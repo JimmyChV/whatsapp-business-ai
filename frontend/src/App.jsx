@@ -128,6 +128,11 @@ function App() {
       setIsAiLoading(false);
     });
 
+    socket.on('ai_error', (msg) => {
+      setIsAiLoading(false);
+      if (msg) alert(msg);
+    });
+
     socket.on('message_ack', ({ id, ack }) => {
       setMessages(prev => prev.map(m => m.id === id ? { ...m, ack } : m));
     });
@@ -150,7 +155,7 @@ function App() {
     return () => {
       ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_history',
         'contact_info', 'message', 'business_data', 'ai_suggestion_chunk',
-        'ai_suggestion_complete', 'message_ack', 'authenticated', 'auth_failure', 'disconnected'
+        'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected'
       ].forEach(ev => socket.off(ev));
     };
   }, [activeChatId]);

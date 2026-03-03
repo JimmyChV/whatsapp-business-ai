@@ -19,6 +19,17 @@ function shouldTryNextModel(error) {
     return error?.status === 404 || String(error?.message || '').includes('is not found');
 }
 
+function mapAiError(error) {
+    const text = String(error?.message || error || '').toLowerCase();
+    if (text.includes('api_key_invalid') || text.includes('api key not valid')) {
+        return 'Error IA: GEMINI_API_KEY inválida. Actualiza tu .env y reinicia backend.';
+    }
+    if (text.includes('is not found') || error?.status === 404) {
+        return 'Error IA: modelo Gemini no disponible para esta cuenta/API. Ajusta GEMINI_MODEL en .env.';
+    }
+    return 'Error IA: fallo al consultar Gemini.';
+}
+
 async function generateWithFallback(prompt, onChunk = null) {
     let lastError = null;
 
@@ -81,8 +92,8 @@ Genera la respuesta sugerida que el negocio debería enviar. Texto directo, sin 
 
         return await generateWithFallback(prompt, onChunk);
     } catch (error) {
-        console.error("Error al obtener sugerencia de IA:", error);
-        return "Error al procesar con IA.";
+        console.error("Error al obtener sugerencia de IA:", error?.message || error);
+        return mapAiError(error);
     }
 }
 
@@ -112,8 +123,8 @@ CONSULTA: "${query}"`;
 
         return await generateWithFallback(prompt, onChunk);
     } catch (error) {
-        console.error("Error en Copiloto Interno:", error);
-        return "Error al consultar al copiloto.";
+        console.error("Error en Copiloto Interno:", error?.message || error);
+        return mapAiError(error);
     }
 }
 

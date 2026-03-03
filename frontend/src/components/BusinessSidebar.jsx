@@ -274,9 +274,19 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
             });
         };
 
+        const onError = (msg) => {
+            setIsAiLoading(false);
+            setAiMessages(prev => [...prev, { role: 'assistant', content: msg || 'Error IA: no se pudo generar respuesta.' }]);
+        };
+
         socket.on('internal_ai_chunk', onChunk);
         socket.on('internal_ai_complete', onComplete);
-        return () => { socket.off('internal_ai_chunk', onChunk); socket.off('internal_ai_complete', onComplete); };
+        socket.on('internal_ai_error', onError);
+        return () => {
+            socket.off('internal_ai_chunk', onChunk);
+            socket.off('internal_ai_complete', onComplete);
+            socket.off('internal_ai_error', onError);
+        };
     }, [socket]);
 
     const buildBusinessContext = () => {

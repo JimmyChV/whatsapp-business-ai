@@ -112,12 +112,16 @@ class SocketManager {
                 // Defer to avoid blocking the event loop (prevents 'click handler took Xms' violations)
                 setImmediate(async () => {
                     try {
-                        await getChatSuggestion(contextText, customPrompt, (chunk) => {
+                        const aiText = await getChatSuggestion(contextText, customPrompt, (chunk) => {
                             socket.emit('ai_suggestion_chunk', chunk);
                         }, businessContext);
+                        if (typeof aiText === 'string' && aiText.startsWith('Error IA:')) {
+                            socket.emit('ai_error', aiText);
+                        }
                         socket.emit('ai_suggestion_complete');
                     } catch (e) {
                         console.error('AI suggestion error:', e);
+                        socket.emit('ai_error', 'Error IA: no se pudo generar sugerencia.');
                         socket.emit('ai_suggestion_complete');
                     }
                 });
@@ -130,12 +134,16 @@ class SocketManager {
                 // Defer to avoid blocking the event loop
                 setImmediate(async () => {
                     try {
-                        await askInternalCopilot(query, (chunk) => {
+                        const copilotText = await askInternalCopilot(query, (chunk) => {
                             socket.emit('internal_ai_chunk', chunk);
                         }, businessContext);
+                        if (typeof copilotText === 'string' && copilotText.startsWith('Error IA:')) {
+                            socket.emit('internal_ai_error', copilotText);
+                        }
                         socket.emit('internal_ai_complete');
                     } catch (e) {
                         console.error('Copilot error:', e);
+                        socket.emit('internal_ai_error', 'Error IA: no se pudo responder en copiloto.');
                         socket.emit('internal_ai_complete');
                     }
                 });
