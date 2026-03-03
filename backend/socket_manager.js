@@ -112,12 +112,16 @@ class SocketManager {
                 // Defer to avoid blocking the event loop (prevents 'click handler took Xms' violations)
                 setImmediate(async () => {
                     try {
-                        await getChatSuggestion(contextText, customPrompt, (chunk) => {
+                        const aiText = await getChatSuggestion(contextText, customPrompt, (chunk) => {
                             socket.emit('ai_suggestion_chunk', chunk);
                         }, businessContext);
+                        if (typeof aiText === 'string' && aiText.startsWith('Error IA:')) {
+                            socket.emit('ai_error', aiText);
+                        }
                         socket.emit('ai_suggestion_complete');
                     } catch (e) {
                         console.error('AI suggestion error:', e);
+                        socket.emit('ai_error', 'Error IA: no se pudo generar sugerencia.');
                         socket.emit('ai_suggestion_complete');
                     }
                 });
@@ -130,12 +134,16 @@ class SocketManager {
                 // Defer to avoid blocking the event loop
                 setImmediate(async () => {
                     try {
-                        await askInternalCopilot(query, (chunk) => {
+                        const copilotText = await askInternalCopilot(query, (chunk) => {
                             socket.emit('internal_ai_chunk', chunk);
                         }, businessContext);
+                        if (typeof copilotText === 'string' && copilotText.startsWith('Error IA:')) {
+                            socket.emit('internal_ai_error', copilotText);
+                        }
                         socket.emit('internal_ai_complete');
                     } catch (e) {
                         console.error('Copilot error:', e);
+                        socket.emit('internal_ai_error', 'Error IA: no se pudo responder en copiloto.');
                         socket.emit('internal_ai_complete');
                     }
                 });
@@ -162,8 +170,9 @@ class SocketManager {
                         labels = raw.map(l => ({ id: l.id, name: l.name, color: l.color }));
                     } catch (e) { console.log('Labels:', e.message); }
 
-                    // Catalog from local JSON file OR Native (User requested native)
-                    let catalog = loadCatalog();
+                    // Catalog: prefer native WhatsApp catalog. Fallback to local only if native is unavailable.
+                    let catalog = [];
+                    let catalogMeta = { source: 'native', nativeAvailable: false };
                     try {
                         const nativeProducts = await waClient.getCatalog(meId);
                         if (nativeProducts && nativeProducts.length > 0) {
@@ -172,16 +181,33 @@ class SocketManager {
                                 title: p.name,
                                 price: p.price ? (p.price / 1000).toFixed(2) : '0.00',
                                 description: p.description,
-                                image: p.imageUrls ? p.imageUrls[0] : null
+                                imageUrl: p.imageUrls ? p.imageUrls[0] : null,
+                                source: 'native'
                             }));
-                            console.log(`[Catalog] Merged ${catalog.length} native products.`);
+                            catalogMeta = { source: 'native', nativeAvailable: true };
+                            console.log(`[Catalog] Loaded ${catalog.length} native products.`);
+                        } else {
+                            const localCatalog = loadCatalog();
+                            catalog = localCatalog;
+                            catalogMeta = { source: 'local', nativeAvailable: false };
+                            console.log('[Catalog] Native unavailable/empty, using local catalog fallback.');
                         }
-                    } catch (e) { console.log('[Catalog] Native fetch failed, using local.'); }
+                    } catch (e) {
+                        const localCatalog = loadCatalog();
+                        catalog = localCatalog;
+                        catalogMeta = { source: 'local', nativeAvailable: false };
+                        console.log('[Catalog] Native fetch failed, using local fallback.', e.message);
+                    }
 
-                    socket.emit('business_data', { profile, labels, catalog });
+                    socket.emit('business_data', { profile, labels, catalog, catalogMeta });
                 } catch (e) {
                     console.error('Error fetching business data:', e);
-                    socket.emit('business_data', { profile: null, labels: [], catalog: loadCatalog() });
+                    socket.emit('business_data', {
+                        profile: null,
+                        labels: [],
+                        catalog: loadCatalog(),
+                        catalogMeta: { source: 'local', nativeAvailable: false }
+                    });
                 }
             });
 
