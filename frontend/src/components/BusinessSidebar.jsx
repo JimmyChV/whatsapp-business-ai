@@ -86,10 +86,11 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
 // =========================================================
 // CATALOG TAB COMPONENT
 // =========================================================
-const CatalogTab = ({ catalog, socket, setInputText, addToCart }) => {
+const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({ title: '', price: '', description: '', imageUrl: '' });
+    const isNativeCatalog = catalogMeta?.source === 'native' && catalogMeta?.nativeAvailable;
 
     const handleAddClick = () => {
         setEditingProduct(null);
@@ -122,10 +123,14 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart }) => {
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>Gestión de Catálogo</div>
-                <button onClick={handleAddClick} style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <PlusCircle size={14} /> Nuevo
-                </button>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                    {isNativeCatalog ? 'Catálogo de WhatsApp (nativo)' : 'Gestión de Catálogo'}
+                </div>
+                {!isNativeCatalog && (
+                    <button onClick={handleAddClick} style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <PlusCircle size={14} /> Nuevo
+                    </button>
+                )}
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -164,7 +169,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart }) => {
                                 <Package size={36} style={{ marginBottom: '12px', opacity: 0.25, marginLeft: 'auto', marginRight: 'auto' }} />
                                 <div style={{ fontSize: '0.875rem', marginBottom: '6px' }}>Catálogo vacío</div>
                                 <div style={{ fontSize: '0.78rem', opacity: 0.7, lineHeight: '1.5' }}>
-                                    Haz clic en "Nuevo" para agregar productos a tu catálogo.
+                                    Si tu catálogo nativo no aparece, WhatsApp Web no lo está exponiendo en esta sesión.
                                 </div>
                             </div>
                         ) : (
@@ -177,10 +182,12 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart }) => {
                                         <div style={{ flex: 1, overflow: 'hidden' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                                 <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
-                                                <div style={{ display: 'flex', gap: '8px' }}>
-                                                    <button onClick={() => handleEditClick(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0' }}><Edit2 size={12} /></button>
-                                                    <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#da3633' }}><Trash2 size={12} /></button>
-                                                </div>
+                                                {!isNativeCatalog && (
+                                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                                        <button onClick={() => handleEditClick(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0' }}><Edit2 size={12} /></button>
+                                                        <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#da3633' }}><Trash2 size={12} /></button>
+                                                    </div>
+                                                )}
                                             </div>
                                             <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 600, marginTop: '2px' }}>
                                                 {item.price ? `S/ ${parseFloat(item.price).toFixed(2)}` : 'Consultar precio'}
@@ -508,7 +515,7 @@ INSTRUCCIONES:
 
             {/* ── CATALOG TAB ── */}
             {activeTab === 'catalog' && (
-                <CatalogTab catalog={catalog} socket={socket} setInputText={setInputText} addToCart={addToCart} />
+                <CatalogTab catalog={catalog} socket={socket} setInputText={setInputText} addToCart={addToCart} catalogMeta={businessData.catalogMeta} />
             )}
 
             {/* ── CART TAB ── */}
