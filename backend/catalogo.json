@@ -1,0 +1,38 @@
+[
+    {
+        "id": "L-SKU01",
+        "nombre": "Crema Facial Antiarrugas Lavitat",
+        "descripcion": "Crema de noche con retinol, vitamina E y ácido hialurónico.",
+        "precio": 85.00,
+        "moneda": "PEN",
+        "disponible": true,
+        "notas_promocionales": "20% de descuento si llevan el Serum."
+    },
+    {
+        "id": "L-SKU02",
+        "nombre": "Serum Vitamina C 30ml",
+        "descripcion": "Serum antioxidante iluminador con 15% de vitamina C pura.",
+        "precio": 65.00,
+        "moneda": "PEN",
+        "disponible": true,
+        "notas_promocionales": ""
+    },
+    {
+        "id": "L-SKU03",
+        "nombre": "Protector Solar F50 Toque Seco",
+        "descripcion": "Protector solar para uso diario, no graso, resistente al agua.",
+        "precio": 45.00,
+        "moneda": "PEN",
+        "disponible": false,
+        "notas_promocionales": "Llega nuevo stock en 5 días."
+    },
+    {
+        "id": "L-PKG01",
+        "nombre": "Pack Rutina Completa",
+        "descripcion": "Incluye Crema Facial, Serum Vitamina C y Protector Solar.",
+        "precio": 170.00,
+        "moneda": "PEN",
+        "disponible": true,
+        "notas_promocionales": "Ideal para regalar. Precio regular sumado 195, ahorro de 25 soles."
+    }
+]

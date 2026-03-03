@@ -1,0 +1,34 @@
+# WhatsApp Business Pro - Git Ignore
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn
+
+# WhatsApp Session (CRITICAL: Do not upload this to GitHub!)
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build
+dist/
+build/
+*.pyc
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local Catalog Storage (Optional: Keep it if you want to share your products)
+# backend/catalog.json

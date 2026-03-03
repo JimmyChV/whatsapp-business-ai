@@ -1,0 +1,626 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Bot, Send, X, ShoppingCart, Tag, BookOpen, Clock, Sparkles, Trash2, Percent, Plus, Minus, ChevronRight, Package, MessageSquare, PlusCircle, Edit2 } from 'lucide-react';
+import moment from 'moment';
+import { io } from 'socket.io-client';
+
+// =========================================================
+// CLIENT PROFILE PANEL
+// =========================================================
+export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
+    if (!contact) return null;
+    const avatarColor = (name) => {
+        const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
+        if (!name) return colors[0];
+        return colors[name.charCodeAt(0) % colors.length];
+    };
+    return (
+        <div style={{
+            position: 'absolute', top: 0, right: 0, width: '340px', height: '100%',
+            background: '#111b21', zIndex: 500, display: 'flex', flexDirection: 'column',
+            boxShadow: '-4px 0 20px rgba(0,0,0,0.5)', borderLeft: '1px solid var(--border-color)',
+            animation: 'slideInRight 0.3s ease-out'
+        }}>
+            <div style={{ background: '#202c33', padding: '14px 18px', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--border-color)' }}>
+                <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0', padding: '4px' }}><X size={20} /></button>
+                <h3 style={{ fontSize: '0.95rem', color: 'var(--text-primary)', fontWeight: 400 }}>Perfil del contacto</h3>
+            </div>
+            <div style={{ background: '#202c33', padding: '28px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                    width: '100px', height: '100px', borderRadius: '50%',
+                    background: contact.profilePicUrl ? `url(${contact.profilePicUrl}) center/cover` : avatarColor(contact.name),
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '2.5rem', color: 'white', fontWeight: 500, overflow: 'hidden', flexShrink: 0
+                }}>
+                    {!contact.profilePicUrl && contact.name?.charAt(0)?.toUpperCase()}
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.1rem', color: 'var(--text-primary)', fontWeight: 400 }}>{contact.name}</div>
+                    <div style={{ fontSize: '0.82rem', color: '#8696a0', marginTop: '3px' }}>{contact.phone || contact.id?.replace('@c.us', '').replace('@g.us', '')}</div>
+                    {contact.isBusiness && (
+                        <div style={{ marginTop: '8px', background: '#00a884', color: 'white', fontSize: '0.72rem', padding: '2px 10px', borderRadius: '20px', display: 'inline-block' }}>
+                            Cuenta Business
+                        </div>
+                    )}
+                </div>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                {contact.status && (
+                    <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
+                        <div style={{ fontSize: '0.7rem', color: '#00a884', marginBottom: '6px' }}>INFO / ESTADO</div>
+                        <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)' }}>{contact.status}</div>
+                    </div>
+                )}
+                {contact.labels?.length > 0 && (
+                    <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
+                        <div style={{ fontSize: '0.7rem', color: '#00a884', marginBottom: '8px' }}>ETIQUETAS</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {contact.labels.map((l, i) => (
+                                <span key={i} style={{ background: l.color || '#3b4a54', color: 'white', padding: '3px 10px', borderRadius: '12px', fontSize: '0.78rem' }}>{l.name}</span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px' }}>
+                    <div style={{ fontSize: '0.7rem', color: '#8a2be2', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Sparkles size={11} /> ACCIONES RÁPIDAS IA
+                    </div>
+                    {[
+                        { label: 'Redactar saludo', prompt: 'Redacta un saludo personalizado y profesional para este cliente.' },
+                        { label: 'Crear propuesta de venta', prompt: 'Crea una propuesta de venta persuasiva para este cliente basada en la conversación.' },
+                        { label: 'Mensaje de seguimiento', prompt: 'Redacta un mensaje de seguimiento para este cliente que no ha respondido.' },
+                    ].map((a, i) => (
+                        <div key={i} onClick={() => onQuickAiAction && onQuickAiAction(a.prompt)}
+                            style={{ padding: '9px 12px', marginBottom: '6px', background: '#1a2530', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.84rem', color: 'var(--text-primary)' }}
+                            onMouseEnter={e => e.currentTarget.style.background = '#243040'}
+                            onMouseLeave={e => e.currentTarget.style.background = '#1a2530'}
+                        >
+                            {a.label} <ChevronRight size={13} color="#8696a0" />
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// =========================================================
+// CATALOG TAB COMPONENT
+// =========================================================
+const CatalogTab = ({ catalog, socket, setInputText, addToCart }) => {
+    const [showForm, setShowForm] = useState(false);
+    const [editingProduct, setEditingProduct] = useState(null);
+    const [formData, setFormData] = useState({ title: '', price: '', description: '', imageUrl: '' });
+
+    const handleAddClick = () => {
+        setEditingProduct(null);
+        setFormData({ title: '', price: '', description: '', imageUrl: '' });
+        setShowForm(true);
+    };
+
+    const handleEditClick = (product) => {
+        setEditingProduct(product);
+        setFormData({ title: product.title, price: product.price, description: product.description, imageUrl: product.imageUrl || '' });
+        setShowForm(true);
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (editingProduct) {
+            socket.emit('update_product', { id: editingProduct.id, updates: formData });
+        } else {
+            socket.emit('add_product', formData);
+        }
+        setShowForm(false);
+    };
+
+    const handleDelete = (id) => {
+        if (window.confirm('¿Eliminar este producto?')) {
+            socket.emit('delete_product', id);
+        }
+    };
+
+    return (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>Gestión de Catálogo</div>
+                <button onClick={handleAddClick} style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <PlusCircle size={14} /> Nuevo
+                </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {showForm ? (
+                    <form onSubmit={handleSubmit} style={{ background: '#202c33', borderRadius: '10px', padding: '15px', border: '1px solid #00a884', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 600, marginBottom: '5px' }}>{editingProduct ? 'Editar Producto' : 'Nuevo Producto'}</div>
+                        <input
+                            type="text" placeholder="Nombre del producto" required
+                            value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })}
+                            style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.82rem', outline: 'none' }}
+                        />
+                        <input
+                            type="text" placeholder="Precio (ej: 25.00)" required
+                            value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })}
+                            style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.82rem', outline: 'none' }}
+                        />
+                        <textarea
+                            placeholder="Descripción" rows="3"
+                            value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })}
+                            style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.82rem', outline: 'none', resize: 'none' }}
+                        />
+                        <input
+                            type="text" placeholder="URL de imagen (opcional)"
+                            value={formData.imageUrl} onChange={e => setFormData({ ...formData, imageUrl: e.target.value })}
+                            style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.82rem', outline: 'none' }}
+                        />
+                        <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
+                            <button type="submit" style={{ flex: 1, background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}>Guardar</button>
+                            <button type="button" onClick={() => setShowForm(false)} style={{ flex: 1, background: 'transparent', border: '1px solid #da3633', color: '#da3633', borderRadius: '6px', padding: '8px', cursor: 'pointer', fontSize: '0.8rem' }}>Cancelar</button>
+                        </div>
+                    </form>
+                ) : (
+                    <>
+                        {catalog.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '30px 15px', color: '#8696a0' }}>
+                                <Package size={36} style={{ marginBottom: '12px', opacity: 0.25, marginLeft: 'auto', marginRight: 'auto' }} />
+                                <div style={{ fontSize: '0.875rem', marginBottom: '6px' }}>Catálogo vacío</div>
+                                <div style={{ fontSize: '0.78rem', opacity: 0.7, lineHeight: '1.5' }}>
+                                    Haz clic en "Nuevo" para agregar productos a tu catálogo.
+                                </div>
+                            </div>
+                        ) : (
+                            catalog.map((item, i) => (
+                                <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+                                    <div style={{ display: 'flex', gap: '10px', padding: '10px' }}>
+                                        <div style={{ width: '50px', height: '50px', borderRadius: '6px', background: '#3b4a54', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            {item.imageUrl ? <img src={item.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={20} color="#8696a0" />}
+                                        </div>
+                                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    <button onClick={() => handleEditClick(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0' }}><Edit2 size={12} /></button>
+                                                    <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#da3633' }}><Trash2 size={12} /></button>
+                                                </div>
+                                            </div>
+                                            <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 600, marginTop: '2px' }}>
+                                                {item.price ? `S/ ${parseFloat(item.price).toFixed(2)}` : 'Consultar precio'}
+                                            </div>
+                                            {item.description && <div style={{ fontSize: '0.72rem', color: '#8696a0', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</div>}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '1px', borderTop: '1px solid var(--border-color)' }}>
+                                        <button
+                                            onClick={() => { setInputText(`📦 *${item.title}*\nPrecio: S/ ${item.price}\n${item.description || ''}\n\n¿Te interesa? 😊`); }}
+                                            style={{ flex: 1, padding: '7px', background: 'transparent', border: 'none', color: '#8696a0', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
+                                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#8696a0'; }}
+                                        >
+                                            <Send size={12} /> Cotizar
+                                        </button>
+                                        <button
+                                            onClick={() => addToCart(item)}
+                                            style={{ flex: 1, padding: '7px', background: 'transparent', border: 'none', borderLeft: '1px solid var(--border-color)', color: '#00a884', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
+                                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,168,132,0.1)'}
+                                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                            <ShoppingCart size={12} /> Al carrito
+                                        </button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// =========================================================
+// BUSINESS SIDEBAR — Main right panel
+// =========================================================
+const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activeChatId, onSendToClient, socket }) => {
+    const [activeTab, setActiveTab] = useState('ai');
+    // AI Chat State
+    const [aiMessages, setAiMessages] = useState([
+        { role: 'assistant', content: '¡Hola! Soy tu asistente de ventas con IA Gemini. Estoy viendo la conversación con tu cliente. ¿Qué necesitas?\n\n💡 Prueba: *"Dame 3 opciones de respuesta"* o *"¿Cómo manejo una objeción de precio?"*' }
+    ]);
+    const [aiInput, setAiInput] = useState('');
+    const [isAiLoading, setIsAiLoading] = useState(false);
+    const aiEndRef = useRef(null);
+
+    // Cart State
+    const [cart, setCart] = useState([]);
+    const [discount, setDiscount] = useState(0);
+    const [showDiscount, setShowDiscount] = useState(false);
+
+    const catalog = businessData.catalog || [];
+    const labels = businessData.labels || [];
+    const profile = businessData.profile;
+
+    // Auto-scroll AI chat
+    useEffect(() => { aiEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [aiMessages]);
+
+    // Listen to AI responses from socket
+    useEffect(() => {
+        if (!socket) return;
+        let buffer = '';
+
+        const onChunk = (chunk) => {
+            buffer += chunk;
+            setAiMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last?.role === 'assistant' && last?.streaming) {
+                    return [...prev.slice(0, -1), { ...last, content: buffer }];
+                }
+                return [...prev, { role: 'assistant', content: buffer, streaming: true }];
+            });
+        };
+
+        const onComplete = () => {
+            buffer = '';
+            setIsAiLoading(false);
+            setAiMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last?.streaming) return [...prev.slice(0, -1), { ...last, streaming: false }];
+                return prev;
+            });
+        };
+
+        socket.on('internal_ai_chunk', onChunk);
+        socket.on('internal_ai_complete', onComplete);
+        return () => { socket.off('internal_ai_chunk', onChunk); socket.off('internal_ai_complete', onComplete); };
+    }, [socket]);
+
+    const buildBusinessContext = () => {
+        const catalogText = catalog.length > 0
+            ? catalog.map(p => `- ${p.title}: S/ ${p.price || 'consultar'}${p.description ? ' | ' + p.description : ''}`).join('\n')
+            : '(sin productos en catálogo)';
+        const convText = messages.slice(-15).map(m => `${m.fromMe ? 'VENDEDOR' : 'CLIENTE'}: ${m.body || '[media]'}`).join('\n');
+        return `
+Eres un asistente experto en ventas. Ayuda al vendedor a cerrar ventas de forma natural y persuasiva.
+
+NEGOCIO: ${profile?.name || profile?.pushname || 'Tu negocio'}
+${profile?.description ? 'Descripción: ' + profile.description : ''}
+
+CATÁLOGO:
+${catalogText}
+
+CONVERSACIÓN ACTUAL CON EL CLIENTE:
+${convText || '(sin mensajes aún)'}
+
+INSTRUCCIONES:
+- Cuando el vendedor pida "opciones" o "alternativas", siempre da AL MENOS 3 opciones numeradas
+- Cuando generes respuestas para enviar al cliente, ponlas entre [MENSAJE: ...] para que el vendedor las pueda enviar fácilmente  
+- Sé conciso, práctico y orientado a cerrar la venta
+- Usa emojis moderadamente como en WhatsApp Business profesional
+        `.trim();
+    };
+
+    const sendAiMessage = () => {
+        if (!aiInput.trim() || isAiLoading || !socket) return;
+        const userMsg = { role: 'user', content: aiInput.trim() };
+        setAiMessages(prev => [...prev, userMsg]);
+        setAiInput('');
+        setIsAiLoading(true);
+
+        socket.emit('internal_ai_query', {
+            query: aiInput.trim(),
+            businessContext: buildBusinessContext()
+        });
+    };
+
+    const sendToClient = (text) => {
+        // Extract content inside [MENSAJE: ...] if present, otherwise use full text
+        const match = text.match(/\[MENSAJE:\s*([\s\S]+?)\]/);
+        const msg = match ? match[1].trim() : text;
+        setInputText(msg);
+        setActiveTab('ai');
+    };
+
+    // Parse AI message to detect [MENSAJE: ...] blocks for send buttons
+    const renderAiMessage = (content) => {
+        const parts = content.split(/(\[MENSAJE:[\s\S]*?\])/g);
+        return parts.map((part, i) => {
+            const match = part.match(/\[MENSAJE:\s*([\s\S]+?)\]/);
+            if (match) {
+                return (
+                    <div key={i} style={{ marginTop: '8px', background: 'rgba(0,168,132,0.12)', border: '1px solid rgba(0,168,132,0.3)', borderRadius: '8px', padding: '10px 12px' }}>
+                        <div style={{ fontSize: '0.78rem', color: '#00a884', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <MessageSquare size={11} /> MENSAJE LISTO PARA ENVIAR
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>{match[1].trim()}</div>
+                        <button
+                            onClick={() => sendToClient(match[1].trim())}
+                            style={{ marginTop: '8px', background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 14px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                            <Send size={13} /> Enviar al cliente
+                        </button>
+                    </div>
+                );
+            }
+            return <span key={i} style={{ whiteSpace: 'pre-wrap' }}>{part}</span>;
+        });
+    };
+
+    // Cart functions
+    const addToCart = (item) => {
+        setCart(prev => {
+            const existing = prev.find(c => c.id === item.id);
+            if (existing) return prev.map(c => c.id === item.id ? { ...c, qty: c.qty + 1 } : c);
+            return [...prev, { ...item, qty: 1, discountPct: 0 }];
+        });
+    };
+
+    const removeFromCart = (id) => setCart(prev => prev.filter(c => c.id !== id));
+    const updateQty = (id, delta) => setCart(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(1, c.qty + delta) } : c));
+    const updateItemDiscount = (id, pct) => setCart(prev => prev.map(c => c.id === id ? { ...c, discountPct: Math.min(90, Math.max(0, pct)) } : c));
+
+    const cartTotal = cart.reduce((sum, item) => {
+        const price = parseFloat(item.price) || 0;
+        const disc = item.discountPct || discount;
+        return sum + (price * item.qty * (1 - disc / 100));
+    }, 0);
+
+    const sendQuoteToChat = () => {
+        if (cart.length === 0) return;
+        const lines = cart.map(item => {
+            const price = parseFloat(item.price) || 0;
+            const disc = item.discountPct || discount;
+            const finalPrice = price * (1 - disc / 100);
+            return `📦 *${item.title}*\n   Qty: ${item.qty} × S/ ${price.toFixed(2)}${disc > 0 ? ` (-${disc}%)` : ''} = *S/ ${(finalPrice * item.qty).toFixed(2)}*`;
+        });
+        const msg = `🛒 *COTIZACIÓN*\n${'─'.repeat(25)}\n${lines.join('\n\n')}\n${'─'.repeat(25)}\n💰 *TOTAL: S/ ${cartTotal.toFixed(2)}*${discount > 0 ? `\n🎁 Descuento global aplicado: ${discount}%` : ''}\n\n¿Procedemoss con el pedido? 🙌`;
+        setInputText(msg);
+    };
+
+    const tabs = [
+        { id: 'ai', icon: <Bot size={15} />, label: 'IA Pro' },
+        { id: 'catalog', icon: <Package size={15} />, label: `Catálogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
+        { id: 'cart', icon: <ShoppingCart size={15} />, label: `Carrito${cart.length > 0 ? ` (${cart.length})` : ''}` },
+        { id: 'quick', icon: <Clock size={15} />, label: 'Rápidas' },
+    ];
+
+    return (
+        <div style={{ width: '340px', flexShrink: 0, background: '#111b21', borderLeft: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
+            {/* Business Profile Header */}
+            <div style={{ background: '#202c33', padding: '12px 14px', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
+                {profile ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                        <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: profile.profilePicUrl ? `url(${profile.profilePicUrl}) center/cover` : '#00a884', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', color: 'white', overflow: 'hidden' }}>
+                            {!profile.profilePicUrl && '📋'}
+                        </div>
+                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                            <div style={{ fontSize: '0.88rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {profile.name || profile.pushname || 'Mi Negocio'}
+                            </div>
+                            {profile.description && (
+                                <div style={{ fontSize: '0.7rem', color: '#8696a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {profile.description}
+                                </div>
+                            )}
+                        </div>
+                        <div style={{ fontSize: '0.65rem', color: '#00a884', background: 'rgba(0,168,132,0.15)', padding: '2px 6px', borderRadius: '4px', flexShrink: 0 }}>
+                            Business
+                        </div>
+                    </div>
+                ) : (
+                    <div style={{ fontSize: '0.83rem', color: '#8696a0' }}>Perfil de Negocio</div>
+                )}
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: 'flex', background: '#202c33', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
+                {tabs.map(t => (
+                    <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
+                        flex: 1, padding: '9px 2px', border: 'none', cursor: 'pointer',
+                        background: activeTab === t.id ? '#111b21' : 'transparent',
+                        color: activeTab === t.id ? '#00a884' : '#8696a0',
+                        fontSize: '0.68rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px',
+                        borderBottom: activeTab === t.id ? '2px solid #00a884' : '2px solid transparent',
+                    }}>
+                        {t.icon} {t.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* ── AI PRO TAB ── Conversational chat with Gemini */}
+            {activeTab === 'ai' && (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {aiMessages.map((msg, idx) => (
+                            <div key={idx} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                                <div style={{
+                                    maxWidth: '92%', padding: '9px 12px', borderRadius: msg.role === 'user' ? '12px 2px 12px 12px' : '2px 12px 12px 12px',
+                                    background: msg.role === 'user' ? '#005c4b' : '#202c33',
+                                    fontSize: '0.82rem', color: 'var(--text-primary)', lineHeight: '1.45',
+                                    position: 'relative'
+                                }}>
+                                    {msg.role === 'assistant' ? renderAiMessage(msg.content) : msg.content}
+                                    {msg.streaming && (
+                                        <span style={{ display: 'inline-block', width: '6px', height: '12px', background: 'var(--text-primary)', marginLeft: '3px', animation: 'blink 0.8s step-end infinite' }} />
+                                    )}
+                                    {msg.role === 'assistant' && !msg.streaming && msg.content.length > 30 && !msg.content.includes('[MENSAJE:') && (
+                                        <button
+                                            onClick={() => sendToClient(msg.content)}
+                                            title="Enviar este mensaje al cliente"
+                                            style={{ marginTop: '6px', background: 'transparent', border: '1px solid rgba(0,168,132,0.4)', color: '#00a884', borderRadius: '5px', padding: '3px 8px', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                        >
+                                            <Send size={10} /> Usar como respuesta
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                        {isAiLoading && aiMessages[aiMessages.length - 1]?.role !== 'assistant' && (
+                            <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                                <div style={{ background: '#202c33', borderRadius: '2px 12px 12px 12px', padding: '10px 14px' }}>
+                                    <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8696a0', animation: 'bounce 1.4s ease-in-out infinite' }} />
+                                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8696a0', animation: 'bounce 1.4s ease-in-out 0.2s infinite' }} />
+                                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8696a0', animation: 'bounce 1.4s ease-in-out 0.4s infinite' }} />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        <div ref={aiEndRef} />
+                    </div>
+
+                    {/* Quick action chips */}
+                    <div style={{ padding: '6px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', flexWrap: 'wrap', gap: '5px', flexShrink: 0 }}>
+                        {[
+                            '💬 Dame 3 opciones de respuesta',
+                            '💰 Cómo cerrar esta venta',
+                            '🔄 Maneja la objeción de precio',
+                            '📦 Recomienda un producto',
+                        ].map((chip, i) => (
+                            <button key={i}
+                                onClick={() => { setAiInput(chip.replace(/^[^\s]+ /, '')); }}
+                                style={{ background: '#202c33', border: '1px solid var(--border-color)', color: '#8696a0', padding: '4px 9px', borderRadius: '14px', fontSize: '0.72rem', cursor: 'pointer' }}
+                                onMouseEnter={e => e.currentTarget.style.borderColor = '#00a884'}
+                                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
+                            >
+                                {chip}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* AI Input */}
+                    <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0, background: '#202c33' }}>
+                        <input
+                            type="text"
+                            placeholder="Pregunta algo a la IA..."
+                            value={aiInput}
+                            onChange={e => setAiInput(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendAiMessage()}
+                            style={{ flex: 1, background: '#2a3942', border: 'none', outline: 'none', color: 'var(--text-primary)', borderRadius: '20px', padding: '8px 14px', fontSize: '0.82rem' }}
+                        />
+                        <button
+                            onClick={sendAiMessage}
+                            disabled={isAiLoading || !aiInput.trim()}
+                            style={{ background: isAiLoading ? '#3b4a54' : '#00a884', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isAiLoading ? 'wait' : 'pointer', flexShrink: 0 }}
+                        >
+                            <Send size={16} color="white" />
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* ── CATALOG TAB ── */}
+            {activeTab === 'catalog' && (
+                <CatalogTab catalog={catalog} socket={socket} setInputText={setInputText} addToCart={addToCart} />
+            )}
+
+            {/* ── CART TAB ── */}
+            {activeTab === 'cart' && (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {cart.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '30px 15px', color: '#8696a0' }}>
+                                <ShoppingCart size={36} style={{ marginBottom: '12px', opacity: 0.25, marginLeft: 'auto', marginRight: 'auto' }} />
+                                <div style={{ fontSize: '0.875rem' }}>Carrito vacío</div>
+                                <div style={{ fontSize: '0.78rem', opacity: 0.7, marginTop: '6px' }}>Agrega productos desde el Catálogo</div>
+                            </div>
+                        ) : (
+                            cart.map((item, i) => {
+                                const price = parseFloat(item.price) || 0;
+                                const disc = item.discountPct || 0;
+                                const finalPrice = price * (1 - disc / 100);
+                                return (
+                                    <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '10px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                            <div style={{ flex: 1, overflow: 'hidden', marginRight: '8px' }}>
+                                                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
+                                                <div style={{ fontSize: '0.8rem', color: '#00a884' }}>
+                                                    S/ {finalPrice.toFixed(2)} {disc > 0 && <span style={{ color: '#8696a0', textDecoration: 'line-through', fontSize: '0.72rem', marginLeft: '4px' }}>S/ {price.toFixed(2)}</span>}
+                                                </div>
+                                            </div>
+                                            <button onClick={() => removeFromCart(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0', padding: '2px' }}>
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <button onClick={() => updateQty(item.id, -1)} style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={10} /></button>
+                                                <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', minWidth: '24px', textAlign: 'center' }}>{item.qty}</span>
+                                                <button onClick={() => updateQty(item.id, 1)} style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus size={10} /></button>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <Percent size={12} color="#8696a0" />
+                                                <input
+                                                    type="number" min="0" max="90" value={item.discountPct || 0}
+                                                    onChange={e => updateItemDiscount(item.id, parseInt(e.target.value) || 0)}
+                                                    style={{ width: '42px', background: '#3b4a54', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '5px', padding: '3px 5px', fontSize: '0.78rem', outline: 'none' }}
+                                                />
+                                                <span style={{ fontSize: '0.72rem', color: '#8696a0' }}>%</span>
+                                            </div>
+                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                                                S/ {(finalPrice * item.qty).toFixed(2)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                    {cart.length > 0 && (
+                        <div style={{ padding: '10px', borderTop: '1px solid var(--border-color)', background: '#202c33', flexShrink: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <span style={{ fontSize: '0.82rem', color: '#8696a0' }}>Descuento global:</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <input type="number" min="0" max="90" value={discount}
+                                        onChange={e => setDiscount(parseInt(e.target.value) || 0)}
+                                        style={{ width: '48px', background: '#2a3942', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '6px', padding: '4px 6px', fontSize: '0.82rem', outline: 'none' }}
+                                    />
+                                    <span style={{ fontSize: '0.78rem', color: '#8696a0' }}>%</span>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                <span style={{ fontSize: '0.95rem', fontWeight: 500, color: 'var(--text-primary)' }}>TOTAL</span>
+                                <span style={{ fontSize: '1.05rem', fontWeight: 600, color: '#00a884' }}>S/ {cartTotal.toFixed(2)}</span>
+                            </div>
+                            <button
+                                onClick={sendQuoteToChat}
+                                style={{ width: '100%', padding: '10px', background: '#00a884', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                            >
+                                <Send size={15} /> Enviar cotización al cliente
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── QUICK REPLIES TAB ── */}
+            {activeTab === 'quick' && (
+                <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                    {[
+                        { label: '👋 Saludo', text: '¡Hola! 👋 Bienvenido a nuestro negocio. ¿En qué puedo ayudarte hoy?' },
+                        { label: '💰 Método de pago', text: 'Puedes pagar mediante:\n🏦 Transferencia bancaria\n💳 Yape / Plin\n💵 Efectivo\n\n¿Cuál prefieres?' },
+                        { label: '🕐 Horario', text: 'Nuestro horario de atención es:\n🗓️ Lunes a Sábado: 9:00 AM – 7:00 PM\n📞 También puedes escribirnos por WhatsApp.' },
+                        { label: '📦 En camino', text: 'Tu pedido está en camino 🚚. Te avisamos en cuanto llegue. ¡Gracias por tu paciencia!' },
+                        { label: '✅ Confirmado', text: '¡Perfecto! Tu pedido ha sido confirmado ✅. Lo procesamos lo antes posible. ¡Gracias! 🎉' },
+                        { label: '💬 ¿Más info?', text: 'Con gusto te doy más información. ¿Qué producto o servicio te interesa? 😊' },
+                        { label: '📸 Comprobante', text: 'Para confirmar tu pago, por favor envíanos una foto del comprobante de transferencia. ¡Gracias!' },
+                        { label: '🙏 Gracias', text: '¡Muchas gracias por tu compra! 🙏 Ha sido un placer atenderte. ¡Hasta pronto!' },
+                        { label: '🔄 Seguimiento', text: 'Hola, quería hacer un seguimiento a tu consulta. ¿Pudiste revisar la información que te compartí? 😊' },
+                        { label: '⏳ Espera', text: 'Un momento por favor, estoy verificando la información para ti. 🙏' },
+                    ].map((qr, i) => (
+                        <button key={i} onClick={() => setInputText(qr.text)} style={{
+                            width: '100%', padding: '10px 12px', borderRadius: '8px',
+                            background: '#202c33', border: '1px solid var(--border-color)',
+                            cursor: 'pointer', textAlign: 'left', color: 'var(--text-primary)', transition: 'all 0.12s'
+                        }}
+                            onMouseEnter={e => e.currentTarget.style.borderColor = '#00a884'}
+                            onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
+                        >
+                            <div style={{ fontSize: '0.84rem', fontWeight: 500, marginBottom: '3px' }}>{qr.label}</div>
+                            <div style={{ fontSize: '0.72rem', color: '#8696a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{qr.text.split('\n')[0]}</div>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default BusinessSidebar;
