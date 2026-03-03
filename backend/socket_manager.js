@@ -2,6 +2,79 @@ const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
 const waClient = require('./whatsapp_client');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
+const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
+
+function collectProductsFromUnknownShape(input, depth = 0, found = []) {
+    if (!input || depth > 4) return found;
+
+    if (Array.isArray(input)) {
+        input.forEach((entry) => collectProductsFromUnknownShape(entry, depth + 1, found));
+        return found;
+    }
+
+    if (typeof input !== 'object') return found;
+
+    const looksLikeLine = (
+        input.name || input.title || input.productName || input.id
+    ) && (
+        input.quantity || input.qty || input.amount || input.price || input.unitPrice || input.retailer_id
+    );
+
+    if (looksLikeLine) {
+        found.push({
+            name: input.name || input.title || input.productName || `Producto ${found.length + 1}`,
+            quantity: input.quantity || input.qty || 1,
+            price: input.price || input.amount || input.unitPrice || null,
+            sku: input.sku || input.retailer_id || null
+        });
+    }
+
+    Object.values(input).forEach((value) => collectProductsFromUnknownShape(value, depth + 1, found));
+    return found;
+}
+
+function extractOrderInfo(msg) {
+    try {
+        const data = msg?._data || {};
+        const products = collectProductsFromUnknownShape({
+            msgOrder: msg?.order,
+            msgOrderProducts: msg?.orderProducts,
+            native: msg,
+            raw: data
+        }).slice(0, 25);
+
+        const orderId = msg?.orderId || data?.orderId || data?.orderToken || data?.token || null;
+        const subtotal = msg?.subtotal || data?.subtotal || data?.totalAmount1000 || data?.total || null;
+        const currency = msg?.currency || data?.currency || 'PEN';
+
+        const maybeOrderType = String(msg?.type || '').toLowerCase().includes('order')
+            || String(data?.type || '').toLowerCase().includes('order')
+            || products.length > 0
+            || Boolean(orderId);
+
+        if (!maybeOrderType) return null;
+
+        const rawPreview = {
+            type: msg?.type || data?.type || null,
+            body: msg?.body || data?.body || null,
+            title: data?.title || data?.orderTitle || null,
+            itemCount: data?.itemCount || data?.orderItemCount || null,
+            sellerJid: data?.sellerJid || null,
+            token: data?.orderToken || data?.token || null
+        };
+
+        return {
+            orderId,
+            currency,
+            subtotal,
+            products,
+            rawPreview
+        };
+    } catch (error) {
+        return null;
+    }
+}
+
 
 class SocketManager {
     constructor(io) {
@@ -73,7 +146,9 @@ class SocketManager {
                             fromMe: m.fromMe,
                             hasMedia: m.hasMedia,
                             mediaData: media ? media.data : null,
-                            mimetype: media ? media.mimetype : null
+                            mimetype: media ? media.mimetype : null,
+                            type: m.type,
+                            order: extractOrderInfo(m)
                         };
                     }));
                     socket.emit('chat_history', { chatId, messages: formatted });
@@ -112,12 +187,16 @@ class SocketManager {
                 // Defer to avoid blocking the event loop (prevents 'click handler took Xms' violations)
                 setImmediate(async () => {
                     try {
-                        await getChatSuggestion(contextText, customPrompt, (chunk) => {
+                        const aiText = await getChatSuggestion(contextText, customPrompt, (chunk) => {
                             socket.emit('ai_suggestion_chunk', chunk);
                         }, businessContext);
+                        if (typeof aiText === 'string' && aiText.startsWith('Error IA:')) {
+                            socket.emit('ai_error', aiText);
+                        }
                         socket.emit('ai_suggestion_complete');
                     } catch (e) {
                         console.error('AI suggestion error:', e);
+                        socket.emit('ai_error', 'Error IA: no se pudo generar sugerencia.');
                         socket.emit('ai_suggestion_complete');
                     }
                 });
@@ -130,12 +209,16 @@ class SocketManager {
                 // Defer to avoid blocking the event loop
                 setImmediate(async () => {
                     try {
-                        await askInternalCopilot(query, (chunk) => {
+                        const copilotText = await askInternalCopilot(query, (chunk) => {
                             socket.emit('internal_ai_chunk', chunk);
                         }, businessContext);
+                        if (typeof copilotText === 'string' && copilotText.startsWith('Error IA:')) {
+                            socket.emit('internal_ai_error', copilotText);
+                        }
                         socket.emit('internal_ai_complete');
                     } catch (e) {
                         console.error('Copilot error:', e);
+                        socket.emit('internal_ai_error', 'Error IA: no se pudo responder en copiloto.');
                         socket.emit('internal_ai_complete');
                     }
                 });
@@ -162,8 +245,18 @@ class SocketManager {
                         labels = raw.map(l => ({ id: l.id, name: l.name, color: l.color }));
                     } catch (e) { console.log('Labels:', e.message); }
 
-                    // Catalog from local JSON file OR Native (User requested native)
-                    let catalog = loadCatalog();
+                    // Catalog priority: WhatsApp native -> WooCommerce -> local file fallback.
+                    let catalog = [];
+                    let catalogMeta = {
+                        source: 'native',
+                        nativeAvailable: false,
+                        wooConfigured: isWooConfigured(),
+                        wooAvailable: false,
+                        wooSource: null,
+                        wooStatus: null,
+                        wooReason: null
+                    };
+
                     try {
                         const nativeProducts = await waClient.getCatalog(meId);
                         if (nativeProducts && nativeProducts.length > 0) {
@@ -172,16 +265,69 @@ class SocketManager {
                                 title: p.name,
                                 price: p.price ? (p.price / 1000).toFixed(2) : '0.00',
                                 description: p.description,
-                                image: p.imageUrls ? p.imageUrls[0] : null
+                                imageUrl: p.imageUrls ? p.imageUrls[0] : null,
+                                source: 'native'
                             }));
-                            console.log(`[Catalog] Merged ${catalog.length} native products.`);
+                            catalogMeta = {
+                                source: 'native',
+                                nativeAvailable: true,
+                                wooConfigured: isWooConfigured(),
+                                wooAvailable: false
+                            };
+                            console.log(`[Catalog] Loaded ${catalog.length} native products.`);
                         }
-                    } catch (e) { console.log('[Catalog] Native fetch failed, using local.'); }
+                    } catch (e) {
+                        console.log('[Catalog] Native fetch failed.', e.message);
+                    }
 
-                    socket.emit('business_data', { profile, labels, catalog });
+                    if (!catalog.length) {
+                        const wooResult = await getWooCatalog();
+                        if (wooResult.products.length > 0) {
+                            catalog = wooResult.products;
+                            catalogMeta = {
+                                source: 'woocommerce',
+                                nativeAvailable: false,
+                                wooConfigured: isWooConfigured(),
+                                wooAvailable: true,
+                                wooSource: wooResult.source,
+                                wooStatus: wooResult.status,
+                                wooReason: wooResult.reason
+                            };
+                            console.log(`[Catalog] Loaded ${catalog.length} products from WooCommerce (${wooResult.source}).`);
+                        } else {
+                            catalogMeta = {
+                                ...catalogMeta,
+                                wooConfigured: isWooConfigured(),
+                                wooAvailable: false,
+                                wooSource: wooResult.source,
+                                wooStatus: wooResult.status,
+                                wooReason: wooResult.reason
+                            };
+                            console.log(`[Catalog] WooCommerce unavailable/empty (${wooResult.source}): ${wooResult.reason || 'sin detalle'}`);
+                        }
+                    }
+
+                    if (!catalog.length) {
+                        catalog = loadCatalog();
+                        catalogMeta = {
+                            ...catalogMeta,
+                            source: 'local',
+                            nativeAvailable: false,
+                            wooConfigured: isWooConfigured(),
+                            wooAvailable: false
+                        };
+                        console.log('[Catalog] Using local catalog fallback.');
+                    }
+
+                    socket.emit('business_data', { profile, labels, catalog, catalogMeta });
                 } catch (e) {
                     console.error('Error fetching business data:', e);
-                    socket.emit('business_data', { profile: null, labels: [], catalog: loadCatalog() });
+                    socket.emit('business_data', {
+                        profile: null,
+                        labels: [],
+                        catalog: loadCatalog(),
+                        catalogMeta: { source: 'local', nativeAvailable: false, wooConfigured: isWooConfigured(), wooAvailable: false, wooSource: null, wooStatus: 'error', wooReason: 'Error al obtener datos de negocio' }
+                    });
                 }
             });
 
@@ -284,7 +430,9 @@ class SocketManager {
                 hasMedia: msg.hasMedia,
                 mediaData: media ? media.data : null,
                 mimetype: media ? media.mimetype : null,
-                ack: msg.ack
+                ack: msg.ack,
+                type: msg.type,
+                order: extractOrderInfo(msg)
             });
             // Auto refresh chat list
             const chats = await waClient.getChats();
@@ -322,7 +470,9 @@ class SocketManager {
                 hasMedia: msg.hasMedia,
                 mediaData: media ? media.data : null,
                 mimetype: media ? media.mimetype : null,
-                ack: msg.ack
+                ack: msg.ack,
+                type: msg.type,
+                order: extractOrderInfo(msg)
             });
         });
 
