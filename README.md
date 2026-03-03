@@ -1,10 +1,10 @@
 # WhatsApp Business Pro - AI Sales Assistant 🚀
 
-Este proyecto es un clon avanzado de WhatsApp Business potenciado con **Inteligencia Artificial (Gemini)** para optimizar el proceso de ventas. Permite a los negocios gestionar chats, catálogos y cotizaciones de forma profesional y eficiente.
+Este proyecto es un clon avanzado de WhatsApp Business potenciado con **Inteligencia Artificial (OpenAI)** para optimizar el proceso de ventas. Permite a los negocios gestionar chats, catálogos y cotizaciones de forma profesional y eficiente.
 
 ## ✨ Características Principales
 
-- **🤖 Asistente IA Gemini**: Integración con Google Gemini para sugerir respuestas persuasivas, manejar objeciones y recomendar productos basados en el contexto del chat.
+- **🤖 Asistente IA OpenAI**: Integración con OpenAI para sugerir respuestas persuasivas, manejar objeciones y recomendar productos basados en el contexto del chat.
 - **📦 Gestión de Catálogo**: Soporte para catálogos nativos de WhatsApp Business y gestión manual de productos (Título, Precio, Descripción, Imagen).
 - **🛒 Sistema de Carrito y Cotización**: Agrega productos al carrito, aplica descuentos (por ítem o globales) y envía cotizaciones detalladas con un solo clic.
 - **🎙️ Notas de Voz Nativas**: Grabación y envío de audios en formato `ogg/opus`, 100% compatibles con WhatsApp oficial.
@@ -15,14 +15,14 @@ Este proyecto es un clon avanzado de WhatsApp Business potenciado con **Intelige
 
 - **Frontend**: React.js, Vite, Lucide React (iconos), Socket.io-client.
 - **Backend**: Node.js, Express, Socket.io, `whatsapp-web.js` (basado en Puppeteer).
-- **IA**: Google Generative AI (Gemini Pro).
+- **IA**: OpenAI API (GPT).
 
 ## 🚀 Instalación y Configuración
 
 ### 1. Requisitos Previos
 - Node.js instalado.
 - Una cuenta de WhatsApp (se recomienda Business).
-- Una API Key de Google Gemini (puedes obtenerla en [Google AI Studio](https://aistudio.google.com/)).
+- Una API Key de OpenAI (puedes obtenerla en [OpenAI Platform](https://platform.openai.com/api-keys)).
 
 ### 2. Clonar y Configurar
 ```bash
@@ -37,7 +37,8 @@ npm install
 ```
 Crea un archivo `.env` en la carpeta `backend` con:
 ```env
-GEMINI_API_KEY=tu_clave_aqui
+OPENAI_API_KEY=tu_clave_openai
+OPENAI_MODEL=gpt-4o-mini
 PORT=3001
 ```
 
@@ -52,7 +53,7 @@ npm run dev
 En una terminal aparte:
 ```bash
 cd backend
-node index.js
+node server.js
 ```
 
 ### 6. Vincular WhatsApp
