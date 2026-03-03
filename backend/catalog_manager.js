@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const CATALOG_FILE = path.join(__dirname, 'catalog.json');
+const CATALOG_FILE = path.join(__dirname, 'catalogo.json');
 
 // Load catalog from disk
 function loadCatalog() {
