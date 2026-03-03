@@ -2,6 +2,7 @@ const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
 const waClient = require('./whatsapp_client');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
+const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
 
 class SocketManager {
     constructor(io) {
@@ -170,9 +171,15 @@ class SocketManager {
                         labels = raw.map(l => ({ id: l.id, name: l.name, color: l.color }));
                     } catch (e) { console.log('Labels:', e.message); }
 
-                    // Catalog: prefer native WhatsApp catalog. Fallback to local only if native is unavailable.
+                    // Catalog priority: WhatsApp native -> WooCommerce -> local file fallback.
                     let catalog = [];
-                    let catalogMeta = { source: 'native', nativeAvailable: false };
+                    let catalogMeta = {
+                        source: 'native',
+                        nativeAvailable: false,
+                        wooConfigured: isWooConfigured(),
+                        wooAvailable: false
+                    };
+
                     try {
                         const nativeProducts = await waClient.getCatalog(meId);
                         if (nativeProducts && nativeProducts.length > 0) {
@@ -184,19 +191,47 @@ class SocketManager {
                                 imageUrl: p.imageUrls ? p.imageUrls[0] : null,
                                 source: 'native'
                             }));
-                            catalogMeta = { source: 'native', nativeAvailable: true };
+                            catalogMeta = {
+                                source: 'native',
+                                nativeAvailable: true,
+                                wooConfigured: isWooConfigured(),
+                                wooAvailable: false
+                            };
                             console.log(`[Catalog] Loaded ${catalog.length} native products.`);
-                        } else {
-                            const localCatalog = loadCatalog();
-                            catalog = localCatalog;
-                            catalogMeta = { source: 'local', nativeAvailable: false };
-                            console.log('[Catalog] Native unavailable/empty, using local catalog fallback.');
                         }
                     } catch (e) {
-                        const localCatalog = loadCatalog();
-                        catalog = localCatalog;
-                        catalogMeta = { source: 'local', nativeAvailable: false };
-                        console.log('[Catalog] Native fetch failed, using local fallback.', e.message);
+                        console.log('[Catalog] Native fetch failed.', e.message);
+                    }
+
+                    if (!catalog.length) {
+                        try {
+                            const wooCatalog = await getWooCatalog();
+                            if (wooCatalog.length > 0) {
+                                catalog = wooCatalog;
+                                catalogMeta = {
+                                    source: 'woocommerce',
+                                    nativeAvailable: false,
+                                    wooConfigured: isWooConfigured(),
+                                    wooAvailable: true
+                                };
+                                console.log(`[Catalog] Loaded ${catalog.length} products from WooCommerce.`);
+                            } else {
+                                console.log('[Catalog] WooCommerce returned empty catalog.');
+                            }
+                        } catch (e) {
+                            console.log('[Catalog] WooCommerce fetch failed.', e.message);
+                        }
+                    }
+
+                    if (!catalog.length) {
+                        catalog = loadCatalog();
+                        catalogMeta = {
+                            source: 'local',
+                            nativeAvailable: false,
+                            wooConfigured: isWooConfigured(),
+                            wooAvailable: false
+                        };
+                        console.log('[Catalog] Using local catalog fallback.');
                     }
 
                     socket.emit('business_data', { profile, labels, catalog, catalogMeta });
@@ -206,7 +241,7 @@ class SocketManager {
                         profile: null,
                         labels: [],
                         catalog: loadCatalog(),
-                        catalogMeta: { source: 'local', nativeAvailable: false }
+                        catalogMeta: { source: 'local', nativeAvailable: false, wooConfigured: isWooConfigured(), wooAvailable: false }
                     });
                 }
             });

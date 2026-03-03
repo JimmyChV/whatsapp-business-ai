@@ -3,6 +3,14 @@ import { Bot, Send, X, ShoppingCart, Tag, BookOpen, Clock, Sparkles, Trash2, Per
 import moment from 'moment';
 import { io } from 'socket.io-client';
 
+
+const roundToOneDecimal = (value) => {
+    const num = Number(value) || 0;
+    return Math.round(num * 10) / 10;
+};
+
+const formatMoney = (value) => roundToOneDecimal(value).toFixed(1);
+
 // =========================================================
 // CLIENT PROFILE PANEL
 // =========================================================
@@ -91,6 +99,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({ title: '', price: '', description: '', imageUrl: '' });
     const isNativeCatalog = catalogMeta?.source === 'native' && catalogMeta?.nativeAvailable;
+    const isExternalCatalog = ['native', 'woocommerce'].includes(catalogMeta?.source);
 
     const handleAddClick = () => {
         setEditingProduct(null);
@@ -124,9 +133,9 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                    {isNativeCatalog ? 'Catálogo de WhatsApp (nativo)' : 'Gestión de Catálogo'}
+                    {isNativeCatalog ? 'Catálogo de WhatsApp (nativo)' : catalogMeta?.source === 'woocommerce' ? 'Catálogo de WooCommerce' : 'Gestión de Catálogo'}
                 </div>
-                {!isNativeCatalog && (
+                {!isExternalCatalog && (
                     <button onClick={handleAddClick} style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
                         <PlusCircle size={14} /> Nuevo
                     </button>
@@ -134,6 +143,11 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {isExternalCatalog && (
+                    <div style={{ background: '#1f2c34', color: '#8696a0', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.75rem' }}>
+                        Este catálogo se sincroniza desde {catalogMeta?.source === 'woocommerce' ? 'WooCommerce' : 'WhatsApp Business'}. Para editar productos, hazlo en el origen.
+                    </div>
+                )}
                 {showForm ? (
                     <form onSubmit={handleSubmit} style={{ background: '#202c33', borderRadius: '10px', padding: '15px', border: '1px solid #00a884', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 600, marginBottom: '5px' }}>{editingProduct ? 'Editar Producto' : 'Nuevo Producto'}</div>
@@ -182,7 +196,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                         <div style={{ flex: 1, overflow: 'hidden' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                                 <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
-                                                {!isNativeCatalog && (
+                                                {!isExternalCatalog && (
                                                     <div style={{ display: 'flex', gap: '8px' }}>
                                                         <button onClick={() => handleEditClick(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0' }}><Edit2 size={12} /></button>
                                                         <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#da3633' }}><Trash2 size={12} /></button>
@@ -190,14 +204,14 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                                 )}
                                             </div>
                                             <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 600, marginTop: '2px' }}>
-                                                {item.price ? `S/ ${parseFloat(item.price).toFixed(2)}` : 'Consultar precio'}
+                                                {item.price ? `S/ ${formatMoney(item.price)}` : 'Consultar precio'}
                                             </div>
                                             {item.description && <div style={{ fontSize: '0.72rem', color: '#8696a0', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</div>}
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', gap: '1px', borderTop: '1px solid var(--border-color)' }}>
                                         <button
-                                            onClick={() => { setInputText(`📦 *${item.title}*\nPrecio: S/ ${item.price}\n${item.description || ''}\n\n¿Te interesa? 😊`); }}
+                                            onClick={() => { setInputText(`📦 *${item.title}*\nPrecio: S/ ${formatMoney(item.price)}\n${item.description || ''}\n\n¿Te interesa? 😊`); }}
                                             style={{ flex: 1, padding: '7px', background: 'transparent', border: 'none', color: '#8696a0', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
                                             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
                                             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#8696a0'; }}
@@ -244,6 +258,7 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
     const catalog = businessData.catalog || [];
     const labels = businessData.labels || [];
     const profile = businessData.profile;
+
 
     // Auto-scroll AI chat
     useEffect(() => { aiEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [aiMessages]);
@@ -375,21 +390,22 @@ INSTRUCCIONES OBLIGATORIAS:
     const updateQty = (id, delta) => setCart(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(1, c.qty + delta) } : c));
     const updateItemDiscount = (id, pct) => setCart(prev => prev.map(c => c.id === id ? { ...c, discountPct: Math.min(90, Math.max(0, pct)) } : c));
 
-    const cartTotal = cart.reduce((sum, item) => {
+    const cartTotal = roundToOneDecimal(cart.reduce((sum, item) => {
         const price = parseFloat(item.price) || 0;
         const disc = item.discountPct || discount;
-        return sum + (price * item.qty * (1 - disc / 100));
-    }, 0);
+        const finalPrice = roundToOneDecimal(price * (1 - disc / 100));
+        return sum + (finalPrice * item.qty);
+    }, 0));
 
     const sendQuoteToChat = () => {
         if (cart.length === 0) return;
         const lines = cart.map(item => {
             const price = parseFloat(item.price) || 0;
             const disc = item.discountPct || discount;
-            const finalPrice = price * (1 - disc / 100);
-            return `📦 *${item.title}*\n   Qty: ${item.qty} × S/ ${price.toFixed(2)}${disc > 0 ? ` (-${disc}%)` : ''} = *S/ ${(finalPrice * item.qty).toFixed(2)}*`;
+            const finalPrice = roundToOneDecimal(price * (1 - disc / 100));
+            return `📦 *${item.title}*\n   Qty: ${item.qty} × S/ ${formatMoney(price)}${disc > 0 ? ` (-${disc}%)` : ''} = *S/ ${formatMoney(finalPrice * item.qty)}*`;
         });
-        const msg = `🛒 *COTIZACIÓN*\n${'─'.repeat(25)}\n${lines.join('\n\n')}\n${'─'.repeat(25)}\n💰 *TOTAL: S/ ${cartTotal.toFixed(2)}*${discount > 0 ? `\n🎁 Descuento global aplicado: ${discount}%` : ''}\n\n¿Procedemoss con el pedido? 🙌`;
+        const msg = `🛒 *COTIZACIÓN*\n${'─'.repeat(25)}\n${lines.join('\n\n')}\n${'─'.repeat(25)}\n💰 *TOTAL: S/ ${formatMoney(cartTotal)}*${discount > 0 ? `\n🎁 Descuento global aplicado: ${discount}%` : ''}\n\n¿Procedemoss con el pedido? 🙌`;
         setInputText(msg);
     };
 
@@ -544,14 +560,14 @@ INSTRUCCIONES OBLIGATORIAS:
                             cart.map((item, i) => {
                                 const price = parseFloat(item.price) || 0;
                                 const disc = item.discountPct || 0;
-                                const finalPrice = price * (1 - disc / 100);
+                                const finalPrice = roundToOneDecimal(price * (1 - disc / 100));
                                 return (
                                     <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '10px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                                             <div style={{ flex: 1, overflow: 'hidden', marginRight: '8px' }}>
                                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
                                                 <div style={{ fontSize: '0.8rem', color: '#00a884' }}>
-                                                    S/ {finalPrice.toFixed(2)} {disc > 0 && <span style={{ color: '#8696a0', textDecoration: 'line-through', fontSize: '0.72rem', marginLeft: '4px' }}>S/ {price.toFixed(2)}</span>}
+                                                    S/ {formatMoney(finalPrice)} {disc > 0 && <span style={{ color: '#8696a0', textDecoration: 'line-through', fontSize: '0.72rem', marginLeft: '4px' }}>S/ {formatMoney(price)}</span>}
                                                 </div>
                                             </div>
                                             <button onClick={() => removeFromCart(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0', padding: '2px' }}>
@@ -574,7 +590,7 @@ INSTRUCCIONES OBLIGATORIAS:
                                                 <span style={{ fontSize: '0.72rem', color: '#8696a0' }}>%</span>
                                             </div>
                                             <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                                                S/ {(finalPrice * item.qty).toFixed(2)}
+                                                S/ {formatMoney(finalPrice * item.qty)}
                                             </div>
                                         </div>
                                     </div>
@@ -596,7 +612,7 @@ INSTRUCCIONES OBLIGATORIAS:
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                                 <span style={{ fontSize: '0.95rem', fontWeight: 500, color: 'var(--text-primary)' }}>TOTAL</span>
-                                <span style={{ fontSize: '1.05rem', fontWeight: 600, color: '#00a884' }}>S/ {cartTotal.toFixed(2)}</span>
+                                <span style={{ fontSize: '1.05rem', fontWeight: 600, color: '#00a884' }}>S/ {formatMoney(cartTotal)}</span>
                             </div>
                             <button
                                 onClick={sendQuoteToChat}
