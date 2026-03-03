@@ -11,6 +11,35 @@ import './index.css';
 
 export const socket = io('http://localhost:3001');
 
+const normalizeCatalogItem = (item = {}, index = 0) => {
+  const safeItem = item && typeof item === 'object' ? item : {};
+  const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
+  const rawPrice = safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio ?? 0;
+  const parsedPrice = Number.parseFloat(String(rawPrice).replace(',', '.'));
+
+  return {
+    id: safeItem.id || safeItem.product_id || `catalog_${index}`,
+    title: String(rawTitle || `Producto ${index + 1}`).trim(),
+    price: Number.isFinite(parsedPrice) ? parsedPrice.toFixed(2) : '0.00',
+    description: safeItem.description || safeItem.short_description || safeItem.descripcion || '',
+    imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
+    source: safeItem.source || 'unknown',
+    sku: safeItem.sku || null,
+    stockStatus: safeItem.stockStatus || safeItem.stock_status || null
+  };
+};
+
+const normalizeBusinessDataPayload = (data = {}) => {
+  const rawCatalog = Array.isArray(data.catalog) ? data.catalog : [];
+  const catalog = rawCatalog.map((item, idx) => normalizeCatalogItem(item, idx));
+  return {
+    profile: data.profile || null,
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    catalog,
+    catalogMeta: data.catalogMeta || { source: 'local', nativeAvailable: false }
+  };
+};
+
 function App() {
   // ─── Connection State ────────────────────────────────────────
   const [isConnected, setIsConnected] = useState(false);
@@ -48,7 +77,7 @@ function App() {
   const timerRef = useRef(null);
 
   // ─── Business Data (Real from WA) ────────────────────────────
-  const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [] });
+  const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
 
   // ─── Other ───────────────────────────────────────────────────
   const [isDragOver, setIsDragOver] = useState(false);
@@ -113,11 +142,12 @@ function App() {
     });
 
     socket.on('business_data', (data) => {
-      setBusinessData(data);
+      setBusinessData(normalizeBusinessDataPayload(data));
     });
 
     socket.on('business_data_catalog', (catalog) => {
-      setBusinessData(prev => ({ ...prev, catalog }));
+      const normalizedCatalog = Array.isArray(catalog) ? catalog.map((item, idx) => normalizeCatalogItem(item, idx)) : [];
+      setBusinessData(prev => ({ ...prev, catalog: normalizedCatalog }));
     });
 
     socket.on('ai_suggestion_chunk', (chunk) => {
@@ -126,6 +156,11 @@ function App() {
 
     socket.on('ai_suggestion_complete', () => {
       setIsAiLoading(false);
+    });
+
+    socket.on('ai_error', (msg) => {
+      setIsAiLoading(false);
+      if (msg) alert(msg);
     });
 
     socket.on('message_ack', ({ id, ack }) => {
@@ -150,7 +185,7 @@ function App() {
     return () => {
       ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_history',
         'contact_info', 'message', 'business_data', 'ai_suggestion_chunk',
-        'ai_suggestion_complete', 'message_ack', 'authenticated', 'auth_failure', 'disconnected'
+        'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected'
       ].forEach(ev => socket.off(ev));
     };
   }, [activeChatId]);
@@ -214,7 +249,7 @@ function App() {
     setIsAiLoading(true);
 
     const businessContext = `
-Eres Gemini, un asistente de ventas especializado. Ayuda al vendedor a responder a sus clientes de forma profesional y persuasiva.
+Eres un asistente de ventas experto en Lávitat Perú. Ayuda al vendedor a responder con precisión técnica, enfoque comercial y cierres claros.
 
 PERFIL DEL NEGOCIO:
 ${businessData.profile?.name || 'Negocio'}
@@ -223,11 +258,16 @@ ${businessData.profile?.address ? 'Dirección: ' + businessData.profile.address 
 
 CATÁLOGO DE PRODUCTOS:
 ${businessData.catalog.length > 0
-        ? businessData.catalog.map(p => `- ${p.title}: S/ ${p.price || 'consultar'}${p.description ? ' — ' + p.description : ''}`).join('\n')
+        ? businessData.catalog.map((p, idx) => `${idx + 1}. ${p.title} | Precio: S/ ${p.price || 'consultar'}${p.sku ? ` | SKU: ${p.sku}` : ''}${p.description ? ` | ${p.description}` : ''}`).join('\n')
         : '(sin productos registrados)'
       }
 
 INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera la respuesta más adecuada, profesional y persuasiva que el vendedor debería enviar.'}
+
+REGLA CRÍTICA:
+- NO INVENTES PRODUCTOS, tamaños o precios.
+- Usa solamente productos presentes en el catálogo listado arriba.
+- Si no existe el dato exacto, responde: "Te confirmo ese detalle en un momento".
     `.trim();
 
     const recentMessages = messages.slice(-12)
@@ -242,10 +282,10 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
   };
 
   const startRecording = async () => {
-    if (isRecording) return;
+    if (isRecording || !activeChatId) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // WhatsApp strictly prefers ogg/opus for PTT. Webm is second best.
+      // WhatsApp prefers ogg/opus for PTT. Fall back to webm/opus if needed.
       let mimeType = 'audio/ogg; codecs=opus';
       if (!MediaRecorder.isTypeSupported(mimeType)) {
         mimeType = 'audio/webm; codecs=opus';
@@ -266,12 +306,13 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
         const reader = new FileReader();
         reader.onloadend = () => {
           const base64 = reader.result.split(',')[1];
+          const extension = mimeType.includes('ogg') ? 'ogg' : 'webm';
           socket.emit('send_media_message', {
             to: activeChatId,
             body: '',
             mediaData: base64,
             mimetype: mimeType,
-            filename: 'voice-note.ogg',
+            filename: `voice-note.${extension}`,
             isPtt: true,
           });
         };
@@ -444,7 +485,7 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
               </h1>
               <p style={{ color: '#8696a0', fontSize: '0.9rem', lineHeight: '1.6' }}>
                 Selecciona un chat para comenzar a vender.<br />
-                Usa los botones de IA para cerrar más ventas con Gemini.
+                Usa los botones de IA para cerrar más ventas con OpenAI.
               </p>
               <div style={{ marginTop: '30px', padding: '16px 20px', background: '#2a3942', borderRadius: '12px', textAlign: 'left', fontSize: '0.85rem', color: '#8696a0', lineHeight: '1.8' }}>
                 <strong style={{ color: '#00a884' }}>Funciones IA disponibles:</strong><br />
