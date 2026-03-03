@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Search, MoreVertical, Mic, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 
@@ -18,6 +18,8 @@ const ChatInput = ({
 }) => {
     const [showEmoji, setShowEmoji] = useState(false);
     const [showCommands, setShowCommands] = useState(false);
+    const [linkPreview, setLinkPreview] = useState(null);
+    const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
     const handleInputChange = (e) => {
         const val = e.target.value;
@@ -36,6 +38,40 @@ const ChatInput = ({
         else setInputText(cmd + ' ');
         setShowCommands(false);
     };
+
+    const extractFirstUrl = (text) => {
+        const match = String(text || '').match(/https?:\/\/[^\s]+/i);
+        return match ? match[0] : null;
+    };
+
+    useEffect(() => {
+        const url = extractFirstUrl(inputText);
+        if (!url) {
+            setLinkPreview(null);
+            setIsLoadingPreview(false);
+            return;
+        }
+
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+            try {
+                setIsLoadingPreview(true);
+                const encoded = encodeURIComponent(url);
+                const resp = await fetch(`http://localhost:3001/api/link-preview?url=${encoded}`);
+                const data = await resp.json();
+                if (!cancelled) setLinkPreview(data?.ok ? data : { ok: false, url });
+            } catch (e) {
+                if (!cancelled) setLinkPreview({ ok: false, url });
+            } finally {
+                if (!cancelled) setIsLoadingPreview(false);
+            }
+        }, 350);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [inputText]);
 
     return (
         <div className="chat-input-area" style={{ position: 'relative' }}>
@@ -83,6 +119,33 @@ const ChatInput = ({
                                 onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}
                             >{e}</span>
                         ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Link Preview (before send) */}
+            {linkPreview && (
+                <div style={{
+                    position: 'absolute', bottom: '100%', left: '70px', right: '70px',
+                    background: '#1f2c34', border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: '10px', padding: '10px', marginBottom: '8px', zIndex: 150,
+                    display: 'flex', gap: '10px', alignItems: 'flex-start'
+                }}>
+                    {linkPreview?.image && (
+                        <img src={linkPreview.image} alt="preview" style={{ width: '64px', height: '64px', borderRadius: '8px', objectFit: 'cover', flexShrink: 0 }} />
+                    )}
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '0.72rem', color: '#00a884', marginBottom: '2px' }}>
+                            {isLoadingPreview ? 'Cargando vista previa...' : 'Vista previa del enlace'}
+                        </div>
+                        <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {linkPreview?.title || linkPreview?.siteName || linkPreview?.url}
+                        </div>
+                        {linkPreview?.description && (
+                            <div style={{ fontSize: '0.75rem', color: '#8696a0', marginTop: '2px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                {linkPreview.description}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -147,6 +210,7 @@ const ChatInput = ({
                         style={{ background: 'none', color: isRecording ? '#da3633' : '#8696a0' }}
                         onMouseDown={startRecording}
                         onMouseUp={stopRecording}
+                        onMouseLeave={isRecording ? stopRecording : undefined}
                         onTouchStart={startRecording}
                         onTouchEnd={stopRecording}
                         title={isRecording ? 'Suelta para enviar' : 'Mantén para grabar voz'}
