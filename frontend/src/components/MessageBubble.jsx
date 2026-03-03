@@ -2,7 +2,7 @@ import React from 'react';
 import moment from 'moment';
 import { Check, CheckCheck, ShoppingBag } from 'lucide-react';
 
-const MessageBubble = ({ msg }) => {
+const MessageBubble = ({ msg, onPrefillMessage }) => {
     const isOut = msg.fromMe;
 
     // Check if message is a catalog item
@@ -10,6 +10,9 @@ const MessageBubble = ({ msg }) => {
     const catalogMatch = isCatalogItem ? msg.body.match(/REF: (.*)\nPrecio: (.*)/) : null;
     const productTitle = catalogMatch ? catalogMatch[1] : null;
     const productPrice = catalogMatch ? catalogMatch[2] : null;
+
+    const hasOrder = Boolean(msg?.order);
+    const orderItems = Array.isArray(msg?.order?.products) ? msg.order.products : [];
 
     const renderStatus = () => {
         if (!isOut) return null;
@@ -59,6 +62,37 @@ const MessageBubble = ({ msg }) => {
                     className="media-audio"
                     style={{ marginBottom: '4px' }}
                 />
+            )}
+
+
+            {hasOrder && (
+                <div style={{
+                    background: 'rgba(0,168,132,0.12)',
+                    border: '1px solid rgba(0,168,132,0.3)',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    marginBottom: '6px'
+                }}>
+                    <div style={{ fontSize: '0.78rem', color: '#00a884', fontWeight: 700, marginBottom: '4px' }}>
+                        🛒 Carrito/Pedido del cliente
+                    </div>
+                    {msg?.order?.orderId && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>ID: {msg.order.orderId}</div>
+                    )}
+                    {orderItems.length > 0 ? orderItems.slice(0, 5).map((item, idx) => (
+                        <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                            • {item.name} x{item.quantity || 1}
+                        </div>
+                    )) : (
+                        <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>Se recibió un pedido desde catálogo de WhatsApp.</div>
+                    )}
+                    <button
+                        onClick={() => onPrefillMessage && onPrefillMessage(`¡Gracias! Ya vi tu carrito del catálogo. ✅\nEstoy validando stock y en un momento te confirmo el pedido para proceder con el pago y despacho.`)}
+                        style={{ marginTop: '8px', background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', fontSize: '0.75rem' }}
+                    >
+                        Aprobar/confirmar pedido
+                    </button>
+                </div>
             )}
 
             <div className="message-content" style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>

@@ -12,19 +12,20 @@ const roundToOneDecimal = (value) => {
 const formatMoney = (value) => roundToOneDecimal(value).toFixed(1);
 
 const normalizeCatalogItem = (item = {}, index = 0) => {
-    const rawTitle = item.title || item.name || item.nombre || item.productName || item.sku || '';
-    const rawPrice = item.price ?? item.regular_price ?? item.sale_price ?? item.amount ?? item.precio ?? 0;
+    const safeItem = item && typeof item === 'object' ? item : {};
+    const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
+    const rawPrice = safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio ?? 0;
     const parsedPrice = Number.parseFloat(String(rawPrice).replace(',', '.'));
 
     return {
-        id: item.id || item.product_id || `catalog_${index}`,
+        id: safeItem.id || safeItem.product_id || `catalog_${index}`,
         title: String(rawTitle || `Producto ${index + 1}`).trim(),
         price: Number.isFinite(parsedPrice) ? parsedPrice.toFixed(2) : '0.00',
-        description: item.description || item.short_description || item.descripcion || '',
-        imageUrl: item.imageUrl || item.image || item.image_url || item.images?.[0]?.src || null,
-        source: item.source || 'unknown',
-        sku: item.sku || null,
-        stockStatus: item.stockStatus || item.stock_status || null
+        description: safeItem.description || safeItem.short_description || safeItem.descripcion || '',
+        imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
+        source: safeItem.source || 'unknown',
+        sku: safeItem.sku || null,
+        stockStatus: safeItem.stockStatus || safeItem.stock_status || null
     };
 };
 
@@ -229,6 +230,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                             <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 600, marginTop: '2px' }}>
                                                 {item.price ? `S/ ${formatMoney(item.price)}` : 'Consultar precio'}
                                             </div>
+                                            {item.sku && <div style={{ fontSize: '0.7rem', color: '#9bb0ba', marginTop: '2px' }}>SKU: {item.sku}</div>}
                                             {item.description && <div style={{ fontSize: '0.72rem', color: '#8696a0', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</div>}
                                         </div>
                                     </div>

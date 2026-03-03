@@ -12,19 +12,20 @@ import './index.css';
 export const socket = io('http://localhost:3001');
 
 const normalizeCatalogItem = (item = {}, index = 0) => {
-  const rawTitle = item.title || item.name || item.nombre || item.productName || item.sku || '';
-  const rawPrice = item.price ?? item.regular_price ?? item.sale_price ?? item.amount ?? item.precio ?? 0;
+  const safeItem = item && typeof item === 'object' ? item : {};
+  const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
+  const rawPrice = safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio ?? 0;
   const parsedPrice = Number.parseFloat(String(rawPrice).replace(',', '.'));
 
   return {
-    id: item.id || item.product_id || `catalog_${index}`,
+    id: safeItem.id || safeItem.product_id || `catalog_${index}`,
     title: String(rawTitle || `Producto ${index + 1}`).trim(),
     price: Number.isFinite(parsedPrice) ? parsedPrice.toFixed(2) : '0.00',
-    description: item.description || item.short_description || item.descripcion || '',
-    imageUrl: item.imageUrl || item.image || item.image_url || item.images?.[0]?.src || null,
-    source: item.source || 'unknown',
-    sku: item.sku || null,
-    stockStatus: item.stockStatus || item.stock_status || null
+    description: safeItem.description || safeItem.short_description || safeItem.descripcion || '',
+    imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
+    source: safeItem.source || 'unknown',
+    sku: safeItem.sku || null,
+    stockStatus: safeItem.stockStatus || safeItem.stock_status || null
   };
 };
 

@@ -4,6 +4,39 @@ const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
 const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
 
+function extractOrderInfo(msg) {
+    try {
+        const data = msg?._data || {};
+        const directProducts = msg?.order?.products || msg?.orderProducts || data?.order?.products || [];
+        const products = Array.isArray(directProducts) ? directProducts.map((p, idx) => ({
+            name: p.name || p.title || p.productName || `Producto ${idx + 1}`,
+            quantity: p.quantity || p.qty || 1,
+            price: p.price || p.amount || null
+        })) : [];
+
+        const orderId = msg?.orderId || data?.orderId || data?.orderToken || null;
+        const subtotal = msg?.subtotal || data?.subtotal || data?.totalAmount1000 || data?.total || null;
+        const currency = msg?.currency || data?.currency || 'PEN';
+
+        const maybeOrderType = String(msg?.type || '').toLowerCase().includes('order')
+            || String(data?.type || '').toLowerCase().includes('order')
+            || products.length > 0
+            || Boolean(orderId);
+
+        if (!maybeOrderType) return null;
+
+        return {
+            orderId,
+            currency,
+            subtotal,
+            products
+        };
+    } catch (error) {
+        return null;
+    }
+}
+
+
 class SocketManager {
     constructor(io) {
         this.io = io;
@@ -74,7 +107,9 @@ class SocketManager {
                             fromMe: m.fromMe,
                             hasMedia: m.hasMedia,
                             mediaData: media ? media.data : null,
-                            mimetype: media ? media.mimetype : null
+                            mimetype: media ? media.mimetype : null,
+                            type: m.type,
+                            order: extractOrderInfo(m)
                         };
                     }));
                     socket.emit('chat_history', { chatId, messages: formatted });
@@ -356,7 +391,9 @@ class SocketManager {
                 hasMedia: msg.hasMedia,
                 mediaData: media ? media.data : null,
                 mimetype: media ? media.mimetype : null,
-                ack: msg.ack
+                ack: msg.ack,
+                type: msg.type,
+                order: extractOrderInfo(msg)
             });
             // Auto refresh chat list
             const chats = await waClient.getChats();
@@ -394,7 +431,9 @@ class SocketManager {
                 hasMedia: msg.hasMedia,
                 mediaData: media ? media.data : null,
                 mimetype: media ? media.mimetype : null,
-                ack: msg.ack
+                ack: msg.ack,
+                type: msg.type,
+                order: extractOrderInfo(msg)
             });
         });
 

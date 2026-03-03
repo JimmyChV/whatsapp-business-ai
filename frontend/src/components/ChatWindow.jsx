@@ -347,7 +347,11 @@ const ChatWindow = ({
                     </div>
                 )}
                 {filteredMessages.map((msg, idx) => (
-                    <MessageBubble key={msg.id || idx} msg={msg} />
+                    <MessageBubble
+                        key={msg.id || idx}
+                        msg={msg}
+                        onPrefillMessage={(text) => inputProps?.setInputText && inputProps.setInputText(text)}
+                    />
                 ))}
                 <div ref={messagesEndRef} />
             </div>
