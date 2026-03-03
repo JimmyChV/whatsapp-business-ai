@@ -48,7 +48,7 @@ function App() {
   const timerRef = useRef(null);
 
   // ─── Business Data (Real from WA) ────────────────────────────
-  const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [] });
+  const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
 
   // ─── Other ───────────────────────────────────────────────────
   const [isDragOver, setIsDragOver] = useState(false);
@@ -266,13 +266,12 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
         const reader = new FileReader();
         reader.onloadend = () => {
           const base64 = reader.result.split(',')[1];
-          const normalizedMimeType = mimeType.split(';')[0];
-          const extension = normalizedMimeType.includes('ogg') ? 'ogg' : 'webm';
+          const extension = mimeType.includes('ogg') ? 'ogg' : 'webm';
           socket.emit('send_media_message', {
             to: activeChatId,
             body: '',
             mediaData: base64,
-            mimetype: normalizedMimeType,
+            mimetype: mimeType,
             filename: `voice-note.${extension}`,
             isPtt: true,
           });
