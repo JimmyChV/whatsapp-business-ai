@@ -148,6 +148,12 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                         Este catálogo se sincroniza desde {catalogMeta?.source === 'woocommerce' ? 'WooCommerce' : 'WhatsApp Business'}. Para editar productos, hazlo en el origen.
                     </div>
                 )}
+                {catalogMeta?.source === 'local' && catalogMeta?.wooStatus && catalogMeta?.wooStatus !== 'ok' && (
+                    <div style={{ background: '#2f2520', color: '#f7b267', border: '1px solid #7a4d2c', borderRadius: '8px', padding: '8px 10px', fontSize: '0.75rem' }}>
+                        WooCommerce no devolvió productos ({catalogMeta?.wooSource || 'sin fuente'}).
+                        {catalogMeta?.wooReason ? ` Detalle: ${catalogMeta.wooReason}` : ''}
+                    </div>
+                )}
                 {showForm ? (
                     <form onSubmit={handleSubmit} style={{ background: '#202c33', borderRadius: '10px', padding: '15px', border: '1px solid #00a884', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 600, marginBottom: '5px' }}>{editingProduct ? 'Editar Producto' : 'Nuevo Producto'}</div>

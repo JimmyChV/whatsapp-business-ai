@@ -80,6 +80,18 @@ Escanea el código QR que aparecerá en la aplicación web para iniciar la sesi�
 2. Productos de WooCommerce.
 3. Catálogo local (`backend/catalogo.json`).
 
+
+## 🧰 Solución rápida si no aparece catálogo
+Si en consola ves algo como `injecting env (3) from .env`, normalmente solo cargaste 3 variables (por ejemplo OpenAI + PORT) y faltan las de WooCommerce.
+
+Checklist:
+1. Verifica que tu `.env` esté en `backend/.env`.
+2. Agrega `WC_BASE_URL` (obligatorio para Woo, ejemplo `https://lavitat.pe`).
+3. Si usarás API privada, agrega también `WC_CONSUMER_KEY` y `WC_CONSUMER_SECRET`.
+4. Reinicia backend después de guardar `.env`.
+
+Nota: aunque no pongas keys, el sistema intenta `wc/store/v1` (endpoint público). Si Woo o plugins bloquean ese endpoint, la app caerá al `catalogo.json` local.
+
 ## ⚠️ Notas de Seguridad
 - El archivo `.wwebjs_auth` contiene tu sesión de WhatsApp. **Nunca lo compartas.**
 - Tu `.env` está protegido por el `.gitignore` para no filtrar tus claves de API.

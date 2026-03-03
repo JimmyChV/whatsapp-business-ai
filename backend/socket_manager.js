@@ -177,7 +177,10 @@ class SocketManager {
                         source: 'native',
                         nativeAvailable: false,
                         wooConfigured: isWooConfigured(),
-                        wooAvailable: false
+                        wooAvailable: false,
+                        wooSource: null,
+                        wooStatus: null,
+                        wooReason: null
                     };
 
                     try {
@@ -204,28 +207,36 @@ class SocketManager {
                     }
 
                     if (!catalog.length) {
-                        try {
-                            const wooCatalog = await getWooCatalog();
-                            if (wooCatalog.length > 0) {
-                                catalog = wooCatalog;
-                                catalogMeta = {
-                                    source: 'woocommerce',
-                                    nativeAvailable: false,
-                                    wooConfigured: isWooConfigured(),
-                                    wooAvailable: true
-                                };
-                                console.log(`[Catalog] Loaded ${catalog.length} products from WooCommerce.`);
-                            } else {
-                                console.log('[Catalog] WooCommerce returned empty catalog.');
-                            }
-                        } catch (e) {
-                            console.log('[Catalog] WooCommerce fetch failed.', e.message);
+                        const wooResult = await getWooCatalog();
+                        if (wooResult.products.length > 0) {
+                            catalog = wooResult.products;
+                            catalogMeta = {
+                                source: 'woocommerce',
+                                nativeAvailable: false,
+                                wooConfigured: isWooConfigured(),
+                                wooAvailable: true,
+                                wooSource: wooResult.source,
+                                wooStatus: wooResult.status,
+                                wooReason: wooResult.reason
+                            };
+                            console.log(`[Catalog] Loaded ${catalog.length} products from WooCommerce (${wooResult.source}).`);
+                        } else {
+                            catalogMeta = {
+                                ...catalogMeta,
+                                wooConfigured: isWooConfigured(),
+                                wooAvailable: false,
+                                wooSource: wooResult.source,
+                                wooStatus: wooResult.status,
+                                wooReason: wooResult.reason
+                            };
+                            console.log(`[Catalog] WooCommerce unavailable/empty (${wooResult.source}): ${wooResult.reason || 'sin detalle'}`);
                         }
                     }
 
                     if (!catalog.length) {
                         catalog = loadCatalog();
                         catalogMeta = {
+                            ...catalogMeta,
                             source: 'local',
                             nativeAvailable: false,
                             wooConfigured: isWooConfigured(),
@@ -241,7 +252,7 @@ class SocketManager {
                         profile: null,
                         labels: [],
                         catalog: loadCatalog(),
-                        catalogMeta: { source: 'local', nativeAvailable: false, wooConfigured: isWooConfigured(), wooAvailable: false }
+                        catalogMeta: { source: 'local', nativeAvailable: false, wooConfigured: isWooConfigured(), wooAvailable: false, wooSource: null, wooStatus: 'error', wooReason: 'Error al obtener datos de negocio' }
                     });
                 }
             });

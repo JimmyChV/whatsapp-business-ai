@@ -11,7 +11,27 @@ function isWooConfigured() {
     return Boolean(WC_BASE_URL && WC_CONSUMER_KEY && WC_CONSUMER_SECRET);
 }
 
-function normalizeWooProduct(product) {
+function htmlToText(html) {
+    if (!html) return '';
+    return String(html)
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function parseStoreApiPrice(rawPrice) {
+    const raw = rawPrice == null ? '' : String(rawPrice);
+    if (!raw || raw === '0') return '0.00';
+    // Store API may return integers in minor units (e.g., "12990" for 129.90)
+    if (/^\d+$/.test(raw) && raw.length > 2) {
+        return (Number(raw) / 100).toFixed(2);
+    }
+    const parsed = Number.parseFloat(raw);
+    return Number.isFinite(parsed) ? parsed.toFixed(2) : '0.00';
+}
+
+function normalizeWooV3Product(product) {
     const basePrice = product?.price || product?.regular_price || '0';
     const price = Number.parseFloat(basePrice);
     const normalizedPrice = Number.isFinite(price) ? price.toFixed(2) : '0.00';
@@ -20,7 +40,7 @@ function normalizeWooProduct(product) {
         id: `woo_${product.id}`,
         title: product?.name || `Producto ${product?.id || ''}`.trim(),
         price: normalizedPrice,
-        description: product?.short_description || product?.description || '',
+        description: htmlToText(product?.short_description || product?.description || ''),
         imageUrl: product?.images?.[0]?.src || null,
         sku: product?.sku || null,
         stockStatus: product?.stock_status || null,
@@ -28,7 +48,34 @@ function normalizeWooProduct(product) {
     };
 }
 
-async function fetchWooProductsPage(page = 1) {
+function normalizeStoreApiProduct(product) {
+    return {
+        id: `woo_${product.id}`,
+        title: product?.name || `Producto ${product?.id || ''}`.trim(),
+        price: parseStoreApiPrice(product?.prices?.price),
+        description: htmlToText(product?.short_description || product?.description || ''),
+        imageUrl: product?.images?.[0]?.src || null,
+        sku: product?.sku || null,
+        stockStatus: product?.is_in_stock === false ? 'outofstock' : 'instock',
+        source: 'woocommerce'
+    };
+}
+
+async function fetchJson(endpoint) {
+    const response = await fetch(endpoint);
+    const payload = await response.json();
+
+    if (!response.ok) {
+        const message = payload?.message || payload?.code || `WooCommerce error ${response.status}`;
+        const error = new Error(message);
+        error.status = response.status;
+        throw error;
+    }
+
+    return payload;
+}
+
+async function fetchWooV3ProductsPage(page = 1) {
     const params = new URLSearchParams({
         consumer_key: WC_CONSUMER_KEY,
         consumer_secret: WC_CONSUMER_SECRET,
@@ -40,35 +87,83 @@ async function fetchWooProductsPage(page = 1) {
     });
 
     const endpoint = `${WC_BASE_URL}/wp-json/wc/v3/products?${params.toString()}`;
-    const response = await fetch(endpoint);
-    const payload = await response.json();
-
-    if (!response.ok) {
-        const message = payload?.message || payload?.code || `WooCommerce error ${response.status}`;
-        const error = new Error(message);
-        error.status = response.status;
-        throw error;
-    }
-
+    const payload = await fetchJson(endpoint);
     return Array.isArray(payload) ? payload : [];
 }
 
-async function getWooCatalog() {
-    if (!isWooConfigured()) return [];
+async function fetchStoreApiProductsPage(page = 1) {
+    const params = new URLSearchParams({
+        per_page: String(WC_PER_PAGE),
+        page: String(page)
+    });
+    const endpoint = `${WC_BASE_URL}/wp-json/wc/store/v1/products?${params.toString()}`;
+    const payload = await fetchJson(endpoint);
+    return Array.isArray(payload) ? payload : [];
+}
 
-    const all = [];
-    for (let page = 1; page <= WC_MAX_PAGES; page += 1) {
-        const pageProducts = await fetchWooProductsPage(page);
-        if (!pageProducts.length) break;
-        all.push(...pageProducts);
-        if (pageProducts.length < WC_PER_PAGE) break;
+function applyStockFilter(products) {
+    return WC_INCLUDE_OUT_OF_STOCK
+        ? products
+        : products.filter((p) => p?.stockStatus !== 'outofstock');
+}
+
+async function getWooCatalog() {
+    if (!WC_BASE_URL) {
+        return {
+            products: [],
+            source: 'none',
+            status: 'missing_base_url',
+            reason: 'WC_BASE_URL no configurado'
+        };
     }
 
-    const filtered = WC_INCLUDE_OUT_OF_STOCK
-        ? all
-        : all.filter((p) => p?.stock_status !== 'outofstock');
+    if (isWooConfigured()) {
+        try {
+            const allV3 = [];
+            for (let page = 1; page <= WC_MAX_PAGES; page += 1) {
+                const pageProducts = await fetchWooV3ProductsPage(page);
+                if (!pageProducts.length) break;
+                allV3.push(...pageProducts);
+                if (pageProducts.length < WC_PER_PAGE) break;
+            }
 
-    return filtered.map(normalizeWooProduct);
+            const normalized = applyStockFilter(allV3.map(normalizeWooV3Product));
+            if (normalized.length > 0) {
+                return { products: normalized, source: 'wc/v3', status: 'ok', reason: null };
+            }
+
+            console.log('[Catalog][Woo] wc/v3 returned 0 products, trying Store API fallback.');
+        } catch (error) {
+            console.log('[Catalog][Woo] wc/v3 failed, trying Store API fallback.', error.message);
+        }
+    } else {
+        console.log('[Catalog][Woo] Credentials not configured; trying public Store API.');
+    }
+
+    try {
+        const allStore = [];
+        for (let page = 1; page <= WC_MAX_PAGES; page += 1) {
+            const pageProducts = await fetchStoreApiProductsPage(page);
+            if (!pageProducts.length) break;
+            allStore.push(...pageProducts);
+            if (pageProducts.length < WC_PER_PAGE) break;
+        }
+
+        const normalized = applyStockFilter(allStore.map(normalizeStoreApiProduct));
+        return {
+            products: normalized,
+            source: 'wc/store/v1',
+            status: normalized.length > 0 ? 'ok' : 'empty',
+            reason: normalized.length > 0 ? null : 'Store API devolvió catálogo vacío'
+        };
+    } catch (error) {
+        return {
+            products: [],
+            source: 'wc/store/v1',
+            status: 'error',
+            reason: error.message
+        };
+    }
 }
 
 module.exports = {
