@@ -172,7 +172,7 @@ class SocketManager {
                                 title: p.name,
                                 price: p.price ? (p.price / 1000).toFixed(2) : '0.00',
                                 description: p.description,
-                                image: p.imageUrls ? p.imageUrls[0] : null
+                                imageUrl: p.imageUrls ? p.imageUrls[0] : null
                             }));
                             console.log(`[Catalog] Merged ${catalog.length} native products.`);
                         }

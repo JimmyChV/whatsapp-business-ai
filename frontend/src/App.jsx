@@ -242,10 +242,10 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
   };
 
   const startRecording = async () => {
-    if (isRecording) return;
+    if (isRecording || !activeChatId) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // WhatsApp strictly prefers ogg/opus for PTT. Webm is second best.
+      // WhatsApp prefers ogg/opus for PTT. Fall back to webm/opus if needed.
       let mimeType = 'audio/ogg; codecs=opus';
       if (!MediaRecorder.isTypeSupported(mimeType)) {
         mimeType = 'audio/webm; codecs=opus';
@@ -266,12 +266,14 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
         const reader = new FileReader();
         reader.onloadend = () => {
           const base64 = reader.result.split(',')[1];
+          const normalizedMimeType = mimeType.split(';')[0];
+          const extension = normalizedMimeType.includes('ogg') ? 'ogg' : 'webm';
           socket.emit('send_media_message', {
             to: activeChatId,
             body: '',
             mediaData: base64,
-            mimetype: mimeType,
-            filename: 'voice-note.ogg',
+            mimetype: normalizedMimeType,
+            filename: `voice-note.${extension}`,
             isPtt: true,
           });
         };
