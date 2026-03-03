@@ -175,7 +175,6 @@ class SocketManager {
                                 description: p.description,
                                 imageUrl: p.imageUrls ? p.imageUrls[0] : null,
                                 source: 'native'
-                                imageUrl: p.imageUrls ? p.imageUrls[0] : null
                             }));
                             catalogMeta = { source: 'native', nativeAvailable: true };
                             console.log(`[Catalog] Loaded ${catalog.length} native products.`);

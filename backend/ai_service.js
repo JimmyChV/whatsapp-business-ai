@@ -8,6 +8,45 @@ if (process.env.GEMINI_API_KEY) {
     ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 }
 
+const MODEL_CANDIDATES = [
+    process.env.GEMINI_MODEL,
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-flash'
+].filter(Boolean);
+
+function shouldTryNextModel(error) {
+    return error?.status === 404 || String(error?.message || '').includes('is not found');
+}
+
+async function generateWithFallback(prompt, onChunk = null) {
+    let lastError = null;
+
+    for (const model of MODEL_CANDIDATES) {
+        try {
+            if (onChunk) {
+                const stream = await ai.models.generateContentStream({ model, contents: prompt });
+                let fullText = '';
+                for await (const chunk of stream) {
+                    const chunkText = chunk.text || '';
+                    fullText += chunkText;
+                    onChunk(chunkText);
+                }
+                return fullText;
+            }
+
+            const result = await ai.models.generateContent({ model, contents: prompt });
+            return result.text;
+        } catch (error) {
+            lastError = error;
+            console.error(`[AI] Model ${model} failed:`, error?.message || error);
+            if (!shouldTryNextModel(error)) break;
+        }
+    }
+
+    throw lastError || new Error('No Gemini model available');
+}
+
 /**
  * Genera una sugerencia de respuesta para el cliente basada en el contexto de la conversación (SOPORTA STREAMING).
  */
@@ -16,8 +55,6 @@ async function getChatSuggestion(context, customPrompt = "", onChunk = null, ext
         if (!ai) {
             return "IA no configurada.";
         }
-
-        const model = "gemini-1.5-flash";
 
         let businessContext = "Eres un asistente virtual de ventas amable.";
         if (externalBusinessContext) {
@@ -42,27 +79,7 @@ ${context}
 
 Genera la respuesta sugerida que el negocio debería enviar. Texto directo, sin comillas.`;
 
-        if (onChunk) {
-            // Modo Streaming
-            const result = await ai.models.generateContentStream({
-                model,
-                contents: prompt,
-            });
-            let fullText = "";
-            for await (const chunk of result) {
-                const chunkText = chunk.text || "";
-                fullText += chunkText;
-                onChunk(chunkText);
-            }
-            return fullText;
-        } else {
-            // Modo Bloqueante
-            const result = await ai.models.generateContent({
-                model,
-                contents: prompt,
-            });
-            return result.text;
-        }
+        return await generateWithFallback(prompt, onChunk);
     } catch (error) {
         console.error("Error al obtener sugerencia de IA:", error);
         return "Error al procesar con IA.";
@@ -77,8 +94,6 @@ async function askInternalCopilot(query, onChunk = null, externalBusinessContext
         if (!ai) {
             return "IA no configurada.";
         }
-
-        const model = "gemini-1.5-flash";
 
         let businessContext = "";
         if (externalBusinessContext) {
@@ -95,25 +110,7 @@ async function askInternalCopilot(query, onChunk = null, externalBusinessContext
 INSTRUCCIÓN: Eres el copiloto interno. Ayuda al dueño con stock y opciones (sugiere 3 siempre). 
 CONSULTA: "${query}"`;
 
-        if (onChunk) {
-            const result = await ai.models.generateContentStream({
-                model,
-                contents: prompt,
-            });
-            let fullText = "";
-            for await (const chunk of result) {
-                const chunkText = chunk.text || "";
-                fullText += chunkText;
-                onChunk(chunkText);
-            }
-            return fullText;
-        } else {
-            const result = await ai.models.generateContent({
-                model,
-                contents: prompt,
-            });
-            return result.text;
-        }
+        return await generateWithFallback(prompt, onChunk);
     } catch (error) {
         console.error("Error en Copiloto Interno:", error);
         return "Error al consultar al copiloto.";

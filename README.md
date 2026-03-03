@@ -39,6 +39,7 @@ npm install
 Crea un archivo `.env` en la carpeta `backend` con:
 ```env
 GEMINI_API_KEY=tu_clave_aqui
+GEMINI_MODEL=gemini-2.0-flash
 PORT=3001
 ```
 
@@ -53,7 +54,7 @@ npm run dev
 En una terminal aparte:
 ```bash
 cd backend
-node index.js
+node server.js
 ```
 
 ### 6. Vincular WhatsApp
