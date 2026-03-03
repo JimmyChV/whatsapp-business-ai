@@ -238,8 +238,20 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                                     </div>
                                                 )}
                                             </div>
-                                            <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 600, marginTop: '2px' }}>
-                                                {item.price ? `S/ ${formatMoney(item.price)}` : 'Consultar precio'}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
+                                                <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 700 }}>
+                                                    {item.price ? `S/ ${formatMoney(item.price)}` : 'Consultar precio'}
+                                                </div>
+                                                {item.regularPrice && Number(item.regularPrice) > Number(item.price || 0) && (
+                                                    <div style={{ fontSize: '0.72rem', color: '#8696a0', textDecoration: 'line-through' }}>
+                                                        S/ {formatMoney(item.regularPrice)}
+                                                    </div>
+                                                )}
+                                                {Number(item.discountPct) > 0 && (
+                                                    <div style={{ fontSize: '0.68rem', color: '#fff', background: '#0b875b', borderRadius: '999px', padding: '1px 6px' }}>
+                                                        -{item.discountPct}%
+                                                    </div>
+                                                )}
                                             </div>
                                             {item.sku && <div style={{ fontSize: '0.7rem', color: '#9bb0ba', marginTop: '2px' }}>SKU: {item.sku}</div>}
                                             <div style={{ fontSize: '0.68rem', color: '#6f8390', marginTop: '1px' }}>Origen: {item.source || 'catálogo'}</div>

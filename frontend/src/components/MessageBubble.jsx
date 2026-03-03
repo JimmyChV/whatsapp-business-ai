@@ -77,11 +77,14 @@ const MessageBubble = ({ msg, onPrefillMessage }) => {
                         🛒 Carrito/Pedido del cliente
                     </div>
                     {msg?.order?.orderId && (
-                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>ID: {msg.order.orderId}</div>
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '2px' }}>ID: {msg.order.orderId}</div>
+                    )}
+                    {msg?.order?.subtotal && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>Subtotal: {msg.order.currency || 'PEN'} {msg.order.subtotal}</div>
                     )}
                     {orderItems.length > 0 ? orderItems.slice(0, 8).map((item, idx) => (
                         <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {item.name} x{item.quantity || 1}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {item.name} x{item.quantity || 1}{item.sku ? ` (SKU: ${item.sku})` : ''}</span>
                             <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{item.price ? `S/ ${item.price}` : ''}</span>
                         </div>
                     )) : (

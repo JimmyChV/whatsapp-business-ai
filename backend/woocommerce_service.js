@@ -20,6 +20,13 @@ function htmlToText(html) {
         .trim();
 }
 
+function calcDiscountPct(regularPrice, salePrice) {
+    const regular = Number.parseFloat(regularPrice);
+    const sale = Number.parseFloat(salePrice);
+    if (!Number.isFinite(regular) || regular <= 0 || !Number.isFinite(sale) || sale <= 0 || sale >= regular) return 0;
+    return Number(((1 - (sale / regular)) * 100).toFixed(1));
+}
+
 function parseStoreApiPrice(rawPrice) {
     const raw = rawPrice == null ? '' : String(rawPrice);
     if (!raw || raw === '0') return '0.00';
@@ -32,14 +39,25 @@ function parseStoreApiPrice(rawPrice) {
 }
 
 function normalizeWooV3Product(product) {
-    const basePrice = product?.price || product?.regular_price || '0';
-    const price = Number.parseFloat(basePrice);
+    const salePriceRaw = product?.sale_price || null;
+    const regularPriceRaw = product?.regular_price || product?.price || '0';
+    const basePriceRaw = product?.price || regularPriceRaw || '0';
+
+    const price = Number.parseFloat(basePriceRaw);
+    const regularPrice = Number.parseFloat(regularPriceRaw);
+    const salePrice = Number.parseFloat(salePriceRaw);
+
     const normalizedPrice = Number.isFinite(price) ? price.toFixed(2) : '0.00';
+    const normalizedRegularPrice = Number.isFinite(regularPrice) ? regularPrice.toFixed(2) : normalizedPrice;
+    const normalizedSalePrice = Number.isFinite(salePrice) && salePrice > 0 ? salePrice.toFixed(2) : null;
 
     return {
         id: `woo_${product.id}`,
         title: product?.name || `Producto ${product?.id || ''}`.trim(),
         price: normalizedPrice,
+        regularPrice: normalizedRegularPrice,
+        salePrice: normalizedSalePrice,
+        discountPct: calcDiscountPct(normalizedRegularPrice, normalizedSalePrice || normalizedPrice),
         description: htmlToText(product?.short_description || product?.description || ''),
         imageUrl: product?.images?.[0]?.src || null,
         sku: product?.sku || null,
@@ -49,10 +67,17 @@ function normalizeWooV3Product(product) {
 }
 
 function normalizeStoreApiProduct(product) {
+    const price = parseStoreApiPrice(product?.prices?.price);
+    const regularPrice = parseStoreApiPrice(product?.prices?.regular_price || product?.prices?.price);
+    const salePrice = parseStoreApiPrice(product?.prices?.sale_price || '0');
+
     return {
         id: `woo_${product.id}`,
         title: product?.name || `Producto ${product?.id || ''}`.trim(),
-        price: parseStoreApiPrice(product?.prices?.price),
+        price,
+        regularPrice,
+        salePrice: salePrice === '0.00' ? null : salePrice,
+        discountPct: calcDiscountPct(regularPrice, salePrice === '0.00' ? price : salePrice),
         description: htmlToText(product?.short_description || product?.description || ''),
         imageUrl: product?.images?.[0]?.src || null,
         sku: product?.sku || null,
