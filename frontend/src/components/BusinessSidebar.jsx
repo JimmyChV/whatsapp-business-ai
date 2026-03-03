@@ -11,6 +11,23 @@ const roundToOneDecimal = (value) => {
 
 const formatMoney = (value) => roundToOneDecimal(value).toFixed(1);
 
+const normalizeCatalogItem = (item = {}, index = 0) => {
+    const rawTitle = item.title || item.name || item.nombre || item.productName || item.sku || '';
+    const rawPrice = item.price ?? item.regular_price ?? item.sale_price ?? item.amount ?? item.precio ?? 0;
+    const parsedPrice = Number.parseFloat(String(rawPrice).replace(',', '.'));
+
+    return {
+        id: item.id || item.product_id || `catalog_${index}`,
+        title: String(rawTitle || `Producto ${index + 1}`).trim(),
+        price: Number.isFinite(parsedPrice) ? parsedPrice.toFixed(2) : '0.00',
+        description: item.description || item.short_description || item.descripcion || '',
+        imageUrl: item.imageUrl || item.image || item.image_url || item.images?.[0]?.src || null,
+        source: item.source || 'unknown',
+        sku: item.sku || null,
+        stockStatus: item.stockStatus || item.stock_status || null
+    };
+};
+
 // =========================================================
 // CLIENT PROFILE PANEL
 // =========================================================
@@ -261,7 +278,7 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
     const [discount, setDiscount] = useState(0);
     const [showDiscount, setShowDiscount] = useState(false);
 
-    const catalog = businessData.catalog || [];
+    const catalog = (businessData.catalog || []).map((item, idx) => normalizeCatalogItem(item, idx));
     const labels = businessData.labels || [];
     const profile = businessData.profile;
 
@@ -312,7 +329,7 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
 
     const buildBusinessContext = () => {
         const catalogText = catalog.length > 0
-            ? catalog.map(p => `- ${p.title}: S/ ${p.price || 'consultar'}${p.description ? ' | ' + p.description : ''}`).join('\n')
+            ? catalog.map((p, idx) => `${idx + 1}. ${p.title} | Precio: S/ ${p.price || 'consultar'}${p.sku ? ` | SKU: ${p.sku}` : ''}${p.description ? ' | ' + p.description : ''}`).join('\n')
             : '(sin productos en catálogo)';
         const convText = messages.slice(-15).map(m => `${m.fromMe ? 'VENDEDOR' : 'CLIENTE'}: ${m.body || '[media]'}`).join('\n');
         return `
@@ -330,6 +347,7 @@ ${convText || '(sin mensajes aún)'}
 
 INSTRUCCIONES OBLIGATORIAS:
 - Si te piden opciones/cotización, da mínimo 2 alternativas: base y optimizada.
+- NO inventes productos, presentaciones ni precios. Usa solo el catálogo listado.
 - Siempre que sea posible, incluye upsell complementario.
 - En objeción de precio: responder por formulación/rendimiento, no por descuento defensivo.
 - Para mensajes listos para enviar al cliente, usa [MENSAJE: ...].

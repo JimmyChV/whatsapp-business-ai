@@ -11,6 +11,34 @@ import './index.css';
 
 export const socket = io('http://localhost:3001');
 
+const normalizeCatalogItem = (item = {}, index = 0) => {
+  const rawTitle = item.title || item.name || item.nombre || item.productName || item.sku || '';
+  const rawPrice = item.price ?? item.regular_price ?? item.sale_price ?? item.amount ?? item.precio ?? 0;
+  const parsedPrice = Number.parseFloat(String(rawPrice).replace(',', '.'));
+
+  return {
+    id: item.id || item.product_id || `catalog_${index}`,
+    title: String(rawTitle || `Producto ${index + 1}`).trim(),
+    price: Number.isFinite(parsedPrice) ? parsedPrice.toFixed(2) : '0.00',
+    description: item.description || item.short_description || item.descripcion || '',
+    imageUrl: item.imageUrl || item.image || item.image_url || item.images?.[0]?.src || null,
+    source: item.source || 'unknown',
+    sku: item.sku || null,
+    stockStatus: item.stockStatus || item.stock_status || null
+  };
+};
+
+const normalizeBusinessDataPayload = (data = {}) => {
+  const rawCatalog = Array.isArray(data.catalog) ? data.catalog : [];
+  const catalog = rawCatalog.map((item, idx) => normalizeCatalogItem(item, idx));
+  return {
+    profile: data.profile || null,
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    catalog,
+    catalogMeta: data.catalogMeta || { source: 'local', nativeAvailable: false }
+  };
+};
+
 function App() {
   // ─── Connection State ────────────────────────────────────────
   const [isConnected, setIsConnected] = useState(false);
@@ -113,11 +141,12 @@ function App() {
     });
 
     socket.on('business_data', (data) => {
-      setBusinessData(data);
+      setBusinessData(normalizeBusinessDataPayload(data));
     });
 
     socket.on('business_data_catalog', (catalog) => {
-      setBusinessData(prev => ({ ...prev, catalog }));
+      const normalizedCatalog = Array.isArray(catalog) ? catalog.map((item, idx) => normalizeCatalogItem(item, idx)) : [];
+      setBusinessData(prev => ({ ...prev, catalog: normalizedCatalog }));
     });
 
     socket.on('ai_suggestion_chunk', (chunk) => {
@@ -228,11 +257,16 @@ ${businessData.profile?.address ? 'Dirección: ' + businessData.profile.address 
 
 CATÁLOGO DE PRODUCTOS:
 ${businessData.catalog.length > 0
-        ? businessData.catalog.map(p => `- ${p.title}: S/ ${p.price || 'consultar'}${p.description ? ' — ' + p.description : ''}`).join('\n')
+        ? businessData.catalog.map((p, idx) => `${idx + 1}. ${p.title} | Precio: S/ ${p.price || 'consultar'}${p.sku ? ` | SKU: ${p.sku}` : ''}${p.description ? ` | ${p.description}` : ''}`).join('\n')
         : '(sin productos registrados)'
       }
 
 INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera la respuesta más adecuada, profesional y persuasiva que el vendedor debería enviar.'}
+
+REGLA CRÍTICA:
+- NO INVENTES PRODUCTOS, tamaños o precios.
+- Usa solamente productos presentes en el catálogo listado arriba.
+- Si no existe el dato exacto, responde: "Te confirmo ese detalle en un momento".
     `.trim();
 
     const recentMessages = messages.slice(-12)

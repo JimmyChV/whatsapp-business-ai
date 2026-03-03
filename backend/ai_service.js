@@ -90,6 +90,11 @@ CONVERSACIÓN RECIENTE:
 ${context}
 ---${customInstructionText}
 
+REGLAS CRÍTICAS DE PRECISIÓN DE CATÁLOGO:
+- Nunca inventes productos, presentaciones, tamaños ni precios.
+- Solo usa productos y precios que aparezcan literalmente en el contexto.
+- Si falta un dato exacto, responde que lo confirmarás antes de cotizar.
+
 Genera la respuesta sugerida que el negocio debería enviar. Texto directo, sin comillas.`;
 
         return await generateWithOpenAI(prompt, onChunk);
@@ -113,7 +118,12 @@ async function askInternalCopilot(query, onChunk = null, externalBusinessContext
         const prompt = `${businessContext}
 
 INSTRUCCIÓN: Eres el copiloto interno. Ayuda al dueño con stock y opciones (sugiere 3 siempre). 
-CONSULTA: "${query}"`;
+CONSULTA: "${query}"
+
+REGLAS CRÍTICAS:
+- No inventar nombres ni precios.
+- Cuando recomiendes, citar el nombre exacto del catálogo.
+- Si hay duda de presentación/capacidad, pedir confirmación antes de cotizar.`;
 
         return await generateWithOpenAI(prompt, onChunk);
     } catch (error) {
