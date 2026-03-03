@@ -172,6 +172,17 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                         {catalogMeta?.wooReason ? ` Detalle: ${catalogMeta.wooReason}` : ''}
                     </div>
                 )}
+                {!showForm && catalog.length > 0 && (
+                    <div style={{ background: '#111b21', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px', maxHeight: '120px', overflowY: 'auto' }}>
+                        {catalog.slice(0, 8).map((item, idx) => (
+                            <div key={`mini_${item.id || idx}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '0.73rem', color: '#9bb0ba', padding: '2px 0' }}>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{idx + 1}. {item.title || `Producto ${idx + 1}`}</span>
+                                <span style={{ color: '#00a884', flexShrink: 0 }}>S/ {formatMoney(item.price)}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
                 {showForm ? (
                     <form onSubmit={handleSubmit} style={{ background: '#202c33', borderRadius: '10px', padding: '15px', border: '1px solid #00a884', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 600, marginBottom: '5px' }}>{editingProduct ? 'Editar Producto' : 'Nuevo Producto'}</div>
@@ -219,7 +230,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                         </div>
                                         <div style={{ flex: 1, overflow: 'hidden' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
+                                                <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title || `Producto ${i + 1}`}</div>
                                                 {!isExternalCatalog && (
                                                     <div style={{ display: 'flex', gap: '8px' }}>
                                                         <button onClick={() => handleEditClick(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0' }}><Edit2 size={12} /></button>
@@ -231,12 +242,13 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                                 {item.price ? `S/ ${formatMoney(item.price)}` : 'Consultar precio'}
                                             </div>
                                             {item.sku && <div style={{ fontSize: '0.7rem', color: '#9bb0ba', marginTop: '2px' }}>SKU: {item.sku}</div>}
+                                            <div style={{ fontSize: '0.68rem', color: '#6f8390', marginTop: '1px' }}>Origen: {item.source || 'catálogo'}</div>
                                             {item.description && <div style={{ fontSize: '0.72rem', color: '#8696a0', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</div>}
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', gap: '1px', borderTop: '1px solid var(--border-color)' }}>
                                         <button
-                                            onClick={() => { setInputText(`📦 *${item.title}*\nPrecio: S/ ${formatMoney(item.price)}\n${item.description || ''}\n\n¿Te interesa? 😊`); }}
+                                            onClick={() => { setInputText(`📦 *${item.title || `Producto ${i + 1}`}*\nPrecio: S/ ${formatMoney(item.price)}\n${item.description || ''}\n\n¿Te interesa? 😊`); }}
                                             style={{ flex: 1, padding: '7px', background: 'transparent', border: 'none', color: '#8696a0', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
                                             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
                                             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#8696a0'; }}

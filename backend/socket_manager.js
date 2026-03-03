@@ -4,17 +4,46 @@ const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
 const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
 
+function collectProductsFromUnknownShape(input, depth = 0, found = []) {
+    if (!input || depth > 4) return found;
+
+    if (Array.isArray(input)) {
+        input.forEach((entry) => collectProductsFromUnknownShape(entry, depth + 1, found));
+        return found;
+    }
+
+    if (typeof input !== 'object') return found;
+
+    const looksLikeLine = (
+        input.name || input.title || input.productName || input.id
+    ) && (
+        input.quantity || input.qty || input.amount || input.price || input.unitPrice || input.retailer_id
+    );
+
+    if (looksLikeLine) {
+        found.push({
+            name: input.name || input.title || input.productName || `Producto ${found.length + 1}`,
+            quantity: input.quantity || input.qty || 1,
+            price: input.price || input.amount || input.unitPrice || null,
+            sku: input.sku || input.retailer_id || null
+        });
+    }
+
+    Object.values(input).forEach((value) => collectProductsFromUnknownShape(value, depth + 1, found));
+    return found;
+}
+
 function extractOrderInfo(msg) {
     try {
         const data = msg?._data || {};
-        const directProducts = msg?.order?.products || msg?.orderProducts || data?.order?.products || [];
-        const products = Array.isArray(directProducts) ? directProducts.map((p, idx) => ({
-            name: p.name || p.title || p.productName || `Producto ${idx + 1}`,
-            quantity: p.quantity || p.qty || 1,
-            price: p.price || p.amount || null
-        })) : [];
+        const products = collectProductsFromUnknownShape({
+            msgOrder: msg?.order,
+            msgOrderProducts: msg?.orderProducts,
+            native: msg,
+            raw: data
+        }).slice(0, 25);
 
-        const orderId = msg?.orderId || data?.orderId || data?.orderToken || null;
+        const orderId = msg?.orderId || data?.orderId || data?.orderToken || data?.token || null;
         const subtotal = msg?.subtotal || data?.subtotal || data?.totalAmount1000 || data?.total || null;
         const currency = msg?.currency || data?.currency || 'PEN';
 
@@ -25,11 +54,21 @@ function extractOrderInfo(msg) {
 
         if (!maybeOrderType) return null;
 
+        const rawPreview = {
+            type: msg?.type || data?.type || null,
+            body: msg?.body || data?.body || null,
+            title: data?.title || data?.orderTitle || null,
+            itemCount: data?.itemCount || data?.orderItemCount || null,
+            sellerJid: data?.sellerJid || null,
+            token: data?.orderToken || data?.token || null
+        };
+
         return {
             orderId,
             currency,
             subtotal,
-            products
+            products,
+            rawPreview
         };
     } catch (error) {
         return null;

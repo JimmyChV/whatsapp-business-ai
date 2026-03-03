@@ -79,12 +79,23 @@ const MessageBubble = ({ msg, onPrefillMessage }) => {
                     {msg?.order?.orderId && (
                         <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>ID: {msg.order.orderId}</div>
                     )}
-                    {orderItems.length > 0 ? orderItems.slice(0, 5).map((item, idx) => (
-                        <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>
-                            • {item.name} x{item.quantity || 1}
+                    {orderItems.length > 0 ? orderItems.slice(0, 8).map((item, idx) => (
+                        <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {item.name} x{item.quantity || 1}</span>
+                            <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{item.price ? `S/ ${item.price}` : ''}</span>
                         </div>
                     )) : (
                         <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>Se recibió un pedido desde catálogo de WhatsApp.</div>
+                    )}
+                    {msg?.order?.rawPreview?.body && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '6px' }}>
+                            Nota cliente: {msg.order.rawPreview.body}
+                        </div>
+                    )}
+                    {msg?.order?.rawPreview?.itemCount && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '2px' }}>
+                            Ítems reportados: {msg.order.rawPreview.itemCount}
+                        </div>
                     )}
                     <button
                         onClick={() => onPrefillMessage && onPrefillMessage(`¡Gracias! Ya vi tu carrito del catálogo. ✅\nEstoy validando stock y en un momento te confirmo el pedido para proceder con el pago y despacho.`)}
