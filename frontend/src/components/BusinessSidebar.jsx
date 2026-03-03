@@ -116,6 +116,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({ title: '', price: '', description: '', imageUrl: '' });
+    const [catalogQty, setCatalogQty] = useState({});
     const isNativeCatalog = catalogMeta?.source === 'native' && catalogMeta?.nativeAvailable;
     const isExternalCatalog = ['native', 'woocommerce'].includes(catalogMeta?.source);
 
@@ -147,6 +148,9 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
         }
     };
 
+    const getCatalogQty = (id) => Math.max(1, catalogQty[id] || 1);
+    const updateCatalogQty = (id, delta) => setCatalogQty(prev => ({ ...prev, [id]: Math.max(1, (prev[id] || 1) + delta) }));
+
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
@@ -170,16 +174,6 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                     <div style={{ background: '#2f2520', color: '#f7b267', border: '1px solid #7a4d2c', borderRadius: '8px', padding: '8px 10px', fontSize: '0.75rem' }}>
                         WooCommerce no devolvió productos ({catalogMeta?.wooSource || 'sin fuente'}).
                         {catalogMeta?.wooReason ? ` Detalle: ${catalogMeta.wooReason}` : ''}
-                    </div>
-                )}
-                {!showForm && catalog.length > 0 && (
-                    <div style={{ background: '#111b21', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px', maxHeight: '120px', overflowY: 'auto' }}>
-                        {catalog.slice(0, 8).map((item, idx) => (
-                            <div key={`mini_${item.id || idx}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '0.73rem', color: '#9bb0ba', padding: '2px 0' }}>
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{idx + 1}. {item.title || `Producto ${idx + 1}`}</span>
-                                <span style={{ color: '#00a884', flexShrink: 0 }}>S/ {formatMoney(item.price)}</span>
-                            </div>
-                        ))}
                     </div>
                 )}
 
@@ -258,9 +252,18 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                             {item.description && <div style={{ fontSize: '0.72rem', color: '#8696a0', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</div>}
                                         </div>
                                     </div>
-                                    <div style={{ display: 'flex', gap: '1px', borderTop: '1px solid var(--border-color)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderTop: '1px solid var(--border-color)', padding: '7px 8px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#1a2530', borderRadius: '999px', padding: '2px 6px' }}>
+                                            <button onClick={() => updateCatalogQty(item.id, -1)} style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={10} /></button>
+                                            <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', minWidth: '18px', textAlign: 'center' }}>{getCatalogQty(item.id)}</span>
+                                            <button onClick={() => updateCatalogQty(item.id, 1)} style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus size={10} /></button>
+                                        </div>
                                         <button
-                                            onClick={() => { setInputText(`📦 *${item.title || `Producto ${i + 1}`}*\nPrecio: S/ ${formatMoney(item.price)}\n${item.description || ''}\n\n¿Te interesa? 😊`); }}
+                                            onClick={() => { setInputText(`📦 *${item.title || `Producto ${i + 1}`}*
+Precio: S/ ${formatMoney(item.price)}
+${item.description || ''}
+
+¿Te interesa? 😊`); }}
                                             style={{ flex: 1, padding: '7px', background: 'transparent', border: 'none', color: '#8696a0', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
                                             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
                                             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#8696a0'; }}
@@ -268,12 +271,12 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                             <Send size={12} /> Cotizar
                                         </button>
                                         <button
-                                            onClick={() => addToCart(item)}
+                                            onClick={() => addToCart(item, getCatalogQty(item.id))}
                                             style={{ flex: 1, padding: '7px', background: 'transparent', border: 'none', borderLeft: '1px solid var(--border-color)', color: '#00a884', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
                                             onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,168,132,0.1)'}
                                             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                                         >
-                                            <ShoppingCart size={12} /> Al carrito
+                                            <ShoppingCart size={12} /> Agregar
                                         </button>
                                     </div>
                                 </div>
@@ -303,11 +306,28 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
     const [cart, setCart] = useState([]);
     const [discount, setDiscount] = useState(0);
     const [showDiscount, setShowDiscount] = useState(false);
+    const [cartDraftsByChat, setCartDraftsByChat] = useState({});
 
     const catalog = (businessData.catalog || []).map((item, idx) => normalizeCatalogItem(item, idx));
     const labels = businessData.labels || [];
     const profile = businessData.profile;
 
+    useEffect(() => {
+        if (!activeChatId) return;
+        const draft = cartDraftsByChat[activeChatId];
+        if (draft) {
+            setCart(draft.cart || []);
+            setDiscount(draft.discount || 0);
+        } else {
+            setCart([]);
+            setDiscount(0);
+        }
+    }, [activeChatId]);
+
+    useEffect(() => {
+        if (!activeChatId) return;
+        setCartDraftsByChat(prev => ({ ...prev, [activeChatId]: { cart, discount } }));
+    }, [activeChatId, cart, discount]);
 
     // Auto-scroll AI chat
     useEffect(() => { aiEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [aiMessages]);
@@ -428,11 +448,12 @@ INSTRUCCIONES OBLIGATORIAS:
     };
 
     // Cart functions
-    const addToCart = (item) => {
+    const addToCart = (item, qtyToAdd = 1) => {
+        const safeQty = Math.max(1, Number(qtyToAdd) || 1);
         setCart(prev => {
             const existing = prev.find(c => c.id === item.id);
-            if (existing) return prev.map(c => c.id === item.id ? { ...c, qty: c.qty + 1 } : c);
-            return [...prev, { ...item, qty: 1, discountPct: 0 }];
+            if (existing) return prev.map(c => c.id === item.id ? { ...c, qty: c.qty + safeQty } : c);
+            return [...prev, { ...item, qty: safeQty, discountPct: 0 }];
         });
     };
 

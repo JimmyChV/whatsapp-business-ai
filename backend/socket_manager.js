@@ -33,15 +33,42 @@ function collectProductsFromUnknownShape(input, depth = 0, found = []) {
     return found;
 }
 
+
+function parseProductsFromBodyText(body = '') {
+    const text = String(body || '').trim();
+    if (!text) return [];
+
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const parsed = [];
+
+    const linePattern = /^(?:[-•*]\s*)?(\d+(?:[.,]\d+)?)\s*(?:x|X)\s+(.+?)(?:\s+[-–—]\s*(?:S\/|PEN\s*)?(\d+(?:[.,]\d+)?))?$/;
+    for (const line of lines) {
+        const m = line.match(linePattern);
+        if (!m) continue;
+        parsed.push({
+            name: m[2].trim(),
+            quantity: Number.parseFloat(m[1].replace(',', '.')) || 1,
+            price: m[3] ? m[3].replace(',', '.') : null,
+            sku: null
+        });
+    }
+
+    return parsed;
+}
+
 function extractOrderInfo(msg) {
     try {
         const data = msg?._data || {};
-        const products = collectProductsFromUnknownShape({
+        let products = collectProductsFromUnknownShape({
             msgOrder: msg?.order,
             msgOrderProducts: msg?.orderProducts,
             native: msg,
             raw: data
         }).slice(0, 25);
+
+        if (!products.length) {
+            products = parseProductsFromBodyText(msg?.body || data?.body || '');
+        }
 
         const orderId = msg?.orderId || data?.orderId || data?.orderToken || data?.token || null;
         const subtotal = msg?.subtotal || data?.subtotal || data?.totalAmount1000 || data?.total || null;
