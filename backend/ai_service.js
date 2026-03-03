@@ -5,7 +5,7 @@ const path = require('path');
 
 let ai = null;
 if (process.env.GEMINI_API_KEY) {
-    ai = new GoogleGenAI(process.env.GEMINI_API_KEY);
+    ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 }
 
 /**
@@ -17,7 +17,7 @@ async function getChatSuggestion(context, customPrompt = "", onChunk = null, ext
             return "IA no configurada.";
         }
 
-        const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = "gemini-1.5-flash";
 
         let businessContext = "Eres un asistente virtual de ventas amable.";
         if (externalBusinessContext) {
@@ -44,18 +44,24 @@ Genera la respuesta sugerida que el negocio debería enviar. Texto directo, sin 
 
         if (onChunk) {
             // Modo Streaming
-            const result = await model.generateContentStream(prompt);
+            const result = await ai.models.generateContentStream({
+                model,
+                contents: prompt,
+            });
             let fullText = "";
-            for await (const chunk of result.stream) {
-                const chunkText = chunk.text();
+            for await (const chunk of result) {
+                const chunkText = chunk.text || "";
                 fullText += chunkText;
                 onChunk(chunkText);
             }
             return fullText;
         } else {
             // Modo Bloqueante
-            const result = await model.generateContent(prompt);
-            return result.response.text();
+            const result = await ai.models.generateContent({
+                model,
+                contents: prompt,
+            });
+            return result.text;
         }
     } catch (error) {
         console.error("Error al obtener sugerencia de IA:", error);
@@ -72,7 +78,7 @@ async function askInternalCopilot(query, onChunk = null, externalBusinessContext
             return "IA no configurada.";
         }
 
-        const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = "gemini-1.5-flash";
 
         let businessContext = "";
         if (externalBusinessContext) {
@@ -90,17 +96,23 @@ INSTRUCCIÓN: Eres el copiloto interno. Ayuda al dueño con stock y opciones (su
 CONSULTA: "${query}"`;
 
         if (onChunk) {
-            const result = await model.generateContentStream(prompt);
+            const result = await ai.models.generateContentStream({
+                model,
+                contents: prompt,
+            });
             let fullText = "";
-            for await (const chunk of result.stream) {
-                const chunkText = chunk.text();
+            for await (const chunk of result) {
+                const chunkText = chunk.text || "";
                 fullText += chunkText;
                 onChunk(chunkText);
             }
             return fullText;
         } else {
-            const result = await model.generateContent(prompt);
-            return result.response.text();
+            const result = await ai.models.generateContent({
+                model,
+                contents: prompt,
+            });
+            return result.text;
         }
     } catch (error) {
         console.error("Error en Copiloto Interno:", error);
