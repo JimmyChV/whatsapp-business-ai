@@ -1,73 +1,64 @@
 require('dotenv').config();
-const { GoogleGenAI } = require('@google/genai');
 const fs = require('fs');
 const path = require('path');
 
-let ai = null;
-if (process.env.GEMINI_API_KEY) {
-    ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-}
-
-const MODEL_CANDIDATES = [
-    process.env.GEMINI_MODEL,
-    'gemini-2.0-flash',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-flash'
-].filter(Boolean);
-
-function shouldTryNextModel(error) {
-    return error?.status === 404 || String(error?.message || '').includes('is not found');
-}
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || null;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 function mapAiError(error) {
     const text = String(error?.message || error || '').toLowerCase();
-    if (text.includes('api_key_invalid') || text.includes('api key not valid')) {
-        return 'Error IA: GEMINI_API_KEY inválida. Actualiza tu .env y reinicia backend.';
+    if (text.includes('api key')) {
+        return 'Error IA: OPENAI_API_KEY inválida o ausente. Actualiza tu .env y reinicia backend.';
     }
-    if (text.includes('is not found') || error?.status === 404) {
-        return 'Error IA: modelo Gemini no disponible para esta cuenta/API. Ajusta GEMINI_MODEL en .env.';
+    if (text.includes('quota') || text.includes('rate limit') || text.includes('resource_exhausted') || error?.status === 429) {
+        return 'Error IA: cuota/límite de OpenAI agotado. Revisa billing y límites de tu cuenta.';
     }
-    return 'Error IA: fallo al consultar Gemini.';
+    if (text.includes('model') && text.includes('not found')) {
+        return 'Error IA: modelo de OpenAI no disponible. Ajusta OPENAI_MODEL en tu .env.';
+    }
+    return 'Error IA: fallo al consultar OpenAI.';
 }
 
-async function generateWithFallback(prompt, onChunk = null) {
-    let lastError = null;
+async function requestOpenAI(prompt) {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+            model: OPENAI_MODEL,
+            temperature: 0.7,
+            messages: [{ role: 'user', content: prompt }],
+        }),
+    });
 
-    for (const model of MODEL_CANDIDATES) {
-        try {
-            if (onChunk) {
-                const stream = await ai.models.generateContentStream({ model, contents: prompt });
-                let fullText = '';
-                for await (const chunk of stream) {
-                    const chunkText = chunk.text || '';
-                    fullText += chunkText;
-                    onChunk(chunkText);
-                }
-                return fullText;
-            }
-
-            const result = await ai.models.generateContent({ model, contents: prompt });
-            return result.text;
-        } catch (error) {
-            lastError = error;
-            console.error(`[AI] Model ${model} failed:`, error?.message || error);
-            if (!shouldTryNextModel(error)) break;
-        }
+    const payload = await response.json();
+    if (!response.ok) {
+        const err = new Error(payload?.error?.message || `OpenAI error ${response.status}`);
+        err.status = response.status;
+        throw err;
     }
 
-    throw lastError || new Error('No Gemini model available');
+    return payload?.choices?.[0]?.message?.content || '';
+}
+
+async function generateWithOpenAI(prompt, onChunk = null) {
+    const text = await requestOpenAI(prompt);
+    if (onChunk && text) onChunk(text);
+    return text;
 }
 
 /**
  * Genera una sugerencia de respuesta para el cliente basada en el contexto de la conversación (SOPORTA STREAMING).
  */
-async function getChatSuggestion(context, customPrompt = "", onChunk = null, externalBusinessContext = null) {
+async function getChatSuggestion(context, customPrompt = '', onChunk = null, externalBusinessContext = null) {
     try {
-        if (!ai) {
-            return "IA no configurada.";
+        if (!OPENAI_API_KEY) {
+            return 'IA no configurada. Falta OPENAI_API_KEY.';
         }
 
-        let businessContext = "Eres un asistente virtual de ventas amable.";
+        let businessContext = 'Eres un asistente virtual de ventas amable.';
         if (externalBusinessContext) {
             businessContext = externalBusinessContext;
         } else {
@@ -77,9 +68,9 @@ async function getChatSuggestion(context, customPrompt = "", onChunk = null, ext
             }
         }
 
-        const customInstructionText = customPrompt.trim() !== ""
+        const customInstructionText = customPrompt.trim() !== ''
             ? `\n\nATENCIÓN: EL VENDEDOR TE HA DADO UNA INSTRUCCIÓN ESPECÍFICA:\n"${customPrompt}"\nPOR FAVOR, PRIORIZA ESTA INSTRUCCIÓN.`
-            : "";
+            : '';
 
         const prompt = `${businessContext}
 
@@ -90,9 +81,9 @@ ${context}
 
 Genera la respuesta sugerida que el negocio debería enviar. Texto directo, sin comillas.`;
 
-        return await generateWithFallback(prompt, onChunk);
+        return await generateWithOpenAI(prompt, onChunk);
     } catch (error) {
-        console.error("Error al obtener sugerencia de IA:", error?.message || error);
+        console.error('Error al obtener sugerencia de IA:', error?.message || error);
         return mapAiError(error);
     }
 }
@@ -102,11 +93,11 @@ Genera la respuesta sugerida que el negocio debería enviar. Texto directo, sin 
  */
 async function askInternalCopilot(query, onChunk = null, externalBusinessContext = null) {
     try {
-        if (!ai) {
-            return "IA no configurada.";
+        if (!OPENAI_API_KEY) {
+            return 'IA no configurada. Falta OPENAI_API_KEY.';
         }
 
-        let businessContext = "";
+        let businessContext = '';
         if (externalBusinessContext) {
             businessContext = externalBusinessContext;
         } else {
@@ -121,9 +112,9 @@ async function askInternalCopilot(query, onChunk = null, externalBusinessContext
 INSTRUCCIÓN: Eres el copiloto interno. Ayuda al dueño con stock y opciones (sugiere 3 siempre). 
 CONSULTA: "${query}"`;
 
-        return await generateWithFallback(prompt, onChunk);
+        return await generateWithOpenAI(prompt, onChunk);
     } catch (error) {
-        console.error("Error en Copiloto Interno:", error?.message || error);
+        console.error('Error en Copiloto Interno:', error?.message || error);
         return mapAiError(error);
     }
 }
