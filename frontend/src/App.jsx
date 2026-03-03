@@ -219,7 +219,7 @@ function App() {
     setIsAiLoading(true);
 
     const businessContext = `
-Eres Gemini, un asistente de ventas especializado. Ayuda al vendedor a responder a sus clientes de forma profesional y persuasiva.
+Eres un asistente de ventas experto en Lávitat Perú. Ayuda al vendedor a responder con precisión técnica, enfoque comercial y cierres claros.
 
 PERFIL DEL NEGOCIO:
 ${businessData.profile?.name || 'Negocio'}
@@ -450,7 +450,7 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
               </h1>
               <p style={{ color: '#8696a0', fontSize: '0.9rem', lineHeight: '1.6' }}>
                 Selecciona un chat para comenzar a vender.<br />
-                Usa los botones de IA para cerrar más ventas con Gemini.
+                Usa los botones de IA para cerrar más ventas con OpenAI.
               </p>
               <div style={{ marginTop: '30px', padding: '16px 20px', background: '#2a3942', borderRadius: '12px', textAlign: 'left', fontSize: '0.85rem', color: '#8696a0', lineHeight: '1.8' }}>
                 <strong style={{ color: '#00a884' }}>Funciones IA disponibles:</strong><br />

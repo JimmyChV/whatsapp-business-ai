@@ -49,6 +49,25 @@ async function generateWithOpenAI(prompt, onChunk = null) {
     return text;
 }
 
+
+function loadBaseBusinessContext() {
+    const contextFilePath = path.join(__dirname, 'lavitat_context.txt');
+    if (fs.existsSync(contextFilePath)) {
+        return fs.readFileSync(contextFilePath, 'utf-8');
+    }
+    return 'Eres un asistente virtual de ventas amable.';
+}
+
+function buildBusinessContext(externalBusinessContext) {
+    const baseContext = loadBaseBusinessContext();
+    if (!externalBusinessContext) return baseContext;
+
+    return `${baseContext}
+
+--- CONTEXTO OPERATIVO EN TIEMPO REAL ---
+${externalBusinessContext}`.trim();
+}
+
 /**
  * Genera una sugerencia de respuesta para el cliente basada en el contexto de la conversación (SOPORTA STREAMING).
  */
@@ -58,15 +77,7 @@ async function getChatSuggestion(context, customPrompt = '', onChunk = null, ext
             return 'IA no configurada. Falta OPENAI_API_KEY.';
         }
 
-        let businessContext = 'Eres un asistente virtual de ventas amable.';
-        if (externalBusinessContext) {
-            businessContext = externalBusinessContext;
-        } else {
-            const contextFilePath = path.join(__dirname, 'lavitat_context.txt');
-            if (fs.existsSync(contextFilePath)) {
-                businessContext = fs.readFileSync(contextFilePath, 'utf-8');
-            }
-        }
+        const businessContext = buildBusinessContext(externalBusinessContext);
 
         const customInstructionText = customPrompt.trim() !== ''
             ? `\n\nATENCIÓN: EL VENDEDOR TE HA DADO UNA INSTRUCCIÓN ESPECÍFICA:\n"${customPrompt}"\nPOR FAVOR, PRIORIZA ESTA INSTRUCCIÓN.`
@@ -97,15 +108,7 @@ async function askInternalCopilot(query, onChunk = null, externalBusinessContext
             return 'IA no configurada. Falta OPENAI_API_KEY.';
         }
 
-        let businessContext = '';
-        if (externalBusinessContext) {
-            businessContext = externalBusinessContext;
-        } else {
-            const contextFilePath = path.join(__dirname, 'lavitat_context.txt');
-            if (fs.existsSync(contextFilePath)) {
-                businessContext = fs.readFileSync(contextFilePath, 'utf-8');
-            }
-        }
+        const businessContext = buildBusinessContext(externalBusinessContext);
 
         const prompt = `${businessContext}
 

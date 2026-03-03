@@ -230,7 +230,7 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
     const [activeTab, setActiveTab] = useState('ai');
     // AI Chat State
     const [aiMessages, setAiMessages] = useState([
-        { role: 'assistant', content: '¡Hola! Soy tu asistente de ventas con IA Gemini. Estoy viendo la conversación con tu cliente. ¿Qué necesitas?\n\n💡 Prueba: *"Dame 3 opciones de respuesta"* o *"¿Cómo manejo una objeción de precio?"*' }
+        { role: 'assistant', content: '¡Hola! Soy tu asistente de ventas de Lávitat con IA OpenAI. Estoy viendo la conversación y te ayudaré a cerrar mejor. ¿Qué necesitas?\n\n💡 Prueba: *"Dame 3 opciones de respuesta"* o *"¿Cómo manejo una objeción de precio?"*' }
     ]);
     const [aiInput, setAiInput] = useState('');
     const [isAiLoading, setIsAiLoading] = useState(false);
@@ -295,22 +295,24 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
             : '(sin productos en catálogo)';
         const convText = messages.slice(-15).map(m => `${m.fromMe ? 'VENDEDOR' : 'CLIENTE'}: ${m.body || '[media]'}`).join('\n');
         return `
-Eres un asistente experto en ventas. Ayuda al vendedor a cerrar ventas de forma natural y persuasiva.
+Eres el copiloto comercial experto de Lávitat en Perú.
+Habla con seguridad, sin justificar precio, resaltando formulación, rendimiento y beneficio técnico.
 
-NEGOCIO: ${profile?.name || profile?.pushname || 'Tu negocio'}
+NEGOCIO: ${profile?.name || profile?.pushname || 'Lávitat'}
 ${profile?.description ? 'Descripción: ' + profile.description : ''}
 
-CATÁLOGO:
+CATÁLOGO DISPONIBLE:
 ${catalogText}
 
 CONVERSACIÓN ACTUAL CON EL CLIENTE:
 ${convText || '(sin mensajes aún)'}
 
-INSTRUCCIONES:
-- Cuando el vendedor pida "opciones" o "alternativas", siempre da AL MENOS 3 opciones numeradas
-- Cuando generes respuestas para enviar al cliente, ponlas entre [MENSAJE: ...] para que el vendedor las pueda enviar fácilmente  
-- Sé conciso, práctico y orientado a cerrar la venta
-- Usa emojis moderadamente como en WhatsApp Business profesional
+INSTRUCCIONES OBLIGATORIAS:
+- Si te piden opciones/cotización, da mínimo 2 alternativas: base y optimizada.
+- Siempre que sea posible, incluye upsell complementario.
+- En objeción de precio: responder por formulación/rendimiento, no por descuento defensivo.
+- Para mensajes listos para enviar al cliente, usa [MENSAJE: ...].
+- Sé claro, breve y vendedor (tono WhatsApp profesional).
         `.trim();
     };
 
@@ -441,7 +443,7 @@ INSTRUCCIONES:
                 ))}
             </div>
 
-            {/* ── AI PRO TAB ── Conversational chat with Gemini */}
+            {/* ── AI PRO TAB ── Conversational sales copilot (OpenAI) */}
             {activeTab === 'ai' && (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
