@@ -86,10 +86,11 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
 // =========================================================
 // CATALOG TAB COMPONENT
 // =========================================================
-const CatalogTab = ({ catalog, socket, setInputText, addToCart }) => {
+const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({ title: '', price: '', description: '', imageUrl: '' });
+    const isNativeCatalog = catalogMeta?.source === 'native' && catalogMeta?.nativeAvailable;
 
     const handleAddClick = () => {
         setEditingProduct(null);
@@ -122,10 +123,14 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart }) => {
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>Gestión de Catálogo</div>
-                <button onClick={handleAddClick} style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <PlusCircle size={14} /> Nuevo
-                </button>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                    {isNativeCatalog ? 'Catálogo de WhatsApp (nativo)' : 'Gestión de Catálogo'}
+                </div>
+                {!isNativeCatalog && (
+                    <button onClick={handleAddClick} style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <PlusCircle size={14} /> Nuevo
+                    </button>
+                )}
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -164,7 +169,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart }) => {
                                 <Package size={36} style={{ marginBottom: '12px', opacity: 0.25, marginLeft: 'auto', marginRight: 'auto' }} />
                                 <div style={{ fontSize: '0.875rem', marginBottom: '6px' }}>Catálogo vacío</div>
                                 <div style={{ fontSize: '0.78rem', opacity: 0.7, lineHeight: '1.5' }}>
-                                    Haz clic en "Nuevo" para agregar productos a tu catálogo.
+                                    Si tu catálogo nativo no aparece, WhatsApp Web no lo está exponiendo en esta sesión.
                                 </div>
                             </div>
                         ) : (
@@ -177,10 +182,12 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart }) => {
                                         <div style={{ flex: 1, overflow: 'hidden' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                                 <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
-                                                <div style={{ display: 'flex', gap: '8px' }}>
-                                                    <button onClick={() => handleEditClick(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0' }}><Edit2 size={12} /></button>
-                                                    <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#da3633' }}><Trash2 size={12} /></button>
-                                                </div>
+                                                {!isNativeCatalog && (
+                                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                                        <button onClick={() => handleEditClick(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0' }}><Edit2 size={12} /></button>
+                                                        <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#da3633' }}><Trash2 size={12} /></button>
+                                                    </div>
+                                                )}
                                             </div>
                                             <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 600, marginTop: '2px' }}>
                                                 {item.price ? `S/ ${parseFloat(item.price).toFixed(2)}` : 'Consultar precio'}
@@ -223,7 +230,7 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
     const [activeTab, setActiveTab] = useState('ai');
     // AI Chat State
     const [aiMessages, setAiMessages] = useState([
-        { role: 'assistant', content: '¡Hola! Soy tu asistente de ventas con IA Gemini. Estoy viendo la conversación con tu cliente. ¿Qué necesitas?\n\n💡 Prueba: *"Dame 3 opciones de respuesta"* o *"¿Cómo manejo una objeción de precio?"*' }
+        { role: 'assistant', content: '¡Hola! Soy tu asistente de ventas de Lávitat con IA OpenAI. Estoy viendo la conversación y te ayudaré a cerrar mejor. ¿Qué necesitas?\n\n💡 Prueba: *"Dame 3 opciones de respuesta"* o *"¿Cómo manejo una objeción de precio?"*' }
     ]);
     const [aiInput, setAiInput] = useState('');
     const [isAiLoading, setIsAiLoading] = useState(false);
@@ -267,9 +274,19 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
             });
         };
 
+        const onError = (msg) => {
+            setIsAiLoading(false);
+            setAiMessages(prev => [...prev, { role: 'assistant', content: msg || 'Error IA: no se pudo generar respuesta.' }]);
+        };
+
         socket.on('internal_ai_chunk', onChunk);
         socket.on('internal_ai_complete', onComplete);
-        return () => { socket.off('internal_ai_chunk', onChunk); socket.off('internal_ai_complete', onComplete); };
+        socket.on('internal_ai_error', onError);
+        return () => {
+            socket.off('internal_ai_chunk', onChunk);
+            socket.off('internal_ai_complete', onComplete);
+            socket.off('internal_ai_error', onError);
+        };
     }, [socket]);
 
     const buildBusinessContext = () => {
@@ -278,22 +295,24 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
             : '(sin productos en catálogo)';
         const convText = messages.slice(-15).map(m => `${m.fromMe ? 'VENDEDOR' : 'CLIENTE'}: ${m.body || '[media]'}`).join('\n');
         return `
-Eres un asistente experto en ventas. Ayuda al vendedor a cerrar ventas de forma natural y persuasiva.
+Eres el copiloto comercial experto de Lávitat en Perú.
+Habla con seguridad, sin justificar precio, resaltando formulación, rendimiento y beneficio técnico.
 
-NEGOCIO: ${profile?.name || profile?.pushname || 'Tu negocio'}
+NEGOCIO: ${profile?.name || profile?.pushname || 'Lávitat'}
 ${profile?.description ? 'Descripción: ' + profile.description : ''}
 
-CATÁLOGO:
+CATÁLOGO DISPONIBLE:
 ${catalogText}
 
 CONVERSACIÓN ACTUAL CON EL CLIENTE:
 ${convText || '(sin mensajes aún)'}
 
-INSTRUCCIONES:
-- Cuando el vendedor pida "opciones" o "alternativas", siempre da AL MENOS 3 opciones numeradas
-- Cuando generes respuestas para enviar al cliente, ponlas entre [MENSAJE: ...] para que el vendedor las pueda enviar fácilmente  
-- Sé conciso, práctico y orientado a cerrar la venta
-- Usa emojis moderadamente como en WhatsApp Business profesional
+INSTRUCCIONES OBLIGATORIAS:
+- Si te piden opciones/cotización, da mínimo 2 alternativas: base y optimizada.
+- Siempre que sea posible, incluye upsell complementario.
+- En objeción de precio: responder por formulación/rendimiento, no por descuento defensivo.
+- Para mensajes listos para enviar al cliente, usa [MENSAJE: ...].
+- Sé claro, breve y vendedor (tono WhatsApp profesional).
         `.trim();
     };
 
@@ -424,7 +443,7 @@ INSTRUCCIONES:
                 ))}
             </div>
 
-            {/* ── AI PRO TAB ── Conversational chat with Gemini */}
+            {/* ── AI PRO TAB ── Conversational sales copilot (OpenAI) */}
             {activeTab === 'ai' && (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -508,7 +527,7 @@ INSTRUCCIONES:
 
             {/* ── CATALOG TAB ── */}
             {activeTab === 'catalog' && (
-                <CatalogTab catalog={catalog} socket={socket} setInputText={setInputText} addToCart={addToCart} />
+                <CatalogTab catalog={catalog} socket={socket} setInputText={setInputText} addToCart={addToCart} catalogMeta={businessData.catalogMeta} />
             )}
 
             {/* ── CART TAB ── */}

@@ -48,7 +48,7 @@ function App() {
   const timerRef = useRef(null);
 
   // ─── Business Data (Real from WA) ────────────────────────────
-  const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [] });
+  const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
 
   // ─── Other ───────────────────────────────────────────────────
   const [isDragOver, setIsDragOver] = useState(false);
@@ -128,6 +128,11 @@ function App() {
       setIsAiLoading(false);
     });
 
+    socket.on('ai_error', (msg) => {
+      setIsAiLoading(false);
+      if (msg) alert(msg);
+    });
+
     socket.on('message_ack', ({ id, ack }) => {
       setMessages(prev => prev.map(m => m.id === id ? { ...m, ack } : m));
     });
@@ -150,7 +155,7 @@ function App() {
     return () => {
       ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_history',
         'contact_info', 'message', 'business_data', 'ai_suggestion_chunk',
-        'ai_suggestion_complete', 'message_ack', 'authenticated', 'auth_failure', 'disconnected'
+        'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected'
       ].forEach(ev => socket.off(ev));
     };
   }, [activeChatId]);
@@ -214,7 +219,7 @@ function App() {
     setIsAiLoading(true);
 
     const businessContext = `
-Eres Gemini, un asistente de ventas especializado. Ayuda al vendedor a responder a sus clientes de forma profesional y persuasiva.
+Eres un asistente de ventas experto en Lávitat Perú. Ayuda al vendedor a responder con precisión técnica, enfoque comercial y cierres claros.
 
 PERFIL DEL NEGOCIO:
 ${businessData.profile?.name || 'Negocio'}
@@ -242,10 +247,10 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
   };
 
   const startRecording = async () => {
-    if (isRecording) return;
+    if (isRecording || !activeChatId) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // WhatsApp strictly prefers ogg/opus for PTT. Webm is second best.
+      // WhatsApp prefers ogg/opus for PTT. Fall back to webm/opus if needed.
       let mimeType = 'audio/ogg; codecs=opus';
       if (!MediaRecorder.isTypeSupported(mimeType)) {
         mimeType = 'audio/webm; codecs=opus';
@@ -266,12 +271,13 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
         const reader = new FileReader();
         reader.onloadend = () => {
           const base64 = reader.result.split(',')[1];
+          const extension = mimeType.includes('ogg') ? 'ogg' : 'webm';
           socket.emit('send_media_message', {
             to: activeChatId,
             body: '',
             mediaData: base64,
             mimetype: mimeType,
-            filename: 'voice-note.ogg',
+            filename: `voice-note.${extension}`,
             isPtt: true,
           });
         };
@@ -444,7 +450,7 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
               </h1>
               <p style={{ color: '#8696a0', fontSize: '0.9rem', lineHeight: '1.6' }}>
                 Selecciona un chat para comenzar a vender.<br />
-                Usa los botones de IA para cerrar más ventas con Gemini.
+                Usa los botones de IA para cerrar más ventas con OpenAI.
               </p>
               <div style={{ marginTop: '30px', padding: '16px 20px', background: '#2a3942', borderRadius: '12px', textAlign: 'left', fontSize: '0.85rem', color: '#8696a0', lineHeight: '1.8' }}>
                 <strong style={{ color: '#00a884' }}>Funciones IA disponibles:</strong><br />
