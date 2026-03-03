@@ -147,6 +147,7 @@ const ChatInput = ({
                         style={{ background: 'none', color: isRecording ? '#da3633' : '#8696a0' }}
                         onMouseDown={startRecording}
                         onMouseUp={stopRecording}
+                        onMouseLeave={isRecording ? stopRecording : undefined}
                         onTouchStart={startRecording}
                         onTouchEnd={stopRecording}
                         title={isRecording ? 'Suelta para enviar' : 'Mantén para grabar voz'}
