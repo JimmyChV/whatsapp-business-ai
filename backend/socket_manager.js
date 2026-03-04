@@ -102,6 +102,23 @@ function extractOrderInfo(msg) {
     }
 }
 
+async function resolveProfilePic(client, chatOrContactId) {
+    try {
+        const direct = await client.getProfilePicUrl(chatOrContactId);
+        if (direct) return direct;
+    } catch (e) { }
+
+    try {
+        const contact = await client.getContactById(chatOrContactId);
+        if (contact?.getProfilePicUrl) {
+            const fromContact = await contact.getProfilePicUrl();
+            if (fromContact) return fromContact;
+        }
+    } catch (e) { }
+
+    return null;
+}
+
 
 class SocketManager {
     constructor(io) {
@@ -124,7 +141,8 @@ class SocketManager {
             socket.on('get_chats', async () => {
                 try {
                     const chats = await waClient.getChats();
-                    const formatted = await Promise.all(chats.slice(0, 40).map(async (c) => {
+                    const sortedChats = [...chats].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 200);
+                    const formatted = await Promise.all(sortedChats.map(async (c) => {
                         let labels = [];
                         try {
                             // Only try to fetch labels if it's potentially a business chat or a contact
@@ -133,10 +151,7 @@ class SocketManager {
                             // Ignore if not supported or fails
                         }
 
-                        let profilePicUrl = null;
-                        try {
-                            profilePicUrl = await waClient.client.getProfilePicUrl(c.id._serialized);
-                        } catch (e) { }
+                        const profilePicUrl = await resolveProfilePic(waClient.client, c.id._serialized);
 
                         return {
                             id: c.id._serialized,
@@ -181,6 +196,32 @@ class SocketManager {
                     socket.emit('chat_history', { chatId, messages: formatted });
                 } catch (e) {
                     console.error('Error fetching history:', e);
+                }
+            });
+
+            socket.on('start_new_chat', async ({ phone, firstMessage }) => {
+                try {
+                    const clean = String(phone || '').replace(/\D/g, '');
+                    if (!clean) {
+                        socket.emit('start_new_chat_error', 'Número inválido.');
+                        return;
+                    }
+
+                    const numberId = await waClient.client.getNumberId(clean);
+                    if (!numberId?.user) {
+                        socket.emit('start_new_chat_error', 'El número no está registrado en WhatsApp.');
+                        return;
+                    }
+
+                    const chatId = `${numberId.user}@c.us`;
+                    if (firstMessage && String(firstMessage).trim()) {
+                        await waClient.sendMessage(chatId, String(firstMessage).trim());
+                    }
+
+                    socket.emit('chat_opened', { chatId });
+                } catch (e) {
+                    console.error('start_new_chat error:', e.message);
+                    socket.emit('start_new_chat_error', 'No se pudo iniciar el chat.');
                 }
             });
 
@@ -399,7 +440,10 @@ class SocketManager {
                     let profilePicUrl = null;
                     let businessProfile = null;
                     try {
-                        profilePicUrl = await waClient.client.getProfilePicUrl(me.wid._serialized);
+                        profilePicUrl = await resolveProfilePic(waClient.client, me.wid._serialized);
+                    } catch (e) { }
+                    try {
+                        businessProfile = await waClient.getBusinessProfile(me.wid._serialized);
                     } catch (e) { }
                     try {
                         businessProfile = await waClient.getBusinessProfile(me.wid._serialized);
@@ -428,7 +472,7 @@ class SocketManager {
                     let status = null;
                     let businessProfile = null;
                     try {
-                        profilePicUrl = await waClient.client.getProfilePicUrl(contactId);
+                        profilePicUrl = await resolveProfilePic(waClient.client, contactId);
                     } catch (e) { }
                     try {
                         const statusObj = await contact.getAbout();
@@ -518,11 +562,11 @@ class SocketManager {
             });
             // Auto refresh chat list
             const chats = await waClient.getChats();
-            const formatted = await Promise.all(chats.slice(0, 40).map(async (c) => {
+            const sortedChats = [...chats].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 200);
+            const formatted = await Promise.all(sortedChats.map(async (c) => {
                 let labels = [];
                 try { labels = await c.getLabels(); } catch (e) { }
-                let profilePicUrl = null;
-                try { profilePicUrl = await waClient.client.getProfilePicUrl(c.id._serialized); } catch (e) { }
+                const profilePicUrl = await resolveProfilePic(waClient.client, c.id._serialized);
 
                 return {
                     id: c.id._serialized,

@@ -122,6 +122,15 @@ function App() {
 
     socket.on('chats', (chatList) => setChats(chatList));
 
+    socket.on('chat_opened', ({ chatId }) => {
+      if (chatId) handleChatSelect(chatId);
+      socket.emit('get_chats');
+    });
+
+    socket.on('start_new_chat_error', (msg) => {
+      if (msg) alert(msg);
+    });
+
     socket.on('chat_history', (data) => {
       if (data.chatId === activeChatId) setMessages(data.messages);
     });
@@ -193,6 +202,7 @@ function App() {
 
     return () => {
       ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_history',
+        'chat_opened', 'start_new_chat_error',
         'contact_info', 'message', 'business_data', 'ai_suggestion_chunk',
         'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
       ].forEach(ev => socket.off(ev));
@@ -254,6 +264,17 @@ function App() {
   const handleLogoutWhatsapp = () => {
     if (!window.confirm('¿Cerrar sesión de WhatsApp en este equipo?')) return;
     socket.emit('logout_whatsapp');
+  };
+
+  const handleRefreshChats = () => {
+    socket.emit('get_chats');
+  };
+
+  const handleStartNewChat = () => {
+    const phone = window.prompt('Número del cliente (con código de país, sin +):');
+    if (!phone) return;
+    const firstMessage = window.prompt('Mensaje inicial (opcional):') || '';
+    socket.emit('start_new_chat', { phone, firstMessage });
   };
 
   const requestAiSuggestion = (customPromptArg) => {
@@ -441,6 +462,8 @@ REGLA CRÍTICA:
         onChatSelect={handleChatSelect}
         myProfile={myProfile}
         onLogout={handleLogoutWhatsapp}
+        onRefreshChats={handleRefreshChats}
+        onStartNewChat={handleStartNewChat}
       />
 
       {/* Main Content Area */}
