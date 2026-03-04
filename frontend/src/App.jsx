@@ -40,6 +40,36 @@ const normalizeBusinessDataPayload = (data = {}) => {
   };
 };
 
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+=======
+const WA_FALLBACK_LABEL_COLORS = ['#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#00A884', '#7D8D95'];
+
+const hydrateChatLabels = (chat = {}, labelDefinitions = [], chatLabelMap = {}) => {
+  const fromChat = Array.isArray(chat.labels) ? chat.labels : [];
+  const customNames = Array.isArray(chatLabelMap[chat.id]) ? chatLabelMap[chat.id] : [];
+  const merged = [...fromChat];
+
+  customNames.forEach((labelName) => {
+    if (!labelName || merged.some((l) => l.name === labelName)) return;
+    const def = labelDefinitions.find((d) => d.name === labelName);
+    merged.push({
+      name: labelName,
+      color: def?.color || WA_FALLBACK_LABEL_COLORS[Math.abs(labelName.charCodeAt(0) || 0) % WA_FALLBACK_LABEL_COLORS.length],
+      isCustom: true,
+    });
+  });
+
+  return { ...chat, labels: merged };
+};
+
+const upsertAndSortChat = (list = [], incoming = null) => {
+  if (!incoming?.id) return list;
+  const without = list.filter((c) => c.id !== incoming.id);
+  const merged = [incoming, ...without];
+  return merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+};
+
+>>>>>>> main
 function App() {
   // ─── Connection State ────────────────────────────────────────
   const [isConnected, setIsConnected] = useState(false);
@@ -78,6 +108,11 @@ function App() {
 
   // ─── Business Data (Real from WA) ────────────────────────────
   const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+=======
+  const [labelDefinitions, setLabelDefinitions] = useState([]);
+  const [chatLabelMap, setChatLabelMap] = useState({});
+>>>>>>> main
   const [toasts, setToasts] = useState([]);
 
   // ─── Other ───────────────────────────────────────────────────
@@ -90,6 +125,14 @@ function App() {
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
+    }
+    try {
+      const savedDefs = JSON.parse(localStorage.getItem('wa_custom_label_defs') || '[]');
+      const savedMap = JSON.parse(localStorage.getItem('wa_custom_chat_labels') || '{}');
+      if (Array.isArray(savedDefs)) setLabelDefinitions(savedDefs);
+      if (savedMap && typeof savedMap === 'object') setChatLabelMap(savedMap);
+    } catch (e) {
+      console.warn('No se pudieron leer etiquetas locales', e.message);
     }
   }, []);
 
@@ -122,7 +165,12 @@ function App() {
     });
 
     socket.on('chats', (chatList) => {
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
       setChats(Array.isArray(chatList) ? chatList : []);
+=======
+      const hydrated = (Array.isArray(chatList) ? chatList : []).map((chat) => hydrateChatLabels(chat, labelDefinitions, chatLabelMap));
+      setChats(hydrated);
+>>>>>>> main
     });
 
     socket.on('chat_opened', ({ chatId }) => {
@@ -134,6 +182,7 @@ function App() {
       if (msg) alert(msg);
     });
 
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
     socket.on('chat_labels_error', (msg) => {
       if (msg) alert(msg);
     });
@@ -141,6 +190,15 @@ function App() {
     socket.on('chat_labels_updated', ({ chatId, labels }) => {
       setChats((prev) => prev.map((chat) => chat.id === chatId ? { ...chat, labels: Array.isArray(labels) ? labels : [] } : chat));
       if (chatId === activeChatId) socket.emit('get_contact_info', chatId);
+=======
+    socket.on('chat_opened', ({ chatId }) => {
+      if (chatId) handleChatSelect(chatId);
+      socket.emit('get_chats');
+    });
+
+    socket.on('start_new_chat_error', (msg) => {
+      if (msg) alert(msg);
+>>>>>>> main
     });
 
     socket.on('chat_history', (data) => {
@@ -154,12 +212,20 @@ function App() {
     socket.on('message', (msg) => {
       const relatedChatId = msg.fromMe ? msg.to : msg.from;
       if (!msg.fromMe && Notification.permission === 'granted') {
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
         new Notification(msg.notifyName || msg.senderPhone || 'Nuevo mensaje', { body: msg.body || 'Nuevo mensaje', icon: '/favicon.ico' });
+=======
+        new Notification('Nuevo mensaje', { body: msg.body || 'Nuevo mensaje', icon: '/favicon.ico' });
+>>>>>>> main
       }
 
       if (!msg.fromMe && relatedChatId !== activeChatId) {
         const toastId = `${msg.id || Date.now()}`;
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
         setToasts((prev) => [...prev, { id: toastId, chatId: relatedChatId, title: msg.notifyName || msg.senderPhone || msg.from, body: msg.body || 'Nuevo mensaje' }].slice(-3));
+=======
+        setToasts((prev) => [...prev, { id: toastId, chatId: relatedChatId, title: msg.notifyName || msg.from, body: msg.body || 'Nuevo mensaje' }].slice(-3));
+>>>>>>> main
         setTimeout(() => {
           setToasts((prev) => prev.filter((t) => t.id !== toastId));
         }, 5000);
@@ -167,17 +233,27 @@ function App() {
 
       setChats((prev) => {
         const existing = prev.find((c) => c.id === relatedChatId);
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
         const nextChat = {
           ...(existing || { id: relatedChatId, name: msg.notifyName || msg.senderPhone || relatedChatId, labels: [] }),
           name: existing?.name || msg.notifyName || msg.senderPhone || relatedChatId,
+=======
+        const nextChat = hydrateChatLabels({
+          ...(existing || { id: relatedChatId, name: msg.notifyName || relatedChatId, labels: [] }),
+>>>>>>> main
           timestamp: msg.timestamp || Math.floor(Date.now() / 1000),
           lastMessage: msg.body || (msg.type === 'image' ? '📷 Imagen' : 'Mensaje'),
           lastMessageFromMe: !!msg.fromMe,
           ack: msg.ack || 0,
           unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (relatedChatId === activeChatId ? 0 : (existing?.unreadCount || 0) + 1),
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
         };
         const without = prev.filter((c) => c.id !== relatedChatId);
         return [nextChat, ...without].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+=======
+        }, labelDefinitions, chatLabelMap);
+        return upsertAndSortChat(prev, nextChat);
+>>>>>>> main
       });
 
       setMessages(prev => {
@@ -239,12 +315,16 @@ function App() {
 
     return () => {
       ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_history',
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
         'chat_opened', 'start_new_chat_error', 'chat_labels_error', 'chat_labels_updated',
+=======
+        'chat_opened', 'start_new_chat_error',
+>>>>>>> main
         'contact_info', 'message', 'business_data', 'ai_suggestion_chunk',
         'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
       ].forEach(ev => socket.off(ev));
     };
-  }, [activeChatId]);
+  }, [activeChatId, labelDefinitions, chatLabelMap]);
 
   // ──────────────────────────────────────────────────────────────
   // Apply AI suggestion to input
@@ -308,6 +388,7 @@ function App() {
   };
 
   const handleCreateLabel = () => {
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
     const name = window.prompt('Nombre de etiqueta para WhatsApp Business:');
     if (!name) return;
     socket.emit('create_label', { name: name.trim() });
@@ -316,6 +397,41 @@ function App() {
   const handleSetChatLabels = (chatId, labelIds) => {
     if (!chatId) return;
     socket.emit('set_chat_labels', { chatId, labelIds });
+=======
+    const name = window.prompt('Nombre de etiqueta (ej: Cliente VIP):');
+    if (!name) return;
+    const color = window.prompt('Color HEX (ej: #25D366):', WA_FALLBACK_LABEL_COLORS[labelDefinitions.length % WA_FALLBACK_LABEL_COLORS.length]) || WA_FALLBACK_LABEL_COLORS[labelDefinitions.length % WA_FALLBACK_LABEL_COLORS.length];
+    const clean = name.trim();
+    if (!clean) return;
+    setLabelDefinitions((prev) => {
+      if (prev.some((l) => l.name.toLowerCase() === clean.toLowerCase())) return prev;
+      const next = [...prev, { name: clean, color }];
+      localStorage.setItem('wa_custom_label_defs', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const handleToggleChatLabel = (chatId, labelName) => {
+    if (!chatId || !labelName) return;
+    setChatLabelMap((prev) => {
+      const current = Array.isArray(prev[chatId]) ? prev[chatId] : [];
+      const exists = current.includes(labelName);
+      const updated = exists ? current.filter((n) => n !== labelName) : [...current, labelName];
+      const next = { ...prev, [chatId]: updated };
+      localStorage.setItem('wa_custom_chat_labels', JSON.stringify(next));
+      return next;
+    });
+
+    setChats((prev) => prev.map((chat) => {
+      if (chat.id !== chatId) return chat;
+      const has = (chat.labels || []).some((l) => l.name === labelName);
+      const definition = labelDefinitions.find((l) => l.name === labelName);
+      const labels = has
+        ? (chat.labels || []).filter((l) => l.name !== labelName || !l.isCustom)
+        : [...(chat.labels || []), { name: labelName, color: definition?.color || '#7D8D95', isCustom: true }];
+      return { ...chat, labels };
+    }));
+>>>>>>> main
   };
 
   const handleStartNewChat = (phoneArg, firstMessageArg = '') => {
@@ -512,6 +628,12 @@ REGLA CRÍTICA:
         onLogout={handleLogoutWhatsapp}
         onRefreshChats={handleRefreshChats}
         onStartNewChat={handleStartNewChat}
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+=======
+        labelDefinitions={labelDefinitions}
+        onCreateLabel={handleCreateLabel}
+        onToggleChatLabel={handleToggleChatLabel}
+>>>>>>> main
       />
 
       {/* Main Content Area */}
