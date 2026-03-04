@@ -172,6 +172,15 @@ function App() {
       if (msg) alert(msg);
     });
 
+    socket.on('chat_opened', ({ chatId }) => {
+      if (chatId) handleChatSelect(chatId);
+      socket.emit('get_chats');
+    });
+
+    socket.on('start_new_chat_error', (msg) => {
+      if (msg) alert(msg);
+    });
+
     socket.on('chat_history', (data) => {
       if (data.chatId === activeChatId) setMessages(data.messages);
     });
