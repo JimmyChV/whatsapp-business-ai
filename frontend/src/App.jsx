@@ -91,6 +91,14 @@ function App() {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
+    try {
+      const savedDefs = JSON.parse(localStorage.getItem('wa_custom_label_defs') || '[]');
+      const savedMap = JSON.parse(localStorage.getItem('wa_custom_chat_labels') || '{}');
+      if (Array.isArray(savedDefs)) setLabelDefinitions(savedDefs);
+      if (savedMap && typeof savedMap === 'object') setChatLabelMap(savedMap);
+    } catch (e) {
+      console.warn('No se pudieron leer etiquetas locales', e.message);
+    }
   }, []);
 
   // ──────────────────────────────────────────────────────────────
@@ -244,7 +252,7 @@ function App() {
         'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
       ].forEach(ev => socket.off(ev));
     };
-  }, [activeChatId]);
+  }, [activeChatId, labelDefinitions, chatLabelMap]);
 
   // ──────────────────────────────────────────────────────────────
   // Apply AI suggestion to input
