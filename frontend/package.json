@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "predev": "node scripts/check-conflicts.mjs",
+    "prebuild": "node scripts/check-conflicts.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.576.0",
