@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
-import moment from 'moment';
 
 import Sidebar from './components/Sidebar';
 import BusinessSidebar, { ClientProfilePanel } from './components/BusinessSidebar';
@@ -9,7 +8,60 @@ import ChatWindow from './components/ChatWindow';
 
 import './index.css';
 
-export const socket = io('http://localhost:3001');
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const socket = io(API_BASE_URL);
+
+const normalizeCatalogItem = (item = {}, index = 0) => {
+  const safeItem = item && typeof item === 'object' ? item : {};
+  const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
+  const rawPrice = safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio ?? 0;
+  const parsedPrice = Number.parseFloat(String(rawPrice).replace(',', '.'));
+
+  return {
+    id: safeItem.id || safeItem.product_id || `catalog_${index}`,
+    title: String(rawTitle || `Producto ${index + 1}`).trim(),
+    price: Number.isFinite(parsedPrice) ? parsedPrice.toFixed(2) : '0.00',
+    description: safeItem.description || safeItem.short_description || safeItem.descripcion || '',
+    imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
+    source: safeItem.source || 'unknown',
+    sku: safeItem.sku || null,
+    stockStatus: safeItem.stockStatus || safeItem.stock_status || null
+  };
+};
+
+const normalizeBusinessDataPayload = (data = {}) => {
+  const rawCatalog = Array.isArray(data.catalog) ? data.catalog : [];
+  const catalog = rawCatalog.map((item, idx) => normalizeCatalogItem(item, idx));
+  return {
+    profile: data.profile || null,
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    catalog,
+    catalogMeta: data.catalogMeta || { source: 'local', nativeAvailable: false }
+  };
+};
+
+
+const upsertChatByMessage = (prevChats, msg, activeChatId) => {
+  const relatedChatId = msg.fromMe ? msg.to : msg.from;
+  const existing = prevChats.find((c) => c.id === relatedChatId);
+  const fallbackTimestamp = Math.floor(Date.now() / 1000);
+  const timestamp = Number(msg.timestamp) || fallbackTimestamp;
+
+  const nextChat = {
+    ...(existing || { id: relatedChatId, name: msg.notifyName || msg.senderPhone || relatedChatId, labels: [] }),
+    name: existing?.name || msg.notifyName || msg.senderPhone || relatedChatId,
+    timestamp,
+    lastMessage: msg.body || (msg.type === 'image' ? '📷 Imagen' : msg.type === 'audio' ? '🎙️ Audio' : 'Mensaje'),
+    lastMessageFromMe: !!msg.fromMe,
+    ack: msg.ack || 0,
+    unreadCount: msg.fromMe
+      ? (existing?.unreadCount || 0)
+      : (relatedChatId === activeChatId ? 0 : (existing?.unreadCount || 0) + 1),
+  };
+
+  const without = prevChats.filter((c) => c.id !== relatedChatId);
+  return [nextChat, ...without].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+};
 
 const normalizeCatalogItem = (item = {}, index = 0) => {
   const safeItem = item && typeof item === 'object' ? item : {};
@@ -84,6 +136,23 @@ function App() {
   const [isDragOver, setIsDragOver] = useState(false);
   const messagesEndRef = useRef(null);
 
+  const pushToast = useCallback((title, body, chatId = null) => {
+    const toastId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    setToasts((prev) => [...prev, { id: toastId, chatId, title, body }].slice(-4));
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== toastId)), 5000);
+  }, []);
+
+  const handleChatSelect = useCallback((chatId) => {
+    setActiveChatId(chatId);
+    setMessages([]);
+    setShowClientProfile(false);
+    setClientContact(null);
+    socket.emit('get_chat_history', chatId);
+    socket.emit('mark_chat_read', chatId);
+    socket.emit('get_contact_info', chatId);
+    setChats(prev => prev.map(c => c.id === chatId ? { ...c, unreadCount: 0 } : c));
+  }, []);
+
   // ──────────────────────────────────────────────────────────────
   // Notifications
   // ──────────────────────────────────────────────────────────────
@@ -151,6 +220,11 @@ function App() {
       if (chatId === activeChatId) socket.emit('get_contact_info', chatId);
     });
 
+    socket.on('chat_labels_saved', ({ chatId }) => {
+      pushToast('Etiquetas actualizadas', 'Sincronizadas con WhatsApp Business.', chatId || null);
+      socket.emit('get_chats');
+    });
+
     socket.on('chat_history', (data) => {
       if (data.chatId === activeChatId) setMessages(data.messages);
     });
@@ -166,27 +240,10 @@ function App() {
       }
 
       if (!msg.fromMe && relatedChatId !== activeChatId) {
-        const toastId = `${msg.id || Date.now()}`;
-        setToasts((prev) => [...prev, { id: toastId, chatId: relatedChatId, title: msg.notifyName || msg.senderPhone || msg.from, body: msg.body || 'Nuevo mensaje' }].slice(-3));
-        setTimeout(() => {
-          setToasts((prev) => prev.filter((t) => t.id !== toastId));
-        }, 5000);
+        pushToast(msg.notifyName || msg.senderPhone || msg.from, msg.body || 'Nuevo mensaje', relatedChatId);
       }
 
-      setChats((prev) => {
-        const existing = prev.find((c) => c.id === relatedChatId);
-        const nextChat = {
-          ...(existing || { id: relatedChatId, name: msg.notifyName || msg.senderPhone || relatedChatId, labels: [] }),
-          name: existing?.name || msg.notifyName || msg.senderPhone || relatedChatId,
-          timestamp: msg.timestamp || Math.floor(Date.now() / 1000),
-          lastMessage: msg.body || (msg.type === 'image' ? '📷 Imagen' : 'Mensaje'),
-          lastMessageFromMe: !!msg.fromMe,
-          ack: msg.ack || 0,
-          unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (relatedChatId === activeChatId ? 0 : (existing?.unreadCount || 0) + 1),
-        };
-        const without = prev.filter((c) => c.id !== relatedChatId);
-        return [nextChat, ...without].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      });
+      setChats((prev) => upsertChatByMessage(prev, msg, activeChatId));
 
       setMessages(prev => {
         if (prev.find(m => m.id === msg.id)) return prev;
@@ -247,12 +304,12 @@ function App() {
 
     return () => {
       ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_history',
-        'chat_opened', 'start_new_chat_error', 'chat_labels_error', 'chat_labels_updated',
+        'chat_opened', 'start_new_chat_error', 'chat_labels_error', 'chat_labels_updated', 'chat_labels_saved',
         'contact_info', 'message', 'business_data', 'ai_suggestion_chunk',
         'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
       ].forEach(ev => socket.off(ev));
     };
-  }, [activeChatId, labelDefinitions, chatLabelMap]);
+  }, [activeChatId, handleChatSelect, pushToast]);
 
   // ──────────────────────────────────────────────────────────────
   // Apply AI suggestion to input
@@ -267,17 +324,6 @@ function App() {
   // ──────────────────────────────────────────────────────────────
   // Handlers
   // ──────────────────────────────────────────────────────────────
-  const handleChatSelect = (chatId) => {
-    setActiveChatId(chatId);
-    setMessages([]);
-    setShowClientProfile(false);
-    setClientContact(null);
-    socket.emit('get_chat_history', chatId);
-    socket.emit('mark_chat_read', chatId);
-    socket.emit('get_contact_info', chatId);
-    setChats(prev => prev.map(c => c.id === chatId ? { ...c, unreadCount: 0 } : c));
-  };
-
   const handleSendMessage = (e) => {
     e?.preventDefault();
     if (!inputText.trim() && !attachment) return;

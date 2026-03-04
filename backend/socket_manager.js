@@ -56,13 +56,20 @@ function parseProductsFromBodyText(body = '') {
     return parsed;
 }
 
-function normalizeMoneyAmount(raw) {
+function normalizeMoneyAmount(raw, hint = '') {
     if (raw === null || raw === undefined || raw === '') return null;
-    const num = Number.parseFloat(String(raw).replace(',', '.'));
+
+    const cleanHint = String(hint || '').toLowerCase();
+    const rawText = String(raw).trim().replace(',', '.');
+    const num = Number.parseFloat(rawText);
     if (!Number.isFinite(num)) return null;
-    if (Math.abs(num) >= 10000 && Number.isInteger(num)) {
-        return Number((num / 1000).toFixed(2));
-    }
+
+    if (cleanHint.includes('1000')) return Number((num / 1000).toFixed(2));
+    if (cleanHint.includes('cent') || cleanHint.includes('minor')) return Number((num / 100).toFixed(2));
+
+    const looksLikeMinorUnits = /^\d+$/.test(rawText) && Math.abs(num) >= 1000;
+    if (looksLikeMinorUnits) return Number((num / 1000).toFixed(2));
+
     return Number(num.toFixed(2));
 }
 
@@ -74,12 +81,19 @@ function extractOrderInfo(msg) {
             msgOrderProducts: msg?.orderProducts,
             native: msg,
             raw: data
-        }).slice(0, 50).map((item) => ({
-            ...item,
-            quantity: Number.parseFloat(String(item.quantity || 1).replace(',', '.')) || 1,
-            price: normalizeMoneyAmount(item.price),
-            lineTotal: normalizeMoneyAmount(item.total || item.lineTotal || item.amount)
-        }));
+        }).slice(0, 50).map((item) => {
+            const quantity = Number.parseFloat(String(item.quantity || 1).replace(',', '.')) || 1;
+            const price = normalizeMoneyAmount(item.price, 'line.price');
+            const lineTotalRaw = item.total || item.lineTotal || item.amount;
+            const normalizedLine = normalizeMoneyAmount(lineTotalRaw, 'line.total');
+            const lineTotal = normalizedLine ?? (price !== null ? Number((price * quantity).toFixed(2)) : null);
+            return {
+                ...item,
+                quantity,
+                price,
+                lineTotal
+            };
+        });
 
         if (!products.length) {
             products = parseProductsFromBodyText(msg?.body || data?.body || '').map((item) => ({
@@ -91,11 +105,41 @@ function extractOrderInfo(msg) {
         }
 
         const orderId = msg?.orderId || data?.orderId || data?.orderToken || data?.token || null;
-        const subtotal = normalizeMoneyAmount(msg?.subtotal || data?.subtotal || data?.totalAmount1000 || data?.subtotalAmount1000 || data?.subTotal || null);
-        const total = normalizeMoneyAmount(msg?.total || data?.total || data?.grandTotal || data?.totalAmount || null);
-        const shipping = normalizeMoneyAmount(data?.shipping || data?.shippingAmount || data?.delivery || null);
-        const discount = normalizeMoneyAmount(data?.discount || data?.discountAmount || null);
-        const tax = normalizeMoneyAmount(data?.tax || data?.taxAmount || null);
+
+        const pickMoney = (pairs) => {
+            const found = pairs.find(([, value]) => value !== null && value !== undefined && value !== '');
+            if (!found) return null;
+            const [hint, value] = found;
+            return normalizeMoneyAmount(value, hint);
+        };
+
+        const subtotal = pickMoney([
+            ['msg.subtotal', msg?.subtotal],
+            ['data.subtotal', data?.subtotal],
+            ['data.subtotalAmount1000', data?.subtotalAmount1000],
+            ['data.totalAmount1000', data?.totalAmount1000],
+            ['data.subTotal', data?.subTotal],
+        ]);
+        const total = pickMoney([
+            ['msg.total', msg?.total],
+            ['data.total', data?.total],
+            ['data.totalAmount1000', data?.totalAmount1000],
+            ['data.grandTotal', data?.grandTotal],
+            ['data.totalAmount', data?.totalAmount],
+        ]);
+        const shipping = pickMoney([
+            ['data.shipping', data?.shipping],
+            ['data.shippingAmount', data?.shippingAmount],
+            ['data.delivery', data?.delivery],
+        ]);
+        const discount = pickMoney([
+            ['data.discount', data?.discount],
+            ['data.discountAmount', data?.discountAmount],
+        ]);
+        const tax = pickMoney([
+            ['data.tax', data?.tax],
+            ['data.taxAmount', data?.taxAmount],
+        ]);
         const currency = msg?.currency || data?.currency || 'PEN';
 
         const maybeOrderType = String(msg?.type || '').toLowerCase().includes('order')
@@ -281,7 +325,12 @@ class SocketManager {
                         socket.emit('chat_labels_error', 'Chat inválido para etiquetar.');
                         return;
                     }
-                    const ids = Array.isArray(labelIds) ? labelIds.filter((v) => v !== null && v !== undefined && String(v).trim() !== '') : [];
+                    const ids = Array.isArray(labelIds)
+                        ? labelIds
+                            .filter((v) => v !== null && v !== undefined && String(v).trim() !== '')
+                            .map((v) => Number.isNaN(Number(v)) ? String(v) : Number(v))
+                        : [];
+
                     const chat = await waClient.client.getChatById(chatId);
                     if (chat?.changeLabels) {
                         await chat.changeLabels(ids);
@@ -290,10 +339,12 @@ class SocketManager {
                     }
 
                     const updatedLabels = await chat.getLabels();
-                    socket.emit('chat_labels_updated', {
+                    const payload = {
                         chatId,
                         labels: updatedLabels.map((l) => ({ id: l.id, name: l.name, color: l.color }))
-                    });
+                    };
+                    this.io.emit('chat_labels_updated', payload);
+                    socket.emit('chat_labels_saved', { chatId, ok: true });
                 } catch (e) {
                     console.error('set_chat_labels error:', e.message);
                     socket.emit('chat_labels_error', 'No se pudieron actualizar las etiquetas en WhatsApp.');

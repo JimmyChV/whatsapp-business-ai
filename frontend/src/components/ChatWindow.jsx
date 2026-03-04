@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Search, MoreVertical, Mic, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+
 // Common emojis for the picker
 const EMOJI_LIST = [
     '😊', '😂', '❤️', '👍', '🙏', '😍', '😭', '😁', '🥰', '🤣',
@@ -57,7 +59,7 @@ const ChatInput = ({
             try {
                 setIsLoadingPreview(true);
                 const encoded = encodeURIComponent(url);
-                const resp = await fetch(`http://localhost:3001/api/link-preview?url=${encoded}`);
+                const resp = await fetch(`${API_BASE_URL}/api/link-preview?url=${encoded}`);
                 const data = await resp.json();
                 if (!cancelled) setLinkPreview(data?.ok ? data : { ok: false, url });
             } catch (e) {
@@ -290,6 +292,15 @@ const ChatWindow = ({
                     <span style={{ fontSize: '0.78rem', color: '#8696a0' }}>
                         {activeChatDetails?.isGroup ? `${activeChatDetails?.participants || 0} participantes` : 'Haz clic para ver el perfil'}
                     </span>
+                    {!!activeChatDetails?.labels?.length && (
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
+                            {activeChatDetails.labels.map((l) => (
+                                <span key={l.id} style={{ fontSize: '0.68rem', borderRadius: '10px', padding: '2px 8px', background: 'rgba(255,255,255,0.08)', color: l.color || '#d8e0e4', border: '1px solid rgba(255,255,255,0.10)' }}>
+                                    {l.name}
+                                </span>
+                            ))}
+                        </div>
+                    )}
                 </div>
                 <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
                     <button className="btn-icon" style={{ color: searchVisible ? '#00a884' : '#8696a0' }}
@@ -303,10 +314,18 @@ const ChatWindow = ({
                         </button>
                         {showLabelMenu && (
                             <div style={{ position: 'absolute', top: '34px', right: 0, background: '#233138', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', minWidth: '260px', zIndex: 1000, padding: '10px' }}>
-                                <div style={{ fontSize: '0.72rem', color: '#9db0ba', marginBottom: '8px' }}>Etiquetas de WhatsApp Business</div>
-                                <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <div style={{ fontSize: '0.72rem', color: '#9db0ba', marginBottom: '8px' }}>Etiquetas de WhatsApp Business (sincroniza con el celular)</div>
+                                <div style={{ marginBottom: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {selectedLabelIds.length === 0 && <span style={{ fontSize: '0.74rem', color: '#9db0ba' }}>Sin etiquetas seleccionadas</span>}
+                                    {availableLabels.filter((l) => selectedLabelIds.map(String).includes(String(l.id))).map((l) => (
+                                        <button key={l.id} onClick={() => setSelectedLabelIds((prev) => prev.filter((id) => String(id) !== String(l.id)))} style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.08)', color: l.color || '#d8e0e4', borderRadius: '999px', fontSize: '0.7rem', padding: '3px 8px', cursor: 'pointer' }}>
+                                            {l.name} ×
+                                        </button>
+                                    ))}
+                                </div>
+                                <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                     {availableLabels.map((label) => {
-                                        const active = selectedLabelIds.includes(label.id);
+                                        const active = selectedLabelIds.map(String).includes(String(label.id));
                                         return (
                                             <label key={label.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', cursor: 'pointer' }}>
                                                 <input
@@ -332,7 +351,7 @@ const ChatWindow = ({
                                             setShowLabelMenu(false);
                                         }}>Guardar</button>
                                     <button style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.18)', color: '#d8e0e4', borderRadius: '6px', padding: '6px 8px', cursor: 'pointer' }}
-                                        onClick={() => onCreateLabel?.()}>Crear</button>
+                                        onClick={() => onCreateLabel?.()}>Crear etiqueta</button>
                                 </div>
                             </div>
                         )}

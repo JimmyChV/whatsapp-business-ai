@@ -21,6 +21,14 @@ const MessageBubble = ({ msg, onPrefillMessage }) => {
     const hasOrder = Boolean(msg?.order);
     const orderItems = Array.isArray(msg?.order?.products) ? msg.order.products : [];
 
+    const computedOrderTotal = orderItems.reduce((acc, item) => {
+        const qty = Number(item.quantity || 0);
+        const line = Number(item.lineTotal);
+        if (Number.isFinite(line)) return acc + line;
+        const price = Number(item.price);
+        return Number.isFinite(price) ? acc + (price * qty) : acc;
+    }, 0);
+
     const renderStatus = () => {
         if (!isOut) return null;
         const color = msg.ack === 3 ? '#53bdeb' : 'rgba(233, 237, 239, 0.6)';
@@ -35,13 +43,15 @@ const MessageBubble = ({ msg, onPrefillMessage }) => {
         <div className={`message ${isOut ? 'out' : 'in'}`}>
             {isCatalogItem && (
                 <div className="catalog-card">
-                    <img src="https://images.unsplash.com/photo-1523275335684-37898b6baf30?q=80&w=300&auto=format&fit=crop" alt="Producto" />
+                    <div style={{ width: '100%', height: '88px', background: 'linear-gradient(135deg, #1f2937, #334155)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <ShoppingBag size={22} color="#9db0ba" />
+                    </div>
                     <div className="catalog-card-info">
                         <div className="catalog-card-title">{productTitle}</div>
                         <div className="catalog-card-price">{productPrice}</div>
                     </div>
-                    <button className="catalog-card-btn" onClick={() => window.open('https://wa.me/c/51933657188')}>
-                        <ShoppingBag size={16} /> Ver artículo
+                    <button className="catalog-card-btn" onClick={() => onPrefillMessage?.(`Hola 👋 Me interesa este producto: ${productTitle || 'del catálogo'}. ¿Me confirmas stock y precio final?`)}>
+                        <ShoppingBag size={16} /> Solicitar cotización
                     </button>
                 </div>
             )}
@@ -92,7 +102,7 @@ const MessageBubble = ({ msg, onPrefillMessage }) => {
                         {msg?.order?.discount !== null && msg?.order?.discount !== undefined && <div style={{ fontSize: '0.74rem', color: '#9bb0ba' }}>Descuento: {formatMoney(msg.order.discount, msg.order.currency)}</div>}
                         {msg?.order?.shipping !== null && msg?.order?.shipping !== undefined && <div style={{ fontSize: '0.74rem', color: '#9bb0ba' }}>Envío: {formatMoney(msg.order.shipping, msg.order.currency)}</div>}
                         {msg?.order?.tax !== null && msg?.order?.tax !== undefined && <div style={{ fontSize: '0.74rem', color: '#9bb0ba' }}>Impuestos: {formatMoney(msg.order.tax, msg.order.currency)}</div>}
-                        {msg?.order?.total !== null && msg?.order?.total !== undefined && <div style={{ fontSize: '0.78rem', color: '#e6f4f1', fontWeight: 600 }}>Total: {formatMoney(msg.order.total, msg.order.currency)}</div>}
+                        {(msg?.order?.total !== null && msg?.order?.total !== undefined) ? (<div style={{ fontSize: '0.78rem', color: '#e6f4f1', fontWeight: 600 }}>Total: {formatMoney(msg.order.total, msg.order.currency)}</div>) : (computedOrderTotal > 0 ? <div style={{ fontSize: '0.78rem', color: '#e6f4f1', fontWeight: 600 }}>Total estimado: {formatMoney(computedOrderTotal, msg.order.currency)}</div> : null)}
                         {msg?.order?.rawPreview?.itemCount && <div style={{ fontSize: '0.74rem', color: '#9bb0ba' }}>Ítems reportados: {msg.order.rawPreview.itemCount}</div>}
                     </div>
 
