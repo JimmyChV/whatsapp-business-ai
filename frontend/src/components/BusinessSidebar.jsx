@@ -151,6 +151,15 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
 
     const getCatalogQty = (id) => Math.max(1, catalogQty[id] || 1);
     const updateCatalogQty = (id, delta) => setCatalogQty(prev => ({ ...prev, [id]: Math.max(1, (prev[id] || 1) + delta) }));
+    const buildProductShareText = (item, i) => {
+        const title = item.title || `Producto ${i + 1}`;
+        const priceLine = item.price ? `Precio: S/ ${formatMoney(item.price)}` : 'Precio: Consultar';
+        const productUrl = item.url || item.permalink || item.productUrl || item.link || '';
+        const mediaRef = item.imageUrl || '';
+        if (productUrl) return `🛍️ *${title}*\n${priceLine}\n${productUrl}`;
+        if (mediaRef) return `🛍️ *${title}*\n${priceLine}\nImagen: ${mediaRef}`;
+        return `🛍️ *${title}*\n${priceLine}`;
+    };
     const normalizedSearch = catalogSearch.trim().toLowerCase();
     const visibleCatalog = normalizedSearch
         ? catalog.filter((item) => `${item.title || ''} ${item.sku || ''}`.toLowerCase().includes(normalizedSearch))
@@ -235,28 +244,20 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                             </div>
                         ) : (
                             visibleCatalog.map((item, i) => (
-                                <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: '10px', padding: '10px' }}>
+                                <div key={item.id || i} style={{ background: '#202c33', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', minHeight: '184px', display: 'flex', flexDirection: 'column' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '78px 1fr', gap: '10px', padding: '10px 10px 8px 10px', minHeight: '106px' }}>
                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                                            <div style={{ width: '62px', height: '62px', borderRadius: '8px', background: '#3b4a54', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                {item.imageUrl ? <img src={item.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={20} color="#8696a0" />}
+                                            <div style={{ width: '68px', height: '68px', borderRadius: '10px', background: '#3b4a54', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                {item.imageUrl ? <img src={item.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={22} color="#8696a0" />}
                                             </div>
-                                            <div style={{ fontSize: '0.84rem', color: '#00d4aa', fontWeight: 700, textAlign: 'center', lineHeight: 1.1 }}>
+                                            <div style={{ fontSize: '0.86rem', color: '#00d4aa', fontWeight: 700, textAlign: 'center', lineHeight: 1.1 }}>
                                                 {item.price ? `S/ ${formatMoney(item.price)}` : 'S/ -'}
                                             </div>
                                             {item.sku && <div style={{ fontSize: '0.64rem', color: '#9bb0ba', textAlign: 'center', lineHeight: 1.1 }}>SKU: {item.sku}</div>}
                                         </div>
-                                        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
-                                                <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', minHeight: '2.5em' }}>
-                                                    {String(item.title || `Producto ${i + 1}`)}
-                                                </div>
-                                                {!isExternalCatalog && (
-                                                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                                                        <button onClick={() => handleEditClick(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0' }}><Edit2 size={12} /></button>
-                                                        <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#da3633' }}><Trash2 size={12} /></button>
-                                                    </div>
-                                                )}
+                                        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px', justifyContent: 'space-between' }}>
+                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', minHeight: '2.5em' }}>
+                                                {String(item.title || `Producto ${i + 1}`)}
                                             </div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                                 {item.regularPrice && Number(item.regularPrice) > Number(item.price || 0) && (
@@ -273,33 +274,27 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                             </div>
                                         </div>
                                     </div>
-                                    <div style={{ borderTop: '1px solid var(--border-color)', background: '#111b21', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#22313b', borderRadius: '999px', padding: '3px 7px', border: '1px solid rgba(255,255,255,0.08)', width: 'fit-content', maxWidth: '100%' }}>
-                                            <button onClick={() => updateCatalogQty(item.id, -1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#2f3e48', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Minus size={11} /></button>
-                                            <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', minWidth: '18px', textAlign: 'center' }}>{getCatalogQty(item.id)}</span>
-                                            <button onClick={() => updateCatalogQty(item.id, 1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Plus size={11} /></button>
-                                        </div>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', width: '100%' }}>
-                                            <button
-                                                onClick={() => { setInputText(`📦 *${item.title || `Producto ${i + 1}`}*
-Precio: S/ ${formatMoney(item.price)}
 
-¿Te interesa? 😊`); }}
-                                                style={{ width: '100%', minWidth: 0, padding: '7px 6px', background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '7px', color: '#d6e2e8', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                                                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
-                                                onMouseLeave={e => { e.currentTarget.style.background = '#1f2c34'; e.currentTarget.style.color = '#d6e2e8'; }}
-                                            >
-                                                <Send size={12} /> Cotizar
-                                            </button>
+                                    <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border-color)', background: '#111b21', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#22313b', borderRadius: '999px', padding: '3px 7px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                                <button onClick={() => updateCatalogQty(item.id, -1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#2f3e48', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={11} /></button>
+                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', minWidth: '18px', textAlign: 'center' }}>{getCatalogQty(item.id)}</span>
+                                                <button onClick={() => updateCatalogQty(item.id, 1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus size={11} /></button>
+                                            </div>
                                             <button
-                                                onClick={() => addToCart(item, getCatalogQty(item.id))}
-                                                style={{ width: '100%', minWidth: 0, padding: '7px 6px', background: '#00a884', border: 'none', borderRadius: '7px', color: 'white', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                                                onMouseEnter={e => e.currentTarget.style.background = '#01bf97'}
-                                                onMouseLeave={e => e.currentTarget.style.background = '#00a884'}
+                                                onClick={() => { setInputText(buildProductShareText(item, i)); }}
+                                                style={{ padding: '7px 10px', background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '7px', color: '#d6e2e8', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', minWidth: '110px' }}
                                             >
-                                                <ShoppingCart size={13} /> + Carrito
+                                                <Send size={12} /> Enviar prod.
                                             </button>
                                         </div>
+                                        <button
+                                            onClick={() => addToCart(item, getCatalogQty(item.id))}
+                                            style={{ width: '100%', minWidth: 0, padding: '8px 8px', background: '#00a884', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer', fontSize: '0.74rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                        >
+                                            <ShoppingCart size={13} /> + Carrito
+                                        </button>
                                     </div>
                                 </div>
                             ))
