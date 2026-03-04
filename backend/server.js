@@ -2,22 +2,47 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const { URL } = require('url');
 require('dotenv').config();
+const logger = require('./logger');
+const { parseCsvEnv, resolveAndValidatePublicHost } = require('./security_utils');
 
 const waClient = require('./whatsapp_client');
 const SocketManager = require('./socket_manager');
-const logger = require('./logger');
 
 const app = express();
-app.use(cors());
+app.use(express.json({ limit: '1mb' }));
+
+const allowedOrigins = parseCsvEnv(process.env.ALLOWED_ORIGINS);
+app.use(cors({
+    origin(origin, callback) {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        return callback(new Error('Not allowed by CORS'));
+    }
+}));
 
 const server = http.createServer(app);
 const io = new Server(server, {
     maxHttpBufferSize: 1e8, // 100MB
     cors: {
-        origin: "*",
+        origin: allowedOrigins.length ? allowedOrigins : '*',
         methods: ["GET", "POST"]
     }
+});
+
+io.use((socket, next) => {
+    const expectedToken = process.env.SOCKET_AUTH_TOKEN || '';
+    if (!expectedToken) {
+        logger.warn('SOCKET_AUTH_TOKEN not configured; Socket.IO auth is bypassed.');
+        return next();
+    }
+
+    const token = socket.handshake?.auth?.token || socket.handshake?.headers?.authorization?.replace(/^Bearer\s+/i, '');
+    if (token && token === expectedToken) return next();
+    return next(new Error('Unauthorized'));
 });
 
 // Initialize Managers
@@ -47,14 +72,43 @@ app.get('/api/link-preview', async (req, res) => {
     }
 
     try {
+        const parsed = new URL(url);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return res.status(400).json({ error: 'Solo se permiten protocolos http/https.' });
+        }
+
+        const blockedHosts = new Set(parseCsvEnv(process.env.LINK_PREVIEW_BLOCKED_HOSTS));
+        if (blockedHosts.has(parsed.hostname)) {
+            return res.status(403).json({ ok: false, url, error: 'Host bloqueado.' });
+        }
+
+        await resolveAndValidatePublicHost(parsed.hostname);
+
+        const timeoutMs = Number(process.env.LINK_PREVIEW_TIMEOUT_MS || 5000);
+        const maxBytes = Number(process.env.LINK_PREVIEW_MAX_BYTES || 1024 * 1024);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
         const response = await fetch(url, {
             redirect: 'follow',
             headers: {
                 'User-Agent': 'Mozilla/5.0 (WhatsApp Business Pro Preview Bot)'
-            }
+            },
+            signal: controller.signal
         });
+        clearTimeout(timeout);
 
-        const html = await response.text();
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+        if (!contentType.includes('text/html')) {
+            return res.status(415).json({ ok: false, url, error: 'La URL no contiene HTML previsualizable.' });
+        }
+
+        const contentLength = Number(response.headers.get('content-length') || 0);
+        if (contentLength && contentLength > maxBytes) {
+            return res.status(413).json({ ok: false, url, error: 'El contenido excede el tamaño permitido para preview.' });
+        }
+
+        const html = (await response.text()).slice(0, maxBytes);
         const title = extractMeta(html, 'og:title') || (/<title>([^<]+)<\/title>/i.exec(html)?.[1] || null);
         const description = extractMeta(html, 'og:description', 'description');
         const image = extractMeta(html, 'og:image');
@@ -81,6 +135,6 @@ app.get('/api/link-preview', async (req, res) => {
 const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    logger.info(`Server running on port ${PORT}`);
     waClient.initialize();
 });

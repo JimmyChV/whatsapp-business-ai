@@ -3,6 +3,8 @@ import { Search, MoreVertical, Mic, Smile, Bot, Sparkles, X, Paperclip, Send, Sh
 import MessageBubble from './MessageBubble';
 import moment from 'moment';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 // Common emojis for the picker
 const EMOJI_LIST = [
     '😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','😘','🥰','😗','😙','😚','🙂','🤗','🤩','🤔','🫡','🤨','😐','😑','😶','🙄','😏','😣','😥','😮','🤐','😯','😪','😫','🥱','😴','😌','😛','😜','😝','🤤','😒','😓','😔','😕','🙃','🫠','🤑','😲','☹️','🙁','😖','😞','😟','😤','😢','😭','😦','😧','😨','😩','🤯','😬','😰','😱','🥵','🥶','😳','🤪','😵','🥴','😠','😡','🤬','😷','🤒','🤕','🤢','🤮','🤧','😇','🥳','🥸','😺','😸','😹','😻','😼','😽','🙀','😿','😾',
@@ -68,7 +70,7 @@ const ChatInput = ({
             try {
                 setIsLoadingPreview(true);
                 const encoded = encodeURIComponent(url);
-                const resp = await fetch(`http://localhost:3001/api/link-preview?url=${encoded}`);
+                const resp = await fetch(`${API_URL}/api/link-preview?url=${encoded}`);
                 const data = await resp.json();
                 if (!cancelled) setLinkPreview(data?.ok ? data : { ok: false, url });
             } catch (e) {
