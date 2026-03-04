@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { MoreVertical, Search, Filter, Check, CheckCheck, X } from 'lucide-react';
 import moment from 'moment';
 
-const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile }) => {
+const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRefreshChats, onStartNewChat }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showMenu, setShowMenu] = useState(false);
+    const [labelFilter, setLabelFilter] = useState('all');
 
     const formatTime = (ts) => {
         const m = moment.unix(ts);
@@ -23,10 +24,13 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile }) => {
         );
     };
 
-    const filteredChats = chats.filter(c =>
-        c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.lastMessage?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const allLabels = Array.from(new Set(chats.flatMap(c => (c.labels || []).map(l => l.name)).filter(Boolean)));
+    const filteredChats = chats.filter(c => {
+        const matchesSearch = c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            c.lastMessage?.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesLabel = labelFilter === 'all' || (c.labels || []).some(l => l.name === labelFilter);
+        return matchesSearch && matchesLabel;
+    });
 
     const avatarLetter = (name) => name ? name.charAt(0).toUpperCase() : '?';
     const avatarColor = (name) => {
@@ -71,15 +75,13 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile }) => {
                                 minWidth: '200px', zIndex: 1000, overflow: 'hidden'
                             }}>
                                 {[
-                                    { label: 'Nuevo grupo', action: () => { } },
-                                    { label: 'Nueva transmisión', action: () => { } },
-                                    { label: 'Chats archivados', action: () => { } },
-                                    { label: 'Mensajes destacados', action: () => { } },
-                                    { label: 'Configuración', action: () => { } },
+                                    { label: 'Nuevo chat', action: () => onStartNewChat?.() },
+                                    { label: 'Recargar chats', action: () => onRefreshChats?.() },
+                                    { label: 'Cerrar sesión WhatsApp', action: () => onLogout?.() },
                                 ].map((item, i) => (
                                     <div key={i}
                                         onClick={() => { item.action(); setShowMenu(false); }}
-                                        style={{ padding: '14px 20px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-primary)', borderBottom: i < 4 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
+                                        style={{ padding: '14px 20px', cursor: 'pointer', fontSize: '0.9rem', color: i === 2 ? '#ff6b6b' : 'var(--text-primary)', borderBottom: i < 2 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
                                         onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                                     >
@@ -107,6 +109,19 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile }) => {
                     {searchQuery && (
                         <X size={16} color="#8696a0" style={{ margin: '0 12px', cursor: 'pointer' }} onClick={() => setSearchQuery('')} />
                     )}
+                </div>
+                <div style={{ marginTop: '7px', display: 'flex', gap: '6px', overflowX: 'auto' }}>
+                    <button
+                        onClick={() => setLabelFilter('all')}
+                        style={{ padding: '4px 8px', borderRadius: '12px', border: '1px solid var(--border-color)', background: labelFilter === 'all' ? '#00a884' : '#202c33', color: labelFilter === 'all' ? '#06271f' : '#9db0ba', fontSize: '0.68rem', cursor: 'pointer', flexShrink: 0 }}
+                    >Todos</button>
+                    {allLabels.map((label) => (
+                        <button
+                            key={label}
+                            onClick={() => setLabelFilter(label)}
+                            style={{ padding: '4px 8px', borderRadius: '12px', border: '1px solid var(--border-color)', background: labelFilter === label ? '#00a884' : '#202c33', color: labelFilter === label ? '#06271f' : '#9db0ba', fontSize: '0.68rem', cursor: 'pointer', flexShrink: 0 }}
+                        >{label}</button>
+                    ))}
                 </div>
             </div>
 
