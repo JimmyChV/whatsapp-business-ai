@@ -111,6 +111,13 @@ Si falla, corrige el archivo reportado eliminando líneas:
 
 Y deja solo el bloque final correcto.
 
+Si quieres recuperarlo en automático (sin editar manualmente), ejecuta:
+```bash
+cd frontend
+npm run fix:sidebar
+```
+Esto restaura `src/components/Sidebar.jsx` desde `scripts/templates/Sidebar.clean.jsx`.
+
 ## ⚠️ Notas de Seguridad
 - El archivo `.wwebjs_auth` contiene tu sesión de WhatsApp. **Nunca lo compartas.**
 - Tu `.env` está protegido por el `.gitignore` para no filtrar tus claves de API.
