@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, MoreVertical, Mic, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart, ChevronUp, ChevronDown, Tag } from 'lucide-react';
+import { Search, MoreVertical, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart, ChevronUp, ChevronDown, Tag } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import moment from 'moment';
 
@@ -14,8 +14,7 @@ const EMOJI_LIST = [
 const ChatInput = ({
     inputText, setInputText, onSendMessage, onKeyDown, onFileClick,
     attachment, attachmentPreview, removeAttachment, isAiLoading,
-    onRequestAiSuggestion, aiPrompt, setAiPrompt, isRecording,
-    recordingTime, startRecording, stopRecording
+    onRequestAiSuggestion, aiPrompt, setAiPrompt
 }) => {
     const [showEmoji, setShowEmoji] = useState(false);
     const [showCommands, setShowCommands] = useState(false);
@@ -211,28 +210,14 @@ const ChatInput = ({
                 >
                     <Bot size={22} />
                 </button>
-                {/* Send or Mic */}
-                {inputText.trim() || attachment ? (
-                    <button className="send-button" onClick={onSendMessage} style={{ background: 'none', color: '#00a884' }} title="Enviar">
-                        <Send size={26} />
-                    </button>
-                ) : (
-                    <button
-                        className={`send-button ${isRecording ? 'pulse' : ''}`}
-                        style={{ background: 'none', color: isRecording ? '#da3633' : '#8696a0' }}
-                        onMouseDown={startRecording}
-                        onMouseUp={stopRecording}
-                        onMouseLeave={isRecording ? stopRecording : undefined}
-                        onTouchStart={startRecording}
-                        onTouchEnd={stopRecording}
-                        title={isRecording ? 'Suelta para enviar' : 'Mantén para grabar voz'}
-                    >
-                        {isRecording
-                            ? <span style={{ fontSize: '10px', fontWeight: 700, color: '#da3633' }}>🔴 {recordingTime}s</span>
-                            : <Mic size={26} />
-                        }
-                    </button>
-                )}
+                <button
+                    className="send-button"
+                    onClick={onSendMessage}
+                    style={{ background: 'none', color: inputText.trim() || attachment ? '#00a884' : '#8696a0' }}
+                    title="Enviar"
+                >
+                    <Send size={26} />
+                </button>
             </div>
         </div>
     );
@@ -266,7 +251,10 @@ const ChatWindow = ({
 
     const searchTerm = chatSearch.trim().toLowerCase();
     const matchIndexes = searchTerm
-        ? messages.reduce((acc, msg, idx) => (String(msg.body || '').toLowerCase().includes(searchTerm) ? [...acc, idx] : acc), [])
+        ? messages.reduce((acc, msg, idx) => {
+            if (String(msg.body || '').toLowerCase().includes(searchTerm)) acc.push(idx);
+            return acc;
+        }, []).reverse()
         : [];
 
     const jumpToMatch = (idx) => {

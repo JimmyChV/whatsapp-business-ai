@@ -14,12 +14,35 @@ const MessageBubble = ({ msg, onPrefillMessage, isHighlighted = false, isCurrent
     const hasOrder = Boolean(msg?.order);
     const orderItems = Array.isArray(msg?.order?.products) ? msg.order.products : [];
 
+    const fallbackOrderItems = (!orderItems.length && hasOrder)
+        ? String(msg?.order?.rawPreview?.body || msg?.body || '')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((line) => {
+                const matched = line.match(/^(?:[-•*]\s*)?(\d+(?:[.,]\d+)?)\s*(?:x|X)\s+(.+?)(?:\s+[-–—]\s*(?:S\/|PEN\s*)?(\d+(?:[.,]\d+)?))?$/);
+                if (!matched) return null;
+                return {
+                    quantity: Number.parseFloat(String(matched[1]).replace(',', '.')) || 1,
+                    name: matched[2].trim(),
+                    price: matched[3] ? String(matched[3]).replace(',', '.') : null,
+                };
+            })
+            .filter(Boolean)
+        : [];
+
+    const visibleOrderItems = orderItems.length > 0 ? orderItems : fallbackOrderItems;
+
     const renderStatus = () => {
         if (!isOut) return null;
-        const color = msg.ack === 3 ? '#53bdeb' : 'rgba(233, 237, 239, 0.6)';
+        const ack = Number(msg.ack || 0);
+        const isDelivered = ack >= 2;
+        const isRead = ack >= 3;
+        const color = isRead ? '#53bdeb' : 'rgba(233, 237, 239, 0.62)';
+
         return (
             <span style={{ display: 'flex', color }}>
-                {msg.ack >= 2 ? <CheckCheck size={16} /> : <Check size={16} />}
+                {isDelivered ? <CheckCheck size={16} /> : <Check size={16} />}
             </span>
         );
     };
@@ -84,13 +107,18 @@ const MessageBubble = ({ msg, onPrefillMessage, isHighlighted = false, isCurrent
                     {msg?.order?.subtotal && (
                         <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>Subtotal: {msg.order.currency || 'PEN'} {msg.order.subtotal}</div>
                     )}
-                    {orderItems.length > 0 ? orderItems.slice(0, 12).map((item, idx) => (
+                    {!msg?.order?.subtotal && visibleOrderItems.length > 0 && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>
+                            Ítems detectados: {visibleOrderItems.length}
+                        </div>
+                    )}
+                    {visibleOrderItems.length > 0 ? visibleOrderItems.slice(0, 12).map((item, idx) => (
                         <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {item.name} x{item.quantity || 1}{item.sku ? ` (SKU: ${item.sku})` : ''}</span>
                             <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{item.lineTotal ? `S/ ${item.lineTotal}` : (item.price ? `S/ ${item.price}` : '')}</span>
                         </div>
                     )) : (
-                        <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>Se recibió un pedido desde catálogo de WhatsApp.</div>
+                        <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>Se recibió un pedido desde catálogo de WhatsApp, pero no se pudo extraer el detalle de productos.</div>
                     )}
                     {msg?.order?.rawPreview?.body && (
                         <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '6px' }}>

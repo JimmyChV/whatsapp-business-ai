@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Send, X, ShoppingCart, Tag, BookOpen, Clock, Sparkles, Trash2, Percent, Plus, Minus, ChevronRight, Package, MessageSquare, PlusCircle, Edit2 } from 'lucide-react';
+import { Bot, Send, X, ShoppingCart, Tag, Clock, Sparkles, Trash2, Percent, Plus, Minus, ChevronRight, Package, MessageSquare, PlusCircle, Edit2 } from 'lucide-react';
 import moment from 'moment';
 import { io } from 'socket.io-client';
 
@@ -533,9 +533,9 @@ INSTRUCCIONES OBLIGATORIAS:
     ];
 
     return (
-        <div style={{ width: '340px', flexShrink: 0, background: '#111b21', borderLeft: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ width: '390px', flexShrink: 0, background: '#111b21', borderLeft: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', boxShadow: 'inset 1px 0 0 rgba(255,255,255,0.03)' }}>
             {/* Business Profile Header */}
-            <div style={{ background: '#202c33', padding: '12px 14px', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
+            <div style={{ background: 'linear-gradient(180deg, #223542 0%, #202c33 100%)', padding: '12px 14px', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
                 {profile ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
                         <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: profile.profilePicUrl ? `url(${profile.profilePicUrl}) center/cover` : '#00a884', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', color: 'white', overflow: 'hidden' }}>
@@ -546,10 +546,11 @@ INSTRUCCIONES OBLIGATORIAS:
                                 {profile.name || profile.pushname || 'Mi Negocio'}
                             </div>
                             {profile.description && (
-                                <div style={{ fontSize: '0.7rem', color: '#8696a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <div style={{ fontSize: '0.7rem', color: '#9cb0bb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {profile.description}
                                 </div>
                             )}
+                            <div style={{ fontSize: '0.64rem', color: '#68cbb8', letterSpacing: '0.04em', marginTop: '2px' }}>ASISTENCIA DE VENTAS</div>
                         </div>
                         <button
                             onClick={onLogout}
@@ -774,30 +775,6 @@ INSTRUCCIONES OBLIGATORIAS:
                 </div>
             )}
 
-            {activeTab === 'company' && (
-                <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '12px' }}>
-                        <div style={{ fontSize: '0.72rem', color: '#00a884', marginBottom: '8px' }}>MI EMPRESA (WHATSAPP)</div>
-                        <div style={{ fontSize: '0.8rem', color: '#d6e2e8', lineHeight: '1.6' }}>
-                            <div><b>Nombre:</b> {profile?.name || profile?.pushname || myProfile?.pushname || '—'}</div>
-                            <div><b>Teléfono:</b> {profile?.phone || myProfile?.phone || '—'}</div>
-                            <div><b>ID:</b> {profile?.id || myProfile?.id || '—'}</div>
-                            <div><b>Plataforma:</b> {profile?.platform || myProfile?.platform || '—'}</div>
-                            {profile?.category && <div><b>Categoría:</b> {profile.category}</div>}
-                            {profile?.website && <div><b>Web:</b> {profile.website}</div>}
-                            {profile?.email && <div><b>Email:</b> {profile.email}</div>}
-                            {profile?.address && <div><b>Dirección:</b> {profile.address}</div>}
-                            {profile?.description && <div><b>Descripción:</b> {profile.description}</div>}
-                        </div>
-                    </div>
-                    <button
-                        onClick={onLogout}
-                        style={{ width: '100%', padding: '10px', background: '#392526', border: '1px solid rgba(218,54,51,0.45)', borderRadius: '8px', color: '#ffb3b3', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}
-                    >
-                        Cerrar sesión de WhatsApp
-                    </button>
-                </div>
-            )}
         </div>
     );
 };

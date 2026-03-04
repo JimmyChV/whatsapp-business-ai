@@ -78,14 +78,6 @@ function App() {
   const [aiPrompt, setAiPrompt] = useState('');
   const [isCopilotMode, setIsCopilotMode] = useState(false);
 
-  // ─── Voice Note State ────────────────────────────────────────
-  const [isRecording, setIsRecording] = useState(false);
-  const [recorder, setRecorder] = useState(null);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const timerRef = useRef(null);
-  const chunksRef = useRef([]);
-  const streamRef = useRef(null);
-  const recordingStartRef = useRef(0);
 
   // ─── Business Data (Real from WA) ────────────────────────────
   const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
@@ -400,83 +392,6 @@ REGLA CRÍTICA:
     });
   };
 
-  const startRecording = async () => {
-    if (isRecording || !activeChatId) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-
-      let mimeType = 'audio/ogg; codecs=opus';
-      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm; codecs=opus';
-      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm';
-
-      const mediaRecorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 });
-      chunksRef.current = [];
-      recordingStartRef.current = Date.now();
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
-      mediaRecorder.onstop = () => {
-        try {
-          streamRef.current?.getTracks()?.forEach((t) => t.stop());
-        } catch (_) { }
-
-        const elapsedMs = Date.now() - recordingStartRef.current;
-        const blob = new Blob(chunksRef.current, { type: mimeType });
-
-        if (elapsedMs < 350 || !blob || blob.size < 800) {
-          alert('Nota de voz muy corta o vacía. Mantén presionado un poco más para grabar.');
-          chunksRef.current = [];
-          return;
-        }
-
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const result = String(reader.result || '');
-          const base64 = result.includes(',') ? result.split(',')[1] : null;
-          if (!base64) {
-            alert('No se pudo procesar la nota de voz. Intenta nuevamente.');
-            return;
-          }
-          const extension = mimeType.includes('ogg') ? 'ogg' : 'webm';
-          socket.emit('send_media_message', {
-            to: activeChatId,
-            body: '',
-            mediaData: base64,
-            mimetype: mimeType,
-            filename: `voice-note.${extension}`,
-            isPtt: true,
-          });
-        };
-        reader.readAsDataURL(blob);
-      };
-
-      mediaRecorder.start(200);
-      setRecorder(mediaRecorder);
-      setIsRecording(true);
-      setRecordingTime(0);
-      timerRef.current = setInterval(() => setRecordingTime((p) => p + 1), 1000);
-    } catch (err) {
-      console.error('Mic error:', err);
-      alert('No se pudo acceder al micrófono. Verifica permisos del navegador y vuelve a intentar.');
-    }
-  };
-
-  const stopRecording = () => {
-    if (!recorder) return;
-    try {
-      if (recorder.state === 'recording') {
-        try { recorder.requestData(); } catch (_) { }
-        recorder.stop();
-      }
-    } catch (_) { }
-    setRecorder(null);
-    setIsRecording(false);
-    clearInterval(timerRef.current);
-  };
-
   const processFile = (file) => {
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -600,10 +515,6 @@ REGLA CRÍTICA:
               onRequestAiSuggestion={requestAiSuggestion}
               aiPrompt={aiPrompt}
               setAiPrompt={setAiPrompt}
-              isRecording={isRecording}
-              recordingTime={recordingTime}
-              startRecording={startRecording}
-              stopRecording={stopRecording}
               isCopilotMode={isCopilotMode}
               setIsCopilotMode={setIsCopilotMode}
               labelDefinitions={labelDefinitions}
