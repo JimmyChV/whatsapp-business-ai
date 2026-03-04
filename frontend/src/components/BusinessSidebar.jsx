@@ -235,8 +235,8 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                             </div>
                         ) : (
                             visibleCatalog.map((item, i) => (
-                                <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', overflow: 'hidden', minHeight: '138px' }}>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: '10px', padding: '10px', minHeight: '86px' }}>
+                                <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: '10px', padding: '10px' }}>
                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', minWidth: 0 }}>
                                             <div style={{ width: '62px', height: '62px', borderRadius: '8px', background: '#3b4a54', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                 {item.imageUrl ? <img src={item.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={20} color="#8696a0" />}
@@ -246,7 +246,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                             </div>
                                             {item.sku && <div style={{ fontSize: '0.64rem', color: '#9bb0ba', textAlign: 'center', lineHeight: 1.1 }}>SKU: {item.sku}</div>}
                                         </div>
-                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
                                                 <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', minHeight: '2.5em' }}>
                                                     {String(item.title || `Producto ${i + 1}`)}
@@ -258,7 +258,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                                     </div>
                                                 )}
                                             </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                                 {item.regularPrice && Number(item.regularPrice) > Number(item.price || 0) && (
                                                     <div style={{ fontSize: '0.68rem', color: '#8696a0', textDecoration: 'line-through' }}>
                                                         S/ {formatMoney(item.regularPrice)}
@@ -271,31 +271,31 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                                 )}
                                                 <div style={{ fontSize: '0.66rem', color: '#6f8390' }}>Origen: {item.source || 'catálogo'}</div>
                                             </div>
-                                        </div>
-                                    </div>
-                                    <div style={{ borderTop: '1px solid var(--border-color)', background: '#111b21', padding: '8px', width: '100%', display: 'flex', flexDirection: 'column', gap: '6px', minHeight: '52px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#22313b', borderRadius: '999px', padding: '3px 7px', border: '1px solid rgba(255,255,255,0.08)', width: 'fit-content', maxWidth: '100%' }}>
-                                            <button onClick={() => updateCatalogQty(item.id, -1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#2f3e48', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Minus size={11} /></button>
-                                            <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', minWidth: '18px', textAlign: 'center' }}>{getCatalogQty(item.id)}</span>
-                                            <button onClick={() => updateCatalogQty(item.id, 1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Plus size={11} /></button>
-                                        </div>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', width: '100%' }}>
-                                            <button
-                                                onClick={() => { setInputText(`📦 *${item.title || `Producto ${i + 1}`}*\nPrecio: S/ ${formatMoney(item.price)}\n\n¿Te interesa? 😊`); }}
-                                                style={{ width: '100%', minWidth: 0, padding: '7px 6px', background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '7px', color: '#d6e2e8', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                                                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
-                                                onMouseLeave={e => { e.currentTarget.style.background = '#1f2c34'; e.currentTarget.style.color = '#d6e2e8'; }}
-                                            >
-                                                <Send size={12} /> Cotizar
-                                            </button>
-                                            <button
-                                                onClick={() => addToCart(item, getCatalogQty(item.id))}
-                                                style={{ width: '100%', minWidth: 0, padding: '7px 6px', background: '#00a884', border: 'none', borderRadius: '7px', color: 'white', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                                                onMouseEnter={e => e.currentTarget.style.background = '#01bf97'}
-                                                onMouseLeave={e => e.currentTarget.style.background = '#00a884'}
-                                            >
-                                                <ShoppingCart size={13} /> + Carrito
-                                            </button>
+                                            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#22313b', borderRadius: '999px', padding: '3px 7px', border: '1px solid rgba(255,255,255,0.08)', width: 'fit-content', maxWidth: '100%' }}>
+                                                    <button onClick={() => updateCatalogQty(item.id, -1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#2f3e48', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Minus size={11} /></button>
+                                                    <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', minWidth: '18px', textAlign: 'center' }}>{getCatalogQty(item.id)}</span>
+                                                    <button onClick={() => updateCatalogQty(item.id, 1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Plus size={11} /></button>
+                                                </div>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', width: '100%' }}>
+                                                    <button
+                                                        onClick={() => { setInputText(`📦 *${item.title || `Producto ${i + 1}`}*\nPrecio: S/ ${formatMoney(item.price)}\n\n¿Te interesa? 😊`); }}
+                                                        style={{ width: '100%', minWidth: 0, padding: '7px 6px', background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '7px', color: '#d6e2e8', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+                                                        onMouseLeave={e => { e.currentTarget.style.background = '#1f2c34'; e.currentTarget.style.color = '#d6e2e8'; }}
+                                                    >
+                                                        <Send size={12} /> Cotizar
+                                                    </button>
+                                                    <button
+                                                        onClick={() => addToCart(item, getCatalogQty(item.id))}
+                                                        style={{ width: '100%', minWidth: 0, padding: '7px 6px', background: '#00a884', border: 'none', borderRadius: '7px', color: 'white', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                                        onMouseEnter={e => e.currentTarget.style.background = '#01bf97'}
+                                                        onMouseLeave={e => e.currentTarget.style.background = '#00a884'}
+                                                    >
+                                                        <ShoppingCart size={13} /> + Carrito
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
