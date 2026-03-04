@@ -3,6 +3,22 @@ const waClient = require('./whatsapp_client');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
 const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
+const RateLimiter = require('./rate_limiter');
+
+const eventRateLimiter = new RateLimiter({
+    windowMs: Number(process.env.SOCKET_RATE_LIMIT_WINDOW_MS || 10000),
+    max: Number(process.env.SOCKET_RATE_LIMIT_MAX || 30)
+});
+
+function guardRateLimit(socket, eventName) {
+    const key = `${socket.id}:${eventName}`;
+    const result = eventRateLimiter.check(key);
+    if (!result.allowed) {
+        socket.emit('error', `Rate limit excedido para ${eventName}. Intenta en unos segundos.`);
+        return false;
+    }
+    return true;
+}
 
 function collectProductsFromUnknownShape(input, depth = 0, found = []) {
     if (!input || depth > 4) return found;
@@ -304,6 +320,7 @@ class SocketManager {
 
             // --- Messaging ---
             socket.on('send_message', async ({ to, body }) => {
+                if (!guardRateLimit(socket, 'send_message')) return;
                 try {
                     await waClient.sendMessage(to, body);
                 } catch (e) {
@@ -312,6 +329,7 @@ class SocketManager {
             });
 
             socket.on('send_media_message', async (data) => {
+                if (!guardRateLimit(socket, 'send_media_message')) return;
                 try {
                     const { to, body, mediaData, mimetype, filename, isPtt } = data;
                     await waClient.sendMedia(to, mediaData, mimetype, filename, body, isPtt);
@@ -328,6 +346,7 @@ class SocketManager {
 
             // --- AI ---
             socket.on('request_ai_suggestion', (payload) => {
+                if (!guardRateLimit(socket, 'request_ai_suggestion')) return;
                 const { contextText, customPrompt, businessContext } = payload || {};
                 // Defer to avoid blocking the event loop (prevents 'click handler took Xms' violations)
                 setImmediate(async () => {
@@ -348,6 +367,7 @@ class SocketManager {
             });
 
             socket.on('internal_ai_query', (payload) => {
+                if (!guardRateLimit(socket, 'internal_ai_query')) return;
                 const { query, businessContext } = typeof payload === 'string'
                     ? { query: payload, businessContext: null }
                     : (payload || {});

@@ -43,6 +43,13 @@ OPENAI_API_KEY=tu_clave_openai
 OPENAI_MODEL=gpt-4o-mini
 PORT=3001
 
+# Seguridad y hardening
+ALLOWED_ORIGINS=http://localhost:5173
+SOCKET_AUTH_TOKEN=define_un_token_seguro
+LINK_PREVIEW_TIMEOUT_MS=5000
+LINK_PREVIEW_MAX_BYTES=1048576
+LINK_PREVIEW_BLOCKED_HOSTS=localhost,metadata.google.internal
+
 # WooCommerce (opcional pero recomendado)
 WC_BASE_URL=https://lavitat.pe
 WC_CONSUMER_KEY=ck_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -91,6 +98,12 @@ Checklist:
 4. Reinicia backend después de guardar `.env`.
 
 Nota: aunque no pongas keys, el sistema intenta `wc/store/v1` (endpoint público). Si Woo o plugins bloquean ese endpoint, la app caerá al `catalogo.json` local.
+
+## 🔐 Seguridad recomendada para producción
+- Define `ALLOWED_ORIGINS` con tu dominio de frontend (evita `*`).
+- Usa `SOCKET_AUTH_TOKEN` y envíalo desde el cliente en `socket.auth.token`.
+- Mantén bloqueados hosts internos en `LINK_PREVIEW_BLOCKED_HOSTS` para reducir riesgo SSRF.
+- Configura límites de rate-limit (`SOCKET_RATE_LIMIT_*`) según tu volumen de operación.
 
 ## ⚠️ Notas de Seguridad
 - El archivo `.wwebjs_auth` contiene tu sesión de WhatsApp. **Nunca lo compartas.**
