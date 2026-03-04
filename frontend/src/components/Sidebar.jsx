@@ -19,6 +19,9 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
     const searchIsPhone = /^\+?\d{8,15}$/.test(searchQuery.trim());
     const normalizedPhone = searchQuery.replace(/\D/g, '');
 
+    const searchIsPhone = /^\+?\d{8,15}$/.test(searchQuery.trim());
+    const normalizedPhone = searchQuery.replace(/\D/g, '');
+
     const formatTime = (ts) => {
         const m = moment.unix(ts || 0);
         if (!m.isValid()) return '';
