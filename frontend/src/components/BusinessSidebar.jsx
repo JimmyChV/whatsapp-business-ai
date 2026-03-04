@@ -235,39 +235,42 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                             </div>
                         ) : (
                             visibleCatalog.map((item, i) => (
-                                <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', overflow: 'hidden', minHeight: '126px' }}>
-                                    <div style={{ display: 'flex', gap: '10px', padding: '10px' }}>
-                                        <div style={{ width: '62px', height: '62px', borderRadius: '8px', background: '#3b4a54', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                            {item.imageUrl ? <img src={item.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={20} color="#8696a0" />}
+                                <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: '10px', padding: '10px' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                                            <div style={{ width: '62px', height: '62px', borderRadius: '8px', background: '#3b4a54', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                {item.imageUrl ? <img src={item.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={20} color="#8696a0" />}
+                                            </div>
+                                            <div style={{ fontSize: '0.82rem', color: '#00a884', fontWeight: 700, textAlign: 'center', lineHeight: 1.1 }}>
+                                                {item.price ? `S/ ${formatMoney(item.price)}` : 'S/ -'}
+                                            </div>
+                                            {item.sku && <div style={{ fontSize: '0.64rem', color: '#9bb0ba', textAlign: 'center', lineHeight: 1.1 }}>SKU: {item.sku}</div>}
                                         </div>
-                                        <div style={{ flex: 1, overflow: 'hidden' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: '1.25' }}>{item.title || `Producto ${i + 1}`}</div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
+                                                <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                                                    {item.title || `Producto ${i + 1}`}
+                                                </div>
                                                 {!isExternalCatalog && (
-                                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                                                         <button onClick={() => handleEditClick(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0' }}><Edit2 size={12} /></button>
                                                         <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#da3633' }}><Trash2 size={12} /></button>
                                                     </div>
                                                 )}
                                             </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
-                                                <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 700 }}>
-                                                    {item.price ? `S/ ${formatMoney(item.price)}` : 'Consultar precio'}
-                                                </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
                                                 {item.regularPrice && Number(item.regularPrice) > Number(item.price || 0) && (
-                                                    <div style={{ fontSize: '0.72rem', color: '#8696a0', textDecoration: 'line-through' }}>
+                                                    <div style={{ fontSize: '0.68rem', color: '#8696a0', textDecoration: 'line-through' }}>
                                                         S/ {formatMoney(item.regularPrice)}
                                                     </div>
                                                 )}
                                                 {Number(item.discountPct) > 0 && (
-                                                    <div style={{ fontSize: '0.68rem', color: '#fff', background: '#0b875b', borderRadius: '999px', padding: '1px 6px' }}>
+                                                    <div style={{ fontSize: '0.66rem', color: '#fff', background: '#0b875b', borderRadius: '999px', padding: '1px 6px' }}>
                                                         -{item.discountPct}%
                                                     </div>
                                                 )}
+                                                <div style={{ fontSize: '0.66rem', color: '#6f8390' }}>Origen: {item.source || 'catálogo'}</div>
                                             </div>
-                                            {item.sku && <div style={{ fontSize: '0.7rem', color: '#9bb0ba', marginTop: '2px' }}>SKU: {item.sku}</div>}
-                                            <div style={{ fontSize: '0.68rem', color: '#6f8390', marginTop: '1px' }}>Origen: {item.source || 'catálogo'}</div>
-                                            {item.description && <div style={{ fontSize: '0.72rem', color: '#8696a0', marginTop: '2px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{item.description}</div>}
                                         </div>
                                     </div>
                                     <div style={{ borderTop: '1px solid var(--border-color)', background: '#111b21', padding: '8px', width: '100%', display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -278,11 +281,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                         </div>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', width: '100%' }}>
                                             <button
-                                                onClick={() => { setInputText(`📦 *${item.title || `Producto ${i + 1}`}*
-Precio: S/ ${formatMoney(item.price)}
-${item.description || ''}
-
-¿Te interesa? 😊`); }}
+                                                onClick={() => { setInputText(`📦 *${item.title || `Producto ${i + 1}`}*\nPrecio: S/ ${formatMoney(item.price)}\n\n¿Te interesa? 😊`); }}
                                                 style={{ width: '100%', minWidth: 0, padding: '7px 6px', background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '7px', color: '#d6e2e8', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
                                                 onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
                                                 onMouseLeave={e => { e.currentTarget.style.background = '#1f2c34'; e.currentTarget.style.color = '#d6e2e8'; }}
