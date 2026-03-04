@@ -1,54 +1,15 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { MoreVertical, Search, Check, CheckCheck, X } from 'lucide-react';
 import moment from 'moment';
 
 const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRefreshChats, onStartNewChat }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showMenu, setShowMenu] = useState(false);
-    const [labelFilter, setLabelFilter] = useState('all');
-
-    const searchIsPhone = /^\+?\d{8,15}$/.test(searchQuery.trim());
-    const normalizedPhone = searchQuery.replace(/\D/g, '');
-
-    const searchIsPhone = /^\+?\d{8,15}$/.test(searchQuery.trim());
-    const normalizedPhone = searchQuery.replace(/\D/g, '');
-
-    const searchIsPhone = /^\+?\d{8,15}$/.test(searchQuery.trim());
-    const normalizedPhone = searchQuery.replace(/\D/g, '');
-
-    const searchIsPhone = /^\+?\d{8,15}$/.test(searchQuery.trim());
-    const normalizedPhone = searchQuery.replace(/\D/g, '');
-
-    const searchIsPhone = /^\+?\d{8,15}$/.test(searchQuery.trim());
-    const normalizedPhone = searchQuery.replace(/\D/g, '');
 
     const phoneSearchMeta = useMemo(() => ({
         isPhone: /^\+?\d{8,15}$/.test(searchQuery.trim()),
         normalized: searchQuery.replace(/\D/g, '')
     }), [searchQuery]);
-
-    const phoneSearchMeta = useMemo(() => ({
-        isPhone: /^\+?\d{8,15}$/.test(searchQuery.trim()),
-        normalized: searchQuery.replace(/\D/g, '')
-    }), [searchQuery]);
-
-    const phoneSearchMeta = useMemo(() => ({
-        isPhone: /^\+?\d{8,15}$/.test(searchQuery.trim()),
-        normalized: searchQuery.replace(/\D/g, '')
-    }), [searchQuery]);
-
-    const phoneSearchMeta = useMemo(() => ({
-        isPhone: /^\+?\d{8,15}$/.test(searchQuery.trim()),
-        normalized: searchQuery.replace(/\D/g, '')
-    }), [searchQuery]);
-
-    const phoneSearchMeta = useMemo(() => ({
-        isPhone: /^\+?\d{8,15}$/.test(searchQuery.trim()),
-        normalized: searchQuery.replace(/\D/g, '')
-    }), [searchQuery]);
-
-    const searchIsPhone = /^\+?\d{8,15}$/.test(searchQuery.trim());
-    const normalizedPhone = searchQuery.replace(/\D/g, '');
 
     const formatTime = (ts) => {
         const m = moment.unix(ts || 0);
@@ -69,19 +30,17 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
     };
 
     const filteredChats = chats.filter((c) => {
-        if (searchIsPhone) return true;
+        if (phoneSearchMeta.isPhone) return true;
         const q = searchQuery.toLowerCase();
         return c.name?.toLowerCase().includes(q) || c.lastMessage?.toLowerCase().includes(q);
     });
 
-    const avatarLetter = (name) => (name ? name.charAt(0).toUpperCase() : '?');
+    const avatarLetter = (name) => name ? name.charAt(0).toUpperCase() : '?';
     const avatarColor = (name) => {
         const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444'];
         if (!name) return colors[0];
         return colors[name.charCodeAt(0) % colors.length];
     };
-
-    const activeChat = chats.find((c) => c.id === activeChatId);
 
     return (
         <div className="sidebar">
@@ -107,7 +66,7 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
                             size={20}
                             color="#8696a0"
                             style={{ cursor: 'pointer' }}
-                            onClick={() => setShowMenu((v) => !v)}
+                            onClick={() => setShowMenu(v => !v)}
                             title="Más opciones"
                         />
                         {showMenu && (
@@ -145,22 +104,22 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
                         onKeyDown={(e) => {
-                            if (e.key === 'Enter' && searchIsPhone) onStartNewChat?.(normalizedPhone, '');
+                            if (e.key === 'Enter' && phoneSearchMeta.isPhone) onStartNewChat?.(phoneSearchMeta.normalized, '');
                         }}
                     />
                     {searchQuery && <X size={16} color="#8696a0" style={{ margin: '0 12px', cursor: 'pointer' }} onClick={() => setSearchQuery('')} />}
                 </div>
-                {searchIsPhone && (
+                {phoneSearchMeta.isPhone && (
                     <button
-                        onClick={() => onStartNewChat?.(normalizedPhone, '')}
+                        onClick={() => onStartNewChat?.(phoneSearchMeta.normalized, '')}
                         style={{ marginTop: '8px', width: '100%', background: '#00a884', color: '#06271f', border: 'none', borderRadius: '8px', padding: '8px 10px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
-                    >Abrir chat con +{normalizedPhone}</button>
+                    >Abrir chat con +{phoneSearchMeta.normalized}</button>
                 )}
             </div>
 
             <div className="chat-list" onClick={() => showMenu && setShowMenu(false)}>
                 {filteredChats.length === 0 && chats.length === 0 ? (
-                    [1, 2, 3, 4, 5].map((i) => (
+                    [1, 2, 3, 4, 5].map(i => (
                         <div key={i} className="chat-item">
                             <div className="chat-avatar skeleton" style={{ width: '49px', height: '49px', borderRadius: '50%', flexShrink: 0 }}></div>
                             <div className="chat-info" style={{ marginLeft: '15px', flex: 1 }}>
@@ -174,7 +133,7 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
                         Sin resultados para "{searchQuery}"
                     </div>
                 ) : (
-                    filteredChats.map((chat) => (
+                    filteredChats.map(chat => (
                         <div
                             key={chat.id}
                             className={`chat-item ${activeChatId === chat.id ? 'active' : ''}`}
