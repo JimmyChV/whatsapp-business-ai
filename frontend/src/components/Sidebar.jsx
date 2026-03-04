@@ -1,3 +1,10 @@
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+import React, { useState } from 'react';
+import { MoreVertical, Search, Check, CheckCheck, X } from 'lucide-react';
+import moment from 'moment';
+
+const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRefreshChats, onStartNewChat }) => {
+=======
 import React, { useMemo, useState } from 'react';
 import { MoreVertical, Search, Check, CheckCheck, X, Plus } from 'lucide-react';
 import moment from 'moment';
@@ -16,9 +23,13 @@ const Sidebar = ({
     onCreateLabel,
     onToggleChatLabel,
 }) => {
+>>>>>>> main
     const [searchQuery, setSearchQuery] = useState('');
     const [showMenu, setShowMenu] = useState(false);
     const [labelFilter, setLabelFilter] = useState('all');
+
+    const searchIsPhone = /^\+?\d{8,15}$/.test(searchQuery.trim());
+    const normalizedPhone = searchQuery.replace(/\D/g, '');
 
     const searchIsPhone = /^\+?\d{8,15}$/.test(searchQuery.trim());
     const normalizedPhone = searchQuery.replace(/\D/g, '');
@@ -41,6 +52,13 @@ const Sidebar = ({
         );
     };
 
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+    const filteredChats = chats.filter((c) => {
+        if (searchIsPhone) return true;
+        const q = searchQuery.toLowerCase();
+        return c.name?.toLowerCase().includes(q) || c.lastMessage?.toLowerCase().includes(q);
+    });
+=======
     const allLabels = useMemo(() => {
         const fromChats = chats.flatMap((c) => c.labels || []);
         const merged = [...(labelDefinitions || []), ...fromChats];
@@ -56,6 +74,7 @@ const Sidebar = ({
         });
         return Array.from(map.values());
     }, [chats, labelDefinitions]);
+>>>>>>> main
 
     const filteredChats = chats.filter((c) => {
         const q = searchQuery.toLowerCase();
@@ -111,14 +130,21 @@ const Sidebar = ({
                                 {[
                                     { label: 'Nuevo chat (número)', action: () => onStartNewChat?.() },
                                     { label: 'Recargar chats', action: () => onRefreshChats?.() },
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+=======
                                     { label: 'Crear etiqueta', action: () => onCreateLabel?.() },
+>>>>>>> main
                                     { label: 'Cerrar sesión WhatsApp', action: () => onLogout?.() },
                                 ].map((item, i) => (
                                     <div key={i}
                                         onClick={() => { item.action(); setShowMenu(false); }}
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+                                        style={{ padding: '14px 20px', cursor: 'pointer', fontSize: '0.9rem', color: i === 2 ? '#ff6b6b' : 'var(--text-primary)', borderBottom: i < 2 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
+=======
                                         style={{ padding: '14px 20px', cursor: 'pointer', fontSize: '0.9rem', color: i === 3 ? '#ff6b6b' : 'var(--text-primary)', borderBottom: i < 3 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
                                         onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+>>>>>>> main
                                     >
                                         {item.label}
                                     </div>
@@ -138,17 +164,28 @@ const Sidebar = ({
                         className="message-input"
                         style={{ fontSize: '0.85rem', flex: 1 }}
                         value={searchQuery}
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+                        onChange={e => setSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && searchIsPhone) onStartNewChat?.(normalizedPhone, '');
+=======
                         onChange={(e) => setSearchQuery(e.target.value)}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter' && searchIsPhone) {
                                 onStartNewChat?.(normalizedPhone, '');
                             }
+>>>>>>> main
                         }}
                     />
-                    {searchQuery && (
-                        <X size={16} color="#8696a0" style={{ margin: '0 12px', cursor: 'pointer' }} onClick={() => setSearchQuery('')} />
-                    )}
+                    {searchQuery && <X size={16} color="#8696a0" style={{ margin: '0 12px', cursor: 'pointer' }} onClick={() => setSearchQuery('')} />}
                 </div>
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+                {searchIsPhone && (
+                    <button
+                        onClick={() => onStartNewChat?.(normalizedPhone, '')}
+                        style={{ marginTop: '8px', width: '100%', background: '#00a884', color: '#06271f', border: 'none', borderRadius: '8px', padding: '8px 10px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
+                    >Abrir chat con +{normalizedPhone}</button>
+=======
 
                 {searchIsPhone && (
                     <button
@@ -194,6 +231,7 @@ const Sidebar = ({
                             );
                         })}
                     </div>
+>>>>>>> main
                 )}
             </div>
 
@@ -229,27 +267,33 @@ const Sidebar = ({
                             </div>
                             <div className="chat-info" style={{ marginLeft: '15px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+                                    <span style={{ fontSize: '1.0rem', fontWeight: 400, color: 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: '220px' }}>{chat.name}</span>
+                                    <span style={{ fontSize: '0.73rem', color: chat.unreadCount > 0 ? '#00a884' : '#8696a0', flexShrink: 0, marginLeft: '8px' }}>{formatTime(chat.timestamp)}</span>
+=======
                                     <span style={{ fontSize: '1rem', fontWeight: 400, color: 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: '220px' }}>
                                         {chat.name}
                                     </span>
                                     <span style={{ fontSize: '0.73rem', color: chat.unreadCount > 0 ? '#00a884' : '#8696a0', flexShrink: 0, marginLeft: '8px' }}>
                                         {formatTime(chat.timestamp)}
                                     </span>
+>>>>>>> main
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3px', alignItems: 'center' }}>
                                     <p style={{ fontSize: '0.875rem', color: '#8696a0', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', display: 'flex', alignItems: 'center', flex: 1 }}>
                                         {renderStatus(chat)}
-                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {chat.lastMessage || 'Haz clic para chatear'}
-                                        </span>
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{chat.lastMessage || 'Haz clic para chatear'}</span>
                                     </p>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px', flexShrink: 0 }}>
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+                                        {chat.labels?.slice(0, 2).map((l, idx) => (
+                                            <span key={idx} style={{ padding: '1px 6px', borderRadius: '8px', fontSize: '0.62rem', background: 'rgba(255,255,255,0.06)', color: l.color || '#9db0ba' }} title={l.name}>{l.name}</span>
+=======
                                         {chat.labels?.slice(0, 4).map((l, idx) => (
                                             <span key={idx} style={{ width: '8px', height: '8px', borderRadius: '50%', background: l.color || '#8696a0', display: 'inline-block' }} title={l.name} />
+>>>>>>> main
                                         ))}
-                                        {chat.unreadCount > 0 && (
-                                            <span className="unread-badge">{chat.unreadCount}</span>
-                                        )}
+                                        {chat.unreadCount > 0 && <span className="unread-badge">{chat.unreadCount}</span>}
                                     </div>
                                 </div>
                             </div>

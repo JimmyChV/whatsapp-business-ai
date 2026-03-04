@@ -241,11 +241,20 @@ const ChatWindow = ({
     onDrop,
     showClientProfile,
     setShowClientProfile,
+    availableLabels = [],
+    onSetChatLabels,
+    onCreateLabel,
     ...inputProps
 }) => {
     const [showMenu, setShowMenu] = useState(false);
     const [searchVisible, setSearchVisible] = useState(false);
     const [chatSearch, setChatSearch] = useState('');
+    const [showLabelMenu, setShowLabelMenu] = useState(false);
+    const [selectedLabelIds, setSelectedLabelIds] = useState([]);
+
+    useEffect(() => {
+        setSelectedLabelIds((activeChatDetails?.labels || []).map((l) => l.id));
+    }, [activeChatDetails?.id, activeChatDetails?.labels]);
 
     const filteredMessages = chatSearch
         ? messages.filter(m => m.body?.toLowerCase().includes(chatSearch.toLowerCase()))
@@ -287,6 +296,47 @@ const ChatWindow = ({
                         onClick={() => setSearchVisible(v => !v)} title="Buscar en chat">
                         <Search size={20} />
                     </button>
+                    <div style={{ position: 'relative' }}>
+                        <button className="btn-icon" style={{ color: showLabelMenu ? '#00a884' : '#8696a0', fontSize: '0.76rem', padding: '6px 10px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.12)' }}
+                            onClick={() => setShowLabelMenu((v) => !v)} title="Etiquetas">
+                            Etiquetas
+                        </button>
+                        {showLabelMenu && (
+                            <div style={{ position: 'absolute', top: '34px', right: 0, background: '#233138', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', minWidth: '260px', zIndex: 1000, padding: '10px' }}>
+                                <div style={{ fontSize: '0.72rem', color: '#9db0ba', marginBottom: '8px' }}>Etiquetas de WhatsApp Business</div>
+                                <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                    {availableLabels.map((label) => {
+                                        const active = selectedLabelIds.includes(label.id);
+                                        return (
+                                            <label key={label.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={active}
+                                                    onChange={(e) => {
+                                                        setSelectedLabelIds((prev) => e.target.checked
+                                                            ? [...new Set([...prev, label.id])]
+                                                            : prev.filter((id) => id !== label.id));
+                                                    }}
+                                                />
+                                                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: label.color || '#8696a0' }} />
+                                                <span>{label.name}</span>
+                                            </label>
+                                        );
+                                    })}
+                                    {availableLabels.length === 0 && <span style={{ fontSize: '0.78rem', color: '#9db0ba' }}>No hay etiquetas disponibles.</span>}
+                                </div>
+                                <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
+                                    <button style={{ flex: 1, background: '#00a884', border: 'none', color: '#06271f', borderRadius: '6px', padding: '6px 8px', cursor: 'pointer', fontWeight: 600 }}
+                                        onClick={() => {
+                                            onSetChatLabels?.(activeChatDetails?.id, selectedLabelIds);
+                                            setShowLabelMenu(false);
+                                        }}>Guardar</button>
+                                    <button style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.18)', color: '#d8e0e4', borderRadius: '6px', padding: '6px 8px', cursor: 'pointer' }}
+                                        onClick={() => onCreateLabel?.()}>Crear</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                     <div style={{ position: 'relative' }}>
                         <button className="btn-icon" style={{ color: '#8696a0' }}
                             onClick={() => setShowMenu(v => !v)} title="Más opciones">

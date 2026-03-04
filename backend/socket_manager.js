@@ -56,6 +56,19 @@ function parseProductsFromBodyText(body = '') {
     return parsed;
 }
 
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+function normalizeMoneyAmount(raw) {
+    if (raw === null || raw === undefined || raw === '') return null;
+    const num = Number.parseFloat(String(raw).replace(',', '.'));
+    if (!Number.isFinite(num)) return null;
+    if (Math.abs(num) >= 10000 && Number.isInteger(num)) {
+        return Number((num / 1000).toFixed(2));
+    }
+    return Number(num.toFixed(2));
+}
+
+=======
+>>>>>>> main
 function extractOrderInfo(msg) {
     try {
         const data = msg?._data || {};
@@ -64,6 +77,30 @@ function extractOrderInfo(msg) {
             msgOrderProducts: msg?.orderProducts,
             native: msg,
             raw: data
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+        }).slice(0, 50).map((item) => ({
+            ...item,
+            quantity: Number.parseFloat(String(item.quantity || 1).replace(',', '.')) || 1,
+            price: normalizeMoneyAmount(item.price),
+            lineTotal: normalizeMoneyAmount(item.total || item.lineTotal || item.amount)
+        }));
+
+        if (!products.length) {
+            products = parseProductsFromBodyText(msg?.body || data?.body || '').map((item) => ({
+                ...item,
+                quantity: Number.parseFloat(String(item.quantity || 1).replace(',', '.')) || 1,
+                price: normalizeMoneyAmount(item.price),
+                lineTotal: null
+            }));
+        }
+
+        const orderId = msg?.orderId || data?.orderId || data?.orderToken || data?.token || null;
+        const subtotal = normalizeMoneyAmount(msg?.subtotal || data?.subtotal || data?.totalAmount1000 || data?.subtotalAmount1000 || data?.subTotal || null);
+        const total = normalizeMoneyAmount(msg?.total || data?.total || data?.grandTotal || data?.totalAmount || null);
+        const shipping = normalizeMoneyAmount(data?.shipping || data?.shippingAmount || data?.delivery || null);
+        const discount = normalizeMoneyAmount(data?.discount || data?.discountAmount || null);
+        const tax = normalizeMoneyAmount(data?.tax || data?.taxAmount || null);
+=======
         }).slice(0, 25);
 
         if (!products.length) {
@@ -72,6 +109,7 @@ function extractOrderInfo(msg) {
 
         const orderId = msg?.orderId || data?.orderId || data?.orderToken || data?.token || null;
         const subtotal = msg?.subtotal || data?.subtotal || data?.totalAmount1000 || data?.total || null;
+>>>>>>> main
         const currency = msg?.currency || data?.currency || 'PEN';
 
         const maybeOrderType = String(msg?.type || '').toLowerCase().includes('order')
@@ -85,7 +123,11 @@ function extractOrderInfo(msg) {
             type: msg?.type || data?.type || null,
             body: msg?.body || data?.body || null,
             title: data?.title || data?.orderTitle || null,
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+            itemCount: data?.itemCount || data?.orderItemCount || products.length || null,
+=======
             itemCount: data?.itemCount || data?.orderItemCount || null,
+>>>>>>> main
             sellerJid: data?.sellerJid || null,
             token: data?.orderToken || data?.token || null
         };
@@ -94,6 +136,13 @@ function extractOrderInfo(msg) {
             orderId,
             currency,
             subtotal,
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+            total,
+            shipping,
+            discount,
+            tax,
+=======
+>>>>>>> main
             products,
             rawPreview
         };
@@ -119,6 +168,31 @@ async function resolveProfilePic(client, chatOrContactId) {
     return null;
 }
 
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+
+
+async function resolveMessageSenderMeta(msg) {
+    try {
+        if (!msg || msg.fromMe) {
+            return { notifyName: null, senderPhone: null };
+        }
+
+        const fromId = msg.from;
+        const senderPhone = String(fromId || '').split('@')[0] || null;
+        let notifyName = msg?._data?.notifyName || msg?.author || null;
+
+        try {
+            const contact = await msg.getContact();
+            notifyName = contact?.name || contact?.pushname || notifyName;
+        } catch (e) { }
+
+        return { notifyName, senderPhone };
+    } catch (e) {
+        return { notifyName: null, senderPhone: null };
+    }
+}
+=======
+>>>>>>> main
 
 class SocketManager {
     constructor(io) {
@@ -161,7 +235,7 @@ class SocketManager {
                             lastMessage: c.lastMessage ? c.lastMessage.body : '',
                             lastMessageFromMe: c.lastMessage ? c.lastMessage.fromMe : false,
                             ack: c.lastMessage ? c.lastMessage.ack : 0,
-                            labels: labels.map(l => ({ name: l.name, color: l.color })),
+                            labels: labels.map(l => ({ id: l.id, name: l.name, color: l.color })),
                             profilePicUrl
                         };
                     }));
@@ -225,6 +299,50 @@ class SocketManager {
                 }
             });
 
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+            socket.on('set_chat_labels', async ({ chatId, labelIds }) => {
+                try {
+                    if (!chatId) {
+                        socket.emit('chat_labels_error', 'Chat inválido para etiquetar.');
+                        return;
+                    }
+                    const ids = Array.isArray(labelIds) ? labelIds.filter((v) => v !== null && v !== undefined && String(v).trim() !== '') : [];
+                    const chat = await waClient.client.getChatById(chatId);
+                    if (chat?.changeLabels) {
+                        await chat.changeLabels(ids);
+                    } else {
+                        await waClient.client.addOrRemoveLabels(ids, [chatId]);
+                    }
+
+                    const updatedLabels = await chat.getLabels();
+                    socket.emit('chat_labels_updated', {
+                        chatId,
+                        labels: updatedLabels.map((l) => ({ id: l.id, name: l.name, color: l.color }))
+                    });
+                } catch (e) {
+                    console.error('set_chat_labels error:', e.message);
+                    socket.emit('chat_labels_error', 'No se pudieron actualizar las etiquetas en WhatsApp.');
+                }
+            });
+
+            socket.on('create_label', async ({ name }) => {
+                try {
+                    const clean = String(name || '').trim();
+                    if (!clean) {
+                        socket.emit('chat_labels_error', 'Nombre de etiqueta inválido.');
+                        return;
+                    }
+
+                    // whatsapp-web.js currently does not expose a stable create label API.
+                    socket.emit('chat_labels_error', 'WhatsApp Web no permite crear etiquetas por API en esta versión. Créala en WhatsApp Business y luego aquí podrás asignarla.');
+                } catch (e) {
+                    console.error('create_label error:', e.message);
+                    socket.emit('chat_labels_error', 'No se pudo crear la etiqueta.');
+                }
+            });
+
+=======
+>>>>>>> main
             // --- Messaging ---
             socket.on('send_message', async ({ to, body }) => {
                 try {
@@ -354,6 +472,7 @@ class SocketManager {
                                 wooAvailable: false
                             };
                             console.log(`[Catalog] Loaded ${catalog.length} native products.`);
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
                         }
                     } catch (e) {
                         console.log('[Catalog] Native fetch failed.', e.message);
@@ -398,6 +517,52 @@ class SocketManager {
                         console.log('[Catalog] Using local catalog fallback.');
                     }
 
+=======
+                        }
+                    } catch (e) {
+                        console.log('[Catalog] Native fetch failed.', e.message);
+                    }
+
+                    if (!catalog.length) {
+                        const wooResult = await getWooCatalog();
+                        if (wooResult.products.length > 0) {
+                            catalog = wooResult.products;
+                            catalogMeta = {
+                                source: 'woocommerce',
+                                nativeAvailable: false,
+                                wooConfigured: isWooConfigured(),
+                                wooAvailable: true,
+                                wooSource: wooResult.source,
+                                wooStatus: wooResult.status,
+                                wooReason: wooResult.reason
+                            };
+                            console.log(`[Catalog] Loaded ${catalog.length} products from WooCommerce (${wooResult.source}).`);
+                        } else {
+                            catalogMeta = {
+                                ...catalogMeta,
+                                wooConfigured: isWooConfigured(),
+                                wooAvailable: false,
+                                wooSource: wooResult.source,
+                                wooStatus: wooResult.status,
+                                wooReason: wooResult.reason
+                            };
+                            console.log(`[Catalog] WooCommerce unavailable/empty (${wooResult.source}): ${wooResult.reason || 'sin detalle'}`);
+                        }
+                    }
+
+                    if (!catalog.length) {
+                        catalog = loadCatalog();
+                        catalogMeta = {
+                            ...catalogMeta,
+                            source: 'local',
+                            nativeAvailable: false,
+                            wooConfigured: isWooConfigured(),
+                            wooAvailable: false
+                        };
+                        console.log('[Catalog] Using local catalog fallback.');
+                    }
+
+>>>>>>> main
                     socket.emit('business_data', { profile, labels, catalog, catalogMeta });
                 } catch (e) {
                     console.error('Error fetching business data:', e);
@@ -439,10 +604,17 @@ class SocketManager {
                     const me = waClient.client.info;
                     let profilePicUrl = null;
                     let businessProfile = null;
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
                     try {
                         profilePicUrl = await resolveProfilePic(waClient.client, me.wid._serialized);
                     } catch (e) { }
                     try {
+=======
+                    try {
+                        profilePicUrl = await resolveProfilePic(waClient.client, me.wid._serialized);
+                    } catch (e) { }
+                    try {
+>>>>>>> main
                         businessProfile = await waClient.getBusinessProfile(me.wid._serialized);
                     } catch (e) { }
                     socket.emit('my_profile', {
@@ -484,7 +656,7 @@ class SocketManager {
                     try {
                         const chat = await waClient.client.getChatById(contactId);
                         const chatLabels = await chat.getLabels();
-                        labels = chatLabels.map(l => ({ name: l.name, color: l.color }));
+                        labels = chatLabels.map(l => ({ id: l.id, name: l.name, color: l.color }));
                     } catch (e) { }
                     socket.emit('contact_info', {
                         id: contactId,
@@ -543,6 +715,7 @@ class SocketManager {
         waClient.on('disconnected', (reason) => this.io.emit('disconnected', reason));
         waClient.on('message', async (msg) => {
             const media = await mediaManager.processMessageMedia(msg);
+            const senderMeta = await resolveMessageSenderMeta(msg);
             this.io.emit('message', {
                 id: msg.id._serialized,
                 from: msg.from,
@@ -555,6 +728,11 @@ class SocketManager {
                 mimetype: media ? media.mimetype : null,
                 ack: msg.ack,
                 type: msg.type,
+<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
+                notifyName: senderMeta.notifyName,
+                senderPhone: senderMeta.senderPhone,
+=======
+>>>>>>> main
                 order: extractOrderInfo(msg)
             });
             // Auto refresh chat list
@@ -573,7 +751,7 @@ class SocketManager {
                     lastMessage: c.lastMessage ? c.lastMessage.body : '',
                     lastMessageFromMe: c.lastMessage ? c.lastMessage.fromMe : false,
                     ack: c.lastMessage ? c.lastMessage.ack : 0,
-                    labels: labels.map(l => ({ name: l.name, color: l.color })),
+                    labels: labels.map(l => ({ id: l.id, name: l.name, color: l.color })),
                     profilePicUrl
                 };
             }));
