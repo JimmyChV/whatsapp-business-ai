@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { MoreVertical, Search, Filter, Check, CheckCheck, X } from 'lucide-react';
 import moment from 'moment';
 
-const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile }) => {
+const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showMenu, setShowMenu] = useState(false);
 
@@ -76,10 +76,11 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile }) => {
                                     { label: 'Chats archivados', action: () => { } },
                                     { label: 'Mensajes destacados', action: () => { } },
                                     { label: 'Configuración', action: () => { } },
+                                    { label: 'Cerrar sesión WhatsApp', action: () => onLogout?.() },
                                 ].map((item, i) => (
                                     <div key={i}
                                         onClick={() => { item.action(); setShowMenu(false); }}
-                                        style={{ padding: '14px 20px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-primary)', borderBottom: i < 4 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
+                                        style={{ padding: '14px 20px', cursor: 'pointer', fontSize: '0.9rem', color: i === 5 ? '#ff6b6b' : 'var(--text-primary)', borderBottom: i < 5 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
                                         onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                                     >
