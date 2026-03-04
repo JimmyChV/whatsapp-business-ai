@@ -529,6 +529,7 @@ INSTRUCCIONES OBLIGATORIAS:
         { id: 'catalog', icon: <Package size={15} />, label: `Catálogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
         { id: 'cart', icon: <ShoppingCart size={15} />, label: `Carrito${cart.length > 0 ? ` (${cart.length})` : ''}` },
         { id: 'quick', icon: <Clock size={15} />, label: 'Rápidas' },
+        { id: 'company', icon: <BookOpen size={15} />, label: 'Empresa' },
     ];
 
     return (

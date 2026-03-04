@@ -95,6 +95,14 @@ function App() {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
+    try {
+      const savedDefs = JSON.parse(localStorage.getItem('wa_custom_label_defs') || '[]');
+      const savedMap = JSON.parse(localStorage.getItem('wa_custom_chat_labels') || '{}');
+      if (Array.isArray(savedDefs)) setLabelDefinitions(savedDefs);
+      if (savedMap && typeof savedMap === 'object') setChatLabelMap(savedMap);
+    } catch (e) {
+      console.warn('No se pudieron leer etiquetas locales', e.message);
+    }
   }, []);
 
   // ──────────────────────────────────────────────────────────────
