@@ -1,13 +1,19 @@
-import React, { useState } from 'react';
-import { MoreVertical, Search, Filter, Check, CheckCheck, X } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { MoreVertical, Search, Check, CheckCheck, X } from 'lucide-react';
 import moment from 'moment';
 
-const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile }) => {
+const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRefreshChats, onStartNewChat }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showMenu, setShowMenu] = useState(false);
 
+    const phoneSearchMeta = useMemo(() => ({
+        isPhone: /^\+?\d{8,15}$/.test(searchQuery.trim()),
+        normalized: searchQuery.replace(/\D/g, '')
+    }), [searchQuery]);
+
     const formatTime = (ts) => {
-        const m = moment.unix(ts);
+        const m = moment.unix(ts || 0);
+        if (!m.isValid()) return '';
         if (m.isSame(moment(), 'day')) return m.format('H:mm');
         if (m.isSame(moment().subtract(1, 'day'), 'day')) return 'Ayer';
         return m.format('DD/MM/YY');
@@ -23,10 +29,11 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile }) => {
         );
     };
 
-    const filteredChats = chats.filter(c =>
-        c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.lastMessage?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredChats = chats.filter((c) => {
+        if (phoneSearchMeta.isPhone) return true;
+        const q = searchQuery.toLowerCase();
+        return c.name?.toLowerCase().includes(q) || c.lastMessage?.toLowerCase().includes(q);
+    });
 
     const avatarLetter = (name) => name ? name.charAt(0).toUpperCase() : '?';
     const avatarColor = (name) => {
@@ -37,7 +44,6 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile }) => {
 
     return (
         <div className="sidebar">
-            {/* Header */}
             <div className="sidebar-header">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{
@@ -55,7 +61,6 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile }) => {
                     )}
                 </div>
                 <div style={{ display: 'flex', gap: '20px', alignItems: 'center', position: 'relative' }}>
-                    <Filter size={20} color="#8696a0" style={{ cursor: 'pointer' }} title="Filtrar" />
                     <div style={{ position: 'relative' }}>
                         <MoreVertical
                             size={20}
@@ -68,20 +73,16 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile }) => {
                             <div style={{
                                 position: 'absolute', top: '28px', right: 0, background: '#233138',
                                 borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
-                                minWidth: '200px', zIndex: 1000, overflow: 'hidden'
+                                minWidth: '220px', zIndex: 1000, overflow: 'hidden'
                             }}>
                                 {[
-                                    { label: 'Nuevo grupo', action: () => { } },
-                                    { label: 'Nueva transmisión', action: () => { } },
-                                    { label: 'Chats archivados', action: () => { } },
-                                    { label: 'Mensajes destacados', action: () => { } },
-                                    { label: 'Configuración', action: () => { } },
+                                    { label: 'Nuevo chat (número)', action: () => onStartNewChat?.() },
+                                    { label: 'Recargar chats', action: () => onRefreshChats?.() },
+                                    { label: 'Cerrar sesión WhatsApp', action: () => onLogout?.() },
                                 ].map((item, i) => (
                                     <div key={i}
                                         onClick={() => { item.action(); setShowMenu(false); }}
-                                        style={{ padding: '14px 20px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-primary)', borderBottom: i < 4 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
-                                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                        style={{ padding: '14px 20px', cursor: 'pointer', fontSize: '0.9rem', color: i === 2 ? '#ff6b6b' : 'var(--text-primary)', borderBottom: i < 2 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
                                     >
                                         {item.label}
                                     </div>
@@ -92,25 +93,30 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile }) => {
                 </div>
             </div>
 
-            {/* Search Bar */}
             <div style={{ padding: '7px 12px', background: 'var(--sidebar-background)', borderBottom: '1px solid var(--border-color)' }}>
                 <div className="input-container" style={{ borderRadius: '8px', background: '#202c33', display: 'flex', alignItems: 'center', height: '35px' }}>
                     <Search size={16} color="#8696a0" style={{ margin: '0 12px', flexShrink: 0 }} />
                     <input
                         type="text"
-                        placeholder="Busca un chat o inicia uno nuevo"
+                        placeholder="Busca chat o escribe número"
                         className="message-input"
                         style={{ fontSize: '0.85rem', flex: 1 }}
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && phoneSearchMeta.isPhone) onStartNewChat?.(phoneSearchMeta.normalized, '');
+                        }}
                     />
-                    {searchQuery && (
-                        <X size={16} color="#8696a0" style={{ margin: '0 12px', cursor: 'pointer' }} onClick={() => setSearchQuery('')} />
-                    )}
+                    {searchQuery && <X size={16} color="#8696a0" style={{ margin: '0 12px', cursor: 'pointer' }} onClick={() => setSearchQuery('')} />}
                 </div>
+                {phoneSearchMeta.isPhone && (
+                    <button
+                        onClick={() => onStartNewChat?.(phoneSearchMeta.normalized, '')}
+                        style={{ marginTop: '8px', width: '100%', background: '#00a884', color: '#06271f', border: 'none', borderRadius: '8px', padding: '8px 10px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
+                    >Abrir chat con +{phoneSearchMeta.normalized}</button>
+                )}
             </div>
 
-            {/* Chat List */}
             <div className="chat-list" onClick={() => showMenu && setShowMenu(false)}>
                 {filteredChats.length === 0 && chats.length === 0 ? (
                     [1, 2, 3, 4, 5].map(i => (
@@ -143,30 +149,19 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile }) => {
                             </div>
                             <div className="chat-info" style={{ marginLeft: '15px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontSize: '1.0rem', fontWeight: 400, color: 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: '220px' }}>
-                                        {chat.name}
-                                    </span>
-                                    <span style={{ fontSize: '0.73rem', color: chat.unreadCount > 0 ? '#00a884' : '#8696a0', flexShrink: 0, marginLeft: '8px' }}>
-                                        {formatTime(chat.timestamp)}
-                                    </span>
+                                    <span style={{ fontSize: '1.0rem', fontWeight: 400, color: 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: '220px' }}>{chat.name}</span>
+                                    <span style={{ fontSize: '0.73rem', color: chat.unreadCount > 0 ? '#00a884' : '#8696a0', flexShrink: 0, marginLeft: '8px' }}>{formatTime(chat.timestamp)}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3px', alignItems: 'center' }}>
                                     <p style={{ fontSize: '0.875rem', color: '#8696a0', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', display: 'flex', alignItems: 'center', flex: 1 }}>
                                         {renderStatus(chat)}
-                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {chat.lastMessage || 'Haz clic para chatear'}
-                                        </span>
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{chat.lastMessage || 'Haz clic para chatear'}</span>
                                     </p>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px', flexShrink: 0 }}>
-                                        {chat.labels?.map((l, idx) => (
-                                            <span key={idx} style={{
-                                                width: '8px', height: '8px', borderRadius: '50%',
-                                                background: l.color || '#8696a0', display: 'inline-block'
-                                            }} title={l.name} />
+                                        {chat.labels?.slice(0, 2).map((l, idx) => (
+                                            <span key={idx} style={{ padding: '1px 6px', borderRadius: '8px', fontSize: '0.62rem', background: 'rgba(255,255,255,0.06)', color: l.color || '#9db0ba' }} title={l.name}>{l.name}</span>
                                         ))}
-                                        {chat.unreadCount > 0 && (
-                                            <span className="unread-badge">{chat.unreadCount}</span>
-                                        )}
+                                        {chat.unreadCount > 0 && <span className="unread-badge">{chat.unreadCount}</span>}
                                     </div>
                                 </div>
                             </div>

@@ -20,6 +20,7 @@ class WhatsAppClient extends EventEmitter {
             }
         });
         this.isReady = false;
+        this.warnedNoBusinessProfileApi = false;
         this.setupEventListeners();
     }
 
@@ -122,47 +123,68 @@ class WhatsAppClient extends EventEmitter {
 
     async getBusinessProfile(contactId) {
         if (!this.isReady) return null;
+        if (typeof this.client.getBusinessProfile !== 'function') {
+            if (!this.warnedNoBusinessProfileApi) {
+                console.warn('[BusinessProfile] getBusinessProfile() is not available in this whatsapp-web.js version; using null fallback.');
+                this.warnedNoBusinessProfileApi = true;
+            }
+            return null;
+        }
+
         try {
             return await this.client.getBusinessProfile(contactId);
         } catch (e) {
-            console.error('Error fetching business profile:', e);
+            console.warn('[BusinessProfile] Error fetching business profile:', e?.message || e);
             return null;
         }
     }
 
     async getCatalog(contactId) {
         if (!this.isReady) return [];
-        try {
-            // Try fetching own catalog first (no args or undefined)
-            let products = [];
+
+        const attempts = [];
+        const pushAttempt = (label, fn) => attempts.push({ label, fn });
+
+        // 1) Preferred path for current whatsapp-web.js: Contact.getProducts()
+        pushAttempt('contact.getProducts(contactId)', async () => {
+            if (!contactId) throw new Error('Missing contactId');
+            const contact = await this.client.getContactById(contactId);
+            if (!contact?.getProducts) throw new Error('contact.getProducts not available');
+            return await contact.getProducts();
+        });
+
+        // 2) Try my own contact as fallback
+        pushAttempt('contact.getProducts(me)', async () => {
+            const meId = this.client?.info?.wid?._serialized;
+            if (!meId) throw new Error('Missing own contact id');
+            const me = await this.client.getContactById(meId);
+            if (!me?.getProducts) throw new Error('me.getProducts not available');
+            return await me.getProducts();
+        });
+
+        // 3) Legacy path (older snippets use client.getProducts)
+        pushAttempt('client.getProducts(contactId)', async () => {
+            if (typeof this.client.getProducts !== 'function') {
+                throw new Error('client.getProducts is not available in this version');
+            }
+            return await this.client.getProducts(contactId);
+        });
+
+        for (const attempt of attempts) {
             try {
-                products = await this.client.getProducts(undefined);
-                console.log(`[Catalog] getProducts(undefined) returned ${products.length} products`);
-            } catch (e1) {
-                console.log('[Catalog] getProducts(undefined) failed:', e1.message);
-                try {
-                    products = await this.client.getProducts(contactId);
-                    console.log(`[Catalog] getProducts(contactId) returned ${products.length} products`);
-                } catch (e2) {
-                    console.log('[Catalog] getProducts(contactId) failed:', e2.message);
-                    // Last ditch effort: try getBusinessProfile if it has products? No, but let's try calling getProducts on a Contact
-                    try {
-                        const me = await this.client.getContactById(this.client.info.wid._serialized);
-                        if (me.getProducts) {
-                            products = await me.getProducts();
-                            console.log(`[Catalog] contact.getProducts() returned ${products.length} products`);
-                        }
-                    } catch (e3) { }
+                const products = await attempt.fn();
+                if (Array.isArray(products) && products.length > 0) {
+                    console.log(`[Catalog] ${attempt.label} returned ${products.length} products`);
+                    console.log('[Catalog] First product sample:', JSON.stringify(products[0]).substring(0, 250));
+                    return products;
                 }
+                console.log(`[Catalog] ${attempt.label} returned 0 products`);
+            } catch (e) {
+                console.log(`[Catalog] ${attempt.label} failed: ${e.message}`);
             }
-            if (products.length > 0) {
-                console.log('[Catalog] First product sample:', JSON.stringify(products[0]).substring(0, 200));
-            }
-            return products;
-        } catch (e) {
-            console.error('Error fetching catalog:', e);
-            return [];
         }
+
+        return [];
     }
 
     async downloadMedia(message) {
