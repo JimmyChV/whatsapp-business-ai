@@ -3,6 +3,32 @@ import { Bot, Send, X, ShoppingCart, Tag, BookOpen, Clock, Sparkles, Trash2, Per
 import moment from 'moment';
 import { io } from 'socket.io-client';
 
+
+const roundToOneDecimal = (value) => {
+    const num = Number(value) || 0;
+    return Math.round(num * 10) / 10;
+};
+
+const formatMoney = (value) => roundToOneDecimal(value).toFixed(1);
+
+const normalizeCatalogItem = (item = {}, index = 0) => {
+    const safeItem = item && typeof item === 'object' ? item : {};
+    const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
+    const rawPrice = safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio ?? 0;
+    const parsedPrice = Number.parseFloat(String(rawPrice).replace(',', '.'));
+
+    return {
+        id: safeItem.id || safeItem.product_id || `catalog_${index}`,
+        title: String(rawTitle || `Producto ${index + 1}`).trim(),
+        price: Number.isFinite(parsedPrice) ? parsedPrice.toFixed(2) : '0.00',
+        description: safeItem.description || safeItem.short_description || safeItem.descripcion || '',
+        imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
+        source: safeItem.source || 'unknown',
+        sku: safeItem.sku || null,
+        stockStatus: safeItem.stockStatus || safeItem.stock_status || null
+    };
+};
+
 // =========================================================
 // CLIENT PROFILE PANEL
 // =========================================================
@@ -86,10 +112,14 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
 // =========================================================
 // CATALOG TAB COMPONENT
 // =========================================================
-const CatalogTab = ({ catalog, socket, setInputText, addToCart }) => {
+const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({ title: '', price: '', description: '', imageUrl: '' });
+    const [catalogQty, setCatalogQty] = useState({});
+    const [catalogSearch, setCatalogSearch] = useState('');
+    const isNativeCatalog = catalogMeta?.source === 'native' && catalogMeta?.nativeAvailable;
+    const isExternalCatalog = ['native', 'woocommerce'].includes(catalogMeta?.source);
 
     const handleAddClick = () => {
         setEditingProduct(null);
@@ -119,16 +149,52 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart }) => {
         }
     };
 
+    const getCatalogQty = (id) => Math.max(1, catalogQty[id] || 1);
+    const updateCatalogQty = (id, delta) => setCatalogQty(prev => ({ ...prev, [id]: Math.max(1, (prev[id] || 1) + delta) }));
+    const normalizedSearch = catalogSearch.trim().toLowerCase();
+    const visibleCatalog = normalizedSearch
+        ? catalog.filter((item) => `${item.title || ''} ${item.sku || ''}`.toLowerCase().includes(normalizedSearch))
+        : catalog;
+
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>Gestión de Catálogo</div>
-                <button onClick={handleAddClick} style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <PlusCircle size={14} /> Nuevo
-                </button>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                    {isNativeCatalog ? 'Catálogo de WhatsApp (nativo)' : catalogMeta?.source === 'woocommerce' ? 'Catálogo de WooCommerce' : 'Gestión de Catálogo'}
+                </div>
+                {!isExternalCatalog && (
+                    <button onClick={handleAddClick} style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <PlusCircle size={14} /> Nuevo
+                    </button>
+                )}
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {isExternalCatalog && (
+                    <div style={{ background: '#1f2c34', color: '#8696a0', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.75rem' }}>
+                        Este catálogo se sincroniza desde {catalogMeta?.source === 'woocommerce' ? 'WooCommerce' : 'WhatsApp Business'}. Para editar productos, hazlo en el origen.
+                    </div>
+                )}
+                {catalogMeta?.source === 'local' && catalogMeta?.wooStatus && catalogMeta?.wooStatus !== 'ok' && (
+                    <div style={{ background: '#2f2520', color: '#f7b267', border: '1px solid #7a4d2c', borderRadius: '8px', padding: '8px 10px', fontSize: '0.75rem' }}>
+                        WooCommerce no devolvió productos ({catalogMeta?.wooSource || 'sin fuente'}).
+                        {catalogMeta?.wooReason ? ` Detalle: ${catalogMeta.wooReason}` : ''}
+                    </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <input
+                        type="text"
+                        value={catalogSearch}
+                        onChange={e => setCatalogSearch(e.target.value)}
+                        placeholder="Buscar por nombre o SKU"
+                        style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none' }}
+                    />
+                    <div style={{ fontSize: '0.7rem', color: '#8696a0' }}>
+                        Mostrando {visibleCatalog.length} de {catalog.length} productos
+                    </div>
+                </div>
+
                 {showForm ? (
                     <form onSubmit={handleSubmit} style={{ background: '#202c33', borderRadius: '10px', padding: '15px', border: '1px solid #00a884', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 600, marginBottom: '5px' }}>{editingProduct ? 'Editar Producto' : 'Nuevo Producto'}</div>
@@ -159,52 +225,81 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart }) => {
                     </form>
                 ) : (
                     <>
-                        {catalog.length === 0 ? (
+                        {visibleCatalog.length === 0 ? (
                             <div style={{ textAlign: 'center', padding: '30px 15px', color: '#8696a0' }}>
                                 <Package size={36} style={{ marginBottom: '12px', opacity: 0.25, marginLeft: 'auto', marginRight: 'auto' }} />
                                 <div style={{ fontSize: '0.875rem', marginBottom: '6px' }}>Catálogo vacío</div>
                                 <div style={{ fontSize: '0.78rem', opacity: 0.7, lineHeight: '1.5' }}>
-                                    Haz clic en "Nuevo" para agregar productos a tu catálogo.
+                                    Si tu catálogo nativo no aparece, WhatsApp Web no lo está exponiendo en esta sesión.
                                 </div>
                             </div>
                         ) : (
-                            catalog.map((item, i) => (
+                            visibleCatalog.map((item, i) => (
                                 <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-                                    <div style={{ display: 'flex', gap: '10px', padding: '10px' }}>
-                                        <div style={{ width: '50px', height: '50px', borderRadius: '6px', background: '#3b4a54', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                            {item.imageUrl ? <img src={item.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={20} color="#8696a0" />}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: '10px', padding: '10px' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                                            <div style={{ width: '62px', height: '62px', borderRadius: '8px', background: '#3b4a54', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                {item.imageUrl ? <img src={item.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={20} color="#8696a0" />}
+                                            </div>
+                                            <div style={{ fontSize: '0.84rem', color: '#00d4aa', fontWeight: 700, textAlign: 'center', lineHeight: 1.1 }}>
+                                                {item.price ? `S/ ${formatMoney(item.price)}` : 'S/ -'}
+                                            </div>
+                                            {item.sku && <div style={{ fontSize: '0.64rem', color: '#9bb0ba', textAlign: 'center', lineHeight: 1.1 }}>SKU: {item.sku}</div>}
                                         </div>
-                                        <div style={{ flex: 1, overflow: 'hidden' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
-                                                <div style={{ display: 'flex', gap: '8px' }}>
-                                                    <button onClick={() => handleEditClick(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0' }}><Edit2 size={12} /></button>
-                                                    <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#da3633' }}><Trash2 size={12} /></button>
+                                        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
+                                                <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', minHeight: '2.5em' }}>
+                                                    {String(item.title || `Producto ${i + 1}`)}
                                                 </div>
+                                                {!isExternalCatalog && (
+                                                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                                        <button onClick={() => handleEditClick(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0' }}><Edit2 size={12} /></button>
+                                                        <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#da3633' }}><Trash2 size={12} /></button>
+                                                    </div>
+                                                )}
                                             </div>
-                                            <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 600, marginTop: '2px' }}>
-                                                {item.price ? `S/ ${parseFloat(item.price).toFixed(2)}` : 'Consultar precio'}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                                {item.regularPrice && Number(item.regularPrice) > Number(item.price || 0) && (
+                                                    <div style={{ fontSize: '0.68rem', color: '#8696a0', textDecoration: 'line-through' }}>
+                                                        S/ {formatMoney(item.regularPrice)}
+                                                    </div>
+                                                )}
+                                                {Number(item.discountPct) > 0 && (
+                                                    <div style={{ fontSize: '0.66rem', color: '#fff', background: '#0b875b', borderRadius: '999px', padding: '1px 6px' }}>
+                                                        -{item.discountPct}%
+                                                    </div>
+                                                )}
+                                                <div style={{ fontSize: '0.66rem', color: '#6f8390' }}>Origen: {item.source || 'catálogo'}</div>
                                             </div>
-                                            {item.description && <div style={{ fontSize: '0.72rem', color: '#8696a0', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</div>}
                                         </div>
                                     </div>
-                                    <div style={{ display: 'flex', gap: '1px', borderTop: '1px solid var(--border-color)' }}>
-                                        <button
-                                            onClick={() => { setInputText(`📦 *${item.title}*\nPrecio: S/ ${item.price}\n${item.description || ''}\n\n¿Te interesa? 😊`); }}
-                                            style={{ flex: 1, padding: '7px', background: 'transparent', border: 'none', color: '#8696a0', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
-                                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
-                                            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#8696a0'; }}
-                                        >
-                                            <Send size={12} /> Cotizar
-                                        </button>
-                                        <button
-                                            onClick={() => addToCart(item)}
-                                            style={{ flex: 1, padding: '7px', background: 'transparent', border: 'none', borderLeft: '1px solid var(--border-color)', color: '#00a884', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
-                                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,168,132,0.1)'}
-                                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                                        >
-                                            <ShoppingCart size={12} /> Al carrito
-                                        </button>
+                                    <div style={{ borderTop: '1px solid var(--border-color)', background: '#111b21', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#22313b', borderRadius: '999px', padding: '3px 7px', border: '1px solid rgba(255,255,255,0.08)', width: 'fit-content', maxWidth: '100%' }}>
+                                            <button onClick={() => updateCatalogQty(item.id, -1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#2f3e48', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Minus size={11} /></button>
+                                            <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', minWidth: '18px', textAlign: 'center' }}>{getCatalogQty(item.id)}</span>
+                                            <button onClick={() => updateCatalogQty(item.id, 1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Plus size={11} /></button>
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', width: '100%' }}>
+                                            <button
+                                                onClick={() => { setInputText(`📦 *${item.title || `Producto ${i + 1}`}*
+Precio: S/ ${formatMoney(item.price)}
+
+¿Te interesa? 😊`); }}
+                                                style={{ width: '100%', minWidth: 0, padding: '7px 6px', background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '7px', color: '#d6e2e8', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+                                                onMouseLeave={e => { e.currentTarget.style.background = '#1f2c34'; e.currentTarget.style.color = '#d6e2e8'; }}
+                                            >
+                                                <Send size={12} /> Cotizar
+                                            </button>
+                                            <button
+                                                onClick={() => addToCart(item, getCatalogQty(item.id))}
+                                                style={{ width: '100%', minWidth: 0, padding: '7px 6px', background: '#00a884', border: 'none', borderRadius: '7px', color: 'white', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                                onMouseEnter={e => e.currentTarget.style.background = '#01bf97'}
+                                                onMouseLeave={e => e.currentTarget.style.background = '#00a884'}
+                                            >
+                                                <ShoppingCart size={13} /> + Carrito
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ))
@@ -223,7 +318,7 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
     const [activeTab, setActiveTab] = useState('ai');
     // AI Chat State
     const [aiMessages, setAiMessages] = useState([
-        { role: 'assistant', content: '¡Hola! Soy tu asistente de ventas con IA Gemini. Estoy viendo la conversación con tu cliente. ¿Qué necesitas?\n\n💡 Prueba: *"Dame 3 opciones de respuesta"* o *"¿Cómo manejo una objeción de precio?"*' }
+        { role: 'assistant', content: '¡Hola! Soy tu asistente de ventas de Lávitat con IA OpenAI. Estoy viendo la conversación y te ayudaré a cerrar mejor. ¿Qué necesitas?\n\n💡 Prueba: *"Dame 3 opciones de respuesta"* o *"¿Cómo manejo una objeción de precio?"*' }
     ]);
     const [aiInput, setAiInput] = useState('');
     const [isAiLoading, setIsAiLoading] = useState(false);
@@ -233,10 +328,28 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
     const [cart, setCart] = useState([]);
     const [discount, setDiscount] = useState(0);
     const [showDiscount, setShowDiscount] = useState(false);
+    const [cartDraftsByChat, setCartDraftsByChat] = useState({});
 
-    const catalog = businessData.catalog || [];
+    const catalog = (businessData.catalog || []).map((item, idx) => normalizeCatalogItem(item, idx));
     const labels = businessData.labels || [];
     const profile = businessData.profile;
+
+    useEffect(() => {
+        if (!activeChatId) return;
+        const draft = cartDraftsByChat[activeChatId];
+        if (draft) {
+            setCart(draft.cart || []);
+            setDiscount(draft.discount || 0);
+        } else {
+            setCart([]);
+            setDiscount(0);
+        }
+    }, [activeChatId]);
+
+    useEffect(() => {
+        if (!activeChatId) return;
+        setCartDraftsByChat(prev => ({ ...prev, [activeChatId]: { cart, discount } }));
+    }, [activeChatId, cart, discount]);
 
     // Auto-scroll AI chat
     useEffect(() => { aiEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [aiMessages]);
@@ -267,33 +380,50 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
             });
         };
 
+        const onError = (msg) => {
+            setIsAiLoading(false);
+            setAiMessages(prev => [...prev, { role: 'assistant', content: msg || 'Error IA: no se pudo generar respuesta.' }]);
+        };
+
         socket.on('internal_ai_chunk', onChunk);
         socket.on('internal_ai_complete', onComplete);
-        return () => { socket.off('internal_ai_chunk', onChunk); socket.off('internal_ai_complete', onComplete); };
+        socket.on('internal_ai_error', onError);
+        return () => {
+            socket.off('internal_ai_chunk', onChunk);
+            socket.off('internal_ai_complete', onComplete);
+            socket.off('internal_ai_error', onError);
+        };
     }, [socket]);
 
     const buildBusinessContext = () => {
         const catalogText = catalog.length > 0
-            ? catalog.map(p => `- ${p.title}: S/ ${p.price || 'consultar'}${p.description ? ' | ' + p.description : ''}`).join('\n')
+            ? catalog.map((p, idx) => `${idx + 1}. ${p.title} | Precio: S/ ${p.price || 'consultar'}${p.sku ? ` | SKU: ${p.sku}` : ''}${p.description ? ' | ' + p.description : ''}`).join('\n')
             : '(sin productos en catálogo)';
         const convText = messages.slice(-15).map(m => `${m.fromMe ? 'VENDEDOR' : 'CLIENTE'}: ${m.body || '[media]'}`).join('\n');
         return `
-Eres un asistente experto en ventas. Ayuda al vendedor a cerrar ventas de forma natural y persuasiva.
+Eres el copiloto comercial experto de Lávitat en Perú.
+Habla con seguridad, sin justificar precio, resaltando formulación, rendimiento y beneficio técnico.
 
-NEGOCIO: ${profile?.name || profile?.pushname || 'Tu negocio'}
+NEGOCIO: ${profile?.name || profile?.pushname || 'Lávitat'}
 ${profile?.description ? 'Descripción: ' + profile.description : ''}
 
-CATÁLOGO:
+CATÁLOGO DISPONIBLE:
 ${catalogText}
 
 CONVERSACIÓN ACTUAL CON EL CLIENTE:
 ${convText || '(sin mensajes aún)'}
 
-INSTRUCCIONES:
-- Cuando el vendedor pida "opciones" o "alternativas", siempre da AL MENOS 3 opciones numeradas
-- Cuando generes respuestas para enviar al cliente, ponlas entre [MENSAJE: ...] para que el vendedor las pueda enviar fácilmente  
-- Sé conciso, práctico y orientado a cerrar la venta
-- Usa emojis moderadamente como en WhatsApp Business profesional
+CARRITO ACTUAL (si ya agregaste productos):
+${cart.length > 0 ? cart.map((item, idx) => `- ${idx + 1}) ${item.title} | qty ${item.qty} | precio S/ ${formatMoney(item.price)}${item.discountPct ? ` | desc ${item.discountPct}%` : ''}`).join('\n') : '(carrito vacío)'}
+
+INSTRUCCIONES OBLIGATORIAS:
+- Si te piden opciones/cotización, da mínimo 2 alternativas: base y optimizada.
+- NO inventes productos, presentaciones ni precios. Usa solo el catálogo listado.
+- Si hay carrito con productos, propone al menos 2 cotizaciones (base y optimizada) usando ese carrito como base.
+- Siempre que sea posible, incluye upsell complementario.
+- En objeción de precio: responder por formulación/rendimiento, no por descuento defensivo.
+- Para mensajes listos para enviar al cliente, usa [MENSAJE: ...].
+- Sé claro, breve y vendedor (tono WhatsApp profesional).
         `.trim();
     };
 
@@ -344,11 +474,12 @@ INSTRUCCIONES:
     };
 
     // Cart functions
-    const addToCart = (item) => {
+    const addToCart = (item, qtyToAdd = 1) => {
+        const safeQty = Math.max(1, Number(qtyToAdd) || 1);
         setCart(prev => {
             const existing = prev.find(c => c.id === item.id);
-            if (existing) return prev.map(c => c.id === item.id ? { ...c, qty: c.qty + 1 } : c);
-            return [...prev, { ...item, qty: 1, discountPct: 0 }];
+            if (existing) return prev.map(c => c.id === item.id ? { ...c, qty: c.qty + safeQty } : c);
+            return [...prev, { ...item, qty: safeQty, discountPct: 0 }];
         });
     };
 
@@ -356,21 +487,22 @@ INSTRUCCIONES:
     const updateQty = (id, delta) => setCart(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(1, c.qty + delta) } : c));
     const updateItemDiscount = (id, pct) => setCart(prev => prev.map(c => c.id === id ? { ...c, discountPct: Math.min(90, Math.max(0, pct)) } : c));
 
-    const cartTotal = cart.reduce((sum, item) => {
+    const cartTotal = roundToOneDecimal(cart.reduce((sum, item) => {
         const price = parseFloat(item.price) || 0;
         const disc = item.discountPct || discount;
-        return sum + (price * item.qty * (1 - disc / 100));
-    }, 0);
+        const finalPrice = roundToOneDecimal(price * (1 - disc / 100));
+        return sum + (finalPrice * item.qty);
+    }, 0));
 
     const sendQuoteToChat = () => {
         if (cart.length === 0) return;
         const lines = cart.map(item => {
             const price = parseFloat(item.price) || 0;
             const disc = item.discountPct || discount;
-            const finalPrice = price * (1 - disc / 100);
-            return `📦 *${item.title}*\n   Qty: ${item.qty} × S/ ${price.toFixed(2)}${disc > 0 ? ` (-${disc}%)` : ''} = *S/ ${(finalPrice * item.qty).toFixed(2)}*`;
+            const finalPrice = roundToOneDecimal(price * (1 - disc / 100));
+            return `📦 *${item.title}*\n   Qty: ${item.qty} × S/ ${formatMoney(price)}${disc > 0 ? ` (-${disc}%)` : ''} = *S/ ${formatMoney(finalPrice * item.qty)}*`;
         });
-        const msg = `🛒 *COTIZACIÓN*\n${'─'.repeat(25)}\n${lines.join('\n\n')}\n${'─'.repeat(25)}\n💰 *TOTAL: S/ ${cartTotal.toFixed(2)}*${discount > 0 ? `\n🎁 Descuento global aplicado: ${discount}%` : ''}\n\n¿Procedemoss con el pedido? 🙌`;
+        const msg = `🛒 *COTIZACIÓN*\n${'─'.repeat(25)}\n${lines.join('\n\n')}\n${'─'.repeat(25)}\n💰 *TOTAL: S/ ${formatMoney(cartTotal)}*${discount > 0 ? `\n🎁 Descuento global aplicado: ${discount}%` : ''}\n\n¿Procedemoss con el pedido? 🙌`;
         setInputText(msg);
     };
 
@@ -424,7 +556,7 @@ INSTRUCCIONES:
                 ))}
             </div>
 
-            {/* ── AI PRO TAB ── Conversational chat with Gemini */}
+            {/* ── AI PRO TAB ── Conversational sales copilot (OpenAI) */}
             {activeTab === 'ai' && (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -508,7 +640,7 @@ INSTRUCCIONES:
 
             {/* ── CATALOG TAB ── */}
             {activeTab === 'catalog' && (
-                <CatalogTab catalog={catalog} socket={socket} setInputText={setInputText} addToCart={addToCart} />
+                <CatalogTab catalog={catalog} socket={socket} setInputText={setInputText} addToCart={addToCart} catalogMeta={businessData.catalogMeta} />
             )}
 
             {/* ── CART TAB ── */}
@@ -525,18 +657,18 @@ INSTRUCCIONES:
                             cart.map((item, i) => {
                                 const price = parseFloat(item.price) || 0;
                                 const disc = item.discountPct || 0;
-                                const finalPrice = price * (1 - disc / 100);
+                                const finalPrice = roundToOneDecimal(price * (1 - disc / 100));
                                 return (
                                     <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '10px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                                             <div style={{ flex: 1, overflow: 'hidden', marginRight: '8px' }}>
                                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
                                                 <div style={{ fontSize: '0.8rem', color: '#00a884' }}>
-                                                    S/ {finalPrice.toFixed(2)} {disc > 0 && <span style={{ color: '#8696a0', textDecoration: 'line-through', fontSize: '0.72rem', marginLeft: '4px' }}>S/ {price.toFixed(2)}</span>}
+                                                    S/ {formatMoney(finalPrice)} {disc > 0 && <span style={{ color: '#8696a0', textDecoration: 'line-through', fontSize: '0.72rem', marginLeft: '4px' }}>S/ {formatMoney(price)}</span>}
                                                 </div>
                                             </div>
-                                            <button onClick={() => removeFromCart(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0', padding: '2px' }}>
-                                                <Trash2 size={14} />
+                                            <button onClick={() => removeFromCart(item.id)} style={{ background: '#2a3942', border: '1px solid var(--border-color)', cursor: 'pointer', color: '#da3633', padding: '4px 8px', borderRadius: '6px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <Trash2 size={13} /> Eliminar
                                             </button>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
@@ -555,7 +687,7 @@ INSTRUCCIONES:
                                                 <span style={{ fontSize: '0.72rem', color: '#8696a0' }}>%</span>
                                             </div>
                                             <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                                                S/ {(finalPrice * item.qty).toFixed(2)}
+                                                S/ {formatMoney(finalPrice * item.qty)}
                                             </div>
                                         </div>
                                     </div>
@@ -577,7 +709,7 @@ INSTRUCCIONES:
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                                 <span style={{ fontSize: '0.95rem', fontWeight: 500, color: 'var(--text-primary)' }}>TOTAL</span>
-                                <span style={{ fontSize: '1.05rem', fontWeight: 600, color: '#00a884' }}>S/ {cartTotal.toFixed(2)}</span>
+                                <span style={{ fontSize: '1.05rem', fontWeight: 600, color: '#00a884' }}>S/ {formatMoney(cartTotal)}</span>
                             </div>
                             <button
                                 onClick={sendQuoteToChat}
