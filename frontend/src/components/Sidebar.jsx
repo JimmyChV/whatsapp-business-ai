@@ -37,6 +37,11 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
         normalized: searchQuery.replace(/\D/g, '')
     }), [searchQuery]);
 
+    const phoneSearchMeta = useMemo(() => ({
+        isPhone: /^\+?\d{8,15}$/.test(searchQuery.trim()),
+        normalized: searchQuery.replace(/\D/g, '')
+    }), [searchQuery]);
+
     const formatTime = (ts) => {
         const m = moment.unix(ts || 0);
         if (!m.isValid()) return '';
