@@ -63,6 +63,35 @@ const upsertChatByMessage = (prevChats, msg, activeChatId) => {
   return [nextChat, ...without].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 };
 
+const normalizeCatalogItem = (item = {}, index = 0) => {
+  const safeItem = item && typeof item === 'object' ? item : {};
+  const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
+  const rawPrice = safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio ?? 0;
+  const parsedPrice = Number.parseFloat(String(rawPrice).replace(',', '.'));
+
+  return {
+    id: safeItem.id || safeItem.product_id || `catalog_${index}`,
+    title: String(rawTitle || `Producto ${index + 1}`).trim(),
+    price: Number.isFinite(parsedPrice) ? parsedPrice.toFixed(2) : '0.00',
+    description: safeItem.description || safeItem.short_description || safeItem.descripcion || '',
+    imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
+    source: safeItem.source || 'unknown',
+    sku: safeItem.sku || null,
+    stockStatus: safeItem.stockStatus || safeItem.stock_status || null
+  };
+};
+
+const normalizeBusinessDataPayload = (data = {}) => {
+  const rawCatalog = Array.isArray(data.catalog) ? data.catalog : [];
+  const catalog = rawCatalog.map((item, idx) => normalizeCatalogItem(item, idx));
+  return {
+    profile: data.profile || null,
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    catalog,
+    catalogMeta: data.catalogMeta || { source: 'local', nativeAvailable: false }
+  };
+};
+
 function App() {
   // ─── Connection State ────────────────────────────────────────
   const [isConnected, setIsConnected] = useState(false);
@@ -130,6 +159,14 @@ function App() {
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
+    }
+    try {
+      const savedDefs = JSON.parse(localStorage.getItem('wa_custom_label_defs') || '[]');
+      const savedMap = JSON.parse(localStorage.getItem('wa_custom_chat_labels') || '{}');
+      if (Array.isArray(savedDefs)) setLabelDefinitions(savedDefs);
+      if (savedMap && typeof savedMap === 'object') setChatLabelMap(savedMap);
+    } catch (e) {
+      console.warn('No se pudieron leer etiquetas locales', e.message);
     }
   }, []);
 

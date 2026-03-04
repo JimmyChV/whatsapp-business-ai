@@ -20,6 +20,7 @@ class WhatsAppClient extends EventEmitter {
             }
         });
         this.isReady = false;
+        this.warnedNoBusinessProfileApi = false;
         this.setupEventListeners();
     }
 
@@ -122,10 +123,18 @@ class WhatsAppClient extends EventEmitter {
 
     async getBusinessProfile(contactId) {
         if (!this.isReady) return null;
+        if (typeof this.client.getBusinessProfile !== 'function') {
+            if (!this.warnedNoBusinessProfileApi) {
+                console.warn('[BusinessProfile] getBusinessProfile() is not available in this whatsapp-web.js version; using null fallback.');
+                this.warnedNoBusinessProfileApi = true;
+            }
+            return null;
+        }
+
         try {
             return await this.client.getBusinessProfile(contactId);
         } catch (e) {
-            console.error('Error fetching business profile:', e);
+            console.warn('[BusinessProfile] Error fetching business profile:', e?.message || e);
             return null;
         }
     }
