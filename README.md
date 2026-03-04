@@ -92,6 +92,25 @@ Checklist:
 
 Nota: aunque no pongas keys, el sistema intenta `wc/store/v1` (endpoint público). Si Woo o plugins bloquean ese endpoint, la app caerá al `catalogo.json` local.
 
+
+## 🧩 Solución rápida (frontend no compila por conflictos Git)
+Si Vite muestra errores como:
+- `Identifier ... has already been declared`, o
+- `Unexpected token <<<<<<<`
+
+revisa que no existan marcadores de merge sin resolver en `frontend/src`.
+
+Este proyecto ya incluye validación automática:
+- `npm run dev` ejecuta `predev` con `scripts/check-conflicts.mjs`
+- `npm run build` ejecuta `prebuild` con `scripts/check-conflicts.mjs`
+
+Si falla, corrige el archivo reportado eliminando líneas:
+- `<<<<<<< ...`
+- `=======`
+- `>>>>>>> ...`
+
+Y deja solo el bloque final correcto.
+
 ## ⚠️ Notas de Seguridad
 - El archivo `.wwebjs_auth` contiene tu sesión de WhatsApp. **Nunca lo compartas.**
 - Tu `.env` está protegido por el `.gitignore` para no filtrar tus claves de API.

@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import React, { useMemo, useState } from 'react';
 import { MoreVertical, Search, Check, CheckCheck, X } from 'lucide-react';
 import moment from 'moment';
 
@@ -33,6 +32,11 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
         normalized: searchQuery.replace(/\D/g, '')
     }), [searchQuery]);
 
+    const phoneSearchMeta = useMemo(() => ({
+        isPhone: /^\+?\d{8,15}$/.test(searchQuery.trim()),
+        normalized: searchQuery.replace(/\D/g, '')
+    }), [searchQuery]);
+
     const formatTime = (ts) => {
         const m = moment.unix(ts || 0);
         if (!m.isValid()) return '';
@@ -52,7 +56,6 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
     };
 
     const filteredChats = chats.filter((c) => {
-        if (phoneSearchMeta.isPhone) return true;
         if (phoneSearchMeta.isPhone) return true;
         const q = searchQuery.toLowerCase();
         return c.name?.toLowerCase().includes(q) || c.lastMessage?.toLowerCase().includes(q);
@@ -129,7 +132,6 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
                         onKeyDown={(e) => {
-                            if (e.key === 'Enter' && phoneSearchMeta.isPhone) onStartNewChat?.(phoneSearchMeta.normalized, '');
                             if (e.key === 'Enter' && phoneSearchMeta.isPhone) onStartNewChat?.(phoneSearchMeta.normalized, '');
                         }}
                     />
