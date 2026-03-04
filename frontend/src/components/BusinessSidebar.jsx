@@ -271,31 +271,34 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                                 )}
                                                 <div style={{ fontSize: '0.66rem', color: '#6f8390' }}>Origen: {item.source || 'catálogo'}</div>
                                             </div>
-                                            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#22313b', borderRadius: '999px', padding: '3px 7px', border: '1px solid rgba(255,255,255,0.08)', width: 'fit-content', maxWidth: '100%' }}>
-                                                    <button onClick={() => updateCatalogQty(item.id, -1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#2f3e48', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Minus size={11} /></button>
-                                                    <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', minWidth: '18px', textAlign: 'center' }}>{getCatalogQty(item.id)}</span>
-                                                    <button onClick={() => updateCatalogQty(item.id, 1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Plus size={11} /></button>
-                                                </div>
-                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', width: '100%' }}>
-                                                    <button
-                                                        onClick={() => { setInputText(`📦 *${item.title || `Producto ${i + 1}`}*\nPrecio: S/ ${formatMoney(item.price)}\n\n¿Te interesa? 😊`); }}
-                                                        style={{ width: '100%', minWidth: 0, padding: '7px 6px', background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '7px', color: '#d6e2e8', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                                                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
-                                                        onMouseLeave={e => { e.currentTarget.style.background = '#1f2c34'; e.currentTarget.style.color = '#d6e2e8'; }}
-                                                    >
-                                                        <Send size={12} /> Cotizar
-                                                    </button>
-                                                    <button
-                                                        onClick={() => addToCart(item, getCatalogQty(item.id))}
-                                                        style={{ width: '100%', minWidth: 0, padding: '7px 6px', background: '#00a884', border: 'none', borderRadius: '7px', color: 'white', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                                                        onMouseEnter={e => e.currentTarget.style.background = '#01bf97'}
-                                                        onMouseLeave={e => e.currentTarget.style.background = '#00a884'}
-                                                    >
-                                                        <ShoppingCart size={13} /> + Carrito
-                                                    </button>
-                                                </div>
-                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{ borderTop: '1px solid var(--border-color)', background: '#111b21', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#22313b', borderRadius: '999px', padding: '3px 7px', border: '1px solid rgba(255,255,255,0.08)', width: 'fit-content', maxWidth: '100%' }}>
+                                            <button onClick={() => updateCatalogQty(item.id, -1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#2f3e48', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Minus size={11} /></button>
+                                            <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', minWidth: '18px', textAlign: 'center' }}>{getCatalogQty(item.id)}</span>
+                                            <button onClick={() => updateCatalogQty(item.id, 1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Plus size={11} /></button>
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', width: '100%' }}>
+                                            <button
+                                                onClick={() => { setInputText(`📦 *${item.title || `Producto ${i + 1}`}*
+Precio: S/ ${formatMoney(item.price)}
+
+¿Te interesa? 😊`); }}
+                                                style={{ width: '100%', minWidth: 0, padding: '7px 6px', background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '7px', color: '#d6e2e8', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+                                                onMouseLeave={e => { e.currentTarget.style.background = '#1f2c34'; e.currentTarget.style.color = '#d6e2e8'; }}
+                                            >
+                                                <Send size={12} /> Cotizar
+                                            </button>
+                                            <button
+                                                onClick={() => addToCart(item, getCatalogQty(item.id))}
+                                                style={{ width: '100%', minWidth: 0, padding: '7px 6px', background: '#00a884', border: 'none', borderRadius: '7px', color: 'white', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                                onMouseEnter={e => e.currentTarget.style.background = '#01bf97'}
+                                                onMouseLeave={e => e.currentTarget.style.background = '#00a884'}
+                                            >
+                                                <ShoppingCart size={13} /> + Carrito
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
