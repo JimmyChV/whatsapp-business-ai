@@ -2,7 +2,7 @@ import React from 'react';
 import moment from 'moment';
 import { Check, CheckCheck, ShoppingBag } from 'lucide-react';
 
-const MessageBubble = ({ msg, onPrefillMessage }) => {
+const MessageBubble = ({ msg, onPrefillMessage, isHighlighted = false, isCurrentHighlighted = false }) => {
     const isOut = msg.fromMe;
 
     // Check if message is a catalog item
@@ -25,16 +25,18 @@ const MessageBubble = ({ msg, onPrefillMessage }) => {
     };
 
     return (
-        <div className={`message ${isOut ? 'out' : 'in'}`}>
+        <div className={`message ${isOut ? 'out' : 'in'}`} style={isHighlighted ? { outline: `2px solid ${isCurrentHighlighted ? '#00a884' : 'rgba(0,168,132,0.35)'}`, borderRadius: '10px', padding: '2px' } : undefined}>
             {isCatalogItem && (
                 <div className="catalog-card">
-                    <img src="https://images.unsplash.com/photo-1523275335684-37898b6baf30?q=80&w=300&auto=format&fit=crop" alt="Producto" />
+                    <div style={{ width: '100%', height: '85px', background: 'linear-gradient(120deg,#233138,#1a252b)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <ShoppingBag size={22} color="#9db0ba" />
+                    </div>
                     <div className="catalog-card-info">
                         <div className="catalog-card-title">{productTitle}</div>
                         <div className="catalog-card-price">{productPrice}</div>
                     </div>
-                    <button className="catalog-card-btn" onClick={() => window.open('https://wa.me/c/51933657188')}>
-                        <ShoppingBag size={16} /> Ver artículo
+                    <button className="catalog-card-btn" onClick={() => onPrefillMessage && onPrefillMessage(`Hola, me interesa ${productTitle || 'el producto del catálogo'}. ¿Me confirmas stock y precio final?`)}>
+                        <ShoppingBag size={16} /> Pedir cotización
                     </button>
                 </div>
             )}
@@ -82,10 +84,10 @@ const MessageBubble = ({ msg, onPrefillMessage }) => {
                     {msg?.order?.subtotal && (
                         <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>Subtotal: {msg.order.currency || 'PEN'} {msg.order.subtotal}</div>
                     )}
-                    {orderItems.length > 0 ? orderItems.slice(0, 8).map((item, idx) => (
+                    {orderItems.length > 0 ? orderItems.slice(0, 12).map((item, idx) => (
                         <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {item.name} x{item.quantity || 1}{item.sku ? ` (SKU: ${item.sku})` : ''}</span>
-                            <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{item.price ? `S/ ${item.price}` : ''}</span>
+                            <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{item.lineTotal ? `S/ ${item.lineTotal}` : (item.price ? `S/ ${item.price}` : '')}</span>
                         </div>
                     )) : (
                         <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>Se recibió un pedido desde catálogo de WhatsApp.</div>

@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
-import moment from 'moment';
 
 import Sidebar from './components/Sidebar';
 import BusinessSidebar, { ClientProfilePanel } from './components/BusinessSidebar';
@@ -40,25 +39,7 @@ const normalizeBusinessDataPayload = (data = {}) => {
   };
 };
 
-const WA_FALLBACK_LABEL_COLORS = ['#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#00A884', '#7D8D95'];
-
-const hydrateChatLabels = (chat = {}, labelDefinitions = [], chatLabelMap = {}) => {
-  const fromChat = Array.isArray(chat.labels) ? chat.labels : [];
-  const customNames = Array.isArray(chatLabelMap[chat.id]) ? chatLabelMap[chat.id] : [];
-  const merged = [...fromChat];
-
-  customNames.forEach((labelName) => {
-    if (!labelName || merged.some((l) => l.name === labelName)) return;
-    const def = labelDefinitions.find((d) => d.name === labelName);
-    merged.push({
-      name: labelName,
-      color: def?.color || WA_FALLBACK_LABEL_COLORS[Math.abs(labelName.charCodeAt(0) || 0) % WA_FALLBACK_LABEL_COLORS.length],
-      isCustom: true,
-    });
-  });
-
-  return { ...chat, labels: merged };
-};
+const normalizeChatLabels = (labels = []) => (Array.isArray(labels) ? labels.map((l) => ({ id: l?.id, name: l?.name || '', color: l?.color || null })) : []);
 
 const upsertAndSortChat = (list = [], incoming = null) => {
   if (!incoming?.id) return list;
@@ -106,7 +87,6 @@ function App() {
   // ─── Business Data (Real from WA) ────────────────────────────
   const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
   const [labelDefinitions, setLabelDefinitions] = useState([]);
-  const [chatLabelMap, setChatLabelMap] = useState({});
   const [toasts, setToasts] = useState([]);
 
   // ─── Other ───────────────────────────────────────────────────
@@ -159,7 +139,7 @@ function App() {
     });
 
     socket.on('chats', (chatList) => {
-      const hydrated = (Array.isArray(chatList) ? chatList : []).map((chat) => hydrateChatLabels(chat, labelDefinitions, chatLabelMap));
+      const hydrated = (Array.isArray(chatList) ? chatList : []).map((chat) => ({ ...chat, labels: normalizeChatLabels(chat.labels) }));
       setChats(hydrated);
     });
 
@@ -172,13 +152,18 @@ function App() {
       if (msg) alert(msg);
     });
 
-    socket.on('chat_opened', ({ chatId }) => {
-      if (chatId) handleChatSelect(chatId);
-      socket.emit('get_chats');
+    socket.on('chat_labels_updated', ({ chatId, labels }) => {
+      setChats((prev) => prev.map((chat) => chat.id === chatId ? { ...chat, labels: normalizeChatLabels(labels) } : chat));
+      if (chatId === activeChatId) socket.emit('get_contact_info', chatId);
     });
 
-    socket.on('start_new_chat_error', (msg) => {
+    socket.on('chat_labels_error', (msg) => {
       if (msg) alert(msg);
+    });
+
+    socket.on('chat_labels_saved', ({ chatId }) => {
+      socket.emit('get_chats');
+      if (chatId === activeChatId) socket.emit('get_contact_info', chatId);
     });
 
     socket.on('chat_history', (data) => {
@@ -192,7 +177,7 @@ function App() {
     socket.on('message', (msg) => {
       const relatedChatId = msg.fromMe ? msg.to : msg.from;
       if (!msg.fromMe && Notification.permission === 'granted') {
-        new Notification('Nuevo mensaje', { body: msg.body || 'Nuevo mensaje', icon: '/favicon.ico' });
+        new Notification(msg.notifyName || 'Nuevo mensaje', { body: msg.body || 'Nuevo mensaje', icon: '/favicon.ico' });
       }
 
       if (!msg.fromMe && relatedChatId !== activeChatId) {
@@ -205,14 +190,14 @@ function App() {
 
       setChats((prev) => {
         const existing = prev.find((c) => c.id === relatedChatId);
-        const nextChat = hydrateChatLabels({
+        const nextChat = {
           ...(existing || { id: relatedChatId, name: msg.notifyName || relatedChatId, labels: [] }),
           timestamp: msg.timestamp || Math.floor(Date.now() / 1000),
           lastMessage: msg.body || (msg.type === 'image' ? '📷 Imagen' : 'Mensaje'),
           lastMessageFromMe: !!msg.fromMe,
           ack: msg.ack || 0,
           unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (relatedChatId === activeChatId ? 0 : (existing?.unreadCount || 0) + 1),
-        }, labelDefinitions, chatLabelMap);
+        };
         return upsertAndSortChat(prev, nextChat);
       });
 
@@ -224,7 +209,9 @@ function App() {
     });
 
     socket.on('business_data', (data) => {
-      setBusinessData(normalizeBusinessDataPayload(data));
+      const normalized = normalizeBusinessDataPayload(data);
+      setBusinessData(normalized);
+      setLabelDefinitions(normalizeChatLabels(normalized.labels));
     });
 
     socket.on('business_data_catalog', (catalog) => {
@@ -247,6 +234,7 @@ function App() {
 
     socket.on('message_ack', ({ id, ack }) => {
       setMessages(prev => prev.map(m => m.id === id ? { ...m, ack } : m));
+      setChats(prev => prev.map(c => c.lastMessageFromMe && c.id === activeChatId ? { ...c, ack } : c));
     });
 
     socket.on('authenticated', () => {
@@ -275,12 +263,12 @@ function App() {
 
     return () => {
       ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_history',
-        'chat_opened', 'start_new_chat_error',
-        'contact_info', 'message', 'business_data', 'ai_suggestion_chunk',
+        'chat_opened', 'start_new_chat_error', 'chat_labels_updated', 'chat_labels_error', 'chat_labels_saved',
+        'contact_info', 'message', 'business_data', 'business_data_catalog', 'ai_suggestion_chunk',
         'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
       ].forEach(ev => socket.off(ev));
     };
-  }, [activeChatId, labelDefinitions, chatLabelMap]);
+  }, [activeChatId, labelDefinitions]);
 
   // ──────────────────────────────────────────────────────────────
   // Apply AI suggestion to input
@@ -344,39 +332,27 @@ function App() {
   };
 
   const handleCreateLabel = () => {
-    const name = window.prompt('Nombre de etiqueta (ej: Cliente VIP):');
-    if (!name) return;
-    const color = window.prompt('Color HEX (ej: #25D366):', WA_FALLBACK_LABEL_COLORS[labelDefinitions.length % WA_FALLBACK_LABEL_COLORS.length]) || WA_FALLBACK_LABEL_COLORS[labelDefinitions.length % WA_FALLBACK_LABEL_COLORS.length];
-    const clean = name.trim();
-    if (!clean) return;
-    setLabelDefinitions((prev) => {
-      if (prev.some((l) => l.name.toLowerCase() === clean.toLowerCase())) return prev;
-      const next = [...prev, { name: clean, color }];
-      localStorage.setItem('wa_custom_label_defs', JSON.stringify(next));
-      return next;
-    });
+    const name = window.prompt('Nombre de etiqueta para WhatsApp Business:');
+    if (!name?.trim()) return;
+    socket.emit('create_label', { name: name.trim() });
   };
 
   const handleToggleChatLabel = (chatId, labelName) => {
     if (!chatId || !labelName) return;
-    setChatLabelMap((prev) => {
-      const current = Array.isArray(prev[chatId]) ? prev[chatId] : [];
-      const exists = current.includes(labelName);
-      const updated = exists ? current.filter((n) => n !== labelName) : [...current, labelName];
-      const next = { ...prev, [chatId]: updated };
-      localStorage.setItem('wa_custom_chat_labels', JSON.stringify(next));
-      return next;
-    });
+    const chat = chats.find((c) => c.id === chatId);
+    const current = Array.isArray(chat?.labels) ? chat.labels : [];
+    const target = labelDefinitions.find((l) => l.name === labelName);
+    if (!target?.id) {
+      alert('Etiqueta no sincronizada aún. Recarga chats y vuelve a intentar.');
+      return;
+    }
 
-    setChats((prev) => prev.map((chat) => {
-      if (chat.id !== chatId) return chat;
-      const has = (chat.labels || []).some((l) => l.name === labelName);
-      const definition = labelDefinitions.find((l) => l.name === labelName);
-      const labels = has
-        ? (chat.labels || []).filter((l) => l.name !== labelName || !l.isCustom)
-        : [...(chat.labels || []), { name: labelName, color: definition?.color || '#7D8D95', isCustom: true }];
-      return { ...chat, labels };
-    }));
+    const has = current.some((l) => String(l.id) === String(target.id));
+    const nextIds = has
+      ? current.filter((l) => String(l.id) !== String(target.id)).map((l) => l.id).filter(Boolean)
+      : [...current.map((l) => l.id).filter(Boolean), target.id];
+
+    socket.emit('set_chat_labels', { chatId, labelIds: nextIds });
   };
 
   const handleStartNewChat = (phoneArg, firstMessageArg = '') => {
@@ -611,6 +587,8 @@ REGLA CRÍTICA:
               stopRecording={stopRecording}
               isCopilotMode={isCopilotMode}
               setIsCopilotMode={setIsCopilotMode}
+              labelDefinitions={labelDefinitions}
+              onToggleChatLabel={handleToggleChatLabel}
             />
 
             {/* Client Profile Panel (slides in from right) */}

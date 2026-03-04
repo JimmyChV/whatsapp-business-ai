@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, MoreVertical, Mic, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart } from 'lucide-react';
+import { Search, MoreVertical, Mic, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart, ChevronUp, ChevronDown, Tag } from 'lucide-react';
 import MessageBubble from './MessageBubble';
+import moment from 'moment';
 
 // Common emojis for the picker
 const EMOJI_LIST = [
@@ -241,20 +242,51 @@ const ChatWindow = ({
     onDrop,
     showClientProfile,
     setShowClientProfile,
+    labelDefinitions = [],
+    onToggleChatLabel,
     ...inputProps
 }) => {
     const [showMenu, setShowMenu] = useState(false);
     const [searchVisible, setSearchVisible] = useState(false);
     const [chatSearch, setChatSearch] = useState('');
+    const [showLabelMenu, setShowLabelMenu] = useState(false);
+    const [activeMatchIdx, setActiveMatchIdx] = useState(0);
+    const messageRefs = useRef({});
 
-    const filteredMessages = chatSearch
-        ? messages.filter(m => m.body?.toLowerCase().includes(chatSearch.toLowerCase()))
-        : messages;
+    const searchTerm = chatSearch.trim().toLowerCase();
+    const matchIndexes = searchTerm
+        ? messages.reduce((acc, msg, idx) => (String(msg.body || '').toLowerCase().includes(searchTerm) ? [...acc, idx] : acc), [])
+        : [];
+
+    const jumpToMatch = (idx) => {
+        const targetMessageIdx = matchIndexes[idx];
+        if (targetMessageIdx === undefined) return;
+        const messageId = messages[targetMessageIdx]?.id || `idx_${targetMessageIdx}`;
+        const node = messageRefs.current[messageId];
+        if (node?.scrollIntoView) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+
+    useEffect(() => {
+        if (!matchIndexes.length) {
+            setActiveMatchIdx(0);
+            return;
+        }
+        setActiveMatchIdx(0);
+        setTimeout(() => jumpToMatch(0), 0);
+    }, [chatSearch, messages.length]);
 
     const avatarColor = (name) => {
         const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
         if (!name) return colors[0];
         return colors[name.charCodeAt(0) % colors.length];
+    };
+
+    const formatDayLabel = (unixTs) => {
+        const m = moment.unix(unixTs || 0);
+        if (!m.isValid()) return '';
+        if (m.isSame(moment(), 'day')) return 'Hoy';
+        if (m.isSame(moment().subtract(1, 'day'), 'day')) return 'Ayer';
+        return m.format('dddd, D [de] MMMM');
     };
 
     return (
@@ -279,14 +311,43 @@ const ChatWindow = ({
                 <div style={{ marginLeft: '15px', flex: 1 }}>
                     <h3 style={{ fontSize: '1rem', fontWeight: 400, color: 'var(--text-primary)' }}>{activeChatDetails?.name}</h3>
                     <span style={{ fontSize: '0.78rem', color: '#8696a0' }}>
-                        {activeChatDetails?.isGroup ? `${activeChatDetails?.participants || 0} participantes` : 'Haz clic para ver el perfil'}
+                        {activeChatDetails?.isGroup ? `${activeChatDetails?.participants || 0} participantes` : (activeChatDetails?.phone ? `+${activeChatDetails.phone}` : 'Haz clic para ver el perfil')}
                     </span>
+                    {!!activeChatDetails?.labels?.length && (
+                        <div style={{ marginTop: '5px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {activeChatDetails.labels.slice(0, 3).map((l, i) => (
+                                <span key={i} style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: '12px', background: 'rgba(255,255,255,0.08)', color: l.color || '#9bb0ba' }}>{l.name}</span>
+                            ))}
+                        </div>
+                    )}
                 </div>
-                <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
                     <button className="btn-icon" style={{ color: searchVisible ? '#00a884' : '#8696a0' }}
                         onClick={() => setSearchVisible(v => !v)} title="Buscar en chat">
                         <Search size={20} />
                     </button>
+                    <div style={{ position: 'relative' }}>
+                        <button className="btn-icon" style={{ color: showLabelMenu ? '#00a884' : '#8696a0' }}
+                            onClick={() => setShowLabelMenu(v => !v)} title="Etiquetas">
+                            <Tag size={20} />
+                        </button>
+                        {showLabelMenu && (
+                            <div style={{ position: 'absolute', top: '30px', right: 0, background: '#233138', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', minWidth: '220px', zIndex: 1000, overflow: 'hidden', padding: '8px' }}>
+                                <div style={{ fontSize: '0.72rem', color: '#9db0ba', marginBottom: '8px' }}>Etiquetas sincronizadas con WhatsApp</div>
+                                {labelDefinitions.length === 0 && <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>No hay etiquetas disponibles.</div>}
+                                {labelDefinitions.map((label) => {
+                                    const isActive = (activeChatDetails?.labels || []).some((l) => String(l.id) === String(label.id));
+                                    return (
+                                        <label key={label.id || label.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 4px', cursor: 'pointer', fontSize: '0.82rem' }}>
+                                            <input type="checkbox" checked={isActive} onChange={() => onToggleChatLabel?.(activeChatDetails?.id, label.name)} />
+                                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: label.color || '#8696a0' }} />
+                                            <span style={{ color: 'var(--text-primary)' }}>{label.name}</span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
                     <div style={{ position: 'relative' }}>
                         <button className="btn-icon" style={{ color: '#8696a0' }}
                             onClick={() => setShowMenu(v => !v)} title="Más opciones">
@@ -302,8 +363,6 @@ const ChatWindow = ({
                                 {[
                                     { label: 'Ver perfil del contacto', action: () => setShowClientProfile(true) },
                                     { label: 'Buscar mensajes', action: () => setSearchVisible(true) },
-                                    { label: 'Silenciar notificaciones', action: () => { } },
-                                    { label: 'Limpiar mensajes', action: () => { } },
                                     { label: 'Modo Copiloto IA', action: () => setIsCopilotMode(v => !v) },
                                 ].map((item, i) => (
                                     <div key={i}
@@ -333,6 +392,21 @@ const ChatWindow = ({
                         onChange={e => setChatSearch(e.target.value)}
                         style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: '0.9rem' }}
                     />
+                    {matchIndexes.length > 0 && (
+                        <span style={{ fontSize: '0.75rem', color: '#9db0ba' }}>{activeMatchIdx + 1}/{matchIndexes.length}</span>
+                    )}
+                    <button disabled={matchIndexes.length === 0} onClick={() => {
+                        if (!matchIndexes.length) return;
+                        const next = (activeMatchIdx - 1 + matchIndexes.length) % matchIndexes.length;
+                        setActiveMatchIdx(next);
+                        jumpToMatch(next);
+                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: matchIndexes.length ? 1 : 0.4 }}><ChevronUp size={16} color="#8696a0" /></button>
+                    <button disabled={matchIndexes.length === 0} onClick={() => {
+                        if (!matchIndexes.length) return;
+                        const next = (activeMatchIdx + 1) % matchIndexes.length;
+                        setActiveMatchIdx(next);
+                        jumpToMatch(next);
+                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: matchIndexes.length ? 1 : 0.4 }}><ChevronDown size={16} color="#8696a0" /></button>
                     <button onClick={() => { setSearchVisible(false); setChatSearch(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
                         <X size={16} color="#8696a0" />
                     </button>
@@ -340,19 +414,38 @@ const ChatWindow = ({
             )}
 
             {/* Messages Area */}
-            <div className="chat-messages" onClick={() => setShowMenu(false)}>
-                {filteredMessages.length === 0 && (
+            <div className="chat-messages" onClick={() => { setShowMenu(false); setShowLabelMenu(false); }}>
+                {messages.length === 0 && (
                     <div style={{ textAlign: 'center', margin: 'auto', background: 'var(--system-message-bg)', padding: '5px 12px', borderRadius: '7px', fontSize: '0.8rem', color: '#8696a0', boxShadow: '0 1px 0.5px rgba(11,20,26,.13)' }}>
-                        {chatSearch ? 'No se encontraron mensajes.' : 'No hay mensajes en esta conversación.'}
+                        No hay mensajes en esta conversación.
                     </div>
                 )}
-                {filteredMessages.map((msg, idx) => (
-                    <MessageBubble
-                        key={msg.id || idx}
-                        msg={msg}
-                        onPrefillMessage={(text) => inputProps?.setInputText && inputProps.setInputText(text)}
-                    />
-                ))}
+                {messages.map((msg, idx) => {
+                    const currentDay = moment.unix(msg.timestamp || 0).format('YYYY-MM-DD');
+                    const prevDay = idx > 0 ? moment.unix(messages[idx - 1].timestamp || 0).format('YYYY-MM-DD') : null;
+                    const showDay = idx === 0 || currentDay !== prevDay;
+                    const matchIdx = matchIndexes.indexOf(idx);
+                    const isHighlighted = matchIdx !== -1;
+                    const isCurrentHighlighted = isHighlighted && matchIdx === activeMatchIdx;
+                    const messageKey = msg.id || `idx_${idx}`;
+                    return (
+                        <React.Fragment key={messageKey}>
+                            {showDay && (
+                                <div style={{ textAlign: 'center', margin: '8px auto', background: 'rgba(255,255,255,0.08)', color: '#9db0ba', fontSize: '0.74rem', borderRadius: '8px', padding: '4px 10px', width: 'fit-content' }}>
+                                    {formatDayLabel(msg.timestamp)}
+                                </div>
+                            )}
+                            <div ref={(el) => { if (el) messageRefs.current[messageKey] = el; }}>
+                                <MessageBubble
+                                    msg={msg}
+                                    isHighlighted={isHighlighted}
+                                    isCurrentHighlighted={isCurrentHighlighted}
+                                    onPrefillMessage={(text) => inputProps?.setInputText && inputProps.setInputText(text)}
+                                />
+                            </div>
+                        </React.Fragment>
+                    );
+                })}
                 <div ref={messagesEndRef} />
             </div>
 

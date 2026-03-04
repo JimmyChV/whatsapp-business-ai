@@ -102,6 +102,17 @@ function extractOrderInfo(msg) {
     }
 }
 
+
+
+function resolveChatDisplayName(chat) {
+    if (!chat) return 'Sin nombre';
+    const directName = chat.name || chat.formattedTitle || null;
+    const contact = chat.contact || null;
+    const contactName = contact?.name || contact?.pushname || contact?.shortName || null;
+    const idUser = chat?.id?.user || String(chat?.id?._serialized || '').split('@')[0] || null;
+    return directName || contactName || idUser || 'Sin nombre';
+}
+
 async function resolveProfilePic(client, chatOrContactId) {
     try {
         const direct = await client.getProfilePicUrl(chatOrContactId);
@@ -119,6 +130,23 @@ async function resolveProfilePic(client, chatOrContactId) {
     return null;
 }
 
+
+
+
+async function resolveMessageSenderMeta(msg) {
+    try {
+        if (!msg || msg.fromMe) return { notifyName: null, senderPhone: null };
+        const senderPhone = String(msg.from || '').split('@')[0] || null;
+        let notifyName = msg?._data?.notifyName || null;
+        try {
+            const contact = await msg.getContact();
+            notifyName = contact?.name || contact?.pushname || notifyName;
+        } catch (e) { }
+        return { notifyName, senderPhone };
+    } catch (e) {
+        return { notifyName: null, senderPhone: null };
+    }
+}
 
 class SocketManager {
     constructor(io) {
@@ -155,13 +183,13 @@ class SocketManager {
 
                         return {
                             id: c.id._serialized,
-                            name: c.name,
+                            name: resolveChatDisplayName(c),
                             unreadCount: c.unreadCount,
                             timestamp: c.timestamp,
                             lastMessage: c.lastMessage ? c.lastMessage.body : '',
                             lastMessageFromMe: c.lastMessage ? c.lastMessage.fromMe : false,
                             ack: c.lastMessage ? c.lastMessage.ack : 0,
-                            labels: labels.map(l => ({ name: l.name, color: l.color })),
+                            labels: labels.map(l => ({ id: l.id, name: l.name, color: l.color })),
                             profilePicUrl
                         };
                     }));
@@ -222,6 +250,55 @@ class SocketManager {
                 } catch (e) {
                     console.error('start_new_chat error:', e.message);
                     socket.emit('start_new_chat_error', 'No se pudo iniciar el chat.');
+                }
+            });
+
+            socket.on('set_chat_labels', async ({ chatId, labelIds }) => {
+                try {
+                    if (!chatId) {
+                        socket.emit('chat_labels_error', 'Chat inválido para etiquetar.');
+                        return;
+                    }
+
+                    const ids = Array.isArray(labelIds)
+                        ? labelIds.filter((v) => v !== null && v !== undefined && String(v).trim() !== '').map((v) => Number.isNaN(Number(v)) ? String(v) : Number(v))
+                        : [];
+
+                    const chat = await waClient.client.getChatById(chatId);
+                    if (chat?.changeLabels) {
+                        await chat.changeLabels(ids);
+                    } else if (waClient.client?.addOrRemoveLabels) {
+                        await waClient.client.addOrRemoveLabels(ids, [chatId]);
+                    }
+
+                    let updatedLabels = [];
+                    try {
+                        updatedLabels = await chat.getLabels();
+                    } catch (e) { }
+
+                    const payload = {
+                        chatId,
+                        labels: (updatedLabels || []).map((l) => ({ id: l.id, name: l.name, color: l.color }))
+                    };
+                    this.io.emit('chat_labels_updated', payload);
+                    socket.emit('chat_labels_saved', { chatId, ok: true });
+                } catch (e) {
+                    console.error('set_chat_labels error:', e.message);
+                    socket.emit('chat_labels_error', 'No se pudieron actualizar las etiquetas en WhatsApp.');
+                }
+            });
+
+            socket.on('create_label', async ({ name }) => {
+                try {
+                    const clean = String(name || '').trim();
+                    if (!clean) {
+                        socket.emit('chat_labels_error', 'Nombre de etiqueta inválido.');
+                        return;
+                    }
+                    socket.emit('chat_labels_error', 'WhatsApp Web no permite crear etiquetas por API en esta versión. Créala en WhatsApp y aquí se sincronizará al recargar.');
+                } catch (e) {
+                    console.error('create_label error:', e.message);
+                    socket.emit('chat_labels_error', 'No se pudo crear la etiqueta.');
                 }
             });
 
@@ -484,7 +561,7 @@ class SocketManager {
                     try {
                         const chat = await waClient.client.getChatById(contactId);
                         const chatLabels = await chat.getLabels();
-                        labels = chatLabels.map(l => ({ name: l.name, color: l.color }));
+                        labels = chatLabels.map(l => ({ id: l.id, name: l.name, color: l.color }));
                     } catch (e) { }
                     socket.emit('contact_info', {
                         id: contactId,
@@ -543,6 +620,7 @@ class SocketManager {
         waClient.on('disconnected', (reason) => this.io.emit('disconnected', reason));
         waClient.on('message', async (msg) => {
             const media = await mediaManager.processMessageMedia(msg);
+            const senderMeta = await resolveMessageSenderMeta(msg);
             this.io.emit('message', {
                 id: msg.id._serialized,
                 from: msg.from,
@@ -555,6 +633,8 @@ class SocketManager {
                 mimetype: media ? media.mimetype : null,
                 ack: msg.ack,
                 type: msg.type,
+                notifyName: senderMeta.notifyName,
+                senderPhone: senderMeta.senderPhone,
                 order: extractOrderInfo(msg)
             });
             // Auto refresh chat list
@@ -567,13 +647,13 @@ class SocketManager {
 
                 return {
                     id: c.id._serialized,
-                    name: c.name,
+                    name: resolveChatDisplayName(c),
                     unreadCount: c.unreadCount,
                     timestamp: c.timestamp,
                     lastMessage: c.lastMessage ? c.lastMessage.body : '',
                     lastMessageFromMe: c.lastMessage ? c.lastMessage.fromMe : false,
                     ack: c.lastMessage ? c.lastMessage.ack : 0,
-                    labels: labels.map(l => ({ name: l.name, color: l.color })),
+                    labels: labels.map(l => ({ id: l.id, name: l.name, color: l.color })),
                     profilePicUrl
                 };
             }));
@@ -595,6 +675,8 @@ class SocketManager {
                 mimetype: media ? media.mimetype : null,
                 ack: msg.ack,
                 type: msg.type,
+                notifyName: null,
+                senderPhone: null,
                 order: extractOrderInfo(msg)
             });
         });
