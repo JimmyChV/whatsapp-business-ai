@@ -83,6 +83,9 @@ function App() {
   const [recorder, setRecorder] = useState(null);
   const [recordingTime, setRecordingTime] = useState(0);
   const timerRef = useRef(null);
+  const chunksRef = useRef([]);
+  const streamRef = useRef(null);
+  const recordingStartRef = useRef(0);
 
   // ─── Business Data (Real from WA) ────────────────────────────
   const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
@@ -337,20 +340,16 @@ function App() {
     socket.emit('create_label', { name: name.trim() });
   };
 
-  const handleToggleChatLabel = (chatId, labelName) => {
-    if (!chatId || !labelName) return;
+  const handleToggleChatLabel = (chatId, labelId) => {
+    if (!chatId || labelId === undefined || labelId === null || labelId === '') return;
     const chat = chats.find((c) => c.id === chatId);
     const current = Array.isArray(chat?.labels) ? chat.labels : [];
-    const target = labelDefinitions.find((l) => l.name === labelName);
-    if (!target?.id) {
-      alert('Etiqueta no sincronizada aún. Recarga chats y vuelve a intentar.');
-      return;
-    }
 
-    const has = current.some((l) => String(l.id) === String(target.id));
+    const idStr = String(labelId);
+    const has = current.some((l) => String(l.id) === idStr);
     const nextIds = has
-      ? current.filter((l) => String(l.id) !== String(target.id)).map((l) => l.id).filter(Boolean)
-      : [...current.map((l) => l.id).filter(Boolean), target.id];
+      ? current.filter((l) => String(l.id) !== idStr).map((l) => l.id).filter(Boolean)
+      : [...current.map((l) => l.id).filter(Boolean), labelId];
 
     socket.emit('set_chat_labels', { chatId, labelIds: nextIds });
   };
@@ -405,27 +404,42 @@ REGLA CRÍTICA:
     if (isRecording || !activeChatId) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // WhatsApp prefers ogg/opus for PTT. Fall back to webm/opus if needed.
-      let mimeType = 'audio/ogg; codecs=opus';
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'audio/webm; codecs=opus';
-      }
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'audio/webm';
-      }
+      streamRef.current = stream;
 
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType,
-        audioBitsPerSecond: 128000
-      });
-      const chunks = [];
-      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+      let mimeType = 'audio/ogg; codecs=opus';
+      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm; codecs=opus';
+      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm';
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 });
+      chunksRef.current = [];
+      recordingStartRef.current = Date.now();
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
       mediaRecorder.onstop = () => {
-        stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(chunks, { type: mimeType });
+        try {
+          streamRef.current?.getTracks()?.forEach((t) => t.stop());
+        } catch (_) { }
+
+        const elapsedMs = Date.now() - recordingStartRef.current;
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+
+        if (elapsedMs < 350 || !blob || blob.size < 800) {
+          alert('Nota de voz muy corta o vacía. Mantén presionado un poco más para grabar.');
+          chunksRef.current = [];
+          return;
+        }
+
         const reader = new FileReader();
         reader.onloadend = () => {
-          const base64 = reader.result.split(',')[1];
+          const result = String(reader.result || '');
+          const base64 = result.includes(',') ? result.split(',')[1] : null;
+          if (!base64) {
+            alert('No se pudo procesar la nota de voz. Intenta nuevamente.');
+            return;
+          }
           const extension = mimeType.includes('ogg') ? 'ogg' : 'webm';
           socket.emit('send_media_message', {
             to: activeChatId,
@@ -438,20 +452,26 @@ REGLA CRÍTICA:
         };
         reader.readAsDataURL(blob);
       };
-      mediaRecorder.start(250); // collect data every 250ms for reliability
+
+      mediaRecorder.start(200);
       setRecorder(mediaRecorder);
       setIsRecording(true);
       setRecordingTime(0);
-      timerRef.current = setInterval(() => setRecordingTime(p => p + 1), 1000);
+      timerRef.current = setInterval(() => setRecordingTime((p) => p + 1), 1000);
     } catch (err) {
       console.error('Mic error:', err);
-      alert('No se pudo acceder al micrófono.\n\nVerifica que el navegador tiene permisos de micrófono.');
+      alert('No se pudo acceder al micrófono. Verifica permisos del navegador y vuelve a intentar.');
     }
   };
 
   const stopRecording = () => {
     if (!recorder) return;
-    recorder.stop();
+    try {
+      if (recorder.state === 'recording') {
+        try { recorder.requestData(); } catch (_) { }
+        recorder.stop();
+      }
+    } catch (_) { }
     setRecorder(null);
     setIsRecording(false);
     clearInterval(timerRef.current);
@@ -551,7 +571,6 @@ REGLA CRÍTICA:
         onStartNewChat={handleStartNewChat}
         labelDefinitions={labelDefinitions}
         onCreateLabel={handleCreateLabel}
-        onToggleChatLabel={handleToggleChatLabel}
       />
 
       {/* Main Content Area */}

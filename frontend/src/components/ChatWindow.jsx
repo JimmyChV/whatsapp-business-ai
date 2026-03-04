@@ -5,11 +5,11 @@ import moment from 'moment';
 
 // Common emojis for the picker
 const EMOJI_LIST = [
-    '😊', '😂', '❤️', '👍', '🙏', '😍', '😭', '😁', '🥰', '🤣',
-    '👏', '🔥', '💪', '✅', '⭐', '🎉', '💯', '🤝', '📦', '💰',
-    '📱', '✨', '🙌', '💬', '👋', '🤔', '😮', '💎', '🛒', '📸',
-    '✔️', '🚀', '💡', '⚡', '🎯', '📞', '📩', '🔔', '📝', '👀',
-];
+    '😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','😘','🥰','😗','😙','😚','🙂','🤗','🤩','🤔','🫡','🤨','😐','😑','😶','🙄','😏','😣','😥','😮','🤐','😯','😪','😫','🥱','😴','😌','😛','😜','😝','🤤','😒','😓','😔','😕','🙃','🫠','🤑','😲','☹️','🙁','😖','😞','😟','😤','😢','😭','😦','😧','😨','😩','🤯','😬','😰','😱','🥵','🥶','😳','🤪','😵','🥴','😠','😡','🤬','😷','🤒','🤕','🤢','🤮','🤧','😇','🥳','🥸','😺','😸','😹','😻','😼','😽','🙀','😿','😾',
+    '👍','👎','👏','🙌','🙏','🤝','💪','🫶','🤟','👌','✌️','🤞','🤘','🫵','👋','🤚','✋','🖐️','🫱','🫲','🫳','🫴','👈','👉','👆','👇','☝️','✍️',
+    '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','🔥','✨','⭐','🌟','💫','⚡','💥','🎉','🎊','✅','❌','⚠️','❗','❓',
+    '📦','🛒','💰','💵','💳','📈','📉','🧾','📋','📝','📌','📍','📞','📲','💬','📩','📨','📧','🔔','⏰','🕒','🕘','📅','🗓️','🚚','🏷️','🛍️','🎯','🚀','🏆','🤖','🧠','🧪','🧴','💧'
+]
 
 const ChatInput = ({
     inputText, setInputText, onSendMessage, onKeyDown, onFileClick,
@@ -21,6 +21,7 @@ const ChatInput = ({
     const [showCommands, setShowCommands] = useState(false);
     const [linkPreview, setLinkPreview] = useState(null);
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+    const inputRef = useRef(null);
 
     const handleInputChange = (e) => {
         const val = e.target.value;
@@ -44,6 +45,15 @@ const ChatInput = ({
         const match = String(text || '').match(/https?:\/\/[^\s]+/i);
         return match ? match[0] : null;
     };
+
+
+    useEffect(() => {
+        const el = inputRef.current;
+        if (!el) return;
+        el.style.height = '24px';
+        const next = Math.min(el.scrollHeight, 220);
+        el.style.height = `${next}px`;
+    }, [inputText]);
 
     useEffect(() => {
         const url = extractFirstUrl(inputText);
@@ -176,6 +186,7 @@ const ChatInput = ({
 
             <div className="input-container" style={{ margin: '0 5px' }}>
                 <textarea
+                    ref={inputRef}
                     className="message-input"
                     placeholder="Escribe un mensaje..."
                     value={inputText}
@@ -185,7 +196,7 @@ const ChatInput = ({
                         onKeyDown && onKeyDown(e);
                     }}
                     rows={1}
-                    style={{ padding: '4px 0', minHeight: '24px', resize: 'none' }}
+                    style={{ padding: '4px 0', minHeight: '24px', maxHeight: '220px', resize: 'none', overflowY: 'auto' }}
                     onClick={() => { setShowEmoji(false); }}
                 />
             </div>
@@ -339,7 +350,7 @@ const ChatWindow = ({
                                     const isActive = (activeChatDetails?.labels || []).some((l) => String(l.id) === String(label.id));
                                     return (
                                         <label key={label.id || label.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 4px', cursor: 'pointer', fontSize: '0.82rem' }}>
-                                            <input type="checkbox" checked={isActive} onChange={() => onToggleChatLabel?.(activeChatDetails?.id, label.name)} />
+                                            <input type="checkbox" checked={isActive} onChange={() => onToggleChatLabel?.(activeChatDetails?.id, label.id)} />
                                             <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: label.color || '#8696a0' }} />
                                             <span style={{ color: 'var(--text-primary)' }}>{label.name}</span>
                                         </label>

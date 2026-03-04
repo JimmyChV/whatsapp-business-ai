@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { MoreVertical, Search, Check, CheckCheck, X, Plus } from 'lucide-react';
+import { MoreVertical, Search, Check, CheckCheck, X } from 'lucide-react';
 import moment from 'moment';
 
 const WA_LABEL_COLORS = ['#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#00A884', '#7D8D95'];
@@ -14,7 +14,6 @@ const Sidebar = ({
     onStartNewChat,
     labelDefinitions,
     onCreateLabel,
-    onToggleChatLabel,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showMenu, setShowMenu] = useState(false);
@@ -176,25 +175,6 @@ const Sidebar = ({
                         >{label.name}</button>
                     ))}
                 </div>
-
-                {activeChat && allLabels.length > 0 && (
-                    <div style={{ marginTop: '6px', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '0.68rem', color: '#9db0ba' }}>Etiquetar chat:</span>
-                        {allLabels.map((label) => {
-                            const active = (activeChat.labels || []).some((l) => l.name === label.name);
-                            return (
-                                <button
-                                    key={`assign_${label.name}`}
-                                    onClick={() => onToggleChatLabel?.(activeChat.id, label.name)}
-                                    className={`label-chip ${active ? 'active' : ''}`}
-                                    style={{ '--label-color': label.color || '#7D8D95', padding: '2px 8px', fontSize: '0.66rem' }}
-                                >
-                                    {active ? '✓ ' : <Plus size={10} style={{ verticalAlign: 'middle' }} />} {label.name}
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
             </div>
 
             <div className="chat-list" onClick={() => showMenu && setShowMenu(false)}>
@@ -244,9 +224,6 @@ const Sidebar = ({
                                         </span>
                                     </p>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px', flexShrink: 0 }}>
-                                        {chat.labels?.slice(0, 4).map((l, idx) => (
-                                            <span key={idx} style={{ width: '8px', height: '8px', borderRadius: '50%', background: l.color || '#8696a0', display: 'inline-block' }} title={l.name} />
-                                        ))}
                                         {chat.unreadCount > 0 && (
                                             <span className="unread-badge">{chat.unreadCount}</span>
                                         )}
