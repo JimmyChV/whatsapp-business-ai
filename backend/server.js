@@ -4,9 +4,25 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 require('dotenv').config();
 
+const fs = require('fs');
+const path = require('path');
 const waClient = require('./whatsapp_client');
-const SocketManager = require('./socket_manager');
 const logger = require('./logger');
+
+
+function assertNoMergeMarkersInBackend() {
+    const backendDir = __dirname;
+    const jsFiles = fs.readdirSync(backendDir).filter((file) => file.endsWith('.js'));
+    const markerRegex = /^(<<<<<<<|=======|>>>>>>> )/m;
+
+    for (const file of jsFiles) {
+        const fullPath = path.join(backendDir, file);
+        const content = fs.readFileSync(fullPath, 'utf8');
+        if (markerRegex.test(content)) {
+            throw new Error(`Se detectaron marcadores de conflicto Git en ${file}. Resuelve los conflictos antes de iniciar el servidor.`);
+        }
+    }
+}
 
 const app = express();
 app.use(cors());
@@ -21,6 +37,8 @@ const io = new Server(server, {
 });
 
 // Initialize Managers
+assertNoMergeMarkersInBackend();
+const SocketManager = require('./socket_manager');
 const socketManager = new SocketManager(io);
 
 // Basic Route

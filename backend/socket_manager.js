@@ -56,7 +56,6 @@ function parseProductsFromBodyText(body = '') {
     return parsed;
 }
 
-<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
 function normalizeMoneyAmount(raw) {
     if (raw === null || raw === undefined || raw === '') return null;
     const num = Number.parseFloat(String(raw).replace(',', '.'));
@@ -67,8 +66,6 @@ function normalizeMoneyAmount(raw) {
     return Number(num.toFixed(2));
 }
 
-=======
->>>>>>> main
 function extractOrderInfo(msg) {
     try {
         const data = msg?._data || {};
@@ -77,7 +74,6 @@ function extractOrderInfo(msg) {
             msgOrderProducts: msg?.orderProducts,
             native: msg,
             raw: data
-<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
         }).slice(0, 50).map((item) => ({
             ...item,
             quantity: Number.parseFloat(String(item.quantity || 1).replace(',', '.')) || 1,
@@ -100,16 +96,6 @@ function extractOrderInfo(msg) {
         const shipping = normalizeMoneyAmount(data?.shipping || data?.shippingAmount || data?.delivery || null);
         const discount = normalizeMoneyAmount(data?.discount || data?.discountAmount || null);
         const tax = normalizeMoneyAmount(data?.tax || data?.taxAmount || null);
-=======
-        }).slice(0, 25);
-
-        if (!products.length) {
-            products = parseProductsFromBodyText(msg?.body || data?.body || '');
-        }
-
-        const orderId = msg?.orderId || data?.orderId || data?.orderToken || data?.token || null;
-        const subtotal = msg?.subtotal || data?.subtotal || data?.totalAmount1000 || data?.total || null;
->>>>>>> main
         const currency = msg?.currency || data?.currency || 'PEN';
 
         const maybeOrderType = String(msg?.type || '').toLowerCase().includes('order')
@@ -123,11 +109,8 @@ function extractOrderInfo(msg) {
             type: msg?.type || data?.type || null,
             body: msg?.body || data?.body || null,
             title: data?.title || data?.orderTitle || null,
-<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
             itemCount: data?.itemCount || data?.orderItemCount || products.length || null,
-=======
-            itemCount: data?.itemCount || data?.orderItemCount || null,
->>>>>>> main
+            itemCount: data?.itemCount || data?.orderItemCount || products.length || null,
             sellerJid: data?.sellerJid || null,
             token: data?.orderToken || data?.token || null
         };
@@ -136,13 +119,10 @@ function extractOrderInfo(msg) {
             orderId,
             currency,
             subtotal,
-<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
             total,
             shipping,
             discount,
             tax,
-=======
->>>>>>> main
             products,
             rawPreview
         };
@@ -168,8 +148,6 @@ async function resolveProfilePic(client, chatOrContactId) {
     return null;
 }
 
-<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
-
 
 async function resolveMessageSenderMeta(msg) {
     try {
@@ -191,8 +169,6 @@ async function resolveMessageSenderMeta(msg) {
         return { notifyName: null, senderPhone: null };
     }
 }
-=======
->>>>>>> main
 
 class SocketManager {
     constructor(io) {
@@ -299,7 +275,6 @@ class SocketManager {
                 }
             });
 
-<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
             socket.on('set_chat_labels', async ({ chatId, labelIds }) => {
                 try {
                     if (!chatId) {
@@ -341,8 +316,6 @@ class SocketManager {
                 }
             });
 
-=======
->>>>>>> main
             // --- Messaging ---
             socket.on('send_message', async ({ to, body }) => {
                 try {
@@ -472,7 +445,6 @@ class SocketManager {
                                 wooAvailable: false
                             };
                             console.log(`[Catalog] Loaded ${catalog.length} native products.`);
-<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
                         }
                     } catch (e) {
                         console.log('[Catalog] Native fetch failed.', e.message);
@@ -517,7 +489,6 @@ class SocketManager {
                         console.log('[Catalog] Using local catalog fallback.');
                     }
 
-=======
                         }
                     } catch (e) {
                         console.log('[Catalog] Native fetch failed.', e.message);
@@ -562,7 +533,6 @@ class SocketManager {
                         console.log('[Catalog] Using local catalog fallback.');
                     }
 
->>>>>>> main
                     socket.emit('business_data', { profile, labels, catalog, catalogMeta });
                 } catch (e) {
                     console.error('Error fetching business data:', e);
@@ -604,17 +574,10 @@ class SocketManager {
                     const me = waClient.client.info;
                     let profilePicUrl = null;
                     let businessProfile = null;
-<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
                     try {
                         profilePicUrl = await resolveProfilePic(waClient.client, me.wid._serialized);
                     } catch (e) { }
                     try {
-=======
-                    try {
-                        profilePicUrl = await resolveProfilePic(waClient.client, me.wid._serialized);
-                    } catch (e) { }
-                    try {
->>>>>>> main
                         businessProfile = await waClient.getBusinessProfile(me.wid._serialized);
                     } catch (e) { }
                     socket.emit('my_profile', {
@@ -728,11 +691,10 @@ class SocketManager {
                 mimetype: media ? media.mimetype : null,
                 ack: msg.ack,
                 type: msg.type,
-<<<<<<< codex/evaluate-project-for-functionality-issues-050m7p
                 notifyName: senderMeta.notifyName,
                 senderPhone: senderMeta.senderPhone,
-=======
->>>>>>> main
+                notifyName: senderMeta.notifyName,
+                senderPhone: senderMeta.senderPhone,
                 order: extractOrderInfo(msg)
             });
             // Auto refresh chat list
