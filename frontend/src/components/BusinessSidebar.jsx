@@ -217,14 +217,14 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                             </div>
                         ) : (
                             catalog.map((item, i) => (
-                                <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+                                <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', overflow: 'hidden', minHeight: '126px' }}>
                                     <div style={{ display: 'flex', gap: '10px', padding: '10px' }}>
-                                        <div style={{ width: '50px', height: '50px', borderRadius: '6px', background: '#3b4a54', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <div style={{ width: '62px', height: '62px', borderRadius: '8px', background: '#3b4a54', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                             {item.imageUrl ? <img src={item.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={20} color="#8696a0" />}
                                         </div>
                                         <div style={{ flex: 1, overflow: 'hidden' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title || `Producto ${i + 1}`}</div>
+                                                <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: '1.25' }}>{item.title || `Producto ${i + 1}`}</div>
                                                 {!isExternalCatalog && (
                                                     <div style={{ display: 'flex', gap: '8px' }}>
                                                         <button onClick={() => handleEditClick(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0' }}><Edit2 size={12} /></button>
@@ -252,7 +252,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                             {item.description && <div style={{ fontSize: '0.72rem', color: '#8696a0', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</div>}
                                         </div>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderTop: '1px solid var(--border-color)', padding: '7px 8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderTop: '1px solid var(--border-color)', padding: '7px 8px', flexWrap: 'wrap' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#1a2530', borderRadius: '999px', padding: '2px 6px' }}>
                                             <button onClick={() => updateCatalogQty(item.id, -1)} style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={10} /></button>
                                             <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', minWidth: '18px', textAlign: 'center' }}>{getCatalogQty(item.id)}</span>
@@ -264,7 +264,7 @@ Precio: S/ ${formatMoney(item.price)}
 ${item.description || ''}
 
 ¿Te interesa? 😊`); }}
-                                            style={{ flex: 1, padding: '7px', background: 'transparent', border: 'none', color: '#8696a0', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
+                                            style={{ flex: 1, minWidth: '95px', padding: '7px', background: 'transparent', border: 'none', color: '#8696a0', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
                                             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
                                             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#8696a0'; }}
                                         >
@@ -272,7 +272,7 @@ ${item.description || ''}
                                         </button>
                                         <button
                                             onClick={() => addToCart(item, getCatalogQty(item.id))}
-                                            style={{ flex: 1, padding: '7px', background: 'transparent', border: 'none', borderLeft: '1px solid var(--border-color)', color: '#00a884', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
+                                            style={{ flex: 1, minWidth: '95px', padding: '7px', background: 'transparent', border: 'none', borderLeft: '1px solid var(--border-color)', color: '#00a884', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
                                             onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,168,132,0.1)'}
                                             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                                         >
@@ -391,9 +391,13 @@ ${catalogText}
 CONVERSACIÓN ACTUAL CON EL CLIENTE:
 ${convText || '(sin mensajes aún)'}
 
+CARRITO ACTUAL (si ya agregaste productos):
+${cart.length > 0 ? cart.map((item, idx) => `- ${idx + 1}) ${item.title} | qty ${item.qty} | precio S/ ${formatMoney(item.price)}${item.discountPct ? ` | desc ${item.discountPct}%` : ''}`).join('\n') : '(carrito vacío)'}
+
 INSTRUCCIONES OBLIGATORIAS:
 - Si te piden opciones/cotización, da mínimo 2 alternativas: base y optimizada.
 - NO inventes productos, presentaciones ni precios. Usa solo el catálogo listado.
+- Si hay carrito con productos, propone al menos 2 cotizaciones (base y optimizada) usando ese carrito como base.
 - Siempre que sea posible, incluye upsell complementario.
 - En objeción de precio: responder por formulación/rendimiento, no por descuento defensivo.
 - Para mensajes listos para enviar al cliente, usa [MENSAJE: ...].
@@ -641,8 +645,8 @@ INSTRUCCIONES OBLIGATORIAS:
                                                     S/ {formatMoney(finalPrice)} {disc > 0 && <span style={{ color: '#8696a0', textDecoration: 'line-through', fontSize: '0.72rem', marginLeft: '4px' }}>S/ {formatMoney(price)}</span>}
                                                 </div>
                                             </div>
-                                            <button onClick={() => removeFromCart(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0', padding: '2px' }}>
-                                                <Trash2 size={14} />
+                                            <button onClick={() => removeFromCart(item.id)} style={{ background: '#2a3942', border: '1px solid var(--border-color)', cursor: 'pointer', color: '#da3633', padding: '4px 8px', borderRadius: '6px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <Trash2 size={13} /> Eliminar
                                             </button>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
