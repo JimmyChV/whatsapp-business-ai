@@ -92,6 +92,31 @@ Checklist:
 
 Nota: aunque no pongas keys, el sistema intenta `wc/store/v1` (endpoint público). Si Woo o plugins bloquean ese endpoint, la app caerá al `catalogo.json` local.
 
+## 🛠️ Solución rápida si la pantalla queda en blanco (frontend)
+Si ves errores como `setChatLabelMap is not defined` o `BookOpen is not defined`, normalmente estás corriendo un build viejo o una mezcla de archivos.
+
+Ejecuta **desde la raíz del repo**:
+
+```bash
+git fetch origin
+git checkout work
+git pull --rebase origin work
+
+# limpiar frontend
+cd frontend
+rm -rf node_modules dist .vite
+npm install
+npm run dev
+```
+
+Si prefieres `main`, usa `git checkout main` y `git pull --rebase origin main`.
+
+En Windows PowerShell, cambia la limpieza por:
+
+```powershell
+Remove-Item -Recurse -Force node_modules, dist, .vite
+```
+
 ## ⚠️ Notas de Seguridad
 - El archivo `.wwebjs_auth` contiene tu sesión de WhatsApp. **Nunca lo compartas.**
 - Tu `.env` está protegido por el `.gitignore` para no filtrar tus claves de API.
