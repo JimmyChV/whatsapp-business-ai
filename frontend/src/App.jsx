@@ -91,6 +91,14 @@ function App() {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
+    try {
+      const savedDefs = JSON.parse(localStorage.getItem('wa_custom_label_defs') || '[]');
+      const savedMap = JSON.parse(localStorage.getItem('wa_custom_chat_labels') || '{}');
+      if (Array.isArray(savedDefs)) setLabelDefinitions(savedDefs);
+      if (savedMap && typeof savedMap === 'object') setChatLabelMap(savedMap);
+    } catch (e) {
+      console.warn('No se pudieron leer etiquetas locales', e.message);
+    }
   }, []);
 
   // ──────────────────────────────────────────────────────────────
@@ -122,6 +130,7 @@ function App() {
     });
 
     socket.on('chats', (chatList) => {
+      setChats(Array.isArray(chatList) ? chatList : []);
       setChats(Array.isArray(chatList) ? chatList : []);
     });
 
@@ -155,10 +164,12 @@ function App() {
       const relatedChatId = msg.fromMe ? msg.to : msg.from;
       if (!msg.fromMe && Notification.permission === 'granted') {
         new Notification(msg.notifyName || msg.senderPhone || 'Nuevo mensaje', { body: msg.body || 'Nuevo mensaje', icon: '/favicon.ico' });
+        new Notification(msg.notifyName || msg.senderPhone || 'Nuevo mensaje', { body: msg.body || 'Nuevo mensaje', icon: '/favicon.ico' });
       }
 
       if (!msg.fromMe && relatedChatId !== activeChatId) {
         const toastId = `${msg.id || Date.now()}`;
+        setToasts((prev) => [...prev, { id: toastId, chatId: relatedChatId, title: msg.notifyName || msg.senderPhone || msg.from, body: msg.body || 'Nuevo mensaje' }].slice(-3));
         setToasts((prev) => [...prev, { id: toastId, chatId: relatedChatId, title: msg.notifyName || msg.senderPhone || msg.from, body: msg.body || 'Nuevo mensaje' }].slice(-3));
         setTimeout(() => {
           setToasts((prev) => prev.filter((t) => t.id !== toastId));
@@ -170,11 +181,17 @@ function App() {
         const nextChat = {
           ...(existing || { id: relatedChatId, name: msg.notifyName || msg.senderPhone || relatedChatId, labels: [] }),
           name: existing?.name || msg.notifyName || msg.senderPhone || relatedChatId,
+        const nextChat = {
+          ...(existing || { id: relatedChatId, name: msg.notifyName || msg.senderPhone || relatedChatId, labels: [] }),
+          name: existing?.name || msg.notifyName || msg.senderPhone || relatedChatId,
           timestamp: msg.timestamp || Math.floor(Date.now() / 1000),
           lastMessage: msg.body || (msg.type === 'image' ? '📷 Imagen' : 'Mensaje'),
           lastMessageFromMe: !!msg.fromMe,
           ack: msg.ack || 0,
           unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (relatedChatId === activeChatId ? 0 : (existing?.unreadCount || 0) + 1),
+        };
+        const without = prev.filter((c) => c.id !== relatedChatId);
+        return [nextChat, ...without].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         };
         const without = prev.filter((c) => c.id !== relatedChatId);
         return [nextChat, ...without].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
@@ -240,11 +257,12 @@ function App() {
     return () => {
       ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_history',
         'chat_opened', 'start_new_chat_error', 'chat_labels_error', 'chat_labels_updated',
+        'chat_opened', 'start_new_chat_error', 'chat_labels_error', 'chat_labels_updated',
         'contact_info', 'message', 'business_data', 'ai_suggestion_chunk',
         'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
       ].forEach(ev => socket.off(ev));
     };
-  }, [activeChatId]);
+  }, [activeChatId, labelDefinitions, chatLabelMap]);
 
   // ──────────────────────────────────────────────────────────────
   // Apply AI suggestion to input
