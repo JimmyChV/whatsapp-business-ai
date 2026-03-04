@@ -72,6 +72,8 @@ const Sidebar = ({
         return colors[name.charCodeAt(0) % colors.length];
     };
 
+    const activeChat = chats.find((c) => c.id === activeChatId);
+
     return (
         <div className="sidebar">
             <div className="sidebar-header">
