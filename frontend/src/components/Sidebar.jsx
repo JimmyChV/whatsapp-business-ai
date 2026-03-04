@@ -16,6 +16,9 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
     const searchIsPhone = /^\+?\d{8,15}$/.test(searchQuery.trim());
     const normalizedPhone = searchQuery.replace(/\D/g, '');
 
+    const searchIsPhone = /^\+?\d{8,15}$/.test(searchQuery.trim());
+    const normalizedPhone = searchQuery.replace(/\D/g, '');
+
     const formatTime = (ts) => {
         const m = moment.unix(ts || 0);
         if (!m.isValid()) return '';
@@ -38,15 +41,6 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
         if (searchIsPhone) return true;
         const q = searchQuery.toLowerCase();
         return c.name?.toLowerCase().includes(q) || c.lastMessage?.toLowerCase().includes(q);
-    });
-
-    const filteredChats = chats.filter((c) => {
-        const q = searchQuery.toLowerCase();
-        const matchesSearch = searchIsPhone
-            ? true
-            : (c.name?.toLowerCase().includes(q) || c.lastMessage?.toLowerCase().includes(q));
-        const matchesLabel = labelFilter === 'all' || (c.labels || []).some((l) => l.name === labelFilter);
-        return matchesSearch && matchesLabel;
     });
 
     const avatarLetter = (name) => (name ? name.charAt(0).toUpperCase() : '?');
@@ -99,7 +93,6 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
                                     <div key={i}
                                         onClick={() => { item.action(); setShowMenu(false); }}
                                         style={{ padding: '14px 20px', cursor: 'pointer', fontSize: '0.9rem', color: i === 2 ? '#ff6b6b' : 'var(--text-primary)', borderBottom: i < 2 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
-                                        style={{ padding: '14px 20px', cursor: 'pointer', fontSize: '0.9rem', color: i === 2 ? '#ff6b6b' : 'var(--text-primary)', borderBottom: i < 2 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
                                     >
                                         {item.label}
                                     </div>
@@ -122,15 +115,6 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
                         onChange={e => setSearchQuery(e.target.value)}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter' && searchIsPhone) onStartNewChat?.(normalizedPhone, '');
-                        }}
-                    />
-                    {searchQuery && <X size={16} color="#8696a0" style={{ margin: '0 12px', cursor: 'pointer' }} onClick={() => setSearchQuery('')} />}
-                </div>
-                {searchIsPhone && (
-                    <button
-                        onClick={() => onStartNewChat?.(normalizedPhone, '')}
-                        style={{ marginTop: '8px', width: '100%', background: '#00a884', color: '#06271f', border: 'none', borderRadius: '8px', padding: '8px 10px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
-                    >Abrir chat con +{normalizedPhone}</button>
                         }}
                     />
                     {searchQuery && <X size={16} color="#8696a0" style={{ margin: '0 12px', cursor: 'pointer' }} onClick={() => setSearchQuery('')} />}
@@ -177,8 +161,6 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontSize: '1.0rem', fontWeight: 400, color: 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: '220px' }}>{chat.name}</span>
                                     <span style={{ fontSize: '0.73rem', color: chat.unreadCount > 0 ? '#00a884' : '#8696a0', flexShrink: 0, marginLeft: '8px' }}>{formatTime(chat.timestamp)}</span>
-                                    <span style={{ fontSize: '1.0rem', fontWeight: 400, color: 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: '220px' }}>{chat.name}</span>
-                                    <span style={{ fontSize: '0.73rem', color: chat.unreadCount > 0 ? '#00a884' : '#8696a0', flexShrink: 0, marginLeft: '8px' }}>{formatTime(chat.timestamp)}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3px', alignItems: 'center' }}>
                                     <p style={{ fontSize: '0.875rem', color: '#8696a0', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', display: 'flex', alignItems: 'center', flex: 1 }}>
@@ -186,8 +168,6 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
                                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{chat.lastMessage || 'Haz clic para chatear'}</span>
                                     </p>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px', flexShrink: 0 }}>
-                                        {chat.labels?.slice(0, 2).map((l, idx) => (
-                                            <span key={idx} style={{ padding: '1px 6px', borderRadius: '8px', fontSize: '0.62rem', background: 'rgba(255,255,255,0.06)', color: l.color || '#9db0ba' }} title={l.name}>{l.name}</span>
                                         {chat.labels?.slice(0, 2).map((l, idx) => (
                                             <span key={idx} style={{ padding: '1px 6px', borderRadius: '8px', fontSize: '0.62rem', background: 'rgba(255,255,255,0.06)', color: l.color || '#9db0ba' }} title={l.name}>{l.name}</span>
                                         ))}

@@ -110,7 +110,6 @@ function extractOrderInfo(msg) {
             body: msg?.body || data?.body || null,
             title: data?.title || data?.orderTitle || null,
             itemCount: data?.itemCount || data?.orderItemCount || products.length || null,
-            itemCount: data?.itemCount || data?.orderItemCount || products.length || null,
             sellerJid: data?.sellerJid || null,
             token: data?.orderToken || data?.token || null
         };
@@ -147,6 +146,7 @@ async function resolveProfilePic(client, chatOrContactId) {
 
     return null;
 }
+
 
 
 async function resolveMessageSenderMeta(msg) {
@@ -489,50 +489,6 @@ class SocketManager {
                         console.log('[Catalog] Using local catalog fallback.');
                     }
 
-                        }
-                    } catch (e) {
-                        console.log('[Catalog] Native fetch failed.', e.message);
-                    }
-
-                    if (!catalog.length) {
-                        const wooResult = await getWooCatalog();
-                        if (wooResult.products.length > 0) {
-                            catalog = wooResult.products;
-                            catalogMeta = {
-                                source: 'woocommerce',
-                                nativeAvailable: false,
-                                wooConfigured: isWooConfigured(),
-                                wooAvailable: true,
-                                wooSource: wooResult.source,
-                                wooStatus: wooResult.status,
-                                wooReason: wooResult.reason
-                            };
-                            console.log(`[Catalog] Loaded ${catalog.length} products from WooCommerce (${wooResult.source}).`);
-                        } else {
-                            catalogMeta = {
-                                ...catalogMeta,
-                                wooConfigured: isWooConfigured(),
-                                wooAvailable: false,
-                                wooSource: wooResult.source,
-                                wooStatus: wooResult.status,
-                                wooReason: wooResult.reason
-                            };
-                            console.log(`[Catalog] WooCommerce unavailable/empty (${wooResult.source}): ${wooResult.reason || 'sin detalle'}`);
-                        }
-                    }
-
-                    if (!catalog.length) {
-                        catalog = loadCatalog();
-                        catalogMeta = {
-                            ...catalogMeta,
-                            source: 'local',
-                            nativeAvailable: false,
-                            wooConfigured: isWooConfigured(),
-                            wooAvailable: false
-                        };
-                        console.log('[Catalog] Using local catalog fallback.');
-                    }
-
                     socket.emit('business_data', { profile, labels, catalog, catalogMeta });
                 } catch (e) {
                     console.error('Error fetching business data:', e);
@@ -691,8 +647,6 @@ class SocketManager {
                 mimetype: media ? media.mimetype : null,
                 ack: msg.ack,
                 type: msg.type,
-                notifyName: senderMeta.notifyName,
-                senderPhone: senderMeta.senderPhone,
                 notifyName: senderMeta.notifyName,
                 senderPhone: senderMeta.senderPhone,
                 order: extractOrderInfo(msg)

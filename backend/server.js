@@ -6,11 +6,12 @@ require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const waClient = require('./whatsapp_client');
 const logger = require('./logger');
 
 
-function assertNoMergeMarkersInBackend() {
+function assertBackendSourcesAreValid() {
     const backendDir = __dirname;
     const jsFiles = fs.readdirSync(backendDir).filter((file) => file.endsWith('.js'));
     const markerRegex = /^(<<<<<<<|=======|>>>>>>> )/m;
@@ -18,8 +19,15 @@ function assertNoMergeMarkersInBackend() {
     for (const file of jsFiles) {
         const fullPath = path.join(backendDir, file);
         const content = fs.readFileSync(fullPath, 'utf8');
+
         if (markerRegex.test(content)) {
             throw new Error(`Se detectaron marcadores de conflicto Git en ${file}. Resuelve los conflictos antes de iniciar el servidor.`);
+        }
+
+        try {
+            new vm.Script(content, { filename: file });
+        } catch (error) {
+            throw new Error(`Error de sintaxis en ${file}: ${error.message}`);
         }
     }
 }
@@ -37,7 +45,7 @@ const io = new Server(server, {
 });
 
 // Initialize Managers
-assertNoMergeMarkersInBackend();
+assertBackendSourcesAreValid();
 const SocketManager = require('./socket_manager');
 const socketManager = new SocketManager(io);
 
