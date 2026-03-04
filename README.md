@@ -92,35 +92,36 @@ Checklist:
 
 Nota: aunque no pongas keys, el sistema intenta `wc/store/v1` (endpoint público). Si Woo o plugins bloquean ese endpoint, la app caerá al `catalogo.json` local.
 
-
-## 🧩 Solución rápida (frontend no compila por conflictos Git)
-Si Vite muestra errores como:
-- `Identifier ... has already been declared`, o
-- `Unexpected token <<<<<<<`
-
-revisa que no existan marcadores de merge sin resolver en `frontend/src`.
-
-Este proyecto ya incluye validación automática:
-- `npm run dev` ejecuta `predev` con `scripts/check-conflicts.mjs`
-- `npm run build` ejecuta `prebuild` con `scripts/check-conflicts.mjs`
-
-Si falla, corrige el archivo reportado eliminando líneas:
-- `<<<<<<< ...`
-- `=======`
-- `>>>>>>> ...`
-
-Y deja solo el bloque final correcto.
-
-Si quieres recuperarlo en automático (sin editar manualmente), ejecuta:
-```bash
-cd frontend
-npm run fix:sidebar
-```
-Esto restaura `src/components/Sidebar.jsx` desde `scripts/templates/Sidebar.clean.jsx`.
-
 ## ⚠️ Notas de Seguridad
 - El archivo `.wwebjs_auth` contiene tu sesión de WhatsApp. **Nunca lo compartas.**
 - Tu `.env` está protegido por el `.gitignore` para no filtrar tus claves de API.
+
+## 🧯 Volver a una versión anterior estable (ejemplo: `f72f765`)
+Si quieres dejar tu carpeta local exactamente como un commit anterior (y eliminar cambios posteriores), usa este flujo:
+
+```bash
+# 1) Desde la raíz del repo
+git status
+
+# 2) (Opcional) Guardar cambios locales no commiteados
+git stash push -u -m "backup antes de volver a f72f765"
+
+# 3) Traer historial remoto
+git fetch origin --prune
+
+# 4) Verificar que exista el commit objetivo
+git show --oneline --no-patch f72f765
+
+# 5) Forzar rama local a ese commit (ejemplo main)
+git checkout -B main f72f765
+
+# 6) Si también quieres que GitHub quede igual, empuja con fuerza
+git push --force-with-lease origin main
+```
+
+Si aparece el error `Your local changes would be overwritten by checkout`, significa que tienes archivos modificados (por ejemplo `frontend/src/components/Sidebar.jsx`). En ese caso:
+- guarda cambios con `git stash push -u`, o
+- descártalos con `git reset --hard` (⚠️ elimina cambios no guardados).
 
 ---
 Desarrollado con ❤️ para potenciar las ventas digitales.
