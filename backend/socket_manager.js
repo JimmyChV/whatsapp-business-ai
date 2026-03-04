@@ -445,6 +445,9 @@ class SocketManager {
                     try {
                         businessProfile = await waClient.getBusinessProfile(me.wid._serialized);
                     } catch (e) { }
+                    try {
+                        businessProfile = await waClient.getBusinessProfile(me.wid._serialized);
+                    } catch (e) { }
                     socket.emit('my_profile', {
                         pushname: me.pushname,
                         phone: me.wid.user,
