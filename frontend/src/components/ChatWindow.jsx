@@ -1,6 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Search, MoreVertical, Mic, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart } from 'lucide-react';
 import MessageBubble from './MessageBubble';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
 // Common emojis for the picker
 const EMOJI_LIST = [
@@ -18,6 +20,8 @@ const ChatInput = ({
 }) => {
     const [showEmoji, setShowEmoji] = useState(false);
     const [showCommands, setShowCommands] = useState(false);
+    const [linkPreview, setLinkPreview] = useState(null);
+    const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
     const handleInputChange = (e) => {
         const val = e.target.value;
@@ -36,6 +40,40 @@ const ChatInput = ({
         else setInputText(cmd + ' ');
         setShowCommands(false);
     };
+
+    const extractFirstUrl = (text) => {
+        const match = String(text || '').match(/https?:\/\/[^\s]+/i);
+        return match ? match[0] : null;
+    };
+
+    useEffect(() => {
+        const url = extractFirstUrl(inputText);
+        if (!url) {
+            setLinkPreview(null);
+            setIsLoadingPreview(false);
+            return;
+        }
+
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+            try {
+                setIsLoadingPreview(true);
+                const encoded = encodeURIComponent(url);
+                const resp = await fetch(`${API_BASE_URL}/api/link-preview?url=${encoded}`);
+                const data = await resp.json();
+                if (!cancelled) setLinkPreview(data?.ok ? data : { ok: false, url });
+            } catch (e) {
+                if (!cancelled) setLinkPreview({ ok: false, url });
+            } finally {
+                if (!cancelled) setIsLoadingPreview(false);
+            }
+        }, 350);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [inputText]);
 
     return (
         <div className="chat-input-area" style={{ position: 'relative' }}>
@@ -83,6 +121,33 @@ const ChatInput = ({
                                 onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}
                             >{e}</span>
                         ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Link Preview (before send) */}
+            {linkPreview && (
+                <div style={{
+                    position: 'absolute', bottom: '100%', left: '70px', right: '70px',
+                    background: '#1f2c34', border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: '10px', padding: '10px', marginBottom: '8px', zIndex: 150,
+                    display: 'flex', gap: '10px', alignItems: 'flex-start'
+                }}>
+                    {linkPreview?.image && (
+                        <img src={linkPreview.image} alt="preview" style={{ width: '64px', height: '64px', borderRadius: '8px', objectFit: 'cover', flexShrink: 0 }} />
+                    )}
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '0.72rem', color: '#00a884', marginBottom: '2px' }}>
+                            {isLoadingPreview ? 'Cargando vista previa...' : 'Vista previa del enlace'}
+                        </div>
+                        <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {linkPreview?.title || linkPreview?.siteName || linkPreview?.url}
+                        </div>
+                        {linkPreview?.description && (
+                            <div style={{ fontSize: '0.75rem', color: '#8696a0', marginTop: '2px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                {linkPreview.description}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -147,6 +212,7 @@ const ChatInput = ({
                         style={{ background: 'none', color: isRecording ? '#da3633' : '#8696a0' }}
                         onMouseDown={startRecording}
                         onMouseUp={stopRecording}
+                        onMouseLeave={isRecording ? stopRecording : undefined}
                         onTouchStart={startRecording}
                         onTouchEnd={stopRecording}
                         title={isRecording ? 'Suelta para enviar' : 'Mantén para grabar voz'}
@@ -177,11 +243,20 @@ const ChatWindow = ({
     onDrop,
     showClientProfile,
     setShowClientProfile,
+    availableLabels = [],
+    onSetChatLabels,
+    onCreateLabel,
     ...inputProps
 }) => {
     const [showMenu, setShowMenu] = useState(false);
     const [searchVisible, setSearchVisible] = useState(false);
     const [chatSearch, setChatSearch] = useState('');
+    const [showLabelMenu, setShowLabelMenu] = useState(false);
+    const [selectedLabelIds, setSelectedLabelIds] = useState([]);
+
+    useEffect(() => {
+        setSelectedLabelIds((activeChatDetails?.labels || []).map((l) => l.id));
+    }, [activeChatDetails?.id, activeChatDetails?.labels]);
 
     const filteredMessages = chatSearch
         ? messages.filter(m => m.body?.toLowerCase().includes(chatSearch.toLowerCase()))
@@ -217,12 +292,70 @@ const ChatWindow = ({
                     <span style={{ fontSize: '0.78rem', color: '#8696a0' }}>
                         {activeChatDetails?.isGroup ? `${activeChatDetails?.participants || 0} participantes` : 'Haz clic para ver el perfil'}
                     </span>
+                    {!!activeChatDetails?.labels?.length && (
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
+                            {activeChatDetails.labels.map((l) => (
+                                <span key={l.id} style={{ fontSize: '0.68rem', borderRadius: '10px', padding: '2px 8px', background: 'rgba(255,255,255,0.08)', color: l.color || '#d8e0e4', border: '1px solid rgba(255,255,255,0.10)' }}>
+                                    {l.name}
+                                </span>
+                            ))}
+                        </div>
+                    )}
                 </div>
                 <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
                     <button className="btn-icon" style={{ color: searchVisible ? '#00a884' : '#8696a0' }}
                         onClick={() => setSearchVisible(v => !v)} title="Buscar en chat">
                         <Search size={20} />
                     </button>
+                    <div style={{ position: 'relative' }}>
+                        <button className="btn-icon" style={{ color: showLabelMenu ? '#00a884' : '#8696a0', fontSize: '0.76rem', padding: '6px 10px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.12)' }}
+                            onClick={() => setShowLabelMenu((v) => !v)} title="Etiquetas">
+                            Etiquetas
+                        </button>
+                        {showLabelMenu && (
+                            <div style={{ position: 'absolute', top: '34px', right: 0, background: '#233138', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', minWidth: '260px', zIndex: 1000, padding: '10px' }}>
+                                <div style={{ fontSize: '0.72rem', color: '#9db0ba', marginBottom: '8px' }}>Etiquetas de WhatsApp Business (sincroniza con el celular)</div>
+                                <div style={{ marginBottom: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {selectedLabelIds.length === 0 && <span style={{ fontSize: '0.74rem', color: '#9db0ba' }}>Sin etiquetas seleccionadas</span>}
+                                    {availableLabels.filter((l) => selectedLabelIds.map(String).includes(String(l.id))).map((l) => (
+                                        <button key={l.id} onClick={() => setSelectedLabelIds((prev) => prev.filter((id) => String(id) !== String(l.id)))} style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.08)', color: l.color || '#d8e0e4', borderRadius: '999px', fontSize: '0.7rem', padding: '3px 8px', cursor: 'pointer' }}>
+                                            {l.name} ×
+                                        </button>
+                                    ))}
+                                </div>
+                                <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                    {availableLabels.map((label) => {
+                                        const active = selectedLabelIds.map(String).includes(String(label.id));
+                                        return (
+                                            <label key={label.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={active}
+                                                    onChange={(e) => {
+                                                        setSelectedLabelIds((prev) => e.target.checked
+                                                            ? [...new Set([...prev, label.id])]
+                                                            : prev.filter((id) => id !== label.id));
+                                                    }}
+                                                />
+                                                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: label.color || '#8696a0' }} />
+                                                <span>{label.name}</span>
+                                            </label>
+                                        );
+                                    })}
+                                    {availableLabels.length === 0 && <span style={{ fontSize: '0.78rem', color: '#9db0ba' }}>No hay etiquetas disponibles.</span>}
+                                </div>
+                                <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
+                                    <button style={{ flex: 1, background: '#00a884', border: 'none', color: '#06271f', borderRadius: '6px', padding: '6px 8px', cursor: 'pointer', fontWeight: 600 }}
+                                        onClick={() => {
+                                            onSetChatLabels?.(activeChatDetails?.id, selectedLabelIds);
+                                            setShowLabelMenu(false);
+                                        }}>Guardar</button>
+                                    <button style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.18)', color: '#d8e0e4', borderRadius: '6px', padding: '6px 8px', cursor: 'pointer' }}
+                                        onClick={() => onCreateLabel?.()}>Crear etiqueta</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                     <div style={{ position: 'relative' }}>
                         <button className="btn-icon" style={{ color: '#8696a0' }}
                             onClick={() => setShowMenu(v => !v)} title="Más opciones">
@@ -283,7 +416,11 @@ const ChatWindow = ({
                     </div>
                 )}
                 {filteredMessages.map((msg, idx) => (
-                    <MessageBubble key={msg.id || idx} msg={msg} />
+                    <MessageBubble
+                        key={msg.id || idx}
+                        msg={msg}
+                        onPrefillMessage={(text) => inputProps?.setInputText && inputProps.setInputText(text)}
+                    />
                 ))}
                 <div ref={messagesEndRef} />
             </div>

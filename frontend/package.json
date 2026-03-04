@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/check-conflicts.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/check-conflicts.mjs",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
