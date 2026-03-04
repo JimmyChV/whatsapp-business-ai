@@ -182,10 +182,19 @@ function App() {
       }
     });
 
+    socket.on('logout_done', () => {
+      setIsClientReady(false);
+      setQrCode('');
+      setChats([]);
+      setMessages([]);
+      setActiveChatId(null);
+      alert('Sesión de WhatsApp cerrada. Escanea nuevamente el QR.');
+    });
+
     return () => {
       ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_history',
         'contact_info', 'message', 'business_data', 'ai_suggestion_chunk',
-        'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected'
+        'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
       ].forEach(ev => socket.off(ev));
     };
   }, [activeChatId]);
@@ -240,6 +249,11 @@ function App() {
       socket.emit('send_message', { to: activeChatId, body: inputText });
     }
     setInputText('');
+  };
+
+  const handleLogoutWhatsapp = () => {
+    if (!window.confirm('¿Cerrar sesión de WhatsApp en este equipo?')) return;
+    socket.emit('logout_whatsapp');
   };
 
   const requestAiSuggestion = (customPromptArg) => {
@@ -426,6 +440,7 @@ REGLA CRÍTICA:
         activeChatId={activeChatId}
         onChatSelect={handleChatSelect}
         myProfile={myProfile}
+        onLogout={handleLogoutWhatsapp}
       />
 
       {/* Main Content Area */}
@@ -505,6 +520,8 @@ REGLA CRÍTICA:
           messages={messages}
           activeChatId={activeChatId}
           socket={socket}
+          myProfile={myProfile}
+          onLogout={handleLogoutWhatsapp}
         />
       </div>
     </div>

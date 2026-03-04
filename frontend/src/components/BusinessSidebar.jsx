@@ -86,6 +86,29 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
                         </div>
                     </div>
                 )}
+                <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '0.7rem', color: '#00a884', marginBottom: '8px' }}>DATOS DISPONIBLES</div>
+                    <div style={{ fontSize: '0.78rem', color: '#c9d5db', lineHeight: '1.55' }}>
+                        {contact.pushname && <div>• Pushname: {contact.pushname}</div>}
+                        {contact.shortName && <div>• Nombre corto: {contact.shortName}</div>}
+                        <div>• Business: {contact.isBusiness ? 'Sí' : 'No'}</div>
+                        <div>• En mis contactos: {contact.isMyContact ? 'Sí' : 'No'}</div>
+                        <div>• Contacto WA: {contact.isWAContact ? 'Sí' : 'No'}</div>
+                        <div>• Bloqueado: {contact.isBlocked ? 'Sí' : 'No'}</div>
+                    </div>
+                </div>
+                {contact.businessDetails && (
+                    <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
+                        <div style={{ fontSize: '0.7rem', color: '#00a884', marginBottom: '8px' }}>PERFIL BUSINESS (WHATSAPP)</div>
+                        <div style={{ fontSize: '0.78rem', color: '#c9d5db', lineHeight: '1.55' }}>
+                            {contact.businessDetails.category && <div>• Categoría: {contact.businessDetails.category}</div>}
+                            {contact.businessDetails.website && <div>• Web: {contact.businessDetails.website}</div>}
+                            {contact.businessDetails.email && <div>• Email: {contact.businessDetails.email}</div>}
+                            {contact.businessDetails.address && <div>• Dirección: {contact.businessDetails.address}</div>}
+                            {contact.businessDetails.description && <div>• Descripción: {contact.businessDetails.description}</div>}
+                        </div>
+                    </div>
+                )}
                 <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px' }}>
                     <div style={{ fontSize: '0.7rem', color: '#8a2be2', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <Sparkles size={11} /> ACCIONES RÁPIDAS IA
@@ -309,7 +332,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
 // =========================================================
 // BUSINESS SIDEBAR — Main right panel
 // =========================================================
-const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activeChatId, onSendToClient, socket }) => {
+const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activeChatId, onSendToClient, socket, myProfile, onLogout }) => {
     const [activeTab, setActiveTab] = useState('ai');
     // AI Chat State
     const [aiMessages, setAiMessages] = useState([
@@ -506,6 +529,7 @@ INSTRUCCIONES OBLIGATORIAS:
         { id: 'catalog', icon: <Package size={15} />, label: `Catálogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
         { id: 'cart', icon: <ShoppingCart size={15} />, label: `Carrito${cart.length > 0 ? ` (${cart.length})` : ''}` },
         { id: 'quick', icon: <Clock size={15} />, label: 'Rápidas' },
+        { id: 'company', icon: <BookOpen size={15} />, label: 'Empresa' },
     ];
 
     return (
@@ -527,9 +551,12 @@ INSTRUCCIONES OBLIGATORIAS:
                                 </div>
                             )}
                         </div>
-                        <div style={{ fontSize: '0.65rem', color: '#00a884', background: 'rgba(0,168,132,0.15)', padding: '2px 6px', borderRadius: '4px', flexShrink: 0 }}>
-                            Business
-                        </div>
+                        <button
+                            onClick={onLogout}
+                            style={{ fontSize: '0.65rem', color: '#ff9f9f', background: 'rgba(218,54,51,0.2)', border: '1px solid rgba(218,54,51,0.4)', padding: '4px 6px', borderRadius: '6px', flexShrink: 0, cursor: 'pointer' }}
+                        >
+                            Cerrar sesión
+                        </button>
                     </div>
                 ) : (
                     <div style={{ fontSize: '0.83rem', color: '#8696a0' }}>Perfil de Negocio</div>
@@ -744,6 +771,31 @@ INSTRUCCIONES OBLIGATORIAS:
                             <div style={{ fontSize: '0.72rem', color: '#8696a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{qr.text.split('\n')[0]}</div>
                         </button>
                     ))}
+                </div>
+            )}
+
+            {activeTab === 'company' && (
+                <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '12px' }}>
+                        <div style={{ fontSize: '0.72rem', color: '#00a884', marginBottom: '8px' }}>MI EMPRESA (WHATSAPP)</div>
+                        <div style={{ fontSize: '0.8rem', color: '#d6e2e8', lineHeight: '1.6' }}>
+                            <div><b>Nombre:</b> {profile?.name || profile?.pushname || myProfile?.pushname || '—'}</div>
+                            <div><b>Teléfono:</b> {profile?.phone || myProfile?.phone || '—'}</div>
+                            <div><b>ID:</b> {profile?.id || myProfile?.id || '—'}</div>
+                            <div><b>Plataforma:</b> {profile?.platform || myProfile?.platform || '—'}</div>
+                            {profile?.category && <div><b>Categoría:</b> {profile.category}</div>}
+                            {profile?.website && <div><b>Web:</b> {profile.website}</div>}
+                            {profile?.email && <div><b>Email:</b> {profile.email}</div>}
+                            {profile?.address && <div><b>Dirección:</b> {profile.address}</div>}
+                            {profile?.description && <div><b>Descripción:</b> {profile.description}</div>}
+                        </div>
+                    </div>
+                    <button
+                        onClick={onLogout}
+                        style={{ width: '100%', padding: '10px', background: '#392526', border: '1px solid rgba(218,54,51,0.45)', borderRadius: '8px', color: '#ffb3b3', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}
+                    >
+                        Cerrar sesión de WhatsApp
+                    </button>
                 </div>
             )}
         </div>

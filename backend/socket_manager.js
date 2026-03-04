@@ -258,11 +258,22 @@ class SocketManager {
 
                     // Real profile from WA account info
                     let profilePicUrl = null;
+                    let businessProfile = null;
                     try { profilePicUrl = await waClient.client.getProfilePicUrl(meId); } catch (e) { }
+                    try { businessProfile = await waClient.getBusinessProfile(meId); } catch (e) { }
                     const profile = {
                         name: me.pushname,
                         phone: me.wid.user,
+                        id: meId,
+                        platform: me.platform || null,
+                        isBusiness: true,
                         profilePicUrl,
+                        businessHours: businessProfile?.business_hours || null,
+                        category: businessProfile?.category || null,
+                        email: businessProfile?.email || null,
+                        website: businessProfile?.website || null,
+                        address: businessProfile?.address || null,
+                        description: businessProfile?.description || null,
                     };
 
                     // Real labels from WA
@@ -386,14 +397,24 @@ class SocketManager {
                 try {
                     const me = waClient.client.info;
                     let profilePicUrl = null;
+                    let businessProfile = null;
                     try {
                         profilePicUrl = await waClient.client.getProfilePicUrl(me.wid._serialized);
+                    } catch (e) { }
+                    try {
+                        businessProfile = await waClient.getBusinessProfile(me.wid._serialized);
                     } catch (e) { }
                     socket.emit('my_profile', {
                         pushname: me.pushname,
                         phone: me.wid.user,
                         id: me.wid._serialized,
+                        platform: me.platform || null,
                         profilePicUrl,
+                        category: businessProfile?.category || null,
+                        email: businessProfile?.email || null,
+                        website: businessProfile?.website || null,
+                        address: businessProfile?.address || null,
+                        description: businessProfile?.description || null,
                     });
                 } catch (e) {
                     console.error('Error fetching my profile:', e);
@@ -405,12 +426,18 @@ class SocketManager {
                     const contact = await waClient.client.getContactById(contactId);
                     let profilePicUrl = null;
                     let status = null;
+                    let businessProfile = null;
                     try {
                         profilePicUrl = await waClient.client.getProfilePicUrl(contactId);
                     } catch (e) { }
                     try {
                         const statusObj = await contact.getAbout();
                         status = statusObj;
+                    } catch (e) { }
+                    try {
+                        if (contact?.isBusiness) {
+                            businessProfile = await waClient.getBusinessProfile(contactId);
+                        }
                     } catch (e) { }
                     let labels = [];
                     try {
@@ -422,15 +449,43 @@ class SocketManager {
                         id: contactId,
                         name: contact.name || contact.pushname || contact.number,
                         phone: contact.number,
+                        pushname: contact.pushname || null,
+                        shortName: contact.shortName || null,
                         profilePicUrl,
                         status,
                         isBusiness: contact.isBusiness,
+                        isEnterprise: contact.isEnterprise || false,
+                        isMyContact: contact.isMyContact || false,
+                        isWAContact: contact.isWAContact || false,
+                        isBlocked: contact.isBlocked || false,
                         isGroup: contactId.includes('@g.us'),
                         labels,
+                        businessDetails: businessProfile ? {
+                            category: businessProfile?.category || null,
+                            email: businessProfile?.email || null,
+                            website: businessProfile?.website || null,
+                            address: businessProfile?.address || null,
+                            description: businessProfile?.description || null,
+                        } : null,
                     });
                 } catch (e) {
                     console.error('Error fetching contact info:', e);
                 }
+            });
+
+            socket.on('logout_whatsapp', async () => {
+                try {
+                    await waClient.client.logout();
+                } catch (e) {
+                    console.error('logout_whatsapp error:', e.message);
+                }
+                try {
+                    waClient.isReady = false;
+                    waClient.client.initialize();
+                } catch (e) {
+                    console.error('reinitialize after logout failed:', e.message);
+                }
+                socket.emit('logout_done', { ok: true });
             });
 
             socket.on('disconnect', () => {
