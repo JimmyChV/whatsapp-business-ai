@@ -11,6 +11,35 @@ import './index.css';
 
 export const socket = io('http://localhost:3001');
 
+const normalizeCatalogItem = (item = {}, index = 0) => {
+  const safeItem = item && typeof item === 'object' ? item : {};
+  const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
+  const rawPrice = safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio ?? 0;
+  const parsedPrice = Number.parseFloat(String(rawPrice).replace(',', '.'));
+
+  return {
+    id: safeItem.id || safeItem.product_id || `catalog_${index}`,
+    title: String(rawTitle || `Producto ${index + 1}`).trim(),
+    price: Number.isFinite(parsedPrice) ? parsedPrice.toFixed(2) : '0.00',
+    description: safeItem.description || safeItem.short_description || safeItem.descripcion || '',
+    imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
+    source: safeItem.source || 'unknown',
+    sku: safeItem.sku || null,
+    stockStatus: safeItem.stockStatus || safeItem.stock_status || null
+  };
+};
+
+const normalizeBusinessDataPayload = (data = {}) => {
+  const rawCatalog = Array.isArray(data.catalog) ? data.catalog : [];
+  const catalog = rawCatalog.map((item, idx) => normalizeCatalogItem(item, idx));
+  return {
+    profile: data.profile || null,
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    catalog,
+    catalogMeta: data.catalogMeta || { source: 'local', nativeAvailable: false }
+  };
+};
+
 function App() {
   // ─── Connection State ────────────────────────────────────────
   const [isConnected, setIsConnected] = useState(false);
@@ -48,7 +77,8 @@ function App() {
   const timerRef = useRef(null);
 
   // ─── Business Data (Real from WA) ────────────────────────────
-  const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [] });
+  const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
+  const [toasts, setToasts] = useState([]);
 
   // ─── Other ───────────────────────────────────────────────────
   const [isDragOver, setIsDragOver] = useState(false);
@@ -91,7 +121,27 @@ function App() {
       setMyProfile(profile);
     });
 
-    socket.on('chats', (chatList) => setChats(chatList));
+    socket.on('chats', (chatList) => {
+      setChats(Array.isArray(chatList) ? chatList : []);
+    });
+
+    socket.on('chat_opened', ({ chatId }) => {
+      if (chatId) handleChatSelect(chatId);
+      socket.emit('get_chats');
+    });
+
+    socket.on('start_new_chat_error', (msg) => {
+      if (msg) alert(msg);
+    });
+
+    socket.on('chat_labels_error', (msg) => {
+      if (msg) alert(msg);
+    });
+
+    socket.on('chat_labels_updated', ({ chatId, labels }) => {
+      setChats((prev) => prev.map((chat) => chat.id === chatId ? { ...chat, labels: Array.isArray(labels) ? labels : [] } : chat));
+      if (chatId === activeChatId) socket.emit('get_contact_info', chatId);
+    });
 
     socket.on('chat_history', (data) => {
       if (data.chatId === activeChatId) setMessages(data.messages);
@@ -102,9 +152,34 @@ function App() {
     });
 
     socket.on('message', (msg) => {
+      const relatedChatId = msg.fromMe ? msg.to : msg.from;
       if (!msg.fromMe && Notification.permission === 'granted') {
-        new Notification(`Nuevo mensaje`, { body: msg.body, icon: '/favicon.ico' });
+        new Notification(msg.notifyName || msg.senderPhone || 'Nuevo mensaje', { body: msg.body || 'Nuevo mensaje', icon: '/favicon.ico' });
       }
+
+      if (!msg.fromMe && relatedChatId !== activeChatId) {
+        const toastId = `${msg.id || Date.now()}`;
+        setToasts((prev) => [...prev, { id: toastId, chatId: relatedChatId, title: msg.notifyName || msg.senderPhone || msg.from, body: msg.body || 'Nuevo mensaje' }].slice(-3));
+        setTimeout(() => {
+          setToasts((prev) => prev.filter((t) => t.id !== toastId));
+        }, 5000);
+      }
+
+      setChats((prev) => {
+        const existing = prev.find((c) => c.id === relatedChatId);
+        const nextChat = {
+          ...(existing || { id: relatedChatId, name: msg.notifyName || msg.senderPhone || relatedChatId, labels: [] }),
+          name: existing?.name || msg.notifyName || msg.senderPhone || relatedChatId,
+          timestamp: msg.timestamp || Math.floor(Date.now() / 1000),
+          lastMessage: msg.body || (msg.type === 'image' ? '📷 Imagen' : 'Mensaje'),
+          lastMessageFromMe: !!msg.fromMe,
+          ack: msg.ack || 0,
+          unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (relatedChatId === activeChatId ? 0 : (existing?.unreadCount || 0) + 1),
+        };
+        const without = prev.filter((c) => c.id !== relatedChatId);
+        return [nextChat, ...without].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      });
+
       setMessages(prev => {
         if (prev.find(m => m.id === msg.id)) return prev;
         const shouldAdd = (msg.fromMe && msg.to === activeChatId) || (!msg.fromMe && msg.from === activeChatId);
@@ -113,11 +188,12 @@ function App() {
     });
 
     socket.on('business_data', (data) => {
-      setBusinessData(data);
+      setBusinessData(normalizeBusinessDataPayload(data));
     });
 
     socket.on('business_data_catalog', (catalog) => {
-      setBusinessData(prev => ({ ...prev, catalog }));
+      const normalizedCatalog = Array.isArray(catalog) ? catalog.map((item, idx) => normalizeCatalogItem(item, idx)) : [];
+      setBusinessData(prev => ({ ...prev, catalog: normalizedCatalog }));
     });
 
     socket.on('ai_suggestion_chunk', (chunk) => {
@@ -126,6 +202,11 @@ function App() {
 
     socket.on('ai_suggestion_complete', () => {
       setIsAiLoading(false);
+    });
+
+    socket.on('ai_error', (msg) => {
+      setIsAiLoading(false);
+      if (msg) alert(msg);
     });
 
     socket.on('message_ack', ({ id, ack }) => {
@@ -147,10 +228,20 @@ function App() {
       }
     });
 
+    socket.on('logout_done', () => {
+      setIsClientReady(false);
+      setQrCode('');
+      setChats([]);
+      setMessages([]);
+      setActiveChatId(null);
+      alert('Sesión de WhatsApp cerrada. Escanea nuevamente el QR.');
+    });
+
     return () => {
       ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_history',
+        'chat_opened', 'start_new_chat_error', 'chat_labels_error', 'chat_labels_updated',
         'contact_info', 'message', 'business_data', 'ai_suggestion_chunk',
-        'ai_suggestion_complete', 'message_ack', 'authenticated', 'auth_failure', 'disconnected'
+        'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
       ].forEach(ev => socket.off(ev));
     };
   }, [activeChatId]);
@@ -207,6 +298,33 @@ function App() {
     setInputText('');
   };
 
+  const handleLogoutWhatsapp = () => {
+    if (!window.confirm('¿Cerrar sesión de WhatsApp en este equipo?')) return;
+    socket.emit('logout_whatsapp');
+  };
+
+  const handleRefreshChats = () => {
+    socket.emit('get_chats');
+  };
+
+  const handleCreateLabel = () => {
+    const name = window.prompt('Nombre de etiqueta para WhatsApp Business:');
+    if (!name) return;
+    socket.emit('create_label', { name: name.trim() });
+  };
+
+  const handleSetChatLabels = (chatId, labelIds) => {
+    if (!chatId) return;
+    socket.emit('set_chat_labels', { chatId, labelIds });
+  };
+
+  const handleStartNewChat = (phoneArg, firstMessageArg = '') => {
+    const phone = phoneArg || window.prompt('Número del cliente (con código de país, sin +):');
+    if (!phone) return;
+    const firstMessage = typeof firstMessageArg === 'string' ? firstMessageArg : (window.prompt('Mensaje inicial (opcional):') || '');
+    socket.emit('start_new_chat', { phone, firstMessage });
+  };
+
   const requestAiSuggestion = (customPromptArg) => {
     if (!activeChatId) return;
     const customPrompt = typeof customPromptArg === 'string' ? customPromptArg : null;
@@ -214,7 +332,7 @@ function App() {
     setIsAiLoading(true);
 
     const businessContext = `
-Eres Gemini, un asistente de ventas especializado. Ayuda al vendedor a responder a sus clientes de forma profesional y persuasiva.
+Eres un asistente de ventas experto en Lávitat Perú. Ayuda al vendedor a responder con precisión técnica, enfoque comercial y cierres claros.
 
 PERFIL DEL NEGOCIO:
 ${businessData.profile?.name || 'Negocio'}
@@ -223,11 +341,16 @@ ${businessData.profile?.address ? 'Dirección: ' + businessData.profile.address 
 
 CATÁLOGO DE PRODUCTOS:
 ${businessData.catalog.length > 0
-        ? businessData.catalog.map(p => `- ${p.title}: S/ ${p.price || 'consultar'}${p.description ? ' — ' + p.description : ''}`).join('\n')
+        ? businessData.catalog.map((p, idx) => `${idx + 1}. ${p.title} | Precio: S/ ${p.price || 'consultar'}${p.sku ? ` | SKU: ${p.sku}` : ''}${p.description ? ` | ${p.description}` : ''}`).join('\n')
         : '(sin productos registrados)'
       }
 
 INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera la respuesta más adecuada, profesional y persuasiva que el vendedor debería enviar.'}
+
+REGLA CRÍTICA:
+- NO INVENTES PRODUCTOS, tamaños o precios.
+- Usa solamente productos presentes en el catálogo listado arriba.
+- Si no existe el dato exacto, responde: "Te confirmo ese detalle en un momento".
     `.trim();
 
     const recentMessages = messages.slice(-12)
@@ -242,10 +365,10 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
   };
 
   const startRecording = async () => {
-    if (isRecording) return;
+    if (isRecording || !activeChatId) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // WhatsApp strictly prefers ogg/opus for PTT. Webm is second best.
+      // WhatsApp prefers ogg/opus for PTT. Fall back to webm/opus if needed.
       let mimeType = 'audio/ogg; codecs=opus';
       if (!MediaRecorder.isTypeSupported(mimeType)) {
         mimeType = 'audio/webm; codecs=opus';
@@ -266,12 +389,13 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
         const reader = new FileReader();
         reader.onloadend = () => {
           const base64 = reader.result.split(',')[1];
+          const extension = mimeType.includes('ogg') ? 'ogg' : 'webm';
           socket.emit('send_media_message', {
             to: activeChatId,
             body: '',
             mediaData: base64,
             mimetype: mimeType,
-            filename: 'voice-note.ogg',
+            filename: `voice-note.${extension}`,
             isPtt: true,
           });
         };
@@ -385,6 +509,9 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
         activeChatId={activeChatId}
         onChatSelect={handleChatSelect}
         myProfile={myProfile}
+        onLogout={handleLogoutWhatsapp}
+        onRefreshChats={handleRefreshChats}
+        onStartNewChat={handleStartNewChat}
       />
 
       {/* Main Content Area */}
@@ -420,6 +547,9 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
               stopRecording={stopRecording}
               isCopilotMode={isCopilotMode}
               setIsCopilotMode={setIsCopilotMode}
+              availableLabels={businessData.labels}
+              onSetChatLabels={handleSetChatLabels}
+              onCreateLabel={handleCreateLabel}
             />
 
             {/* Client Profile Panel (slides in from right) */}
@@ -444,7 +574,7 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
               </h1>
               <p style={{ color: '#8696a0', fontSize: '0.9rem', lineHeight: '1.6' }}>
                 Selecciona un chat para comenzar a vender.<br />
-                Usa los botones de IA para cerrar más ventas con Gemini.
+                Usa los botones de IA para cerrar más ventas con OpenAI.
               </p>
               <div style={{ marginTop: '30px', padding: '16px 20px', background: '#2a3942', borderRadius: '12px', textAlign: 'left', fontSize: '0.85rem', color: '#8696a0', lineHeight: '1.8' }}>
                 <strong style={{ color: '#00a884' }}>Funciones IA disponibles:</strong><br />
@@ -457,6 +587,17 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
           </div>
         )}
 
+        {toasts.length > 0 && (
+          <div className="in-app-toast-stack">
+            {toasts.map((toast) => (
+              <button key={toast.id} className="in-app-toast" onClick={() => { handleChatSelect(toast.chatId); setToasts((prev) => prev.filter((t) => t.id !== toast.id)); }}>
+                <strong>{toast.title || 'Nuevo mensaje'}</strong>
+                <span>{toast.body}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Business Sidebar — AI & Catalog (always visible) */}
         <BusinessSidebar
           setInputText={setInputText}
@@ -464,6 +605,8 @@ INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera
           messages={messages}
           activeChatId={activeChatId}
           socket={socket}
+          myProfile={myProfile}
+          onLogout={handleLogoutWhatsapp}
         />
       </div>
     </div>

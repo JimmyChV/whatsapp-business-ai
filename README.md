@@ -1,12 +1,12 @@
 # WhatsApp Business Pro - AI Sales Assistant 🚀
 
-Este proyecto es un clon avanzado de WhatsApp Business potenciado con **Inteligencia Artificial (Gemini)** para optimizar el proceso de ventas. Permite a los negocios gestionar chats, catálogos y cotizaciones de forma profesional y eficiente.
+Este proyecto es un clon avanzado de WhatsApp Business potenciado con **Inteligencia Artificial (OpenAI)** para optimizar el proceso de ventas. Permite a los negocios gestionar chats, catálogos y cotizaciones de forma profesional y eficiente.
 
 ## ✨ Características Principales
 
-- **🤖 Asistente IA Gemini**: Integración con Google Gemini para sugerir respuestas persuasivas, manejar objeciones y recomendar productos basados en el contexto del chat.
-- **📦 Gestión de Catálogo**: Soporte para catálogos nativos de WhatsApp Business y gestión manual de productos (Título, Precio, Descripción, Imagen).
-- **🛒 Sistema de Carrito y Cotización**: Agrega productos al carrito, aplica descuentos (por ítem o globales) y envía cotizaciones detalladas con un solo clic.
+- **🤖 Asistente IA OpenAI**: Integración con OpenAI para sugerir respuestas persuasivas, manejar objeciones y recomendar productos basados en el contexto del chat.
+- **🛍️ Catálogo conectado**: Prioriza catálogo nativo de WhatsApp, luego WooCommerce y finalmente catálogo local (`catalogo.json`) como fallback.
+- **🛒 Sistema de Carrito y Cotización**: Agrega productos al carrito, aplica descuentos y calcula cotizaciones con redondeo comercial a 1 decimal.
 - **🎙️ Notas de Voz Nativas**: Grabación y envío de audios en formato `ogg/opus`, 100% compatibles con WhatsApp oficial.
 - **🖼️ Interfaz Premium**: Diseño moderno estilo "Glassmorphism" con animaciones fluidas y visualización de fotos de perfil reales.
 - **🏷️ Etiquetas de Chat**: Visualización de etiquetas de WhatsApp para organizar a los clientes por estado.
@@ -15,14 +15,16 @@ Este proyecto es un clon avanzado de WhatsApp Business potenciado con **Intelige
 
 - **Frontend**: React.js, Vite, Lucide React (iconos), Socket.io-client.
 - **Backend**: Node.js, Express, Socket.io, `whatsapp-web.js` (basado en Puppeteer).
-- **IA**: Google Generative AI (Gemini Pro).
+- **IA**: OpenAI API (GPT).
+- **Catálogo externo**: WooCommerce REST API.
 
 ## 🚀 Instalación y Configuración
 
 ### 1. Requisitos Previos
 - Node.js instalado.
 - Una cuenta de WhatsApp (se recomienda Business).
-- Una API Key de Google Gemini (puedes obtenerla en [Google AI Studio](https://aistudio.google.com/)).
+- Una API Key de OpenAI (puedes obtenerla en [OpenAI Platform](https://platform.openai.com/api-keys)).
+- WooCommerce con API REST habilitada (opcional, pero recomendado).
 
 ### 2. Clonar y Configurar
 ```bash
@@ -37,9 +39,20 @@ npm install
 ```
 Crea un archivo `.env` en la carpeta `backend` con:
 ```env
-GEMINI_API_KEY=tu_clave_aqui
+OPENAI_API_KEY=tu_clave_openai
+OPENAI_MODEL=gpt-4o-mini
 PORT=3001
+
+# WooCommerce (opcional pero recomendado)
+WC_BASE_URL=https://lavitat.pe
+WC_CONSUMER_KEY=ck_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+WC_CONSUMER_SECRET=cs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+WC_PER_PAGE=100
+WC_MAX_PAGES=10
+WC_INCLUDE_OUT_OF_STOCK=true
 ```
+
+> ⚠️ Si expusiste claves de WooCommerce en una captura o chat, **revócalas y genera unas nuevas** antes de usar producción.
 
 ### 4. Configurar Frontend
 ```bash
@@ -52,15 +65,63 @@ npm run dev
 En una terminal aparte:
 ```bash
 cd backend
-node index.js
+node server.js
 ```
 
 ### 6. Vincular WhatsApp
 Escanea el código QR que aparecerá en la aplicación web para iniciar la sesión.
 
+## 🧮 Regla de redondeo comercial
+- El precio final por ítem en cotización se calcula con descuento y se redondea a **1 decimal**.
+- El total también se muestra con **1 decimal** para mantener consistencia comercial.
+
+## 📦 Orden de prioridad del catálogo
+1. Catálogo nativo de WhatsApp Business.
+2. Productos de WooCommerce.
+3. Catálogo local (`backend/catalogo.json`).
+
+
+## 🧰 Solución rápida si no aparece catálogo
+Si en consola ves algo como `injecting env (3) from .env`, normalmente solo cargaste 3 variables (por ejemplo OpenAI + PORT) y faltan las de WooCommerce.
+
+Checklist:
+1. Verifica que tu `.env` esté en `backend/.env`.
+2. Agrega `WC_BASE_URL` (obligatorio para Woo, ejemplo `https://lavitat.pe`).
+3. Si usarás API privada, agrega también `WC_CONSUMER_KEY` y `WC_CONSUMER_SECRET`.
+4. Reinicia backend después de guardar `.env`.
+
+Nota: aunque no pongas keys, el sistema intenta `wc/store/v1` (endpoint público). Si Woo o plugins bloquean ese endpoint, la app caerá al `catalogo.json` local.
+
 ## ⚠️ Notas de Seguridad
 - El archivo `.wwebjs_auth` contiene tu sesión de WhatsApp. **Nunca lo compartas.**
 - Tu `.env` está protegido por el `.gitignore` para no filtrar tus claves de API.
+
+## 🧯 Volver a una versión anterior estable (ejemplo: `f72f765`)
+Si quieres dejar tu carpeta local exactamente como un commit anterior (y eliminar cambios posteriores), usa este flujo:
+
+```bash
+# 1) Desde la raíz del repo
+git status
+
+# 2) (Opcional) Guardar cambios locales no commiteados
+git stash push -u -m "backup antes de volver a f72f765"
+
+# 3) Traer historial remoto
+git fetch origin --prune
+
+# 4) Verificar que exista el commit objetivo
+git show --oneline --no-patch f72f765
+
+# 5) Forzar rama local a ese commit (ejemplo main)
+git checkout -B main f72f765
+
+# 6) Si también quieres que GitHub quede igual, empuja con fuerza
+git push --force-with-lease origin main
+```
+
+Si aparece el error `Your local changes would be overwritten by checkout`, significa que tienes archivos modificados (por ejemplo `frontend/src/components/Sidebar.jsx`). En ese caso:
+- guarda cambios con `git stash push -u`, o
+- descártalos con `git reset --hard` (⚠️ elimina cambios no guardados).
 
 ---
 Desarrollado con ❤️ para potenciar las ventas digitales.
