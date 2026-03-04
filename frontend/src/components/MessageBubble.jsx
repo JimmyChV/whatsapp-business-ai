@@ -2,7 +2,7 @@ import React from 'react';
 import moment from 'moment';
 import { Check, CheckCheck, ShoppingBag } from 'lucide-react';
 
-const MessageBubble = ({ msg }) => {
+const MessageBubble = ({ msg, onPrefillMessage, isHighlighted = false, isCurrentHighlighted = false }) => {
     const isOut = msg.fromMe;
 
     // Check if message is a catalog item
@@ -11,27 +11,55 @@ const MessageBubble = ({ msg }) => {
     const productTitle = catalogMatch ? catalogMatch[1] : null;
     const productPrice = catalogMatch ? catalogMatch[2] : null;
 
+    const hasOrder = Boolean(msg?.order);
+    const orderItems = Array.isArray(msg?.order?.products) ? msg.order.products : [];
+
+    const fallbackOrderItems = (!orderItems.length && hasOrder)
+        ? String(msg?.order?.rawPreview?.body || msg?.body || '')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((line) => {
+                const matched = line.match(/^(?:[-•*]\s*)?(\d+(?:[.,]\d+)?)\s*(?:x|X)\s+(.+?)(?:\s+[-–—]\s*(?:S\/|PEN\s*)?(\d+(?:[.,]\d+)?))?$/);
+                if (!matched) return null;
+                return {
+                    quantity: Number.parseFloat(String(matched[1]).replace(',', '.')) || 1,
+                    name: matched[2].trim(),
+                    price: matched[3] ? String(matched[3]).replace(',', '.') : null,
+                };
+            })
+            .filter(Boolean)
+        : [];
+
+    const visibleOrderItems = orderItems.length > 0 ? orderItems : fallbackOrderItems;
+
     const renderStatus = () => {
         if (!isOut) return null;
-        const color = msg.ack === 3 ? '#53bdeb' : 'rgba(233, 237, 239, 0.6)';
+        const ack = Number(msg.ack || 0);
+        const isDelivered = ack >= 2;
+        const isRead = ack >= 3;
+        const color = isRead ? '#53bdeb' : 'rgba(233, 237, 239, 0.62)';
+
         return (
             <span style={{ display: 'flex', color }}>
-                {msg.ack >= 2 ? <CheckCheck size={16} /> : <Check size={16} />}
+                {isDelivered ? <CheckCheck size={16} /> : <Check size={16} />}
             </span>
         );
     };
 
     return (
-        <div className={`message ${isOut ? 'out' : 'in'}`}>
+        <div className={`message ${isOut ? 'out' : 'in'}`} style={isHighlighted ? { outline: `2px solid ${isCurrentHighlighted ? '#00a884' : 'rgba(0,168,132,0.35)'}`, borderRadius: '10px', padding: '2px' } : undefined}>
             {isCatalogItem && (
                 <div className="catalog-card">
-                    <img src="https://images.unsplash.com/photo-1523275335684-37898b6baf30?q=80&w=300&auto=format&fit=crop" alt="Producto" />
+                    <div style={{ width: '100%', height: '85px', background: 'linear-gradient(120deg,#233138,#1a252b)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <ShoppingBag size={22} color="#9db0ba" />
+                    </div>
                     <div className="catalog-card-info">
                         <div className="catalog-card-title">{productTitle}</div>
                         <div className="catalog-card-price">{productPrice}</div>
                     </div>
-                    <button className="catalog-card-btn" onClick={() => window.open('https://wa.me/c/51933657188')}>
-                        <ShoppingBag size={16} /> Ver artículo
+                    <button className="catalog-card-btn" onClick={() => onPrefillMessage && onPrefillMessage(`Hola, me interesa ${productTitle || 'el producto del catálogo'}. ¿Me confirmas stock y precio final?`)}>
+                        <ShoppingBag size={16} /> Pedir cotización
                     </button>
                 </div>
             )}
@@ -59,6 +87,56 @@ const MessageBubble = ({ msg }) => {
                     className="media-audio"
                     style={{ marginBottom: '4px' }}
                 />
+            )}
+
+
+            {hasOrder && (
+                <div style={{
+                    background: 'rgba(0,168,132,0.12)',
+                    border: '1px solid rgba(0,168,132,0.3)',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    marginBottom: '6px'
+                }}>
+                    <div style={{ fontSize: '0.78rem', color: '#00a884', fontWeight: 700, marginBottom: '4px' }}>
+                        🛒 Carrito/Pedido del cliente
+                    </div>
+                    {msg?.order?.orderId && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '2px' }}>ID: {msg.order.orderId}</div>
+                    )}
+                    {msg?.order?.subtotal && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>Subtotal: {msg.order.currency || 'PEN'} {msg.order.subtotal}</div>
+                    )}
+                    {!msg?.order?.subtotal && visibleOrderItems.length > 0 && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>
+                            Ítems detectados: {visibleOrderItems.length}
+                        </div>
+                    )}
+                    {visibleOrderItems.length > 0 ? visibleOrderItems.slice(0, 12).map((item, idx) => (
+                        <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {item.name} x{item.quantity || 1}{item.sku ? ` (SKU: ${item.sku})` : ''}</span>
+                            <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{item.lineTotal ? `S/ ${item.lineTotal}` : (item.price ? `S/ ${item.price}` : '')}</span>
+                        </div>
+                    )) : (
+                        <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>Se recibió un pedido desde catálogo de WhatsApp, pero no se pudo extraer el detalle de productos.</div>
+                    )}
+                    {msg?.order?.rawPreview?.body && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '6px' }}>
+                            Nota cliente: {msg.order.rawPreview.body}
+                        </div>
+                    )}
+                    {msg?.order?.rawPreview?.itemCount && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '2px' }}>
+                            Ítems reportados: {msg.order.rawPreview.itemCount}
+                        </div>
+                    )}
+                    <button
+                        onClick={() => onPrefillMessage && onPrefillMessage(`¡Gracias! Ya vi tu carrito del catálogo. ✅\nEstoy validando stock y en un momento te confirmo el pedido para proceder con el pago y despacho.`)}
+                        style={{ marginTop: '8px', background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', fontSize: '0.75rem' }}
+                    >
+                        Aprobar/confirmar pedido
+                    </button>
+                </div>
             )}
 
             <div className="message-content" style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
