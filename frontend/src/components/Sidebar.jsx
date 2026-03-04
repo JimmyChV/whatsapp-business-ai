@@ -1,4 +1,8 @@
+<<<<<<< codex/evaluate-project-for-functionality-issues-1v5mmo
+import React, { useMemo, useState } from 'react';
+=======
 import React, { useState } from 'react';
+>>>>>>> main
 import { MoreVertical, Search, Check, CheckCheck, X } from 'lucide-react';
 import moment from 'moment';
 
@@ -22,6 +26,11 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
     const searchIsPhone = /^\+?\d{8,15}$/.test(searchQuery.trim());
     const normalizedPhone = searchQuery.replace(/\D/g, '');
 
+    const phoneSearchMeta = useMemo(() => ({
+        isPhone: /^\+?\d{8,15}$/.test(searchQuery.trim()),
+        normalized: searchQuery.replace(/\D/g, '')
+    }), [searchQuery]);
+
     const formatTime = (ts) => {
         const m = moment.unix(ts || 0);
         if (!m.isValid()) return '';
@@ -41,7 +50,11 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
     };
 
     const filteredChats = chats.filter((c) => {
+<<<<<<< codex/evaluate-project-for-functionality-issues-1v5mmo
+        if (phoneSearchMeta.isPhone) return true;
+=======
         if (searchIsPhone) return true;
+>>>>>>> main
         const q = searchQuery.toLowerCase();
         return c.name?.toLowerCase().includes(q) || c.lastMessage?.toLowerCase().includes(q);
     });
@@ -117,16 +130,28 @@ const Sidebar = ({ chats, activeChatId, onChatSelect, myProfile, onLogout, onRef
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
                         onKeyDown={(e) => {
+<<<<<<< codex/evaluate-project-for-functionality-issues-1v5mmo
+                            if (e.key === 'Enter' && phoneSearchMeta.isPhone) onStartNewChat?.(phoneSearchMeta.normalized, '');
+=======
                             if (e.key === 'Enter' && searchIsPhone) onStartNewChat?.(normalizedPhone, '');
+>>>>>>> main
                         }}
                     />
                     {searchQuery && <X size={16} color="#8696a0" style={{ margin: '0 12px', cursor: 'pointer' }} onClick={() => setSearchQuery('')} />}
                 </div>
+<<<<<<< codex/evaluate-project-for-functionality-issues-1v5mmo
+                {phoneSearchMeta.isPhone && (
+                    <button
+                        onClick={() => onStartNewChat?.(phoneSearchMeta.normalized, '')}
+                        style={{ marginTop: '8px', width: '100%', background: '#00a884', color: '#06271f', border: 'none', borderRadius: '8px', padding: '8px 10px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
+                    >Abrir chat con +{phoneSearchMeta.normalized}</button>
+=======
                 {searchIsPhone && (
                     <button
                         onClick={() => onStartNewChat?.(normalizedPhone, '')}
                         style={{ marginTop: '8px', width: '100%', background: '#00a884', color: '#06271f', border: 'none', borderRadius: '8px', padding: '8px 10px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
                     >Abrir chat con +{normalizedPhone}</button>
+>>>>>>> main
                 )}
             </div>
 
