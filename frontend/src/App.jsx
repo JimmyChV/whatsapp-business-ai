@@ -46,6 +46,14 @@ const normalizeBusinessDataPayload = (data = {}) => {
 
 const normalizeChatLabels = (labels = []) => (Array.isArray(labels) ? labels.map((l) => ({ id: l?.id, name: l?.name || '', color: l?.color || null })) : []);
 
+const isVisibleChatId = (chatId = '') => {
+  const id = String(chatId || '');
+  if (!id) return false;
+  if (id.includes('status@broadcast')) return false;
+  if (id.endsWith('@broadcast')) return false;
+  return true;
+};
+
 const upsertAndSortChat = (list = [], incoming = null) => {
   if (!incoming?.id) return list;
   const without = list.filter((c) => c.id !== incoming.id);
@@ -151,6 +159,12 @@ function App() {
       setChats(hydrated);
     });
 
+    socket.on('chat_updated', (chat) => {
+      if (!chat?.id || !isVisibleChatId(chat.id)) return;
+      const hydrated = { ...chat, labels: normalizeChatLabels(chat.labels) };
+      setChats((prev) => upsertAndSortChat(prev, hydrated));
+    });
+
     socket.on('chat_opened', ({ chatId }) => {
       if (chatId) handleChatSelect(chatId);
       socket.emit('get_chats');
@@ -184,6 +198,7 @@ function App() {
 
     socket.on('message', (msg) => {
       const relatedChatId = msg.fromMe ? msg.to : msg.from;
+      if (!isVisibleChatId(relatedChatId)) return;
       if (!msg.fromMe && Notification.permission === 'granted') {
         new Notification(msg.notifyName || 'Nuevo mensaje', { body: msg.body || 'Nuevo mensaje', icon: '/favicon.ico' });
       }
@@ -270,7 +285,7 @@ function App() {
     });
 
     return () => {
-      ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_history',
+      ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_updated', 'chat_history',
         'chat_opened', 'start_new_chat_error', 'chat_labels_updated', 'chat_labels_error', 'chat_labels_saved',
         'contact_info', 'message', 'business_data', 'business_data_catalog', 'ai_suggestion_chunk',
         'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
