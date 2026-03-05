@@ -61,6 +61,8 @@ const upsertAndSortChat = (list = [], incoming = null) => {
   return merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 };
 
+const CHAT_PAGE_SIZE = 80;
+
 function App() {
   // ─── Connection State ────────────────────────────────────────
   const [isConnected, setIsConnected] = useState(false);
@@ -69,6 +71,9 @@ function App() {
 
   // ─── Chat State ──────────────────────────────────────────────
   const [chats, setChats] = useState([]);
+  const [chatsTotal, setChatsTotal] = useState(0);
+  const [chatsHasMore, setChatsHasMore] = useState(true);
+  const [isLoadingMoreChats, setIsLoadingMoreChats] = useState(false);
   const [activeChatId, setActiveChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -108,6 +113,8 @@ function App() {
   // ─── Other ───────────────────────────────────────────────────
   const [isDragOver, setIsDragOver] = useState(false);
   const messagesEndRef = useRef(null);
+  const activeChatIdRef = useRef(null);
+  const chatPagingRef = useRef({ offset: 0, hasMore: true, loading: false });
 
   // ──────────────────────────────────────────────────────────────
   // Notifications
@@ -133,19 +140,43 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    activeChatIdRef.current = activeChatId;
+  }, [activeChatId]);
+
   // ──────────────────────────────────────────────────────────────
+  const requestChatsPage = ({ reset = false } = {}) => {
+    if (chatPagingRef.current.loading && !reset) return;
+    if (!reset && !chatPagingRef.current.hasMore) return;
+
+    const offset = reset ? 0 : chatPagingRef.current.offset;
+    chatPagingRef.current.loading = true;
+    if (reset) {
+      chatPagingRef.current.offset = 0;
+      chatPagingRef.current.hasMore = true;
+      setChatsHasMore(true);
+      setChatsTotal(0);
+    }
+    setIsLoadingMoreChats(true);
+    socket.emit('get_chats', { offset, limit: CHAT_PAGE_SIZE, reset });
+  };
+
   // Socket Events
   // ──────────────────────────────────────────────────────────────
   useEffect(() => {
     socket.on('connect', () => setIsConnected(true));
-    socket.on('disconnect', () => setIsConnected(false));
+    socket.on('disconnect', () => {
+      setIsConnected(false);
+      chatPagingRef.current.loading = false;
+      setIsLoadingMoreChats(false);
+    });
 
     socket.on('qr', (qr) => { setQrCode(qr); setIsClientReady(false); });
 
     socket.on('ready', () => {
       setIsClientReady(true);
       setQrCode('');
-      socket.emit('get_chats');
+      requestChatsPage({ reset: true });
       socket.emit('get_business_data');
       socket.emit('get_my_profile');
     });
@@ -154,9 +185,31 @@ function App() {
       setMyProfile(profile);
     });
 
-    socket.on('chats', (chatList) => {
-      const hydrated = (Array.isArray(chatList) ? chatList : []).map((chat) => ({ ...chat, labels: normalizeChatLabels(chat.labels) }));
-      setChats(hydrated);
+    socket.on('chats', (payload) => {
+      const isLegacy = Array.isArray(payload);
+      const page = isLegacy
+        ? { items: payload, offset: 0, total: payload.length, hasMore: false }
+        : (payload || {});
+
+      const rawItems = Array.isArray(page.items) ? page.items : [];
+      const hydrated = rawItems.map((chat) => ({ ...chat, labels: normalizeChatLabels(chat.labels) }));
+      const pageOffset = Number.isFinite(Number(page.offset)) ? Number(page.offset) : 0;
+      const total = Number.isFinite(Number(page.total)) ? Number(page.total) : hydrated.length;
+      const hasMore = Boolean(page.hasMore);
+
+      setChats((prev) => {
+        if (pageOffset <= 0) return hydrated;
+        const existingIds = new Set(prev.map((c) => c.id));
+        const appended = hydrated.filter((c) => !existingIds.has(c.id));
+        return [...prev, ...appended];
+      });
+
+      chatPagingRef.current.offset = pageOffset + hydrated.length;
+      chatPagingRef.current.hasMore = hasMore;
+      chatPagingRef.current.loading = false;
+      setChatsTotal(total);
+      setChatsHasMore(hasMore);
+      setIsLoadingMoreChats(false);
     });
 
     socket.on('chat_updated', (chat) => {
@@ -167,7 +220,7 @@ function App() {
 
     socket.on('chat_opened', ({ chatId }) => {
       if (chatId) handleChatSelect(chatId);
-      socket.emit('get_chats');
+      requestChatsPage({ reset: true });
     });
 
     socket.on('start_new_chat_error', (msg) => {
@@ -176,7 +229,7 @@ function App() {
 
     socket.on('chat_labels_updated', ({ chatId, labels }) => {
       setChats((prev) => prev.map((chat) => chat.id === chatId ? { ...chat, labels: normalizeChatLabels(labels) } : chat));
-      if (chatId === activeChatId) socket.emit('get_contact_info', chatId);
+      if (chatId === activeChatIdRef.current) socket.emit('get_contact_info', chatId);
     });
 
     socket.on('chat_labels_error', (msg) => {
@@ -184,12 +237,20 @@ function App() {
     });
 
     socket.on('chat_labels_saved', ({ chatId }) => {
-      socket.emit('get_chats');
-      if (chatId === activeChatId) socket.emit('get_contact_info', chatId);
+      requestChatsPage({ reset: true });
+      if (chatId === activeChatIdRef.current) socket.emit('get_contact_info', chatId);
     });
 
     socket.on('chat_history', (data) => {
-      if (data.chatId === activeChatId) setMessages(data.messages);
+      if (data.chatId === activeChatIdRef.current) setMessages(data.messages);
+    });
+
+    socket.on('chat_media', ({ chatId, messageId, mediaData, mimetype }) => {
+      if (chatId !== activeChatIdRef.current) return;
+      if (!messageId || !mediaData) return;
+      setMessages((prev) => prev.map((m) => (
+        m.id === messageId ? { ...m, mediaData, mimetype: mimetype || m.mimetype } : m
+      )));
     });
 
     socket.on('contact_info', (contact) => {
@@ -203,7 +264,7 @@ function App() {
         new Notification(msg.notifyName || 'Nuevo mensaje', { body: msg.body || 'Nuevo mensaje', icon: '/favicon.ico' });
       }
 
-      if (!msg.fromMe && relatedChatId !== activeChatId) {
+      if (!msg.fromMe && relatedChatId !== activeChatIdRef.current) {
         const toastId = `${msg.id || Date.now()}`;
         setToasts((prev) => [...prev, { id: toastId, chatId: relatedChatId, title: msg.notifyName || msg.from, body: msg.body || 'Nuevo mensaje' }].slice(-3));
         setTimeout(() => {
@@ -219,14 +280,14 @@ function App() {
           lastMessage: msg.body || (msg.type === 'image' ? '📷 Imagen' : 'Mensaje'),
           lastMessageFromMe: !!msg.fromMe,
           ack: msg.ack || 0,
-          unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (relatedChatId === activeChatId ? 0 : (existing?.unreadCount || 0) + 1),
+          unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (relatedChatId === activeChatIdRef.current ? 0 : (existing?.unreadCount || 0) + 1),
         };
         return upsertAndSortChat(prev, nextChat);
       });
 
       setMessages(prev => {
         if (prev.find(m => m.id === msg.id)) return prev;
-        const shouldAdd = (msg.fromMe && msg.to === activeChatId) || (!msg.fromMe && msg.from === activeChatId);
+        const shouldAdd = (msg.fromMe && msg.to === activeChatIdRef.current) || (!msg.fromMe && msg.from === activeChatIdRef.current);
         return shouldAdd ? [...prev, msg] : prev;
       });
     });
@@ -257,7 +318,7 @@ function App() {
 
     socket.on('message_ack', ({ id, ack }) => {
       setMessages(prev => prev.map(m => m.id === id ? { ...m, ack } : m));
-      setChats(prev => prev.map(c => c.lastMessageFromMe && c.id === activeChatId ? { ...c, ack } : c));
+      setChats(prev => prev.map(c => c.lastMessageFromMe && c.id === activeChatIdRef.current ? { ...c, ack } : c));
     });
 
     socket.on('authenticated', () => {
@@ -279,19 +340,23 @@ function App() {
       setIsClientReady(false);
       setQrCode('');
       setChats([]);
+      setChatsTotal(0);
+      setChatsHasMore(false);
+      chatPagingRef.current = { offset: 0, hasMore: false, loading: false };
+      setIsLoadingMoreChats(false);
       setMessages([]);
       setActiveChatId(null);
       alert('Sesión de WhatsApp cerrada. Escanea nuevamente el QR.');
     });
 
     return () => {
-      ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_updated', 'chat_history',
+      ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_updated', 'chat_history', 'chat_media',
         'chat_opened', 'start_new_chat_error', 'chat_labels_updated', 'chat_labels_error', 'chat_labels_saved',
         'contact_info', 'message', 'business_data', 'business_data_catalog', 'ai_suggestion_chunk',
         'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
       ].forEach(ev => socket.off(ev));
     };
-  }, [activeChatId, labelDefinitions]);
+  }, []);
 
   // ──────────────────────────────────────────────────────────────
   // Apply AI suggestion to input
@@ -307,6 +372,7 @@ function App() {
   // Handlers
   // ──────────────────────────────────────────────────────────────
   const handleChatSelect = (chatId) => {
+    activeChatIdRef.current = chatId;
     setActiveChatId(chatId);
     setMessages([]);
     setShowClientProfile(false);
@@ -351,7 +417,11 @@ function App() {
   };
 
   const handleRefreshChats = () => {
-    socket.emit('get_chats');
+    requestChatsPage({ reset: true });
+  };
+
+  const handleLoadMoreChats = () => {
+    requestChatsPage({ reset: false });
   };
 
   const handleCreateLabel = () => {
@@ -591,6 +661,10 @@ REGLA CRÍTICA:
         onStartNewChat={handleStartNewChat}
         labelDefinitions={labelDefinitions}
         onCreateLabel={handleCreateLabel}
+        onLoadMoreChats={handleLoadMoreChats}
+        chatsHasMore={chatsHasMore}
+        chatsLoadingMore={isLoadingMoreChats}
+        chatsTotal={chatsTotal}
       />
 
       {/* Main Content Area */}
@@ -692,3 +766,5 @@ REGLA CRÍTICA:
 }
 
 export default App;
+
+

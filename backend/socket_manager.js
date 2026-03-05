@@ -195,8 +195,32 @@ class SocketManager {
         this.io = io;
         this.chatMetaCache = new Map();
         this.chatMetaTtlMs = Number(process.env.CHAT_META_TTL_MS || 10 * 60 * 1000);
+        this.chatListCache = { items: [], updatedAt: 0 };
+        this.chatListTtlMs = Number(process.env.CHAT_LIST_TTL_MS || 15000);
         this.setupSocketEvents();
         this.setupWAClientEvents();
+    }
+
+    invalidateChatListCache() {
+        this.chatListCache = { items: [], updatedAt: 0 };
+    }
+
+    async getSortedVisibleChats({ forceRefresh = false } = {}) {
+        const cacheAge = Date.now() - (this.chatListCache?.updatedAt || 0);
+        if (!forceRefresh && this.chatListCache.items.length > 0 && cacheAge <= this.chatListTtlMs) {
+            return this.chatListCache.items;
+        }
+
+        const chats = await waClient.getChats();
+        const sortedChats = [...chats]
+            .filter((c) => isVisibleChatId(c?.id?._serialized))
+            .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+        this.chatListCache = {
+            items: sortedChats,
+            updatedAt: Date.now()
+        };
+        return sortedChats;
     }
 
     getCachedChatMeta(chatId) {
@@ -266,19 +290,32 @@ class SocketManager {
             }
 
             // --- Chat info ---
-            socket.on('get_chats', async () => {
+            socket.on('get_chats', async (payload = {}) => {
                 try {
-                    const chats = await waClient.getChats();
-                    const sortedChats = [...chats]
-                        .filter((c) => isVisibleChatId(c?.id?._serialized))
-                        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-                        .slice(0, 200);
+                    const rawOffset = Number(payload?.offset ?? 0);
+                    const rawLimit = Number(payload?.limit ?? 80);
+                    const reset = Boolean(payload?.reset);
+                    const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.floor(rawOffset)) : 0;
+                    const limit = Number.isFinite(rawLimit)
+                        ? Math.min(250, Math.max(20, Math.floor(rawLimit)))
+                        : 80;
 
-                    const formatted = await Promise.all(sortedChats.map((c, index) => {
-                        const includeHeavyMeta = index < 25;
+                    const sortedChats = await this.getSortedVisibleChats({ forceRefresh: reset });
+                    const page = sortedChats.slice(offset, offset + limit);
+                    const formatted = await Promise.all(page.map((c, index) => {
+                        const includeHeavyMeta = (offset + index) < 25;
                         return this.toChatSummary(c, { includeHeavyMeta });
                     }));
-                    socket.emit('chats', formatted);
+
+                    const items = formatted.filter(Boolean);
+                    const nextOffset = offset + items.length;
+                    socket.emit('chats', {
+                        items,
+                        offset,
+                        limit,
+                        total: sortedChats.length,
+                        hasMore: nextOffset < sortedChats.length
+                    });
                 } catch (e) {
                     console.error('Error fetching chats:', e);
                 }
@@ -287,27 +324,38 @@ class SocketManager {
             socket.on('get_chat_history', async (chatId) => {
                 try {
                     const messages = await waClient.getMessages(chatId, 50);
-                    const formatted = await Promise.all(messages.map(async (m) => {
-                        if (isStatusOrSystemMessage(m)) return null;
-                        let media = null;
-                        if (m.hasMedia) {
-                            media = await mediaManager.processMessageMedia(m);
-                        }
-                        return {
-                            id: m.id._serialized,
-                            from: m.from,
-                            to: m.to,
-                            body: m.body,
-                            timestamp: m.timestamp,
-                            fromMe: m.fromMe,
-                            hasMedia: m.hasMedia,
-                            mediaData: media ? media.data : null,
-                            mimetype: media ? media.mimetype : null,
-                            type: m.type,
-                            order: extractOrderInfo(m)
-                        };
+                    const visible = messages.filter((m) => !isStatusOrSystemMessage(m));
+                    const formatted = visible.map((m) => ({
+                        id: m.id._serialized,
+                        from: m.from,
+                        to: m.to,
+                        body: m.body,
+                        timestamp: m.timestamp,
+                        fromMe: m.fromMe,
+                        hasMedia: m.hasMedia,
+                        mediaData: null,
+                        mimetype: null,
+                        type: m.type,
+                        order: extractOrderInfo(m)
                     }));
-                    socket.emit('chat_history', { chatId, messages: formatted.filter(Boolean) });
+                    socket.emit('chat_history', { chatId, messages: formatted });
+
+                    // Avoid blocking chat open while media is downloaded/cached.
+                    visible
+                        .filter((m) => m.hasMedia)
+                        .slice(-12)
+                        .forEach(async (m) => {
+                            try {
+                                const media = await mediaManager.processMessageMedia(m);
+                                if (!media) return;
+                                socket.emit('chat_media', {
+                                    chatId,
+                                    messageId: m.id._serialized,
+                                    mediaData: media.data,
+                                    mimetype: media.mimetype
+                                });
+                            } catch (mediaErr) { }
+                        });
                 } catch (e) {
                     console.error('Error fetching history:', e);
                 }
@@ -733,6 +781,7 @@ class SocketManager {
             try {
                 const relatedChatId = msg.fromMe ? msg.to : msg.from;
                 if (isVisibleChatId(relatedChatId)) {
+                    this.invalidateChatListCache();
                     const chat = await waClient.client.getChatById(relatedChatId);
                     const summary = await this.toChatSummary(chat, { includeHeavyMeta: false });
                     if (summary) this.io.emit('chat_updated', summary);
@@ -766,6 +815,7 @@ class SocketManager {
             try {
                 const relatedChatId = msg.to || msg.from;
                 if (isVisibleChatId(relatedChatId)) {
+                    this.invalidateChatListCache();
                     const chat = await waClient.client.getChatById(relatedChatId);
                     const summary = await this.toChatSummary(chat, { includeHeavyMeta: false });
                     if (summary) this.io.emit('chat_updated', summary);
@@ -784,3 +834,4 @@ class SocketManager {
 }
 
 module.exports = SocketManager;
+

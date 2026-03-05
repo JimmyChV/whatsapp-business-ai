@@ -14,6 +14,10 @@ const Sidebar = ({
     onStartNewChat,
     labelDefinitions,
     onCreateLabel,
+    onLoadMoreChats,
+    chatsHasMore = false,
+    chatsLoadingMore = false,
+    chatsTotal = 0,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showMenu, setShowMenu] = useState(false);
@@ -64,6 +68,13 @@ const Sidebar = ({
         const matchesLabel = labelFilter === 'all' || (c.labels || []).some((l) => l.name === labelFilter);
         return matchesSearch && matchesLabel;
     });
+
+    const handleChatListScroll = (e) => {
+        if (!onLoadMoreChats || !chatsHasMore || chatsLoadingMore) return;
+        const el = e.currentTarget;
+        const nearBottom = (el.scrollTop + el.clientHeight) >= (el.scrollHeight - 120);
+        if (nearBottom) onLoadMoreChats();
+    };
 
     const avatarLetter = (name) => (name ? name.charAt(0).toUpperCase() : '?');
     const avatarColor = (name) => {
@@ -177,7 +188,7 @@ const Sidebar = ({
                 </div>
             </div>
 
-            <div className="chat-list" onClick={() => showMenu && setShowMenu(false)}>
+            <div className="chat-list" onClick={() => showMenu && setShowMenu(false)} onScroll={handleChatListScroll}>
                 {filteredChats.length === 0 && chats.length === 0 ? (
                     [1, 2, 3, 4, 5].map((i) => (
                         <div key={i} className="chat-item">
@@ -233,9 +244,20 @@ const Sidebar = ({
                         </div>
                     ))
                 )}
+
+                {chats.length > 0 && (
+                    <div style={{ padding: '10px 14px', textAlign: 'center', color: '#8696a0', fontSize: '0.75rem' }}>
+                        {chatsLoadingMore
+                            ? 'Cargando más chats...'
+                            : (chatsHasMore
+                                ? `Mostrando ${chats.length} de ${chatsTotal || '...'} chats`
+                                : `Mostrando todos los chats (${chats.length})`)}
+                    </div>
+                )}
             </div>
         </div>
     );
 };
 
 export default Sidebar;
+

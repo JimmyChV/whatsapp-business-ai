@@ -8,34 +8,53 @@ class MediaManager {
         if (!fs.existsSync(this.cacheDir)) {
             fs.mkdirSync(this.cacheDir, { recursive: true });
         }
-        // Limpiamos caché antiguo al iniciar (opcionalmente)
-        this.pruneCache(24 * 60 * 60 * 1000); // 24 horas
+        this.pruneCache(24 * 60 * 60 * 1000);
     }
 
-    /**
-     * Genera un hash para el ID del mensaje para usarlo como nombre de archivo.
-     */
+    getMessageHash(messageId) {
+        return crypto.createHash('md5').update(messageId).digest('hex');
+    }
+
     getCachePath(messageId, mimetype) {
-        const hash = crypto.createHash('md5').update(messageId).digest('hex');
-        const ext = mimetype.split('/')[1] || 'bin';
+        const hash = this.getMessageHash(messageId);
+        const rawExt = String(mimetype || '').split('/')[1] || 'bin';
+        const ext = rawExt.split(';')[0].trim().toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
         return path.join(this.cacheDir, `${hash}.${ext}`);
     }
 
-    /**
-     * Intenta obtener la data base64 de la caché.
-     */
-    async getFromCache(messageId, mimetype) {
-        const filePath = this.getCachePath(messageId, mimetype);
-        if (fs.existsSync(filePath)) {
-            console.log(`Media cache hit for ${messageId}`);
-            return fs.readFileSync(filePath, 'base64');
-        }
-        return null;
+    extToMime(ext = '') {
+        const clean = String(ext || '').toLowerCase();
+        if (!clean) return 'application/octet-stream';
+        const map = {
+            jpg: 'image/jpeg',
+            jpeg: 'image/jpeg',
+            png: 'image/png',
+            webp: 'image/webp',
+            gif: 'image/gif',
+            mp3: 'audio/mpeg',
+            ogg: 'audio/ogg',
+            opus: 'audio/ogg',
+            mp4: 'video/mp4',
+            pdf: 'application/pdf'
+        };
+        return map[clean] || `application/${clean}`;
     }
 
-    /**
-     * Guarda la data base64 en la caché.
-     */
+    async getFromCache(messageId) {
+        const hash = this.getMessageHash(messageId);
+        const files = fs.readdirSync(this.cacheDir);
+        const hit = files.find((name) => name.startsWith(`${hash}.`));
+        if (!hit) return null;
+
+        const filePath = path.join(this.cacheDir, hit);
+        const ext = path.extname(hit).replace('.', '');
+        console.log(`Media cache hit for ${messageId}`);
+        return {
+            data: fs.readFileSync(filePath, 'base64'),
+            mimetype: this.extToMime(ext)
+        };
+    }
+
     async saveToCache(messageId, mimetype, base64Data) {
         try {
             const filePath = this.getCachePath(messageId, mimetype);
@@ -46,17 +65,14 @@ class MediaManager {
         }
     }
 
-    /**
-     * Elimina archivos antiguos de la caché.
-     */
     pruneCache(maxAgeMs) {
         const now = Date.now();
         fs.readdir(this.cacheDir, (err, files) => {
             if (err) return;
-            files.forEach(file => {
+            files.forEach((file) => {
                 const filePath = path.join(this.cacheDir, file);
-                fs.stat(filePath, (err, stats) => {
-                    if (err) return;
+                fs.stat(filePath, (statErr, stats) => {
+                    if (statErr) return;
                     if (now - stats.mtimeMs > maxAgeMs) {
                         fs.unlink(filePath, () => { });
                     }
@@ -65,21 +81,12 @@ class MediaManager {
         });
     }
 
-    /**
-     * Procesa un mensaje con media, usando caché si está disponible.
-     */
     async processMessageMedia(message) {
         if (!message.hasMedia) return null;
 
         const messageId = message.id._serialized;
-        // Intentar obtener de caché primero
-        // Nota: El mimetype no lo sabemos hasta descargar, pero para mensajes entrantes
-        // podemos usar el ID como clave principal en un objeto de mapeo o simplemente
-        // buscar si existe algún archivo con ese hash.
-
-        // Versión simplificada: descargamos y guardamos si no existe.
-        const cached = await this.getFromCache(messageId, ''); // Búsqueda aproximada o simplificada
-        if (cached) return { data: cached, mimetype: 'image/jpeg' }; // Mimetype idealmente debería guardarse también
+        const cached = await this.getFromCache(messageId);
+        if (cached) return cached;
 
         try {
             const media = await message.downloadMedia();
@@ -95,3 +102,4 @@ class MediaManager {
 }
 
 module.exports = new MediaManager();
+
