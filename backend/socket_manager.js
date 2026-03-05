@@ -3,6 +3,22 @@ const waClient = require('./whatsapp_client');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
 const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
+const RateLimiter = require('./rate_limiter');
+
+const eventRateLimiter = new RateLimiter({
+    windowMs: Number(process.env.SOCKET_RATE_LIMIT_WINDOW_MS || 10000),
+    max: Number(process.env.SOCKET_RATE_LIMIT_MAX || 30)
+});
+
+function guardRateLimit(socket, eventName) {
+    const key = `${socket.id}:${eventName}`;
+    const result = eventRateLimiter.check(key);
+    if (!result.allowed) {
+        socket.emit('error', `Rate limit excedido para ${eventName}. Intenta en unos segundos.`);
+        return false;
+    }
+    return true;
+}
 
 function collectProductsFromUnknownShape(input, depth = 0, found = []) {
     if (!input || depth > 4) return found;
@@ -148,11 +164,95 @@ async function resolveMessageSenderMeta(msg) {
     }
 }
 
+function isStatusOrSystemMessage(msg) {
+    const from = String(msg?.from || '');
+    const to = String(msg?.to || '');
+    const type = String(msg?.type || '').toLowerCase();
+
+    if (from.includes('status@broadcast') || to.includes('status@broadcast')) return true;
+    if (from.endsWith('@broadcast') || to.endsWith('@broadcast')) return true;
+
+    const blockedTypes = new Set([
+        'e2e_notification',
+        'notification',
+        'ciphertext',
+        'revoked'
+    ]);
+
+    return blockedTypes.has(type);
+}
+
+function isVisibleChatId(chatId) {
+    const id = String(chatId || '');
+    if (!id) return false;
+    if (id.includes('status@broadcast')) return false;
+    if (id.endsWith('@broadcast')) return false;
+    return true;
+}
+
 class SocketManager {
     constructor(io) {
         this.io = io;
+        this.chatMetaCache = new Map();
+        this.chatMetaTtlMs = Number(process.env.CHAT_META_TTL_MS || 10 * 60 * 1000);
         this.setupSocketEvents();
         this.setupWAClientEvents();
+    }
+
+    getCachedChatMeta(chatId) {
+        const key = String(chatId || '');
+        const cached = this.chatMetaCache.get(key);
+        if (!cached) return null;
+        if (Date.now() - cached.updatedAt > this.chatMetaTtlMs) return null;
+        return cached;
+    }
+
+    async hydrateChatMeta(chat) {
+        const chatId = chat?.id?._serialized;
+        if (!chatId || !isVisibleChatId(chatId)) return { labels: [], profilePicUrl: null };
+
+        const cached = this.getCachedChatMeta(chatId);
+        if (cached) return { labels: cached.labels, profilePicUrl: cached.profilePicUrl };
+
+        let labels = [];
+        let profilePicUrl = null;
+        try { labels = await chat.getLabels(); } catch (e) { }
+        try { profilePicUrl = await resolveProfilePic(waClient.client, chatId); } catch (e) { }
+
+        const normalized = {
+            labels: (labels || []).map((l) => ({ id: l.id, name: l.name, color: l.color })),
+            profilePicUrl,
+            updatedAt: Date.now()
+        };
+        this.chatMetaCache.set(chatId, normalized);
+        return normalized;
+    }
+
+    async toChatSummary(chat, { includeHeavyMeta = false } = {}) {
+        const chatId = chat?.id?._serialized;
+        if (!isVisibleChatId(chatId)) return null;
+
+        const cached = this.getCachedChatMeta(chatId);
+        let labels = cached?.labels || [];
+        let profilePicUrl = cached?.profilePicUrl || null;
+
+        if (includeHeavyMeta || !cached) {
+            const hydrated = await this.hydrateChatMeta(chat);
+            labels = hydrated.labels;
+            profilePicUrl = hydrated.profilePicUrl;
+        }
+
+        return {
+            id: chatId,
+            name: resolveChatDisplayName(chat),
+            unreadCount: chat.unreadCount,
+            timestamp: chat.timestamp,
+            lastMessage: chat.lastMessage ? chat.lastMessage.body : '',
+            lastMessageFromMe: chat.lastMessage ? chat.lastMessage.fromMe : false,
+            ack: chat.lastMessage ? chat.lastMessage.ack : 0,
+            labels,
+            profilePicUrl
+        };
     }
 
     setupSocketEvents() {
@@ -169,29 +269,14 @@ class SocketManager {
             socket.on('get_chats', async () => {
                 try {
                     const chats = await waClient.getChats();
-                    const sortedChats = [...chats].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 200);
-                    const formatted = await Promise.all(sortedChats.map(async (c) => {
-                        let labels = [];
-                        try {
-                            // Only try to fetch labels if it's potentially a business chat or a contact
-                            labels = await c.getLabels();
-                        } catch (e) {
-                            // Ignore if not supported or fails
-                        }
+                    const sortedChats = [...chats]
+                        .filter((c) => isVisibleChatId(c?.id?._serialized))
+                        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+                        .slice(0, 200);
 
-                        const profilePicUrl = await resolveProfilePic(waClient.client, c.id._serialized);
-
-                        return {
-                            id: c.id._serialized,
-                            name: resolveChatDisplayName(c),
-                            unreadCount: c.unreadCount,
-                            timestamp: c.timestamp,
-                            lastMessage: c.lastMessage ? c.lastMessage.body : '',
-                            lastMessageFromMe: c.lastMessage ? c.lastMessage.fromMe : false,
-                            ack: c.lastMessage ? c.lastMessage.ack : 0,
-                            labels: labels.map(l => ({ id: l.id, name: l.name, color: l.color })),
-                            profilePicUrl
-                        };
+                    const formatted = await Promise.all(sortedChats.map((c, index) => {
+                        const includeHeavyMeta = index < 25;
+                        return this.toChatSummary(c, { includeHeavyMeta });
                     }));
                     socket.emit('chats', formatted);
                 } catch (e) {
@@ -203,6 +288,7 @@ class SocketManager {
                 try {
                     const messages = await waClient.getMessages(chatId, 50);
                     const formatted = await Promise.all(messages.map(async (m) => {
+                        if (isStatusOrSystemMessage(m)) return null;
                         let media = null;
                         if (m.hasMedia) {
                             media = await mediaManager.processMessageMedia(m);
@@ -221,7 +307,7 @@ class SocketManager {
                             order: extractOrderInfo(m)
                         };
                     }));
-                    socket.emit('chat_history', { chatId, messages: formatted });
+                    socket.emit('chat_history', { chatId, messages: formatted.filter(Boolean) });
                 } catch (e) {
                     console.error('Error fetching history:', e);
                 }
@@ -304,6 +390,7 @@ class SocketManager {
 
             // --- Messaging ---
             socket.on('send_message', async ({ to, body }) => {
+                if (!guardRateLimit(socket, 'send_message')) return;
                 try {
                     await waClient.sendMessage(to, body);
                 } catch (e) {
@@ -312,6 +399,7 @@ class SocketManager {
             });
 
             socket.on('send_media_message', async (data) => {
+                if (!guardRateLimit(socket, 'send_media_message')) return;
                 try {
                     const { to, body, mediaData, mimetype, filename, isPtt } = data;
                     await waClient.sendMedia(to, mediaData, mimetype, filename, body, isPtt);
@@ -328,6 +416,7 @@ class SocketManager {
 
             // --- AI ---
             socket.on('request_ai_suggestion', (payload) => {
+                if (!guardRateLimit(socket, 'request_ai_suggestion')) return;
                 const { contextText, customPrompt, businessContext } = payload || {};
                 // Defer to avoid blocking the event loop (prevents 'click handler took Xms' violations)
                 setImmediate(async () => {
@@ -348,6 +437,7 @@ class SocketManager {
             });
 
             socket.on('internal_ai_query', (payload) => {
+                if (!guardRateLimit(socket, 'internal_ai_query')) return;
                 const { query, businessContext } = typeof payload === 'string'
                     ? { query: payload, businessContext: null }
                     : (payload || {});
@@ -619,6 +709,8 @@ class SocketManager {
         waClient.on('auth_failure', (msg) => this.io.emit('auth_failure', msg));
         waClient.on('disconnected', (reason) => this.io.emit('disconnected', reason));
         waClient.on('message', async (msg) => {
+            if (isStatusOrSystemMessage(msg)) return;
+
             const media = await mediaManager.processMessageMedia(msg);
             const senderMeta = await resolveMessageSenderMeta(msg);
             this.io.emit('message', {
@@ -637,30 +729,21 @@ class SocketManager {
                 senderPhone: senderMeta.senderPhone,
                 order: extractOrderInfo(msg)
             });
-            // Auto refresh chat list
-            const chats = await waClient.getChats();
-            const sortedChats = [...chats].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 200);
-            const formatted = await Promise.all(sortedChats.map(async (c) => {
-                let labels = [];
-                try { labels = await c.getLabels(); } catch (e) { }
-                const profilePicUrl = await resolveProfilePic(waClient.client, c.id._serialized);
 
-                return {
-                    id: c.id._serialized,
-                    name: resolveChatDisplayName(c),
-                    unreadCount: c.unreadCount,
-                    timestamp: c.timestamp,
-                    lastMessage: c.lastMessage ? c.lastMessage.body : '',
-                    lastMessageFromMe: c.lastMessage ? c.lastMessage.fromMe : false,
-                    ack: c.lastMessage ? c.lastMessage.ack : 0,
-                    labels: labels.map(l => ({ id: l.id, name: l.name, color: l.color })),
-                    profilePicUrl
-                };
-            }));
-            this.io.emit('chats', formatted);
+            try {
+                const relatedChatId = msg.fromMe ? msg.to : msg.from;
+                if (isVisibleChatId(relatedChatId)) {
+                    const chat = await waClient.client.getChatById(relatedChatId);
+                    const summary = await this.toChatSummary(chat, { includeHeavyMeta: false });
+                    if (summary) this.io.emit('chat_updated', summary);
+                }
+            } catch (e) {
+                // silent: message delivery should not fail by chat refresh issues
+            }
         });
 
         waClient.on('message_sent', async (msg) => {
+            if (isStatusOrSystemMessage(msg)) return;
             // Emite de vuelta para confirmar en UI si se envió desde otro lugar
             const media = await mediaManager.processMessageMedia(msg);
             this.io.emit('message', {
@@ -679,6 +762,15 @@ class SocketManager {
                 senderPhone: null,
                 order: extractOrderInfo(msg)
             });
+
+            try {
+                const relatedChatId = msg.to || msg.from;
+                if (isVisibleChatId(relatedChatId)) {
+                    const chat = await waClient.client.getChatById(relatedChatId);
+                    const summary = await this.toChatSummary(chat, { includeHeavyMeta: false });
+                    if (summary) this.io.emit('chat_updated', summary);
+                }
+            } catch (e) { }
         });
 
         waClient.on('message_ack', ({ message, ack }) => {
