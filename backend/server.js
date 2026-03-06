@@ -7,7 +7,7 @@ require('dotenv').config();
 const logger = require('./logger');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./security_utils');
 
-const waClient = require('./whatsapp_client');
+const waClient = require('./wa_provider');
 const SocketManager = require('./socket_manager');
 
 const app = express();
@@ -136,6 +136,9 @@ const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
+    const runtime = typeof waClient.getRuntimeInfo === 'function'
+        ? waClient.getRuntimeInfo()
+        : { requestedTransport: 'webjs', activeTransport: 'webjs', cloudConfigured: false };
+    logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     waClient.initialize();
 });
-
