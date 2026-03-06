@@ -1,5 +1,5 @@
 const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
-const waClient = require('./whatsapp_client');
+const waClient = require('./wa_provider');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
 const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
@@ -509,19 +509,39 @@ class SocketManager {
         this.setupWAClientEvents();
     }
 
+    getWaRuntime() {
+        const runtime = typeof waClient.getRuntimeInfo === 'function'
+            ? waClient.getRuntimeInfo()
+            : {};
+        return {
+            requestedTransport: String(runtime?.requestedTransport || process.env.WA_TRANSPORT || 'webjs').toLowerCase(),
+            activeTransport: String(runtime?.activeTransport || 'webjs').toLowerCase(),
+            cloudRequested: Boolean(runtime?.cloudRequested),
+            cloudConfigured: Boolean(runtime?.cloudConfigured),
+            cloudReady: Boolean(runtime?.cloudReady),
+            migrationReady: runtime?.migrationReady !== false
+        };
+    }
+
     getWaCapabilities() {
         const caps = waClient.getCapabilities();
+        const runtime = this.getWaRuntime();
         return {
             messageEdit: Boolean(caps?.messageEdit),
             messageEditSync: Boolean(caps?.messageEditSync),
             quickReplies: Boolean(caps?.quickReplies),
             quickRepliesRead: Boolean(caps?.quickRepliesRead),
-            quickRepliesWrite: Boolean(caps?.quickRepliesWrite)
+            quickRepliesWrite: Boolean(caps?.quickRepliesWrite),
+            transport: runtime.activeTransport,
+            requestedTransport: runtime.requestedTransport,
+            cloudConfigured: runtime.cloudConfigured,
+            migrationReady: runtime.migrationReady
         };
     }
 
     emitWaCapabilities(socket) {
         socket.emit('wa_capabilities', this.getWaCapabilities());
+        socket.emit('wa_runtime', this.getWaRuntime());
     }
 
     async emitMessageEditability(messageId, chatId) {
@@ -1547,6 +1567,7 @@ class SocketManager {
         waClient.on('ready', () => {
             this.io.emit('ready', { message: 'WhatsApp Ready' });
             this.io.emit('wa_capabilities', this.getWaCapabilities());
+            this.io.emit('wa_runtime', this.getWaRuntime());
         });
         waClient.on('authenticated', () => this.io.emit('authenticated'));
         waClient.on('auth_failure', (msg) => this.io.emit('auth_failure', msg));
@@ -1687,35 +1708,3 @@ class SocketManager {
 
 
 module.exports = SocketManager;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
