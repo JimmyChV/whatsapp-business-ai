@@ -635,15 +635,17 @@ INSTRUCCIONES OBLIGATORIAS:
                         fontSize: '0.68rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px',
                         borderBottom: activeTab === t.id ? '2px solid #00a884' : '2px solid transparent',
                     }}>
-                        {t.icon} {t.label}
+                        <span className="business-tab-icon">{t.icon}</span>
+                        <span className="business-tab-label">{t.label}</span>
                     </button>
                 ))}
             </div>
 
 
             {!quickRepliesEnabled && (
-                <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-color)', background: '#111b21', color: '#8696a0', fontSize: '0.75rem', lineHeight: '1.4' }}>
-                    Respuestas rapidas nativas no disponibles en esta version de WhatsApp Web.
+                <div className="quick-replies-warning">
+                    <strong>Modo compatibilidad</strong>
+                    <span>Las respuestas rapidas nativas no estan disponibles en esta version de WhatsApp Web.</span>
                 </div>
             )}
 
@@ -668,10 +670,10 @@ INSTRUCCIONES OBLIGATORIAS:
             {/* AI PRO TAB */}
             {activeTab === 'ai' && (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div className="ai-thread-pro" style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {aiMessages.map((msg, idx) => (
-                            <div key={idx} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                                <div style={{
+                            <div key={idx} className={`ai-row-pro ${msg.role === 'user' ? 'user' : 'assistant'}`} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                                <div className={`ai-bubble-pro ${msg.role === 'user' ? 'user' : 'assistant'}`} style={{
                                     maxWidth: '92%', padding: '9px 12px', borderRadius: msg.role === 'user' ? '12px 2px 12px 12px' : '2px 12px 12px 12px',
                                     background: msg.role === 'user' ? '#005c4b' : '#202c33',
                                     fontSize: '0.82rem', color: 'var(--text-primary)', lineHeight: '1.45',
@@ -685,7 +687,7 @@ INSTRUCCIONES OBLIGATORIAS:
                                         <button
                                             onClick={() => sendToClient(msg.content)}
                                             title="Enviar este mensaje al cliente"
-                                            style={{ marginTop: '6px', background: 'transparent', border: '1px solid rgba(0,168,132,0.4)', color: '#00a884', borderRadius: '5px', padding: '3px 8px', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                            className="ai-use-reply-btn"
                                         >
                                             <Send size={10} /> Usar como respuesta
                                         </button>
@@ -708,14 +710,18 @@ INSTRUCCIONES OBLIGATORIAS:
                     </div>
 
                     {/* Quick action chips */}
-                    <div className="ai-quick-prompts" style={{ padding: '6px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', flexWrap: 'wrap', gap: '5px', flexShrink: 0 }}>
+                    <div className="ai-quick-prompts ai-quick-prompts-pro" style={{ padding: '8px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', flexWrap: 'wrap', gap: '6px', flexShrink: 0 }}>
+                        <div className="ai-quick-prompts-title">
+                            <Sparkles size={12} />
+                            Atajos IA
+                        </div>
                         {[
                             'Dame 3 opciones de respuesta',
                             'Como cerrar esta venta',
                             'Maneja la objecion de precio',
                             'Recomienda un producto',
                         ].map((chip, i) => (
-                            <button key={i} className="ai-prompt-chip"
+                            <button key={i} className="ai-prompt-chip ai-prompt-chip-pro"
                                 onClick={() => { setAiInput(chip.replace(/^[^\s]+ /, '')); }}
                                 style={{ background: '#202c33', border: '1px solid var(--border-color)', color: '#8696a0', padding: '4px 9px', borderRadius: '14px', fontSize: '0.72rem', cursor: 'pointer' }}
                                 onMouseEnter={e => e.currentTarget.style.borderColor = '#00a884'}
@@ -727,19 +733,19 @@ INSTRUCCIONES OBLIGATORIAS:
                     </div>
 
                     {/* AI Input */}
-                    <div className="ai-assistant-input-row" style={{ padding: '8px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0, background: '#202c33' }}>
+                    <div className="ai-assistant-input-row ai-input-row-pro" style={{ padding: '8px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0, background: '#202c33' }}>
                         <input
                             type="text"
                             placeholder="Pregunta algo a la IA..."
                             value={aiInput}
                             onChange={e => setAiInput(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendAiMessage()}
-                            className="ai-assistant-input" style={{ flex: 1, background: '#2a3942', border: 'none', outline: 'none', color: 'var(--text-primary)', borderRadius: '20px', padding: '8px 14px', fontSize: '0.82rem' }}
+                            className="ai-assistant-input ai-assistant-input-pro" style={{ flex: 1, background: '#2a3942', border: 'none', outline: 'none', color: 'var(--text-primary)', borderRadius: '20px', padding: '8px 14px', fontSize: '0.82rem' }}
                         />
                         <button
                             onClick={sendAiMessage}
                             disabled={isAiLoading || !aiInput.trim()}
-                            className="ai-assistant-send" style={{ background: isAiLoading ? '#3b4a54' : '#00a884', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isAiLoading ? 'wait' : 'pointer', flexShrink: 0 }}
+                            className="ai-assistant-send ai-assistant-send-pro" style={{ background: isAiLoading ? '#3b4a54' : '#00a884', border: 'none', borderRadius: '50%', width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isAiLoading ? 'wait' : 'pointer', flexShrink: 0 }}
                         >
                             <Send size={16} color="white" />
                         </button>
@@ -949,6 +955,8 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
+
+
 
 
 

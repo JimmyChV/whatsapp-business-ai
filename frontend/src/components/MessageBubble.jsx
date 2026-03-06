@@ -1,6 +1,6 @@
 import React from 'react';
 import moment from 'moment';
-import { Check, CheckCheck, ShoppingBag } from 'lucide-react';
+import { Check, CheckCheck, ShoppingBag, Pencil } from 'lucide-react';
 
 const MessageBubble = ({
     msg,
@@ -9,7 +9,6 @@ const MessageBubble = ({
     isCurrentHighlighted = false,
     onOpenMedia,
     onEditMessage,
-
     canEditMessages = true,
 }) => {
     const isOut = msg.fromMe;
@@ -46,7 +45,6 @@ const MessageBubble = ({
     const mediaDataUrl = msg.hasMedia && msg.mediaData
         ? `data:${msg.mimetype || 'application/octet-stream'};base64,${msg.mediaData}`
         : null;
-
 
     const canEditMessage = Boolean(
         canEditMessages
@@ -179,7 +177,7 @@ const MessageBubble = ({
                 </div>
             )}
 
-            <div className="message-content" style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
+            <div className={`message-content ${canEditMessage ? 'can-edit' : ''}`} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
                 <span style={{ fontSize: '0.9rem', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
                     {isCatalogItem ? 'Te gustaria que te lo separemos?' : msg.body}
                 </span>
@@ -188,9 +186,10 @@ const MessageBubble = ({
                     <button
                         type="button"
                         onClick={handleEditClick}
-                        style={{ alignSelf: isOut ? 'flex-end' : 'flex-start', marginTop: '4px', border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: 'inherit', borderRadius: '6px', padding: '2px 7px', fontSize: '0.68rem', cursor: 'pointer' }}
+                        className="message-edit-btn"
+                        title="Editar este mensaje"
                     >
-                        Editar
+                        <Pencil size={11} /> Editar
                     </button>
                 )}
 
@@ -200,15 +199,12 @@ const MessageBubble = ({
                     justifyContent: 'flex-end',
                     gap: '4px',
                     marginTop: '2px',
-                    height: '15px'
+                    minHeight: '16px'
                 }}>
-                    <span style={{
-                        fontSize: '0.65rem',
-                        color: isOut ? 'rgba(233, 237, 239, 0.6)' : 'var(--text-secondary)'
-                    }}>
+                    <span className="message-time-text">
                         {moment.unix(msg.timestamp).format('H:mm')}
-                        {msg?.edited ? ' (editado)' : ''}
                     </span>
+                    {msg?.edited && <span className="message-edited-badge">editado</span>}
                     {renderStatus()}
                 </div>
             </div>
@@ -217,6 +213,3 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
-
-
-
