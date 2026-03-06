@@ -1,10 +1,39 @@
 import React, { useMemo, useState } from 'react';
-import { MoreVertical, Search, Check, CheckCheck, X } from 'lucide-react';
+import { MoreVertical, Search, Check, CheckCheck, X, SlidersHorizontal, Tags, Users, UserRoundX, Archive } from 'lucide-react';
 import moment from 'moment';
 
 const WA_LABEL_COLORS = ['#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#00A884', '#7D8D95'];
 
 const normalizePhoneDigits = (value = '') => String(value || '').replace(/\D/g, '');
+const normalizeFilterToken = (value = '') => String(value || '').trim().toLowerCase();
+
+const normalizeFilters = (filters = {}) => {
+    const rawTokens = Array.isArray(filters?.labelTokens) ? filters.labelTokens : [];
+    const seen = new Set();
+    const labelTokens = [];
+    for (const token of rawTokens) {
+        const clean = normalizeFilterToken(token);
+        if (!clean || seen.has(clean)) continue;
+        seen.add(clean);
+        labelTokens.push(clean);
+    }
+
+    const contactMode = ['all', 'my', 'unknown'].includes(String(filters?.contactMode || 'all'))
+        ? String(filters?.contactMode || 'all')
+        : 'all';
+    const archivedMode = ['all', 'archived', 'active'].includes(String(filters?.archivedMode || 'all'))
+        ? String(filters?.archivedMode || 'all')
+        : 'all';
+
+    return {
+        labelTokens,
+        unreadOnly: Boolean(filters?.unreadOnly),
+        unlabeledOnly: Boolean(filters?.unlabeledOnly),
+        contactMode,
+        archivedMode,
+    };
+};
+
 const formatPhone = (value = '') => {
     const digits = normalizePhoneDigits(value);
     return digits ? `+${digits}` : '';
@@ -31,6 +60,24 @@ const sanitizeDisplayText = (value = '') => repairMojibake(value)
     .replace(/\s+/g, ' ')
     .trim();
 
+const getLabelToken = (label = {}) => {
+    const id = normalizeFilterToken(label?.id);
+    if (id) return `id:${id}`;
+    const name = normalizeFilterToken(label?.name);
+    if (name) return `name:${name}`;
+    return '';
+};
+
+const getChatLabelTokenSet = (chat = {}) => {
+    const set = new Set();
+    const labels = Array.isArray(chat?.labels) ? chat.labels : [];
+    labels.forEach((label) => {
+        const token = getLabelToken(label);
+        if (token) set.add(token);
+    });
+    return set;
+};
+
 const Sidebar = ({
     chats,
     activeChatId,
@@ -47,9 +94,19 @@ const Sidebar = ({
     chatsTotal = 0,
     searchQuery = '',
     onSearchQueryChange,
+    activeFilters = {},
+    onFiltersChange,
 }) => {
     const [showMenu, setShowMenu] = useState(false);
-    const [labelFilter, setLabelFilter] = useState('all');
+    const [showLabelPanel, setShowLabelPanel] = useState(false);
+    const [labelSearch, setLabelSearch] = useState('');
+
+    const filters = normalizeFilters(activeFilters);
+
+    const updateFilters = (patch = {}) => {
+        const next = normalizeFilters({ ...filters, ...patch });
+        onFiltersChange?.(next);
+    };
 
     const localQuery = String(searchQuery || '');
     const searchIsPhone = /^\+?\d{6,15}$/.test(localQuery.trim());
@@ -75,38 +132,91 @@ const Sidebar = ({
     };
 
     const allLabels = useMemo(() => {
-        const fromChats = chats.flatMap((c) => c.labels || []);
-        const merged = [...(labelDefinitions || []), ...fromChats];
         const map = new Map();
-        merged.forEach((l, idx) => {
-            if (!l?.name) return;
-            if (!map.has(l.name)) {
-                map.set(l.name, {
-                    name: l.name,
-                    color: l.color || WA_LABEL_COLORS[idx % WA_LABEL_COLORS.length],
+        const counts = new Map();
+
+        const register = (label, idx = 0) => {
+            const token = getLabelToken(label);
+            if (!token) return;
+            if (!map.has(token)) {
+                const id = label?.id ?? null;
+                const fallbackName = id !== null && id !== undefined ? `Etiqueta ${id}` : 'Etiqueta';
+                map.set(token, {
+                    token,
+                    id,
+                    name: String(label?.name || fallbackName).trim(),
+                    color: label?.color || WA_LABEL_COLORS[idx % WA_LABEL_COLORS.length],
                 });
             }
+        };
+
+        (labelDefinitions || []).forEach((label, idx) => register(label, idx));
+        chats.forEach((chat) => {
+            const chatTokens = new Set();
+            (chat?.labels || []).forEach((label, idx) => {
+                register(label, idx);
+                const token = getLabelToken(label);
+                if (token) chatTokens.add(token);
+            });
+            chatTokens.forEach((token) => counts.set(token, (counts.get(token) || 0) + 1));
         });
-        return Array.from(map.values());
+
+        return Array.from(map.values())
+            .map((label) => ({ ...label, count: counts.get(label.token) || 0 }))
+            .sort((a, b) => {
+                if (b.count !== a.count) return b.count - a.count;
+                return a.name.localeCompare(b.name);
+            });
     }, [chats, labelDefinitions]);
 
-    const filteredChats = chats.filter((c) => {
-        const matchesLabel = labelFilter === 'all' || (c.labels || []).some((l) => l.name === labelFilter);
+    const normalizedLabelSearch = String(labelSearch || '').trim().toLowerCase();
+    const visibleLabels = normalizedLabelSearch
+        ? allLabels.filter((label) => `${label.name}`.toLowerCase().includes(normalizedLabelSearch))
+        : allLabels;
+
+    const selectedLabelCount = filters.labelTokens.length;
+    const hasActiveQuickFilters = filters.unreadOnly || filters.unlabeledOnly || filters.contactMode !== 'all' || filters.archivedMode !== 'all';
+    const hasAnyFilter = hasActiveQuickFilters || selectedLabelCount > 0;
+
+    const quickStats = useMemo(() => {
+        const unread = chats.filter((c) => Number(c?.unreadCount || 0) > 0).length;
+        const unlabeled = chats.filter((c) => (Array.isArray(c?.labels) ? c.labels.length : 0) === 0).length;
+        const myContacts = chats.filter((c) => c?.isMyContact === true).length;
+        const unknown = chats.filter((c) => c?.isMyContact !== true).length;
+        const archived = chats.filter((c) => Boolean(c?.archived)).length;
+        return { unread, unlabeled, myContacts, unknown, archived };
+    }, [chats]);
+
+    const filteredChats = chats.filter((chat) => {
+        const labelTokenSet = getChatLabelTokenSet(chat);
+
+        if (filters.unreadOnly && Number(chat?.unreadCount || 0) <= 0) return false;
+        if (filters.contactMode === 'my' && !chat?.isMyContact) return false;
+        if (filters.contactMode === 'unknown' && chat?.isMyContact) return false;
+        if (filters.archivedMode === 'archived' && !chat?.archived) return false;
+        if (filters.archivedMode === 'active' && chat?.archived) return false;
+        if (filters.unlabeledOnly && labelTokenSet.size > 0) return false;
+
+        if (!filters.unlabeledOnly && filters.labelTokens.length > 0) {
+            const hasLabel = filters.labelTokens.some((token) => labelTokenSet.has(normalizeFilterToken(token)));
+            if (!hasLabel) return false;
+        }
 
         const q = String(localQuery || '').trim().toLowerCase();
-        if (!q) return matchesLabel;
+        if (!q) return true;
 
         const qDigits = normalizePhoneDigits(q);
-        const name = String(c?.name || '').toLowerCase();
-        const subtitle = String(c?.subtitle || '').toLowerCase();
-        const lastMessage = String(c?.lastMessage || '').toLowerCase();
-        const phone = normalizePhoneDigits(c?.phone || c?.id || '');
+        const name = String(chat?.name || '').toLowerCase();
+        const subtitle = String(chat?.subtitle || '').toLowerCase();
+        const status = String(chat?.status || '').toLowerCase();
+        const lastMessage = String(chat?.lastMessage || '').toLowerCase();
+        const phone = normalizePhoneDigits(chat?.phone || chat?.id || '');
 
-        const matchesSearch = qDigits
-            ? phone.includes(qDigits)
-            : (name.includes(q) || subtitle.includes(q) || lastMessage.includes(q));
+        if (qDigits) {
+            return phone.includes(qDigits) || normalizePhoneDigits(subtitle).includes(qDigits);
+        }
 
-        return matchesLabel && matchesSearch;
+        return name.includes(q) || subtitle.includes(q) || status.includes(q) || lastMessage.includes(q);
     });
 
     const handleChatListScroll = (e) => {
@@ -132,12 +242,8 @@ const Sidebar = ({
     const getDisplayName = (chat) => {
         const rawName = sanitizeDisplayText(chat?.name || '');
         const phone = formatPhone(chat?.phone || chat?.id || '');
-        if (chat?.isMyContact) {
-            if (rawName && !isInternalIdentifier(rawName)) return rawName;
-            return phone || 'Sin nombre';
-        }
-        if (phone) return phone;
         if (rawName && !isInternalIdentifier(rawName)) return rawName;
+        if (phone) return phone;
         return 'Sin nombre';
     };
 
@@ -154,17 +260,37 @@ const Sidebar = ({
         const statusText = sanitizeDisplayText(chat?.status || '');
         const subtitleText = sanitizeDisplayText(chat?.subtitle || '');
         const phone = formatPhone(chat?.phone || chat?.id || '');
-        const candidates = [statusText, subtitleText].filter((v) => isHumanSubtitle(v) && !isInternalIdentifier(v));
-        const profileLabel = candidates.find((v) => v !== getDisplayName(chat)) || '';
+        const displayName = getDisplayName(chat);
 
-        if (chat?.isMyContact) {
-            if (profileLabel && phone && profileLabel !== phone) return `${profileLabel} - ${phone}`;
-            return phone;
+        const candidates = [statusText, subtitleText]
+            .filter((v) => isHumanSubtitle(v) && !isInternalIdentifier(v) && v !== displayName);
+
+        if (candidates.length > 0) {
+            const primary = candidates[0];
+            if (phone && primary !== phone) return primary + ' - ' + phone;
+            return primary;
         }
 
-        if (profileLabel) return profileLabel;
-        if (phone && phone !== getDisplayName(chat)) return phone;
+        if (phone && phone !== displayName) return phone;
         return '';
+    };
+
+    const resetFilters = () => {
+        onFiltersChange?.(normalizeFilters({
+            labelTokens: [],
+            unreadOnly: false,
+            unlabeledOnly: false,
+            contactMode: 'all',
+            archivedMode: 'all',
+        }));
+    };
+
+    const toggleLabel = (token) => {
+        const clean = normalizeFilterToken(token);
+        if (!clean) return;
+        const next = new Set(filters.labelTokens);
+        if (next.has(clean)) next.delete(clean); else next.add(clean);
+        updateFilters({ labelTokens: Array.from(next), unlabeledOnly: false });
     };
 
     return (
@@ -243,20 +369,101 @@ const Sidebar = ({
                     </button>
                 )}
 
-                <div className="label-chip-row">
+                <div className="sidebar-filter-toolbar">
                     <button
-                        onClick={() => setLabelFilter('all')}
-                        className={`label-chip ${labelFilter === 'all' ? 'active' : ''}`}
-                    >Todos</button>
-                    {allLabels.map((label) => (
-                        <button
-                            key={label.name}
-                            onClick={() => setLabelFilter(label.name)}
-                            className={`label-chip ${labelFilter === label.name ? 'active' : ''}`}
-                            style={{ '--label-color': label.color || '#7D8D95' }}
-                        >{label.name}</button>
-                    ))}
+                        type="button"
+                        className={`sidebar-filter-pill ${!hasAnyFilter ? 'active' : ''}`}
+                        onClick={resetFilters}
+                    >
+                        <SlidersHorizontal size={13} /> Todos
+                    </button>
+                    <button
+                        type="button"
+                        className={`sidebar-filter-pill ${filters.unreadOnly ? 'active' : ''}`}
+                        onClick={() => updateFilters({ unreadOnly: !filters.unreadOnly })}
+                    >
+                        No leidos {quickStats.unread > 0 ? `(${quickStats.unread})` : ''}
+                    </button>
+                    <button
+                        type="button"
+                        className={`sidebar-filter-pill ${filters.unlabeledOnly ? 'active' : ''}`}
+                        onClick={() => updateFilters({ unlabeledOnly: !filters.unlabeledOnly, labelTokens: [] })}
+                    >
+                        Sin etiqueta {quickStats.unlabeled > 0 ? `(${quickStats.unlabeled})` : ''}
+                    </button>
+                    <button
+                        type="button"
+                        className={`sidebar-filter-pill ${filters.contactMode === 'my' ? 'active' : ''}`}
+                        onClick={() => updateFilters({ contactMode: filters.contactMode === 'my' ? 'all' : 'my' })}
+                    >
+                        <Users size={13} /> Guardados {quickStats.myContacts > 0 ? `(${quickStats.myContacts})` : ''}
+                    </button>
+                    <button
+                        type="button"
+                        className={`sidebar-filter-pill ${filters.contactMode === 'unknown' ? 'active' : ''}`}
+                        onClick={() => updateFilters({ contactMode: filters.contactMode === 'unknown' ? 'all' : 'unknown' })}
+                    >
+                        <UserRoundX size={13} /> No guardados {quickStats.unknown > 0 ? `(${quickStats.unknown})` : ''}
+                    </button>
+                    <button
+                        type="button"
+                        className={`sidebar-filter-pill ${filters.archivedMode === 'archived' ? 'active' : ''}`}
+                        onClick={() => updateFilters({ archivedMode: filters.archivedMode === 'archived' ? 'all' : 'archived' })}
+                    >
+                        <Archive size={13} /> Archivados {quickStats.archived > 0 ? `(${quickStats.archived})` : ''}
+                    </button>
                 </div>
+
+                <div className="sidebar-label-filter-head">
+                    <button
+                        type="button"
+                        className={`sidebar-label-toggle ${showLabelPanel ? 'open' : ''}`}
+                        onClick={() => setShowLabelPanel((v) => !v)}
+                    >
+                        <Tags size={14} />
+                        Etiquetas
+                        {selectedLabelCount > 0 ? <span className="sidebar-label-selected-count">{selectedLabelCount}</span> : null}
+                    </button>
+                    {hasAnyFilter && (
+                        <button type="button" className="sidebar-filter-clear" onClick={resetFilters}>Limpiar</button>
+                    )}
+                </div>
+
+                {showLabelPanel && (
+                    <div className="sidebar-label-panel">
+                        <div className="sidebar-label-search-row">
+                            <Search size={14} />
+                            <input
+                                type="text"
+                                value={labelSearch}
+                                onChange={(e) => setLabelSearch(e.target.value)}
+                                placeholder="Buscar etiqueta"
+                                className="sidebar-label-search-input"
+                            />
+                        </div>
+                        <div className="sidebar-label-list">
+                            {visibleLabels.length === 0 ? (
+                                <div className="sidebar-label-empty">No hay etiquetas para mostrar</div>
+                            ) : (
+                                visibleLabels.map((label) => {
+                                    const isSelected = filters.labelTokens.includes(label.token);
+                                    return (
+                                        <button
+                                            key={label.token}
+                                            type="button"
+                                            className={`sidebar-label-item ${isSelected ? 'active' : ''}`}
+                                            onClick={() => toggleLabel(label.token)}
+                                        >
+                                            <span className="sidebar-label-color" style={{ background: label.color || '#7D8D95' }} />
+                                            <span className="sidebar-label-name">{label.name}</span>
+                                            <span className="sidebar-label-count">{label.count}</span>
+                                        </button>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="chat-list" onClick={() => showMenu && setShowMenu(false)} onScroll={handleChatListScroll}>
@@ -272,13 +479,14 @@ const Sidebar = ({
                     ))
                 ) : filteredChats.length === 0 ? (
                     <div className="sidebar-empty-search">
-                        Sin resultados para "{localQuery}"
+                        Sin resultados para "{localQuery || 'los filtros actuales'}"
                     </div>
                 ) : (
                     filteredChats.map((chat) => {
                         const displayName = getDisplayName(chat);
                         const subtitle = getSubtitle(chat);
                         const lastMessage = sanitizeDisplayText(chat.lastMessage || '') || 'Haz clic para chatear';
+                        const labels = Array.isArray(chat?.labels) ? chat.labels : [];
                         return (
                             <div
                                 key={chat.id}
@@ -301,6 +509,17 @@ const Sidebar = ({
                                     </div>
 
                                     {subtitle && <p className="chat-subtitle-modern">{subtitle}</p>}
+
+                                    {labels.length > 0 && (
+                                        <div className="chat-inline-labels">
+                                            {labels.slice(0, 2).map((label, idx) => (
+                                                <span key={`${label?.id || label?.name || 'l'}_${idx}`} className="chat-inline-label" style={{ '--label-color': label?.color || '#7D8D95' }}>
+                                                    {label?.name || 'Etiqueta'}
+                                                </span>
+                                            ))}
+                                            {labels.length > 2 && <span className="chat-inline-label-more">+{labels.length - 2}</span>}
+                                        </div>
+                                    )}
 
                                     <div className="chat-row-bottom">
                                         <p className="chat-last-message">
@@ -330,3 +549,9 @@ const Sidebar = ({
 };
 
 export default Sidebar;
+
+
+
+
+
+

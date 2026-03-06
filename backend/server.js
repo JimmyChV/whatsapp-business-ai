@@ -68,7 +68,7 @@ function extractMeta(html, property, nameFallback = null) {
 app.get('/api/link-preview', async (req, res) => {
     const url = String(req.query.url || '').trim();
     if (!url || !/^https?:\/\//i.test(url)) {
-        return res.status(400).json({ error: 'URL inválida. Usa http(s).' });
+        return res.status(400).json({ error: 'URL invalida. Usa http(s).' });
     }
 
     try {
@@ -105,7 +105,7 @@ app.get('/api/link-preview', async (req, res) => {
 
         const contentLength = Number(response.headers.get('content-length') || 0);
         if (contentLength && contentLength > maxBytes) {
-            return res.status(413).json({ ok: false, url, error: 'El contenido excede el tamaño permitido para preview.' });
+            return res.status(413).json({ ok: false, url, error: 'El contenido excede el tamano permitido para preview.' });
         }
 
         const html = (await response.text()).slice(0, maxBytes);
@@ -138,3 +138,4 @@ server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
     waClient.initialize();
 });
+
