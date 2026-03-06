@@ -79,6 +79,10 @@ class WhatsAppClient extends EventEmitter {
         this.client.on('message_ack', (message, ack) => {
             this.emit('message_ack', { message, ack });
         });
+
+        this.client.on('message_edit', (message, newBody, prevBody) => {
+            this.emit('message_edit', { message, newBody, prevBody });
+        });
     }
 
     initialize() {
@@ -97,9 +101,85 @@ class WhatsAppClient extends EventEmitter {
         return await chat.fetchMessages({ limit });
     }
 
+    getCapabilities() {
+        const quickRepliesNative = Boolean(
+            typeof this.client?.getQuickReplies === 'function'
+            || typeof this.client?.listQuickReplies === 'function'
+            || typeof this.client?.getQuickReplyTemplates === 'function'
+        );
+
+        return {
+            messageEdit: true,
+            messageEditSync: true,
+            quickReplies: quickRepliesNative,
+            quickRepliesRead: quickRepliesNative,
+            quickRepliesWrite: quickRepliesNative
+        };
+    }
+
     async sendMessage(to, body) {
         if (!this.isReady) throw new Error('Client not ready');
         return await this.client.sendMessage(to, body);
+    }
+
+    async getMessagesEditability(messageIds = []) {
+        const ids = Array.isArray(messageIds)
+            ? messageIds.map((id) => String(id || '').trim()).filter(Boolean)
+            : [];
+        const fallback = {};
+        ids.forEach((id) => { fallback[id] = false; });
+
+        if (!ids.length) return fallback;
+        if (!this.isReady || typeof this.client?.pupPage?.evaluate !== 'function') return fallback;
+
+        try {
+            const result = await this.client.pupPage.evaluate(async (idList) => {
+                const output = {};
+                for (const messageId of idList) {
+                    try {
+                        const store = window.Store || {};
+                        const msgStore = store.Msg;
+                        const checks = store.MsgActionChecks;
+                        if (!msgStore || !checks) {
+                            output[messageId] = false;
+                            continue;
+                        }
+                        const msg = msgStore.get(messageId)
+                            || (await msgStore.getMessagesById([messageId]))?.messages?.[0];
+                        if (!msg) {
+                            output[messageId] = false;
+                            continue;
+                        }
+                        const canEditText = typeof checks.canEditText === 'function' && checks.canEditText(msg);
+                        const canEditCaption = typeof checks.canEditCaption === 'function' && checks.canEditCaption(msg);
+                        output[messageId] = Boolean(canEditText || canEditCaption);
+                    } catch (e) {
+                        output[messageId] = false;
+                    }
+                }
+                return output;
+            }, ids);
+
+            if (!result || typeof result !== 'object') return fallback;
+            const normalized = { ...fallback };
+            ids.forEach((id) => {
+                normalized[id] = result[id] === true;
+            });
+            return normalized;
+        } catch (e) {
+            this.warnCapabilityOnce(
+                'message_editability_eval_failed',
+                '[WA] No se pudo evaluar canEdit por mensaje; se usara fallback sin edicion visible.'
+            );
+            return fallback;
+        }
+    }
+
+    async canEditMessageById(messageId) {
+        const cleanId = String(messageId || '').trim();
+        if (!cleanId) return false;
+        const map = await this.getMessagesEditability([cleanId]);
+        return map[cleanId] === true;
     }
 
     async sendMedia(to, mediaData, mimetype, filename, caption, isPtt = false) {

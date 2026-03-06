@@ -228,6 +228,7 @@ const ChatWindow = ({
     labelDefinitions = [],
     onToggleChatLabel,
     onEditMessage,
+    canEditMessages = true,
     ...inputProps
 }) => {
     const [showMenu, setShowMenu] = useState(false);
@@ -436,6 +437,7 @@ const ChatWindow = ({
                                     onPrefillMessage={(text) => inputProps?.setInputText && inputProps.setInputText(text)}
                                     onOpenMedia={setLightboxMedia}
                                     onEditMessage={onEditMessage}
+                                    canEditMessages={canEditMessages}
                                 />
                             </div>
                         </React.Fragment>

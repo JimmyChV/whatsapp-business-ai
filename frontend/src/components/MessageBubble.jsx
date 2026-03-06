@@ -9,6 +9,7 @@ const MessageBubble = ({
     isCurrentHighlighted = false,
     onOpenMedia,
     onEditMessage,
+    canEditMessages = true,
 }) => {
     const isOut = msg.fromMe;
 
@@ -45,7 +46,13 @@ const MessageBubble = ({
         ? `data:${msg.mimetype || 'application/octet-stream'};base64,${msg.mediaData}`
         : null;
 
-    const canEditMessage = Boolean(isOut && !msg?.hasMedia && String(msg?.body || '').trim());
+    const canEditMessage = Boolean(
+        canEditMessages
+        && isOut
+        && !msg?.hasMedia
+        && String(msg?.body || '').trim()
+        && msg?.canEdit === true
+    );
 
     const handleEditClick = () => {
         if (!canEditMessage || typeof onEditMessage !== 'function') return;

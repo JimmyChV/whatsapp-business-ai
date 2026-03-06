@@ -309,6 +309,7 @@ function App() {
   const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
   const [labelDefinitions, setLabelDefinitions] = useState([]);
   const [quickReplies, setQuickReplies] = useState([]);
+  const [waCapabilities, setWaCapabilities] = useState({ messageEdit: true, messageEditSync: true, quickReplies: false, quickRepliesRead: false, quickRepliesWrite: false });
   const [toasts, setToasts] = useState([]);
 
   // --------------------------------------------------------------
@@ -403,11 +404,27 @@ function App() {
       requestChatsPage({ reset: true });
       socket.emit('get_business_data');
       socket.emit('get_my_profile');
-      socket.emit('get_quick_replies');
+      socket.emit('get_wa_capabilities');
     });
 
     socket.on('my_profile', (profile) => {
       setMyProfile(profile);
+    });
+
+    socket.on('wa_capabilities', (caps) => {
+      const nextCaps = {
+        messageEdit: Boolean(caps?.messageEdit),
+        messageEditSync: Boolean(caps?.messageEditSync),
+        quickReplies: Boolean(caps?.quickReplies),
+        quickRepliesRead: Boolean(caps?.quickRepliesRead),
+        quickRepliesWrite: Boolean(caps?.quickRepliesWrite),
+      };
+      setWaCapabilities(nextCaps);
+      if (nextCaps.quickRepliesRead) {
+        socket.emit('get_quick_replies');
+      } else {
+        setQuickReplies([]);
+      }
     });
 
     socket.on('chats', (payload) => {
@@ -539,7 +556,8 @@ function App() {
           body: repairMojibake(m?.body || ''),
           ack: Number.isFinite(Number(m?.ack)) ? Number(m.ack) : 0,
           edited: Boolean(m?.edited),
-          editedAt: Number(m?.editedAt || 0) || null
+          editedAt: Number(m?.editedAt || 0) || null,
+          canEdit: Boolean(m?.canEdit)
         }))
         : [];
       setMessages(sanitizedMessages);
@@ -673,7 +691,7 @@ function App() {
         if (prev.find((m) => m.id === msg.id)) return prev;
         const shouldAdd = (msg.fromMe && msg.to === activeChatIdRef.current) || (!msg.fromMe && msg.from === activeChatIdRef.current);
         if (!shouldAdd) return prev;
-        return [...prev, { ...msg, body: repairMojibake(msg?.body || '') }];
+        return [...prev, { ...msg, body: repairMojibake(msg?.body || ''), canEdit: Boolean(msg?.canEdit) }];
       });
     });
 
@@ -704,7 +722,7 @@ function App() {
       if (msg) alert(msg);
     });
 
-    socket.on('message_edited', ({ chatId, messageId, body, edited, editedAt }) => {
+    socket.on('message_edited', ({ chatId, messageId, body, edited, editedAt, canEdit }) => {
       const targetChatId = String(chatId || '');
       const active = String(activeChatIdRef.current || '');
       if (targetChatId && active && targetChatId !== active) return;
@@ -715,7 +733,8 @@ function App() {
             ...m,
             body: repairMojibake(body || ''),
             edited: edited !== false,
-            editedAt: Number(editedAt || 0) || Math.floor(Date.now() / 1000)
+            editedAt: Number(editedAt || 0) || Math.floor(Date.now() / 1000),
+            canEdit: typeof canEdit === 'boolean' ? canEdit : Boolean(m?.canEdit)
           }
           : m
       )));
@@ -778,7 +797,7 @@ function App() {
     });
 
     return () => {
-      ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_updated', 'chat_history', 'chat_media',
+      ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'wa_capabilities', 'chats', 'chat_updated', 'chat_history', 'chat_media',
         'chat_opened', 'start_new_chat_error', 'chat_labels_updated', 'chat_labels_error', 'chat_labels_saved',
         'contact_info', 'message', 'business_data', 'business_data_catalog', 'quick_replies', 'quick_reply_error',
         'ai_suggestion_chunk',
@@ -919,6 +938,10 @@ function App() {
   };
 
   const handleEditMessage = (messageId, nextBody) => {
+    if (!waCapabilities.messageEdit) {
+      alert('La edicion de mensajes no esta disponible en esta sesion de WhatsApp.');
+      return;
+    }
     const activeId = String(activeChatIdRef.current || '');
     const cleanId = String(messageId || '').trim();
     const cleanBody = String(nextBody || '').trim();
@@ -927,14 +950,17 @@ function App() {
   };
 
   const handleCreateQuickReply = ({ label, text }) => {
+    if (!waCapabilities.quickRepliesWrite) return;
     socket.emit('add_quick_reply', { label, text });
   };
 
   const handleUpdateQuickReply = ({ id, label, text }) => {
+    if (!waCapabilities.quickRepliesWrite) return;
     socket.emit('update_quick_reply', { id, label, text });
   };
 
   const handleDeleteQuickReply = (id) => {
+    if (!waCapabilities.quickRepliesWrite) return;
     socket.emit('delete_quick_reply', { id });
   };
   const requestAiSuggestion = (customPromptArg) => {
@@ -1111,6 +1137,7 @@ REGLA CRITICA:
               labelDefinitions={labelDefinitions}
               onToggleChatLabel={handleToggleChatLabel}
               onEditMessage={handleEditMessage}
+              canEditMessages={waCapabilities.messageEdit}
             />
 
             {/* Client Profile Panel (slides in from right) */}
@@ -1172,6 +1199,7 @@ REGLA CRITICA:
           onCreateQuickReply={handleCreateQuickReply}
           onUpdateQuickReply={handleUpdateQuickReply}
           onDeleteQuickReply={handleDeleteQuickReply}
+          waCapabilities={waCapabilities}
         />
       </div>
     </div>
