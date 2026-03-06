@@ -509,6 +509,46 @@ class SocketManager {
         this.setupWAClientEvents();
     }
 
+    getWaCapabilities() {
+        const caps = waClient.getCapabilities();
+        return {
+            messageEdit: Boolean(caps?.messageEdit),
+            messageEditSync: Boolean(caps?.messageEditSync),
+            quickReplies: Boolean(caps?.quickReplies),
+            quickRepliesRead: Boolean(caps?.quickRepliesRead),
+            quickRepliesWrite: Boolean(caps?.quickRepliesWrite)
+        };
+    }
+
+    emitWaCapabilities(socket) {
+        socket.emit('wa_capabilities', this.getWaCapabilities());
+    }
+
+    async emitMessageEditability(messageId, chatId) {
+        const id = String(messageId || '').trim();
+        if (!id) return;
+        try {
+            const canEdit = await waClient.canEditMessageById(id);
+            this.io.emit('message_editability', {
+                id,
+                chatId: String(chatId || ''),
+                canEdit
+            });
+        } catch (e) { }
+    }
+
+    scheduleEditabilityRefresh(messageId, chatId, delaysMs = [1200, 3200, 7000]) {
+        const id = String(messageId || '').trim();
+        if (!id) return;
+        const normalizedChatId = String(chatId || '');
+        (Array.isArray(delaysMs) ? delaysMs : []).forEach((delay) => {
+            const waitMs = Number.isFinite(Number(delay)) ? Math.max(0, Number(delay)) : 0;
+            setTimeout(() => {
+                this.emitMessageEditability(id, normalizedChatId);
+            }, waitMs);
+        });
+    }
+
     invalidateChatListCache() {
         this.chatListCache = { items: [], updatedAt: 0 };
     }
@@ -740,6 +780,11 @@ class SocketManager {
             } else if (waClient.lastQr) {
                 socket.emit('qr', waClient.lastQr);
             }
+            this.emitWaCapabilities(socket);
+
+            socket.on('get_wa_capabilities', () => {
+                this.emitWaCapabilities(socket);
+            });
 
             // --- Chat info ---
             socket.on('get_chats', async (payload = {}) => {
@@ -941,6 +986,14 @@ class SocketManager {
                         }
                     }
                     const visible = messages.filter((m) => !isStatusOrSystemMessage(m));
+                    const outgoingIds = visible
+                        .filter((m) => Boolean(m?.fromMe))
+                        .map((m) => String(m?.id?._serialized || ''))
+                        .filter(Boolean);
+                    const editableMap = outgoingIds.length > 0
+                        ? await waClient.getMessagesEditability(outgoingIds)
+                        : {};
+
                     const formatted = visible.map((m) => ({
                         id: m.id._serialized,
                         from: m.from,
@@ -955,6 +1008,8 @@ class SocketManager {
                         ack: Number.isFinite(Number(m.ack)) ? Number(m.ack) : 0,
                         edited: Boolean(m?._data?.latestEditMsgKey || m?._data?.latestEditSenderTimestampMs || m?._data?.edited),
                         editedAt: Number(m?._data?.latestEditSenderTimestampMs || 0) > 0 ? Math.floor(Number(m._data.latestEditSenderTimestampMs) / 1000) : null,
+
+                        canEdit: Boolean(editableMap[String(m?.id?._serialized || '')]),
                         order: extractOrderInfo(m)
                     }));
                     socket.emit('chat_history', { chatId: historyChatId, requestedChatId: chatId, messages: formatted });
@@ -1091,40 +1146,29 @@ class SocketManager {
             });
             socket.on('get_quick_replies', async () => {
                 try {
-                    socket.emit('quick_replies', { items: listQuickReplies() });
+
+                    const caps = this.getWaCapabilities();
+                    if (!caps.quickRepliesRead || typeof waClient.client?.getQuickReplies !== 'function') {
+                        socket.emit('quick_replies', { items: [], source: 'unsupported' });
+                        return;
+                    }
+                    const nativeItems = await waClient.client.getQuickReplies();
+                    socket.emit('quick_replies', { items: Array.isArray(nativeItems) ? nativeItems : [], source: 'native' });
                 } catch (e) {
-                    socket.emit('quick_reply_error', 'No se pudieron cargar las respuestas rapidas.');
+                    socket.emit('quick_reply_error', 'No se pudieron cargar las respuestas rapidas nativas.');
                 }
             });
 
-            socket.on('add_quick_reply', async ({ label, text }) => {
-                try {
-                    const item = addQuickReply({ label, text });
-                    this.io.emit('quick_replies', { items: listQuickReplies() });
-                    socket.emit('quick_reply_saved', { action: 'add', id: item.id, ok: true });
-                } catch (e) {
-                    socket.emit('quick_reply_error', e?.message || 'No se pudo crear la respuesta rapida.');
-                }
+            socket.on('add_quick_reply', async () => {
+                socket.emit('quick_reply_error', 'WhatsApp Web no expone crear respuestas rapidas por API en esta version.');
             });
 
-            socket.on('update_quick_reply', async ({ id, label, text }) => {
-                try {
-                    const item = updateQuickReply({ id, label, text });
-                    this.io.emit('quick_replies', { items: listQuickReplies() });
-                    socket.emit('quick_reply_saved', { action: 'update', id: item.id, ok: true });
-                } catch (e) {
-                    socket.emit('quick_reply_error', e?.message || 'No se pudo actualizar la respuesta rapida.');
-                }
+            socket.on('update_quick_reply', async () => {
+                socket.emit('quick_reply_error', 'WhatsApp Web no expone editar respuestas rapidas por API en esta version.');
             });
 
-            socket.on('delete_quick_reply', async ({ id }) => {
-                try {
-                    const deleted = deleteQuickReply(id);
-                    this.io.emit('quick_replies', { items: listQuickReplies() });
-                    socket.emit('quick_reply_saved', { action: 'delete', id: deleted.id, ok: true });
-                } catch (e) {
-                    socket.emit('quick_reply_error', e?.message || 'No se pudo eliminar la respuesta rapida.');
-                }
+            socket.on('delete_quick_reply', async () => {
+                socket.emit('quick_reply_error', 'WhatsApp Web no expone eliminar respuestas rapidas por API en esta version.');
             });
 
             // --- Messaging ---
@@ -1167,22 +1211,20 @@ class SocketManager {
                         return;
                     }
 
-                    await targetMessage.edit(nextBody);
 
-                    this.io.emit('message_edited', {
-                        chatId: targetChatId,
-                        messageId: targetMessageId,
-                        body: nextBody,
-                        edited: true,
-                        editedAt: Math.floor(Date.now() / 1000)
-                    });
+                    const canEditNow = await waClient.canEditMessageById(targetMessageId);
+                    if (!canEditNow) {
+                        socket.emit('edit_message_error', 'WhatsApp no permite editar este mensaje (tipo o tiempo).');
+                        return;
+                    }
 
-                    try {
-                        this.invalidateChatListCache();
-                        const refreshedChat = await waClient.client.getChatById(targetChatId);
-                        const summary = await this.toChatSummary(refreshedChat, { includeHeavyMeta: false });
-                        if (summary) this.io.emit('chat_updated', summary);
-                    } catch (e) { }
+                    const editedMessage = await targetMessage.edit(nextBody);
+                    if (!editedMessage) {
+                        socket.emit('edit_message_error', 'WhatsApp no permitio editar el mensaje.');
+                        return;
+                    }
+
+                    this.emitMessageEditability(targetMessageId, targetChatId);
                 } catch (e) {
                     const detail = String(e?.message || '').toLowerCase();
                     if (detail.includes('revoke') || detail.includes('time') || detail.includes('edit')) {
@@ -1502,10 +1544,14 @@ class SocketManager {
 
     setupWAClientEvents() {
         waClient.on('qr', (qr) => this.io.emit('qr', qr));
-        waClient.on('ready', () => this.io.emit('ready', { message: 'WhatsApp Ready' }));
+        waClient.on('ready', () => {
+            this.io.emit('ready', { message: 'WhatsApp Ready' });
+            this.io.emit('wa_capabilities', this.getWaCapabilities());
+        });
         waClient.on('authenticated', () => this.io.emit('authenticated'));
         waClient.on('auth_failure', (msg) => this.io.emit('auth_failure', msg));
         waClient.on('disconnected', (reason) => this.io.emit('disconnected', reason));
+
         waClient.on('message', async (msg) => {
             if (isStatusOrSystemMessage(msg)) return;
 
@@ -1525,6 +1571,7 @@ class SocketManager {
                 type: msg.type,
                 notifyName: senderMeta.notifyName,
                 senderPhone: senderMeta.senderPhone,
+                canEdit: false,
                 order: extractOrderInfo(msg)
             });
 
@@ -1559,8 +1606,12 @@ class SocketManager {
                 type: msg.type,
                 notifyName: null,
                 senderPhone: null,
+                canEdit: false,
                 order: extractOrderInfo(msg)
             });
+
+            this.emitMessageEditability(msg.id._serialized, msg.to || msg.from);
+            this.scheduleEditabilityRefresh(msg.id._serialized, msg.to || msg.from);
 
             try {
                 const relatedChatId = msg.to || msg.from;
@@ -1573,15 +1624,67 @@ class SocketManager {
             } catch (e) { }
         });
 
-        waClient.on('message_ack', ({ message, ack }) => {
-            this.io.emit('message_ack', {
-                id: message.id._serialized,
-                chatId: message.to || message.from,
-                ack: ack
+        waClient.on('message_edit', async ({ message, newBody, prevBody }) => {
+            if (!message || isStatusOrSystemMessage(message)) return;
+            const chatId = message.fromMe ? message.to : message.from;
+            if (!isVisibleChatId(chatId)) return;
+
+            const messageId = message?.id?._serialized;
+            if (!messageId) return;
+
+            let canEdit = false;
+            try {
+                canEdit = await waClient.canEditMessageById(messageId);
+            } catch (e) { }
+
+            const editedAtMs = Number(message?.latestEditSenderTimestampMs || message?._data?.latestEditSenderTimestampMs || 0);
+            const editedAt = editedAtMs > 0 ? Math.floor(editedAtMs / 1000) : Math.floor(Date.now() / 1000);
+
+            this.io.emit('message_edited', {
+                chatId,
+                messageId,
+                body: String(newBody ?? message.body ?? ''),
+                prevBody: String(prevBody ?? ''),
+                edited: true,
+                editedAt,
+                fromMe: Boolean(message.fromMe),
+                canEdit
             });
+
+            try {
+                this.invalidateChatListCache();
+                const refreshedChat = await waClient.client.getChatById(chatId);
+                const summary = await this.toChatSummary(refreshedChat, { includeHeavyMeta: false });
+                if (summary) this.io.emit('chat_updated', summary);
+            } catch (e) { }
+        });
+
+        waClient.on('message_ack', async ({ message, ack }) => {
+            const messageId = message?.id?._serialized;
+            const chatId = message?.to || message?.from || '';
+            const isFromMe = Boolean(message?.fromMe);
+
+            let canEdit;
+            if (isFromMe && messageId) {
+                try {
+                    canEdit = await waClient.canEditMessageById(messageId);
+                } catch (e) { }
+            }
+
+            this.io.emit('message_ack', {
+                id: messageId,
+                chatId,
+                ack: ack,
+                canEdit
+            });
+
+            if (isFromMe && messageId) {
+                this.scheduleEditabilityRefresh(messageId, chatId, [900, 2600]);
+            }
         });
     }
 }
+
 
 module.exports = SocketManager;
 

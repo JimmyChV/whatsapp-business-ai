@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -286,6 +286,7 @@ function App() {
   const [activeChatId, setActiveChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
+  const [editingMessage, setEditingMessage] = useState(null);
 
   // --------------------------------------------------------------
   const [myProfile, setMyProfile] = useState(null);
@@ -309,6 +310,8 @@ function App() {
   const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
   const [labelDefinitions, setLabelDefinitions] = useState([]);
   const [quickReplies, setQuickReplies] = useState([]);
+
+  const [waCapabilities, setWaCapabilities] = useState({ messageEdit: true, messageEditSync: true, quickReplies: false, quickRepliesRead: false, quickRepliesWrite: false });
   const [toasts, setToasts] = useState([]);
 
   // --------------------------------------------------------------
@@ -319,6 +322,7 @@ function App() {
   const chatSearchRef = useRef('');
   const chatFiltersRef = useRef(normalizeChatFilters({ labelTokens: [], unreadOnly: false, unlabeledOnly: false, contactMode: 'all', archivedMode: 'all' }));
   const chatPagingRef = useRef({ offset: 0, hasMore: true, loading: false });
+  const shouldInstantScrollRef = useRef(false);
 
   // --------------------------------------------------------------
   // Notifications
@@ -338,8 +342,11 @@ function App() {
   // --------------------------------------------------------------
   // Auto-scroll
   // --------------------------------------------------------------
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  useLayoutEffect(() => {
+    if (!messagesEndRef.current) return;
+    const behavior = shouldInstantScrollRef.current ? 'auto' : 'smooth';
+    messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    if (shouldInstantScrollRef.current) shouldInstantScrollRef.current = false;
   }, [messages]);
 
   useEffect(() => {
@@ -403,11 +410,28 @@ function App() {
       requestChatsPage({ reset: true });
       socket.emit('get_business_data');
       socket.emit('get_my_profile');
-      socket.emit('get_quick_replies');
+
+      socket.emit('get_wa_capabilities');
     });
 
     socket.on('my_profile', (profile) => {
       setMyProfile(profile);
+    });
+
+    socket.on('wa_capabilities', (caps) => {
+      const nextCaps = {
+        messageEdit: Boolean(caps?.messageEdit),
+        messageEditSync: Boolean(caps?.messageEditSync),
+        quickReplies: Boolean(caps?.quickReplies),
+        quickRepliesRead: Boolean(caps?.quickRepliesRead),
+        quickRepliesWrite: Boolean(caps?.quickRepliesWrite),
+      };
+      setWaCapabilities(nextCaps);
+      if (nextCaps.quickRepliesRead) {
+        socket.emit('get_quick_replies');
+      } else {
+        setQuickReplies([]);
+      }
     });
 
     socket.on('chats', (payload) => {
@@ -521,6 +545,8 @@ function App() {
     });
 
     socket.on('chat_history', (data) => {
+
+      shouldInstantScrollRef.current = true;
       const requestedChatId = String(data?.requestedChatId || '');
       const resolvedChatId = String(data?.chatId || requestedChatId || '');
       const active = String(activeChatIdRef.current || '');
@@ -539,7 +565,9 @@ function App() {
           body: repairMojibake(m?.body || ''),
           ack: Number.isFinite(Number(m?.ack)) ? Number(m.ack) : 0,
           edited: Boolean(m?.edited),
-          editedAt: Number(m?.editedAt || 0) || null
+
+          editedAt: Number(m?.editedAt || 0) || null,
+          canEdit: Boolean(m?.canEdit)
         }))
         : [];
       setMessages(sanitizedMessages);
@@ -671,9 +699,29 @@ function App() {
 
       setMessages((prev) => {
         if (prev.find((m) => m.id === msg.id)) return prev;
-        const shouldAdd = (msg.fromMe && msg.to === activeChatIdRef.current) || (!msg.fromMe && msg.from === activeChatIdRef.current);
+
+        const activeId = String(activeChatIdRef.current || '');
+        const incomingChatId = String((msg.fromMe ? msg.to : msg.from) || '');
+        const activeIdDigits = normalizeDigits(activeId.split('@')[0] || '');
+        const incomingDigits = normalizeDigits(incomingChatId.split('@')[0] || '');
+        const activeChat = chatsRef.current.find((c) => c.id === activeId);
+        const activePhoneDigits = normalizeDigits(activeChat?.phone || '');
+
+        const sameById = incomingChatId === activeId;
+        const sameByIdDigits = activeIdDigits && incomingDigits && (
+          activeIdDigits === incomingDigits
+          || activeIdDigits.endsWith(incomingDigits)
+          || incomingDigits.endsWith(activeIdDigits)
+        );
+        const sameByPhone = activePhoneDigits && incomingDigits && (
+          activePhoneDigits === incomingDigits
+          || activePhoneDigits.endsWith(incomingDigits)
+          || incomingDigits.endsWith(activePhoneDigits)
+        );
+
+        const shouldAdd = sameById || sameByIdDigits || sameByPhone;
         if (!shouldAdd) return prev;
-        return [...prev, { ...msg, body: repairMojibake(msg?.body || '') }];
+        return [...prev, { ...msg, body: repairMojibake(msg?.body || ''), canEdit: Boolean(msg?.canEdit) }];
       });
     });
 
@@ -704,7 +752,8 @@ function App() {
       if (msg) alert(msg);
     });
 
-    socket.on('message_edited', ({ chatId, messageId, body, edited, editedAt }) => {
+
+    socket.on('message_edited', ({ chatId, messageId, body, edited, editedAt, canEdit }) => {
       const targetChatId = String(chatId || '');
       const active = String(activeChatIdRef.current || '');
       if (targetChatId && active && targetChatId !== active) return;
@@ -715,14 +764,28 @@ function App() {
             ...m,
             body: repairMojibake(body || ''),
             edited: edited !== false,
-            editedAt: Number(editedAt || 0) || Math.floor(Date.now() / 1000)
+
+            editedAt: Number(editedAt || 0) || Math.floor(Date.now() / 1000),
+            canEdit: typeof canEdit === 'boolean' ? canEdit : Boolean(m?.canEdit)
           }
           : m
       )));
+      setEditingMessage((prev) => (prev && String(prev.id || '') === String(messageId || '') ? null : prev));
     });
 
     socket.on('edit_message_error', (msg) => {
       if (msg) alert(msg);
+    });
+
+
+    socket.on('message_editability', ({ id, chatId, canEdit }) => {
+      if (!id || typeof canEdit !== 'boolean') return;
+      const active = String(activeChatIdRef.current || '');
+      const incomingChatId = String(chatId || '');
+      if (incomingChatId && active && incomingChatId !== active) return;
+      setMessages((prev) => prev.map((m) => (
+        m.id === id ? { ...m, canEdit } : m
+      )));
     });
     socket.on('ai_suggestion_chunk', (chunk) => {
       setAiSuggestion(prev => prev + chunk);
@@ -737,8 +800,13 @@ function App() {
       if (msg) alert(msg);
     });
 
-    socket.on('message_ack', ({ id, ack, chatId }) => {
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, ack } : m));
+
+    socket.on('message_ack', ({ id, ack, chatId, canEdit }) => {
+      setMessages(prev => prev.map((m) => (
+        m.id === id
+          ? { ...m, ack, canEdit: typeof canEdit === 'boolean' ? canEdit : m.canEdit }
+          : m
+      )));
       const ackChatId = String(chatId || '');
       const ackDigits = normalizeDigits(ackChatId.split('@')[0] || '');
       setChats(prev => prev.map((c) => {
@@ -773,16 +841,18 @@ function App() {
       chatPagingRef.current = { offset: 0, hasMore: false, loading: false };
       setIsLoadingMoreChats(false);
       setMessages([]);
+      setEditingMessage(null);
       setActiveChatId(null);
       alert('Sesion de WhatsApp cerrada. Escanea nuevamente el QR.');
     });
 
     return () => {
-      ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_updated', 'chat_history', 'chat_media',
+      ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'wa_capabilities', 'chats', 'chat_updated', 'chat_history', 'chat_media',
         'chat_opened', 'start_new_chat_error', 'chat_labels_updated', 'chat_labels_error', 'chat_labels_saved',
         'contact_info', 'message', 'business_data', 'business_data_catalog', 'quick_replies', 'quick_reply_error',
         'ai_suggestion_chunk',
-        'ai_suggestion_complete', 'ai_error', 'message_ack', 'message_edited', 'edit_message_error', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
+
+        'ai_suggestion_complete', 'ai_error', 'message_ack', 'message_editability', 'message_edited', 'edit_message_error', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
       ].forEach(ev => socket.off(ev));
     };
   }, []);
@@ -811,7 +881,9 @@ function App() {
 
     activeChatIdRef.current = chatId;
     setActiveChatId(chatId);
+    shouldInstantScrollRef.current = true;
     setMessages([]);
+    setEditingMessage(null);
     setShowClientProfile(false);
     setClientContact(null);
     socket.emit('get_chat_history', chatId);
@@ -822,9 +894,35 @@ function App() {
 
   const handleSendMessage = (e) => {
     e?.preventDefault();
-    if (!inputText.trim() && !attachment) return;
-
     const text = inputText.trim();
+
+    if (editingMessage?.id) {
+      if (!waCapabilities.messageEdit) {
+        alert('La edicion de mensajes no esta disponible en esta sesion de WhatsApp.');
+        return;
+      }
+      if (attachment) {
+        alert('No puedes adjuntar archivos mientras editas un mensaje.');
+        return;
+      }
+      if (!text) return;
+
+      const original = String(editingMessage.originalBody || '').trim();
+      if (text === original) {
+        setEditingMessage(null);
+        setInputText('');
+        return;
+      }
+
+      const activeId = String(activeChatIdRef.current || '');
+      if (!activeId) return;
+      socket.emit('edit_message', { chatId: activeId, messageId: String(editingMessage.id), body: text });
+      setEditingMessage(null);
+      setInputText('');
+      return;
+    }
+
+    if (!text && !attachment) return;
 
     // Command: /ayudar
     if (text === '/ayudar') {
@@ -918,23 +1016,39 @@ function App() {
     socket.emit('start_new_chat', { phone: normalizedPhone, firstMessage });
   };
 
-  const handleEditMessage = (messageId, nextBody) => {
-    const activeId = String(activeChatIdRef.current || '');
+
+  const handleEditMessage = (messageId, currentBody) => {
+    if (!waCapabilities.messageEdit) {
+      alert('La edicion de mensajes no esta disponible en esta sesion de WhatsApp.');
+      return;
+    }
+    removeAttachment();
     const cleanId = String(messageId || '').trim();
-    const cleanBody = String(nextBody || '').trim();
-    if (!activeId || !cleanId || !cleanBody) return;
-    socket.emit('edit_message', { chatId: activeId, messageId: cleanId, body: cleanBody });
+    if (!cleanId) return;
+    const body = String(currentBody || '');
+    setEditingMessage({ id: cleanId, originalBody: body });
+    setInputText(body);
+  };
+
+  const handleCancelEditMessage = () => {
+    setEditingMessage(null);
+    setInputText('');
   };
 
   const handleCreateQuickReply = ({ label, text }) => {
+    if (!waCapabilities.quickRepliesWrite) return;
     socket.emit('add_quick_reply', { label, text });
   };
 
   const handleUpdateQuickReply = ({ id, label, text }) => {
+
+    if (!waCapabilities.quickRepliesWrite) return;
     socket.emit('update_quick_reply', { id, label, text });
   };
 
   const handleDeleteQuickReply = (id) => {
+
+    if (!waCapabilities.quickRepliesWrite) return;
     socket.emit('delete_quick_reply', { id });
   };
   const requestAiSuggestion = (customPromptArg) => {
@@ -1111,6 +1225,10 @@ REGLA CRITICA:
               labelDefinitions={labelDefinitions}
               onToggleChatLabel={handleToggleChatLabel}
               onEditMessage={handleEditMessage}
+
+              onCancelEditMessage={handleCancelEditMessage}
+              editingMessage={editingMessage}
+              canEditMessages={waCapabilities.messageEdit}
             />
 
             {/* Client Profile Panel (slides in from right) */}
@@ -1172,6 +1290,8 @@ REGLA CRITICA:
           onCreateQuickReply={handleCreateQuickReply}
           onUpdateQuickReply={handleUpdateQuickReply}
           onDeleteQuickReply={handleDeleteQuickReply}
+
+          waCapabilities={waCapabilities}
         />
       </div>
     </div>
@@ -1179,6 +1299,10 @@ REGLA CRITICA:
 }
 
 export default App;
+
+
+
+
 
 
 

@@ -14,7 +14,9 @@ const EMOJI_LIST = [
 const ChatInput = ({
     inputText, setInputText, onSendMessage, onKeyDown, onFileClick,
     attachment, attachmentPreview, removeAttachment, isAiLoading,
-    onRequestAiSuggestion, aiPrompt, setAiPrompt
+
+    onRequestAiSuggestion, aiPrompt, setAiPrompt,
+    editingMessage, onCancelEditMessage
 }) => {
     const [showEmoji, setShowEmoji] = useState(false);
     const [showCommands, setShowCommands] = useState(false);
@@ -53,6 +55,18 @@ const ChatInput = ({
         const next = Math.min(el.scrollHeight, 220);
         el.style.height = `${next}px`;
     }, [inputText]);
+    useEffect(() => {
+        if (!editingMessage?.id) return;
+        const timer = setTimeout(() => {
+            if (inputRef.current) {
+                inputRef.current.focus();
+                const len = inputRef.current.value.length;
+                inputRef.current.setSelectionRange(len, len);
+            }
+        }, 0);
+        return () => clearTimeout(timer);
+    }, [editingMessage?.id]);
+
 
     useEffect(() => {
         const url = extractFirstUrl(inputText);
@@ -85,6 +99,39 @@ const ChatInput = ({
 
     return (
         <div className="chat-input-area chat-input-area-pro" style={{ position: 'relative' }}>
+            {editingMessage?.id && (
+                <div style={{
+                    position: 'absolute',
+                    left: '12px',
+                    right: '12px',
+                    bottom: '100%',
+                    marginBottom: '8px',
+                    border: '1px solid rgba(0, 168, 132, 0.45)',
+                    background: '#1f2c34',
+                    borderRadius: '10px',
+                    padding: '8px 10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    zIndex: 40
+                }}>
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '0.72rem', color: '#00a884', fontWeight: 700, marginBottom: '2px' }}>Editando mensaje</div>
+                        <div style={{ fontSize: '0.78rem', color: '#b6c7cf', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {String(editingMessage?.originalBody || '').trim() || 'Mensaje sin texto'}
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => onCancelEditMessage && onCancelEditMessage()}
+                        style={{ border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: '#d8e3e8', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
+                    >
+                        Cancelar
+                    </button>
+                </div>
+            )}
+
             {/* Commands popover */}
             {showCommands && (
                 <div className="floating-panel commands-panel">
@@ -163,7 +210,7 @@ const ChatInput = ({
                 <button className={`btn-icon ui-icon-btn ${showEmoji ? 'active' : ''}`} onClick={() => setShowEmoji(v => !v)} title="Emojis">
                     <Smile size={26} />
                 </button>
-                <button className="btn-icon ui-icon-btn" onClick={onFileClick} title="Adjuntar archivo">
+                <button className="btn-icon ui-icon-btn" onClick={onFileClick} title="Adjuntar archivo" disabled={Boolean(editingMessage?.id)} style={{ opacity: editingMessage?.id ? 0.45 : 1, cursor: editingMessage?.id ? 'not-allowed' : 'pointer' }}>
                     <Paperclip size={26} />
                 </button>
             </div>
@@ -172,11 +219,20 @@ const ChatInput = ({
                 <textarea
                     ref={inputRef}
                     className="message-input"
-                    placeholder="Escribe un mensaje..."
+                    placeholder={editingMessage?.id ? 'Edita el mensaje y presiona Enter...' : 'Escribe un mensaje...'}
                     value={inputText}
                     onChange={handleInputChange}
                     onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSendMessage(); }
+                        if (editingMessage?.id && e.key === 'Escape') {
+                            e.preventDefault();
+                            onCancelEditMessage && onCancelEditMessage();
+                            return;
+                        }
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            onSendMessage();
+                            return;
+                        }
                         onKeyDown && onKeyDown(e);
                     }}
                     rows={1}
@@ -199,7 +255,8 @@ const ChatInput = ({
                 <button
                     className="send-button send-button-modern"
                     onClick={onSendMessage}
-                    title="Enviar"
+
+                    title={editingMessage?.id ? 'Guardar edicion' : 'Enviar'}
                     disabled={!inputText.trim() && !attachment}
                     style={{ opacity: (!inputText.trim() && !attachment) ? 0.55 : 1, cursor: (!inputText.trim() && !attachment) ? 'not-allowed' : 'pointer' }}
                 >
@@ -228,6 +285,8 @@ const ChatWindow = ({
     labelDefinitions = [],
     onToggleChatLabel,
     onEditMessage,
+
+    canEditMessages = true,
     ...inputProps
 }) => {
     const [showMenu, setShowMenu] = useState(false);
@@ -436,6 +495,8 @@ const ChatWindow = ({
                                     onPrefillMessage={(text) => inputProps?.setInputText && inputProps.setInputText(text)}
                                     onOpenMedia={setLightboxMedia}
                                     onEditMessage={onEditMessage}
+
+                                    canEditMessages={canEditMessages}
                                 />
                             </div>
                         </React.Fragment>
