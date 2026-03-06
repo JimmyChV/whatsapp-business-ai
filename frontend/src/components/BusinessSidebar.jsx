@@ -466,7 +466,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                 )}
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {isExternalCatalog && (
                     <div style={{ background: '#1f2c34', color: '#9eb2bf', border: '1px solid var(--border-color)', borderRadius: '9px', padding: '8px 10px', fontSize: '0.76rem', lineHeight: 1.45 }}>
                         Este catalogo se sincroniza desde {catalogMeta?.source === 'woocommerce' ? 'WooCommerce' : 'WhatsApp Business'}. Para editar productos, hazlo en el origen.
@@ -1553,6 +1553,7 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
+
 
 
 
