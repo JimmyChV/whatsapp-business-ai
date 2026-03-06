@@ -3,6 +3,7 @@ const waClient = require('./whatsapp_client');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
 const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
+const { listQuickReplies, addQuickReply, updateQuickReply, deleteQuickReply } = require('./quick_replies_manager');
 const RateLimiter = require('./rate_limiter');
 
 const eventRateLimiter = new RateLimiter({
@@ -1007,6 +1008,7 @@ class SocketManager {
                         ack: Number.isFinite(Number(m.ack)) ? Number(m.ack) : 0,
                         edited: Boolean(m?._data?.latestEditMsgKey || m?._data?.latestEditSenderTimestampMs || m?._data?.edited),
                         editedAt: Number(m?._data?.latestEditSenderTimestampMs || 0) > 0 ? Math.floor(Number(m._data.latestEditSenderTimestampMs) / 1000) : null,
+
                         canEdit: Boolean(editableMap[String(m?.id?._serialized || '')]),
                         order: extractOrderInfo(m)
                     }));
@@ -1144,6 +1146,7 @@ class SocketManager {
             });
             socket.on('get_quick_replies', async () => {
                 try {
+
                     const caps = this.getWaCapabilities();
                     if (!caps.quickRepliesRead || typeof waClient.client?.getQuickReplies !== 'function') {
                         socket.emit('quick_replies', { items: [], source: 'unsupported' });
@@ -1207,6 +1210,7 @@ class SocketManager {
                         socket.emit('edit_message_error', 'Esta version de WhatsApp Web no permite editar mensajes por API.');
                         return;
                     }
+
 
                     const canEditNow = await waClient.canEditMessageById(targetMessageId);
                     if (!canEditNow) {

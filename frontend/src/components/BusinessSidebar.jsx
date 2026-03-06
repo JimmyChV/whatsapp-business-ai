@@ -346,6 +346,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
 // =========================================================
 // BUSINESS SIDEBAR - Main right panel
 // =========================================================
+
 const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activeChatId, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {} }) => {
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
@@ -571,6 +572,7 @@ INSTRUCCIONES OBLIGATORIAS:
     };
 
     const submitQuickReply = () => {
+
         if (!quickRepliesWriteEnabled) return;
         const label = String(quickForm.label || '').trim();
         const text = String(quickForm.text || '').trim();
@@ -588,6 +590,7 @@ INSTRUCCIONES OBLIGATORIAS:
         { id: 'ai', icon: <Bot size={15} />, label: 'IA Pro' },
         { id: 'catalog', icon: <Package size={15} />, label: `Catalogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
         { id: 'cart', icon: <ShoppingCart size={15} />, label: `Carrito${cart.length > 0 ? ` (${cart.length})` : ''}` },
+
         ...(quickRepliesEnabled ? [{ id: 'quick', icon: <Clock size={15} />, label: 'Rapidas' }] : []),
     ];
 
@@ -636,6 +639,7 @@ INSTRUCCIONES OBLIGATORIAS:
                     </button>
                 ))}
             </div>
+
 
             {!quickRepliesEnabled && (
                 <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-color)', background: '#111b21', color: '#8696a0', fontSize: '0.75rem', lineHeight: '1.4' }}>
@@ -828,6 +832,7 @@ INSTRUCCIONES OBLIGATORIAS:
             )}
 
             {/* QUICK REPLIES TAB */}
+
             {activeTab === 'quick' && quickRepliesEnabled && (
                 <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px' }}>
@@ -839,6 +844,7 @@ INSTRUCCIONES OBLIGATORIAS:
                             style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none' }}
                         />
                     </div>
+
 
                     {quickRepliesWriteEnabled ? (
                         <div style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -907,6 +913,7 @@ INSTRUCCIONES OBLIGATORIAS:
                                         <div style={{ fontSize: '0.72rem', color: '#8696a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(qr.text || '').split('\n')[0]}</div>
                                     </button>
                                     <div style={{ display: 'flex', gap: '6px' }}>
+
                                         {quickRepliesWriteEnabled && (
                                             <>
                                                 <button

@@ -14,6 +14,7 @@ const EMOJI_LIST = [
 const ChatInput = ({
     inputText, setInputText, onSendMessage, onKeyDown, onFileClick,
     attachment, attachmentPreview, removeAttachment, isAiLoading,
+
     onRequestAiSuggestion, aiPrompt, setAiPrompt,
     editingMessage, onCancelEditMessage
 }) => {
@@ -254,6 +255,7 @@ const ChatInput = ({
                 <button
                     className="send-button send-button-modern"
                     onClick={onSendMessage}
+
                     title={editingMessage?.id ? 'Guardar edicion' : 'Enviar'}
                     disabled={!inputText.trim() && !attachment}
                     style={{ opacity: (!inputText.trim() && !attachment) ? 0.55 : 1, cursor: (!inputText.trim() && !attachment) ? 'not-allowed' : 'pointer' }}
@@ -283,6 +285,7 @@ const ChatWindow = ({
     labelDefinitions = [],
     onToggleChatLabel,
     onEditMessage,
+
     canEditMessages = true,
     ...inputProps
 }) => {
@@ -492,6 +495,7 @@ const ChatWindow = ({
                                     onPrefillMessage={(text) => inputProps?.setInputText && inputProps.setInputText(text)}
                                     onOpenMedia={setLightboxMedia}
                                     onEditMessage={onEditMessage}
+
                                     canEditMessages={canEditMessages}
                                 />
                             </div>

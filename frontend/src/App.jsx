@@ -310,6 +310,7 @@ function App() {
   const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
   const [labelDefinitions, setLabelDefinitions] = useState([]);
   const [quickReplies, setQuickReplies] = useState([]);
+
   const [waCapabilities, setWaCapabilities] = useState({ messageEdit: true, messageEditSync: true, quickReplies: false, quickRepliesRead: false, quickRepliesWrite: false });
   const [toasts, setToasts] = useState([]);
 
@@ -409,6 +410,7 @@ function App() {
       requestChatsPage({ reset: true });
       socket.emit('get_business_data');
       socket.emit('get_my_profile');
+
       socket.emit('get_wa_capabilities');
     });
 
@@ -543,6 +545,7 @@ function App() {
     });
 
     socket.on('chat_history', (data) => {
+
       shouldInstantScrollRef.current = true;
       const requestedChatId = String(data?.requestedChatId || '');
       const resolvedChatId = String(data?.chatId || requestedChatId || '');
@@ -562,6 +565,7 @@ function App() {
           body: repairMojibake(m?.body || ''),
           ack: Number.isFinite(Number(m?.ack)) ? Number(m.ack) : 0,
           edited: Boolean(m?.edited),
+
           editedAt: Number(m?.editedAt || 0) || null,
           canEdit: Boolean(m?.canEdit)
         }))
@@ -748,6 +752,7 @@ function App() {
       if (msg) alert(msg);
     });
 
+
     socket.on('message_edited', ({ chatId, messageId, body, edited, editedAt, canEdit }) => {
       const targetChatId = String(chatId || '');
       const active = String(activeChatIdRef.current || '');
@@ -759,6 +764,7 @@ function App() {
             ...m,
             body: repairMojibake(body || ''),
             edited: edited !== false,
+
             editedAt: Number(editedAt || 0) || Math.floor(Date.now() / 1000),
             canEdit: typeof canEdit === 'boolean' ? canEdit : Boolean(m?.canEdit)
           }
@@ -770,6 +776,7 @@ function App() {
     socket.on('edit_message_error', (msg) => {
       if (msg) alert(msg);
     });
+
 
     socket.on('message_editability', ({ id, chatId, canEdit }) => {
       if (!id || typeof canEdit !== 'boolean') return;
@@ -792,6 +799,7 @@ function App() {
       setIsAiLoading(false);
       if (msg) alert(msg);
     });
+
 
     socket.on('message_ack', ({ id, ack, chatId, canEdit }) => {
       setMessages(prev => prev.map((m) => (
@@ -843,6 +851,7 @@ function App() {
         'chat_opened', 'start_new_chat_error', 'chat_labels_updated', 'chat_labels_error', 'chat_labels_saved',
         'contact_info', 'message', 'business_data', 'business_data_catalog', 'quick_replies', 'quick_reply_error',
         'ai_suggestion_chunk',
+
         'ai_suggestion_complete', 'ai_error', 'message_ack', 'message_editability', 'message_edited', 'edit_message_error', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
       ].forEach(ev => socket.off(ev));
     };
@@ -1007,6 +1016,7 @@ function App() {
     socket.emit('start_new_chat', { phone: normalizedPhone, firstMessage });
   };
 
+
   const handleEditMessage = (messageId, currentBody) => {
     if (!waCapabilities.messageEdit) {
       alert('La edicion de mensajes no esta disponible en esta sesion de WhatsApp.');
@@ -1031,11 +1041,13 @@ function App() {
   };
 
   const handleUpdateQuickReply = ({ id, label, text }) => {
+
     if (!waCapabilities.quickRepliesWrite) return;
     socket.emit('update_quick_reply', { id, label, text });
   };
 
   const handleDeleteQuickReply = (id) => {
+
     if (!waCapabilities.quickRepliesWrite) return;
     socket.emit('delete_quick_reply', { id });
   };
@@ -1213,6 +1225,7 @@ REGLA CRITICA:
               labelDefinitions={labelDefinitions}
               onToggleChatLabel={handleToggleChatLabel}
               onEditMessage={handleEditMessage}
+
               onCancelEditMessage={handleCancelEditMessage}
               editingMessage={editingMessage}
               canEditMessages={waCapabilities.messageEdit}
@@ -1277,6 +1290,7 @@ REGLA CRITICA:
           onCreateQuickReply={handleCreateQuickReply}
           onUpdateQuickReply={handleUpdateQuickReply}
           onDeleteQuickReply={handleDeleteQuickReply}
+
           waCapabilities={waCapabilities}
         />
       </div>
@@ -1285,6 +1299,7 @@ REGLA CRITICA:
 }
 
 export default App;
+
 
 
 

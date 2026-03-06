@@ -9,6 +9,7 @@ const MessageBubble = ({
     isCurrentHighlighted = false,
     onOpenMedia,
     onEditMessage,
+
     canEditMessages = true,
 }) => {
     const isOut = msg.fromMe;
@@ -45,6 +46,7 @@ const MessageBubble = ({
     const mediaDataUrl = msg.hasMedia && msg.mediaData
         ? `data:${msg.mimetype || 'application/octet-stream'};base64,${msg.mediaData}`
         : null;
+
 
     const canEditMessage = Boolean(
         canEditMessages
@@ -215,5 +217,6 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
+
 
 
