@@ -383,15 +383,21 @@ async function resolveRegisteredNumber(client, rawPhone) {
             const numberId = await client.getNumberId(cand);
             if (!numberId) continue;
 
-            const byUser = formatPhoneForDisplay(numberId.user || '');
-            if (byUser) return byUser;
-
+            const candDigits = coerceHumanPhone(cand);
+            const byUser = coerceHumanPhone(numberId.user || '');
             const serialized = String(numberId._serialized || '');
-            const bySerialized = formatPhoneForDisplay(serialized.split('@')[0] || '');
-            if (bySerialized) return bySerialized;
+            const bySerialized = coerceHumanPhone(serialized.split('@')[0] || '');
 
-            const byCand = formatPhoneForDisplay(cand);
-            if (byCand) return byCand;
+            const looksLikeSameNumber = (a, b) => {
+                if (!a || !b) return false;
+                return a === b || a.endsWith(b) || b.endsWith(a);
+            };
+
+            if (byUser && candDigits && looksLikeSameNumber(byUser, candDigits)) return byUser;
+            if (bySerialized && candDigits && looksLikeSameNumber(bySerialized, candDigits)) return bySerialized;
+            if (candDigits) return candDigits;
+            if (byUser) return byUser;
+            if (bySerialized) return bySerialized;
         } catch (e) { }
     }
     return null;
