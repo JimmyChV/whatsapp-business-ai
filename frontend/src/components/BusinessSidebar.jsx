@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Send, X, ShoppingCart, Tag, Clock, Sparkles, Trash2, Percent, Plus, Minus, ChevronRight, Package, MessageSquare, PlusCircle, Edit2 } from 'lucide-react';
+import { Bot, Send, X, ShoppingCart, Tag, Clock, Sparkles, Trash2, Percent, Plus, Minus, ChevronRight, Package, MessageSquare, PlusCircle, Edit2, Check } from 'lucide-react';
 import moment from 'moment';
 
 const repairMojibake = (value = '') => {
@@ -365,7 +365,7 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout, p
 // =========================================================
 // CATALOG TAB
 // =========================================================
-const CatalogTab = ({ catalog, socket, addToCart, catalogMeta, activeChatId }) => {
+const CatalogTab = ({ catalog, socket, addToCart, catalogMeta, activeChatId, cartItems = [] }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({ title: '', price: '', description: '', imageUrl: '' });
@@ -523,6 +523,9 @@ const CatalogTab = ({ catalog, socket, addToCart, catalogMeta, activeChatId }) =
                                 const effectiveDiscount = Number.isFinite(rawDiscount) && rawDiscount > 0
                                     ? rawDiscount
                                     : (hasDiscount ? Number((((regularPrice - finalPrice) / regularPrice) * 100).toFixed(1)) : 0);
+                                const cartLine = cartItems.find((cartItem) => String(cartItem?.id || '') === String(item?.id || ''));
+                                const cartQty = Math.max(0, Number(cartLine?.qty || 0));
+                                const inCart = cartQty > 0;
                                 const cleanDescription = String(item.description || '')
                                     .replace(/<[^>]*>/g, ' ')
                                     .replace(/\s+/g, ' ')
@@ -562,6 +565,13 @@ const CatalogTab = ({ catalog, socket, addToCart, catalogMeta, activeChatId }) =
                                                 {finalPrice > 0 ? `S/ ${formatMoney(finalPrice)}` : 'Precio: Consultar'}
                                             </div>
 
+                                            {inCart && (
+                                                <div style={{ width: 'fit-content', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.68rem', color: '#d9fff4', background: 'rgba(0,168,132,0.22)', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '999px', padding: '3px 8px', fontWeight: 700 }}>
+                                                    <Check size={11} />
+                                                    En carrito: {cartQty}
+                                                </div>
+                                            )}
+
                                             <div style={{ marginTop: '6px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', alignItems: 'stretch' }}>
                                                 <button
                                                     onClick={() => sendCatalogProduct(item, i)}
@@ -571,9 +581,9 @@ const CatalogTab = ({ catalog, socket, addToCart, catalogMeta, activeChatId }) =
                                                 </button>
                                                 <button
                                                     onClick={() => addToCart(item, 1)}
-                                                    style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 9px', background: 'linear-gradient(90deg, #00a884 0%, #02c39a 100%)', border: 'none', borderRadius: '9px', color: 'white', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                                    style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 9px', background: inCart ? 'linear-gradient(90deg, #0a7e66 0%, #00a884 100%)' : 'linear-gradient(90deg, #00a884 0%, #02c39a 100%)', border: 'none', borderRadius: '9px', color: 'white', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                                                 >
-                                                    <ShoppingCart size={12} /> Carrito
+                                                    <ShoppingCart size={12} /> {inCart ? 'Agregar +1' : 'Carrito'}
                                                 </button>
                                             </div>
 
@@ -1019,7 +1029,7 @@ INSTRUCCIONES OBLIGATORIAS:
 
             {/* CATALOG TAB */}
             {activeTab === 'catalog' && (
-                <CatalogTab catalog={catalog} socket={socket} addToCart={addToCart} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} />
+                <CatalogTab catalog={catalog} socket={socket} addToCart={addToCart} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} cartItems={cart} />
             )}
 
             {/* CART TAB */}
