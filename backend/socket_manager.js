@@ -509,6 +509,7 @@ class SocketManager {
         this.setupWAClientEvents();
     }
 
+
     getWaRuntime() {
         const runtime = typeof waClient.getRuntimeInfo === 'function'
             ? waClient.getRuntimeInfo()
@@ -531,6 +532,7 @@ class SocketManager {
             messageEditSync: Boolean(caps?.messageEditSync),
             quickReplies: Boolean(caps?.quickReplies),
             quickRepliesRead: Boolean(caps?.quickRepliesRead),
+
             quickRepliesWrite: Boolean(caps?.quickRepliesWrite),
             transport: runtime.activeTransport,
             requestedTransport: runtime.requestedTransport,
@@ -541,6 +543,7 @@ class SocketManager {
 
     emitWaCapabilities(socket) {
         socket.emit('wa_capabilities', this.getWaCapabilities());
+
         socket.emit('wa_runtime', this.getWaRuntime());
     }
 
@@ -1567,6 +1570,7 @@ class SocketManager {
         waClient.on('ready', () => {
             this.io.emit('ready', { message: 'WhatsApp Ready' });
             this.io.emit('wa_capabilities', this.getWaCapabilities());
+
             this.io.emit('wa_runtime', this.getWaRuntime());
         });
         waClient.on('authenticated', () => this.io.emit('authenticated'));
