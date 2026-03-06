@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, MoreVertical, Mic, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart, ChevronUp, ChevronDown, Tag } from 'lucide-react';
+import { Search, MoreVertical, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart, ChevronUp, ChevronDown, Tag } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import moment from 'moment';
 
@@ -7,15 +7,14 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 // Common emojis for the picker
 const EMOJI_LIST = [
-    ':)', ':D', ';)', ':P', ':(', ':|', ':o', '<3',
-    ':+1:', ':ok:', ':fire:', ':sparkles:', ':star:', ':100:'
+    ':)', ':D', ';)', ':P', ':-(', ':-|', ':O', '<3',
+    ':+1:', ':ok:', ':fire:', ':sparkles:', ':star:', ':100:', ':wave:', ':clap:'
 ];
 
 const ChatInput = ({
     inputText, setInputText, onSendMessage, onKeyDown, onFileClick,
     attachment, attachmentPreview, removeAttachment, isAiLoading,
-    onRequestAiSuggestion, aiPrompt, setAiPrompt, isRecording,
-    recordingTime, startRecording, stopRecording
+    onRequestAiSuggestion, aiPrompt, setAiPrompt
 }) => {
     const [showEmoji, setShowEmoji] = useState(false);
     const [showCommands, setShowCommands] = useState(false);
@@ -196,28 +195,16 @@ const ChatInput = ({
                 >
                     <Bot size={22} />
                 </button>
-                {/* Send or Mic */}
-                {inputText.trim() || attachment ? (
-                    <button className="send-button send-button-modern" onClick={onSendMessage} title="Enviar">
-                        <Send size={26} />
-                    </button>
-                ) : (
-                    <button
-                        className={`send-button ${isRecording ? 'pulse' : ''}`}
-                        style={{ background: 'none', color: isRecording ? '#da3633' : '#8696a0' }}
-                        onMouseDown={startRecording}
-                        onMouseUp={stopRecording}
-                        onMouseLeave={isRecording ? stopRecording : undefined}
-                        onTouchStart={startRecording}
-                        onTouchEnd={stopRecording}
-                        title={isRecording ? 'Suelta para enviar' : 'Manten presionado para grabar voz'}
-                    >
-                        {isRecording
-                            ? <span style={{ fontSize: '10px', fontWeight: 700, color: '#da3633' }}>REC {recordingTime}s</span>
-                            : <Mic size={26} />
-                        }
-                    </button>
-                )}
+                {/* Send button */}
+                <button
+                    className="send-button send-button-modern"
+                    onClick={onSendMessage}
+                    title="Enviar"
+                    disabled={!inputText.trim() && !attachment}
+                    style={{ opacity: (!inputText.trim() && !attachment) ? 0.55 : 1, cursor: (!inputText.trim() && !attachment) ? 'not-allowed' : 'pointer' }}
+                >
+                    <Send size={26} />
+                </button>
             </div>
         </div>
     );
@@ -240,6 +227,7 @@ const ChatWindow = ({
     setShowClientProfile,
     labelDefinitions = [],
     onToggleChatLabel,
+    onEditMessage,
     ...inputProps
 }) => {
     const [showMenu, setShowMenu] = useState(false);
@@ -247,6 +235,7 @@ const ChatWindow = ({
     const [chatSearch, setChatSearch] = useState('');
     const [showLabelMenu, setShowLabelMenu] = useState(false);
     const [activeMatchIdx, setActiveMatchIdx] = useState(0);
+    const [lightboxMedia, setLightboxMedia] = useState(null);
     const messageRefs = useRef({});
 
     const searchTerm = chatSearch.trim().toLowerCase();
@@ -270,6 +259,14 @@ const ChatWindow = ({
         setActiveMatchIdx(0);
         setTimeout(() => jumpToMatch(0), 0);
     }, [chatSearch, messages.length]);
+
+    useEffect(() => {
+        const onEsc = (event) => {
+            if (event.key === 'Escape') setLightboxMedia(null);
+        };
+        window.addEventListener('keydown', onEsc);
+        return () => window.removeEventListener('keydown', onEsc);
+    }, []);
 
     const avatarColor = (name) => {
         const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
@@ -437,6 +434,8 @@ const ChatWindow = ({
                                     isHighlighted={isHighlighted}
                                     isCurrentHighlighted={isCurrentHighlighted}
                                     onPrefillMessage={(text) => inputProps?.setInputText && inputProps.setInputText(text)}
+                                    onOpenMedia={setLightboxMedia}
+                                    onEditMessage={onEditMessage}
                                 />
                             </div>
                         </React.Fragment>
@@ -444,6 +443,17 @@ const ChatWindow = ({
                 })}
                 <div ref={messagesEndRef} />
             </div>
+
+            {lightboxMedia?.src && (
+                <div className="chat-lightbox" onClick={() => setLightboxMedia(null)}>
+                    <div className="chat-lightbox-content" onClick={(e) => e.stopPropagation()}>
+                        <button className="chat-lightbox-close" onClick={() => setLightboxMedia(null)} aria-label="Cerrar vista previa">
+                            <X size={20} />
+                        </button>
+                        <img src={lightboxMedia.src} alt="Vista previa" className="chat-lightbox-image" />
+                    </div>
+                </div>
+            )}
 
             {/* Input Area */}
             <ChatInput {...inputProps} />
@@ -453,4 +463,8 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
+
+
+
+
 

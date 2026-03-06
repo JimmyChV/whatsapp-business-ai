@@ -168,7 +168,90 @@ const chatMatchesQuery = (chat = {}, query = '') => {
   if (qDigits) return phone.includes(qDigits);
   return name.includes(q) || subtitle.includes(q) || lastMessage.includes(q);
 };
+const normalizeFilterToken = (value = '') => String(value || '').trim().toLowerCase();
 
+const normalizeChatFilters = (filters = {}) => {
+  const rawTokens = Array.isArray(filters?.labelTokens) ? filters.labelTokens : [];
+  const seen = new Set();
+  const labelTokens = [];
+  for (const token of rawTokens) {
+    const clean = normalizeFilterToken(token);
+    if (!clean || seen.has(clean)) continue;
+    seen.add(clean);
+    labelTokens.push(clean);
+  }
+
+  const contactMode = ['all', 'my', 'unknown'].includes(String(filters?.contactMode || 'all'))
+    ? String(filters?.contactMode || 'all')
+    : 'all';
+  const archivedMode = ['all', 'archived', 'active'].includes(String(filters?.archivedMode || 'all'))
+    ? String(filters?.archivedMode || 'all')
+    : 'all';
+
+  return {
+    labelTokens,
+    unreadOnly: Boolean(filters?.unreadOnly),
+    unlabeledOnly: Boolean(filters?.unlabeledOnly),
+    contactMode,
+    archivedMode,
+  };
+};
+
+const buildFiltersKey = (filters = {}) => {
+  const normalized = normalizeChatFilters(filters);
+  return JSON.stringify({
+    ...normalized,
+    labelTokens: [...normalized.labelTokens].sort(),
+  });
+};
+
+const chatLabelTokenSet = (chat = {}) => {
+  const set = new Set();
+  const labels = Array.isArray(chat?.labels) ? chat.labels : [];
+  for (const label of labels) {
+    const id = normalizeFilterToken(label?.id);
+    if (id) set.add(`id:${id}`);
+    const name = normalizeFilterToken(label?.name);
+    if (name) set.add(`name:${name}`);
+  }
+  return set;
+};
+
+const chatMatchesFilters = (chat = {}, filters = {}) => {
+  const normalized = normalizeChatFilters(filters);
+
+  if (normalized.unreadOnly && Number(chat?.unreadCount || 0) <= 0) return false;
+
+  const isMyContact = Boolean(chat?.isMyContact);
+  if (normalized.contactMode === 'my' && !isMyContact) return false;
+  if (normalized.contactMode === 'unknown' && isMyContact) return false;
+  const isArchived = Boolean(chat?.archived);
+  if (normalized.archivedMode === 'archived' && !isArchived) return false;
+  if (normalized.archivedMode === 'active' && isArchived) return false;
+
+  const labelSet = chatLabelTokenSet(chat);
+  if (normalized.unlabeledOnly && labelSet.size > 0) return false;
+
+  if (!normalized.unlabeledOnly && normalized.labelTokens.length > 0) {
+    const hasLabel = normalized.labelTokens.some((token) => {
+      const clean = normalizeFilterToken(token);
+      if (!clean) return false;
+      if (labelSet.has(clean)) return true;
+      if (clean.startsWith('id:')) {
+        const val = clean.slice(3);
+        return val ? labelSet.has(val) : false;
+      }
+      if (clean.startsWith('name:')) {
+        const val = clean.slice(5);
+        return val ? labelSet.has(val) : false;
+      }
+      return labelSet.has(`id:${clean}`) || labelSet.has(`name:${clean}`);
+    });
+    if (!hasLabel) return false;
+  }
+
+  return true;
+};
 const isVisibleChatId = (chatId = '') => {
   const id = String(chatId || '');
   if (!id) return false;
@@ -199,6 +282,7 @@ function App() {
   const [chatsHasMore, setChatsHasMore] = useState(true);
   const [isLoadingMoreChats, setIsLoadingMoreChats] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [chatFilters, setChatFilters] = useState({ labelTokens: [], unreadOnly: false, unlabeledOnly: false, contactMode: 'all', archivedMode: 'all' });
   const [activeChatId, setActiveChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -222,17 +306,9 @@ function App() {
   const [isCopilotMode, setIsCopilotMode] = useState(false);
 
   // --------------------------------------------------------------
-  const [isRecording, setIsRecording] = useState(false);
-  const [recorder, setRecorder] = useState(null);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const timerRef = useRef(null);
-  const chunksRef = useRef([]);
-  const streamRef = useRef(null);
-  const recordingStartRef = useRef(0);
-
-  // --------------------------------------------------------------
   const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
   const [labelDefinitions, setLabelDefinitions] = useState([]);
+  const [quickReplies, setQuickReplies] = useState([]);
   const [toasts, setToasts] = useState([]);
 
   // --------------------------------------------------------------
@@ -241,6 +317,7 @@ function App() {
   const activeChatIdRef = useRef(null);
   const chatsRef = useRef([]);
   const chatSearchRef = useRef('');
+  const chatFiltersRef = useRef(normalizeChatFilters({ labelTokens: [], unreadOnly: false, unlabeledOnly: false, contactMode: 'all', archivedMode: 'all' }));
   const chatPagingRef = useRef({ offset: 0, hasMore: true, loading: false });
 
   // --------------------------------------------------------------
@@ -278,12 +355,16 @@ function App() {
   }, [chatSearchQuery]);
 
   useEffect(() => {
+    chatFiltersRef.current = normalizeChatFilters(chatFilters);
+  }, [chatFilters]);
+
+  useEffect(() => {
     if (!isClientReady) return;
     const timer = setTimeout(() => {
       requestChatsPage({ reset: true });
     }, 180);
     return () => clearTimeout(timer);
-  }, [chatSearchQuery, isClientReady]);
+  }, [chatSearchQuery, chatFilters, isClientReady]);
 
   // --------------------------------------------------------------
   const requestChatsPage = ({ reset = false } = {}) => {
@@ -292,6 +373,7 @@ function App() {
 
     const offset = reset ? 0 : chatPagingRef.current.offset;
     const query = chatSearchRef.current;
+    const filters = chatFiltersRef.current;
     chatPagingRef.current.loading = true;
     if (reset) {
       chatPagingRef.current.offset = 0;
@@ -300,7 +382,7 @@ function App() {
       setChatsTotal(0);
     }
     setIsLoadingMoreChats(true);
-    socket.emit('get_chats', { offset, limit: CHAT_PAGE_SIZE, reset, query });
+    socket.emit('get_chats', { offset, limit: CHAT_PAGE_SIZE, reset, query, filters, filterKey: buildFiltersKey(filters) });
   };
 
   // Socket Events
@@ -321,6 +403,7 @@ function App() {
       requestChatsPage({ reset: true });
       socket.emit('get_business_data');
       socket.emit('get_my_profile');
+      socket.emit('get_quick_replies');
     });
 
     socket.on('my_profile', (profile) => {
@@ -335,6 +418,8 @@ function App() {
 
       const incomingQuery = String(page.query || '').trim();
       if (incomingQuery !== chatSearchRef.current) return;
+      const incomingFilterKey = String(page.filterKey || '').trim();
+      if (incomingFilterKey && incomingFilterKey !== buildFiltersKey(chatFiltersRef.current)) return;
 
       const rawItems = Array.isArray(page.items) ? page.items : [];
       const hydrated = rawItems
@@ -347,8 +432,10 @@ function App() {
           phone: getBestChatPhone(chat),
           lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
           labels: normalizeChatLabels(chat.labels),
-          isMyContact: chat?.isMyContact === true
-        }));
+          isMyContact: chat?.isMyContact === true,
+          archived: Boolean(chat?.archived)
+        }))
+        .filter((chat) => chatMatchesFilters(chat, chatFiltersRef.current));
 
       const pageOffset = Number.isFinite(Number(page.offset)) ? Number(page.offset) : 0;
       const total = Number.isFinite(Number(page.total)) ? Number(page.total) : hydrated.length;
@@ -379,10 +466,11 @@ function App() {
         phone: getBestChatPhone(chat),
         lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
         labels: normalizeChatLabels(chat.labels),
-        isMyContact: chat?.isMyContact === true
+        isMyContact: chat?.isMyContact === true,
+        archived: Boolean(chat?.archived)
       };
 
-      if (!chatMatchesQuery(hydrated, chatSearchRef.current)) {
+      if (!chatMatchesQuery(hydrated, chatSearchRef.current) || !chatMatchesFilters(hydrated, chatFiltersRef.current)) {
         setChats((prev) => prev.filter((c) => chatIdentityKey(c) !== chatIdentityKey(hydrated) && c.id !== hydrated.id));
         return;
       }
@@ -416,7 +504,10 @@ function App() {
     });
 
     socket.on('chat_labels_updated', ({ chatId, labels }) => {
-      setChats((prev) => prev.map((chat) => chat.id === chatId ? { ...chat, labels: normalizeChatLabels(labels) } : chat));
+      setChats((prev) => {
+        const next = prev.map((chat) => chat.id === chatId ? { ...chat, labels: normalizeChatLabels(labels) } : chat);
+        return next.filter((chat) => chatMatchesQuery(chat, chatSearchRef.current) && chatMatchesFilters(chat, chatFiltersRef.current));
+      });
       if (chatId === activeChatIdRef.current) socket.emit('get_contact_info', chatId);
     });
 
@@ -430,15 +521,41 @@ function App() {
     });
 
     socket.on('chat_history', (data) => {
-      if (data.chatId !== activeChatIdRef.current) return;
+      const requestedChatId = String(data?.requestedChatId || '');
+      const resolvedChatId = String(data?.chatId || requestedChatId || '');
+      const active = String(activeChatIdRef.current || '');
+      if (resolvedChatId !== active && requestedChatId !== active) return;
+
+      if (resolvedChatId && resolvedChatId !== active) {
+        activeChatIdRef.current = resolvedChatId;
+        setActiveChatId(resolvedChatId);
+        socket.emit('mark_chat_read', resolvedChatId);
+        socket.emit('get_contact_info', resolvedChatId);
+      }
+
       const sanitizedMessages = Array.isArray(data.messages)
-        ? data.messages.map((m) => ({ ...m, body: repairMojibake(m?.body || '') }))
+        ? data.messages.map((m) => ({
+          ...m,
+          body: repairMojibake(m?.body || ''),
+          ack: Number.isFinite(Number(m?.ack)) ? Number(m.ack) : 0,
+          edited: Boolean(m?.edited),
+          editedAt: Number(m?.editedAt || 0) || null
+        }))
         : [];
       setMessages(sanitizedMessages);
     });
 
     socket.on('chat_media', ({ chatId, messageId, mediaData, mimetype }) => {
-      if (chatId !== activeChatIdRef.current) return;
+      const active = String(activeChatIdRef.current || '');
+      const incoming = String(chatId || '');
+      if (incoming !== active) {
+        const incomingDigits = normalizeDigits(incoming.split('@')[0] || '');
+        const activeDigits = normalizeDigits(active.split('@')[0] || '');
+        const sameByDigits = incomingDigits && activeDigits && (
+          incomingDigits === activeDigits || incomingDigits.endsWith(activeDigits) || activeDigits.endsWith(incomingDigits)
+        );
+        if (!sameByDigits) return;
+      }
       if (!messageId || !mediaData) return;
       setMessages((prev) => prev.map((m) => (
         m.id === messageId ? { ...m, mediaData, mimetype: mimetype || m.mimetype } : m
@@ -482,6 +599,10 @@ function App() {
           subtitle: subtitleName || existing?.subtitle || null,
           status: normalizedContact.status || existing?.status || ''
         };
+
+        if (!chatMatchesQuery(nextChat, chatSearchRef.current) || !chatMatchesFilters(nextChat, chatFiltersRef.current)) {
+          return prev.filter((c) => c.id !== nextChat.id && chatIdentityKey(c) !== chatIdentityKey(nextChat));
+        }
 
         return upsertAndSortChat(prev, nextChat);
       });
@@ -542,7 +663,9 @@ function App() {
           unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (canonicalId === activeChatIdRef.current ? 0 : (existing?.unreadCount || 0) + 1),
         };
 
-        if (!chatMatchesQuery(nextChat, chatSearchRef.current)) return prev;
+        if (!chatMatchesQuery(nextChat, chatSearchRef.current) || !chatMatchesFilters(nextChat, chatFiltersRef.current)) {
+          return prev.filter((c) => c.id !== canonicalId && chatIdentityKey(c) !== incomingIdentity);
+        }
         return upsertAndSortChat(prev, nextChat);
       });
 
@@ -565,6 +688,42 @@ function App() {
       setBusinessData(prev => ({ ...prev, catalog: normalizedCatalog }));
     });
 
+    socket.on('quick_replies', (payload) => {
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      const normalized = items
+        .map((item, idx) => ({
+          id: String(item?.id || ('qr_' + (idx + 1))),
+          label: sanitizeDisplayText(item?.label || 'Respuesta rapida'),
+          text: repairMojibake(item?.text || '')
+        }))
+        .filter((item) => item.id && item.text);
+      setQuickReplies(normalized);
+    });
+
+    socket.on('quick_reply_error', (msg) => {
+      if (msg) alert(msg);
+    });
+
+    socket.on('message_edited', ({ chatId, messageId, body, edited, editedAt }) => {
+      const targetChatId = String(chatId || '');
+      const active = String(activeChatIdRef.current || '');
+      if (targetChatId && active && targetChatId !== active) return;
+
+      setMessages((prev) => prev.map((m) => (
+        String(m?.id || '') === String(messageId || '')
+          ? {
+            ...m,
+            body: repairMojibake(body || ''),
+            edited: edited !== false,
+            editedAt: Number(editedAt || 0) || Math.floor(Date.now() / 1000)
+          }
+          : m
+      )));
+    });
+
+    socket.on('edit_message_error', (msg) => {
+      if (msg) alert(msg);
+    });
     socket.on('ai_suggestion_chunk', (chunk) => {
       setAiSuggestion(prev => prev + chunk);
     });
@@ -578,9 +737,16 @@ function App() {
       if (msg) alert(msg);
     });
 
-    socket.on('message_ack', ({ id, ack }) => {
+    socket.on('message_ack', ({ id, ack, chatId }) => {
       setMessages(prev => prev.map(m => m.id === id ? { ...m, ack } : m));
-      setChats(prev => prev.map(c => c.lastMessageFromMe && c.id === activeChatIdRef.current ? { ...c, ack } : c));
+      const ackChatId = String(chatId || '');
+      const ackDigits = normalizeDigits(ackChatId.split('@')[0] || '');
+      setChats(prev => prev.map((c) => {
+        const chatDigits = normalizeDigits(c?.phone || c?.id || '');
+        const sameChat = c.id === ackChatId || (ackDigits && chatDigits && (chatDigits === ackDigits || chatDigits.endsWith(ackDigits) || ackDigits.endsWith(chatDigits)));
+        if (!sameChat || !c.lastMessageFromMe) return c;
+        return { ...c, ack };
+      }));
     });
 
     socket.on('authenticated', () => {
@@ -614,8 +780,9 @@ function App() {
     return () => {
       ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'chats', 'chat_updated', 'chat_history', 'chat_media',
         'chat_opened', 'start_new_chat_error', 'chat_labels_updated', 'chat_labels_error', 'chat_labels_saved',
-        'contact_info', 'message', 'business_data', 'business_data_catalog', 'ai_suggestion_chunk',
-        'ai_suggestion_complete', 'ai_error', 'message_ack', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
+        'contact_info', 'message', 'business_data', 'business_data_catalog', 'quick_replies', 'quick_reply_error',
+        'ai_suggestion_chunk',
+        'ai_suggestion_complete', 'ai_error', 'message_ack', 'message_edited', 'edit_message_error', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
       ].forEach(ev => socket.off(ev));
     };
   }, []);
@@ -694,6 +861,10 @@ function App() {
     setChatSearchQuery(String(value || ''));
   };
 
+  const handleChatFiltersChange = (nextFilters = {}) => {
+    setChatFilters(normalizeChatFilters(nextFilters));
+  };
+
   const handleLoadMoreChats = () => {
     requestChatsPage({ reset: false });
   };
@@ -724,9 +895,48 @@ function App() {
     const normalizedPhone = normalizeDigits(phone);
     if (!normalizedPhone) return;
     const firstMessage = typeof firstMessageArg === 'string' ? firstMessageArg : (window.prompt('Mensaje inicial (opcional):') || '');
+
+    const candidates = chatsRef.current
+      .filter((c) => {
+        const chatPhone = normalizeDigits(c?.phone || c?.id || '');
+        if (!chatPhone) return false;
+        return chatPhone === normalizedPhone || chatPhone.endsWith(normalizedPhone) || normalizedPhone.endsWith(chatPhone);
+      })
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    if (candidates.length > 0) {
+      const best = candidates[0];
+      if (best?.id) {
+        handleChatSelect(best.id, { clearSearch: true });
+        if (firstMessage?.trim()) {
+          socket.emit('send_message', { to: best.id, body: firstMessage.trim() });
+        }
+        return;
+      }
+    }
+
     socket.emit('start_new_chat', { phone: normalizedPhone, firstMessage });
   };
 
+  const handleEditMessage = (messageId, nextBody) => {
+    const activeId = String(activeChatIdRef.current || '');
+    const cleanId = String(messageId || '').trim();
+    const cleanBody = String(nextBody || '').trim();
+    if (!activeId || !cleanId || !cleanBody) return;
+    socket.emit('edit_message', { chatId: activeId, messageId: cleanId, body: cleanBody });
+  };
+
+  const handleCreateQuickReply = ({ label, text }) => {
+    socket.emit('add_quick_reply', { label, text });
+  };
+
+  const handleUpdateQuickReply = ({ id, label, text }) => {
+    socket.emit('update_quick_reply', { id, label, text });
+  };
+
+  const handleDeleteQuickReply = (id) => {
+    socket.emit('delete_quick_reply', { id });
+  };
   const requestAiSuggestion = (customPromptArg) => {
     if (!activeChatId) return;
     const customPrompt = typeof customPromptArg === 'string' ? customPromptArg : null;
@@ -765,84 +975,6 @@ REGLA CRITICA:
       customPrompt: customPrompt || aiPrompt,
     });
   };
-
-  const startRecording = async () => {
-    if (isRecording || !activeChatId) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-
-      let mimeType = 'audio/ogg; codecs=opus';
-      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm; codecs=opus';
-      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm';
-
-      const mediaRecorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 });
-      chunksRef.current = [];
-      recordingStartRef.current = Date.now();
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
-      mediaRecorder.onstop = () => {
-        try {
-          streamRef.current?.getTracks()?.forEach((t) => t.stop());
-        } catch (_) { }
-
-        const elapsedMs = Date.now() - recordingStartRef.current;
-        const blob = new Blob(chunksRef.current, { type: mimeType });
-
-        if (elapsedMs < 350 || !blob || blob.size < 800) {
-          alert('Nota de voz muy corta o vacia. Manten presionado un poco mas para grabar.');
-          chunksRef.current = [];
-          return;
-        }
-
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const result = String(reader.result || '');
-          const base64 = result.includes(',') ? result.split(',')[1] : null;
-          if (!base64) {
-            alert('No se pudo procesar la nota de voz. Intenta nuevamente.');
-            return;
-          }
-          const extension = mimeType.includes('ogg') ? 'ogg' : 'webm';
-          socket.emit('send_media_message', {
-            to: activeChatId,
-            body: '',
-            mediaData: base64,
-            mimetype: mimeType,
-            filename: `voice-note.${extension}`,
-            isPtt: true,
-          });
-        };
-        reader.readAsDataURL(blob);
-      };
-
-      mediaRecorder.start(200);
-      setRecorder(mediaRecorder);
-      setIsRecording(true);
-      setRecordingTime(0);
-      timerRef.current = setInterval(() => setRecordingTime((p) => p + 1), 1000);
-    } catch (err) {
-      console.error('Mic error:', err);
-      alert('No se pudo acceder al microfono. Verifica permisos del navegador y vuelve a intentar.');
-    }
-  };
-
-  const stopRecording = () => {
-    if (!recorder) return;
-    try {
-      if (recorder.state === 'recording') {
-        try { recorder.requestData(); } catch (_) { }
-        recorder.stop();
-      }
-    } catch (_) { }
-    setRecorder(null);
-    setIsRecording(false);
-    clearInterval(timerRef.current);
-  };
-
   const processFile = (file) => {
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -931,7 +1063,7 @@ REGLA CRITICA:
         chats={chats}
         activeChatId={activeChatId}
         onChatSelect={handleChatSelect}
-        myProfile={myProfile}
+        myProfile={myProfile || businessData?.profile}
         onLogout={handleLogoutWhatsapp}
         onRefreshChats={handleRefreshChats}
         onStartNewChat={handleStartNewChat}
@@ -943,6 +1075,8 @@ REGLA CRITICA:
         chatsTotal={chatsTotal}
         searchQuery={chatSearchQuery}
         onSearchQueryChange={handleChatSearchChange}
+        activeFilters={chatFilters}
+        onFiltersChange={handleChatFiltersChange}
       />
 
       {/* Main Content Area */}
@@ -972,14 +1106,11 @@ REGLA CRITICA:
               onRequestAiSuggestion={requestAiSuggestion}
               aiPrompt={aiPrompt}
               setAiPrompt={setAiPrompt}
-              isRecording={isRecording}
-              recordingTime={recordingTime}
-              startRecording={startRecording}
-              stopRecording={stopRecording}
               isCopilotMode={isCopilotMode}
               setIsCopilotMode={setIsCopilotMode}
               labelDefinitions={labelDefinitions}
               onToggleChatLabel={handleToggleChatLabel}
+              onEditMessage={handleEditMessage}
             />
 
             {/* Client Profile Panel (slides in from right) */}
@@ -1035,8 +1166,12 @@ REGLA CRITICA:
           messages={messages}
           activeChatId={activeChatId}
           socket={socket}
-          myProfile={myProfile}
+          myProfile={myProfile || businessData?.profile}
           onLogout={handleLogoutWhatsapp}
+          quickReplies={quickReplies}
+          onCreateQuickReply={handleCreateQuickReply}
+          onUpdateQuickReply={handleUpdateQuickReply}
+          onDeleteQuickReply={handleDeleteQuickReply}
         />
       </div>
     </div>
@@ -1044,6 +1179,34 @@ REGLA CRITICA:
 }
 
 export default App;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

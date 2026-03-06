@@ -2,7 +2,14 @@ import React from 'react';
 import moment from 'moment';
 import { Check, CheckCheck, ShoppingBag } from 'lucide-react';
 
-const MessageBubble = ({ msg, onPrefillMessage, isHighlighted = false, isCurrentHighlighted = false }) => {
+const MessageBubble = ({
+    msg,
+    onPrefillMessage,
+    isHighlighted = false,
+    isCurrentHighlighted = false,
+    onOpenMedia,
+    onEditMessage,
+}) => {
     const isOut = msg.fromMe;
 
     const isCatalogItem = msg.body && msg.body.includes('REF:');
@@ -26,26 +33,39 @@ const MessageBubble = ({ msg, onPrefillMessage, isHighlighted = false, isCurrent
     const renderStatus = () => {
         if (!isOut) return null;
         const ack = Number.isFinite(Number(msg.ack)) ? Number(msg.ack) : 0;
-        const color = ack >= 3 ? '#53bdeb' : 'rgba(233, 237, 239, 0.6)';
         const label = `Estado: ${getAckLabel(ack)}`;
         return (
-            <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); window.alert(label); }}
-                title={label}
-                style={{ display: 'flex', color, background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
-            >
+            <span className={`message-ack ${ack >= 3 ? 'read' : ack >= 2 ? 'delivered' : ack >= 1 ? 'sent' : 'pending'}`} title={label} aria-label={label}>
                 {ack >= 2 ? <CheckCheck size={16} /> : <Check size={16} />}
-            </button>
+            </span>
         );
     };
 
+    const mediaDataUrl = msg.hasMedia && msg.mediaData
+        ? `data:${msg.mimetype || 'application/octet-stream'};base64,${msg.mediaData}`
+        : null;
+
+    const canEditMessage = Boolean(isOut && !msg?.hasMedia && String(msg?.body || '').trim());
+
+    const handleEditClick = () => {
+        if (!canEditMessage || typeof onEditMessage !== 'function') return;
+        const currentBody = String(msg?.body || '');
+        const nextBody = window.prompt('Editar mensaje:', currentBody);
+        if (typeof nextBody !== 'string') return;
+        const trimmed = nextBody.trim();
+        if (!trimmed || trimmed === currentBody.trim()) return;
+        onEditMessage(msg?.id, trimmed);
+    };
+
     return (
-        <div className={`message ${isOut ? 'out' : 'in'}`} style={isHighlighted ? { outline: `2px solid ${isCurrentHighlighted ? '#00a884' : 'rgba(0,168,132,0.35)'}`, borderRadius: '10px', padding: '2px' } : undefined}>
+        <div
+            className={`message ${isOut ? 'out' : 'in'}`}
+            style={isHighlighted ? { outline: `2px solid ${isCurrentHighlighted ? '#00a884' : 'rgba(0,168,132,0.35)'}`, borderRadius: '10px', padding: '2px' } : undefined}
+        >
             {isCatalogItem && (
                 <div className="catalog-card">
-                    <div style={{ width: '100%', height: '85px', background: 'linear-gradient(120deg,#233138,#1a252b)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <ShoppingBag size={22} color="#9db0ba" />
+                    <div style={{ width: '100%', height: '72px', background: 'linear-gradient(120deg,#233138,#1a252b)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <ShoppingBag size={20} color="#9db0ba" />
                     </div>
                     <div className="catalog-card-info">
                         <div className="catalog-card-title">{productTitle}</div>
@@ -59,25 +79,25 @@ const MessageBubble = ({ msg, onPrefillMessage, isHighlighted = false, isCurrent
 
             {msg.hasMedia && msg.mediaData && msg.mimetype?.startsWith('image/') && (
                 <img
-                    src={`data:${msg.mimetype};base64,${msg.mediaData}`}
+                    src={mediaDataUrl}
                     className="message-media"
                     alt="Media"
                     style={{
-                        borderRadius: '6px',
+                        borderRadius: '8px',
                         marginBottom: '4px',
-                        maxWidth: '220px',
-                        maxHeight: '180px',
+                        maxWidth: '190px',
+                        maxHeight: '145px',
                         objectFit: 'cover',
                         cursor: 'zoom-in',
                         display: 'block'
                     }}
-                    onClick={() => window.open(`data:${msg.mimetype};base64,${msg.mediaData}`)}
+                    onClick={() => onOpenMedia && onOpenMedia({ src: mediaDataUrl, mimetype: msg.mimetype, messageId: msg.id })}
                 />
             )}
 
             {msg.hasMedia && msg.mediaData && msg.mimetype?.startsWith('audio/') && (
                 <audio
-                    src={`data:${msg.mimetype};base64,${msg.mediaData}`}
+                    src={mediaDataUrl}
                     controls
                     className="media-audio"
                     style={{ marginBottom: '4px' }}
@@ -86,7 +106,7 @@ const MessageBubble = ({ msg, onPrefillMessage, isHighlighted = false, isCurrent
 
             {msg.hasMedia && msg.mediaData && !msg.mimetype?.startsWith('image/') && !msg.mimetype?.startsWith('audio/') && (
                 <a
-                    href={`data:${msg.mimetype || 'application/octet-stream'};base64,${msg.mediaData}`}
+                    href={mediaDataUrl}
                     target="_blank"
                     rel="noreferrer"
                     style={{
@@ -96,12 +116,12 @@ const MessageBubble = ({ msg, onPrefillMessage, isHighlighted = false, isCurrent
                         background: 'rgba(0,0,0,0.18)',
                         border: '1px solid rgba(255,255,255,0.15)',
                         borderRadius: '8px',
-                        padding: '8px 10px',
+                        padding: '7px 10px',
                         marginBottom: '6px',
                         color: 'inherit',
                         textDecoration: 'none',
-                        maxWidth: '220px',
-                        fontSize: '0.78rem'
+                        maxWidth: '210px',
+                        fontSize: '0.76rem'
                     }}
                 >
                     <span>Adjunto</span>
@@ -130,7 +150,7 @@ const MessageBubble = ({ msg, onPrefillMessage, isHighlighted = false, isCurrent
                     )}
                     {orderItems.length > 0 ? orderItems.slice(0, 12).map((item, idx) => (
                         <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {item.name} x{item.quantity || 1}{item.sku ? ` (SKU: ${item.sku})` : ''}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>- {item.name} x{item.quantity || 1}{item.sku ? ` (SKU: ${item.sku})` : ''}</span>
                             <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{item.lineTotal ? `S/ ${item.lineTotal}` : (item.price ? `S/ ${item.price}` : '')}</span>
                         </div>
                     )) : (
@@ -160,6 +180,16 @@ const MessageBubble = ({ msg, onPrefillMessage, isHighlighted = false, isCurrent
                     {isCatalogItem ? 'Te gustaria que te lo separemos?' : msg.body}
                 </span>
 
+                {canEditMessage && (
+                    <button
+                        type="button"
+                        onClick={handleEditClick}
+                        style={{ alignSelf: isOut ? 'flex-end' : 'flex-start', marginTop: '4px', border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: 'inherit', borderRadius: '6px', padding: '2px 7px', fontSize: '0.68rem', cursor: 'pointer' }}
+                    >
+                        Editar
+                    </button>
+                )}
+
                 <div className="message-meta" style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -173,6 +203,7 @@ const MessageBubble = ({ msg, onPrefillMessage, isHighlighted = false, isCurrent
                         color: isOut ? 'rgba(233, 237, 239, 0.6)' : 'var(--text-secondary)'
                     }}>
                         {moment.unix(msg.timestamp).format('H:mm')}
+                        {msg?.edited ? ' (editado)' : ''}
                     </span>
                     {renderStatus()}
                 </div>
@@ -182,3 +213,4 @@ const MessageBubble = ({ msg, onPrefillMessage, isHighlighted = false, isCurrent
 };
 
 export default MessageBubble;
+

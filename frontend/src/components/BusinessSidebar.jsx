@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Send, X, ShoppingCart, Tag, BookOpen, Clock, Sparkles, Trash2, Percent, Plus, Minus, ChevronRight, Package, MessageSquare, PlusCircle, Edit2 } from 'lucide-react';
+import { Bot, Send, X, ShoppingCart, Tag, Clock, Sparkles, Trash2, Percent, Plus, Minus, ChevronRight, Package, MessageSquare, PlusCircle, Edit2 } from 'lucide-react';
 import moment from 'moment';
 import { io } from 'socket.io-client';
 
@@ -23,7 +23,7 @@ const roundToOneDecimal = (value) => {
     return Math.round(num * 10) / 10;
 };
 
-const formatMoney = (value) => roundToOneDecimal(value).toFixed(1);
+const formatMoney = (value) => Number(value || 0).toFixed(2);
 
 const normalizeCatalogItem = (item = {}, index = 0) => {
     const safeItem = item && typeof item === 'object' ? item : {};
@@ -147,7 +147,7 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
 };
 
 // =========================================================
-            {/* CATALOG TAB */}
+// CATALOG TAB
 // =========================================================
 const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) => {
     const [showForm, setShowForm] = useState(false);
@@ -346,8 +346,9 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
 // =========================================================
 // BUSINESS SIDEBAR - Main right panel
 // =========================================================
-const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activeChatId, onSendToClient, socket, myProfile, onLogout }) => {
+const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activeChatId, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply }) => {
     const [activeTab, setActiveTab] = useState('ai');
+    const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     // AI Chat State
     const [aiMessages, setAiMessages] = useState([
         { role: 'assistant', content: 'Hola, soy tu asistente de ventas de Lavitat con IA OpenAI. Estoy viendo la conversacion y te ayudare a cerrar mejor.\n\nPrueba: "Dame 3 opciones de respuesta" o "Como manejo una objecion de precio".' }
@@ -361,6 +362,9 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
     const [discount, setDiscount] = useState(0);
     const [showDiscount, setShowDiscount] = useState(false);
     const [cartDraftsByChat, setCartDraftsByChat] = useState({});
+    const [quickForm, setQuickForm] = useState({ label: '', text: '' });
+    const [quickEditId, setQuickEditId] = useState('');
+    const [quickSearch, setQuickSearch] = useState('');
 
     const catalog = (businessData.catalog || []).map((item, idx) => normalizeCatalogItem(item, idx));
     const labels = businessData.labels || [];
@@ -538,12 +542,44 @@ INSTRUCCIONES OBLIGATORIAS:
         setInputText(msg);
     };
 
+    const filteredQuickReplies = (Array.isArray(quickReplies) ? quickReplies : []).filter((item) => {
+        const q = String(quickSearch || '').trim().toLowerCase();
+        if (!q) return true;
+        const haystack = `${item?.label || ''} ${item?.text || ''}`.toLowerCase();
+        return haystack.includes(q);
+    });
+
+    const beginEditQuickReply = (item) => {
+        setQuickEditId(String(item?.id || ''));
+        setQuickForm({
+            label: String(item?.label || ''),
+            text: String(item?.text || '')
+        });
+    };
+
+    const resetQuickForm = () => {
+        setQuickEditId('');
+        setQuickForm({ label: '', text: '' });
+    };
+
+    const submitQuickReply = () => {
+        const label = String(quickForm.label || '').trim();
+        const text = String(quickForm.text || '').trim();
+        if (!label || !text) return;
+
+        if (quickEditId) {
+            onUpdateQuickReply && onUpdateQuickReply({ id: quickEditId, label, text });
+        } else {
+            onCreateQuickReply && onCreateQuickReply({ label, text });
+        }
+        resetQuickForm();
+    };
+
     const tabs = [
         { id: 'ai', icon: <Bot size={15} />, label: 'IA Pro' },
         { id: 'catalog', icon: <Package size={15} />, label: `Catalogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
         { id: 'cart', icon: <ShoppingCart size={15} />, label: `Carrito${cart.length > 0 ? ` (${cart.length})` : ''}` },
         { id: 'quick', icon: <Clock size={15} />, label: 'Rapidas' },
-        { id: 'company', icon: <BookOpen size={15} />, label: 'Empresa' },
     ];
 
     return (
@@ -551,7 +587,7 @@ INSTRUCCIONES OBLIGATORIAS:
             {/* Business Profile Header */}
             <div className="business-sidebar-header">
                 {profile ? (
-                    <div className="business-header-row">
+                    <div className="business-header-row" style={{ cursor: "pointer" }} onClick={() => setShowCompanyProfile((v) => !v)}>
                         <div className="business-header-avatar" style={{ background: profile.profilePicUrl ? `url(${profile.profilePicUrl}) center/cover` : '#00a884' }}>
                             {!profile.profilePicUrl && 'B'}
                         </div>
@@ -566,7 +602,7 @@ INSTRUCCIONES OBLIGATORIAS:
                             )}
                         </div>
                         <button
-                            onClick={onLogout}
+                            onClick={(e) => { e.stopPropagation(); onLogout && onLogout(); }}
                             className="business-logout-btn"
                         >
                             Cerrar sesion
@@ -580,7 +616,7 @@ INSTRUCCIONES OBLIGATORIAS:
             {/* Tabs */}
             <div className="business-tabs">
                 {tabs.map(t => (
-                    <button key={t.id} onClick={() => setActiveTab(t.id)} className={`business-tab-btn ${activeTab === t.id ? 'active' : ''}`} style={{
+                    <button key={t.id} onClick={() => { setActiveTab(t.id); setShowCompanyProfile(false); }} className={`business-tab-btn ${activeTab === t.id ? 'active' : ''}`} style={{
                         flex: 1, padding: '9px 2px', border: 'none', cursor: 'pointer',
                         background: activeTab === t.id ? '#111b21' : 'transparent',
                         color: activeTab === t.id ? '#00a884' : '#8696a0',
@@ -591,6 +627,24 @@ INSTRUCCIONES OBLIGATORIAS:
                     </button>
                 ))}
             </div>
+
+            {showCompanyProfile && (
+                <div style={{ padding: '10px', borderBottom: '1px solid var(--border-color)', background: '#111b21' }}>
+                    <div style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '12px' }}>
+                        <div style={{ fontSize: '0.72rem', color: '#00a884', marginBottom: '8px' }}>PERFIL DE EMPRESA</div>
+                        <div style={{ fontSize: '0.8rem', color: '#d6e2e8', lineHeight: '1.6' }}>
+                            <div><b>Nombre:</b> {profile?.name || profile?.pushname || myProfile?.pushname || '--'}</div>
+                            <div><b>Telefono:</b> {profile?.phone || myProfile?.phone || '--'}</div>
+                            <div><b>Plataforma:</b> {profile?.platform || myProfile?.platform || '--'}</div>
+                            {profile?.category && <div><b>Categoria:</b> {profile.category}</div>}
+                            {profile?.website && <div><b>Web:</b> {profile.website}</div>}
+                            {profile?.email && <div><b>Email:</b> {profile.email}</div>}
+                            {profile?.address && <div><b>Direccion:</b> {profile.address}</div>}
+                            {profile?.description && <div><b>Descripcion:</b> {profile.description}</div>}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* AI PRO TAB */}
             {activeTab === 'ai' && (
@@ -760,62 +814,116 @@ INSTRUCCIONES OBLIGATORIAS:
 
             {/* QUICK REPLIES TAB */}
             {activeTab === 'quick' && (
-                <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '7px' }}>
-                    {[
-                        { label: 'Saludo', text: 'Hola. Bienvenido a nuestro negocio. En que puedo ayudarte hoy?' },
-                        { label: 'Metodo de pago', text: 'Puedes pagar mediante:\n- Transferencia bancaria\n- Yape / Plin\n- Efectivo\n\nCual prefieres?' },
-                        { label: 'Horario', text: 'Nuestro horario de atencion es:\nLunes a Sabado: 9:00 AM - 7:00 PM\nTambien puedes escribirnos por WhatsApp.' },
-                        { label: 'En camino', text: 'Tu pedido esta en camino. Te avisamos en cuanto llegue. Gracias por tu paciencia.' },
-                        { label: 'Confirmado', text: 'Perfecto. Tu pedido ha sido confirmado. Lo procesamos lo antes posible. Gracias.' },
-                        { label: 'Mas info', text: 'Con gusto te doy mas informacion. Que producto o servicio te interesa?' },
-                        { label: 'Comprobante', text: 'Para confirmar tu pago, por favor envianos una foto del comprobante de transferencia. Gracias.' },
-                        { label: 'Gracias', text: 'Muchas gracias por tu compra. Ha sido un placer atenderte. Hasta pronto.' },
-                        { label: 'Seguimiento', text: 'Hola, queria hacer seguimiento a tu consulta. Pudiste revisar la informacion que te comparti?' },
-                        { label: 'Espera', text: 'Un momento por favor, estoy verificando la informacion para ti.' },
-                    ].map((qr, i) => (
-                        <button key={i} className="ai-prompt-chip" onClick={() => setInputText(qr.text)} style={{
-                            width: '100%', padding: '10px 12px', borderRadius: '8px',
-                            background: '#202c33', border: '1px solid var(--border-color)',
-                            cursor: 'pointer', textAlign: 'left', color: 'var(--text-primary)', transition: 'all 0.12s'
-                        }}
-                            onMouseEnter={e => e.currentTarget.style.borderColor = '#00a884'}
-                            onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
-                        >
-                            <div style={{ fontSize: '0.84rem', fontWeight: 500, marginBottom: '3px' }}>{qr.label}</div>
-                            <div style={{ fontSize: '0.72rem', color: '#8696a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{qr.text.split('\n')[0]}</div>
-                        </button>
-                    ))}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px' }}>
+                        <input
+                            type="text"
+                            value={quickSearch}
+                            onChange={e => setQuickSearch(e.target.value)}
+                            placeholder="Buscar respuesta rapida"
+                            style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none' }}
+                        />
+                    </div>
+
+                    <div style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#9db0ba' }}>
+                            {quickEditId ? 'Editar respuesta rapida' : 'Nueva respuesta rapida'}
+                        </div>
+                        <input
+                            type="text"
+                            value={quickForm.label}
+                            onChange={e => setQuickForm((prev) => ({ ...prev, label: e.target.value }))}
+                            placeholder="Titulo"
+                            style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none' }}
+                        />
+                        <textarea
+                            rows={3}
+                            value={quickForm.text}
+                            onChange={e => setQuickForm((prev) => ({ ...prev, text: e.target.value }))}
+                            placeholder="Texto de respuesta"
+                            style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none', resize: 'vertical' }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                            {quickEditId && (
+                                <button
+                                    type="button"
+                                    onClick={resetQuickForm}
+                                    style={{ background: 'transparent', border: '1px solid var(--border-color)', color: '#9db0ba', borderRadius: '7px', padding: '6px 10px', cursor: 'pointer', fontSize: '0.75rem' }}
+                                >
+                                    Cancelar
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                onClick={submitQuickReply}
+                                style={{ background: '#00a884', border: 'none', color: 'white', borderRadius: '7px', padding: '6px 10px', cursor: 'pointer', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                            >
+                                <PlusCircle size={13} /> {quickEditId ? 'Guardar cambios' : 'Agregar respuesta'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                        {filteredQuickReplies.length === 0 ? (
+                            <div style={{ background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px', color: '#8696a0', fontSize: '0.78rem' }}>
+                                No hay respuestas rapidas para mostrar.
+                            </div>
+                        ) : (
+                            filteredQuickReplies.map((qr) => (
+                                <div key={qr.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
+                                    <button
+                                        className="ai-prompt-chip"
+                                        onClick={() => setInputText(qr.text)}
+                                        style={{
+                                            width: '100%', padding: '10px 12px', borderRadius: '8px',
+                                            background: '#202c33', border: '1px solid var(--border-color)',
+                                            cursor: 'pointer', textAlign: 'left', color: 'var(--text-primary)', transition: 'all 0.12s'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.borderColor = '#00a884'}
+                                        onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
+                                    >
+                                        <div style={{ fontSize: '0.84rem', fontWeight: 500, marginBottom: '3px' }}>{qr.label}</div>
+                                        <div style={{ fontSize: '0.72rem', color: '#8696a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(qr.text || '').split('\n')[0]}</div>
+                                    </button>
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => beginEditQuickReply(qr)}
+                                            style={{ width: '30px', height: '30px', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#202c33', color: '#9db0ba', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                            title="Editar"
+                                        >
+                                            <Edit2 size={14} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => onDeleteQuickReply && onDeleteQuickReply(qr.id)}
+                                            style={{ width: '30px', height: '30px', borderRadius: '8px', border: '1px solid rgba(218,54,51,0.45)', background: '#202c33', color: '#da3633', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                            title="Eliminar"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </div>
             )}
 
-            {activeTab === 'company' && (
-                <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '12px' }}>
-                        <div style={{ fontSize: '0.72rem', color: '#00a884', marginBottom: '8px' }}>MI EMPRESA (WHATSAPP)</div>
-                        <div style={{ fontSize: '0.8rem', color: '#d6e2e8', lineHeight: '1.6' }}>
-                            <div><b>Nombre:</b> {profile?.name || profile?.pushname || myProfile?.pushname || '--'}</div>
-                            <div><b>Telefono:</b> {profile?.phone || myProfile?.phone || '--'}</div>
-                            <div><b>ID:</b> {profile?.id || myProfile?.id || '--'}</div>
-                            <div><b>Plataforma:</b> {profile?.platform || myProfile?.platform || '--'}</div>
-                            {profile?.category && <div><b>Categoria:</b> {profile.category}</div>}
-                            {profile?.website && <div><b>Web:</b> {profile.website}</div>}
-                            {profile?.email && <div><b>Email:</b> {profile.email}</div>}
-                            {profile?.address && <div><b>Direccion:</b> {profile.address}</div>}
-                            {profile?.description && <div><b>Descripcion:</b> {profile.description}</div>}
-                        </div>
-                    </div>
-                    <button
-                        onClick={onLogout}
-                        style={{ width: '100%', padding: '10px', background: '#392526', border: '1px solid rgba(218,54,51,0.45)', borderRadius: '8px', color: '#ffb3b3', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}
-                    >
-                        Cerrar sesion de WhatsApp
-                    </button>
-                </div>
-            )}
+            
+
         </div>
     );
 };
 
 export default BusinessSidebar;
+
+
+
+
+
+
+
+
 
 

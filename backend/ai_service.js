@@ -1,33 +1,51 @@
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 require('dotenv').config();
 const fs = require('fs');
-const path = require('path');
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || null;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+function sanitizeApiKey(value = '') {
+    return String(value || '')
+        .trim()
+        .replace(/^["']|["']$/g, '')
+        .replace(/\s+/g, '');
+}
+
+function getOpenAIConfig() {
+    return {
+        apiKey: sanitizeApiKey(process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || ''),
+        model: String(process.env.OPENAI_MODEL || 'gpt-4o-mini').trim()
+    };
+}
 
 function mapAiError(error) {
     const text = String(error?.message || error || '').toLowerCase();
     if (text.includes('api key')) {
-        return 'Error IA: OPENAI_API_KEY inválida o ausente. Actualiza tu .env y reinicia backend.';
+        return 'Error IA: OPENAI_API_KEY invalida o ausente. Verifica tu .env y reinicia backend.';
     }
     if (text.includes('quota') || text.includes('rate limit') || text.includes('resource_exhausted') || error?.status === 429) {
-        return 'Error IA: cuota/límite de OpenAI agotado. Revisa billing y límites de tu cuenta.';
+        return 'Error IA: cuota/limite de OpenAI agotado. Revisa billing y limites de tu cuenta.';
     }
     if (text.includes('model') && text.includes('not found')) {
         return 'Error IA: modelo de OpenAI no disponible. Ajusta OPENAI_MODEL en tu .env.';
     }
+    if (error?.status === 401) {
+        return 'Error IA: autenticacion fallida con OpenAI (401). Revisa OPENAI_API_KEY/proyecto.';
+    }
+    if (error?.status === 403) {
+        return 'Error IA: acceso denegado por OpenAI (403). Revisa permisos del proyecto.';
+    }
     return 'Error IA: fallo al consultar OpenAI.';
 }
 
-async function requestOpenAI(prompt) {
+async function requestOpenAI(prompt, { apiKey, model }) {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-            model: OPENAI_MODEL,
+            model,
             temperature: 0.7,
             messages: [{ role: 'user', content: prompt }],
         }),
@@ -43,12 +61,11 @@ async function requestOpenAI(prompt) {
     return payload?.choices?.[0]?.message?.content || '';
 }
 
-async function generateWithOpenAI(prompt, onChunk = null) {
-    const text = await requestOpenAI(prompt);
+async function generateWithOpenAI(prompt, config, onChunk = null) {
+    const text = await requestOpenAI(prompt, config);
     if (onChunk && text) onChunk(text);
     return text;
 }
-
 
 function loadBaseBusinessContext() {
     const contextFilePath = path.join(__dirname, 'lavitat_context.txt');
@@ -69,35 +86,36 @@ ${externalBusinessContext}`.trim();
 }
 
 /**
- * Genera una sugerencia de respuesta para el cliente basada en el contexto de la conversación (SOPORTA STREAMING).
+ * Genera una sugerencia de respuesta para el cliente basada en el contexto de la conversacion (SOPORTA STREAMING).
  */
 async function getChatSuggestion(context, customPrompt = '', onChunk = null, externalBusinessContext = null) {
     try {
-        if (!OPENAI_API_KEY) {
+        const config = getOpenAIConfig();
+        if (!config.apiKey) {
             return 'IA no configurada. Falta OPENAI_API_KEY.';
         }
 
         const businessContext = buildBusinessContext(externalBusinessContext);
 
         const customInstructionText = customPrompt.trim() !== ''
-            ? `\n\nATENCIÓN: EL VENDEDOR TE HA DADO UNA INSTRUCCIÓN ESPECÍFICA:\n"${customPrompt}"\nPOR FAVOR, PRIORIZA ESTA INSTRUCCIÓN.`
+            ? `\n\nATENCION: EL VENDEDOR TE HA DADO UNA INSTRUCCION ESPECIFICA:\n"${customPrompt}"\nPOR FAVOR, PRIORIZA ESTA INSTRUCCION.`
             : '';
 
         const prompt = `${businessContext}
 
-CONVERSACIÓN RECIENTE:
+CONVERSACION RECIENTE:
 ---
 ${context}
 ---${customInstructionText}
 
-REGLAS CRÍTICAS DE PRECISIÓN DE CATÁLOGO:
-- Nunca inventes productos, presentaciones, tamaños ni precios.
+REGLAS CRITICAS DE PRECISION DE CATALOGO:
+- Nunca inventes productos, presentaciones, tamanos ni precios.
 - Solo usa productos y precios que aparezcan literalmente en el contexto.
-- Si falta un dato exacto, responde que lo confirmarás antes de cotizar.
+- Si falta un dato exacto, responde que lo confirmaras antes de cotizar.
 
-Genera la respuesta sugerida que el negocio debería enviar. Texto directo, sin comillas.`;
+Genera la respuesta sugerida que el negocio deberia enviar. Texto directo, sin comillas.`;
 
-        return await generateWithOpenAI(prompt, onChunk);
+        return await generateWithOpenAI(prompt, config, onChunk);
     } catch (error) {
         console.error('Error al obtener sugerencia de IA:', error?.message || error);
         return mapAiError(error);
@@ -109,7 +127,8 @@ Genera la respuesta sugerida que el negocio debería enviar. Texto directo, sin 
  */
 async function askInternalCopilot(query, onChunk = null, externalBusinessContext = null) {
     try {
-        if (!OPENAI_API_KEY) {
+        const config = getOpenAIConfig();
+        if (!config.apiKey) {
             return 'IA no configurada. Falta OPENAI_API_KEY.';
         }
 
@@ -117,15 +136,15 @@ async function askInternalCopilot(query, onChunk = null, externalBusinessContext
 
         const prompt = `${businessContext}
 
-INSTRUCCIÓN: Eres el copiloto interno. Ayuda al dueño con stock y opciones (sugiere 3 siempre). 
+INSTRUCCION: Eres el copiloto interno. Ayuda al dueno con stock y opciones (sugiere 3 siempre). 
 CONSULTA: "${query}"
 
-REGLAS CRÍTICAS:
+REGLAS CRITICAS:
 - No inventar nombres ni precios.
-- Cuando recomiendes, citar el nombre exacto del catálogo.
-- Si hay duda de presentación/capacidad, pedir confirmación antes de cotizar.`;
+- Cuando recomiendes, citar el nombre exacto del catalogo.
+- Si hay duda de presentacion/capacidad, pedir confirmacion antes de cotizar.`;
 
-        return await generateWithOpenAI(prompt, onChunk);
+        return await generateWithOpenAI(prompt, config, onChunk);
     } catch (error) {
         console.error('Error en Copiloto Interno:', error?.message || error);
         return mapAiError(error);

@@ -3,6 +3,7 @@ const waClient = require('./whatsapp_client');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
 const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
+const { listQuickReplies, addQuickReply, updateQuickReply, deleteQuickReply } = require('./quick_replies_manager');
 const RateLimiter = require('./rate_limiter');
 
 const eventRateLimiter = new RateLimiter({
@@ -245,15 +246,18 @@ function extractPhoneFromText(value = '') {
     return null;
 }
 
-function extractPhoneFromContactLike(contact = {}) {
+function extractPhoneFromContactLike(contact = {}, options = {}) {
+    const skipDirectNumber = Boolean(options?.skipDirectNumber);
     const serialized = String(contact?.id?._serialized || '');
     const isLid = isLidIdentifier(serialized);
     const candidates = [
-        contact?.number,
+        skipDirectNumber ? null : contact?.number,
         contact?.phoneNumber,
         (!isLid ? contact?.id?.user : null),
         (!isLid ? (serialized.split('@')[0] || '') : null),
-        contact?.userid
+        contact?.userid,
+        contact?.pn,
+        contact?.lid
     ];
     for (const candidate of candidates) {
         const phone = coerceHumanPhone(candidate);
@@ -270,13 +274,13 @@ function extractPhoneFromChat(chat = {}) {
     const chatId = String(chat?.id?._serialized || '');
     const contact = chat?.contact || null;
     const isLid = isLidIdentifier(chatId);
-
-    const fromContact = extractPhoneFromContactLike(contact || {});
-    if (fromContact) return fromContact;
-
     const fromMetaText = extractPhoneFromText(
         `${chat?.name || ''} ${chat?.formattedTitle || ''} ${contact?.name || ''} ${contact?.pushname || ''} ${contact?.shortName || ''}`
     );
+    if (isLid && fromMetaText && isLikelyHumanPhoneDigits(fromMetaText)) return fromMetaText;
+
+    const fromContact = extractPhoneFromContactLike(contact || {}, { skipDirectNumber: isLid });
+    if (fromContact) return fromContact;
     if (fromMetaText && isLikelyHumanPhoneDigits(fromMetaText)) return fromMetaText;
 
     if (!isLid && chatId.endsWith('@c.us')) {
@@ -295,14 +299,15 @@ function extractPhoneFromChat(chat = {}) {
 function extractPhoneFromSummary(summary = {}) {
     const id = String(summary?.id || '');
     const isLid = isLidIdentifier(id);
-    const explicitPhone = coerceHumanPhone(summary?.phone || '');
-    if (explicitPhone) return explicitPhone;
 
     const fromSubtitle = extractPhoneFromText(summary?.subtitle || '');
     if (fromSubtitle && isLikelyHumanPhoneDigits(fromSubtitle)) return fromSubtitle;
 
     const fromStatus = extractPhoneFromText(summary?.status || '');
     if (fromStatus && isLikelyHumanPhoneDigits(fromStatus)) return fromStatus;
+
+    const explicitPhone = coerceHumanPhone(summary?.phone || '');
+    if (explicitPhone) return explicitPhone;
 
     if (!isLid && id.endsWith('@c.us')) {
         const fromCUs = coerceHumanPhone(id.split('@')[0] || '');
@@ -348,6 +353,30 @@ function pickPreferredSummary(prevItem = {}, incoming = {}) {
     merged.name = (!primaryLooksInternal && primaryName) ? primaryName : (secondaryName || primaryName || 'Sin nombre');
 
     return merged;
+}
+
+function resolveLastMessagePreview(chat = {}) {
+    const last = chat?.lastMessage;
+    if (!last) return '';
+
+    const body = String(last?.body || '').trim();
+    if (body) return body;
+
+    const type = String(last?.type || last?._data?.type || '').toLowerCase();
+    const map = {
+        image: 'Imagen',
+        video: 'Video',
+        audio: 'Audio',
+        ptt: 'Nota de voz',
+        document: 'Documento',
+        sticker: 'Sticker',
+        location: 'Ubicacion',
+        vcard: 'Contacto',
+        order: 'Pedido',
+        revoked: 'Mensaje eliminado'
+    };
+
+    return map[type] || 'Mensaje';
 }
 
 function defaultCountryCode() {
@@ -403,7 +432,70 @@ async function resolveRegisteredNumber(client, rawPhone) {
     return null;
 }
 
+function normalizeFilterToken(value = '') {
+    return String(value || '').trim().toLowerCase();
+}
 
+function normalizeFilterTokens(tokens = []) {
+    if (!Array.isArray(tokens)) return [];
+    const seen = new Set();
+    const normalized = [];
+    for (const token of tokens) {
+        const clean = normalizeFilterToken(token);
+        if (!clean) continue;
+        if (seen.has(clean)) continue;
+        seen.add(clean);
+        normalized.push(clean);
+    }
+    return normalized;
+}
+
+function toLabelTokenSet(labels = []) {
+    const tokens = new Set();
+    if (!Array.isArray(labels)) return tokens;
+    for (const label of labels) {
+        const id = normalizeFilterToken(label?.id);
+        if (id) tokens.add(`id:${id}`);
+        const name = normalizeFilterToken(label?.name);
+        if (name) tokens.add(`name:${name}`);
+    }
+    return tokens;
+}
+
+function matchesTokenSet(labelTokenSet, selectedTokens) {
+    if (!(labelTokenSet instanceof Set)) return false;
+    if (!Array.isArray(selectedTokens) || selectedTokens.length === 0) return true;
+    return selectedTokens.some((token) => {
+        const clean = normalizeFilterToken(token);
+        if (!clean) return false;
+        if (labelTokenSet.has(clean)) return true;
+        if (clean.startsWith('id:')) {
+            const value = clean.slice(3);
+            return value ? labelTokenSet.has(value) : false;
+        }
+        if (clean.startsWith('name:')) {
+            const value = clean.slice(5);
+            return value ? labelTokenSet.has(value) : false;
+        }
+        return labelTokenSet.has(`id:${clean}`) || labelTokenSet.has(`name:${clean}`);
+    });
+}
+
+async function runWithConcurrency(items, limit, worker) {
+    if (!Array.isArray(items) || items.length === 0) return;
+    const max = Math.max(1, Math.floor(Number(limit) || 1));
+    let cursor = 0;
+
+    const runners = Array.from({ length: Math.min(max, items.length) }, async () => {
+        while (true) {
+            const idx = cursor++;
+            if (idx >= items.length) return;
+            await worker(items[idx], idx);
+        }
+    });
+
+    await Promise.all(runners);
+}
 class SocketManager {
     constructor(io) {
         this.io = io;
@@ -531,7 +623,63 @@ class SocketManager {
         };
         return deduped;
     }
+    async getChatLabelTokenSet(chat) {
+        const chatId = String(chat?.id?._serialized || '');
+        if (!chatId || !isVisibleChatId(chatId)) return new Set();
 
+        let labels = this.getCachedChatMeta(chatId)?.labels;
+        if (!Array.isArray(labels)) {
+            const hydrated = await this.hydrateChatMeta(chat);
+            labels = hydrated?.labels || [];
+        }
+
+        return toLabelTokenSet(labels);
+    }
+
+    async applyAdvancedChatFilters(chats = [], filters = {}) {
+        if (!Array.isArray(chats) || chats.length === 0) return [];
+
+        const selectedTokens = normalizeFilterTokens(filters?.labelTokens);
+        const unreadOnly = Boolean(filters?.unreadOnly);
+        const unlabeledOnly = Boolean(filters?.unlabeledOnly);
+        const contactMode = ['all', 'my', 'unknown'].includes(String(filters?.contactMode || 'all'))
+            ? String(filters?.contactMode || 'all')
+            : 'all';
+        const archivedMode = ['all', 'archived', 'active'].includes(String(filters?.archivedMode || 'all'))
+            ? String(filters?.archivedMode || 'all')
+            : 'all';
+
+        const needsLabelFiltering = unlabeledOnly || selectedTokens.length > 0;
+        if (!unreadOnly && !needsLabelFiltering && contactMode === 'all' && archivedMode === 'all') return chats;
+
+        const included = new Array(chats.length).fill(false);
+        const labelConcurrency = Math.max(2, Number(process.env.LABEL_FILTER_CONCURRENCY || 10));
+
+        await runWithConcurrency(chats, labelConcurrency, async (chat, idx) => {
+            const unreadCount = Number(chat?.unreadCount || 0);
+            if (unreadOnly && unreadCount <= 0) return;
+
+            const isMyContact = Boolean(chat?.contact?.isMyContact);
+            if (contactMode === 'my' && !isMyContact) return;
+            if (contactMode === 'unknown' && isMyContact) return;
+            const isArchived = Boolean(chat?.archived);
+            if (archivedMode === 'archived' && !isArchived) return;
+            if (archivedMode === 'active' && isArchived) return;
+
+            if (needsLabelFiltering) {
+                const labelTokenSet = await this.getChatLabelTokenSet(chat);
+                const hasAnyLabel = labelTokenSet.size > 0;
+                if (unlabeledOnly && hasAnyLabel) return;
+                if (!unlabeledOnly && selectedTokens.length > 0 && !matchesTokenSet(labelTokenSet, selectedTokens)) {
+                    return;
+                }
+            }
+
+            included[idx] = true;
+        });
+
+        return chats.filter((_, idx) => included[idx]);
+    }
     async toChatSummary(chat, { includeHeavyMeta = false } = {}) {
         const chatId = chat?.id?._serialized;
         if (!isVisibleChatId(chatId)) return null;
@@ -572,12 +720,13 @@ class SocketManager {
             subtitle,
             unreadCount: chat.unreadCount,
             timestamp: chat.timestamp,
-            lastMessage: chat.lastMessage ? chat.lastMessage.body : '',
+            lastMessage: resolveLastMessagePreview(chat),
             lastMessageFromMe: chat.lastMessage ? chat.lastMessage.fromMe : false,
             ack: chat.lastMessage ? chat.lastMessage.ack : 0,
             labels,
             profilePicUrl,
-            isMyContact: Boolean(contact?.isMyContact)
+            isMyContact: Boolean(contact?.isMyContact),
+            archived: Boolean(chat?.archived)
         };
     }
 
@@ -599,15 +748,29 @@ class SocketManager {
                     const rawLimit = Number(payload?.limit ?? 80);
                     const reset = Boolean(payload?.reset);
                     const query = String(payload?.query || '').trim();
+                    const filterKey = String(payload?.filterKey || '').trim();
+                    const incomingFilters = payload?.filters || {};
                     const queryLower = query.toLowerCase();
                     const queryDigits = normalizePhoneDigits(query);
+                    const activeFilters = {
+                        labelTokens: normalizeFilterTokens(incomingFilters?.labelTokens),
+                        unreadOnly: Boolean(incomingFilters?.unreadOnly),
+                        unlabeledOnly: Boolean(incomingFilters?.unlabeledOnly),
+                        contactMode: ['all', 'my', 'unknown'].includes(String(incomingFilters?.contactMode || 'all'))
+                            ? String(incomingFilters?.contactMode || 'all')
+                            : 'all',
+                        archivedMode: ['all', 'archived', 'active'].includes(String(incomingFilters?.archivedMode || 'all'))
+                            ? String(incomingFilters?.archivedMode || 'all')
+                            : 'all'
+                    };
 
                     const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.floor(rawOffset)) : 0;
                     const limit = Number.isFinite(rawLimit)
                         ? Math.min(250, Math.max(20, Math.floor(rawLimit)))
                         : 80;
 
-                    let sortedChats = await this.getSortedVisibleChats({ forceRefresh: reset || Boolean(query) });
+                    const hasActiveFilters = activeFilters.unreadOnly || activeFilters.unlabeledOnly || activeFilters.contactMode !== 'all' || activeFilters.archivedMode !== 'all' || activeFilters.labelTokens.length > 0;
+                    let sortedChats = await this.getSortedVisibleChats({ forceRefresh: reset || Boolean(query) || hasActiveFilters });
                     if (!queryLower && !reset && offset >= sortedChats.length) {
                         sortedChats = await this.getSortedVisibleChats({ forceRefresh: true });
                     }
@@ -615,7 +778,6 @@ class SocketManager {
 
                     if (queryLower) {
                         filtered = sortedChats.filter((c) => {
-                            const chatId = c?.id?._serialized || '';
                             const name = resolveChatDisplayName(c).toLowerCase();
                             const lastMessage = String(c?.lastMessage?.body || '').toLowerCase();
                             const phone = normalizePhoneDigits(extractPhoneFromChat(c) || '');
@@ -629,15 +791,14 @@ class SocketManager {
                         });
                     }
 
+                    filtered = await this.applyAdvancedChatFilters(filtered, activeFilters);
+
                     const page = filtered.slice(offset, offset + limit);
                     const scannedCount = page.length;
-                    const formatted = await Promise.all(page.map((c, index) => {
-                        const includeHeavyMeta = (offset + index) < 25;
-                        return this.toChatSummary(c, { includeHeavyMeta });
-                    }));
+                    const formatted = await Promise.all(page.map((c) => this.toChatSummary(c, { includeHeavyMeta: false })));
 
                     let items = formatted.filter(Boolean);
-                    if (queryLower && offset === 0 && items.length < limit) {
+                    if (queryLower && offset === 0 && items.length < limit && !hasActiveFilters) {
                         const existingIds = new Set(items.map((it) => it.id));
                         const existingPhones = new Set(items.map((it) => normalizePhoneDigits(it.phone || '')).filter(Boolean));
                         const phoneToExistingChatId = new Map();
@@ -669,7 +830,7 @@ class SocketManager {
                         const remaining = Math.max(0, limit - items.length);
                         items = [...items, ...contactMatches.slice(0, remaining)];
                     }
-                    if (queryDigits && offset === 0 && items.length === 0) {
+                    if (queryDigits && offset === 0 && items.length === 0 && !hasActiveFilters) {
                         const registeredUser = await resolveRegisteredNumber(waClient.client, queryDigits);
                         if (registeredUser) {
                             const normalizedRegistered = normalizePhoneDigits(registeredUser);
@@ -727,8 +888,32 @@ class SocketManager {
                         total,
                         hasMore,
                         nextOffset,
-                        query
+                        query,
+                        filters: activeFilters,
+                        filterKey
                     });
+
+                    // Hydrate photos/labels progressively in background to keep first paint fast.
+                    const pendingMetaChats = page
+                        .filter((chat) => {
+                            const chatId = String(chat?.id?._serialized || '');
+                            if (!chatId || !isVisibleChatId(chatId)) return false;
+                            const cached = this.getCachedChatMeta(chatId);
+                            if (!cached) return true;
+                            return !cached.profilePicUrl || !Array.isArray(cached.labels);
+                        })
+                        .slice(0, 24);
+
+                    if (pendingMetaChats.length > 0) {
+                        setImmediate(async () => {
+                            for (const chat of pendingMetaChats) {
+                                try {
+                                    const summary = await this.toChatSummary(chat, { includeHeavyMeta: true });
+                                    if (summary) socket.emit('chat_updated', summary);
+                                } catch (_) { }
+                            }
+                        });
+                    }
                 } catch (e) {
                     console.error('Error fetching chats:', e);
                 }
@@ -736,7 +921,25 @@ class SocketManager {
 
             socket.on('get_chat_history', async (chatId) => {
                 try {
-                    const messages = await waClient.getMessages(chatId, 30);
+                    let historyChatId = String(chatId || '');
+                    let messages = [];
+                    try {
+                        messages = await waClient.getMessages(historyChatId, 30);
+                    } catch (directErr) {
+                        const requestedDigits = normalizePhoneDigits(historyChatId.split('@')[0] || '');
+                        if (requestedDigits) {
+                            const visibleChats = await this.getSortedVisibleChats({ forceRefresh: true });
+                            const byPhone = visibleChats.find((c) => normalizePhoneDigits(extractPhoneFromChat(c) || '') === requestedDigits);
+                            if (byPhone?.id?._serialized) {
+                                historyChatId = byPhone.id._serialized;
+                                messages = await waClient.getMessages(historyChatId, 30);
+                            } else {
+                                throw directErr;
+                            }
+                        } else {
+                            throw directErr;
+                        }
+                    }
                     const visible = messages.filter((m) => !isStatusOrSystemMessage(m));
                     const formatted = visible.map((m) => ({
                         id: m.id._serialized,
@@ -749,9 +952,12 @@ class SocketManager {
                         mediaData: null,
                         mimetype: null,
                         type: m.type,
+                        ack: Number.isFinite(Number(m.ack)) ? Number(m.ack) : 0,
+                        edited: Boolean(m?._data?.latestEditMsgKey || m?._data?.latestEditSenderTimestampMs || m?._data?.edited),
+                        editedAt: Number(m?._data?.latestEditSenderTimestampMs || 0) > 0 ? Math.floor(Number(m._data.latestEditSenderTimestampMs) / 1000) : null,
                         order: extractOrderInfo(m)
                     }));
-                    socket.emit('chat_history', { chatId, messages: formatted });
+                    socket.emit('chat_history', { chatId: historyChatId, requestedChatId: chatId, messages: formatted });
 
                     // Avoid blocking chat open while media is downloaded/cached.
                     visible
@@ -762,7 +968,7 @@ class SocketManager {
                                 const media = await mediaManager.processMessageMedia(m);
                                 if (!media) return;
                                 socket.emit('chat_media', {
-                                    chatId,
+                                    chatId: historyChatId,
                                     messageId: m.id._serialized,
                                     mediaData: media.data,
                                     mimetype: media.mimetype
@@ -856,6 +1062,12 @@ class SocketManager {
                         chatId,
                         labels: (updatedLabels || []).map((l) => ({ id: l.id, name: l.name, color: l.color }))
                     };
+                    const cachedMeta = this.getCachedChatMeta(chatId) || {};
+                    this.chatMetaCache.set(String(chatId), {
+                        labels: payload.labels,
+                        profilePicUrl: cachedMeta.profilePicUrl || null,
+                        updatedAt: Date.now()
+                    });
                     this.io.emit('chat_labels_updated', payload);
                     socket.emit('chat_labels_saved', { chatId, ok: true });
                 } catch (e) {
@@ -877,6 +1089,43 @@ class SocketManager {
                     socket.emit('chat_labels_error', 'No se pudo crear la etiqueta.');
                 }
             });
+            socket.on('get_quick_replies', async () => {
+                try {
+                    socket.emit('quick_replies', { items: listQuickReplies() });
+                } catch (e) {
+                    socket.emit('quick_reply_error', 'No se pudieron cargar las respuestas rapidas.');
+                }
+            });
+
+            socket.on('add_quick_reply', async ({ label, text }) => {
+                try {
+                    const item = addQuickReply({ label, text });
+                    this.io.emit('quick_replies', { items: listQuickReplies() });
+                    socket.emit('quick_reply_saved', { action: 'add', id: item.id, ok: true });
+                } catch (e) {
+                    socket.emit('quick_reply_error', e?.message || 'No se pudo crear la respuesta rapida.');
+                }
+            });
+
+            socket.on('update_quick_reply', async ({ id, label, text }) => {
+                try {
+                    const item = updateQuickReply({ id, label, text });
+                    this.io.emit('quick_replies', { items: listQuickReplies() });
+                    socket.emit('quick_reply_saved', { action: 'update', id: item.id, ok: true });
+                } catch (e) {
+                    socket.emit('quick_reply_error', e?.message || 'No se pudo actualizar la respuesta rapida.');
+                }
+            });
+
+            socket.on('delete_quick_reply', async ({ id }) => {
+                try {
+                    const deleted = deleteQuickReply(id);
+                    this.io.emit('quick_replies', { items: listQuickReplies() });
+                    socket.emit('quick_reply_saved', { action: 'delete', id: deleted.id, ok: true });
+                } catch (e) {
+                    socket.emit('quick_reply_error', e?.message || 'No se pudo eliminar la respuesta rapida.');
+                }
+            });
 
             // --- Messaging ---
             socket.on('send_message', async ({ to, body }) => {
@@ -888,10 +1137,69 @@ class SocketManager {
                 }
             });
 
+            socket.on('edit_message', async ({ chatId, messageId, body }) => {
+                if (!guardRateLimit(socket, 'edit_message')) return;
+                try {
+                    const targetChatId = String(chatId || '').trim();
+                    const targetMessageId = String(messageId || '').trim();
+                    const nextBody = String(body || '').trim();
+
+                    if (!targetChatId || !targetMessageId || !nextBody) {
+                        socket.emit('edit_message_error', 'Datos invalidos para editar el mensaje.');
+                        return;
+                    }
+
+                    const chat = await waClient.client.getChatById(targetChatId);
+                    const candidates = await chat.fetchMessages({ limit: 150 });
+                    const targetMessage = candidates.find((m) => String(m?.id?._serialized || '') === targetMessageId);
+                    if (!targetMessage) {
+                        socket.emit('edit_message_error', 'No se encontro el mensaje para editar.');
+                        return;
+                    }
+
+                    if (!targetMessage.fromMe) {
+                        socket.emit('edit_message_error', 'Solo puedes editar mensajes enviados por ti.');
+                        return;
+                    }
+
+                    if (typeof targetMessage.edit !== 'function') {
+                        socket.emit('edit_message_error', 'Esta version de WhatsApp Web no permite editar mensajes por API.');
+                        return;
+                    }
+
+                    await targetMessage.edit(nextBody);
+
+                    this.io.emit('message_edited', {
+                        chatId: targetChatId,
+                        messageId: targetMessageId,
+                        body: nextBody,
+                        edited: true,
+                        editedAt: Math.floor(Date.now() / 1000)
+                    });
+
+                    try {
+                        this.invalidateChatListCache();
+                        const refreshedChat = await waClient.client.getChatById(targetChatId);
+                        const summary = await this.toChatSummary(refreshedChat, { includeHeavyMeta: false });
+                        if (summary) this.io.emit('chat_updated', summary);
+                    } catch (e) { }
+                } catch (e) {
+                    const detail = String(e?.message || '').toLowerCase();
+                    if (detail.includes('revoke') || detail.includes('time') || detail.includes('edit')) {
+                        socket.emit('edit_message_error', 'No se pudo editar: WhatsApp puede limitar la edicion por tiempo.');
+                    } else {
+                        socket.emit('edit_message_error', 'No se pudo editar el mensaje.');
+                    }
+                }
+            });
             socket.on('send_media_message', async (data) => {
                 if (!guardRateLimit(socket, 'send_media_message')) return;
                 try {
                     const { to, body, mediaData, mimetype, filename, isPtt } = data;
+                    if (isPtt) {
+                        socket.emit('error', 'El envio de notas de voz esta deshabilitado temporalmente.');
+                        return;
+                    }
                     await waClient.sendMedia(to, mediaData, mimetype, filename, body, isPtt);
                 } catch (e) {
                     socket.emit('error', 'Failed to send media.');
@@ -999,7 +1307,7 @@ class SocketManager {
                             catalog = nativeProducts.map(p => ({
                                 id: p.id,
                                 title: p.name,
-                                price: p.price ? (p.price / 1000).toFixed(2) : '0.00',
+                                price: p.price ? Number.parseFloat(String(p.price)).toFixed(2) : '0.00',
                                 description: p.description,
                                 imageUrl: p.imageUrls ? p.imageUrls[0] : null,
                                 source: 'native'
@@ -1276,6 +1584,27 @@ class SocketManager {
 }
 
 module.exports = SocketManager;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -27,14 +27,25 @@ function calcDiscountPct(regularPrice, salePrice) {
     return Number(((1 - (sale / regular)) * 100).toFixed(1));
 }
 
-function parseStoreApiPrice(rawPrice) {
-    const raw = rawPrice == null ? '' : String(rawPrice);
+function parseStoreApiPrice(rawPrice, minorUnit = null) {
+    const raw = rawPrice == null ? '' : String(rawPrice).trim();
     if (!raw || raw === '0') return '0.00';
-    // Store API may return integers in minor units (e.g., "12990" for 129.90)
-    if (/^\d+$/.test(raw) && raw.length > 2) {
-        return (Number(raw) / 100).toFixed(2);
+
+    const parsedMinor = Number.parseInt(String(minorUnit ?? ''), 10);
+    const safeMinor = Number.isFinite(parsedMinor) && parsedMinor >= 0 && parsedMinor <= 4
+        ? parsedMinor
+        : null;
+
+    if (/^-?\d+$/.test(raw)) {
+        const intValue = Number(raw);
+        if (!Number.isFinite(intValue)) return '0.00';
+        if (safeMinor !== null && safeMinor > 0) {
+            return (intValue / (10 ** safeMinor)).toFixed(2);
+        }
+        return intValue.toFixed(2);
     }
-    const parsed = Number.parseFloat(raw);
+
+    const parsed = Number.parseFloat(raw.replace(',', '.'));
     return Number.isFinite(parsed) ? parsed.toFixed(2) : '0.00';
 }
 
@@ -67,9 +78,10 @@ function normalizeWooV3Product(product) {
 }
 
 function normalizeStoreApiProduct(product) {
-    const price = parseStoreApiPrice(product?.prices?.price);
-    const regularPrice = parseStoreApiPrice(product?.prices?.regular_price || product?.prices?.price);
-    const salePrice = parseStoreApiPrice(product?.prices?.sale_price || '0');
+    const minorUnit = product?.prices?.currency_minor_unit;
+    const price = parseStoreApiPrice(product?.prices?.price, minorUnit);
+    const regularPrice = parseStoreApiPrice(product?.prices?.regular_price || product?.prices?.price, minorUnit);
+    const salePrice = parseStoreApiPrice(product?.prices?.sale_price || '0', minorUnit);
 
     return {
         id: `woo_${product.id}`,
@@ -195,3 +207,4 @@ module.exports = {
     isWooConfigured,
     getWooCatalog
 };
+
