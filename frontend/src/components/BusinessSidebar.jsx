@@ -365,7 +365,7 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout, p
 // =========================================================
 // CATALOG TAB
 // =========================================================
-const CatalogTab = ({ catalog, socket, addToCart, catalogMeta, activeChatId, cartItems = [] }) => {
+const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, cartItems = [] }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({ title: '', price: '', description: '', imageUrl: '' });
@@ -579,12 +579,30 @@ const CatalogTab = ({ catalog, socket, addToCart, catalogMeta, activeChatId, car
                                                 >
                                                     <Send size={12} /> Enviar
                                                 </button>
-                                                <button
-                                                    onClick={() => addToCart(item, 1)}
-                                                    style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 9px', background: inCart ? 'linear-gradient(90deg, #0a7e66 0%, #00a884 100%)' : 'linear-gradient(90deg, #00a884 0%, #02c39a 100%)', border: 'none', borderRadius: '9px', color: 'white', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                                                >
-                                                    <ShoppingCart size={12} /> {inCart ? 'Agregar +1' : 'Carrito'}
-                                                </button>
+                                                {inCart ? (
+                                                    <div style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#0f322b', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '9px', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                                                        <button
+                                                            onClick={() => onCatalogQtyDelta && onCatalogQtyDelta(item.id, -1)}
+                                                            style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#20423a', border: 'none', cursor: 'pointer', color: '#d6f7ee', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                                                        >
+                                                            <Minus size={11} />
+                                                        </button>
+                                                        <span style={{ minWidth: '20px', textAlign: 'center', color: '#d9fff4', fontSize: '0.78rem', fontWeight: 800 }}>{cartQty}</span>
+                                                        <button
+                                                            onClick={() => onCatalogQtyDelta && onCatalogQtyDelta(item.id, 1)}
+                                                            style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                                                        >
+                                                            <Plus size={11} />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => addToCart(item, 1)}
+                                                        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 9px', background: 'linear-gradient(90deg, #00a884 0%, #02c39a 100%)', border: 'none', borderRadius: '9px', color: 'white', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                                    >
+                                                        <ShoppingCart size={12} /> Carrito
+                                                    </button>
+                                                )}
                                             </div>
 
                                             {!isExternalCatalog && (
@@ -812,6 +830,17 @@ INSTRUCCIONES OBLIGATORIAS:
 
     const removeFromCart = (id) => setCart(prev => prev.filter(c => c.id !== id));
     const updateQty = (id, delta) => setCart(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(1, c.qty + delta) } : c));
+    const updateCatalogQty = (id, delta) => {
+        const safeDelta = Number(delta) || 0;
+        if (!id || !safeDelta) return;
+        const targetId = String(id);
+        setCart(prev => prev.flatMap((item) => {
+            if (String(item.id) !== targetId) return [item];
+            const nextQty = (Number(item.qty) || 1) + safeDelta;
+            if (nextQty <= 0) return [];
+            return [{ ...item, qty: nextQty }];
+        }));
+    };
     const updateItemDiscount = (id, pct) => setCart(prev => prev.map(c => c.id === id ? { ...c, discountPct: Math.min(90, Math.max(0, pct)) } : c));
 
     const cartTotal = roundToOneDecimal(cart.reduce((sum, item) => {
@@ -1029,7 +1058,7 @@ INSTRUCCIONES OBLIGATORIAS:
 
             {/* CATALOG TAB */}
             {activeTab === 'catalog' && (
-                <CatalogTab catalog={catalog} socket={socket} addToCart={addToCart} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} cartItems={cart} />
+                <CatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} cartItems={cart} />
             )}
 
             {/* CART TAB */}
