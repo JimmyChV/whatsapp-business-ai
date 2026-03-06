@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Send, X, ShoppingCart, Tag, Clock, Sparkles, Trash2, Percent, Plus, Minus, ChevronRight, Package, MessageSquare, PlusCircle, Edit2 } from 'lucide-react';
 import moment from 'moment';
-import { io } from 'socket.io-client';
 
 const repairMojibake = (value = '') => {
     let text = String(value || '');
@@ -42,110 +41,360 @@ const normalizeCatalogItem = (item = {}, index = 0) => {
         stockStatus: safeItem.stockStatus || safeItem.stock_status || null
     };
 };
+const sanitizeProfileText = (value = '') => repairMojibake(String(value || ''))
+    .replace(/[\u0000-\u001F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
+const firstValue = (...values) => {
+    for (const value of values) {
+        if (value === null || value === undefined) continue;
+        if (typeof value === 'string') {
+            const clean = sanitizeProfileText(value);
+            if (clean) return clean;
+            continue;
+        }
+        if (typeof value === 'number' || typeof value === 'boolean') return value;
+        if (Array.isArray(value) && value.length > 0) return value;
+        if (typeof value === 'object' && Object.keys(value).length > 0) return value;
+    }
+    return '';
+};
+
+const formatPhoneForDisplay = (value = '') => {
+    const raw = String(value || '').trim();
+    if (!raw) return 'Sin numero visible';
+    const normalized = raw.replace(/[^\d+]/g, '');
+    if (!normalized) return 'Sin numero visible';
+    return normalized.startsWith('+') ? normalized : `+${normalized}`;
+};
+
+const formatBoolValue = (value) => (value ? 'Si' : 'No');
+
+const formatTimestampValue = (value) => {
+    const unixValue = Number(value || 0);
+    if (!Number.isFinite(unixValue) || unixValue <= 0) return '--';
+    const m = moment.unix(unixValue);
+    return m.isValid() ? m.format('YYYY-MM-DD HH:mm:ss') : '--';
+};
+
+const prettyJson = (value) => {
+    if (!value || (typeof value === 'object' && Object.keys(value).length === 0)) return '';
+    try {
+        return JSON.stringify(value, null, 2);
+    } catch (e) {
+        return '';
+    }
+};
+
+const avatarColorForName = (name) => {
+    const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
+    if (!name) return colors[0];
+    return colors[name.charCodeAt(0) % colors.length];
+};
 // =========================================================
 // CLIENT PROFILE PANEL
 // =========================================================
 export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
     if (!contact) return null;
-    const avatarColor = (name) => {
-        const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
-        if (!name) return colors[0];
-        return colors[name.charCodeAt(0) % colors.length];
-    };
+
+    const displayName = firstValue(contact.name, contact.pushname, contact.shortName, 'Contacto');
+    const fallbackPhone = String(contact.id || '').replace('@c.us', '').replace('@g.us', '');
+    const rawPhone = firstValue(contact.phone, contact.number, contact.user, fallbackPhone);
+    const displayPhone = formatPhoneForDisplay(rawPhone);
+
+    const infoRows = [
+        ['ID', firstValue(contact.id, '--')],
+        ['Telefono', displayPhone],
+        ['Pushname', firstValue(contact.pushname, '--')],
+        ['Nombre corto', firstValue(contact.shortName, '--')],
+        ['Nombre verificado', firstValue(contact.verifiedName, '--')],
+        ['Nivel verificado', firstValue(contact.verifiedLevel, '--')],
+        ['Cuenta Business', formatBoolValue(contact.isBusiness)],
+        ['Enterprise', formatBoolValue(contact.isEnterprise)],
+        ['En mis contactos', formatBoolValue(contact.isMyContact)],
+        ['Contacto WA', formatBoolValue(contact.isWAContact)],
+        ['Bloqueado', formatBoolValue(contact.isBlocked)],
+        ['Es grupo', formatBoolValue(contact.isGroup)],
+        ['Es usuario', formatBoolValue(contact.isUser)],
+        ['Es mi cuenta', formatBoolValue(contact.isMe)],
+    ];
+
+    const chatStateRows = [
+        ['Archivado', formatBoolValue(contact.chatState?.archived)],
+        ['Fijado', formatBoolValue(contact.chatState?.pinned)],
+        ['Silenciado', formatBoolValue(contact.chatState?.isMuted)],
+        ['No leidos', String(contact.chatState?.unreadCount ?? 0)],
+        ['Ultima actividad', formatTimestampValue(contact.chatState?.timestamp)],
+        ['Participantes', contact.chatState?.participantsCount ?? '--'],
+    ];
+
+    const businessRows = [
+        ['Categoria', firstValue(contact.businessDetails?.category, '--')],
+        ['Web principal', firstValue(contact.businessDetails?.website, '--')],
+        ['Webs', (contact.businessDetails?.websites || []).join(', ') || '--'],
+        ['Email', firstValue(contact.businessDetails?.email, '--')],
+        ['Direccion', firstValue(contact.businessDetails?.address, '--')],
+        ['Horario', firstValue(prettyJson(contact.businessDetails?.businessHours), '--')],
+        ['Descripcion', firstValue(contact.businessDetails?.description, '--')],
+    ].filter(([, value]) => Boolean(String(value || '').trim()));
+
+    const technicalJson = prettyJson({
+        raw: contact.raw || null,
+        contactSnapshot: contact.contactSnapshot || null,
+        chatState: contact.chatState || null,
+        businessDetailsRaw: contact.businessDetails?.raw || null,
+    });
+
+    const quickActions = [
+        { label: 'Redactar saludo', prompt: 'Redacta un saludo personalizado y profesional para este cliente.' },
+        { label: 'Crear propuesta de venta', prompt: 'Crea una propuesta de venta persuasiva para este cliente basada en la conversacion.' },
+        { label: 'Mensaje de seguimiento', prompt: 'Redacta un mensaje de seguimiento para este cliente que no ha respondido.' },
+    ];
+
     return (
-        <div style={{
-            position: 'absolute', top: 0, right: 0, width: '340px', height: '100%',
-            background: '#111b21', zIndex: 500, display: 'flex', flexDirection: 'column',
-            boxShadow: '-4px 0 20px rgba(0,0,0,0.5)', borderLeft: '1px solid var(--border-color)',
-            animation: 'slideInRight 0.3s ease-out'
-        }}>
-            <div style={{ background: '#202c33', padding: '14px 18px', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--border-color)' }}>
-                <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0', padding: '4px' }}><X size={20} /></button>
-                <h3 style={{ fontSize: '0.95rem', color: 'var(--text-primary)', fontWeight: 400 }}>Perfil del contacto</h3>
-            </div>
-            <div style={{ background: '#202c33', padding: '28px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                <div style={{
-                    width: '100px', height: '100px', borderRadius: '50%',
-                    background: contact.profilePicUrl ? `url(${contact.profilePicUrl}) center/cover` : avatarColor(contact.name),
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '2.5rem', color: 'white', fontWeight: 500, overflow: 'hidden', flexShrink: 0
-                }}>
-                    {!contact.profilePicUrl && contact.name?.charAt(0)?.toUpperCase()}
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.1rem', color: 'var(--text-primary)', fontWeight: 400 }}>{contact.name}</div>
-                    <div style={{ fontSize: '0.82rem', color: '#8696a0', marginTop: '3px' }}>{contact.phone || contact.id?.replace('@c.us', '').replace('@g.us', '')}</div>
-                    {contact.isBusiness && (
-                        <div style={{ marginTop: '8px', background: '#00a884', color: 'white', fontSize: '0.72rem', padding: '2px 10px', borderRadius: '20px', display: 'inline-block' }}>
-                            Cuenta Business
-                        </div>
-                    )}
+        <aside className="client-profile-panel">
+            <div className="client-profile-header">
+                <button className="client-profile-close" onClick={onClose} aria-label="Cerrar perfil">
+                    <X size={20} />
+                </button>
+                <div className="client-profile-header-copy">
+                    <span className="client-profile-kicker">Ficha del cliente</span>
+                    <h3>Perfil del contacto</h3>
                 </div>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+
+            <div className="client-profile-hero">
+                <div className="client-profile-avatar" style={{ background: contact.profilePicUrl ? `url(${contact.profilePicUrl}) center/cover` : avatarColorForName(displayName) }}>
+                    {!contact.profilePicUrl && displayName.charAt(0).toUpperCase()}
+                </div>
+                <div className="client-profile-name">{displayName}</div>
+                <div className="client-profile-phone">{displayPhone}</div>
+                <div className="client-profile-badges">
+                    {contact.isBusiness && <span className="client-profile-badge business">Cuenta Business</span>}
+                    {contact.isMyContact && <span className="client-profile-badge">Contacto guardado</span>}
+                </div>
+            </div>
+
+            <div className="client-profile-scroll">
                 {contact.status && (
-                    <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
-                        <div style={{ fontSize: '0.7rem', color: '#00a884', marginBottom: '6px' }}>INFO / ESTADO</div>
-                        <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)' }}>{contact.status}</div>
+                    <div className="client-profile-card">
+                        <div className="client-profile-card-title">Info / Estado</div>
+                        <div className="client-profile-status">{contact.status}</div>
                     </div>
                 )}
+
                 {contact.labels?.length > 0 && (
-                    <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
-                        <div style={{ fontSize: '0.7rem', color: '#00a884', marginBottom: '8px' }}>ETIQUETAS</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                            {contact.labels.map((l, i) => (
-                                <span key={i} style={{ background: l.color || '#3b4a54', color: 'white', padding: '3px 10px', borderRadius: '12px', fontSize: '0.78rem' }}>{l.name}</span>
+                    <div className="client-profile-card">
+                        <div className="client-profile-card-title">Etiquetas</div>
+                        <div className="client-profile-labels">
+                            {contact.labels.map((label, idx) => (
+                                <span key={idx} className="client-profile-label-chip" style={{ '--label-color': label.color || '#5f7380' }}>
+                                    {label.name}
+                                </span>
                             ))}
                         </div>
                     </div>
                 )}
-                <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
-                    <div style={{ fontSize: '0.7rem', color: '#00a884', marginBottom: '8px' }}>DATOS DISPONIBLES</div>
-                    <div style={{ fontSize: '0.78rem', color: '#c9d5db', lineHeight: '1.55' }}>
-                        {contact.pushname && <div>- Pushname: {contact.pushname}</div>}
-                        {contact.shortName && <div>- Nombre corto: {contact.shortName}</div>}
-                        <div>- Business: {contact.isBusiness ? 'Si' : 'No'}</div>
-                        <div>- En mis contactos: {contact.isMyContact ? 'Si' : 'No'}</div>
-                        <div>- Contacto WA: {contact.isWAContact ? 'Si' : 'No'}</div>
-                        <div>- Bloqueado: {contact.isBlocked ? 'Si' : 'No'}</div>
+
+                <div className="client-profile-card">
+                    <div className="client-profile-card-title">Cuenta y contacto</div>
+                    <div className="client-profile-grid">
+                        {infoRows.map(([label, value]) => (
+                            <React.Fragment key={label}>
+                                <span className="client-profile-key">{label}</span>
+                                <span className="client-profile-value">{value}</span>
+                            </React.Fragment>
+                        ))}
                     </div>
                 </div>
-                {contact.businessDetails && (
-                    <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
-                        <div style={{ fontSize: '0.7rem', color: '#00a884', marginBottom: '8px' }}>PERFIL BUSINESS (WHATSAPP)</div>
-                        <div style={{ fontSize: '0.78rem', color: '#c9d5db', lineHeight: '1.55' }}>
-                            {contact.businessDetails.category && <div>- Categoria: {contact.businessDetails.category}</div>}
-                            {contact.businessDetails.website && <div>- Web: {contact.businessDetails.website}</div>}
-                            {contact.businessDetails.email && <div>- Email: {contact.businessDetails.email}</div>}
-                            {contact.businessDetails.address && <div>- Direccion: {contact.businessDetails.address}</div>}
-                            {contact.businessDetails.description && <div>- Descripcion: {contact.businessDetails.description}</div>}
+
+                <div className="client-profile-card">
+                    <div className="client-profile-card-title">Estado del chat</div>
+                    <div className="client-profile-grid">
+                        {chatStateRows.map(([label, value]) => (
+                            <React.Fragment key={label}>
+                                <span className="client-profile-key">{label}</span>
+                                <span className="client-profile-value">{value}</span>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                </div>
+
+                {businessRows.length > 0 && (
+                    <div className="client-profile-card">
+                        <div className="client-profile-card-title">Perfil Business (WhatsApp)</div>
+                        <div className="client-profile-grid">
+                            {businessRows.map(([label, value]) => (
+                                <React.Fragment key={label}>
+                                    <span className="client-profile-key">{label}</span>
+                                    <span className="client-profile-value">{value}</span>
+                                </React.Fragment>
+                            ))}
                         </div>
                     </div>
                 )}
-                <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px' }}>
-                    <div style={{ fontSize: '0.7rem', color: '#8a2be2', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Sparkles size={11} /> ACCIONES RAPIDAS IA
+
+                {technicalJson && (
+                    <div className="client-profile-card">
+                        <div className="client-profile-card-title">Datos tecnicos WhatsApp</div>
+                        <pre className="profile-json-block">{technicalJson}</pre>
                     </div>
-                    {[
-                        { label: 'Redactar saludo', prompt: 'Redacta un saludo personalizado y profesional para este cliente.' },
-                        { label: 'Crear propuesta de venta', prompt: 'Crea una propuesta de venta persuasiva para este cliente basada en la conversacion.' },
-                        { label: 'Mensaje de seguimiento', prompt: 'Redacta un mensaje de seguimiento para este cliente que no ha respondido.' },
-                    ].map((a, i) => (
-                        <div key={i} onClick={() => onQuickAiAction && onQuickAiAction(a.prompt)}
-                            style={{ padding: '9px 12px', marginBottom: '6px', background: '#1a2530', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.84rem', color: 'var(--text-primary)' }}
-                            onMouseEnter={e => e.currentTarget.style.background = '#243040'}
-                            onMouseLeave={e => e.currentTarget.style.background = '#1a2530'}
-                        >
-                            {a.label} <ChevronRight size={13} color="#8696a0" />
-                        </div>
-                    ))}
+                )}
+
+                <div className="client-profile-card">
+                    <div className="client-profile-actions-title">
+                        <Sparkles size={12} /> Acciones rapidas IA
+                    </div>
+                    <div className="client-profile-actions-list">
+                        {quickActions.map((action, idx) => (
+                            <button
+                                key={idx}
+                                className="client-profile-action-btn"
+                                onClick={() => onQuickAiAction && onQuickAiAction(action.prompt)}
+                                type="button"
+                            >
+                                <span>{action.label}</span>
+                                <ChevronRight size={14} />
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
-        </div>
+        </aside>
     );
 };
 
+export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout }) => {
+    if (!profile) return null;
+
+    const displayName = firstValue(profile.name, profile.pushname, profile.shortName, 'Mi negocio');
+    const displayPhone = formatPhoneForDisplay(firstValue(profile.phone, profile.id));
+
+    const companyRows = [
+        ['Nombre', displayName],
+        ['Telefono', displayPhone],
+        ['ID', firstValue(profile.id, '--')],
+        ['Plataforma', firstValue(profile.platform, '--')],
+        ['Pushname', firstValue(profile.pushname, '--')],
+        ['Nombre corto', firstValue(profile.shortName, '--')],
+        ['Nombre verificado', firstValue(profile.verifiedName, '--')],
+        ['Nivel verificado', firstValue(profile.verifiedLevel, '--')],
+        ['Estado', firstValue(profile.status, '--')],
+    ];
+
+    const accountStateRows = [
+        ['Cuenta Business', formatBoolValue(profile.isBusiness)],
+        ['Enterprise', formatBoolValue(profile.isEnterprise)],
+        ['Es mi cuenta', formatBoolValue(profile.isMe)],
+        ['Contacto WA', formatBoolValue(profile.isWAContact)],
+        ['En mis contactos', formatBoolValue(profile.isMyContact)],
+        ['Total etiquetas', String(profile.labelsCount ?? labels.length ?? 0)],
+    ];
+
+    const businessRows = [
+        ['Categoria', firstValue(profile.category, profile.businessDetails?.category, '--')],
+        ['Web principal', firstValue(profile.website, profile.businessDetails?.website, '--')],
+        ['Webs', firstValue((profile.websites || profile.businessDetails?.websites || []).join(', '), '--')],
+        ['Email', firstValue(profile.email, profile.businessDetails?.email, '--')],
+        ['Direccion', firstValue(profile.address, profile.businessDetails?.address, '--')],
+        ['Horario', firstValue(prettyJson(profile.businessHours || profile.businessDetails?.businessHours), '--')],
+        ['Descripcion', firstValue(profile.description, profile.businessDetails?.description, '--')],
+    ];
+
+    const technicalJson = prettyJson({
+        whatsappInfo: profile.whatsappInfo || null,
+        contactSnapshot: profile.contactSnapshot || null,
+        businessDetailsRaw: profile.businessDetails?.raw || null,
+    });
+
+    return (
+        <aside className="client-profile-panel company-profile-panel">
+            <div className="client-profile-header">
+                <button className="client-profile-close" onClick={onClose} aria-label="Cerrar perfil de empresa">
+                    <X size={20} />
+                </button>
+                <div className="client-profile-header-copy">
+                    <span className="client-profile-kicker">Cuenta de negocio</span>
+                    <h3>Perfil de la empresa</h3>
+                </div>
+            </div>
+
+            <div className="client-profile-hero company-profile-hero">
+                <div className="client-profile-avatar" style={{ background: profile.profilePicUrl ? `url(${profile.profilePicUrl}) center/cover` : avatarColorForName(displayName) }}>
+                    {!profile.profilePicUrl && displayName.charAt(0).toUpperCase()}
+                </div>
+                <div className="client-profile-name">{displayName}</div>
+                <div className="client-profile-phone">{displayPhone}</div>
+            </div>
+
+            <div className="client-profile-scroll">
+                {labels.length > 0 && (
+                    <div className="client-profile-card">
+                        <div className="client-profile-card-title">Etiquetas del negocio</div>
+                        <div className="client-profile-labels">
+                            {labels.map((label) => (
+                                <span key={String(label?.id || label?.name)} className="client-profile-label-chip" style={{ '--label-color': label?.color || '#5f7380' }}>
+                                    {label?.name || `Etiqueta ${label?.id || ''}`}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                <div className="client-profile-card">
+                    <div className="client-profile-card-title">Datos de cuenta</div>
+                    <div className="client-profile-grid">
+                        {companyRows.map(([label, value]) => (
+                            <React.Fragment key={label}>
+                                <span className="client-profile-key">{label}</span>
+                                <span className="client-profile-value">{value}</span>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="client-profile-card">
+                    <div className="client-profile-card-title">Estado de la cuenta</div>
+                    <div className="client-profile-grid">
+                        {accountStateRows.map(([label, value]) => (
+                            <React.Fragment key={label}>
+                                <span className="client-profile-key">{label}</span>
+                                <span className="client-profile-value">{value}</span>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="client-profile-card">
+                    <div className="client-profile-card-title">Perfil Business</div>
+                    <div className="client-profile-grid">
+                        {businessRows.map(([label, value]) => (
+                            <React.Fragment key={label}>
+                                <span className="client-profile-key">{label}</span>
+                                <span className="client-profile-value">{value}</span>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                </div>
+
+                {technicalJson && (
+                    <div className="client-profile-card">
+                        <div className="client-profile-card-title">Datos tecnicos WhatsApp</div>
+                        <pre className="profile-json-block">{technicalJson}</pre>
+                    </div>
+                )}
+
+                <div className="client-profile-card">
+                    <button type="button" className="client-profile-action-btn company-logout-btn" onClick={() => onLogout && onLogout()}>
+                        <span>Cerrar sesion de WhatsApp</span>
+                        <ChevronRight size={14} />
+                    </button>
+                </div>
+            </div>
+        </aside>
+    );
+};
 // =========================================================
 // CATALOG TAB
 // =========================================================
@@ -369,7 +618,7 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
 
     const catalog = (businessData.catalog || []).map((item, idx) => normalizeCatalogItem(item, idx));
     const labels = businessData.labels || [];
-    const profile = businessData.profile;
+    const profile = businessData.profile || myProfile || null;
     const quickRepliesEnabled = Boolean(waCapabilities?.quickReplies || waCapabilities?.quickRepliesRead || waCapabilities?.quickRepliesWrite);
     const quickRepliesWriteEnabled = Boolean(waCapabilities?.quickRepliesWrite);
 
@@ -635,43 +884,36 @@ INSTRUCCIONES OBLIGATORIAS:
                         fontSize: '0.68rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px',
                         borderBottom: activeTab === t.id ? '2px solid #00a884' : '2px solid transparent',
                     }}>
-                        {t.icon} {t.label}
+                        <span className="business-tab-icon">{t.icon}</span>
+                        <span className="business-tab-label">{t.label}</span>
                     </button>
                 ))}
             </div>
 
 
             {!quickRepliesEnabled && (
-                <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-color)', background: '#111b21', color: '#8696a0', fontSize: '0.75rem', lineHeight: '1.4' }}>
-                    Respuestas rapidas nativas no disponibles en esta version de WhatsApp Web.
+                <div className="quick-replies-warning">
+                    <strong>Modo compatibilidad</strong>
+                    <span>Las respuestas rapidas nativas no estan disponibles en esta version de WhatsApp Web.</span>
                 </div>
             )}
 
             {showCompanyProfile && (
-                <div style={{ padding: '10px', borderBottom: '1px solid var(--border-color)', background: '#111b21' }}>
-                    <div style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '12px' }}>
-                        <div style={{ fontSize: '0.72rem', color: '#00a884', marginBottom: '8px' }}>PERFIL DE EMPRESA</div>
-                        <div style={{ fontSize: '0.8rem', color: '#d6e2e8', lineHeight: '1.6' }}>
-                            <div><b>Nombre:</b> {profile?.name || profile?.pushname || myProfile?.pushname || '--'}</div>
-                            <div><b>Telefono:</b> {profile?.phone || myProfile?.phone || '--'}</div>
-                            <div><b>Plataforma:</b> {profile?.platform || myProfile?.platform || '--'}</div>
-                            {profile?.category && <div><b>Categoria:</b> {profile.category}</div>}
-                            {profile?.website && <div><b>Web:</b> {profile.website}</div>}
-                            {profile?.email && <div><b>Email:</b> {profile.email}</div>}
-                            {profile?.address && <div><b>Direccion:</b> {profile.address}</div>}
-                            {profile?.description && <div><b>Descripcion:</b> {profile.description}</div>}
-                        </div>
-                    </div>
-                </div>
+                <CompanyProfilePanel
+                    profile={profile}
+                    labels={labels}
+                    onClose={() => setShowCompanyProfile(false)}
+                    onLogout={onLogout}
+                />
             )}
 
             {/* AI PRO TAB */}
             {activeTab === 'ai' && (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div className="ai-thread-pro" style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {aiMessages.map((msg, idx) => (
-                            <div key={idx} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                                <div style={{
+                            <div key={idx} className={`ai-row-pro ${msg.role === 'user' ? 'user' : 'assistant'}`} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                                <div className={`ai-bubble-pro ${msg.role === 'user' ? 'user' : 'assistant'}`} style={{
                                     maxWidth: '92%', padding: '9px 12px', borderRadius: msg.role === 'user' ? '12px 2px 12px 12px' : '2px 12px 12px 12px',
                                     background: msg.role === 'user' ? '#005c4b' : '#202c33',
                                     fontSize: '0.82rem', color: 'var(--text-primary)', lineHeight: '1.45',
@@ -685,7 +927,7 @@ INSTRUCCIONES OBLIGATORIAS:
                                         <button
                                             onClick={() => sendToClient(msg.content)}
                                             title="Enviar este mensaje al cliente"
-                                            style={{ marginTop: '6px', background: 'transparent', border: '1px solid rgba(0,168,132,0.4)', color: '#00a884', borderRadius: '5px', padding: '3px 8px', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                            className="ai-use-reply-btn"
                                         >
                                             <Send size={10} /> Usar como respuesta
                                         </button>
@@ -708,14 +950,18 @@ INSTRUCCIONES OBLIGATORIAS:
                     </div>
 
                     {/* Quick action chips */}
-                    <div className="ai-quick-prompts" style={{ padding: '6px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', flexWrap: 'wrap', gap: '5px', flexShrink: 0 }}>
+                    <div className="ai-quick-prompts ai-quick-prompts-pro" style={{ padding: '8px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', flexWrap: 'wrap', gap: '6px', flexShrink: 0 }}>
+                        <div className="ai-quick-prompts-title">
+                            <Sparkles size={12} />
+                            Atajos IA
+                        </div>
                         {[
                             'Dame 3 opciones de respuesta',
                             'Como cerrar esta venta',
                             'Maneja la objecion de precio',
                             'Recomienda un producto',
                         ].map((chip, i) => (
-                            <button key={i} className="ai-prompt-chip"
+                            <button key={i} className="ai-prompt-chip ai-prompt-chip-pro"
                                 onClick={() => { setAiInput(chip.replace(/^[^\s]+ /, '')); }}
                                 style={{ background: '#202c33', border: '1px solid var(--border-color)', color: '#8696a0', padding: '4px 9px', borderRadius: '14px', fontSize: '0.72rem', cursor: 'pointer' }}
                                 onMouseEnter={e => e.currentTarget.style.borderColor = '#00a884'}
@@ -727,19 +973,19 @@ INSTRUCCIONES OBLIGATORIAS:
                     </div>
 
                     {/* AI Input */}
-                    <div className="ai-assistant-input-row" style={{ padding: '8px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0, background: '#202c33' }}>
+                    <div className="ai-assistant-input-row ai-input-row-pro" style={{ padding: '8px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0, background: '#202c33' }}>
                         <input
                             type="text"
                             placeholder="Pregunta algo a la IA..."
                             value={aiInput}
                             onChange={e => setAiInput(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendAiMessage()}
-                            className="ai-assistant-input" style={{ flex: 1, background: '#2a3942', border: 'none', outline: 'none', color: 'var(--text-primary)', borderRadius: '20px', padding: '8px 14px', fontSize: '0.82rem' }}
+                            className="ai-assistant-input ai-assistant-input-pro" style={{ flex: 1, background: '#2a3942', border: 'none', outline: 'none', color: 'var(--text-primary)', borderRadius: '20px', padding: '8px 14px', fontSize: '0.82rem' }}
                         />
                         <button
                             onClick={sendAiMessage}
                             disabled={isAiLoading || !aiInput.trim()}
-                            className="ai-assistant-send" style={{ background: isAiLoading ? '#3b4a54' : '#00a884', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isAiLoading ? 'wait' : 'pointer', flexShrink: 0 }}
+                            className="ai-assistant-send ai-assistant-send-pro" style={{ background: isAiLoading ? '#3b4a54' : '#00a884', border: 'none', borderRadius: '50%', width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isAiLoading ? 'wait' : 'pointer', flexShrink: 0 }}
                         >
                             <Send size={16} color="white" />
                         </button>
@@ -949,13 +1195,3 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
-
-
-
-
-
-
-
-
-
-

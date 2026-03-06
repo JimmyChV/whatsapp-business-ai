@@ -333,6 +333,21 @@ const ChatWindow = ({
         return colors[name.charCodeAt(0) % colors.length];
     };
 
+    const formatHeaderPhone = (phoneValue) => {
+        const raw = String(phoneValue || '').trim();
+        if (!raw) return '';
+        const normalized = raw.replace(/[^\d+]/g, '');
+        if (!normalized) return '';
+        return normalized.startsWith('+') ? normalized : `+${normalized}`;
+    };
+
+    const headerPhone = formatHeaderPhone(activeChatDetails?.phone);
+    const headerSubline = activeChatDetails?.isGroup
+        ? `${activeChatDetails?.participants || 0} participantes`
+        : (headerPhone || 'Sin numero visible');
+    const headerHint = activeChatDetails?.isGroup
+        ? 'Grupo'
+        : (activeChatDetails?.pushname ? `Pushname: ${activeChatDetails.pushname}` : 'Haz clic para ver el perfil');
     const formatDayLabel = (unixTs) => {
         const m = moment.unix(unixTs || 0);
         if (!m.isValid()) return '';
@@ -350,68 +365,74 @@ const ChatWindow = ({
         >
             {/* Chat Header */}
             <div className="chat-header chat-header-pro" onClick={() => setShowClientProfile(v => !v)}>
-                <div style={{
-                    width: '40px', height: '40px', borderRadius: '50%',
-                    background: activeChatDetails?.profilePicUrl
-                        ? `url(${activeChatDetails.profilePicUrl}) center/cover`
-                        : avatarColor(activeChatDetails?.name),
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '1rem', color: 'white', fontWeight: 500, flexShrink: 0, overflow: 'hidden'
-                }}>
+                <div
+                    className="chat-header-avatar"
+                    style={{
+                        background: activeChatDetails?.profilePicUrl
+                            ? `url(${activeChatDetails.profilePicUrl}) center/cover`
+                            : avatarColor(activeChatDetails?.name),
+                    }}
+                >
                     {!activeChatDetails?.profilePicUrl && activeChatDetails?.name?.charAt(0)?.toUpperCase()}
                 </div>
                 <div className="chat-header-meta">
-                    <h3 style={{ fontSize: '1rem', fontWeight: 400, color: 'var(--text-primary)' }}>{activeChatDetails?.name}</h3>
-                    <span style={{ fontSize: '0.78rem', color: '#8696a0' }}>
-                        {activeChatDetails?.isGroup ? `${activeChatDetails?.participants || 0} participantes` : (activeChatDetails?.phone ? `+${activeChatDetails.phone}` : 'Haz clic para ver el perfil')}
-                    </span>
+                    <div className="chat-header-title-row">
+                        <h3 className="chat-header-name">{activeChatDetails?.name || 'Sin nombre'}</h3>
+                        {activeChatDetails?.isBusiness && <span className="chat-header-pill">Business</span>}
+                    </div>
+                    <div className="chat-header-subline">
+                        <span className="chat-header-primary">{headerSubline}</span>
+                        <span className="chat-header-dot">|</span>
+                        <span className="chat-header-secondary">{headerHint}</span>
+                    </div>
                     {!!activeChatDetails?.labels?.length && (
-                        <div style={{ marginTop: '5px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        <div className="chat-header-labels">
                             {activeChatDetails.labels.slice(0, 3).map((l, i) => (
-                                <span key={i} style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: '12px', background: 'rgba(255,255,255,0.08)', color: l.color || '#9bb0ba' }}>{l.name}</span>
+                                <span
+                                    key={i}
+                                    className="chat-header-label-chip"
+                                    style={{ '--label-color': l.color || '#7a8f9a' }}
+                                >
+                                    {l.name}
+                                </span>
                             ))}
                         </div>
                     )}
                 </div>
                 <div className="chat-header-actions" onClick={e => e.stopPropagation()}>
-                    <button className="btn-icon" style={{ color: searchVisible ? '#00a884' : '#8696a0' }}
+                    <button className={`btn-icon ui-icon-btn chat-header-action-btn ${searchVisible ? 'active' : ''}`}
                         onClick={() => setSearchVisible(v => !v)} title="Buscar en chat">
                         <Search size={20} />
                     </button>
-                    <div style={{ position: 'relative' }}>
-                        <button className="btn-icon" style={{ color: showLabelMenu ? '#00a884' : '#8696a0' }}
+                    <div className="chat-header-menu-wrap">
+                        <button className={`btn-icon ui-icon-btn chat-header-action-btn ${showLabelMenu ? 'active' : ''}`}
                             onClick={() => setShowLabelMenu(v => !v)} title="Etiquetas">
                             <Tag size={20} />
                         </button>
                         {showLabelMenu && (
-                            <div style={{ position: 'absolute', top: '30px', right: 0, background: '#233138', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', minWidth: '220px', zIndex: 1000, overflow: 'hidden', padding: '8px' }}>
-                                <div style={{ fontSize: '0.72rem', color: '#9db0ba', marginBottom: '8px' }}>Etiquetas sincronizadas con WhatsApp</div>
-                                {labelDefinitions.length === 0 && <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>No hay etiquetas disponibles.</div>}
+                            <div className="chat-header-popover chat-header-label-popover">
+                                <div className="chat-header-popover-title">Etiquetas sincronizadas con WhatsApp</div>
+                                {labelDefinitions.length === 0 && <div className="chat-header-popover-empty">No hay etiquetas disponibles.</div>}
                                 {labelDefinitions.map((label) => {
                                     const isActive = (activeChatDetails?.labels || []).some((l) => String(l.id) === String(label.id));
                                     return (
-                                        <label key={label.id || label.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 4px', cursor: 'pointer', fontSize: '0.82rem' }}>
+                                        <label key={label.id || label.name} className="chat-header-label-option">
                                             <input type="checkbox" checked={isActive} onChange={() => onToggleChatLabel?.(activeChatDetails?.id, label.id)} />
-                                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: label.color || '#8696a0' }} />
-                                            <span style={{ color: 'var(--text-primary)' }}>{label.name}</span>
+                                            <span className="chat-header-label-color" style={{ background: label.color || '#8696a0' }} />
+                                            <span className="chat-header-label-name">{label.name}</span>
                                         </label>
                                     );
                                 })}
                             </div>
                         )}
                     </div>
-                    <div style={{ position: 'relative' }}>
-                        <button className="btn-icon" style={{ color: '#8696a0' }}
+                    <div className="chat-header-menu-wrap">
+                        <button className="btn-icon ui-icon-btn chat-header-action-btn"
                             onClick={() => setShowMenu(v => !v)} title="Mas opciones">
                             <MoreVertical size={20} />
                         </button>
                         {showMenu && (
-                            <div style={{
-                                position: 'absolute', top: '30px', right: 0,
-                                background: '#233138', borderRadius: '8px',
-                                boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
-                                minWidth: '200px', zIndex: 1000, overflow: 'hidden'
-                            }}>
+                            <div className="chat-header-popover chat-header-actions-popover">
                                 {[
                                     { label: 'Ver perfil del contacto', action: () => setShowClientProfile(true) },
                                     { label: 'Buscar mensajes', action: () => setSearchVisible(true) },
@@ -419,9 +440,7 @@ const ChatWindow = ({
                                 ].map((item, i) => (
                                     <div key={i}
                                         onClick={() => { item.action(); setShowMenu(false); }}
-                                        style={{ padding: '13px 20px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-primary)' }}
-                                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                        className="chat-header-action-item"
                                     >
                                         {item.label}
                                     </div>
@@ -431,7 +450,6 @@ const ChatWindow = ({
                     </div>
                 </div>
             </div>
-
             {/* In-chat Search Bar */}
             {searchVisible && (
                 <div className="chat-searchbar">
@@ -524,6 +542,7 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
+
 
 
 

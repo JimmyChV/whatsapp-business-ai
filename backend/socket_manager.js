@@ -147,21 +147,161 @@ function resolveChatDisplayName(chat) {
     return 'Sin nombre';
 }
 
-async function resolveProfilePic(client, chatOrContactId) {
-    try {
-        const direct = await client.getProfilePicUrl(chatOrContactId);
-        if (direct) return direct;
-    } catch (e) { }
-
-    try {
-        const contact = await client.getContactById(chatOrContactId);
-        if (contact?.getProfilePicUrl) {
-            const fromContact = await contact.getProfilePicUrl();
-            if (fromContact) return fromContact;
+function buildProfilePicCandidates(rawId, extraCandidates = []) {
+    const out = [];
+    const push = (value) => {
+        const text = String(value || '').trim();
+        if (!text) return;
+        if (!out.includes(text)) out.push(text);
+        if (!text.includes('@')) {
+            const digits = text.replace(/\D/g, '');
+            if (digits && !out.includes(`${digits}@c.us`)) out.push(`${digits}@c.us`);
+        } else {
+            const localPart = text.split('@')[0] || '';
+            const digits = localPart.replace(/\D/g, '');
+            if (digits && !out.includes(`${digits}@c.us`)) out.push(`${digits}@c.us`);
         }
-    } catch (e) { }
+    };
+
+    push(rawId);
+    (Array.isArray(extraCandidates) ? extraCandidates : []).forEach(push);
+    return out;
+}
+
+async function resolveProfilePic(client, chatOrContactId, extraCandidates = []) {
+    const candidates = buildProfilePicCandidates(chatOrContactId, extraCandidates);
+
+    for (const candidate of candidates) {
+        try {
+            const direct = await client.getProfilePicUrl(candidate);
+            if (direct) return direct;
+        } catch (e) { }
+    }
+
+    for (const candidate of candidates) {
+        try {
+            const contact = await client.getContactById(candidate);
+            if (contact?.getProfilePicUrl) {
+                const fromContact = await contact.getProfilePicUrl();
+                if (fromContact) return fromContact;
+            }
+        } catch (e) { }
+    }
+
+    for (const candidate of candidates) {
+        try {
+            const chat = await client.getChatById(candidate);
+            if (chat?.contact?.getProfilePicUrl) {
+                const fromChatContact = await chat.contact.getProfilePicUrl();
+                if (fromChatContact) return fromChatContact;
+            }
+        } catch (e) { }
+    }
 
     return null;
+}
+
+function truncateDisplayValue(value = '', maxLen = 260) {
+    const text = String(value ?? '');
+    if (text.length <= maxLen) return text;
+    return text.slice(0, maxLen) + '...';
+}
+
+function snapshotSerializable(input, depth = 0, seen = new WeakSet()) {
+    if (depth > 3) return undefined;
+    if (input === null || input === undefined) return input;
+
+    const t = typeof input;
+    if (t === 'string') return truncateDisplayValue(input);
+    if (t === 'number' || t === 'boolean') return input;
+    if (t === 'bigint') return String(input);
+    if (t === 'function' || t === 'symbol') return undefined;
+
+    if (Array.isArray(input)) {
+        return input
+            .slice(0, 30)
+            .map((entry) => snapshotSerializable(entry, depth + 1, seen))
+            .filter((entry) => entry !== undefined);
+    }
+
+    if (input instanceof Date) return input.toISOString();
+    if (Buffer.isBuffer(input)) return `[buffer:${input.length}]`;
+
+    if (t === 'object') {
+        if (seen.has(input)) return '[circular]';
+        seen.add(input);
+        const out = {};
+        const keys = Object.keys(input).slice(0, 80);
+        for (const key of keys) {
+            const value = snapshotSerializable(input[key], depth + 1, seen);
+            if (value !== undefined && value !== '') out[key] = value;
+        }
+        return out;
+    }
+
+    return undefined;
+}
+
+function normalizeBusinessDetailsSnapshot(businessProfile = null) {
+    if (!businessProfile) return null;
+    const websites = Array.isArray(businessProfile?.website)
+        ? businessProfile.website.filter(Boolean)
+        : (businessProfile?.website ? [businessProfile.website] : []);
+
+    return {
+        category: businessProfile?.category || null,
+        description: businessProfile?.description || null,
+        email: businessProfile?.email || null,
+        website: websites[0] || null,
+        websites,
+        address: businessProfile?.address || null,
+        businessHours: businessProfile?.business_hours || businessProfile?.businessHours || null,
+        raw: snapshotSerializable(businessProfile)
+    };
+}
+
+function extractContactSnapshot(contact = null) {
+    if (!contact) return null;
+    const raw = contact?._data || {};
+    return {
+        id: contact?.id?._serialized || null,
+        user: contact?.id?.user || null,
+        server: contact?.id?.server || null,
+        number: contact?.number || raw?.userid || null,
+        name: contact?.name || null,
+        pushname: contact?.pushname || null,
+        shortName: contact?.shortName || null,
+        verifiedName: raw?.verifiedName || null,
+        verifiedLevel: raw?.verifiedLevel || null,
+        statusMute: raw?.statusMute || null,
+        type: raw?.type || null,
+        isBusiness: Boolean(contact?.isBusiness),
+        isEnterprise: Boolean(contact?.isEnterprise),
+        isMyContact: Boolean(contact?.isMyContact),
+        isMe: Boolean(contact?.isMe),
+        isUser: Boolean(contact?.isUser),
+        isGroup: Boolean(contact?.isGroup),
+        isWAContact: Boolean(contact?.isWAContact),
+        isBlocked: Boolean(contact?.isBlocked),
+        isPSA: Boolean(contact?.isPSA),
+        rawData: snapshotSerializable(raw)
+    };
+}
+
+function extractChatSnapshot(chat = null) {
+    if (!chat) return null;
+    return {
+        id: chat?.id?._serialized || null,
+        archived: Boolean(chat?.archived),
+        pinned: Boolean(chat?.pinned),
+        isMuted: Boolean(chat?.isMuted),
+        muteExpiration: Number(chat?.muteExpiration || 0) || null,
+        unreadCount: Number(chat?.unreadCount || 0) || 0,
+        timestamp: Number(chat?.timestamp || 0) || null,
+        isGroup: Boolean(chat?.isGroup),
+        participantsCount: Array.isArray(chat?.participants) ? chat.participants.length : null,
+        rawData: snapshotSerializable(chat?._data || null)
+    };
 }
 
 
@@ -1327,24 +1467,54 @@ class SocketManager {
                     const me = waClient.client.info;
                     const meId = me.wid._serialized;
 
-                    // Real profile from WA account info
+                                        // Real profile from WA account info
+                    let meContact = null;
                     let profilePicUrl = null;
                     let businessProfile = null;
-                    try { profilePicUrl = await waClient.client.getProfilePicUrl(meId); } catch (e) { }
+                    let aboutStatus = null;
+                    try {
+                        if (meId) meContact = await waClient.client.getContactById(meId);
+                    } catch (e) { }
+                    try {
+                        profilePicUrl = await resolveProfilePic(waClient.client, meId, [
+                            me?.wid?.user,
+                            meContact?.id?._serialized,
+                            meContact?.number
+                        ]);
+                    } catch (e) { }
                     try { businessProfile = await waClient.getBusinessProfile(meId); } catch (e) { }
+                    try {
+                        if (meContact?.getAbout) aboutStatus = await meContact.getAbout();
+                    } catch (e) { }
+
+                    const businessDetails = normalizeBusinessDetailsSnapshot(businessProfile);
+                    const contactSnapshot = extractContactSnapshot(meContact);
                     const profile = {
-                        name: me.pushname,
-                        phone: me.wid.user,
-                        id: meId,
-                        platform: me.platform || null,
-                        isBusiness: true,
+                        name: me?.pushname || meContact?.name || meContact?.pushname || 'Mi Negocio',
+                        pushname: me?.pushname || meContact?.pushname || null,
+                        shortName: meContact?.shortName || null,
+                        verifiedName: meContact?._data?.verifiedName || null,
+                        verifiedLevel: meContact?._data?.verifiedLevel || null,
+                        phone: me?.wid?.user || meContact?.number || null,
+                        id: meId || null,
+                        platform: me?.platform || null,
+                        isBusiness: Boolean(meContact?.isBusiness ?? true),
+                        isEnterprise: Boolean(meContact?.isEnterprise),
+                        isMyContact: Boolean(meContact?.isMyContact),
+                        isMe: Boolean(meContact?.isMe ?? true),
+                        isWAContact: Boolean(meContact?.isWAContact ?? true),
+                        status: aboutStatus || null,
                         profilePicUrl,
-                        businessHours: businessProfile?.business_hours || null,
-                        category: businessProfile?.category || null,
-                        email: businessProfile?.email || null,
-                        website: businessProfile?.website || null,
-                        address: businessProfile?.address || null,
-                        description: businessProfile?.description || null,
+                        businessHours: businessDetails?.businessHours || null,
+                        category: businessDetails?.category || null,
+                        email: businessDetails?.email || null,
+                        website: businessDetails?.website || null,
+                        websites: businessDetails?.websites || [],
+                        address: businessDetails?.address || null,
+                        description: businessDetails?.description || null,
+                        businessDetails,
+                        whatsappInfo: snapshotSerializable(me),
+                        contactSnapshot
                     };
 
                     // Real labels from WA
@@ -1352,6 +1522,7 @@ class SocketManager {
                     try {
                         const raw = await waClient.getLabels();
                         labels = raw.map(l => ({ id: l.id, name: l.name, color: l.color }));
+                        profile.labelsCount = labels.length;
                     } catch (e) { console.log('Labels:', e.message); }
 
                     // Catalog priority: WhatsApp native -> WooCommerce -> local file fallback.
@@ -1466,26 +1637,59 @@ class SocketManager {
 
             socket.on('get_my_profile', async () => {
                 try {
-                    const me = waClient.client.info;
+                    const me = waClient.client.info || {};
+                    const meId = me?.wid?._serialized || null;
+                    let meContact = null;
                     let profilePicUrl = null;
                     let businessProfile = null;
+                    let aboutStatus = null;
+
                     try {
-                        profilePicUrl = await resolveProfilePic(waClient.client, me.wid._serialized);
+                        if (meId) meContact = await waClient.client.getContactById(meId);
                     } catch (e) { }
                     try {
-                        businessProfile = await waClient.getBusinessProfile(me.wid._serialized);
+                        profilePicUrl = await resolveProfilePic(waClient.client, meId, [
+                            me?.wid?.user,
+                            meContact?.id?._serialized,
+                            meContact?.number
+                        ]);
                     } catch (e) { }
+                    try {
+                        businessProfile = await waClient.getBusinessProfile(meId);
+                    } catch (e) { }
+                    try {
+                        if (meContact?.getAbout) aboutStatus = await meContact.getAbout();
+                    } catch (e) { }
+
+                    const businessDetails = normalizeBusinessDetailsSnapshot(businessProfile);
+                    const contactSnapshot = extractContactSnapshot(meContact);
+
                     socket.emit('my_profile', {
-                        pushname: me.pushname,
-                        phone: me.wid.user,
-                        id: me.wid._serialized,
-                        platform: me.platform || null,
+                        name: me?.pushname || meContact?.name || meContact?.pushname || null,
+                        pushname: me?.pushname || meContact?.pushname || null,
+                        shortName: meContact?.shortName || null,
+                        verifiedName: meContact?._data?.verifiedName || null,
+                        verifiedLevel: meContact?._data?.verifiedLevel || null,
+                        phone: me?.wid?.user || meContact?.number || null,
+                        id: meId,
+                        platform: me?.platform || null,
                         profilePicUrl,
-                        category: businessProfile?.category || null,
-                        email: businessProfile?.email || null,
-                        website: businessProfile?.website || null,
-                        address: businessProfile?.address || null,
-                        description: businessProfile?.description || null,
+                        status: aboutStatus || null,
+                        isBusiness: Boolean(meContact?.isBusiness ?? true),
+                        isEnterprise: Boolean(meContact?.isEnterprise),
+                        isMyContact: Boolean(meContact?.isMyContact),
+                        isMe: Boolean(meContact?.isMe ?? true),
+                        isWAContact: Boolean(meContact?.isWAContact ?? true),
+                        category: businessDetails?.category || null,
+                        email: businessDetails?.email || null,
+                        website: businessDetails?.website || null,
+                        websites: businessDetails?.websites || [],
+                        address: businessDetails?.address || null,
+                        description: businessDetails?.description || null,
+                        businessHours: businessDetails?.businessHours || null,
+                        businessDetails,
+                        whatsappInfo: snapshotSerializable(me),
+                        contactSnapshot
                     });
                 } catch (e) {
                     console.error('Error fetching my profile:', e);
@@ -1494,12 +1698,27 @@ class SocketManager {
 
             socket.on('get_contact_info', async (contactId) => {
                 try {
-                    const contact = await waClient.client.getContactById(contactId);
+                    const safeContactId = String(contactId || '').trim();
+                    if (!safeContactId) return;
+
+                    const contact = await waClient.client.getContactById(safeContactId);
+                    let chat = null;
                     let profilePicUrl = null;
                     let status = null;
                     let businessProfile = null;
+
                     try {
-                        profilePicUrl = await resolveProfilePic(waClient.client, contactId);
+                        chat = await waClient.client.getChatById(safeContactId);
+                    } catch (e) { }
+
+                    try {
+                        profilePicUrl = await resolveProfilePic(waClient.client, safeContactId, [
+                            contact?.id?._serialized,
+                            contact?.number,
+                            contact?.number ? `${contact.number}@c.us` : null,
+                            chat?.id?._serialized,
+                            chat?.contact?.id?._serialized
+                        ]);
                     } catch (e) { }
                     try {
                         const statusObj = await contact.getAbout();
@@ -1507,37 +1726,53 @@ class SocketManager {
                     } catch (e) { }
                     try {
                         if (contact?.isBusiness) {
-                            businessProfile = await waClient.getBusinessProfile(contactId);
+                            businessProfile = await waClient.getBusinessProfile(safeContactId);
                         }
                     } catch (e) { }
+
                     let labels = [];
                     try {
-                        const chat = await waClient.client.getChatById(contactId);
-                        const chatLabels = await chat.getLabels();
-                        labels = chatLabels.map(l => ({ id: l.id, name: l.name, color: l.color }));
+                        const chatRef = chat || await waClient.client.getChatById(safeContactId);
+                        const chatLabels = await chatRef.getLabels();
+                        labels = chatLabels.map((l) => ({ id: l.id, name: l.name, color: l.color }));
                     } catch (e) { }
+
+                    const businessDetails = normalizeBusinessDetailsSnapshot(businessProfile);
+                    const contactSnapshot = extractContactSnapshot(contact);
+                    const chatSnapshot = extractChatSnapshot(chat);
+
                     socket.emit('contact_info', {
-                        id: contactId,
-                        name: contact.name || contact.pushname || contact.number,
-                        phone: contact.number,
-                        pushname: contact.pushname || null,
-                        shortName: contact.shortName || null,
+                        id: safeContactId,
+                        name: contact?.name || contact?.pushname || contact?.number || null,
+                        phone: contact?.number || null,
+                        number: contact?.number || null,
+                        user: contact?.id?.user || null,
+                        server: contact?.id?.server || null,
+                        pushname: contact?.pushname || null,
+                        shortName: contact?.shortName || null,
+                        verifiedName: contact?._data?.verifiedName || null,
+                        verifiedLevel: contact?._data?.verifiedLevel || null,
                         profilePicUrl,
+                        hasProfilePic: Boolean(profilePicUrl),
                         status,
-                        isBusiness: contact.isBusiness,
-                        isEnterprise: contact.isEnterprise || false,
-                        isMyContact: contact.isMyContact || false,
-                        isWAContact: contact.isWAContact || false,
-                        isBlocked: contact.isBlocked || false,
-                        isGroup: contactId.includes('@g.us'),
+                        isBusiness: Boolean(contact?.isBusiness),
+                        isEnterprise: Boolean(contact?.isEnterprise),
+                        isMyContact: Boolean(contact?.isMyContact),
+                        isWAContact: Boolean(contact?.isWAContact),
+                        isBlocked: Boolean(contact?.isBlocked),
+                        isMe: Boolean(contact?.isMe),
+                        isUser: Boolean(contact?.isUser),
+                        isGroup: safeContactId.includes('@g.us') || Boolean(contact?.isGroup),
+                        isPSA: Boolean(contact?.isPSA),
                         labels,
-                        businessDetails: businessProfile ? {
-                            category: businessProfile?.category || null,
-                            email: businessProfile?.email || null,
-                            website: businessProfile?.website || null,
-                            address: businessProfile?.address || null,
-                            description: businessProfile?.description || null,
-                        } : null,
+                        chatState: chatSnapshot,
+                        businessDetails,
+                        contactSnapshot,
+                        raw: {
+                            contact: contactSnapshot?.rawData || null,
+                            chat: chatSnapshot?.rawData || null,
+                            business: businessDetails?.raw || null
+                        }
                     });
                 } catch (e) {
                     console.error('Error fetching contact info:', e);
