@@ -18,13 +18,31 @@ export const socket = io(API_URL, {
 const normalizeCatalogItem = (item = {}, index = 0) => {
   const safeItem = item && typeof item === 'object' ? item : {};
   const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
-  const rawPrice = safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio ?? 0;
-  const parsedPrice = Number.parseFloat(String(rawPrice).replace(',', '.'));
+
+  const parsePrice = (value, fallback = 0) => {
+    const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+    if (Number.isFinite(parsed)) return parsed;
+    return Number.isFinite(fallback) ? fallback : 0;
+  };
+
+  const priceNum = parsePrice(safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio, 0);
+  const regularNum = parsePrice(safeItem.regularPrice ?? safeItem.regular_price ?? safeItem.price ?? safeItem.amount ?? safeItem.precio, priceNum);
+  const saleNum = parsePrice(safeItem.salePrice ?? safeItem.sale_price, priceNum);
+  const baseFinal = saleNum > 0 && saleNum < regularNum ? saleNum : priceNum;
+  const finalNum = baseFinal > 0 ? baseFinal : regularNum;
+  const computedDiscount = regularNum > 0 && finalNum > 0 && finalNum < regularNum
+    ? Number((((regularNum - finalNum) / regularNum) * 100).toFixed(1))
+    : 0;
+  const rawDiscount = Number.parseFloat(String(safeItem.discountPct ?? safeItem.discount_pct ?? computedDiscount).replace(',', '.'));
+  const discountPct = Number.isFinite(rawDiscount) ? Math.max(0, rawDiscount) : 0;
 
   return {
     id: safeItem.id || safeItem.product_id || `catalog_${index}`,
     title: String(rawTitle || `Producto ${index + 1}`).trim(),
-    price: Number.isFinite(parsedPrice) ? parsedPrice.toFixed(2) : '0.00',
+    price: Number.isFinite(finalNum) ? finalNum.toFixed(2) : '0.00',
+    regularPrice: Number.isFinite(regularNum) ? regularNum.toFixed(2) : (Number.isFinite(finalNum) ? finalNum.toFixed(2) : '0.00'),
+    salePrice: Number.isFinite(saleNum) && saleNum > 0 ? saleNum.toFixed(2) : null,
+    discountPct,
     description: safeItem.description || safeItem.short_description || safeItem.descripcion || '',
     imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
     source: safeItem.source || 'unknown',
@@ -33,11 +51,34 @@ const normalizeCatalogItem = (item = {}, index = 0) => {
   };
 };
 
+const normalizeProfilePhotoUrl = (rawUrl = '') => {
+  const value = String(rawUrl || '').trim();
+  if (!value) return null;
+  if (value.startsWith('data:') || value.startsWith('blob:')) return value;
+
+  if (value.includes('/api/profile-photo?url=')) {
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.startsWith('/')) return `${API_URL}${value}`;
+    return `${API_URL}/${value}`;
+  }
+
+  if (!/^https?:\/\//i.test(value)) return value;
+  return `${API_URL}/api/profile-photo?url=${encodeURIComponent(value)}`;
+};
+
+const normalizeProfilePayload = (profile = null) => {
+  if (!profile || typeof profile !== 'object') return null;
+  return {
+    ...profile,
+    profilePicUrl: normalizeProfilePhotoUrl(profile.profilePicUrl)
+  };
+};
+
 const normalizeBusinessDataPayload = (data = {}) => {
   const rawCatalog = Array.isArray(data.catalog) ? data.catalog : [];
   const catalog = rawCatalog.map((item, idx) => normalizeCatalogItem(item, idx));
   return {
-    profile: data.profile || null,
+    profile: normalizeProfilePayload(data.profile || null),
     labels: Array.isArray(data.labels) ? data.labels : [],
     catalog,
     catalogMeta: data.catalogMeta || { source: 'local', nativeAvailable: false }
@@ -317,6 +358,7 @@ function App() {
   // --------------------------------------------------------------
   const [isDragOver, setIsDragOver] = useState(false);
   const messagesEndRef = useRef(null);
+  const clientProfilePanelRef = useRef(null);
   const activeChatIdRef = useRef(null);
   const chatsRef = useRef([]);
   const chatSearchRef = useRef('');
@@ -364,6 +406,17 @@ function App() {
   useEffect(() => {
     chatFiltersRef.current = normalizeChatFilters(chatFilters);
   }, [chatFilters]);
+
+  useEffect(() => {
+    if (!showClientProfile) return;
+    const handleOutsideClick = (event) => {
+      const target = event.target;
+      if (clientProfilePanelRef.current?.contains(target)) return;
+      setShowClientProfile(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [showClientProfile]);
 
   useEffect(() => {
     if (!isClientReady) return;
@@ -415,7 +468,7 @@ function App() {
     });
 
     socket.on('my_profile', (profile) => {
-      setMyProfile(profile);
+      setMyProfile(normalizeProfilePayload(profile));
     });
 
     socket.on('wa_capabilities', (caps) => {
@@ -456,6 +509,7 @@ function App() {
           phone: getBestChatPhone(chat),
           lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
           labels: normalizeChatLabels(chat.labels),
+          profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
           isMyContact: chat?.isMyContact === true,
           archived: Boolean(chat?.archived)
         }))
@@ -490,6 +544,7 @@ function App() {
         phone: getBestChatPhone(chat),
         lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
         labels: normalizeChatLabels(chat.labels),
+        profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
         isMyContact: chat?.isMyContact === true,
         archived: Boolean(chat?.archived)
       };
@@ -596,6 +651,7 @@ function App() {
         name: sanitizeDisplayText(contact?.name || ''),
         pushname: sanitizeDisplayText(contact?.pushname || ''),
         shortName: sanitizeDisplayText(contact?.shortName || ''),
+        profilePicUrl: normalizeProfilePhotoUrl(contact?.profilePicUrl),
         status: repairMojibake(contact?.status || '')
       };
       setClientContact(normalizedContact);
@@ -1068,7 +1124,7 @@ ${businessData.profile?.address ? 'Direccion: ' + businessData.profile.address :
 
 CATALOGO DE PRODUCTOS:
 ${businessData.catalog.length > 0
-        ? businessData.catalog.map((p, idx) => `${idx + 1}. ${p.title} | Precio: S/ ${p.price || 'consultar'}${p.sku ? ` | SKU: ${p.sku}` : ''}${p.description ? ` | ${p.description}` : ''}`).join('\n')
+        ? businessData.catalog.map((p, idx) => `${idx + 1}. ${p.title} | Precio: S/ ${p.price || 'consultar'}${p.description ? ` | ${p.description}` : ''}`).join('\n')
         : '(sin productos registrados)'
       }
 
@@ -1238,6 +1294,7 @@ REGLA CRITICA:
                 contact={{ ...activeChatDetails, ...clientContact }}
                 onClose={() => setShowClientProfile(false)}
                 onQuickAiAction={requestAiSuggestion}
+                panelRef={clientProfilePanelRef}
               />
             )}
           </div>
@@ -1300,39 +1357,3 @@ REGLA CRITICA:
 }
 
 export default App;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

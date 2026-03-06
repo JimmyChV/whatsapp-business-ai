@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Send, X, ShoppingCart, Tag, Clock, Sparkles, Trash2, Percent, Plus, Minus, ChevronRight, Package, MessageSquare, PlusCircle, Edit2 } from 'lucide-react';
+import { Bot, Send, X, ShoppingCart, Tag, Clock, Sparkles, Trash2, Percent, Plus, Minus, ChevronRight, Package, MessageSquare, PlusCircle, Edit2, Check } from 'lucide-react';
 import moment from 'moment';
 
 const repairMojibake = (value = '') => {
@@ -27,13 +27,31 @@ const formatMoney = (value) => Number(value || 0).toFixed(2);
 const normalizeCatalogItem = (item = {}, index = 0) => {
     const safeItem = item && typeof item === 'object' ? item : {};
     const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
-    const rawPrice = safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio ?? 0;
-    const parsedPrice = Number.parseFloat(String(rawPrice).replace(',', '.'));
+
+    const parsePrice = (value, fallback = 0) => {
+        const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+        if (Number.isFinite(parsed)) return parsed;
+        return Number.isFinite(fallback) ? fallback : 0;
+    };
+
+    const priceNum = parsePrice(safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio, 0);
+    const regularNum = parsePrice(safeItem.regularPrice ?? safeItem.regular_price ?? safeItem.price ?? safeItem.amount ?? safeItem.precio, priceNum);
+    const saleNum = parsePrice(safeItem.salePrice ?? safeItem.sale_price, priceNum);
+    const baseFinal = saleNum > 0 && saleNum < regularNum ? saleNum : priceNum;
+    const finalNum = baseFinal > 0 ? baseFinal : regularNum;
+    const computedDiscount = regularNum > 0 && finalNum > 0 && finalNum < regularNum
+        ? Number((((regularNum - finalNum) / regularNum) * 100).toFixed(1))
+        : 0;
+    const rawDiscount = Number.parseFloat(String(safeItem.discountPct ?? safeItem.discount_pct ?? computedDiscount).replace(',', '.'));
+    const discountPct = Number.isFinite(rawDiscount) ? Math.max(0, rawDiscount) : 0;
 
     return {
         id: safeItem.id || safeItem.product_id || `catalog_${index}`,
         title: String(rawTitle || `Producto ${index + 1}`).trim(),
-        price: Number.isFinite(parsedPrice) ? parsedPrice.toFixed(2) : '0.00',
+        price: Number.isFinite(finalNum) ? finalNum.toFixed(2) : '0.00',
+        regularPrice: Number.isFinite(regularNum) ? regularNum.toFixed(2) : (Number.isFinite(finalNum) ? finalNum.toFixed(2) : '0.00'),
+        salePrice: Number.isFinite(saleNum) && saleNum > 0 ? saleNum.toFixed(2) : null,
+        discountPct,
         description: safeItem.description || safeItem.short_description || safeItem.descripcion || '',
         imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
         source: safeItem.source || 'unknown',
@@ -78,14 +96,6 @@ const formatTimestampValue = (value) => {
     return m.isValid() ? m.format('YYYY-MM-DD HH:mm:ss') : '--';
 };
 
-const prettyJson = (value) => {
-    if (!value || (typeof value === 'object' && Object.keys(value).length === 0)) return '';
-    try {
-        return JSON.stringify(value, null, 2);
-    } catch (e) {
-        return '';
-    }
-};
 
 const avatarColorForName = (name) => {
     const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
@@ -95,29 +105,21 @@ const avatarColorForName = (name) => {
 // =========================================================
 // CLIENT PROFILE PANEL
 // =========================================================
-export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
+export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction, panelRef }) => {
     if (!contact) return null;
 
     const displayName = firstValue(contact.name, contact.pushname, contact.shortName, 'Contacto');
     const fallbackPhone = String(contact.id || '').replace('@c.us', '').replace('@g.us', '');
     const rawPhone = firstValue(contact.phone, contact.number, contact.user, fallbackPhone);
     const displayPhone = formatPhoneForDisplay(rawPhone);
+    const accountType = contact.isBusiness ? 'Business' : 'Personal';
 
     const infoRows = [
-        ['ID', firstValue(contact.id, '--')],
+        ['Nombre', displayName],
         ['Telefono', displayPhone],
-        ['Pushname', firstValue(contact.pushname, '--')],
-        ['Nombre corto', firstValue(contact.shortName, '--')],
-        ['Nombre verificado', firstValue(contact.verifiedName, '--')],
-        ['Nivel verificado', firstValue(contact.verifiedLevel, '--')],
-        ['Cuenta Business', formatBoolValue(contact.isBusiness)],
-        ['Enterprise', formatBoolValue(contact.isEnterprise)],
-        ['En mis contactos', formatBoolValue(contact.isMyContact)],
-        ['Contacto WA', formatBoolValue(contact.isWAContact)],
-        ['Bloqueado', formatBoolValue(contact.isBlocked)],
-        ['Es grupo', formatBoolValue(contact.isGroup)],
-        ['Es usuario', formatBoolValue(contact.isUser)],
-        ['Es mi cuenta', formatBoolValue(contact.isMe)],
+        ['Nombre de perfil', firstValue(contact.pushname, contact.shortName, '--')],
+        ['Cuenta', accountType],
+        ['Guardado', formatBoolValue(contact.isMyContact)],
     ];
 
     const chatStateRows = [
@@ -126,25 +128,19 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
         ['Silenciado', formatBoolValue(contact.chatState?.isMuted)],
         ['No leidos', String(contact.chatState?.unreadCount ?? 0)],
         ['Ultima actividad', formatTimestampValue(contact.chatState?.timestamp)],
-        ['Participantes', contact.chatState?.participantsCount ?? '--'],
     ];
+    if (contact.isGroup && Number(contact.chatState?.participantsCount || 0) > 0) {
+        chatStateRows.push(['Participantes', String(contact.chatState?.participantsCount || 0)]);
+    }
 
     const businessRows = [
         ['Categoria', firstValue(contact.businessDetails?.category, '--')],
-        ['Web principal', firstValue(contact.businessDetails?.website, '--')],
+        ['Web', firstValue(contact.businessDetails?.website, '--')],
         ['Webs', (contact.businessDetails?.websites || []).join(', ') || '--'],
         ['Email', firstValue(contact.businessDetails?.email, '--')],
         ['Direccion', firstValue(contact.businessDetails?.address, '--')],
-        ['Horario', firstValue(prettyJson(contact.businessDetails?.businessHours), '--')],
         ['Descripcion', firstValue(contact.businessDetails?.description, '--')],
     ].filter(([, value]) => Boolean(String(value || '').trim()));
-
-    const technicalJson = prettyJson({
-        raw: contact.raw || null,
-        contactSnapshot: contact.contactSnapshot || null,
-        chatState: contact.chatState || null,
-        businessDetailsRaw: contact.businessDetails?.raw || null,
-    });
 
     const quickActions = [
         { label: 'Redactar saludo', prompt: 'Redacta un saludo personalizado y profesional para este cliente.' },
@@ -153,7 +149,7 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
     ];
 
     return (
-        <aside className="client-profile-panel">
+        <aside className="client-profile-panel" ref={panelRef}>
             <div className="client-profile-header">
                 <button className="client-profile-close" onClick={onClose} aria-label="Cerrar perfil">
                     <X size={20} />
@@ -235,13 +231,6 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
                     </div>
                 )}
 
-                {technicalJson && (
-                    <div className="client-profile-card">
-                        <div className="client-profile-card-title">Datos tecnicos WhatsApp</div>
-                        <pre className="profile-json-block">{technicalJson}</pre>
-                    </div>
-                )}
-
                 <div className="client-profile-card">
                     <div className="client-profile-actions-title">
                         <Sparkles size={12} /> Acciones rapidas IA
@@ -265,51 +254,36 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
     );
 };
 
-export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout }) => {
+export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout, panelRef }) => {
     if (!profile) return null;
 
     const displayName = firstValue(profile.name, profile.pushname, profile.shortName, 'Mi negocio');
     const displayPhone = formatPhoneForDisplay(firstValue(profile.phone, profile.id));
+    const accountType = profile.isBusiness ? 'Business' : 'Personal';
 
     const companyRows = [
-        ['Nombre', displayName],
+        ['Nombre comercial', displayName],
         ['Telefono', displayPhone],
-        ['ID', firstValue(profile.id, '--')],
-        ['Plataforma', firstValue(profile.platform, '--')],
-        ['Pushname', firstValue(profile.pushname, '--')],
-        ['Nombre corto', firstValue(profile.shortName, '--')],
-        ['Nombre verificado', firstValue(profile.verifiedName, '--')],
-        ['Nivel verificado', firstValue(profile.verifiedLevel, '--')],
         ['Estado', firstValue(profile.status, '--')],
+        ['Cuenta', accountType],
     ];
 
     const accountStateRows = [
-        ['Cuenta Business', formatBoolValue(profile.isBusiness)],
-        ['Enterprise', formatBoolValue(profile.isEnterprise)],
-        ['Es mi cuenta', formatBoolValue(profile.isMe)],
-        ['Contacto WA', formatBoolValue(profile.isWAContact)],
-        ['En mis contactos', formatBoolValue(profile.isMyContact)],
-        ['Total etiquetas', String(profile.labelsCount ?? labels.length ?? 0)],
+        ['Etiquetas activas', String(profile.labelsCount ?? labels.length ?? 0)],
+        ['Canal', firstValue(profile.platform, 'WhatsApp Web')],
     ];
 
     const businessRows = [
         ['Categoria', firstValue(profile.category, profile.businessDetails?.category, '--')],
-        ['Web principal', firstValue(profile.website, profile.businessDetails?.website, '--')],
+        ['Web', firstValue(profile.website, profile.businessDetails?.website, '--')],
         ['Webs', firstValue((profile.websites || profile.businessDetails?.websites || []).join(', '), '--')],
         ['Email', firstValue(profile.email, profile.businessDetails?.email, '--')],
         ['Direccion', firstValue(profile.address, profile.businessDetails?.address, '--')],
-        ['Horario', firstValue(prettyJson(profile.businessHours || profile.businessDetails?.businessHours), '--')],
         ['Descripcion', firstValue(profile.description, profile.businessDetails?.description, '--')],
     ];
 
-    const technicalJson = prettyJson({
-        whatsappInfo: profile.whatsappInfo || null,
-        contactSnapshot: profile.contactSnapshot || null,
-        businessDetailsRaw: profile.businessDetails?.raw || null,
-    });
-
     return (
-        <aside className="client-profile-panel company-profile-panel">
+        <aside className="client-profile-panel company-profile-panel" ref={panelRef}>
             <div className="client-profile-header">
                 <button className="client-profile-close" onClick={onClose} aria-label="Cerrar perfil de empresa">
                     <X size={20} />
@@ -378,13 +352,6 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout })
                     </div>
                 </div>
 
-                {technicalJson && (
-                    <div className="client-profile-card">
-                        <div className="client-profile-card-title">Datos tecnicos WhatsApp</div>
-                        <pre className="profile-json-block">{technicalJson}</pre>
-                    </div>
-                )}
-
                 <div className="client-profile-card">
                     <button type="button" className="client-profile-action-btn company-logout-btn" onClick={() => onLogout && onLogout()}>
                         <span>Cerrar sesion de WhatsApp</span>
@@ -398,11 +365,10 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout })
 // =========================================================
 // CATALOG TAB
 // =========================================================
-const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) => {
+const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, cartItems = [] }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({ title: '', price: '', description: '', imageUrl: '' });
-    const [catalogQty, setCatalogQty] = useState({});
     const [catalogSearch, setCatalogSearch] = useState('');
     const isNativeCatalog = catalogMeta?.source === 'native' && catalogMeta?.nativeAvailable;
     const isExternalCatalog = ['native', 'woocommerce'].includes(catalogMeta?.source);
@@ -415,7 +381,12 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
 
     const handleEditClick = (product) => {
         setEditingProduct(product);
-        setFormData({ title: product.title, price: product.price, description: product.description, imageUrl: product.imageUrl || '' });
+        setFormData({
+            title: product.title,
+            price: product.price,
+            description: product.description,
+            imageUrl: product.imageUrl || ''
+        });
         setShowForm(true);
     };
 
@@ -435,43 +406,58 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
         }
     };
 
-    const getCatalogQty = (id) => Math.max(1, catalogQty[id] || 1);
-    const updateCatalogQty = (id, delta) => setCatalogQty(prev => ({ ...prev, [id]: Math.max(1, (prev[id] || 1) + delta) }));
-    const buildProductShareText = (item, i) => {
-        const title = item.title || `Producto ${i + 1}`;
-        const priceLine = item.price ? `Precio: S/ ${formatMoney(item.price)}` : 'Precio: Consultar';
-        const productUrl = item.url || item.permalink || item.productUrl || item.link || '';
-        const mediaRef = item.imageUrl || '';
-        if (productUrl) return `*${title}*\n${priceLine}\n${productUrl}`;
-        if (mediaRef) return `*${title}*\n${priceLine}\nImagen: ${mediaRef}`;
-        return `*${title}*\n${priceLine}`;
+    const sendCatalogProduct = (item, i) => {
+        if (!activeChatId) {
+            window.alert('Selecciona un chat antes de enviar un producto.');
+            return;
+        }
+
+        socket.emit('send_catalog_product', {
+            to: activeChatId,
+            product: {
+                id: item.id || `catalog_${i}`,
+                title: item.title || `Producto ${i + 1}`,
+                price: item.price || '',
+                regularPrice: item.regularPrice || item.price || '',
+                salePrice: item.salePrice || '',
+                discountPct: item.discountPct || 0,
+                description: item.description || '',
+                imageUrl: item.imageUrl || '',
+                url: item.url || item.permalink || item.productUrl || item.link || ''
+            }
+        });
     };
+
     const normalizedSearch = catalogSearch.trim().toLowerCase();
     const visibleCatalog = normalizedSearch
-        ? catalog.filter((item) => `${item.title || ''} ${item.sku || ''}`.toLowerCase().includes(normalizedSearch))
+        ? catalog.filter((item) => `${item.title || ''} ${item.sku || ''} ${item.description || ''}`.toLowerCase().includes(normalizedSearch))
         : catalog;
 
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                    {isNativeCatalog ? 'Catalogo de WhatsApp (nativo)' : catalogMeta?.source === 'woocommerce' ? 'Catalogo de WooCommerce' : 'Gestion de Catalogo'}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <div style={{ fontSize: '0.9rem', color: '#e9f2f7', fontWeight: 700 }}>
+                        {isNativeCatalog ? 'Catalogo de WhatsApp (nativo)' : catalogMeta?.source === 'woocommerce' ? 'Catalogo de WooCommerce' : 'Gestion de Catalogo'}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#8ca3b3' }}>Vista comercial lista para enviar al cliente</div>
                 </div>
                 {!isExternalCatalog && (
-                    <button onClick={handleAddClick} style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <button onClick={handleAddClick} style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '7px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 700 }}>
                         <PlusCircle size={14} /> Nuevo
                     </button>
                 )}
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {isExternalCatalog && (
-                    <div style={{ background: '#1f2c34', color: '#8696a0', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.75rem' }}>
+                    <div style={{ background: '#1f2c34', color: '#9eb2bf', border: '1px solid var(--border-color)', borderRadius: '9px', padding: '8px 10px', fontSize: '0.76rem', lineHeight: 1.45 }}>
                         Este catalogo se sincroniza desde {catalogMeta?.source === 'woocommerce' ? 'WooCommerce' : 'WhatsApp Business'}. Para editar productos, hazlo en el origen.
                     </div>
                 )}
+
                 {catalogMeta?.source === 'local' && catalogMeta?.wooStatus && catalogMeta?.wooStatus !== 'ok' && (
-                    <div style={{ background: '#2f2520', color: '#f7b267', border: '1px solid #7a4d2c', borderRadius: '8px', padding: '8px 10px', fontSize: '0.75rem' }}>
+                    <div style={{ background: '#2f2520', color: '#f7b267', border: '1px solid #7a4d2c', borderRadius: '9px', padding: '8px 10px', fontSize: '0.75rem' }}>
                         WooCommerce no devolvio productos ({catalogMeta?.wooSource || 'sin fuente'}).
                         {catalogMeta?.wooReason ? ` Detalle: ${catalogMeta.wooReason}` : ''}
                     </div>
@@ -482,10 +468,10 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                         type="text"
                         value={catalogSearch}
                         onChange={e => setCatalogSearch(e.target.value)}
-                        placeholder="Buscar por nombre o SKU"
-                        style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none' }}
+                        placeholder="Buscar producto"
+                        style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '9px', padding: '9px 10px', fontSize: '0.79rem', outline: 'none' }}
                     />
-                    <div style={{ fontSize: '0.7rem', color: '#8696a0' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#8ca3b3' }}>
                         Mostrando {visibleCatalog.length} de {catalog.length} productos
                     </div>
                 </div>
@@ -529,61 +515,110 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                 </div>
                             </div>
                         ) : (
-                            visibleCatalog.map((item, i) => (
-                                <div key={item.id || i} style={{ background: '#202c33', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', minHeight: '184px', display: 'flex', flexDirection: 'column' }}>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '78px 1fr', gap: '10px', padding: '10px 10px 8px 10px', minHeight: '106px' }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                                            <div style={{ width: '68px', height: '68px', borderRadius: '10px', background: '#3b4a54', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                {item.imageUrl ? <img src={item.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={22} color="#8696a0" />}
-                                            </div>
-                                            <div style={{ fontSize: '0.86rem', color: '#00d4aa', fontWeight: 700, textAlign: 'center', lineHeight: 1.1 }}>
-                                                {item.price ? `S/ ${formatMoney(item.price)}` : 'S/ -'}
-                                            </div>
-                                            {item.sku && <div style={{ fontSize: '0.64rem', color: '#9bb0ba', textAlign: 'center', lineHeight: 1.1 }}>SKU: {item.sku}</div>}
+                            visibleCatalog.map((item, i) => {
+                                const finalPrice = Number.parseFloat(item.price || '0') || 0;
+                                const regularPrice = Number.parseFloat(item.regularPrice || item.price || '0') || finalPrice;
+                                const hasDiscount = regularPrice > 0 && finalPrice > 0 && finalPrice < regularPrice;
+                                const rawDiscount = Number.parseFloat(String(item.discountPct || 0));
+                                const effectiveDiscount = Number.isFinite(rawDiscount) && rawDiscount > 0
+                                    ? rawDiscount
+                                    : (hasDiscount ? Number((((regularPrice - finalPrice) / regularPrice) * 100).toFixed(1)) : 0);
+                                const cartLine = cartItems.find((cartItem) => String(cartItem?.id || '') === String(item?.id || ''));
+                                const cartQty = Math.max(0, Number(cartLine?.qty || 0));
+                                const inCart = cartQty > 0;
+                                const cleanDescription = String(item.description || '')
+                                    .replace(/<[^>]*>/g, ' ')
+                                    .replace(/\s+/g, ' ')
+                                    .trim();
+
+                                return (
+                                    <div key={item.id || i} style={{ background: '#1b2730', borderRadius: '12px', border: '1px solid #2a3a45', padding: '10px', display: 'grid', gridTemplateColumns: '88px 1fr', gap: '10px', alignItems: 'start' }}>
+                                        <div style={{ width: '88px', height: '88px', borderRadius: '10px', background: '#2a3942', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                            {item.imageUrl
+                                                ? <img src={item.imageUrl} alt={item.title || 'Producto'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                : <Package size={24} color="#98adba" />}
                                         </div>
-                                        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px', justifyContent: 'space-between' }}>
-                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', minHeight: '2.5em' }}>
+
+                                        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '7px', justifyContent: 'flex-start' }}>
+                                            <div style={{ fontSize: '0.88rem', color: '#eef5f9', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                                                 {String(item.title || `Producto ${i + 1}`)}
                                             </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                                {item.regularPrice && Number(item.regularPrice) > Number(item.price || 0) && (
-                                                    <div style={{ fontSize: '0.68rem', color: '#8696a0', textDecoration: 'line-through' }}>
-                                                        S/ {formatMoney(item.regularPrice)}
-                                                    </div>
-                                                )}
-                                                {Number(item.discountPct) > 0 && (
-                                                    <div style={{ fontSize: '0.66rem', color: '#fff', background: '#0b875b', borderRadius: '999px', padding: '1px 6px' }}>
-                                                        -{item.discountPct}%
-                                                    </div>
-                                                )}
-                                                <div style={{ fontSize: '0.66rem', color: '#6f8390' }}>Origen: {item.source || 'catalogo'}</div>
-                                            </div>
-                                        </div>
-                                    </div>
 
-                                    <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border-color)', background: '#111b21', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#22313b', borderRadius: '999px', padding: '3px 7px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                                                <button onClick={() => updateCatalogQty(item.id, -1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#2f3e48', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={11} /></button>
-                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', minWidth: '18px', textAlign: 'center' }}>{getCatalogQty(item.id)}</span>
-                                                <button onClick={() => updateCatalogQty(item.id, 1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus size={11} /></button>
+                                            {cleanDescription && (
+                                                <div style={{ fontSize: '0.72rem', color: '#97acba', lineHeight: 1.35, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                                                    {cleanDescription}
+                                                </div>
+                                            )}
+
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
+                                                {hasDiscount && (
+                                                    <span style={{ fontSize: '0.72rem', color: '#8fa1ad', textDecoration: 'line-through' }}>S/ {formatMoney(regularPrice)}</span>
+                                                )}
+                                                {hasDiscount && (
+                                                    <span style={{ fontSize: '0.7rem', color: '#d5fff4', background: 'rgba(0,168,132,0.26)', border: '1px solid rgba(0,168,132,0.44)', borderRadius: '999px', padding: '2px 7px', fontWeight: 700 }}>
+                                                        -{effectiveDiscount.toFixed(effectiveDiscount % 1 === 0 ? 0 : 1)}%
+                                                    </span>
+                                                )}
                                             </div>
-                                            <button
-                                                onClick={() => { setInputText(buildProductShareText(item, i)); }}
-                                                style={{ padding: '7px 10px', background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '7px', color: '#d6e2e8', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', minWidth: '110px' }}
-                                            >
-                                                <Send size={12} /> Enviar prod.
-                                            </button>
+
+                                            <div style={{ fontSize: '1.05rem', color: '#00d7ad', fontWeight: 800 }}>
+                                                {finalPrice > 0 ? `S/ ${formatMoney(finalPrice)}` : 'Precio: Consultar'}
+                                            </div>
+
+                                            {inCart && (
+                                                <div style={{ width: 'fit-content', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.68rem', color: '#d9fff4', background: 'rgba(0,168,132,0.22)', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '999px', padding: '3px 8px', fontWeight: 700 }}>
+                                                    <Check size={11} />
+                                                    En carrito: {cartQty}
+                                                </div>
+                                            )}
+
+                                            <div style={{ marginTop: '6px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', alignItems: 'stretch' }}>
+                                                <button
+                                                    onClick={() => sendCatalogProduct(item, i)}
+                                                    style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 9px', background: '#17323f', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '9px', color: '#d6f7ee', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                                >
+                                                    <Send size={12} /> Enviar
+                                                </button>
+                                                {inCart ? (
+                                                    <div style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#0f322b', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '9px', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                                                        <button
+                                                            onClick={() => onCatalogQtyDelta && onCatalogQtyDelta(item.id, -1)}
+                                                            style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#20423a', border: 'none', cursor: 'pointer', color: '#d6f7ee', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                                                        >
+                                                            <Minus size={11} />
+                                                        </button>
+                                                        <span style={{ minWidth: '20px', textAlign: 'center', color: '#d9fff4', fontSize: '0.78rem', fontWeight: 800 }}>{cartQty}</span>
+                                                        <button
+                                                            onClick={() => onCatalogQtyDelta && onCatalogQtyDelta(item.id, 1)}
+                                                            style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                                                        >
+                                                            <Plus size={11} />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => addToCart(item, 1)}
+                                                        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 9px', background: 'linear-gradient(90deg, #00a884 0%, #02c39a 100%)', border: 'none', borderRadius: '9px', color: 'white', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                                    >
+                                                        <ShoppingCart size={12} /> Carrito
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {!isExternalCatalog && (
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', alignItems: 'stretch' }}>
+                                                    <button onClick={() => handleEditClick(item)} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#23323c', border: '1px solid rgba(255,255,255,0.13)', borderRadius: '8px', color: '#d8e6ef', cursor: 'pointer', fontSize: '0.71rem', padding: '6px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        Editar
+                                                    </button>
+                                                    <button onClick={() => handleDelete(item.id)} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#2e1f26', border: '1px solid rgba(220,74,95,0.45)', borderRadius: '8px', color: '#ffb8c7', cursor: 'pointer', fontSize: '0.71rem', padding: '6px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        Eliminar
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
-                                        <button
-                                            onClick={() => addToCart(item, getCatalogQty(item.id))}
-                                            style={{ width: '100%', minWidth: 0, padding: '8px 8px', background: '#00a884', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer', fontSize: '0.74rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                                        >
-                                            <ShoppingCart size={13} /> + Carrito
-                                        </button>
                                     </div>
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </>
                 )}
@@ -594,11 +629,15 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
 
 // =========================================================
 // BUSINESS SIDEBAR - Main right panel
+
+
 // =========================================================
 
 const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activeChatId, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {} }) => {
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
+    const companyProfileRef = useRef(null);
+    const companyHeaderRef = useRef(null);
     // AI Chat State
     const [aiMessages, setAiMessages] = useState([
         { role: 'assistant', content: 'Hola, soy tu asistente de ventas de Lavitat con IA OpenAI. Estoy viendo la conversacion y te ayudare a cerrar mejor.\n\nPrueba: "Dame 3 opciones de respuesta" o "Como manejo una objecion de precio".' }
@@ -648,6 +687,18 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
         }
     }, [activeTab, quickRepliesEnabled]);
 
+    useEffect(() => {
+        if (!showCompanyProfile) return;
+        const handleOutsideClick = (event) => {
+            const target = event.target;
+            if (companyProfileRef.current?.contains(target)) return;
+            if (companyHeaderRef.current?.contains(target)) return;
+            setShowCompanyProfile(false);
+        };
+        document.addEventListener('mousedown', handleOutsideClick);
+        return () => document.removeEventListener('mousedown', handleOutsideClick);
+    }, [showCompanyProfile]);
+
     // Listen to AI responses from socket
     useEffect(() => {
         if (!socket) return;
@@ -691,7 +742,7 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
 
     const buildBusinessContext = () => {
         const catalogText = catalog.length > 0
-            ? catalog.map((p, idx) => `${idx + 1}. ${p.title} | Precio: S/ ${p.price || 'consultar'}${p.sku ? ` | SKU: ${p.sku}` : ''}${p.description ? ' | ' + p.description : ''}`).join('\n')
+            ? catalog.map((p, idx) => `${idx + 1}. ${p.title} | Precio: S/ ${p.price || 'consultar'}${p.description ? ' | ' + p.description : ''}`).join('\n')
             : '(sin productos en catalogo)';
         const convText = messages.slice(-15).map(m => `${m.fromMe ? 'VENDEDOR' : 'CLIENTE'}: ${m.body || '[media]'}`).join('\n');
         return `
@@ -779,6 +830,17 @@ INSTRUCCIONES OBLIGATORIAS:
 
     const removeFromCart = (id) => setCart(prev => prev.filter(c => c.id !== id));
     const updateQty = (id, delta) => setCart(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(1, c.qty + delta) } : c));
+    const updateCatalogQty = (id, delta) => {
+        const safeDelta = Number(delta) || 0;
+        if (!id || !safeDelta) return;
+        const targetId = String(id);
+        setCart(prev => prev.flatMap((item) => {
+            if (String(item.id) !== targetId) return [item];
+            const nextQty = (Number(item.qty) || 1) + safeDelta;
+            if (nextQty <= 0) return [];
+            return [{ ...item, qty: nextQty }];
+        }));
+    };
     const updateItemDiscount = (id, pct) => setCart(prev => prev.map(c => c.id === id ? { ...c, discountPct: Math.min(90, Math.max(0, pct)) } : c));
 
     const cartTotal = roundToOneDecimal(cart.reduce((sum, item) => {
@@ -848,7 +910,7 @@ INSTRUCCIONES OBLIGATORIAS:
             {/* Business Profile Header */}
             <div className="business-sidebar-header">
                 {profile ? (
-                    <div className="business-header-row" style={{ cursor: "pointer" }} onClick={() => setShowCompanyProfile((v) => !v)}>
+                    <div ref={companyHeaderRef} className="business-header-row" style={{ cursor: "pointer" }} onClick={() => setShowCompanyProfile((v) => !v)}>
                         <div className="business-header-avatar" style={{ background: profile.profilePicUrl ? `url(${profile.profilePicUrl}) center/cover` : '#00a884' }}>
                             {!profile.profilePicUrl && 'B'}
                         </div>
@@ -904,6 +966,7 @@ INSTRUCCIONES OBLIGATORIAS:
                     labels={labels}
                     onClose={() => setShowCompanyProfile(false)}
                     onLogout={onLogout}
+                    panelRef={companyProfileRef}
                 />
             )}
 
@@ -995,7 +1058,7 @@ INSTRUCCIONES OBLIGATORIAS:
 
             {/* CATALOG TAB */}
             {activeTab === 'catalog' && (
-                <CatalogTab catalog={catalog} socket={socket} setInputText={setInputText} addToCart={addToCart} catalogMeta={businessData.catalogMeta} />
+                <CatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} cartItems={cart} />
             )}
 
             {/* CART TAB */}

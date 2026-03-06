@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { URL } = require('url');
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const logger = require('./logger');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./security_utils');
 
@@ -33,10 +33,14 @@ const io = new Server(server, {
     }
 });
 
+let socketAuthBypassLogged = false;
 io.use((socket, next) => {
     const expectedToken = process.env.SOCKET_AUTH_TOKEN || '';
     if (!expectedToken) {
-        logger.warn('SOCKET_AUTH_TOKEN not configured; Socket.IO auth is bypassed.');
+        if (!socketAuthBypassLogged) {
+            logger.info('SOCKET_AUTH_TOKEN not configured; Socket.IO auth is bypassed.');
+            socketAuthBypassLogged = true;
+        }
         return next();
     }
 
@@ -53,6 +57,82 @@ app.get('/', (req, res) => {
     res.send('WhatsApp Business API V4 - Robust & Modular');
 });
 
+const PROFILE_PHOTO_ALLOWED_HOST_SUFFIXES = ['whatsapp.net', 'fbcdn.net', 'fbsbx.com'];
+
+function isAllowedProfilePhotoHost(hostname = '') {
+    const host = String(hostname || '').trim().toLowerCase();
+    if (!host) return false;
+    return PROFILE_PHOTO_ALLOWED_HOST_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
+app.get('/api/profile-photo', async (req, res) => {
+    const rawUrl = String(req.query.url || '').trim();
+    if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) {
+        return res.status(400).json({ error: 'URL de foto invalida. Usa http(s).' });
+    }
+
+    let parsed;
+    try {
+        parsed = new URL(rawUrl);
+    } catch (error) {
+        return res.status(400).json({ error: 'URL de foto invalida.' });
+    }
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return res.status(400).json({ error: 'Solo se permiten protocolos http/https.' });
+    }
+
+    if (!isAllowedProfilePhotoHost(parsed.hostname)) {
+        return res.status(403).json({ error: 'Host de imagen no permitido.' });
+    }
+
+    try {
+        await resolveAndValidatePublicHost(parsed.hostname);
+
+        const timeoutMs = Number(process.env.PROFILE_PHOTO_TIMEOUT_MS || 5000);
+        const maxBytes = Number(process.env.PROFILE_PHOTO_MAX_BYTES || 2 * 1024 * 1024);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+        let response;
+        try {
+            response = await fetch(parsed.toString(), {
+                redirect: 'follow',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (WhatsApp Business Pro Photo Proxy)'
+                },
+                signal: controller.signal
+            });
+        } finally {
+            clearTimeout(timeout);
+        }
+
+        if (!response.ok) {
+            return res.status(response.status).json({ error: 'No se pudo descargar la foto de perfil.' });
+        }
+
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+        if (!contentType.startsWith('image/')) {
+            return res.status(415).json({ error: 'El recurso no es una imagen.' });
+        }
+
+        const contentLength = Number(response.headers.get('content-length') || 0);
+        if (contentLength && contentLength > maxBytes) {
+            return res.status(413).json({ error: 'La imagen excede el tamano permitido.' });
+        }
+
+        const imageBuffer = Buffer.from(await response.arrayBuffer());
+        if (imageBuffer.length > maxBytes) {
+            return res.status(413).json({ error: 'La imagen excede el tamano permitido.' });
+        }
+
+        res.setHeader('Content-Type', contentType.split(';')[0] || 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=300');
+        return res.send(imageBuffer);
+    } catch (error) {
+        return res.status(502).json({ error: 'No se pudo cargar la foto de perfil.' });
+    }
+});
 function extractMeta(html, property, nameFallback = null) {
     const escaped = property.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const byProperty = new RegExp(`<meta[^>]+property=["']${escaped}["'][^>]+content=["']([^"']+)["'][^>]*>`, 'i').exec(html);
