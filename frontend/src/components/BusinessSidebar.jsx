@@ -103,33 +103,33 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
                 <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
                     <div style={{ fontSize: '0.7rem', color: '#00a884', marginBottom: '8px' }}>DATOS DISPONIBLES</div>
                     <div style={{ fontSize: '0.78rem', color: '#c9d5db', lineHeight: '1.55' }}>
-                        {contact.pushname && <div>• Pushname: {contact.pushname}</div>}
-                        {contact.shortName && <div>• Nombre corto: {contact.shortName}</div>}
-                        <div>• Business: {contact.isBusiness ? 'Sí' : 'No'}</div>
-                        <div>• En mis contactos: {contact.isMyContact ? 'Sí' : 'No'}</div>
-                        <div>• Contacto WA: {contact.isWAContact ? 'Sí' : 'No'}</div>
-                        <div>• Bloqueado: {contact.isBlocked ? 'Sí' : 'No'}</div>
+                        {contact.pushname && <div>- Pushname: {contact.pushname}</div>}
+                        {contact.shortName && <div>- Nombre corto: {contact.shortName}</div>}
+                        <div>- Business: {contact.isBusiness ? 'Si' : 'No'}</div>
+                        <div>- En mis contactos: {contact.isMyContact ? 'Si' : 'No'}</div>
+                        <div>- Contacto WA: {contact.isWAContact ? 'Si' : 'No'}</div>
+                        <div>- Bloqueado: {contact.isBlocked ? 'Si' : 'No'}</div>
                     </div>
                 </div>
                 {contact.businessDetails && (
                     <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
                         <div style={{ fontSize: '0.7rem', color: '#00a884', marginBottom: '8px' }}>PERFIL BUSINESS (WHATSAPP)</div>
                         <div style={{ fontSize: '0.78rem', color: '#c9d5db', lineHeight: '1.55' }}>
-                            {contact.businessDetails.category && <div>• Categoría: {contact.businessDetails.category}</div>}
-                            {contact.businessDetails.website && <div>• Web: {contact.businessDetails.website}</div>}
-                            {contact.businessDetails.email && <div>• Email: {contact.businessDetails.email}</div>}
-                            {contact.businessDetails.address && <div>• Dirección: {contact.businessDetails.address}</div>}
-                            {contact.businessDetails.description && <div>• Descripción: {contact.businessDetails.description}</div>}
+                            {contact.businessDetails.category && <div>- Categoria: {contact.businessDetails.category}</div>}
+                            {contact.businessDetails.website && <div>- Web: {contact.businessDetails.website}</div>}
+                            {contact.businessDetails.email && <div>- Email: {contact.businessDetails.email}</div>}
+                            {contact.businessDetails.address && <div>- Direccion: {contact.businessDetails.address}</div>}
+                            {contact.businessDetails.description && <div>- Descripcion: {contact.businessDetails.description}</div>}
                         </div>
                     </div>
                 )}
                 <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px' }}>
                     <div style={{ fontSize: '0.7rem', color: '#8a2be2', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Sparkles size={11} /> ACCIONES RÁPIDAS IA
+                        <Sparkles size={11} /> ACCIONES RAPIDAS IA
                     </div>
                     {[
                         { label: 'Redactar saludo', prompt: 'Redacta un saludo personalizado y profesional para este cliente.' },
-                        { label: 'Crear propuesta de venta', prompt: 'Crea una propuesta de venta persuasiva para este cliente basada en la conversación.' },
+                        { label: 'Crear propuesta de venta', prompt: 'Crea una propuesta de venta persuasiva para este cliente basada en la conversacion.' },
                         { label: 'Mensaje de seguimiento', prompt: 'Redacta un mensaje de seguimiento para este cliente que no ha respondido.' },
                     ].map((a, i) => (
                         <div key={i} onClick={() => onQuickAiAction && onQuickAiAction(a.prompt)}
@@ -147,7 +147,7 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
 };
 
 // =========================================================
-// CATALOG TAB COMPONENT
+            {/* CATALOG TAB */}
 // =========================================================
 const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) => {
     const [showForm, setShowForm] = useState(false);
@@ -181,7 +181,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
     };
 
     const handleDelete = (id) => {
-        if (window.confirm('¿Eliminar este producto?')) {
+        if (window.confirm('Eliminar este producto?')) {
             socket.emit('delete_product', id);
         }
     };
@@ -193,9 +193,9 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
         const priceLine = item.price ? `Precio: S/ ${formatMoney(item.price)}` : 'Precio: Consultar';
         const productUrl = item.url || item.permalink || item.productUrl || item.link || '';
         const mediaRef = item.imageUrl || '';
-        if (productUrl) return `🛍️ *${title}*\n${priceLine}\n${productUrl}`;
-        if (mediaRef) return `🛍️ *${title}*\n${priceLine}\nImagen: ${mediaRef}`;
-        return `🛍️ *${title}*\n${priceLine}`;
+        if (productUrl) return `*${title}*\n${priceLine}\n${productUrl}`;
+        if (mediaRef) return `*${title}*\n${priceLine}\nImagen: ${mediaRef}`;
+        return `*${title}*\n${priceLine}`;
     };
     const normalizedSearch = catalogSearch.trim().toLowerCase();
     const visibleCatalog = normalizedSearch
@@ -206,7 +206,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                    {isNativeCatalog ? 'Catálogo de WhatsApp (nativo)' : catalogMeta?.source === 'woocommerce' ? 'Catálogo de WooCommerce' : 'Gestión de Catálogo'}
+                    {isNativeCatalog ? 'Catalogo de WhatsApp (nativo)' : catalogMeta?.source === 'woocommerce' ? 'Catalogo de WooCommerce' : 'Gestion de Catalogo'}
                 </div>
                 {!isExternalCatalog && (
                     <button onClick={handleAddClick} style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -218,12 +218,12 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
             <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {isExternalCatalog && (
                     <div style={{ background: '#1f2c34', color: '#8696a0', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.75rem' }}>
-                        Este catálogo se sincroniza desde {catalogMeta?.source === 'woocommerce' ? 'WooCommerce' : 'WhatsApp Business'}. Para editar productos, hazlo en el origen.
+                        Este catalogo se sincroniza desde {catalogMeta?.source === 'woocommerce' ? 'WooCommerce' : 'WhatsApp Business'}. Para editar productos, hazlo en el origen.
                     </div>
                 )}
                 {catalogMeta?.source === 'local' && catalogMeta?.wooStatus && catalogMeta?.wooStatus !== 'ok' && (
                     <div style={{ background: '#2f2520', color: '#f7b267', border: '1px solid #7a4d2c', borderRadius: '8px', padding: '8px 10px', fontSize: '0.75rem' }}>
-                        WooCommerce no devolvió productos ({catalogMeta?.wooSource || 'sin fuente'}).
+                        WooCommerce no devolvio productos ({catalogMeta?.wooSource || 'sin fuente'}).
                         {catalogMeta?.wooReason ? ` Detalle: ${catalogMeta.wooReason}` : ''}
                     </div>
                 )}
@@ -255,7 +255,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                             style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.82rem', outline: 'none' }}
                         />
                         <textarea
-                            placeholder="Descripción" rows="3"
+                            placeholder="Descripcion" rows="3"
                             value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })}
                             style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.82rem', outline: 'none', resize: 'none' }}
                         />
@@ -274,9 +274,9 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                         {visibleCatalog.length === 0 ? (
                             <div style={{ textAlign: 'center', padding: '30px 15px', color: '#8696a0' }}>
                                 <Package size={36} style={{ marginBottom: '12px', opacity: 0.25, marginLeft: 'auto', marginRight: 'auto' }} />
-                                <div style={{ fontSize: '0.875rem', marginBottom: '6px' }}>Catálogo vacío</div>
+                                <div style={{ fontSize: '0.875rem', marginBottom: '6px' }}>Catalogo vacio</div>
                                 <div style={{ fontSize: '0.78rem', opacity: 0.7, lineHeight: '1.5' }}>
-                                    Si tu catálogo nativo no aparece, WhatsApp Web no lo está exponiendo en esta sesión.
+                                    Si tu catalogo nativo no aparece, WhatsApp Web no lo esta exponiendo en esta sesion.
                                 </div>
                             </div>
                         ) : (
@@ -307,7 +307,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                                         -{item.discountPct}%
                                                     </div>
                                                 )}
-                                                <div style={{ fontSize: '0.66rem', color: '#6f8390' }}>Origen: {item.source || 'catálogo'}</div>
+                                                <div style={{ fontSize: '0.66rem', color: '#6f8390' }}>Origen: {item.source || 'catalogo'}</div>
                                             </div>
                                         </div>
                                     </div>
@@ -344,7 +344,7 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
 };
 
 // =========================================================
-// BUSINESS SIDEBAR — Main right panel
+// BUSINESS SIDEBAR - Main right panel
 // =========================================================
 const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activeChatId, onSendToClient, socket, myProfile, onLogout }) => {
     const [activeTab, setActiveTab] = useState('ai');
@@ -430,32 +430,32 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
     const buildBusinessContext = () => {
         const catalogText = catalog.length > 0
             ? catalog.map((p, idx) => `${idx + 1}. ${p.title} | Precio: S/ ${p.price || 'consultar'}${p.sku ? ` | SKU: ${p.sku}` : ''}${p.description ? ' | ' + p.description : ''}`).join('\n')
-            : '(sin productos en catálogo)';
+            : '(sin productos en catalogo)';
         const convText = messages.slice(-15).map(m => `${m.fromMe ? 'VENDEDOR' : 'CLIENTE'}: ${m.body || '[media]'}`).join('\n');
         return `
-Eres el copiloto comercial experto de Lávitat en Perú.
-Habla con seguridad, sin justificar precio, resaltando formulación, rendimiento y beneficio técnico.
+Eres el copiloto comercial experto de Lavitat en Peru.
+Habla con seguridad, sin justificar precio, resaltando formulacion, rendimiento y beneficio tecnico.
 
-NEGOCIO: ${profile?.name || profile?.pushname || 'Lávitat'}
-${profile?.description ? 'Descripción: ' + profile.description : ''}
+NEGOCIO: ${profile?.name || profile?.pushname || 'Lavitat'}
+${profile?.description ? 'Descripcion: ' + profile.description : ''}
 
-CATÁLOGO DISPONIBLE:
+CATALOGO DISPONIBLE:
 ${catalogText}
 
-CONVERSACIÓN ACTUAL CON EL CLIENTE:
-${convText || '(sin mensajes aún)'}
+CONVERSACION ACTUAL CON EL CLIENTE:
+${convText || '(sin mensajes aun)'}
 
 CARRITO ACTUAL (si ya agregaste productos):
-${cart.length > 0 ? cart.map((item, idx) => `- ${idx + 1}) ${item.title} | qty ${item.qty} | precio S/ ${formatMoney(item.price)}${item.discountPct ? ` | desc ${item.discountPct}%` : ''}`).join('\n') : '(carrito vacío)'}
+${cart.length > 0 ? cart.map((item, idx) => `- ${idx + 1}) ${item.title} | qty ${item.qty} | precio S/ ${formatMoney(item.price)}${item.discountPct ? ` | desc ${item.discountPct}%` : ''}`).join('\n') : '(carrito vacio)'}
 
 INSTRUCCIONES OBLIGATORIAS:
-- Si te piden opciones/cotización, da mínimo 2 alternativas: base y optimizada.
-- NO inventes productos, presentaciones ni precios. Usa solo el catálogo listado.
+- Si te piden opciones/cotizacion, da minimo 2 alternativas: base y optimizada.
+- NO inventes productos, presentaciones ni precios. Usa solo el catalogo listado.
 - Si hay carrito con productos, propone al menos 2 cotizaciones (base y optimizada) usando ese carrito como base.
 - Siempre que sea posible, incluye upsell complementario.
-- En objeción de precio: responder por formulación/rendimiento, no por descuento defensivo.
+- En objecion de precio: responder por formulacion/rendimiento, no por descuento defensivo.
 - Para mensajes listos para enviar al cliente, usa [MENSAJE: ...].
-- Sé claro, breve y vendedor (tono WhatsApp profesional).
+- Se claro, breve y vendedor (tono WhatsApp profesional).
         `.trim();
     };
 
@@ -540,36 +540,36 @@ INSTRUCCIONES OBLIGATORIAS:
 
     const tabs = [
         { id: 'ai', icon: <Bot size={15} />, label: 'IA Pro' },
-        { id: 'catalog', icon: <Package size={15} />, label: `Catálogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
+        { id: 'catalog', icon: <Package size={15} />, label: `Catalogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
         { id: 'cart', icon: <ShoppingCart size={15} />, label: `Carrito${cart.length > 0 ? ` (${cart.length})` : ''}` },
-        { id: 'quick', icon: <Clock size={15} />, label: 'Rápidas' },
+        { id: 'quick', icon: <Clock size={15} />, label: 'Rapidas' },
         { id: 'company', icon: <BookOpen size={15} />, label: 'Empresa' },
     ];
 
     return (
-        <div style={{ width: '340px', flexShrink: 0, background: '#111b21', borderLeft: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
+        <div className="business-sidebar business-sidebar-pro">
             {/* Business Profile Header */}
-            <div style={{ background: '#202c33', padding: '12px 14px', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
+            <div className="business-sidebar-header">
                 {profile ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                        <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: profile.profilePicUrl ? `url(${profile.profilePicUrl}) center/cover` : '#00a884', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', color: 'white', overflow: 'hidden' }}>
-                            {!profile.profilePicUrl && '📋'}
+                    <div className="business-header-row">
+                        <div className="business-header-avatar" style={{ background: profile.profilePicUrl ? `url(${profile.profilePicUrl}) center/cover` : '#00a884' }}>
+                            {!profile.profilePicUrl && 'B'}
                         </div>
-                        <div style={{ flex: 1, overflow: 'hidden' }}>
-                            <div style={{ fontSize: '0.88rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div className="business-header-meta">
+                            <div className="business-header-name">
                                 {profile.name || profile.pushname || 'Mi Negocio'}
                             </div>
                             {profile.description && (
-                                <div style={{ fontSize: '0.7rem', color: '#8696a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <div className="business-header-description">
                                     {profile.description}
                                 </div>
                             )}
                         </div>
                         <button
                             onClick={onLogout}
-                            style={{ fontSize: '0.65rem', color: '#ff9f9f', background: 'rgba(218,54,51,0.2)', border: '1px solid rgba(218,54,51,0.4)', padding: '4px 6px', borderRadius: '6px', flexShrink: 0, cursor: 'pointer' }}
+                            className="business-logout-btn"
                         >
-                            Cerrar sesión
+                            Cerrar sesion
                         </button>
                     </div>
                 ) : (
@@ -578,9 +578,9 @@ INSTRUCCIONES OBLIGATORIAS:
             </div>
 
             {/* Tabs */}
-            <div style={{ display: 'flex', background: '#202c33', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
+            <div className="business-tabs">
                 {tabs.map(t => (
-                    <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
+                    <button key={t.id} onClick={() => setActiveTab(t.id)} className={`business-tab-btn ${activeTab === t.id ? 'active' : ''}`} style={{
                         flex: 1, padding: '9px 2px', border: 'none', cursor: 'pointer',
                         background: activeTab === t.id ? '#111b21' : 'transparent',
                         color: activeTab === t.id ? '#00a884' : '#8696a0',
@@ -592,7 +592,7 @@ INSTRUCCIONES OBLIGATORIAS:
                 ))}
             </div>
 
-            {/* ── AI PRO TAB ── Conversational sales copilot (OpenAI) */}
+            {/* AI PRO TAB */}
             {activeTab === 'ai' && (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -635,14 +635,14 @@ INSTRUCCIONES OBLIGATORIAS:
                     </div>
 
                     {/* Quick action chips */}
-                    <div style={{ padding: '6px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', flexWrap: 'wrap', gap: '5px', flexShrink: 0 }}>
+                    <div className="ai-quick-prompts" style={{ padding: '6px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', flexWrap: 'wrap', gap: '5px', flexShrink: 0 }}>
                         {[
                             'Dame 3 opciones de respuesta',
                             'Como cerrar esta venta',
                             'Maneja la objecion de precio',
                             'Recomienda un producto',
                         ].map((chip, i) => (
-                            <button key={i}
+                            <button key={i} className="ai-prompt-chip"
                                 onClick={() => { setAiInput(chip.replace(/^[^\s]+ /, '')); }}
                                 style={{ background: '#202c33', border: '1px solid var(--border-color)', color: '#8696a0', padding: '4px 9px', borderRadius: '14px', fontSize: '0.72rem', cursor: 'pointer' }}
                                 onMouseEnter={e => e.currentTarget.style.borderColor = '#00a884'}
@@ -654,19 +654,19 @@ INSTRUCCIONES OBLIGATORIAS:
                     </div>
 
                     {/* AI Input */}
-                    <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0, background: '#202c33' }}>
+                    <div className="ai-assistant-input-row" style={{ padding: '8px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0, background: '#202c33' }}>
                         <input
                             type="text"
                             placeholder="Pregunta algo a la IA..."
                             value={aiInput}
                             onChange={e => setAiInput(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendAiMessage()}
-                            style={{ flex: 1, background: '#2a3942', border: 'none', outline: 'none', color: 'var(--text-primary)', borderRadius: '20px', padding: '8px 14px', fontSize: '0.82rem' }}
+                            className="ai-assistant-input" style={{ flex: 1, background: '#2a3942', border: 'none', outline: 'none', color: 'var(--text-primary)', borderRadius: '20px', padding: '8px 14px', fontSize: '0.82rem' }}
                         />
                         <button
                             onClick={sendAiMessage}
                             disabled={isAiLoading || !aiInput.trim()}
-                            style={{ background: isAiLoading ? '#3b4a54' : '#00a884', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isAiLoading ? 'wait' : 'pointer', flexShrink: 0 }}
+                            className="ai-assistant-send" style={{ background: isAiLoading ? '#3b4a54' : '#00a884', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isAiLoading ? 'wait' : 'pointer', flexShrink: 0 }}
                         >
                             <Send size={16} color="white" />
                         </button>
@@ -674,20 +674,20 @@ INSTRUCCIONES OBLIGATORIAS:
                 </div>
             )}
 
-            {/* ── CATALOG TAB ── */}
+            {/* CATALOG TAB */}
             {activeTab === 'catalog' && (
                 <CatalogTab catalog={catalog} socket={socket} setInputText={setInputText} addToCart={addToCart} catalogMeta={businessData.catalogMeta} />
             )}
 
-            {/* ── CART TAB ── */}
+            {/* CART TAB */}
             {activeTab === 'cart' && (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {cart.length === 0 ? (
                             <div style={{ textAlign: 'center', padding: '30px 15px', color: '#8696a0' }}>
                                 <ShoppingCart size={36} style={{ marginBottom: '12px', opacity: 0.25, marginLeft: 'auto', marginRight: 'auto' }} />
-                                <div style={{ fontSize: '0.875rem' }}>Carrito vacío</div>
-                                <div style={{ fontSize: '0.78rem', opacity: 0.7, marginTop: '6px' }}>Agrega productos desde el Catálogo</div>
+                                <div style={{ fontSize: '0.875rem' }}>Carrito vacio</div>
+                                <div style={{ fontSize: '0.78rem', opacity: 0.7, marginTop: '6px' }}>Agrega productos desde el Catalogo</div>
                             </div>
                         ) : (
                             cart.map((item, i) => {
@@ -751,29 +751,29 @@ INSTRUCCIONES OBLIGATORIAS:
                                 onClick={sendQuoteToChat}
                                 style={{ width: '100%', padding: '10px', background: '#00a884', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                             >
-                                <Send size={15} /> Enviar cotización al cliente
+                                <Send size={15} /> Enviar cotizacion al cliente
                             </button>
                         </div>
                     )}
                 </div>
             )}
 
-            {/* ── QUICK REPLIES TAB ── */}
+            {/* QUICK REPLIES TAB */}
             {activeTab === 'quick' && (
                 <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '7px' }}>
                     {[
-                        { label: '👋 Saludo', text: '¡Hola! 👋 Bienvenido a nuestro negocio. ¿En qué puedo ayudarte hoy?' },
-                        { label: '💰 Método de pago', text: 'Puedes pagar mediante:\n🏦 Transferencia bancaria\n💳 Yape / Plin\n💵 Efectivo\n\n¿Cuál prefieres?' },
-                        { label: '🕐 Horario', text: 'Nuestro horario de atención es:\n🗓️ Lunes a Sábado: 9:00 AM – 7:00 PM\n📞 También puedes escribirnos por WhatsApp.' },
-                        { label: '📦 En camino', text: 'Tu pedido está en camino 🚚. Te avisamos en cuanto llegue. ¡Gracias por tu paciencia!' },
-                        { label: '✅ Confirmado', text: '¡Perfecto! Tu pedido ha sido confirmado ✅. Lo procesamos lo antes posible. ¡Gracias! 🎉' },
-                        { label: '💬 ¿Más info?', text: 'Con gusto te doy más información. ¿Qué producto o servicio te interesa? 😊' },
-                        { label: '📸 Comprobante', text: 'Para confirmar tu pago, por favor envíanos una foto del comprobante de transferencia. ¡Gracias!' },
-                        { label: '🙏 Gracias', text: '¡Muchas gracias por tu compra! 🙏 Ha sido un placer atenderte. ¡Hasta pronto!' },
-                        { label: '🔄 Seguimiento', text: 'Hola, quería hacer un seguimiento a tu consulta. ¿Pudiste revisar la información que te compartí? 😊' },
-                        { label: '⏳ Espera', text: 'Un momento por favor, estoy verificando la información para ti. 🙏' },
+                        { label: 'Saludo', text: 'Hola. Bienvenido a nuestro negocio. En que puedo ayudarte hoy?' },
+                        { label: 'Metodo de pago', text: 'Puedes pagar mediante:\n- Transferencia bancaria\n- Yape / Plin\n- Efectivo\n\nCual prefieres?' },
+                        { label: 'Horario', text: 'Nuestro horario de atencion es:\nLunes a Sabado: 9:00 AM - 7:00 PM\nTambien puedes escribirnos por WhatsApp.' },
+                        { label: 'En camino', text: 'Tu pedido esta en camino. Te avisamos en cuanto llegue. Gracias por tu paciencia.' },
+                        { label: 'Confirmado', text: 'Perfecto. Tu pedido ha sido confirmado. Lo procesamos lo antes posible. Gracias.' },
+                        { label: 'Mas info', text: 'Con gusto te doy mas informacion. Que producto o servicio te interesa?' },
+                        { label: 'Comprobante', text: 'Para confirmar tu pago, por favor envianos una foto del comprobante de transferencia. Gracias.' },
+                        { label: 'Gracias', text: 'Muchas gracias por tu compra. Ha sido un placer atenderte. Hasta pronto.' },
+                        { label: 'Seguimiento', text: 'Hola, queria hacer seguimiento a tu consulta. Pudiste revisar la informacion que te comparti?' },
+                        { label: 'Espera', text: 'Un momento por favor, estoy verificando la informacion para ti.' },
                     ].map((qr, i) => (
-                        <button key={i} onClick={() => setInputText(qr.text)} style={{
+                        <button key={i} className="ai-prompt-chip" onClick={() => setInputText(qr.text)} style={{
                             width: '100%', padding: '10px 12px', borderRadius: '8px',
                             background: '#202c33', border: '1px solid var(--border-color)',
                             cursor: 'pointer', textAlign: 'left', color: 'var(--text-primary)', transition: 'all 0.12s'
@@ -793,22 +793,22 @@ INSTRUCCIONES OBLIGATORIAS:
                     <div style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '12px' }}>
                         <div style={{ fontSize: '0.72rem', color: '#00a884', marginBottom: '8px' }}>MI EMPRESA (WHATSAPP)</div>
                         <div style={{ fontSize: '0.8rem', color: '#d6e2e8', lineHeight: '1.6' }}>
-                            <div><b>Nombre:</b> {profile?.name || profile?.pushname || myProfile?.pushname || '—'}</div>
-                            <div><b>Teléfono:</b> {profile?.phone || myProfile?.phone || '—'}</div>
-                            <div><b>ID:</b> {profile?.id || myProfile?.id || '—'}</div>
-                            <div><b>Plataforma:</b> {profile?.platform || myProfile?.platform || '—'}</div>
-                            {profile?.category && <div><b>Categoría:</b> {profile.category}</div>}
+                            <div><b>Nombre:</b> {profile?.name || profile?.pushname || myProfile?.pushname || '--'}</div>
+                            <div><b>Telefono:</b> {profile?.phone || myProfile?.phone || '--'}</div>
+                            <div><b>ID:</b> {profile?.id || myProfile?.id || '--'}</div>
+                            <div><b>Plataforma:</b> {profile?.platform || myProfile?.platform || '--'}</div>
+                            {profile?.category && <div><b>Categoria:</b> {profile.category}</div>}
                             {profile?.website && <div><b>Web:</b> {profile.website}</div>}
                             {profile?.email && <div><b>Email:</b> {profile.email}</div>}
-                            {profile?.address && <div><b>Dirección:</b> {profile.address}</div>}
-                            {profile?.description && <div><b>Descripción:</b> {profile.description}</div>}
+                            {profile?.address && <div><b>Direccion:</b> {profile.address}</div>}
+                            {profile?.description && <div><b>Descripcion:</b> {profile.description}</div>}
                         </div>
                     </div>
                     <button
                         onClick={onLogout}
                         style={{ width: '100%', padding: '10px', background: '#392526', border: '1px solid rgba(218,54,51,0.45)', borderRadius: '8px', color: '#ffb3b3', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}
                     >
-                        Cerrar sesión de WhatsApp
+                        Cerrar sesion de WhatsApp
                     </button>
                 </div>
             )}
@@ -817,3 +817,5 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
+
+

@@ -188,12 +188,12 @@ const upsertAndSortChat = (list = [], incoming = null) => {
 const CHAT_PAGE_SIZE = 80;
 
 function App() {
-  // ─── Connection State ────────────────────────────────────────
+  // --------------------------------------------------------------
   const [isConnected, setIsConnected] = useState(false);
   const [qrCode, setQrCode] = useState('');
   const [isClientReady, setIsClientReady] = useState(false);
 
-  // ─── Chat State ──────────────────────────────────────────────
+  // --------------------------------------------------------------
   const [chats, setChats] = useState([]);
   const [chatsTotal, setChatsTotal] = useState(0);
   const [chatsHasMore, setChatsHasMore] = useState(true);
@@ -203,25 +203,25 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
 
-  // ─── My Profile (the logged-in WA Business Account) ─────────
+  // --------------------------------------------------------------
   const [myProfile, setMyProfile] = useState(null);
 
-  // ─── Client Profile Panel ───────────────────────────────────
+  // --------------------------------------------------------------
   const [showClientProfile, setShowClientProfile] = useState(false);
   const [clientContact, setClientContact] = useState(null);
 
-  // ─── Media State ─────────────────────────────────────────────
+  // --------------------------------------------------------------
   const [attachment, setAttachment] = useState(null);
   const [attachmentPreview, setAttachmentPreview] = useState(null);
   const fileInputRef = useRef(null);
 
-  // ─── AI State ────────────────────────────────────────────────
+  // --------------------------------------------------------------
   const [aiSuggestion, setAiSuggestion] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [isCopilotMode, setIsCopilotMode] = useState(false);
 
-  // ─── Voice Note State ────────────────────────────────────────
+  // --------------------------------------------------------------
   const [isRecording, setIsRecording] = useState(false);
   const [recorder, setRecorder] = useState(null);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -230,12 +230,12 @@ function App() {
   const streamRef = useRef(null);
   const recordingStartRef = useRef(0);
 
-  // ─── Business Data (Real from WA) ────────────────────────────
+  // --------------------------------------------------------------
   const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
   const [labelDefinitions, setLabelDefinitions] = useState([]);
   const [toasts, setToasts] = useState([]);
 
-  // ─── Other ───────────────────────────────────────────────────
+  // --------------------------------------------------------------
   const [isDragOver, setIsDragOver] = useState(false);
   const messagesEndRef = useRef(null);
   const activeChatIdRef = useRef(null);
@@ -243,9 +243,9 @@ function App() {
   const chatSearchRef = useRef('');
   const chatPagingRef = useRef({ offset: 0, hasMore: true, loading: false });
 
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   // Notifications
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
@@ -258,9 +258,9 @@ function App() {
     }
   }, []);
 
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   // Auto-scroll
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -285,7 +285,7 @@ function App() {
     return () => clearTimeout(timer);
   }, [chatSearchQuery, isClientReady]);
 
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   const requestChatsPage = ({ reset = false } = {}) => {
     if (chatPagingRef.current.loading && !reset) return;
     if (!reset && !chatPagingRef.current.hasMore) return;
@@ -620,9 +620,9 @@ function App() {
     };
   }, []);
 
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   // Apply AI suggestion to input
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   useEffect(() => {
     if (aiSuggestion && !isAiLoading) {
       setInputText(aiSuggestion);
@@ -630,9 +630,9 @@ function App() {
     }
   }, [isAiLoading, aiSuggestion]);
 
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   // Handlers
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   const handleChatSelect = (chatId, options = {}) => {
     if (!chatId) return;
     const clearSearch = Boolean(options?.clearSearch);
@@ -682,7 +682,7 @@ function App() {
   };
 
   const handleLogoutWhatsapp = () => {
-    if (!window.confirm('¿Cerrar sesión de WhatsApp en este equipo?')) return;
+    if (!window.confirm('Cerrar sesion de WhatsApp en este equipo?')) return;
     socket.emit('logout_whatsapp');
   };
 
@@ -734,24 +734,24 @@ function App() {
     setIsAiLoading(true);
 
     const businessContext = `
-Eres un asistente de ventas experto en Lávitat Perú. Ayuda al vendedor a responder con precisión técnica, enfoque comercial y cierres claros.
+Eres un asistente de ventas experto en Lavitat Peru. Ayuda al vendedor a responder con precision tecnica, enfoque comercial y cierres claros.
 
 PERFIL DEL NEGOCIO:
 ${businessData.profile?.name || 'Negocio'}
 ${businessData.profile?.description || ''}
-${businessData.profile?.address ? 'Dirección: ' + businessData.profile.address : ''}
+${businessData.profile?.address ? 'Direccion: ' + businessData.profile.address : ''}
 
-CATÁLOGO DE PRODUCTOS:
+CATALOGO DE PRODUCTOS:
 ${businessData.catalog.length > 0
         ? businessData.catalog.map((p, idx) => `${idx + 1}. ${p.title} | Precio: S/ ${p.price || 'consultar'}${p.sku ? ` | SKU: ${p.sku}` : ''}${p.description ? ` | ${p.description}` : ''}`).join('\n')
         : '(sin productos registrados)'
       }
 
-INSTRUCCIÓN: ${customPrompt || 'Basándote en la conversación reciente, genera la respuesta más adecuada, profesional y persuasiva que el vendedor debería enviar.'}
+INSTRUCCION: ${customPrompt || 'Basandote en la conversacion reciente, genera la respuesta mas adecuada, profesional y persuasiva que el vendedor deberia enviar.'}
 
-REGLA CRÍTICA:
-- NO INVENTES PRODUCTOS, tamaños o precios.
-- Usa solamente productos presentes en el catálogo listado arriba.
+REGLA CRITICA:
+- NO INVENTES PRODUCTOS, tamanos o precios.
+- Usa solamente productos presentes en el catalogo listado arriba.
 - Si no existe el dato exacto, responde: "Te confirmo ese detalle en un momento".
     `.trim();
 
@@ -793,7 +793,7 @@ REGLA CRÍTICA:
         const blob = new Blob(chunksRef.current, { type: mimeType });
 
         if (elapsedMs < 350 || !blob || blob.size < 800) {
-          alert('Nota de voz muy corta o vacía. Mantén presionado un poco más para grabar.');
+          alert('Nota de voz muy corta o vacia. Manten presionado un poco mas para grabar.');
           chunksRef.current = [];
           return;
         }
@@ -826,7 +826,7 @@ REGLA CRÍTICA:
       timerRef.current = setInterval(() => setRecordingTime((p) => p + 1), 1000);
     } catch (err) {
       console.error('Mic error:', err);
-      alert('No se pudo acceder al micrófono. Verifica permisos del navegador y vuelve a intentar.');
+      alert('No se pudo acceder al microfono. Verifica permisos del navegador y vuelve a intentar.');
     }
   };
 
@@ -868,9 +868,9 @@ REGLA CRÍTICA:
     Array.from(e.dataTransfer.files).forEach(processFile);
   };
 
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   // Render: Reconnecting
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   if (!isConnected) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#111b21', gap: '20px' }}>
@@ -880,16 +880,16 @@ REGLA CRÍTICA:
     );
   }
 
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   // Render: QR Screen
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   if (!isClientReady) {
     return (
       <div className="login-screen">
         <div style={{ textAlign: 'center', maxWidth: '500px' }}>
           <div style={{ marginBottom: '30px' }}>
             <div style={{ fontSize: '2rem', fontWeight: 300, color: '#e9edef', marginBottom: '10px' }}>WhatsApp Business Pro</div>
-            <p style={{ color: '#8696a0', fontSize: '0.9rem' }}>Escanea el código QR con tu teléfono para comenzar</p>
+            <p style={{ color: '#8696a0', fontSize: '0.9rem' }}>Escanea el codigo QR con tu telefono para comenzar</p>
           </div>
           <div style={{ background: 'white', padding: '24px', borderRadius: '16px', display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.4)' }}>
             {qrCode
@@ -899,8 +899,8 @@ REGLA CRÍTICA:
           </div>
           <div style={{ marginTop: '30px', padding: '20px', background: '#202c33', borderRadius: '12px', textAlign: 'left' }}>
             <p style={{ color: '#8696a0', fontSize: '0.85rem', lineHeight: '1.8' }}>
-              1. Abre <strong style={{ color: '#e9edef' }}>WhatsApp</strong> en tu teléfono<br />
-              2. Toca <strong style={{ color: '#e9edef' }}>Menú (⋮)</strong> o <strong style={{ color: '#e9edef' }}>Configuración</strong><br />
+              1. Abre <strong style={{ color: '#e9edef' }}>WhatsApp</strong> en tu telefono<br />
+              2. Toca <strong style={{ color: '#e9edef' }}>Menu (...)</strong> o <strong style={{ color: '#e9edef' }}>Configuracion</strong><br />
               3. Selecciona <strong style={{ color: '#e9edef' }}>Dispositivos vinculados</strong><br />
               4. Toca <strong style={{ color: '#e9edef' }}>Vincular un dispositivo</strong> y escanea
             </p>
@@ -910,9 +910,9 @@ REGLA CRÍTICA:
     );
   }
 
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   // Render: Main App
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   const activeChatDetails = chats.find(c => c.id === activeChatId) || null;
 
   return (
@@ -926,7 +926,7 @@ REGLA CRÍTICA:
         accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
       />
 
-      {/* Sidebar — Chat List */}
+      {/* Sidebar - Chat List */}
       <Sidebar
         chats={chats}
         activeChatId={activeChatId}
@@ -946,9 +946,9 @@ REGLA CRÍTICA:
       />
 
       {/* Main Content Area */}
-      <div style={{ flex: 1, display: 'flex', background: '#0b141a', position: 'relative', overflow: 'hidden' }}>
+      <div className="main-workspace">
         {activeChatId ? (
-          <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
+          <div className="conversation-pane-shell">
             {/* Chat Window */}
             <ChatWindow
               activeChatDetails={{ ...activeChatDetails, ...clientContact }}
@@ -997,21 +997,21 @@ REGLA CRÍTICA:
             alignItems: 'center', justifyContent: 'center',
             background: '#222e35',
           }}>
-            <div style={{ textAlign: 'center', padding: '40px', maxWidth: '450px' }}>
-              <div style={{ fontSize: '3rem', marginBottom: '20px' }}>💬</div>
-              <h1 style={{ fontSize: '2rem', fontWeight: 300, color: '#e9edef', marginBottom: '15px' }}>
+            <div className="conversation-empty-card">
+              <div className="conversation-empty-icon">WA</div>
+              <h1 className="conversation-empty-title">
                 WhatsApp Business Pro
               </h1>
-              <p style={{ color: '#8696a0', fontSize: '0.9rem', lineHeight: '1.6' }}>
+              <p className="conversation-empty-text">
                 Selecciona un chat para comenzar a vender.<br />
-                Usa los botones de IA para cerrar más ventas con OpenAI.
+                Usa los botones de IA para cerrar mas ventas con OpenAI.
               </p>
-              <div style={{ marginTop: '30px', padding: '16px 20px', background: '#2a3942', borderRadius: '12px', textAlign: 'left', fontSize: '0.85rem', color: '#8696a0', lineHeight: '1.8' }}>
-                <strong style={{ color: '#00a884' }}>Funciones IA disponibles:</strong><br />
-                ✨ Sugerencia de respuesta automática<br />
-                📦 Recomendación de producto<br />
-                💰 Técnicas de cierre de venta<br />
-                🔄 Manejo de objeciones
+              <div className="conversation-empty-features">
+                <strong>Funciones IA disponibles:</strong><br />
+                Sugerencia de respuesta automatica<br />
+                Recomendacion de producto<br />
+                Tecnicas de cierre de venta<br />
+                Manejo de objeciones
               </div>
             </div>
           </div>
@@ -1028,7 +1028,7 @@ REGLA CRÍTICA:
           </div>
         )}
 
-        {/* Business Sidebar — AI & Catalog (always visible) */}
+        {/* Business Sidebar - AI and Catalog */}
         <BusinessSidebar
           setInputText={setInputText}
           businessData={businessData}
@@ -1044,5 +1044,6 @@ REGLA CRÍTICA:
 }
 
 export default App;
+
 
 

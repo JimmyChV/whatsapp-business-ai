@@ -68,7 +68,7 @@ const Sidebar = ({
         if (!chat.lastMessageFromMe) return null;
         const color = chat.ack === 3 ? '#53bdeb' : '#8696a0';
         return (
-            <span style={{ marginRight: '4px', display: 'inline-flex', verticalAlign: 'middle', flexShrink: 0 }}>
+            <span className="chat-last-status-icon">
                 {chat.ack >= 2 ? <CheckCheck size={16} color={color} /> : <Check size={16} color="#8696a0" />}
             </span>
         );
@@ -168,67 +168,60 @@ const Sidebar = ({
     };
 
     return (
-        <div className="sidebar">
-            <div className="sidebar-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{
-                        width: '40px', height: '40px', borderRadius: '50%',
-                        background: myProfile?.profilePicUrl ? `url(${myProfile.profilePicUrl}) center/cover` : '#3b4a54',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: '1rem', color: '#8696a0', flexShrink: 0, overflow: 'hidden'
-                    }}>
+        <div className="sidebar sidebar-pro">
+            <div className="sidebar-header sidebar-header-pro">
+                <div className="sidebar-account-block">
+                    <div
+                        className="sidebar-account-avatar"
+                        style={{
+                            background: myProfile?.profilePicUrl
+                                ? `url(${myProfile.profilePicUrl}) center/cover`
+                                : '#3b4a54',
+                        }}
+                    >
                         {!myProfile?.profilePicUrl && (myProfile?.pushname?.charAt(0)?.toUpperCase() || '?')}
                     </div>
                     {myProfile?.pushname && (
-                        <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {myProfile.pushname}
-                        </span>
+                        <span className="sidebar-account-name">{myProfile.pushname}</span>
                     )}
                 </div>
-                <div style={{ display: 'flex', gap: '20px', alignItems: 'center', position: 'relative' }}>
-                    <div style={{ position: 'relative' }}>
-                        <MoreVertical
-                            size={20}
-                            color="#8696a0"
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => setShowMenu((v) => !v)}
-                            title="Mas opciones"
-                        />
-                        {showMenu && (
-                            <div style={{
-                                position: 'absolute', top: '28px', right: 0, background: '#233138',
-                                borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
-                                minWidth: '220px', zIndex: 1000, overflow: 'hidden'
-                            }}>
-                                {[
-                                    { label: 'Nuevo chat (numero)', action: () => onStartNewChat?.() },
-                                    { label: 'Recargar chats', action: () => onRefreshChats?.() },
-                                    { label: 'Crear etiqueta', action: () => onCreateLabel?.() },
-                                    { label: 'Cerrar sesion WhatsApp', action: () => onLogout?.() },
-                                ].map((item, i) => (
-                                    <div key={i}
-                                        onClick={() => { item.action(); setShowMenu(false); }}
-                                        style={{ padding: '14px 20px', cursor: 'pointer', fontSize: '0.9rem', color: i === 3 ? '#ff6b6b' : 'var(--text-primary)', borderBottom: i < 3 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                    >
-                                        {item.label}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+
+                <div className="sidebar-header-actions">
+                    <button
+                        type="button"
+                        className="ui-icon-btn"
+                        onClick={() => setShowMenu((v) => !v)}
+                        title="Mas opciones"
+                    >
+                        <MoreVertical size={18} />
+                    </button>
+
+                    {showMenu && (
+                        <div className="sidebar-dropdown-menu">
+                            <button type="button" className="sidebar-menu-item" onClick={() => { onStartNewChat?.(); setShowMenu(false); }}>
+                                Nuevo chat (numero)
+                            </button>
+                            <button type="button" className="sidebar-menu-item" onClick={() => { onRefreshChats?.(); setShowMenu(false); }}>
+                                Recargar chats
+                            </button>
+                            <button type="button" className="sidebar-menu-item" onClick={() => { onCreateLabel?.(); setShowMenu(false); }}>
+                                Crear etiqueta
+                            </button>
+                            <button type="button" className="sidebar-menu-item sidebar-menu-item-danger" onClick={() => { onLogout?.(); setShowMenu(false); }}>
+                                Cerrar sesion WhatsApp
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
 
-            <div style={{ padding: '7px 12px', background: 'var(--sidebar-background)', borderBottom: '1px solid var(--border-color)' }}>
-                <div className="input-container" style={{ borderRadius: '8px', background: '#202c33', display: 'flex', alignItems: 'center', height: '35px' }}>
-                    <Search size={16} color="#8696a0" style={{ margin: '0 12px', flexShrink: 0 }} />
+            <div className="sidebar-search-zone">
+                <div className="sidebar-search-box">
+                    <Search size={16} />
                     <input
                         type="text"
                         placeholder="Busca chat o escribe numero"
-                        className="message-input"
-                        style={{ fontSize: '0.85rem', flex: 1 }}
+                        className="sidebar-search-input"
                         value={localQuery}
                         onChange={(e) => onSearchQueryChange?.(e.target.value)}
                         onKeyDown={(e) => {
@@ -238,18 +231,14 @@ const Sidebar = ({
                         }}
                     />
                     {localQuery && (
-                        <X size={16} color="#8696a0" style={{ margin: '0 12px', cursor: 'pointer' }} onClick={() => onSearchQueryChange?.('')} />
+                        <button type="button" className="ui-icon-btn ui-icon-btn-sm" onClick={() => onSearchQueryChange?.('')}>
+                            <X size={14} />
+                        </button>
                     )}
                 </div>
 
                 {searchIsPhone && (
-                    <button
-                        onClick={() => onStartNewChat?.(normalizedPhone, '')}
-                        style={{
-                            marginTop: '8px', width: '100%', background: '#00a884', color: '#06271f', border: 'none',
-                            borderRadius: '8px', padding: '8px 10px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem'
-                        }}
-                    >
+                    <button type="button" className="ui-btn ui-btn--primary ui-btn--block" onClick={() => onStartNewChat?.(normalizedPhone, '')}>
                         Abrir chat con {normalizedPhone}
                     </button>
                 )}
@@ -273,7 +262,7 @@ const Sidebar = ({
             <div className="chat-list" onClick={() => showMenu && setShowMenu(false)} onScroll={handleChatListScroll}>
                 {filteredChats.length === 0 && chats.length === 0 ? (
                     [1, 2, 3, 4, 5].map((i) => (
-                        <div key={i} className="chat-item">
+                        <div key={i} className="chat-item chat-item-modern">
                             <div className="chat-avatar skeleton" style={{ width: '49px', height: '49px', borderRadius: '50%', flexShrink: 0 }}></div>
                             <div className="chat-info" style={{ marginLeft: '15px', flex: 1 }}>
                                 <div className="skeleton" style={{ height: '14px', width: '60%', marginBottom: '10px' }}></div>
@@ -282,7 +271,7 @@ const Sidebar = ({
                         </div>
                     ))
                 ) : filteredChats.length === 0 ? (
-                    <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                    <div className="sidebar-empty-search">
                         Sin resultados para "{localQuery}"
                     </div>
                 ) : (
@@ -293,46 +282,32 @@ const Sidebar = ({
                         return (
                             <div
                                 key={chat.id}
-                                className={`chat-item ${activeChatId === chat.id ? 'active' : ''}`}
+                                className={`chat-item chat-item-modern ${activeChatId === chat.id ? 'active' : ''}`}
                                 onClick={() => onChatSelect(chat.id, { clearSearch: true })}
-                                style={{ height: subtitle ? '88px' : '80px', alignItems: 'flex-start', paddingTop: '10px', paddingBottom: '8px' }}
                             >
-                                <div style={{
-                                    width: '49px', height: '49px', borderRadius: '50%',
-                                    background: chat.profilePicUrl ? `url(${chat.profilePicUrl}) center/cover` : avatarColor(displayName),
-                                    flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    fontSize: '1.2rem', color: 'white', fontWeight: 500, overflow: 'hidden'
-                                }}>
+                                <div
+                                    className="chat-avatar-modern"
+                                    style={{ background: chat.profilePicUrl ? `url(${chat.profilePicUrl}) center/cover` : avatarColor(displayName) }}
+                                >
                                     {!chat.profilePicUrl && avatarLetter(displayName)}
                                 </div>
-                                <div className="chat-info" style={{ marginLeft: '15px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ fontSize: '0.97rem', fontWeight: 400, color: 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: '220px' }}>
-                                            {displayName}
-                                        </span>
-                                        <span style={{ fontSize: '0.73rem', color: chat.unreadCount > 0 ? '#00a884' : '#8696a0', flexShrink: 0, marginLeft: '8px' }}>
+
+                                <div className="chat-info chat-info-modern">
+                                    <div className="chat-row-top">
+                                        <span className="chat-display-name">{displayName}</span>
+                                        <span className={`chat-time ${chat.unreadCount > 0 ? 'chat-time-unread' : ''}`}>
                                             {formatTime(chat.timestamp)}
                                         </span>
                                     </div>
 
-                                    {subtitle && (
-                                        <p style={{ fontSize: '0.73rem', color: '#7d939d', marginTop: '2px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                                            {subtitle}
-                                        </p>
-                                    )}
+                                    {subtitle && <p className="chat-subtitle-modern">{subtitle}</p>}
 
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: subtitle ? '3px' : '5px', alignItems: 'center' }}>
-                                        <p style={{ fontSize: '0.84rem', color: '#9bb0ba', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', display: 'flex', alignItems: 'center', flex: 1 }}>
+                                    <div className="chat-row-bottom">
+                                        <p className="chat-last-message">
                                             {renderStatus(chat)}
-                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                {lastMessage}
-                                            </span>
+                                            <span>{lastMessage}</span>
                                         </p>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px', flexShrink: 0 }}>
-                                            {chat.unreadCount > 0 && (
-                                                <span className="unread-badge">{chat.unreadCount}</span>
-                                            )}
-                                        </div>
+                                        {chat.unreadCount > 0 && <span className="unread-badge">{chat.unreadCount}</span>}
                                     </div>
                                 </div>
                             </div>
@@ -341,7 +316,7 @@ const Sidebar = ({
                 )}
 
                 {chats.length > 0 && (
-                    <div style={{ padding: '10px 14px', textAlign: 'center', color: '#8696a0', fontSize: '0.75rem' }}>
+                    <div className="sidebar-list-footer">
                         {chatsLoadingMore
                             ? 'Cargando mas chats...'
                             : (chatsHasMore
