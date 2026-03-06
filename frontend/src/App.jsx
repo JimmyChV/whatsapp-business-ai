@@ -33,11 +33,34 @@ const normalizeCatalogItem = (item = {}, index = 0) => {
   };
 };
 
+const normalizeProfilePhotoUrl = (rawUrl = '') => {
+  const value = String(rawUrl || '').trim();
+  if (!value) return null;
+  if (value.startsWith('data:') || value.startsWith('blob:')) return value;
+
+  if (value.includes('/api/profile-photo?url=')) {
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.startsWith('/')) return `${API_URL}${value}`;
+    return `${API_URL}/${value}`;
+  }
+
+  if (!/^https?:\/\//i.test(value)) return value;
+  return `${API_URL}/api/profile-photo?url=${encodeURIComponent(value)}`;
+};
+
+const normalizeProfilePayload = (profile = null) => {
+  if (!profile || typeof profile !== 'object') return null;
+  return {
+    ...profile,
+    profilePicUrl: normalizeProfilePhotoUrl(profile.profilePicUrl)
+  };
+};
+
 const normalizeBusinessDataPayload = (data = {}) => {
   const rawCatalog = Array.isArray(data.catalog) ? data.catalog : [];
   const catalog = rawCatalog.map((item, idx) => normalizeCatalogItem(item, idx));
   return {
-    profile: data.profile || null,
+    profile: normalizeProfilePayload(data.profile || null),
     labels: Array.isArray(data.labels) ? data.labels : [],
     catalog,
     catalogMeta: data.catalogMeta || { source: 'local', nativeAvailable: false }
@@ -317,6 +340,7 @@ function App() {
   // --------------------------------------------------------------
   const [isDragOver, setIsDragOver] = useState(false);
   const messagesEndRef = useRef(null);
+  const clientProfilePanelRef = useRef(null);
   const activeChatIdRef = useRef(null);
   const chatsRef = useRef([]);
   const chatSearchRef = useRef('');
@@ -364,6 +388,17 @@ function App() {
   useEffect(() => {
     chatFiltersRef.current = normalizeChatFilters(chatFilters);
   }, [chatFilters]);
+
+  useEffect(() => {
+    if (!showClientProfile) return;
+    const handleOutsideClick = (event) => {
+      const target = event.target;
+      if (clientProfilePanelRef.current?.contains(target)) return;
+      setShowClientProfile(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [showClientProfile]);
 
   useEffect(() => {
     if (!isClientReady) return;
@@ -415,7 +450,7 @@ function App() {
     });
 
     socket.on('my_profile', (profile) => {
-      setMyProfile(profile);
+      setMyProfile(normalizeProfilePayload(profile));
     });
 
     socket.on('wa_capabilities', (caps) => {
@@ -456,6 +491,7 @@ function App() {
           phone: getBestChatPhone(chat),
           lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
           labels: normalizeChatLabels(chat.labels),
+          profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
           isMyContact: chat?.isMyContact === true,
           archived: Boolean(chat?.archived)
         }))
@@ -490,6 +526,7 @@ function App() {
         phone: getBestChatPhone(chat),
         lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
         labels: normalizeChatLabels(chat.labels),
+        profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
         isMyContact: chat?.isMyContact === true,
         archived: Boolean(chat?.archived)
       };
@@ -596,6 +633,7 @@ function App() {
         name: sanitizeDisplayText(contact?.name || ''),
         pushname: sanitizeDisplayText(contact?.pushname || ''),
         shortName: sanitizeDisplayText(contact?.shortName || ''),
+        profilePicUrl: normalizeProfilePhotoUrl(contact?.profilePicUrl),
         status: repairMojibake(contact?.status || '')
       };
       setClientContact(normalizedContact);
@@ -1238,6 +1276,7 @@ REGLA CRITICA:
                 contact={{ ...activeChatDetails, ...clientContact }}
                 onClose={() => setShowClientProfile(false)}
                 onQuickAiAction={requestAiSuggestion}
+                panelRef={clientProfilePanelRef}
               />
             )}
           </div>
@@ -1300,39 +1339,3 @@ REGLA CRITICA:
 }
 
 export default App;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

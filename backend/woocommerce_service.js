@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 
 const WC_BASE_URL = (process.env.WC_BASE_URL || '').replace(/\/+$/, '');
 const WC_CONSUMER_KEY = process.env.WC_CONSUMER_KEY || '';
@@ -207,4 +207,3 @@ module.exports = {
     isWooConfigured,
     getWooCatalog
 };
-

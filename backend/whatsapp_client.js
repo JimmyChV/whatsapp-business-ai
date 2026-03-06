@@ -210,24 +210,15 @@ class WhatsAppClient extends EventEmitter {
     async getBusinessProfile(contactId) {
         if (!this.isReady) return null;
         if (typeof this.client.getBusinessProfile !== 'function') {
-            this.warnCapabilityOnce(
-                'business_profile_unsupported',
-                '[WA] getBusinessProfile no esta disponible en esta version de whatsapp-web.js; se omite el perfil business nativo.'
-            );
             return null;
         }
         try {
             return await this.client.getBusinessProfile(contactId);
         } catch (e) {
             const msg = String(e?.message || e || '');
-            if (/not a function|not available/i.test(msg)) {
-                this.warnCapabilityOnce(
-                    'business_profile_unsupported_runtime',
-                    '[WA] getBusinessProfile no esta soportado por la sesion actual; se usa fallback sin perfil business.'
-                );
+            if (/not a function|not available|unsupported/i.test(msg)) {
                 return null;
             }
-            console.error('Error fetching business profile:', e);
             return null;
         }
     }
@@ -238,42 +229,41 @@ class WhatsAppClient extends EventEmitter {
         const attempts = [];
         const pushAttempt = (label, fn) => attempts.push({ label, fn });
 
-        // 1) Preferred path for current whatsapp-web.js: Contact.getProducts()
         pushAttempt('contact.getProducts(contactId)', async () => {
-            if (!contactId) throw new Error('Missing contactId');
+            if (!contactId) return [];
             const contact = await this.client.getContactById(contactId);
-            if (!contact?.getProducts) throw new Error('contact.getProducts not available');
-            return await contact.getProducts();
+            if (!contact || typeof contact.getProducts !== 'function') return [];
+            const products = await contact.getProducts();
+            return Array.isArray(products) ? products : [];
         });
 
-        // 2) Try my own contact as fallback
         pushAttempt('contact.getProducts(me)', async () => {
             const meId = this.client?.info?.wid?._serialized;
-            if (!meId) throw new Error('Missing own contact id');
+            if (!meId) return [];
             const me = await this.client.getContactById(meId);
-            if (!me?.getProducts) throw new Error('me.getProducts not available');
-            return await me.getProducts();
+            if (!me || typeof me.getProducts !== 'function') return [];
+            const products = await me.getProducts();
+            return Array.isArray(products) ? products : [];
         });
 
-        // 3) Legacy path (older snippets use client.getProducts)
-        pushAttempt('client.getProducts(contactId)', async () => {
-            if (typeof this.client.getProducts !== 'function') {
-                throw new Error('client.getProducts is not available in this version');
-            }
-            return await this.client.getProducts(contactId);
-        });
+        if (typeof this.client.getProducts === 'function') {
+            pushAttempt('client.getProducts(contactId)', async () => {
+                const products = await this.client.getProducts(contactId);
+                return Array.isArray(products) ? products : [];
+            });
+        }
 
         for (const attempt of attempts) {
             try {
                 const products = await attempt.fn();
-                if (Array.isArray(products) && products.length > 0) {
+                if (products.length > 0) {
                     console.log(`[Catalog] ${attempt.label} returned ${products.length} products`);
-                    console.log('[Catalog] First product sample:', JSON.stringify(products[0]).substring(0, 250));
                     return products;
                 }
-                console.log(`[Catalog] ${attempt.label} returned 0 products`);
             } catch (e) {
-                console.log(`[Catalog] ${attempt.label} failed: ${e.message}`);
+                const message = String(e?.message || e || '');
+                if (/not available|not a function|missing/i.test(message)) continue;
+                console.log(`[Catalog] ${attempt.label} failed: ${message}`);
             }
         }
 

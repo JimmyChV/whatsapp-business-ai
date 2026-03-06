@@ -1,6 +1,6 @@
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
-require('dotenv').config();
+require('dotenv').config({ path: path.join(__dirname, '.env'), quiet: true });
+require('dotenv').config({ quiet: true });
 const fs = require('fs');
 
 function sanitizeApiKey(value = '') {

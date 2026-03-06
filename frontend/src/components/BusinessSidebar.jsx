@@ -78,14 +78,6 @@ const formatTimestampValue = (value) => {
     return m.isValid() ? m.format('YYYY-MM-DD HH:mm:ss') : '--';
 };
 
-const prettyJson = (value) => {
-    if (!value || (typeof value === 'object' && Object.keys(value).length === 0)) return '';
-    try {
-        return JSON.stringify(value, null, 2);
-    } catch (e) {
-        return '';
-    }
-};
 
 const avatarColorForName = (name) => {
     const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
@@ -95,29 +87,21 @@ const avatarColorForName = (name) => {
 // =========================================================
 // CLIENT PROFILE PANEL
 // =========================================================
-export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
+export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction, panelRef }) => {
     if (!contact) return null;
 
     const displayName = firstValue(contact.name, contact.pushname, contact.shortName, 'Contacto');
     const fallbackPhone = String(contact.id || '').replace('@c.us', '').replace('@g.us', '');
     const rawPhone = firstValue(contact.phone, contact.number, contact.user, fallbackPhone);
     const displayPhone = formatPhoneForDisplay(rawPhone);
+    const accountType = contact.isBusiness ? 'Business' : 'Personal';
 
     const infoRows = [
-        ['ID', firstValue(contact.id, '--')],
+        ['Nombre', displayName],
         ['Telefono', displayPhone],
-        ['Pushname', firstValue(contact.pushname, '--')],
-        ['Nombre corto', firstValue(contact.shortName, '--')],
-        ['Nombre verificado', firstValue(contact.verifiedName, '--')],
-        ['Nivel verificado', firstValue(contact.verifiedLevel, '--')],
-        ['Cuenta Business', formatBoolValue(contact.isBusiness)],
-        ['Enterprise', formatBoolValue(contact.isEnterprise)],
-        ['En mis contactos', formatBoolValue(contact.isMyContact)],
-        ['Contacto WA', formatBoolValue(contact.isWAContact)],
-        ['Bloqueado', formatBoolValue(contact.isBlocked)],
-        ['Es grupo', formatBoolValue(contact.isGroup)],
-        ['Es usuario', formatBoolValue(contact.isUser)],
-        ['Es mi cuenta', formatBoolValue(contact.isMe)],
+        ['Nombre de perfil', firstValue(contact.pushname, contact.shortName, '--')],
+        ['Cuenta', accountType],
+        ['Guardado', formatBoolValue(contact.isMyContact)],
     ];
 
     const chatStateRows = [
@@ -126,25 +110,19 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
         ['Silenciado', formatBoolValue(contact.chatState?.isMuted)],
         ['No leidos', String(contact.chatState?.unreadCount ?? 0)],
         ['Ultima actividad', formatTimestampValue(contact.chatState?.timestamp)],
-        ['Participantes', contact.chatState?.participantsCount ?? '--'],
     ];
+    if (contact.isGroup && Number(contact.chatState?.participantsCount || 0) > 0) {
+        chatStateRows.push(['Participantes', String(contact.chatState?.participantsCount || 0)]);
+    }
 
     const businessRows = [
         ['Categoria', firstValue(contact.businessDetails?.category, '--')],
-        ['Web principal', firstValue(contact.businessDetails?.website, '--')],
+        ['Web', firstValue(contact.businessDetails?.website, '--')],
         ['Webs', (contact.businessDetails?.websites || []).join(', ') || '--'],
         ['Email', firstValue(contact.businessDetails?.email, '--')],
         ['Direccion', firstValue(contact.businessDetails?.address, '--')],
-        ['Horario', firstValue(prettyJson(contact.businessDetails?.businessHours), '--')],
         ['Descripcion', firstValue(contact.businessDetails?.description, '--')],
     ].filter(([, value]) => Boolean(String(value || '').trim()));
-
-    const technicalJson = prettyJson({
-        raw: contact.raw || null,
-        contactSnapshot: contact.contactSnapshot || null,
-        chatState: contact.chatState || null,
-        businessDetailsRaw: contact.businessDetails?.raw || null,
-    });
 
     const quickActions = [
         { label: 'Redactar saludo', prompt: 'Redacta un saludo personalizado y profesional para este cliente.' },
@@ -153,7 +131,7 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
     ];
 
     return (
-        <aside className="client-profile-panel">
+        <aside className="client-profile-panel" ref={panelRef}>
             <div className="client-profile-header">
                 <button className="client-profile-close" onClick={onClose} aria-label="Cerrar perfil">
                     <X size={20} />
@@ -235,13 +213,6 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
                     </div>
                 )}
 
-                {technicalJson && (
-                    <div className="client-profile-card">
-                        <div className="client-profile-card-title">Datos tecnicos WhatsApp</div>
-                        <pre className="profile-json-block">{technicalJson}</pre>
-                    </div>
-                )}
-
                 <div className="client-profile-card">
                     <div className="client-profile-actions-title">
                         <Sparkles size={12} /> Acciones rapidas IA
@@ -265,51 +236,36 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
     );
 };
 
-export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout }) => {
+export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout, panelRef }) => {
     if (!profile) return null;
 
     const displayName = firstValue(profile.name, profile.pushname, profile.shortName, 'Mi negocio');
     const displayPhone = formatPhoneForDisplay(firstValue(profile.phone, profile.id));
+    const accountType = profile.isBusiness ? 'Business' : 'Personal';
 
     const companyRows = [
-        ['Nombre', displayName],
+        ['Nombre comercial', displayName],
         ['Telefono', displayPhone],
-        ['ID', firstValue(profile.id, '--')],
-        ['Plataforma', firstValue(profile.platform, '--')],
-        ['Pushname', firstValue(profile.pushname, '--')],
-        ['Nombre corto', firstValue(profile.shortName, '--')],
-        ['Nombre verificado', firstValue(profile.verifiedName, '--')],
-        ['Nivel verificado', firstValue(profile.verifiedLevel, '--')],
         ['Estado', firstValue(profile.status, '--')],
+        ['Cuenta', accountType],
     ];
 
     const accountStateRows = [
-        ['Cuenta Business', formatBoolValue(profile.isBusiness)],
-        ['Enterprise', formatBoolValue(profile.isEnterprise)],
-        ['Es mi cuenta', formatBoolValue(profile.isMe)],
-        ['Contacto WA', formatBoolValue(profile.isWAContact)],
-        ['En mis contactos', formatBoolValue(profile.isMyContact)],
-        ['Total etiquetas', String(profile.labelsCount ?? labels.length ?? 0)],
+        ['Etiquetas activas', String(profile.labelsCount ?? labels.length ?? 0)],
+        ['Canal', firstValue(profile.platform, 'WhatsApp Web')],
     ];
 
     const businessRows = [
         ['Categoria', firstValue(profile.category, profile.businessDetails?.category, '--')],
-        ['Web principal', firstValue(profile.website, profile.businessDetails?.website, '--')],
+        ['Web', firstValue(profile.website, profile.businessDetails?.website, '--')],
         ['Webs', firstValue((profile.websites || profile.businessDetails?.websites || []).join(', '), '--')],
         ['Email', firstValue(profile.email, profile.businessDetails?.email, '--')],
         ['Direccion', firstValue(profile.address, profile.businessDetails?.address, '--')],
-        ['Horario', firstValue(prettyJson(profile.businessHours || profile.businessDetails?.businessHours), '--')],
         ['Descripcion', firstValue(profile.description, profile.businessDetails?.description, '--')],
     ];
 
-    const technicalJson = prettyJson({
-        whatsappInfo: profile.whatsappInfo || null,
-        contactSnapshot: profile.contactSnapshot || null,
-        businessDetailsRaw: profile.businessDetails?.raw || null,
-    });
-
     return (
-        <aside className="client-profile-panel company-profile-panel">
+        <aside className="client-profile-panel company-profile-panel" ref={panelRef}>
             <div className="client-profile-header">
                 <button className="client-profile-close" onClick={onClose} aria-label="Cerrar perfil de empresa">
                     <X size={20} />
@@ -377,13 +333,6 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout })
                         ))}
                     </div>
                 </div>
-
-                {technicalJson && (
-                    <div className="client-profile-card">
-                        <div className="client-profile-card-title">Datos tecnicos WhatsApp</div>
-                        <pre className="profile-json-block">{technicalJson}</pre>
-                    </div>
-                )}
 
                 <div className="client-profile-card">
                     <button type="button" className="client-profile-action-btn company-logout-btn" onClick={() => onLogout && onLogout()}>
@@ -599,6 +548,8 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
 const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activeChatId, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {} }) => {
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
+    const companyProfileRef = useRef(null);
+    const companyHeaderRef = useRef(null);
     // AI Chat State
     const [aiMessages, setAiMessages] = useState([
         { role: 'assistant', content: 'Hola, soy tu asistente de ventas de Lavitat con IA OpenAI. Estoy viendo la conversacion y te ayudare a cerrar mejor.\n\nPrueba: "Dame 3 opciones de respuesta" o "Como manejo una objecion de precio".' }
@@ -647,6 +598,18 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
             setActiveTab('ai');
         }
     }, [activeTab, quickRepliesEnabled]);
+
+    useEffect(() => {
+        if (!showCompanyProfile) return;
+        const handleOutsideClick = (event) => {
+            const target = event.target;
+            if (companyProfileRef.current?.contains(target)) return;
+            if (companyHeaderRef.current?.contains(target)) return;
+            setShowCompanyProfile(false);
+        };
+        document.addEventListener('mousedown', handleOutsideClick);
+        return () => document.removeEventListener('mousedown', handleOutsideClick);
+    }, [showCompanyProfile]);
 
     // Listen to AI responses from socket
     useEffect(() => {
@@ -848,7 +811,7 @@ INSTRUCCIONES OBLIGATORIAS:
             {/* Business Profile Header */}
             <div className="business-sidebar-header">
                 {profile ? (
-                    <div className="business-header-row" style={{ cursor: "pointer" }} onClick={() => setShowCompanyProfile((v) => !v)}>
+                    <div ref={companyHeaderRef} className="business-header-row" style={{ cursor: "pointer" }} onClick={() => setShowCompanyProfile((v) => !v)}>
                         <div className="business-header-avatar" style={{ background: profile.profilePicUrl ? `url(${profile.profilePicUrl}) center/cover` : '#00a884' }}>
                             {!profile.profilePicUrl && 'B'}
                         </div>
@@ -904,6 +867,7 @@ INSTRUCCIONES OBLIGATORIAS:
                     labels={labels}
                     onClose={() => setShowCompanyProfile(false)}
                     onLogout={onLogout}
+                    panelRef={companyProfileRef}
                 />
             )}
 
