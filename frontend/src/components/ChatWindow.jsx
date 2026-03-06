@@ -7,11 +7,9 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 // Common emojis for the picker
 const EMOJI_LIST = [
-    '😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','😘','🥰','😗','😙','😚','🙂','🤗','🤩','🤔','🫡','🤨','😐','😑','😶','🙄','😏','😣','😥','😮','🤐','😯','😪','😫','🥱','😴','😌','😛','😜','😝','🤤','😒','😓','😔','😕','🙃','🫠','🤑','😲','☹️','🙁','😖','😞','😟','😤','😢','😭','😦','😧','😨','😩','🤯','😬','😰','😱','🥵','🥶','😳','🤪','😵','🥴','😠','😡','🤬','😷','🤒','🤕','🤢','🤮','🤧','😇','🥳','🥸','😺','😸','😹','😻','😼','😽','🙀','😿','😾',
-    '👍','👎','👏','🙌','🙏','🤝','💪','🫶','🤟','👌','✌️','🤞','🤘','🫵','👋','🤚','✋','🖐️','🫱','🫲','🫳','🫴','👈','👉','👆','👇','☝️','✍️',
-    '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','🔥','✨','⭐','🌟','💫','⚡','💥','🎉','🎊','✅','❌','⚠️','❗','❓',
-    '📦','🛒','💰','💵','💳','📈','📉','🧾','📋','📝','📌','📍','📞','📲','💬','📩','📨','📧','🔔','⏰','🕒','🕘','📅','🗓️','🚚','🏷️','🛍️','🎯','🚀','🏆','🤖','🧠','🧪','🧴','💧'
-]
+    ':)', ':D', ';)', ':P', ':(', ':|', ':o', '<3',
+    ':+1:', ':ok:', ':fire:', ':sparkles:', ':star:', ':100:'
+];
 
 const ChatInput = ({
     inputText, setInputText, onSendMessage, onKeyDown, onFileClick,
@@ -87,15 +85,10 @@ const ChatInput = ({
     }, [inputText]);
 
     return (
-        <div className="chat-input-area" style={{ position: 'relative' }}>
+        <div className="chat-input-area chat-input-area-pro" style={{ position: 'relative' }}>
             {/* Commands popover */}
             {showCommands && (
-                <div style={{
-                    position: 'absolute', bottom: '100%', left: '10px',
-                    background: '#1f2937', borderRadius: '10px', padding: '8px 0',
-                    width: '260px', boxShadow: '0 -4px 20px rgba(0,0,0,0.4)',
-                    marginBottom: '8px', zIndex: 200, border: '1px solid rgba(255,255,255,0.08)'
-                }}>
+                <div className="floating-panel commands-panel">
                     <div style={{ padding: '6px 14px', color: '#00a884', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em' }}>COMANDOS IA</div>
                     {[
                         { cmd: '/ayudar', icon: <Sparkles size={15} color="#8a2be2" />, desc: 'Genera respuesta inteligente' },
@@ -118,12 +111,7 @@ const ChatInput = ({
 
             {/* Emoji Picker */}
             {showEmoji && (
-                <div style={{
-                    position: 'absolute', bottom: '100%', left: '0px',
-                    background: '#1f2937', borderRadius: '10px', padding: '12px',
-                    width: '300px', boxShadow: '0 -4px 20px rgba(0,0,0,0.4)',
-                    marginBottom: '8px', zIndex: 200, border: '1px solid rgba(255,255,255,0.08)'
-                }}>
+                <div className="floating-panel emoji-panel">
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                         {EMOJI_LIST.map(e => (
                             <span key={e} onClick={() => insertEmoji(e)}
@@ -138,12 +126,7 @@ const ChatInput = ({
 
             {/* Link Preview (before send) */}
             {linkPreview && (
-                <div style={{
-                    position: 'absolute', bottom: '100%', left: '70px', right: '70px',
-                    background: '#1f2c34', border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: '10px', padding: '10px', marginBottom: '8px', zIndex: 150,
-                    display: 'flex', gap: '10px', alignItems: 'flex-start'
-                }}>
+                <div className="floating-panel link-preview-panel">
                     {linkPreview?.image && (
                         <img src={linkPreview.image} alt="preview" style={{ width: '64px', height: '64px', borderRadius: '8px', objectFit: 'cover', flexShrink: 0 }} />
                     )}
@@ -171,22 +154,22 @@ const ChatInput = ({
                         <img src={attachmentPreview} alt="Preview" style={{ maxWidth: '160px', maxHeight: '160px', borderRadius: '8px' }} />
                     ) : (
                         <div style={{ padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', fontSize: '0.8rem' }}>
-                            📄 {attachment.filename}
+                            Archivo: {attachment.filename}
                         </div>
                     )}
                 </div>
             )}
 
-            <div style={{ display: 'flex', gap: '15px', padding: '0 5px', alignItems: 'center' }}>
-                <button className="btn-icon" style={{ color: showEmoji ? '#00a884' : '#8696a0' }} onClick={() => setShowEmoji(v => !v)} title="Emojis">
+            <div className="chat-input-left-actions">
+                <button className={`btn-icon ui-icon-btn ${showEmoji ? 'active' : ''}`} onClick={() => setShowEmoji(v => !v)} title="Emojis">
                     <Smile size={26} />
                 </button>
-                <button className="btn-icon" onClick={onFileClick} style={{ color: '#8696a0' }} title="Adjuntar archivo">
+                <button className="btn-icon ui-icon-btn" onClick={onFileClick} title="Adjuntar archivo">
                     <Paperclip size={26} />
                 </button>
             </div>
 
-            <div className="input-container" style={{ margin: '0 5px' }}>
+            <div className="input-container chat-composer-field">
                 <textarea
                     ref={inputRef}
                     className="message-input"
@@ -203,7 +186,7 @@ const ChatInput = ({
                 />
             </div>
 
-            <div style={{ display: 'flex', gap: '12px', padding: '0 10px', alignItems: 'center' }}>
+            <div className="chat-input-right-actions">
                 {/* AI button */}
                 <button
                     className="btn-icon"
@@ -215,7 +198,7 @@ const ChatInput = ({
                 </button>
                 {/* Send or Mic */}
                 {inputText.trim() || attachment ? (
-                    <button className="send-button" onClick={onSendMessage} style={{ background: 'none', color: '#00a884' }} title="Enviar">
+                    <button className="send-button send-button-modern" onClick={onSendMessage} title="Enviar">
                         <Send size={26} />
                     </button>
                 ) : (
@@ -227,10 +210,10 @@ const ChatInput = ({
                         onMouseLeave={isRecording ? stopRecording : undefined}
                         onTouchStart={startRecording}
                         onTouchEnd={stopRecording}
-                        title={isRecording ? 'Suelta para enviar' : 'Mantén para grabar voz'}
+                        title={isRecording ? 'Suelta para enviar' : 'Manten presionado para grabar voz'}
                     >
                         {isRecording
-                            ? <span style={{ fontSize: '10px', fontWeight: 700, color: '#da3633' }}>🔴 {recordingTime}s</span>
+                            ? <span style={{ fontSize: '10px', fontWeight: 700, color: '#da3633' }}>REC {recordingTime}s</span>
                             : <Mic size={26} />
                         }
                     </button>
@@ -310,7 +293,7 @@ const ChatWindow = ({
             onDrop={onDrop}
         >
             {/* Chat Header */}
-            <div className="chat-header" style={{ cursor: 'pointer' }} onClick={() => setShowClientProfile(v => !v)}>
+            <div className="chat-header chat-header-pro" onClick={() => setShowClientProfile(v => !v)}>
                 <div style={{
                     width: '40px', height: '40px', borderRadius: '50%',
                     background: activeChatDetails?.profilePicUrl
@@ -321,7 +304,7 @@ const ChatWindow = ({
                 }}>
                     {!activeChatDetails?.profilePicUrl && activeChatDetails?.name?.charAt(0)?.toUpperCase()}
                 </div>
-                <div style={{ marginLeft: '15px', flex: 1 }}>
+                <div className="chat-header-meta">
                     <h3 style={{ fontSize: '1rem', fontWeight: 400, color: 'var(--text-primary)' }}>{activeChatDetails?.name}</h3>
                     <span style={{ fontSize: '0.78rem', color: '#8696a0' }}>
                         {activeChatDetails?.isGroup ? `${activeChatDetails?.participants || 0} participantes` : (activeChatDetails?.phone ? `+${activeChatDetails.phone}` : 'Haz clic para ver el perfil')}
@@ -334,7 +317,7 @@ const ChatWindow = ({
                         </div>
                     )}
                 </div>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                <div className="chat-header-actions" onClick={e => e.stopPropagation()}>
                     <button className="btn-icon" style={{ color: searchVisible ? '#00a884' : '#8696a0' }}
                         onClick={() => setSearchVisible(v => !v)} title="Buscar en chat">
                         <Search size={20} />
@@ -363,7 +346,7 @@ const ChatWindow = ({
                     </div>
                     <div style={{ position: 'relative' }}>
                         <button className="btn-icon" style={{ color: '#8696a0' }}
-                            onClick={() => setShowMenu(v => !v)} title="Más opciones">
+                            onClick={() => setShowMenu(v => !v)} title="Mas opciones">
                             <MoreVertical size={20} />
                         </button>
                         {showMenu && (
@@ -395,12 +378,12 @@ const ChatWindow = ({
 
             {/* In-chat Search Bar */}
             {searchVisible && (
-                <div style={{ background: '#1f2937', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--border-color)' }}>
+                <div className="chat-searchbar">
                     <Search size={16} color="#8696a0" />
                     <input
                         autoFocus
                         type="text"
-                        placeholder="Buscar en esta conversación..."
+                        placeholder="Buscar en esta conversacion..."
                         value={chatSearch}
                         onChange={e => setChatSearch(e.target.value)}
                         style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: '0.9rem' }}
@@ -429,8 +412,8 @@ const ChatWindow = ({
             {/* Messages Area */}
             <div className="chat-messages" onClick={() => { setShowMenu(false); setShowLabelMenu(false); }}>
                 {messages.length === 0 && (
-                    <div style={{ textAlign: 'center', margin: 'auto', background: 'var(--system-message-bg)', padding: '5px 12px', borderRadius: '7px', fontSize: '0.8rem', color: '#8696a0', boxShadow: '0 1px 0.5px rgba(11,20,26,.13)' }}>
-                        No hay mensajes en esta conversación.
+                    <div className="chat-empty-state-pill">
+                        No hay mensajes en esta conversacion.
                     </div>
                 )}
                 {messages.map((msg, idx) => {
@@ -444,7 +427,7 @@ const ChatWindow = ({
                     return (
                         <React.Fragment key={messageKey}>
                             {showDay && (
-                                <div style={{ textAlign: 'center', margin: '8px auto', background: 'rgba(255,255,255,0.08)', color: '#9db0ba', fontSize: '0.74rem', borderRadius: '8px', padding: '4px 10px', width: 'fit-content' }}>
+                                <div className="chat-day-separator">
                                     {formatDayLabel(msg.timestamp)}
                                 </div>
                             )}
@@ -470,3 +453,4 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
+
