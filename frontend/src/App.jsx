@@ -743,6 +743,16 @@ function App() {
     socket.on('edit_message_error', (msg) => {
       if (msg) alert(msg);
     });
+
+    socket.on('message_editability', ({ id, chatId, canEdit }) => {
+      if (!id || typeof canEdit !== 'boolean') return;
+      const active = String(activeChatIdRef.current || '');
+      const incomingChatId = String(chatId || '');
+      if (incomingChatId && active && incomingChatId !== active) return;
+      setMessages((prev) => prev.map((m) => (
+        m.id === id ? { ...m, canEdit } : m
+      )));
+    });
     socket.on('ai_suggestion_chunk', (chunk) => {
       setAiSuggestion(prev => prev + chunk);
     });
@@ -756,8 +766,12 @@ function App() {
       if (msg) alert(msg);
     });
 
-    socket.on('message_ack', ({ id, ack, chatId }) => {
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, ack } : m));
+    socket.on('message_ack', ({ id, ack, chatId, canEdit }) => {
+      setMessages(prev => prev.map((m) => (
+        m.id === id
+          ? { ...m, ack, canEdit: typeof canEdit === 'boolean' ? canEdit : m.canEdit }
+          : m
+      )));
       const ackChatId = String(chatId || '');
       const ackDigits = normalizeDigits(ackChatId.split('@')[0] || '');
       setChats(prev => prev.map((c) => {
@@ -801,7 +815,7 @@ function App() {
         'chat_opened', 'start_new_chat_error', 'chat_labels_updated', 'chat_labels_error', 'chat_labels_saved',
         'contact_info', 'message', 'business_data', 'business_data_catalog', 'quick_replies', 'quick_reply_error',
         'ai_suggestion_chunk',
-        'ai_suggestion_complete', 'ai_error', 'message_ack', 'message_edited', 'edit_message_error', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
+        'ai_suggestion_complete', 'ai_error', 'message_ack', 'message_editability', 'message_edited', 'edit_message_error', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
       ].forEach(ev => socket.off(ev));
     };
   }, []);
