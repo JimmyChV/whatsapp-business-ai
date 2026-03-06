@@ -1547,11 +1547,47 @@ class SocketManager {
         waClient.on('authenticated', () => this.io.emit('authenticated'));
         waClient.on('auth_failure', (msg) => this.io.emit('auth_failure', msg));
         waClient.on('disconnected', (reason) => this.io.emit('disconnected', reason));
+
         waClient.on('message', async (msg) => {
             if (isStatusOrSystemMessage(msg)) return;
 
             const media = await mediaManager.processMessageMedia(msg);
             const senderMeta = await resolveMessageSenderMeta(msg);
+            this.io.emit('message', {
+                id: msg.id._serialized,
+                from: msg.from,
+                to: msg.to,
+                body: msg.body,
+                timestamp: msg.timestamp,
+                fromMe: msg.fromMe,
+                hasMedia: msg.hasMedia,
+                mediaData: media ? media.data : null,
+                mimetype: media ? media.mimetype : null,
+                ack: msg.ack,
+                type: msg.type,
+                notifyName: senderMeta.notifyName,
+                senderPhone: senderMeta.senderPhone,
+                canEdit: false,
+                order: extractOrderInfo(msg)
+            });
+
+            try {
+                const relatedChatId = msg.fromMe ? msg.to : msg.from;
+                if (isVisibleChatId(relatedChatId)) {
+                    this.invalidateChatListCache();
+                    const chat = await waClient.client.getChatById(relatedChatId);
+                    const summary = await this.toChatSummary(chat, { includeHeavyMeta: false });
+                    if (summary) this.io.emit('chat_updated', summary);
+                }
+            } catch (e) {
+                // silent: message delivery should not fail by chat refresh issues
+            }
+        });
+
+        waClient.on('message_sent', async (msg) => {
+            if (isStatusOrSystemMessage(msg)) return;
+            // Emite de vuelta para confirmar en UI si se envio desde otro lugar
+            const media = await mediaManager.processMessageMedia(msg);
             this.io.emit('message', {
                 id: msg.id._serialized,
                 from: msg.from,
@@ -1566,10 +1602,11 @@ class SocketManager {
                 type: msg.type,
                 notifyName: null,
                 senderPhone: null,
-                canEdit,
+                canEdit: false,
                 order: extractOrderInfo(msg)
             });
 
+            this.emitMessageEditability(msg.id._serialized, msg.to || msg.from);
             this.scheduleEditabilityRefresh(msg.id._serialized, msg.to || msg.from);
 
             try {

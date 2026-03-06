@@ -689,7 +689,27 @@ function App() {
 
       setMessages((prev) => {
         if (prev.find((m) => m.id === msg.id)) return prev;
-        const shouldAdd = (msg.fromMe && msg.to === activeChatIdRef.current) || (!msg.fromMe && msg.from === activeChatIdRef.current);
+
+        const activeId = String(activeChatIdRef.current || '');
+        const incomingChatId = String((msg.fromMe ? msg.to : msg.from) || '');
+        const activeIdDigits = normalizeDigits(activeId.split('@')[0] || '');
+        const incomingDigits = normalizeDigits(incomingChatId.split('@')[0] || '');
+        const activeChat = chatsRef.current.find((c) => c.id === activeId);
+        const activePhoneDigits = normalizeDigits(activeChat?.phone || '');
+
+        const sameById = incomingChatId === activeId;
+        const sameByIdDigits = activeIdDigits && incomingDigits && (
+          activeIdDigits === incomingDigits
+          || activeIdDigits.endsWith(incomingDigits)
+          || incomingDigits.endsWith(activeIdDigits)
+        );
+        const sameByPhone = activePhoneDigits && incomingDigits && (
+          activePhoneDigits === incomingDigits
+          || activePhoneDigits.endsWith(incomingDigits)
+          || incomingDigits.endsWith(activePhoneDigits)
+        );
+
+        const shouldAdd = sameById || sameByIdDigits || sameByPhone;
         if (!shouldAdd) return prev;
         return [...prev, { ...msg, body: repairMojibake(msg?.body || ''), canEdit: Boolean(msg?.canEdit) }];
       });
