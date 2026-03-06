@@ -57,7 +57,7 @@ function parseProductsFromBodyText(body = '') {
     const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const parsed = [];
 
-    const linePattern = /^(?:[-•*]\s*)?(\d+(?:[.,]\d+)?)\s*(?:x|X)\s+(.+?)(?:\s+[-–—]\s*(?:S\/|PEN\s*)?(\d+(?:[.,]\d+)?))?$/;
+    const linePattern = /^(?:[-\u2022*]\s*)?(\d+(?:[.,]\d+)?)\s*(?:x|X)\s+(.+?)(?:\s+[-\u2013\u2014]\s*(?:S\/|PEN\s*)?(\d+(?:[.,]\d+)?))?$/;
     for (const line of lines) {
         const m = line.match(linePattern);
         if (!m) continue;
@@ -122,11 +122,28 @@ function extractOrderInfo(msg) {
 
 function resolveChatDisplayName(chat) {
     if (!chat) return 'Sin nombre';
-    const directName = chat.name || chat.formattedTitle || null;
+
     const contact = chat.contact || null;
-    const contactName = contact?.name || contact?.pushname || contact?.shortName || null;
-    const idUser = chat?.id?.user || String(chat?.id?._serialized || '').split('@')[0] || null;
-    return directName || contactName || idUser || 'Sin nombre';
+    const chatId = String(chat?.id?._serialized || '');
+    const candidates = [
+        String(chat.name || '').trim(),
+        String(chat.formattedTitle || '').trim(),
+        String(contact?.name || '').trim(),
+        String(contact?.pushname || '').trim(),
+        String(contact?.shortName || '').trim(),
+    ].filter(Boolean);
+
+    const bestHuman = candidates.find((name) => !name.includes('@') && !/^\d{14,}$/.test(name));
+    if (bestHuman) return bestHuman;
+
+    const fallbackPhone = coerceHumanPhone(
+        contact?.number
+        || contact?.phoneNumber
+        || (!isLidIdentifier(chatId) ? (contact?.id?.user || chat?.id?.user || String(chatId).split('@')[0] || '') : '')
+    );
+    if (fallbackPhone) return `+${fallbackPhone}`;
+
+    return 'Sin nombre';
 }
 
 async function resolveProfilePic(client, chatOrContactId) {
@@ -190,6 +207,197 @@ function isVisibleChatId(chatId) {
     return true;
 }
 
+function normalizePhoneDigits(raw = '') {
+    return String(raw || '').replace(/\D/g, '');
+}
+
+function formatPhoneForDisplay(raw = '') {
+    const digits = normalizePhoneDigits(raw);
+    if (digits.length < 8 || digits.length > 15) return null;
+    return digits;
+}
+
+function isLikelyHumanPhoneDigits(raw = '') {
+    const digits = normalizePhoneDigits(raw);
+    if (digits.length < 8 || digits.length > 12) return false;
+    if (/^0+$/.test(digits)) return false;
+    return true;
+}
+
+function coerceHumanPhone(raw = '') {
+    const digits = formatPhoneForDisplay(raw);
+    if (!digits) return null;
+    return isLikelyHumanPhoneDigits(digits) ? digits : null;
+}
+
+function isLidIdentifier(value = '') {
+    return String(value || '').trim().endsWith('@lid');
+}
+
+function extractPhoneFromText(value = '') {
+    const text = String(value || '');
+    if (!text) return null;
+    const matches = text.match(/\+?\d[\d\s().-]{6,}\d/g) || [];
+    for (const token of matches) {
+        const phone = formatPhoneForDisplay(token);
+        if (phone) return phone;
+    }
+    return null;
+}
+
+function extractPhoneFromContactLike(contact = {}) {
+    const serialized = String(contact?.id?._serialized || '');
+    const isLid = isLidIdentifier(serialized);
+    const candidates = [
+        contact?.number,
+        contact?.phoneNumber,
+        (!isLid ? contact?.id?.user : null),
+        (!isLid ? (serialized.split('@')[0] || '') : null),
+        contact?.userid
+    ];
+    for (const candidate of candidates) {
+        const phone = coerceHumanPhone(candidate);
+        if (phone) return phone;
+    }
+    const fromText = extractPhoneFromText(
+        `${contact?.name || ''} ${contact?.pushname || ''} ${contact?.shortName || ''}`
+    );
+    if (fromText && isLikelyHumanPhoneDigits(fromText)) return fromText;
+    return null;
+}
+
+function extractPhoneFromChat(chat = {}) {
+    const chatId = String(chat?.id?._serialized || '');
+    const contact = chat?.contact || null;
+    const isLid = isLidIdentifier(chatId);
+
+    const fromContact = extractPhoneFromContactLike(contact || {});
+    if (fromContact) return fromContact;
+
+    const fromMetaText = extractPhoneFromText(
+        `${chat?.name || ''} ${chat?.formattedTitle || ''} ${contact?.name || ''} ${contact?.pushname || ''} ${contact?.shortName || ''}`
+    );
+    if (fromMetaText && isLikelyHumanPhoneDigits(fromMetaText)) return fromMetaText;
+
+    if (!isLid && chatId.endsWith('@c.us')) {
+        const fromCUs = coerceHumanPhone(chat?.id?.user || chatId.split('@')[0] || '');
+        if (fromCUs) return fromCUs;
+    }
+
+    if (!isLid) {
+        const fromUser = coerceHumanPhone(chat?.id?.user || '');
+        if (fromUser) return fromUser;
+    }
+
+    if (isLid) return null;
+    return coerceHumanPhone(chatId.split('@')[0] || '');
+}
+function extractPhoneFromSummary(summary = {}) {
+    const id = String(summary?.id || '');
+    const isLid = isLidIdentifier(id);
+    const explicitPhone = coerceHumanPhone(summary?.phone || '');
+    if (explicitPhone) return explicitPhone;
+
+    const fromSubtitle = extractPhoneFromText(summary?.subtitle || '');
+    if (fromSubtitle && isLikelyHumanPhoneDigits(fromSubtitle)) return fromSubtitle;
+
+    const fromStatus = extractPhoneFromText(summary?.status || '');
+    if (fromStatus && isLikelyHumanPhoneDigits(fromStatus)) return fromStatus;
+
+    if (!isLid && id.endsWith('@c.us')) {
+        const fromCUs = coerceHumanPhone(id.split('@')[0] || '');
+        if (fromCUs) return fromCUs;
+    }
+
+    if (isLid) return null;
+    return coerceHumanPhone(id.split('@')[0] || '');
+}
+
+function buildChatIdentityKeyFromSummary(summary = {}) {
+    const id = String(summary?.id || '');
+    const phone = extractPhoneFromSummary(summary);
+    if (phone) return 'phone:' + phone;
+    return 'id:' + id;
+}
+
+function pickPreferredSummary(prevItem = {}, incoming = {}) {
+    const prevTs = Number(prevItem?.timestamp || 0);
+    const incomingTs = Number(incoming?.timestamp || 0);
+
+    const incomingHasFreshPayload = Boolean(incoming?.lastMessage) && !Boolean(prevItem?.lastMessage);
+    const pickIncoming = incomingTs > prevTs || (incomingTs === prevTs && incomingHasFreshPayload);
+    const primary = pickIncoming ? incoming : prevItem;
+    const secondary = pickIncoming ? prevItem : incoming;
+
+    const merged = {
+        ...secondary,
+        ...primary,
+        phone: primary?.phone || secondary?.phone || null,
+        subtitle: primary?.subtitle || secondary?.subtitle || null,
+        isMyContact: Boolean(primary?.isMyContact ?? secondary?.isMyContact),
+        lastMessage: primary?.lastMessage || secondary?.lastMessage || '',
+        timestamp: Math.max(prevTs, incomingTs),
+        labels: Array.isArray(primary?.labels) && primary.labels.length > 0
+            ? primary.labels
+            : (Array.isArray(secondary?.labels) ? secondary.labels : [])
+    };
+
+    const primaryName = String(primary?.name || '').trim();
+    const secondaryName = String(secondary?.name || '').trim();
+    const primaryLooksInternal = primaryName.includes('@') || /^\d{14,}$/.test(primaryName);
+    merged.name = (!primaryLooksInternal && primaryName) ? primaryName : (secondaryName || primaryName || 'Sin nombre');
+
+    return merged;
+}
+
+function defaultCountryCode() {
+    return normalizePhoneDigits(process.env.WA_DEFAULT_COUNTRY_CODE || process.env.DEFAULT_COUNTRY_CODE || '51');
+}
+
+function buildPhoneCandidates(rawPhone) {
+    const clean = normalizePhoneDigits(rawPhone);
+    if (!clean) return [];
+
+    const cc = defaultCountryCode();
+    const trimmed = clean.replace(/^0+/, '') || clean;
+    const candidates = [];
+
+    const push = (v) => {
+        const digits = normalizePhoneDigits(v);
+        if (!digits) return;
+        if (!candidates.includes(digits)) candidates.push(digits);
+    };
+
+    const isLikelyLocal = trimmed.length <= 10;
+    if (isLikelyLocal && cc && !trimmed.startsWith(cc)) push(`${cc}${trimmed}`);
+    push(trimmed);
+    if (cc && trimmed.startsWith(cc)) push(trimmed.slice(cc.length));
+
+    return candidates;
+}
+
+async function resolveRegisteredNumber(client, rawPhone) {
+    const candidates = buildPhoneCandidates(rawPhone);
+    for (const cand of candidates) {
+        try {
+            const numberId = await client.getNumberId(cand);
+            if (!numberId) continue;
+
+            const byUser = formatPhoneForDisplay(numberId.user || '');
+            if (byUser) return byUser;
+
+            const serialized = String(numberId._serialized || '');
+            const bySerialized = formatPhoneForDisplay(serialized.split('@')[0] || '');
+            if (bySerialized) return bySerialized;
+
+            const byCand = formatPhoneForDisplay(cand);
+            if (byCand) return byCand;
+        } catch (e) { }
+    }
+    return null;
+}
+
+
 class SocketManager {
     constructor(io) {
         this.io = io;
@@ -197,6 +405,8 @@ class SocketManager {
         this.chatMetaTtlMs = Number(process.env.CHAT_META_TTL_MS || 10 * 60 * 1000);
         this.chatListCache = { items: [], updatedAt: 0 };
         this.chatListTtlMs = Number(process.env.CHAT_LIST_TTL_MS || 15000);
+        this.contactListCache = { items: [], updatedAt: 0 };
+        this.contactListTtlMs = Number(process.env.CONTACT_LIST_TTL_MS || 60 * 1000);
         this.setupSocketEvents();
         this.setupWAClientEvents();
     }
@@ -252,6 +462,70 @@ class SocketManager {
         return normalized;
     }
 
+    async getSearchableContacts({ forceRefresh = false } = {}) {
+        const cacheAge = Date.now() - (this.contactListCache?.updatedAt || 0);
+        if (!forceRefresh && this.contactListCache.items.length > 0 && cacheAge <= this.contactListTtlMs) {
+            return this.contactListCache.items;
+        }
+
+        let contacts = [];
+        try {
+            contacts = await waClient.client.getContacts();
+        } catch (e) {
+            contacts = [];
+        }
+
+        const mapped = contacts
+            .filter((c) => {
+                const serialized = String(c?.id?._serialized || '');
+                return serialized.endsWith('@c.us') || serialized.endsWith('@lid');
+            })
+            .map((c) => {
+                const serialized = String(c?.id?._serialized || '');
+                const phone = coerceHumanPhone(c?.number || c?.id?.user || serialized.split('@')[0] || '');
+                if (!phone) return null;
+
+                const displayNameCandidate = String(c?.name || c?.pushname || c?.shortName || '').trim();
+                const displayName = (displayNameCandidate && !displayNameCandidate.includes('@') && !/^\d{14,}$/.test(displayNameCandidate))
+                    ? displayNameCandidate
+                    : ('+' + phone);
+
+                const subtitleCandidate = String(c?.pushname || c?.shortName || c?.name || '').trim();
+                const subtitle = subtitleCandidate && subtitleCandidate !== displayName ? subtitleCandidate : null;
+
+                return {
+                    id: `${phone}@c.us`,
+                    name: displayName,
+                    phone,
+                    subtitle,
+                    unreadCount: 0,
+                    timestamp: 0,
+                    lastMessage: '',
+                    lastMessageFromMe: false,
+                    ack: 0,
+                    labels: [],
+                    profilePicUrl: null,
+                    isMyContact: Boolean(c?.isMyContact)
+                };
+            })
+            .filter(Boolean);
+
+        const dedupMap = new Map();
+        for (const item of mapped) {
+            const key = buildChatIdentityKeyFromSummary(item);
+            if (!dedupMap.has(key)) {
+                dedupMap.set(key, item);
+            }
+        }
+        const deduped = Array.from(dedupMap.values());
+
+        this.contactListCache = {
+            items: deduped,
+            updatedAt: Date.now()
+        };
+        return deduped;
+    }
+
     async toChatSummary(chat, { includeHeavyMeta = false } = {}) {
         const chatId = chat?.id?._serialized;
         if (!isVisibleChatId(chatId)) return null;
@@ -266,20 +540,43 @@ class SocketManager {
             profilePicUrl = hydrated.profilePicUrl;
         }
 
+        let contact = chat?.contact || null;
+        const isGroup = String(chatId || '').endsWith('@g.us');
+        const shouldHydrateContact = !isGroup && (!extractPhoneFromChat(chat) || isLidIdentifier(chatId));
+        if (shouldHydrateContact) {
+            try {
+                const hydratedContact = await waClient.client.getContactById(chatId);
+                if (hydratedContact) {
+                    contact = {
+                        ...(chat?.contact || {}),
+                        ...hydratedContact
+                    };
+                }
+            } catch (e) { }
+        }
+
+        const effectiveChat = { ...chat, contact };
+        const phone = isGroup ? null : extractPhoneFromChat(effectiveChat);
+        const subtitle = contact?.pushname || contact?.shortName || contact?.name || null;
+
         return {
             id: chatId,
-            name: resolveChatDisplayName(chat),
+            name: resolveChatDisplayName(effectiveChat),
+            phone,
+            subtitle,
             unreadCount: chat.unreadCount,
             timestamp: chat.timestamp,
             lastMessage: chat.lastMessage ? chat.lastMessage.body : '',
             lastMessageFromMe: chat.lastMessage ? chat.lastMessage.fromMe : false,
             ack: chat.lastMessage ? chat.lastMessage.ack : 0,
             labels,
-            profilePicUrl
+            profilePicUrl,
+            isMyContact: Boolean(contact?.isMyContact)
         };
     }
 
     setupSocketEvents() {
+
         this.io.on('connection', (socket) => {
             console.log('Web client connected:', socket.id);
 
@@ -295,26 +592,136 @@ class SocketManager {
                     const rawOffset = Number(payload?.offset ?? 0);
                     const rawLimit = Number(payload?.limit ?? 80);
                     const reset = Boolean(payload?.reset);
+                    const query = String(payload?.query || '').trim();
+                    const queryLower = query.toLowerCase();
+                    const queryDigits = normalizePhoneDigits(query);
+
                     const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.floor(rawOffset)) : 0;
                     const limit = Number.isFinite(rawLimit)
                         ? Math.min(250, Math.max(20, Math.floor(rawLimit)))
                         : 80;
 
-                    const sortedChats = await this.getSortedVisibleChats({ forceRefresh: reset });
-                    const page = sortedChats.slice(offset, offset + limit);
+                    let sortedChats = await this.getSortedVisibleChats({ forceRefresh: reset || Boolean(query) });
+                    if (!queryLower && !reset && offset >= sortedChats.length) {
+                        sortedChats = await this.getSortedVisibleChats({ forceRefresh: true });
+                    }
+                    let filtered = sortedChats;
+
+                    if (queryLower) {
+                        filtered = sortedChats.filter((c) => {
+                            const chatId = c?.id?._serialized || '';
+                            const name = resolveChatDisplayName(c).toLowerCase();
+                            const lastMessage = String(c?.lastMessage?.body || '').toLowerCase();
+                            const phone = normalizePhoneDigits(extractPhoneFromChat(c) || '');
+                            const contact = c?.contact || {};
+                            const subtitle = `${contact?.pushname || ''} ${contact?.name || ''} ${contact?.shortName || ''}`.toLowerCase();
+
+                            if (queryDigits) {
+                                return phone.includes(queryDigits);
+                            }
+                            return name.includes(queryLower) || lastMessage.includes(queryLower) || subtitle.includes(queryLower);
+                        });
+                    }
+
+                    const page = filtered.slice(offset, offset + limit);
+                    const scannedCount = page.length;
                     const formatted = await Promise.all(page.map((c, index) => {
                         const includeHeavyMeta = (offset + index) < 25;
                         return this.toChatSummary(c, { includeHeavyMeta });
                     }));
 
-                    const items = formatted.filter(Boolean);
-                    const nextOffset = offset + items.length;
+                    let items = formatted.filter(Boolean);
+                    if (queryLower && offset === 0 && items.length < limit) {
+                        const existingIds = new Set(items.map((it) => it.id));
+                        const existingPhones = new Set(items.map((it) => normalizePhoneDigits(it.phone || '')).filter(Boolean));
+                        const phoneToExistingChatId = new Map();
+                        for (const chat of sortedChats) {
+                            const phone = normalizePhoneDigits(extractPhoneFromChat(chat) || '');
+                            const serializedId = chat?.id?._serialized;
+                            if (!phone || !serializedId || phoneToExistingChatId.has(phone)) continue;
+                            phoneToExistingChatId.set(phone, serializedId);
+                        }
+
+                        const contacts = await this.getSearchableContacts();
+                        const contactMatches = contacts
+                            .map((c) => {
+                                const phone = normalizePhoneDigits(c?.phone || '');
+                                const canonicalId = phone ? phoneToExistingChatId.get(phone) : null;
+                                return canonicalId ? { ...c, id: canonicalId } : c;
+                            })
+                            .filter((c) => {
+                                if (!c?.id || existingIds.has(c.id)) return false;
+                                const contactPhone = normalizePhoneDigits(c.phone || '');
+                                if (contactPhone && existingPhones.has(contactPhone)) return false;
+                                const name = String(c.name || '').toLowerCase();
+                                const subtitle = String(c.subtitle || '').toLowerCase();
+                                const phone = normalizePhoneDigits(c.phone || '');
+                                if (queryDigits) return phone.includes(queryDigits);
+                                return name.includes(queryLower) || subtitle.includes(queryLower);
+                            });
+
+                        const remaining = Math.max(0, limit - items.length);
+                        items = [...items, ...contactMatches.slice(0, remaining)];
+                    }
+                    if (queryDigits && offset === 0 && items.length === 0) {
+                        const registeredUser = await resolveRegisteredNumber(waClient.client, queryDigits);
+                        if (registeredUser) {
+                            const normalizedRegistered = normalizePhoneDigits(registeredUser);
+                            let canonicalChatId = `${registeredUser}@c.us`;
+
+                            const existingChat = sortedChats.find((c) => normalizePhoneDigits(extractPhoneFromChat(c) || '') === normalizedRegistered);
+                            if (existingChat?.id?._serialized) {
+                                canonicalChatId = existingChat.id._serialized;
+                            }
+
+                            try {
+                                const chat = await waClient.client.getChatById(canonicalChatId);
+                                const summary = await this.toChatSummary(chat, { includeHeavyMeta: true });
+                                if (summary) items = [summary];
+                            } catch (e) {
+                                items = [{
+                                    id: canonicalChatId,
+                                    name: `+${registeredUser}`,
+                                    phone: registeredUser,
+                                    subtitle: null,
+                                    unreadCount: 0,
+                                    timestamp: 0,
+                                    lastMessage: '',
+                                    lastMessageFromMe: false,
+                                    ack: 0,
+                                    labels: [],
+                                    profilePicUrl: null,
+                                    isMyContact: false
+                                }];
+                            }
+                        }
+                    }
+
+                    const dedupMap = new Map();
+                    for (const item of items) {
+                        if (!item) continue;
+                        const key = buildChatIdentityKeyFromSummary(item);
+                        if (!dedupMap.has(key)) {
+                            dedupMap.set(key, item);
+                            continue;
+                        }
+
+                        const prevItem = dedupMap.get(key);
+                        dedupMap.set(key, pickPreferredSummary(prevItem, item));
+                    }
+                    items = Array.from(dedupMap.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+                    const nextOffset = offset + scannedCount;
+                    const total = filtered.length;
+                    const hasMore = nextOffset < total;
                     socket.emit('chats', {
                         items,
                         offset,
                         limit,
-                        total: sortedChats.length,
-                        hasMore: nextOffset < sortedChats.length
+                        total,
+                        hasMore,
+                        nextOffset,
+                        query
                     });
                 } catch (e) {
                     console.error('Error fetching chats:', e);
@@ -323,7 +730,7 @@ class SocketManager {
 
             socket.on('get_chat_history', async (chatId) => {
                 try {
-                    const messages = await waClient.getMessages(chatId, 50);
+                    const messages = await waClient.getMessages(chatId, 30);
                     const visible = messages.filter((m) => !isStatusOrSystemMessage(m));
                     const formatted = visible.map((m) => ({
                         id: m.id._serialized,
@@ -363,24 +770,53 @@ class SocketManager {
 
             socket.on('start_new_chat', async ({ phone, firstMessage }) => {
                 try {
-                    const clean = String(phone || '').replace(/\D/g, '');
+                    const clean = normalizePhoneDigits(phone);
                     if (!clean) {
-                        socket.emit('start_new_chat_error', 'Número inválido.');
+                        socket.emit('start_new_chat_error', 'Numero invalido.');
                         return;
                     }
 
-                    const numberId = await waClient.client.getNumberId(clean);
-                    if (!numberId?.user) {
-                        socket.emit('start_new_chat_error', 'El número no está registrado en WhatsApp.');
+                    const registeredUser = await resolveRegisteredNumber(waClient.client, clean);
+                    if (!registeredUser) {
+                        socket.emit('start_new_chat_error', 'El numero no esta registrado en WhatsApp.');
                         return;
                     }
 
-                    const chatId = `${numberId.user}@c.us`;
+                    const normalizedRegistered = normalizePhoneDigits(registeredUser);
+                    const directChatId = `${registeredUser}@c.us`;
+                    let canonicalChatId = directChatId;
+
+                    try {
+                        const visibleChats = await this.getSortedVisibleChats({ forceRefresh: true });
+                        const existingChat = visibleChats.find((c) => normalizePhoneDigits(extractPhoneFromChat(c) || '') === normalizedRegistered);
+                        if (existingChat?.id?._serialized) {
+                            canonicalChatId = existingChat.id._serialized;
+                        }
+                    } catch (e) { }
+
                     if (firstMessage && String(firstMessage).trim()) {
-                        await waClient.sendMessage(chatId, String(firstMessage).trim());
+                        await waClient.sendMessage(directChatId, String(firstMessage).trim());
                     }
 
-                    socket.emit('chat_opened', { chatId });
+                    try {
+                        const chat = await waClient.client.getChatById(canonicalChatId);
+                        const summary = await this.toChatSummary(chat, { includeHeavyMeta: true });
+                        if (summary) {
+                            canonicalChatId = summary.id || canonicalChatId;
+                            this.io.emit('chat_updated', summary);
+                        }
+                    } catch (e) {
+                        try {
+                            const fallbackChat = await waClient.client.getChatById(directChatId);
+                            const fallbackSummary = await this.toChatSummary(fallbackChat, { includeHeavyMeta: true });
+                            if (fallbackSummary) {
+                                canonicalChatId = fallbackSummary.id || directChatId;
+                                this.io.emit('chat_updated', fallbackSummary);
+                            }
+                        } catch (fallbackErr) { }
+                    }
+
+                    socket.emit('chat_opened', { chatId: canonicalChatId, phone: registeredUser });
                 } catch (e) {
                     console.error('start_new_chat error:', e.message);
                     socket.emit('start_new_chat_error', 'No se pudo iniciar el chat.');
@@ -390,7 +826,7 @@ class SocketManager {
             socket.on('set_chat_labels', async ({ chatId, labelIds }) => {
                 try {
                     if (!chatId) {
-                        socket.emit('chat_labels_error', 'Chat inválido para etiquetar.');
+                        socket.emit('chat_labels_error', 'Chat invalido para etiquetar.');
                         return;
                     }
 
@@ -426,10 +862,10 @@ class SocketManager {
                 try {
                     const clean = String(name || '').trim();
                     if (!clean) {
-                        socket.emit('chat_labels_error', 'Nombre de etiqueta inválido.');
+                        socket.emit('chat_labels_error', 'Nombre de etiqueta invalido.');
                         return;
                     }
-                    socket.emit('chat_labels_error', 'WhatsApp Web no permite crear etiquetas por API en esta versión. Créala en WhatsApp y aquí se sincronizará al recargar.');
+                    socket.emit('chat_labels_error', 'WhatsApp Web no permite crear etiquetas por API en esta version. Creala en WhatsApp y aqui se sincronizara al recargar.');
                 } catch (e) {
                     console.error('create_label error:', e.message);
                     socket.emit('chat_labels_error', 'No se pudo crear la etiqueta.');
@@ -793,7 +1229,7 @@ class SocketManager {
 
         waClient.on('message_sent', async (msg) => {
             if (isStatusOrSystemMessage(msg)) return;
-            // Emite de vuelta para confirmar en UI si se envió desde otro lugar
+            // Emite de vuelta para confirmar en UI si se envio desde otro lugar
             const media = await mediaManager.processMessageMedia(msg);
             this.io.emit('message', {
                 id: msg.id._serialized,
@@ -834,4 +1270,14 @@ class SocketManager {
 }
 
 module.exports = SocketManager;
+
+
+
+
+
+
+
+
+
+
 

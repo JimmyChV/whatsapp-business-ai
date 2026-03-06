@@ -46,6 +46,129 @@ const normalizeBusinessDataPayload = (data = {}) => {
 
 const normalizeChatLabels = (labels = []) => (Array.isArray(labels) ? labels.map((l) => ({ id: l?.id, name: l?.name || '', color: l?.color || null })) : []);
 
+const cleanLooseText = (value = '') => String(value || '')
+  .replace(/\uFFFD/g, '')
+  .replace(/[\u0000-\u001F]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const normalizeDigits = (value = '') => String(value || '').replace(/\D/g, '');
+const isLikelyPhoneDigits = (digits = '') => {
+  const d = normalizeDigits(digits);
+  return d.length >= 8 && d.length <= 12;
+};
+
+const extractPhoneFromText = (value = '') => {
+  const text = String(value || '');
+  if (!text) return null;
+  const matches = text.match(/\+?\d[\d\s().-]{6,}\d/g) || [];
+  for (const token of matches) {
+    const digits = normalizeDigits(token);
+    if (isLikelyPhoneDigits(digits)) return digits;
+  }
+  return null;
+};
+
+const getBestChatPhone = (chat = {}) => {
+  const direct = normalizeDigits(chat?.phone || '');
+  if (isLikelyPhoneDigits(direct)) return direct;
+
+  const fromSubtitle = extractPhoneFromText(chat?.subtitle || '');
+  if (fromSubtitle) return fromSubtitle;
+
+  const fromStatus = extractPhoneFromText(chat?.status || '');
+  if (fromStatus) return fromStatus;
+
+  const id = String(chat?.id || '');
+  if (id.endsWith('@lid')) return null;
+  const idUser = normalizeDigits(id.split('@')[0] || '');
+  if (id.endsWith('@c.us') && isLikelyPhoneDigits(idUser)) return idUser;
+  if (isLikelyPhoneDigits(idUser)) return idUser;
+
+  return null;
+};
+
+const repairMojibake = (value = '') => {
+  let text = String(value || '');
+  if (!text) return '';
+  try {
+    const decoded = decodeURIComponent(escape(text));
+    const cleanDecoded = decoded.replace(/\uFFFD/g, '');
+    const cleanOriginal = text.replace(/\uFFFD/g, '');
+    if (decoded && decoded !== text && cleanDecoded.length >= Math.floor(cleanOriginal.length * 0.8)) {
+      text = decoded;
+    }
+  } catch (e) { }
+  return text.replace(/\uFFFD/g, '');
+};
+
+const sanitizeDisplayText = (value = '') => repairMojibake(value)
+  .replace(/[\u0000-\u001F]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const isInternalIdentifier = (value = '') => {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  return text.includes('@') || /^\d{14,}$/.test(text);
+};
+
+const normalizeDisplayNameKey = (value = '') => sanitizeDisplayText(value)
+  .toLowerCase()
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const isPlaceholderChat = (chat = {}) => {
+  const ts = Number(chat?.timestamp || 0);
+  const lastMessage = sanitizeDisplayText(chat?.lastMessage || '');
+  return ts <= 0 && !lastMessage;
+};
+
+const chatIdentityKey = (chat = {}) => {
+  const id = String(chat?.id || '').trim();
+  const phone = getBestChatPhone(chat);
+  if (phone) return `phone:${phone}`;
+  return `id:${id}`;
+};
+
+const dedupeChats = (list = []) => {
+  const seen = new Set();
+  const deduped = [];
+  for (const chat of list) {
+    const key = chatIdentityKey(chat);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(chat);
+  }
+
+  const namesWithHistory = new Set(
+    deduped
+      .filter((chat) => !isPlaceholderChat(chat))
+      .map((chat) => normalizeDisplayNameKey(chat?.name || ''))
+      .filter(Boolean)
+  );
+
+  return deduped.filter((chat) => {
+    if (!isPlaceholderChat(chat)) return true;
+    const nameKey = normalizeDisplayNameKey(chat?.name || '');
+    if (!nameKey) return true;
+    return !namesWithHistory.has(nameKey);
+  });
+};
+
+const chatMatchesQuery = (chat = {}, query = '') => {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return true;
+  const qDigits = normalizeDigits(q);
+  const name = String(chat?.name || '').toLowerCase();
+  const subtitle = String(chat?.subtitle || '').toLowerCase();
+  const lastMessage = String(chat?.lastMessage || '').toLowerCase();
+  const phone = getBestChatPhone(chat) || '';
+
+  if (qDigits) return phone.includes(qDigits);
+  return name.includes(q) || subtitle.includes(q) || lastMessage.includes(q);
+};
+
 const isVisibleChatId = (chatId = '') => {
   const id = String(chatId || '');
   if (!id) return false;
@@ -56,9 +179,10 @@ const isVisibleChatId = (chatId = '') => {
 
 const upsertAndSortChat = (list = [], incoming = null) => {
   if (!incoming?.id) return list;
-  const without = list.filter((c) => c.id !== incoming.id);
-  const merged = [incoming, ...without];
-  return merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const incomingKey = chatIdentityKey(incoming);
+  const without = list.filter((c) => c.id !== incoming.id && chatIdentityKey(c) !== incomingKey);
+  const merged = [incoming, ...without].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  return dedupeChats(merged);
 };
 
 const CHAT_PAGE_SIZE = 80;
@@ -74,6 +198,7 @@ function App() {
   const [chatsTotal, setChatsTotal] = useState(0);
   const [chatsHasMore, setChatsHasMore] = useState(true);
   const [isLoadingMoreChats, setIsLoadingMoreChats] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
   const [activeChatId, setActiveChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -114,6 +239,8 @@ function App() {
   const [isDragOver, setIsDragOver] = useState(false);
   const messagesEndRef = useRef(null);
   const activeChatIdRef = useRef(null);
+  const chatsRef = useRef([]);
+  const chatSearchRef = useRef('');
   const chatPagingRef = useRef({ offset: 0, hasMore: true, loading: false });
 
   // ──────────────────────────────────────────────────────────────
@@ -125,9 +252,7 @@ function App() {
     }
     try {
       const savedDefs = JSON.parse(localStorage.getItem('wa_custom_label_defs') || '[]');
-      const savedMap = JSON.parse(localStorage.getItem('wa_custom_chat_labels') || '{}');
       if (Array.isArray(savedDefs)) setLabelDefinitions(savedDefs);
-      if (savedMap && typeof savedMap === 'object') setChatLabelMap(savedMap);
     } catch (e) {
       console.warn('No se pudieron leer etiquetas locales', e.message);
     }
@@ -144,12 +269,29 @@ function App() {
     activeChatIdRef.current = activeChatId;
   }, [activeChatId]);
 
+  useEffect(() => {
+    chatsRef.current = chats;
+  }, [chats]);
+
+  useEffect(() => {
+    chatSearchRef.current = String(chatSearchQuery || '').trim();
+  }, [chatSearchQuery]);
+
+  useEffect(() => {
+    if (!isClientReady) return;
+    const timer = setTimeout(() => {
+      requestChatsPage({ reset: true });
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [chatSearchQuery, isClientReady]);
+
   // ──────────────────────────────────────────────────────────────
   const requestChatsPage = ({ reset = false } = {}) => {
     if (chatPagingRef.current.loading && !reset) return;
     if (!reset && !chatPagingRef.current.hasMore) return;
 
     const offset = reset ? 0 : chatPagingRef.current.offset;
+    const query = chatSearchRef.current;
     chatPagingRef.current.loading = true;
     if (reset) {
       chatPagingRef.current.offset = 0;
@@ -158,11 +300,11 @@ function App() {
       setChatsTotal(0);
     }
     setIsLoadingMoreChats(true);
-    socket.emit('get_chats', { offset, limit: CHAT_PAGE_SIZE, reset });
+    socket.emit('get_chats', { offset, limit: CHAT_PAGE_SIZE, reset, query });
   };
 
   // Socket Events
-  // ──────────────────────────────────────────────────────────────
+  // --------------------------------------------------------------
   useEffect(() => {
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => {
@@ -191,20 +333,35 @@ function App() {
         ? { items: payload, offset: 0, total: payload.length, hasMore: false }
         : (payload || {});
 
+      const incomingQuery = String(page.query || '').trim();
+      if (incomingQuery !== chatSearchRef.current) return;
+
       const rawItems = Array.isArray(page.items) ? page.items : [];
-      const hydrated = rawItems.map((chat) => ({ ...chat, labels: normalizeChatLabels(chat.labels) }));
+      const hydrated = rawItems
+        .filter((chat) => chat?.id && isVisibleChatId(chat.id))
+        .map((chat) => ({
+          ...chat,
+          name: sanitizeDisplayText(chat?.name || ''),
+          subtitle: sanitizeDisplayText(chat?.subtitle || ''),
+          status: sanitizeDisplayText(chat?.status || ''),
+          phone: getBestChatPhone(chat),
+          lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
+          labels: normalizeChatLabels(chat.labels),
+          isMyContact: chat?.isMyContact === true
+        }));
+
       const pageOffset = Number.isFinite(Number(page.offset)) ? Number(page.offset) : 0;
       const total = Number.isFinite(Number(page.total)) ? Number(page.total) : hydrated.length;
       const hasMore = Boolean(page.hasMore);
 
       setChats((prev) => {
-        if (pageOffset <= 0) return hydrated;
-        const existingIds = new Set(prev.map((c) => c.id));
-        const appended = hydrated.filter((c) => !existingIds.has(c.id));
-        return [...prev, ...appended];
+        if (pageOffset <= 0) {
+          return dedupeChats(hydrated).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        }
+        return dedupeChats([...prev, ...hydrated]).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       });
 
-      chatPagingRef.current.offset = pageOffset + hydrated.length;
+      chatPagingRef.current.offset = Number.isFinite(Number(page.nextOffset)) ? Number(page.nextOffset) : (pageOffset + rawItems.length);
       chatPagingRef.current.hasMore = hasMore;
       chatPagingRef.current.loading = false;
       setChatsTotal(total);
@@ -214,13 +371,44 @@ function App() {
 
     socket.on('chat_updated', (chat) => {
       if (!chat?.id || !isVisibleChatId(chat.id)) return;
-      const hydrated = { ...chat, labels: normalizeChatLabels(chat.labels) };
+      const hydrated = {
+        ...chat,
+        name: sanitizeDisplayText(chat?.name || ''),
+        subtitle: sanitizeDisplayText(chat?.subtitle || ''),
+        status: sanitizeDisplayText(chat?.status || ''),
+        phone: getBestChatPhone(chat),
+        lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
+        labels: normalizeChatLabels(chat.labels),
+        isMyContact: chat?.isMyContact === true
+      };
+
+      if (!chatMatchesQuery(hydrated, chatSearchRef.current)) {
+        setChats((prev) => prev.filter((c) => chatIdentityKey(c) !== chatIdentityKey(hydrated) && c.id !== hydrated.id));
+        return;
+      }
+
       setChats((prev) => upsertAndSortChat(prev, hydrated));
     });
 
-    socket.on('chat_opened', ({ chatId }) => {
-      if (chatId) handleChatSelect(chatId);
-      requestChatsPage({ reset: true });
+    socket.on('chat_opened', ({ chatId, phone }) => {
+      if (!chatId) {
+        requestChatsPage({ reset: true });
+        return;
+      }
+
+      const normalizedPhone = normalizeDigits(phone || '');
+      let targetChatId = chatId;
+
+      if (normalizedPhone) {
+        const existing = chatsRef.current.find((c) => normalizeDigits(c?.phone || '') === normalizedPhone || chatIdentityKey(c) === ('phone:' + normalizedPhone));
+        if (existing?.id) targetChatId = existing.id;
+      }
+
+      if (targetChatId !== chatId) {
+        setChats((prev) => prev.filter((c) => c.id !== chatId));
+      }
+
+      handleChatSelect(targetChatId, { clearSearch: true });
     });
 
     socket.on('start_new_chat_error', (msg) => {
@@ -242,7 +430,11 @@ function App() {
     });
 
     socket.on('chat_history', (data) => {
-      if (data.chatId === activeChatIdRef.current) setMessages(data.messages);
+      if (data.chatId !== activeChatIdRef.current) return;
+      const sanitizedMessages = Array.isArray(data.messages)
+        ? data.messages.map((m) => ({ ...m, body: repairMojibake(m?.body || '') }))
+        : [];
+      setMessages(sanitizedMessages);
     });
 
     socket.on('chat_media', ({ chatId, messageId, mediaData, mimetype }) => {
@@ -254,41 +446,111 @@ function App() {
     });
 
     socket.on('contact_info', (contact) => {
-      setClientContact(contact);
+      const normalizedContact = {
+        ...contact,
+        name: sanitizeDisplayText(contact?.name || ''),
+        pushname: sanitizeDisplayText(contact?.pushname || ''),
+        shortName: sanitizeDisplayText(contact?.shortName || ''),
+        status: repairMojibake(contact?.status || '')
+      };
+      setClientContact(normalizedContact);
+
+      const contactId = String(contact?.id || '');
+      if (!contactId) return;
+
+      const contactPhone = getBestChatPhone({
+        id: contactId,
+        phone: contact?.phone || '',
+        subtitle: String(contact?.pushname || '') + ' ' + String(contact?.shortName || '') + ' ' + String(contact?.name || ''),
+        status: contact?.status || ''
+      });
+
+      setChats((prev) => {
+        const existing = prev.find((c) => c.id === contactId || (contactPhone && getBestChatPhone(c) === contactPhone));
+        if (!existing) return prev;
+
+        const fallbackName = sanitizeDisplayText(contact?.name || contact?.pushname || contact?.shortName || existing?.name || '');
+        const subtitleName = sanitizeDisplayText(contact?.pushname || contact?.shortName || contact?.name || '');
+        const nextChat = {
+          ...existing,
+          id: existing.id || contactId,
+          phone: contactPhone || existing?.phone || null,
+          isMyContact: contact?.isMyContact === true,
+          name: fallbackName && !isInternalIdentifier(fallbackName)
+            ? fallbackName
+            : (existing?.name || (contactPhone ? ('+' + contactPhone) : 'Contacto')),
+          subtitle: subtitleName || existing?.subtitle || null,
+          status: normalizedContact.status || existing?.status || ''
+        };
+
+        return upsertAndSortChat(prev, nextChat);
+      });
     });
 
     socket.on('message', (msg) => {
       const relatedChatId = msg.fromMe ? msg.to : msg.from;
       if (!isVisibleChatId(relatedChatId)) return;
+
       if (!msg.fromMe && Notification.permission === 'granted') {
-        new Notification(msg.notifyName || 'Nuevo mensaje', { body: msg.body || 'Nuevo mensaje', icon: '/favicon.ico' });
+        new Notification(msg.notifyName || 'Nuevo mensaje', {
+          body: msg.body || 'Nuevo mensaje',
+          icon: '/favicon.ico'
+        });
       }
 
       if (!msg.fromMe && relatedChatId !== activeChatIdRef.current) {
-        const toastId = `${msg.id || Date.now()}`;
-        setToasts((prev) => [...prev, { id: toastId, chatId: relatedChatId, title: msg.notifyName || msg.from, body: msg.body || 'Nuevo mensaje' }].slice(-3));
+        const toastId = String(msg.id || Date.now());
+        setToasts((prev) => [...prev, {
+          id: toastId,
+          chatId: relatedChatId,
+          title: sanitizeDisplayText(msg.notifyName || msg.from || 'Nuevo mensaje'),
+          body: sanitizeDisplayText(msg.body || 'Nuevo mensaje')
+        }].slice(-3));
+
         setTimeout(() => {
           setToasts((prev) => prev.filter((t) => t.id !== toastId));
         }, 5000);
       }
 
       setChats((prev) => {
-        const existing = prev.find((c) => c.id === relatedChatId);
+        const senderDigits = normalizeDigits(msg.senderPhone || '');
+        const idDigits = normalizeDigits(String(relatedChatId || '').split('@')[0] || '');
+        const fallbackDigits = isLikelyPhoneDigits(senderDigits)
+          ? senderDigits
+          : (isLikelyPhoneDigits(idDigits) ? idDigits : '');
+        const fallbackName = sanitizeDisplayText(msg.notifyName || '');
+        const safeName = fallbackName && !isInternalIdentifier(fallbackName)
+          ? fallbackName
+          : (isLikelyPhoneDigits(fallbackDigits) ? ('+' + fallbackDigits) : 'Contacto');
+
+        const incomingIdentity = chatIdentityKey({ id: relatedChatId, phone: fallbackDigits, subtitle: fallbackName });
+        const existing = prev.find((c) => c.id === relatedChatId || chatIdentityKey(c) === incomingIdentity);
+        const canonicalId = existing?.id || relatedChatId;
         const nextChat = {
-          ...(existing || { id: relatedChatId, name: msg.notifyName || relatedChatId, labels: [] }),
+          ...(existing || { id: canonicalId, name: safeName, phone: isLikelyPhoneDigits(fallbackDigits) ? fallbackDigits : null, subtitle: null, labels: [] }),
+          id: canonicalId,
+          name: sanitizeDisplayText(existing?.name || '') && !isInternalIdentifier(existing?.name || '')
+            ? existing.name
+            : safeName,
+          phone: existing?.phone || (isLikelyPhoneDigits(fallbackDigits) ? fallbackDigits : null),
+          subtitle: sanitizeDisplayText(existing?.subtitle || fallbackName || '') || existing?.subtitle || null,
           timestamp: msg.timestamp || Math.floor(Date.now() / 1000),
-          lastMessage: msg.body || (msg.type === 'image' ? '📷 Imagen' : 'Mensaje'),
+          lastMessage: sanitizeDisplayText(msg.body || '') || (msg.type === 'image' ? 'Imagen' : 'Mensaje'),
           lastMessageFromMe: !!msg.fromMe,
           ack: msg.ack || 0,
-          unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (relatedChatId === activeChatIdRef.current ? 0 : (existing?.unreadCount || 0) + 1),
+          isMyContact: existing?.isMyContact === true,
+          unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (canonicalId === activeChatIdRef.current ? 0 : (existing?.unreadCount || 0) + 1),
         };
+
+        if (!chatMatchesQuery(nextChat, chatSearchRef.current)) return prev;
         return upsertAndSortChat(prev, nextChat);
       });
 
-      setMessages(prev => {
-        if (prev.find(m => m.id === msg.id)) return prev;
+      setMessages((prev) => {
+        if (prev.find((m) => m.id === msg.id)) return prev;
         const shouldAdd = (msg.fromMe && msg.to === activeChatIdRef.current) || (!msg.fromMe && msg.from === activeChatIdRef.current);
-        return shouldAdd ? [...prev, msg] : prev;
+        if (!shouldAdd) return prev;
+        return [...prev, { ...msg, body: repairMojibake(msg?.body || '') }];
       });
     });
 
@@ -322,11 +584,11 @@ function App() {
     });
 
     socket.on('authenticated', () => {
-      console.log('WhatsApp authenticated ✅');
+      console.log('WhatsApp authenticated');
     });
 
     socket.on('auth_failure', (msg) => {
-      alert('Error de autenticación. Por favor recarga la página y escanea de nuevo.\n\nDetalle: ' + msg);
+      alert('Error de autenticacion. Por favor recarga la pagina y escanea de nuevo.\n\nDetalle: ' + msg);
     });
 
     socket.on('disconnected', (reason) => {
@@ -346,7 +608,7 @@ function App() {
       setIsLoadingMoreChats(false);
       setMessages([]);
       setActiveChatId(null);
-      alert('Sesión de WhatsApp cerrada. Escanea nuevamente el QR.');
+      alert('Sesion de WhatsApp cerrada. Escanea nuevamente el QR.');
     });
 
     return () => {
@@ -371,7 +633,15 @@ function App() {
   // ──────────────────────────────────────────────────────────────
   // Handlers
   // ──────────────────────────────────────────────────────────────
-  const handleChatSelect = (chatId) => {
+  const handleChatSelect = (chatId, options = {}) => {
+    if (!chatId) return;
+    const clearSearch = Boolean(options?.clearSearch);
+    if (clearSearch && chatSearchRef.current) {
+      chatSearchRef.current = '';
+      setChatSearchQuery('');
+      requestChatsPage({ reset: true });
+    }
+
     activeChatIdRef.current = chatId;
     setActiveChatId(chatId);
     setMessages([]);
@@ -380,7 +650,7 @@ function App() {
     socket.emit('get_chat_history', chatId);
     socket.emit('mark_chat_read', chatId);
     socket.emit('get_contact_info', chatId);
-    setChats(prev => prev.map(c => c.id === chatId ? { ...c, unreadCount: 0 } : c));
+    setChats((prev) => prev.map((c) => c.id === chatId ? { ...c, unreadCount: 0 } : c));
   };
 
   const handleSendMessage = (e) => {
@@ -420,6 +690,10 @@ function App() {
     requestChatsPage({ reset: true });
   };
 
+  const handleChatSearchChange = (value) => {
+    setChatSearchQuery(String(value || ''));
+  };
+
   const handleLoadMoreChats = () => {
     requestChatsPage({ reset: false });
   };
@@ -445,10 +719,12 @@ function App() {
   };
 
   const handleStartNewChat = (phoneArg, firstMessageArg = '') => {
-    const phone = phoneArg || window.prompt('Número del cliente (con código de país, sin +):');
+    const phone = phoneArg || window.prompt('Numero del cliente (con codigo de pais, sin +):');
     if (!phone) return;
+    const normalizedPhone = normalizeDigits(phone);
+    if (!normalizedPhone) return;
     const firstMessage = typeof firstMessageArg === 'string' ? firstMessageArg : (window.prompt('Mensaje inicial (opcional):') || '');
-    socket.emit('start_new_chat', { phone, firstMessage });
+    socket.emit('start_new_chat', { phone: normalizedPhone, firstMessage });
   };
 
   const requestAiSuggestion = (customPromptArg) => {
@@ -665,6 +941,8 @@ REGLA CRÍTICA:
         chatsHasMore={chatsHasMore}
         chatsLoadingMore={isLoadingMoreChats}
         chatsTotal={chatsTotal}
+        searchQuery={chatSearchQuery}
+        onSearchQueryChange={handleChatSearchChange}
       />
 
       {/* Main Content Area */}
