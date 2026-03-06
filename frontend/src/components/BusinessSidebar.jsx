@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Send, X, ShoppingCart, Tag, Clock, Sparkles, Trash2, Percent, Plus, Minus, ChevronRight, Package, MessageSquare, PlusCircle, Edit2, Check } from 'lucide-react';
+﻿import React, { useState, useRef, useEffect } from 'react';
+import { Bot, Send, X, ShoppingCart, Clock, Sparkles, Trash2, Plus, Minus, ChevronRight, ChevronDown, ChevronUp, Package, MessageSquare, PlusCircle, Edit2, Check } from 'lucide-react';
 import moment from 'moment';
 
 const repairMojibake = (value = '') => {
@@ -17,12 +17,29 @@ const repairMojibake = (value = '') => {
 };
 
 
-const roundToOneDecimal = (value) => {
-    const num = Number(value) || 0;
-    return Math.round(num * 10) / 10;
-};
-
 const formatMoney = (value) => Number(value || 0).toFixed(2);
+const formatMoneyCompact = (value) => {
+    const fixed = Number(value || 0).toFixed(2);
+    return fixed.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+};
+const parseMoney = (value, fallback = 0) => {
+    const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+    if (Number.isFinite(parsed)) return parsed;
+    return Number.isFinite(fallback) ? fallback : 0;
+};
+const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
+const clampNumber = (value, min = 0, max = 100) => Math.min(max, Math.max(min, Number(value) || 0));
+const toSentenceCase = (value = '') => {
+    const clean = String(value || '').trim().replace(/\s+/g, ' ');
+    if (!clean) return '';
+    return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
+};
+const formatQuoteProductTitle = (value = '') => {
+    const sentence = toSentenceCase(value);
+    return sentence
+        .replace(/(\d+(?:[.,]\d+)?)\s*l\b/gi, (_, qty) => `${String(qty).replace(',', '.')} Litros`)
+        .replace(/(\d+(?:[.,]\d+)?)\s*ml\b/gi, (_, qty) => `${String(qty).replace(',', '.')} mL`) || 'Producto';
+};
 
 const normalizeCatalogItem = (item = {}, index = 0) => {
     const safeItem = item && typeof item === 'object' ? item : {};
@@ -646,10 +663,14 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
     const [isAiLoading, setIsAiLoading] = useState(false);
     const aiEndRef = useRef(null);
 
-    // Cart State
+        // Cart State
     const [cart, setCart] = useState([]);
-    const [discount, setDiscount] = useState(0);
-    const [showDiscount, setShowDiscount] = useState(false);
+    const [showOrderAdjustments, setShowOrderAdjustments] = useState(false);
+    const [globalDiscountEnabled, setGlobalDiscountEnabled] = useState(false);
+    const [globalDiscountType, setGlobalDiscountType] = useState('percent');
+    const [globalDiscountValue, setGlobalDiscountValue] = useState(0);
+    const [deliveryType, setDeliveryType] = useState('free');
+    const [deliveryAmount, setDeliveryAmount] = useState(0);
     const [cartDraftsByChat, setCartDraftsByChat] = useState({});
     const [quickForm, setQuickForm] = useState({ label: '', text: '' });
     const [quickEditId, setQuickEditId] = useState('');
@@ -665,19 +686,55 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
         if (!activeChatId) return;
         const draft = cartDraftsByChat[activeChatId];
         if (draft) {
+            const legacyPct = parseMoney(draft.globalDiscountPct ?? draft.discount ?? 0, 0);
+            const legacyAmount = parseMoney(draft.globalDiscountAmount ?? 0, 0);
+            const hasLegacyDiscount = legacyPct > 0 || legacyAmount > 0;
+            const resolvedDiscountType = draft.globalDiscountType || (legacyAmount > 0 ? 'amount' : 'percent');
+            const resolvedDiscountValue = parseMoney(
+                draft.globalDiscountValue ?? (resolvedDiscountType === 'amount' ? legacyAmount : legacyPct),
+                0
+            );
+
+            let resolvedDeliveryType = draft.deliveryType;
+            if (!resolvedDeliveryType) {
+                const legacyDeliveryEnabled = Boolean(draft.deliveryEnabled ?? false);
+                const legacyDeliveryAmount = parseMoney(draft.deliveryAmount ?? 0, 0);
+                resolvedDeliveryType = legacyDeliveryEnabled && legacyDeliveryAmount > 0 ? 'amount' : 'free';
+            }
+
             setCart(draft.cart || []);
-            setDiscount(draft.discount || 0);
+            setShowOrderAdjustments(Boolean(draft.showOrderAdjustments ?? false));
+            setGlobalDiscountEnabled(Boolean(draft.globalDiscountEnabled ?? hasLegacyDiscount));
+            setGlobalDiscountType(resolvedDiscountType === 'amount' ? 'amount' : 'percent');
+            setGlobalDiscountValue(Math.max(0, resolvedDiscountValue));
+            setDeliveryType(resolvedDeliveryType === 'amount' ? 'amount' : 'free');
+            setDeliveryAmount(Math.max(0, parseMoney(draft.deliveryAmount ?? 0, 0)));
         } else {
             setCart([]);
-            setDiscount(0);
+            setShowOrderAdjustments(false);
+            setGlobalDiscountEnabled(false);
+            setGlobalDiscountType('percent');
+            setGlobalDiscountValue(0);
+            setDeliveryType('free');
+            setDeliveryAmount(0);
         }
     }, [activeChatId]);
 
     useEffect(() => {
         if (!activeChatId) return;
-        setCartDraftsByChat(prev => ({ ...prev, [activeChatId]: { cart, discount } }));
-    }, [activeChatId, cart, discount]);
-
+        setCartDraftsByChat(prev => ({
+            ...prev,
+            [activeChatId]: {
+                cart,
+                showOrderAdjustments,
+                globalDiscountEnabled,
+                globalDiscountType,
+                globalDiscountValue,
+                deliveryType,
+                deliveryAmount
+            }
+        }));
+    }, [activeChatId, cart, showOrderAdjustments, globalDiscountEnabled, globalDiscountType, globalDiscountValue, deliveryType, deliveryAmount]);
     // Auto-scroll AI chat
     useEffect(() => { aiEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [aiMessages]);
 
@@ -686,6 +743,12 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
             setActiveTab('ai');
         }
     }, [activeTab, quickRepliesEnabled]);
+
+    useEffect(() => {
+        if (activeTab === 'cart' && cart.length === 0) {
+            setActiveTab('catalog');
+        }
+    }, [activeTab, cart.length]);
 
     useEffect(() => {
         if (!showCompanyProfile) return;
@@ -759,7 +822,7 @@ CONVERSACION ACTUAL CON EL CLIENTE:
 ${convText || '(sin mensajes aun)'}
 
 CARRITO ACTUAL (si ya agregaste productos):
-${cart.length > 0 ? cart.map((item, idx) => `- ${idx + 1}) ${item.title} | qty ${item.qty} | precio S/ ${formatMoney(item.price)}${item.discountPct ? ` | desc ${item.discountPct}%` : ''}`).join('\n') : '(carrito vacio)'}
+${cart.length > 0 ? cart.map((item, idx) => `- ${idx + 1}) ${item.title} | qty ${item.qty} | precio base S/ ${formatMoney(item.price)}${item.lineDiscountEnabled ? ` | desc ${item.lineDiscountType === 'amount' ? 'monto' : '%'} ${formatMoney(item.lineDiscountValue)}` : ''}`).join('\n') : '(carrito vacio)'}
 
 INSTRUCCIONES OBLIGATORIAS:
 - Si te piden opciones/cotizacion, da minimo 2 alternativas: base y optimizada.
@@ -818,18 +881,63 @@ INSTRUCCIONES OBLIGATORIAS:
         });
     };
 
-    // Cart functions
+        // Cart functions
+    const getLineBreakdown = (item = {}) => {
+        const qty = Math.max(1, Math.trunc(parseMoney(item.qty, 1)) || 1);
+        const unitPrice = Math.max(0, parseMoney(item.price, 0));
+        const regularUnitCandidate = Math.max(0, parseMoney(item.regularPrice, unitPrice));
+        const regularUnit = regularUnitCandidate > 0 ? regularUnitCandidate : unitPrice;
+
+        const regularSubtotal = roundMoney(regularUnit * qty);
+        const baseSubtotal = roundMoney(unitPrice * qty);
+        const includedDiscount = roundMoney(Math.max(regularSubtotal - baseSubtotal, 0));
+
+        const lineDiscountEnabled = Boolean(item.lineDiscountEnabled);
+        const lineDiscountType = item.lineDiscountType === 'amount' ? 'amount' : 'percent';
+        const rawLineDiscountValue = Math.max(0, parseMoney(item.lineDiscountValue, 0));
+        const lineDiscountValue = lineDiscountType === 'percent'
+            ? clampNumber(rawLineDiscountValue, 0, 100)
+            : rawLineDiscountValue;
+
+        let additionalDiscountApplied = 0;
+        if (lineDiscountEnabled) {
+            if (lineDiscountType === 'percent') {
+                additionalDiscountApplied = roundMoney(baseSubtotal * (lineDiscountValue / 100));
+            } else {
+                additionalDiscountApplied = roundMoney(Math.min(baseSubtotal, lineDiscountValue));
+            }
+        }
+
+        const lineFinal = roundMoney(baseSubtotal - additionalDiscountApplied);
+
+        return {
+            qty,
+            unitPrice,
+            regularUnit,
+            regularSubtotal,
+            baseSubtotal,
+            includedDiscount,
+            lineDiscountEnabled,
+            lineDiscountType,
+            lineDiscountValue,
+            additionalDiscountApplied,
+            lineFinal,
+            totalDiscount: roundMoney(includedDiscount + additionalDiscountApplied)
+        };
+    };
+
     const addToCart = (item, qtyToAdd = 1) => {
         const safeQty = Math.max(1, Number(qtyToAdd) || 1);
         setCart(prev => {
             const existing = prev.find(c => c.id === item.id);
             if (existing) return prev.map(c => c.id === item.id ? { ...c, qty: c.qty + safeQty } : c);
-            return [...prev, { ...item, qty: safeQty, discountPct: 0 }];
+            return [...prev, { ...item, qty: safeQty, lineDiscountEnabled: false, lineDiscountType: 'percent', lineDiscountValue: 0 }];
         });
     };
 
     const removeFromCart = (id) => setCart(prev => prev.filter(c => c.id !== id));
     const updateQty = (id, delta) => setCart(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(1, c.qty + delta) } : c));
+
     const updateCatalogQty = (id, delta) => {
         const safeDelta = Number(delta) || 0;
         if (!id || !safeDelta) return;
@@ -841,24 +949,99 @@ INSTRUCCIONES OBLIGATORIAS:
             return [{ ...item, qty: nextQty }];
         }));
     };
-    const updateItemDiscount = (id, pct) => setCart(prev => prev.map(c => c.id === id ? { ...c, discountPct: Math.min(90, Math.max(0, pct)) } : c));
 
-    const cartTotal = roundToOneDecimal(cart.reduce((sum, item) => {
-        const price = parseFloat(item.price) || 0;
-        const disc = item.discountPct || discount;
-        const finalPrice = roundToOneDecimal(price * (1 - disc / 100));
-        return sum + (finalPrice * item.qty);
-    }, 0));
+    const updateItemDiscountEnabled = (id, enabled) => {
+        const isEnabled = Boolean(enabled);
+        setCart(prev => prev.map(c => c.id === id
+            ? {
+                ...c,
+                lineDiscountEnabled: isEnabled,
+                lineDiscountValue: isEnabled ? Math.max(0, parseMoney(c.lineDiscountValue, 0)) : 0
+            }
+            : c));
+    };
+
+    const updateItemDiscountType = (id, type) => {
+        const safeType = type === 'amount' ? 'amount' : 'percent';
+        setCart(prev => prev.map(c => c.id === id
+            ? {
+                ...c,
+                lineDiscountType: safeType,
+                lineDiscountValue: 0
+            }
+            : c));
+    };
+
+    const updateItemDiscountValue = (id, value) => {
+        setCart(prev => prev.map(c => {
+            if (c.id !== id) return c;
+            const safeType = c.lineDiscountType === 'amount' ? 'amount' : 'percent';
+            const rawValue = Math.max(0, parseMoney(value, 0));
+            const safeValue = safeType === 'percent' ? clampNumber(rawValue, 0, 100) : rawValue;
+            return { ...c, lineDiscountValue: safeValue };
+        }));
+    };
+
+    const lineBreakdowns = cart.map((item) => ({ item, ...getLineBreakdown(item) }));
+    const regularSubtotalTotal = roundMoney(lineBreakdowns.reduce((sum, line) => sum + line.regularSubtotal, 0));
+    const subtotalProducts = roundMoney(lineBreakdowns.reduce((sum, line) => sum + line.lineFinal, 0));
+
+    const rawGlobalDiscountValue = Math.max(0, parseMoney(globalDiscountValue, 0));
+    const normalizedGlobalDiscountValue = globalDiscountType === 'amount'
+        ? rawGlobalDiscountValue
+        : clampNumber(rawGlobalDiscountValue, 0, 100);
+
+    const globalDiscountApplied = globalDiscountEnabled
+        ? roundMoney(Math.min(
+            subtotalProducts,
+            globalDiscountType === 'amount'
+                ? normalizedGlobalDiscountValue
+                : subtotalProducts * (normalizedGlobalDiscountValue / 100)
+        ))
+        : 0;
+
+    const subtotalAfterGlobal = roundMoney(subtotalProducts - globalDiscountApplied);
+    const totalDiscountForQuote = roundMoney(Math.max(0, regularSubtotalTotal - subtotalAfterGlobal));
+
+    const safeDeliveryAmount = Math.max(0, parseMoney(deliveryAmount, 0));
+    const deliveryFee = deliveryType === 'amount' ? safeDeliveryAmount : 0;
+    const cartTotal = roundMoney(subtotalAfterGlobal + deliveryFee);
 
     const sendQuoteToChat = () => {
         if (cart.length === 0) return;
-        const lines = cart.map(item => {
-            const price = parseFloat(item.price) || 0;
-            const disc = item.discountPct || discount;
-            const finalPrice = roundToOneDecimal(price * (1 - disc / 100));
-            return `*${item.title}*\n   Qty: ${item.qty} x S/ ${formatMoney(price)}${disc > 0 ? ` (-${disc}%)` : ''} = *S/ ${formatMoney(finalPrice * item.qty)}*`;
+
+        const separator = '---------------------------------------------';
+
+        const productRows = cart.map((item) => {
+            const line = getLineBreakdown(item);
+            return `\u2796 *${line.qty}* ${formatQuoteProductTitle(item.title)}`;
         });
-        const msg = `*COTIZACION*\n${'-'.repeat(25)}\n${lines.join('\n\n')}\n${'-'.repeat(25)}\n*TOTAL: S/ ${formatMoney(cartTotal)}*${discount > 0 ? `\nDescuento global aplicado: ${discount}%` : ''}\n\nProcedemos con el pedido?`;
+
+        const paymentRows = [
+            `\u2796 Subtotal: S/ ${formatMoneyCompact(regularSubtotalTotal)}`,
+        ];
+
+        if (totalDiscountForQuote > 0) {
+            paymentRows.push(`\u2796 *DESCUENTO: S/ ${formatMoneyCompact(totalDiscountForQuote)}*`);
+            paymentRows.push(`\u2796 Total con Descuento: S/ ${formatMoneyCompact(subtotalAfterGlobal)}`);
+        }
+
+        paymentRows.push(`\u2796 Delivery: ${deliveryFee > 0 ? `S/ ${formatMoneyCompact(deliveryFee)}` : 'Gratuito'}`);
+        paymentRows.push(`\u2796 *TOTAL A PAGAR: S/ ${formatMoneyCompact(cartTotal)}*`);
+
+        const msg = [
+            `*\u2705 COTIZACION \u2705*`,
+            separator,
+            '*_DETALLE DE PRODUCTOS:_*',
+            separator,
+            ...productRows,
+            separator,
+            '*_DETALLE DE PAGO:_*',
+            separator,
+            ...paymentRows,
+            separator,
+        ].join('\n');
+
         setInputText(msg);
     };
 
@@ -900,10 +1083,10 @@ INSTRUCCIONES OBLIGATORIAS:
     const tabs = [
         { id: 'ai', icon: <Bot size={15} />, label: 'IA Pro' },
         { id: 'catalog', icon: <Package size={15} />, label: `Catalogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
-        { id: 'cart', icon: <ShoppingCart size={15} />, label: `Carrito${cart.length > 0 ? ` (${cart.length})` : ''}` },
-
+        ...(cart.length > 0 ? [{ id: 'cart', icon: <ShoppingCart size={15} />, label: `Carrito (${cart.length})` }] : []),
         ...(quickRepliesEnabled ? [{ id: 'quick', icon: <Clock size={15} />, label: 'Rapidas' }] : []),
     ];
+
 
     return (
         <div className="business-sidebar business-sidebar-pro">
@@ -952,13 +1135,14 @@ INSTRUCCIONES OBLIGATORIAS:
                 ))}
             </div>
 
-
             {!quickRepliesEnabled && (
-                <div className="quick-replies-warning">
-                    <strong>Modo compatibilidad</strong>
-                    <span>Las respuestas rapidas nativas no estan disponibles en esta version de WhatsApp Web.</span>
+                <div style={{ padding: '2px 10px 0', fontSize: '0.66rem', color: '#6f8796', textAlign: 'right' }}>
+                    Modo compatibilidad activo (respuestas rapidas nativas no disponibles).
                 </div>
             )}
+
+
+
 
             {showCompanyProfile && (
                 <CompanyProfilePanel
@@ -1061,10 +1245,10 @@ INSTRUCCIONES OBLIGATORIAS:
                 <CatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} cartItems={cart} />
             )}
 
-            {/* CART TAB */}
+                        {/* CART TAB */}
             {activeTab === 'cart' && (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {cart.length === 0 ? (
                             <div style={{ textAlign: 'center', padding: '30px 15px', color: '#8696a0' }}>
                                 <ShoppingCart size={36} style={{ marginBottom: '12px', opacity: 0.25, marginLeft: 'auto', marginRight: 'auto' }} />
@@ -1073,65 +1257,175 @@ INSTRUCCIONES OBLIGATORIAS:
                             </div>
                         ) : (
                             cart.map((item, i) => {
-                                const price = parseFloat(item.price) || 0;
-                                const disc = item.discountPct || 0;
-                                const finalPrice = roundToOneDecimal(price * (1 - disc / 100));
+                                const line = getLineBreakdown(item);
                                 return (
-                                    <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '10px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                                            <div style={{ flex: 1, overflow: 'hidden', marginRight: '8px' }}>
-                                                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
-                                                <div style={{ fontSize: '0.8rem', color: '#00a884' }}>
-                                                    S/ {formatMoney(finalPrice)} {disc > 0 && <span style={{ color: '#8696a0', textDecoration: 'line-through', fontSize: '0.72rem', marginLeft: '4px' }}>S/ {formatMoney(price)}</span>}
+                                    <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: '0.86rem', color: 'var(--text-primary)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
+                                                <div style={{ marginTop: '4px', fontSize: '0.73rem', color: '#97adba', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                    <span>Regular: S/ {formatMoney(line.regularSubtotal)}</span>
+                                                    {line.includedDiscount > 0 && <span style={{ color: '#63d1b7' }}>Desc. kit: -S/ {formatMoney(line.includedDiscount)}</span>}
+                                                    <span style={{ color: '#00d7ad', fontWeight: 700 }}>Final: S/ {formatMoney(line.lineFinal)}</span>
                                                 </div>
                                             </div>
-                                            <button onClick={() => removeFromCart(item.id)} style={{ background: '#2a3942', border: '1px solid var(--border-color)', cursor: 'pointer', color: '#da3633', padding: '4px 8px', borderRadius: '6px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <button onClick={() => removeFromCart(item.id)} style={{ background: '#2a3942', border: '1px solid var(--border-color)', cursor: 'pointer', color: '#da3633', padding: '4px 8px', borderRadius: '6px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
                                                 <Trash2 size={13} /> Eliminar
                                             </button>
                                         </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                <button onClick={() => updateQty(item.id, -1)} style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={10} /></button>
-                                                <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', minWidth: '24px', textAlign: 'center' }}>{item.qty}</span>
+
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', background: '#17242c', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '6px 8px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <button onClick={() => (line.qty <= 1 ? removeFromCart(item.id) : updateQty(item.id, -1))} style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={10} /></button>
+                                                <span style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 700, minWidth: '22px', textAlign: 'center' }}>{line.qty}</span>
                                                 <button onClick={() => updateQty(item.id, 1)} style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus size={10} /></button>
                                             </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                <Percent size={12} color="#8696a0" />
+                                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#cfe2ec', fontSize: '0.76rem', cursor: 'pointer' }}>
                                                 <input
-                                                    type="number" min="0" max="90" value={item.discountPct || 0}
-                                                    onChange={e => updateItemDiscount(item.id, parseInt(e.target.value) || 0)}
-                                                    style={{ width: '42px', background: '#3b4a54', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '5px', padding: '3px 5px', fontSize: '0.78rem', outline: 'none' }}
+                                                    type="checkbox"
+                                                    checked={line.lineDiscountEnabled}
+                                                    onChange={e => updateItemDiscountEnabled(item.id, e.target.checked)}
                                                 />
-                                                <span style={{ fontSize: '0.72rem', color: '#8696a0' }}>%</span>
-                                            </div>
-                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                                                S/ {formatMoney(finalPrice * item.qty)}
-                                            </div>
+                                                Aplicar descuento en linea
+                                            </label>
                                         </div>
+
+                                        {line.lineDiscountEnabled && (
+                                            <div style={{ background: '#17242c', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                                    <span style={{ fontSize: '0.72rem', color: '#95abba' }}>Tipo de descuento</span>
+                                                    <select
+                                                        value={line.lineDiscountType}
+                                                        onChange={e => updateItemDiscountType(item.id, e.target.value)}
+                                                        style={{ background: '#2a3942', border: '1px solid var(--border-color)', color: '#d9e8f0', borderRadius: '6px', padding: '5px 7px', fontSize: '0.8rem', outline: 'none' }}
+                                                    >
+                                                        <option value="percent">Porcentaje (%)</option>
+                                                        <option value="amount">Monto (S/)</option>
+                                                    </select>
+                                                </div>
+
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                                    <span style={{ fontSize: '0.72rem', color: '#95abba' }}>Valor</span>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max={line.lineDiscountType === 'percent' ? 100 : undefined}
+                                                        step={line.lineDiscountType === 'percent' ? '1' : '0.01'}
+                                                        value={line.lineDiscountValue}
+                                                        onChange={e => updateItemDiscountValue(item.id, e.target.value)}
+                                                        style={{ background: '#2a3942', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '6px', padding: '5px 7px', fontSize: '0.8rem', outline: 'none' }}
+                                                    />
+                                                </div>
+
+                                                <div style={{ gridColumn: '1 / -1', fontSize: '0.76rem', color: '#9bb0bc', display: 'flex', justifyContent: 'space-between' }}>
+                                                    <span>Descuento aplicado</span>
+                                                    <strong style={{ color: '#63d1b7' }}>-S/ {formatMoney(line.additionalDiscountApplied)}</strong>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })
                         )}
                     </div>
+
                     {cart.length > 0 && (
-                        <div style={{ padding: '10px', borderTop: '1px solid var(--border-color)', background: '#202c33', flexShrink: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                <span style={{ fontSize: '0.82rem', color: '#8696a0' }}>Descuento global:</span>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <input type="number" min="0" max="90" value={discount}
-                                        onChange={e => setDiscount(parseInt(e.target.value) || 0)}
-                                        style={{ width: '48px', background: '#2a3942', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '6px', padding: '4px 6px', fontSize: '0.82rem', outline: 'none' }}
-                                    />
-                                    <span style={{ fontSize: '0.78rem', color: '#8696a0' }}>%</span>
+                        <div style={{ padding: '8px', borderTop: '1px solid var(--border-color)', background: '#202c33', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
+                            <button
+                                type="button"
+                                onClick={() => setShowOrderAdjustments(prev => !prev)}
+                                style={{ width: '100%', background: '#1a2a33', border: '1px solid var(--border-color)', color: '#d3e4ed', borderRadius: '8px', padding: '8px 10px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                            >
+                                <span>Ajustes de pago (descuento global y delivery)</span>
+                                {showOrderAdjustments ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                            </button>
+
+                            {showOrderAdjustments && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <div style={{ background: '#17242c', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#d5e3ec', fontSize: '0.78rem', cursor: 'pointer' }}>
+                                            <input type="checkbox" checked={globalDiscountEnabled} onChange={e => setGlobalDiscountEnabled(e.target.checked)} />
+                                            Aplicar descuento global
+                                        </label>
+
+                                        {globalDiscountEnabled && (
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                                <select
+                                                    value={globalDiscountType}
+                                                    onChange={e => setGlobalDiscountType(e.target.value === 'amount' ? 'amount' : 'percent')}
+                                                    style={{ background: '#2a3942', border: '1px solid var(--border-color)', color: '#d9e8f0', borderRadius: '6px', padding: '5px 7px', fontSize: '0.8rem', outline: 'none' }}
+                                                >
+                                                    <option value="percent">Porcentaje (%)</option>
+                                                    <option value="amount">Monto (S/)</option>
+                                                </select>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max={globalDiscountType === 'percent' ? 100 : undefined}
+                                                    step={globalDiscountType === 'percent' ? '1' : '0.01'}
+                                                    value={normalizedGlobalDiscountValue}
+                                                    onChange={e => setGlobalDiscountValue(Math.max(0, parseMoney(e.target.value, 0)))}
+                                                    style={{ background: '#2a3942', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '6px', padding: '5px 7px', fontSize: '0.8rem', outline: 'none' }}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div style={{ background: '#17242c', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        <div style={{ fontSize: '0.75rem', color: '#95abba' }}>Delivery / envio</div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                            <select
+                                                value={deliveryType}
+                                                onChange={e => setDeliveryType(e.target.value === 'amount' ? 'amount' : 'free')}
+                                                style={{ background: '#2a3942', border: '1px solid var(--border-color)', color: '#d9e8f0', borderRadius: '6px', padding: '5px 7px', fontSize: '0.8rem', outline: 'none' }}
+                                            >
+                                                <option value="free">Gratuito</option>
+                                                <option value="amount">Con monto</option>
+                                            </select>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                value={deliveryType === 'amount' ? safeDeliveryAmount : 0}
+                                                onChange={e => setDeliveryAmount(Math.max(0, parseMoney(e.target.value, 0)))}
+                                                disabled={deliveryType !== 'amount'}
+                                                style={{ background: deliveryType === 'amount' ? '#2a3942' : '#26343d', border: '1px solid var(--border-color)', color: deliveryType === 'amount' ? 'var(--text-primary)' : '#6f8796', borderRadius: '6px', padding: '5px 7px', fontSize: '0.8rem', outline: 'none' }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div style={{ background: '#17242c', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#d8e6ef', fontWeight: 700 }}>
+                                    <span>Subtotal</span>
+                                    <span>S/ {formatMoney(regularSubtotalTotal)}</span>
+                                </div>
+                                {totalDiscountForQuote > 0 && (
+                                    <>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: '#95abba' }}>
+                                            <span>Descuento</span>
+                                            <span>- S/ {formatMoney(totalDiscountForQuote)}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: '#95abba' }}>
+                                            <span>Total con descuento</span>
+                                            <span>S/ {formatMoney(subtotalAfterGlobal)}</span>
+                                        </div>
+                                    </>
+                                )}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: '#95abba' }}>
+                                    <span>Delivery</span>
+                                    <span>{deliveryFee > 0 ? `S/ ${formatMoney(deliveryFee)}` : 'Gratuito'}</span>
+                                </div>
+                                <div style={{ marginTop: '2px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', fontSize: '1rem', fontWeight: 800, color: '#00d7ad' }}>
+                                    <span>TOTAL A PAGAR</span>
+                                    <span>S/ {formatMoney(cartTotal)}</span>
                                 </div>
                             </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                <span style={{ fontSize: '0.95rem', fontWeight: 500, color: 'var(--text-primary)' }}>TOTAL</span>
-                                <span style={{ fontSize: '1.05rem', fontWeight: 600, color: '#00a884' }}>S/ {formatMoney(cartTotal)}</span>
-                            </div>
+
                             <button
                                 onClick={sendQuoteToChat}
-                                style={{ width: '100%', padding: '10px', background: '#00a884', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                                style={{ width: '100%', padding: '9px', background: '#00a884', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer', fontSize: '0.84rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                             >
                                 <Send size={15} /> Enviar cotizacion al cliente
                             </button>
@@ -1141,6 +1435,7 @@ INSTRUCCIONES OBLIGATORIAS:
             )}
 
             {/* QUICK REPLIES TAB */}
+
 
             {activeTab === 'quick' && quickRepliesEnabled && (
                 <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1258,3 +1553,12 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
+
+
+
+
+
+
+
+
+
