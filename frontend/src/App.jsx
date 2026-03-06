@@ -625,7 +625,8 @@ function App() {
             ? fallbackName
             : (existing?.name || (contactPhone ? ('+' + contactPhone) : 'Contacto')),
           subtitle: subtitleName || existing?.subtitle || null,
-          status: normalizedContact.status || existing?.status || ''
+          status: normalizedContact.status || existing?.status || '',
+          profilePicUrl: normalizedContact.profilePicUrl || existing?.profilePicUrl || null
         };
 
         if (!chatMatchesQuery(nextChat, chatSearchRef.current) || !chatMatchesFilters(nextChat, chatFiltersRef.current)) {
@@ -1299,6 +1300,7 @@ REGLA CRITICA:
 }
 
 export default App;
+
 
 
 

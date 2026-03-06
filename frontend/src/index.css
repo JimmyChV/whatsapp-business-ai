@@ -2353,3 +2353,46 @@ body {
   background: #21343f;
   color: #ffffff;
 }
+
+.business-sidebar.business-sidebar-pro {
+  position: relative;
+  overflow: hidden;
+}
+
+.company-profile-panel {
+  width: 100%;
+  max-width: none;
+  border-left: none;
+  z-index: 620;
+}
+
+.company-profile-hero {
+  background: radial-gradient(circle at 50% 20%, rgba(0, 168, 132, 0.24), transparent 62%);
+}
+
+.profile-json-block {
+  margin: 0;
+  width: 100%;
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(134, 150, 160, 0.26);
+  background: rgba(11, 20, 26, 0.56);
+  color: #c8d8df;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  padding: 9px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.company-logout-btn {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.16);
+  color: #ffc6c6;
+}
+
+.company-logout-btn:hover {
+  border-color: rgba(239, 68, 68, 0.55);
+  background: rgba(239, 68, 68, 0.24);
+}

@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Send, X, ShoppingCart, Tag, Clock, Sparkles, Trash2, Percent, Plus, Minus, ChevronRight, Package, MessageSquare, PlusCircle, Edit2 } from 'lucide-react';
 import moment from 'moment';
-import { io } from 'socket.io-client';
 
 const repairMojibake = (value = '') => {
     let text = String(value || '');
@@ -42,43 +41,110 @@ const normalizeCatalogItem = (item = {}, index = 0) => {
         stockStatus: safeItem.stockStatus || safeItem.stock_status || null
     };
 };
+const sanitizeProfileText = (value = '') => repairMojibake(String(value || ''))
+    .replace(/[\u0000-\u001F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
+const firstValue = (...values) => {
+    for (const value of values) {
+        if (value === null || value === undefined) continue;
+        if (typeof value === 'string') {
+            const clean = sanitizeProfileText(value);
+            if (clean) return clean;
+            continue;
+        }
+        if (typeof value === 'number' || typeof value === 'boolean') return value;
+        if (Array.isArray(value) && value.length > 0) return value;
+        if (typeof value === 'object' && Object.keys(value).length > 0) return value;
+    }
+    return '';
+};
+
+const formatPhoneForDisplay = (value = '') => {
+    const raw = String(value || '').trim();
+    if (!raw) return 'Sin numero visible';
+    const normalized = raw.replace(/[^\d+]/g, '');
+    if (!normalized) return 'Sin numero visible';
+    return normalized.startsWith('+') ? normalized : `+${normalized}`;
+};
+
+const formatBoolValue = (value) => (value ? 'Si' : 'No');
+
+const formatTimestampValue = (value) => {
+    const unixValue = Number(value || 0);
+    if (!Number.isFinite(unixValue) || unixValue <= 0) return '--';
+    const m = moment.unix(unixValue);
+    return m.isValid() ? m.format('YYYY-MM-DD HH:mm:ss') : '--';
+};
+
+const prettyJson = (value) => {
+    if (!value || (typeof value === 'object' && Object.keys(value).length === 0)) return '';
+    try {
+        return JSON.stringify(value, null, 2);
+    } catch (e) {
+        return '';
+    }
+};
+
+const avatarColorForName = (name) => {
+    const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
+    if (!name) return colors[0];
+    return colors[name.charCodeAt(0) % colors.length];
+};
 // =========================================================
 // CLIENT PROFILE PANEL
 // =========================================================
 export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
     if (!contact) return null;
 
-    const avatarColor = (name) => {
-        const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
-        if (!name) return colors[0];
-        return colors[name.charCodeAt(0) % colors.length];
-    };
-
-    const displayName = String(contact.name || contact.pushname || contact.shortName || 'Contacto').trim();
+    const displayName = firstValue(contact.name, contact.pushname, contact.shortName, 'Contacto');
     const fallbackPhone = String(contact.id || '').replace('@c.us', '').replace('@g.us', '');
-    const rawPhone = String(contact.phone || fallbackPhone || '').trim();
-    const normalizedPhone = rawPhone.replace(/[^\d+]/g, '');
-    const displayPhone = normalizedPhone
-        ? (normalizedPhone.startsWith('+') ? normalizedPhone : `+${normalizedPhone}`)
-        : 'Sin numero visible';
+    const rawPhone = firstValue(contact.phone, contact.number, contact.user, fallbackPhone);
+    const displayPhone = formatPhoneForDisplay(rawPhone);
 
     const infoRows = [
-        ['Pushname', contact.pushname || '--'],
-        ['Nombre corto', contact.shortName || '--'],
-        ['Business', contact.isBusiness ? 'Si' : 'No'],
-        ['En mis contactos', contact.isMyContact ? 'Si' : 'No'],
-        ['Contacto WA', contact.isWAContact ? 'Si' : 'No'],
-        ['Bloqueado', contact.isBlocked ? 'Si' : 'No'],
+        ['ID', firstValue(contact.id, '--')],
+        ['Telefono', displayPhone],
+        ['Pushname', firstValue(contact.pushname, '--')],
+        ['Nombre corto', firstValue(contact.shortName, '--')],
+        ['Nombre verificado', firstValue(contact.verifiedName, '--')],
+        ['Nivel verificado', firstValue(contact.verifiedLevel, '--')],
+        ['Cuenta Business', formatBoolValue(contact.isBusiness)],
+        ['Enterprise', formatBoolValue(contact.isEnterprise)],
+        ['En mis contactos', formatBoolValue(contact.isMyContact)],
+        ['Contacto WA', formatBoolValue(contact.isWAContact)],
+        ['Bloqueado', formatBoolValue(contact.isBlocked)],
+        ['Es grupo', formatBoolValue(contact.isGroup)],
+        ['Es usuario', formatBoolValue(contact.isUser)],
+        ['Es mi cuenta', formatBoolValue(contact.isMe)],
+    ];
+
+    const chatStateRows = [
+        ['Archivado', formatBoolValue(contact.chatState?.archived)],
+        ['Fijado', formatBoolValue(contact.chatState?.pinned)],
+        ['Silenciado', formatBoolValue(contact.chatState?.isMuted)],
+        ['No leidos', String(contact.chatState?.unreadCount ?? 0)],
+        ['Ultima actividad', formatTimestampValue(contact.chatState?.timestamp)],
+        ['Participantes', contact.chatState?.participantsCount ?? '--'],
     ];
 
     const businessRows = [
-        ['Categoria', contact.businessDetails?.category],
-        ['Web', contact.businessDetails?.website],
-        ['Email', contact.businessDetails?.email],
-        ['Direccion', contact.businessDetails?.address],
-        ['Descripcion', contact.businessDetails?.description],
+        ['Categoria', firstValue(contact.businessDetails?.category, '--')],
+        ['Web principal', firstValue(contact.businessDetails?.website, '--')],
+        ['Webs', (contact.businessDetails?.websites || []).join(', ') || '--'],
+        ['Email', firstValue(contact.businessDetails?.email, '--')],
+        ['Direccion', firstValue(contact.businessDetails?.address, '--')],
+        ['Horario', firstValue(prettyJson(contact.businessDetails?.businessHours), '--')],
+        ['Descripcion', firstValue(contact.businessDetails?.description, '--')],
     ].filter(([, value]) => Boolean(String(value || '').trim()));
+
+    const technicalJson = prettyJson({
+        raw: contact.raw || null,
+        contactSnapshot: contact.contactSnapshot || null,
+        chatState: contact.chatState || null,
+        businessDetailsRaw: contact.businessDetails?.raw || null,
+    });
 
     const quickActions = [
         { label: 'Redactar saludo', prompt: 'Redacta un saludo personalizado y profesional para este cliente.' },
@@ -99,7 +165,7 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
             </div>
 
             <div className="client-profile-hero">
-                <div className="client-profile-avatar" style={{ background: contact.profilePicUrl ? `url(${contact.profilePicUrl}) center/cover` : avatarColor(displayName) }}>
+                <div className="client-profile-avatar" style={{ background: contact.profilePicUrl ? `url(${contact.profilePicUrl}) center/cover` : avatarColorForName(displayName) }}>
                     {!contact.profilePicUrl && displayName.charAt(0).toUpperCase()}
                 </div>
                 <div className="client-profile-name">{displayName}</div>
@@ -132,9 +198,21 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
                 )}
 
                 <div className="client-profile-card">
-                    <div className="client-profile-card-title">Datos disponibles</div>
+                    <div className="client-profile-card-title">Cuenta y contacto</div>
                     <div className="client-profile-grid">
                         {infoRows.map(([label, value]) => (
+                            <React.Fragment key={label}>
+                                <span className="client-profile-key">{label}</span>
+                                <span className="client-profile-value">{value}</span>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="client-profile-card">
+                    <div className="client-profile-card-title">Estado del chat</div>
+                    <div className="client-profile-grid">
+                        {chatStateRows.map(([label, value]) => (
                             <React.Fragment key={label}>
                                 <span className="client-profile-key">{label}</span>
                                 <span className="client-profile-value">{value}</span>
@@ -157,6 +235,13 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
                     </div>
                 )}
 
+                {technicalJson && (
+                    <div className="client-profile-card">
+                        <div className="client-profile-card-title">Datos tecnicos WhatsApp</div>
+                        <pre className="profile-json-block">{technicalJson}</pre>
+                    </div>
+                )}
+
                 <div className="client-profile-card">
                     <div className="client-profile-actions-title">
                         <Sparkles size={12} /> Acciones rapidas IA
@@ -174,6 +259,137 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
                             </button>
                         ))}
                     </div>
+                </div>
+            </div>
+        </aside>
+    );
+};
+
+export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout }) => {
+    if (!profile) return null;
+
+    const displayName = firstValue(profile.name, profile.pushname, profile.shortName, 'Mi negocio');
+    const displayPhone = formatPhoneForDisplay(firstValue(profile.phone, profile.id));
+
+    const companyRows = [
+        ['Nombre', displayName],
+        ['Telefono', displayPhone],
+        ['ID', firstValue(profile.id, '--')],
+        ['Plataforma', firstValue(profile.platform, '--')],
+        ['Pushname', firstValue(profile.pushname, '--')],
+        ['Nombre corto', firstValue(profile.shortName, '--')],
+        ['Nombre verificado', firstValue(profile.verifiedName, '--')],
+        ['Nivel verificado', firstValue(profile.verifiedLevel, '--')],
+        ['Estado', firstValue(profile.status, '--')],
+    ];
+
+    const accountStateRows = [
+        ['Cuenta Business', formatBoolValue(profile.isBusiness)],
+        ['Enterprise', formatBoolValue(profile.isEnterprise)],
+        ['Es mi cuenta', formatBoolValue(profile.isMe)],
+        ['Contacto WA', formatBoolValue(profile.isWAContact)],
+        ['En mis contactos', formatBoolValue(profile.isMyContact)],
+        ['Total etiquetas', String(profile.labelsCount ?? labels.length ?? 0)],
+    ];
+
+    const businessRows = [
+        ['Categoria', firstValue(profile.category, profile.businessDetails?.category, '--')],
+        ['Web principal', firstValue(profile.website, profile.businessDetails?.website, '--')],
+        ['Webs', firstValue((profile.websites || profile.businessDetails?.websites || []).join(', '), '--')],
+        ['Email', firstValue(profile.email, profile.businessDetails?.email, '--')],
+        ['Direccion', firstValue(profile.address, profile.businessDetails?.address, '--')],
+        ['Horario', firstValue(prettyJson(profile.businessHours || profile.businessDetails?.businessHours), '--')],
+        ['Descripcion', firstValue(profile.description, profile.businessDetails?.description, '--')],
+    ];
+
+    const technicalJson = prettyJson({
+        whatsappInfo: profile.whatsappInfo || null,
+        contactSnapshot: profile.contactSnapshot || null,
+        businessDetailsRaw: profile.businessDetails?.raw || null,
+    });
+
+    return (
+        <aside className="client-profile-panel company-profile-panel">
+            <div className="client-profile-header">
+                <button className="client-profile-close" onClick={onClose} aria-label="Cerrar perfil de empresa">
+                    <X size={20} />
+                </button>
+                <div className="client-profile-header-copy">
+                    <span className="client-profile-kicker">Cuenta de negocio</span>
+                    <h3>Perfil de la empresa</h3>
+                </div>
+            </div>
+
+            <div className="client-profile-hero company-profile-hero">
+                <div className="client-profile-avatar" style={{ background: profile.profilePicUrl ? `url(${profile.profilePicUrl}) center/cover` : avatarColorForName(displayName) }}>
+                    {!profile.profilePicUrl && displayName.charAt(0).toUpperCase()}
+                </div>
+                <div className="client-profile-name">{displayName}</div>
+                <div className="client-profile-phone">{displayPhone}</div>
+            </div>
+
+            <div className="client-profile-scroll">
+                {labels.length > 0 && (
+                    <div className="client-profile-card">
+                        <div className="client-profile-card-title">Etiquetas del negocio</div>
+                        <div className="client-profile-labels">
+                            {labels.map((label) => (
+                                <span key={String(label?.id || label?.name)} className="client-profile-label-chip" style={{ '--label-color': label?.color || '#5f7380' }}>
+                                    {label?.name || `Etiqueta ${label?.id || ''}`}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                <div className="client-profile-card">
+                    <div className="client-profile-card-title">Datos de cuenta</div>
+                    <div className="client-profile-grid">
+                        {companyRows.map(([label, value]) => (
+                            <React.Fragment key={label}>
+                                <span className="client-profile-key">{label}</span>
+                                <span className="client-profile-value">{value}</span>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="client-profile-card">
+                    <div className="client-profile-card-title">Estado de la cuenta</div>
+                    <div className="client-profile-grid">
+                        {accountStateRows.map(([label, value]) => (
+                            <React.Fragment key={label}>
+                                <span className="client-profile-key">{label}</span>
+                                <span className="client-profile-value">{value}</span>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="client-profile-card">
+                    <div className="client-profile-card-title">Perfil Business</div>
+                    <div className="client-profile-grid">
+                        {businessRows.map(([label, value]) => (
+                            <React.Fragment key={label}>
+                                <span className="client-profile-key">{label}</span>
+                                <span className="client-profile-value">{value}</span>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                </div>
+
+                {technicalJson && (
+                    <div className="client-profile-card">
+                        <div className="client-profile-card-title">Datos tecnicos WhatsApp</div>
+                        <pre className="profile-json-block">{technicalJson}</pre>
+                    </div>
+                )}
+
+                <div className="client-profile-card">
+                    <button type="button" className="client-profile-action-btn company-logout-btn" onClick={() => onLogout && onLogout()}>
+                        <span>Cerrar sesion de WhatsApp</span>
+                        <ChevronRight size={14} />
+                    </button>
                 </div>
             </div>
         </aside>
@@ -402,7 +618,7 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
 
     const catalog = (businessData.catalog || []).map((item, idx) => normalizeCatalogItem(item, idx));
     const labels = businessData.labels || [];
-    const profile = businessData.profile;
+    const profile = businessData.profile || myProfile || null;
     const quickRepliesEnabled = Boolean(waCapabilities?.quickReplies || waCapabilities?.quickRepliesRead || waCapabilities?.quickRepliesWrite);
     const quickRepliesWriteEnabled = Boolean(waCapabilities?.quickRepliesWrite);
 
@@ -683,21 +899,12 @@ INSTRUCCIONES OBLIGATORIAS:
             )}
 
             {showCompanyProfile && (
-                <div style={{ padding: '10px', borderBottom: '1px solid var(--border-color)', background: '#111b21' }}>
-                    <div style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '12px' }}>
-                        <div style={{ fontSize: '0.72rem', color: '#00a884', marginBottom: '8px' }}>PERFIL DE EMPRESA</div>
-                        <div style={{ fontSize: '0.8rem', color: '#d6e2e8', lineHeight: '1.6' }}>
-                            <div><b>Nombre:</b> {profile?.name || profile?.pushname || myProfile?.pushname || '--'}</div>
-                            <div><b>Telefono:</b> {profile?.phone || myProfile?.phone || '--'}</div>
-                            <div><b>Plataforma:</b> {profile?.platform || myProfile?.platform || '--'}</div>
-                            {profile?.category && <div><b>Categoria:</b> {profile.category}</div>}
-                            {profile?.website && <div><b>Web:</b> {profile.website}</div>}
-                            {profile?.email && <div><b>Email:</b> {profile.email}</div>}
-                            {profile?.address && <div><b>Direccion:</b> {profile.address}</div>}
-                            {profile?.description && <div><b>Descripcion:</b> {profile.description}</div>}
-                        </div>
-                    </div>
-                </div>
+                <CompanyProfilePanel
+                    profile={profile}
+                    labels={labels}
+                    onClose={() => setShowCompanyProfile(false)}
+                    onLogout={onLogout}
+                />
             )}
 
             {/* AI PRO TAB */}
@@ -988,16 +1195,3 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
-
-
-
-
-
-
-
-
-
-
-
-
-
