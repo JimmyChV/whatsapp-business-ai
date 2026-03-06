@@ -3,6 +3,20 @@ import { Bot, Send, X, ShoppingCart, Tag, BookOpen, Clock, Sparkles, Trash2, Per
 import moment from 'moment';
 import { io } from 'socket.io-client';
 
+const repairMojibake = (value = '') => {
+    let text = String(value || '');
+    if (!text) return '';
+    try {
+        const decoded = decodeURIComponent(escape(text));
+        const cleanDecoded = decoded.replace(/\uFFFD/g, '');
+        const cleanOriginal = text.replace(/\uFFFD/g, '');
+        if (decoded && decoded !== text && cleanDecoded.length >= Math.floor(cleanOriginal.length * 0.8)) {
+            text = decoded;
+        }
+    } catch (e) { }
+    return text.replace(/\uFFFD/g, '');
+};
+
 
 const roundToOneDecimal = (value) => {
     const num = Number(value) || 0;
@@ -336,7 +350,7 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
     const [activeTab, setActiveTab] = useState('ai');
     // AI Chat State
     const [aiMessages, setAiMessages] = useState([
-        { role: 'assistant', content: '¡Hola! Soy tu asistente de ventas de Lávitat con IA OpenAI. Estoy viendo la conversación y te ayudaré a cerrar mejor. ¿Qué necesitas?\n\n💡 Prueba: *"Dame 3 opciones de respuesta"* o *"¿Cómo manejo una objeción de precio?"*' }
+        { role: 'assistant', content: 'Hola, soy tu asistente de ventas de Lavitat con IA OpenAI. Estoy viendo la conversacion y te ayudare a cerrar mejor.\n\nPrueba: "Dame 3 opciones de respuesta" o "Como manejo una objecion de precio".' }
     ]);
     const [aiInput, setAiInput] = useState('');
     const [isAiLoading, setIsAiLoading] = useState(false);
@@ -378,7 +392,7 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
         let buffer = '';
 
         const onChunk = (chunk) => {
-            buffer += chunk;
+            buffer += repairMojibake(chunk);
             setAiMessages(prev => {
                 const last = prev[prev.length - 1];
                 if (last?.role === 'assistant' && last?.streaming) {
@@ -400,7 +414,7 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
 
         const onError = (msg) => {
             setIsAiLoading(false);
-            setAiMessages(prev => [...prev, { role: 'assistant', content: msg || 'Error IA: no se pudo generar respuesta.' }]);
+            setAiMessages(prev => [...prev, { role: 'assistant', content: repairMojibake(msg || 'Error IA: no se pudo generar respuesta.') }]);
         };
 
         socket.on('internal_ai_chunk', onChunk);
@@ -468,7 +482,7 @@ INSTRUCCIONES OBLIGATORIAS:
 
     // Parse AI message to detect [MENSAJE: ...] blocks for send buttons
     const renderAiMessage = (content) => {
-        const parts = content.split(/(\[MENSAJE:[\s\S]*?\])/g);
+        const parts = repairMojibake(content).split(/(\[MENSAJE:[\s\S]*?\])/g);
         return parts.map((part, i) => {
             const match = part.match(/\[MENSAJE:\s*([\s\S]+?)\]/);
             if (match) {
@@ -518,9 +532,9 @@ INSTRUCCIONES OBLIGATORIAS:
             const price = parseFloat(item.price) || 0;
             const disc = item.discountPct || discount;
             const finalPrice = roundToOneDecimal(price * (1 - disc / 100));
-            return `📦 *${item.title}*\n   Qty: ${item.qty} × S/ ${formatMoney(price)}${disc > 0 ? ` (-${disc}%)` : ''} = *S/ ${formatMoney(finalPrice * item.qty)}*`;
+            return `*${item.title}*\n   Qty: ${item.qty} x S/ ${formatMoney(price)}${disc > 0 ? ` (-${disc}%)` : ''} = *S/ ${formatMoney(finalPrice * item.qty)}*`;
         });
-        const msg = `🛒 *COTIZACIÓN*\n${'─'.repeat(25)}\n${lines.join('\n\n')}\n${'─'.repeat(25)}\n💰 *TOTAL: S/ ${formatMoney(cartTotal)}*${discount > 0 ? `\n🎁 Descuento global aplicado: ${discount}%` : ''}\n\n¿Procedemoss con el pedido? 🙌`;
+        const msg = `*COTIZACION*\n${'-'.repeat(25)}\n${lines.join('\n\n')}\n${'-'.repeat(25)}\n*TOTAL: S/ ${formatMoney(cartTotal)}*${discount > 0 ? `\nDescuento global aplicado: ${discount}%` : ''}\n\nProcedemos con el pedido?`;
         setInputText(msg);
     };
 
@@ -623,10 +637,10 @@ INSTRUCCIONES OBLIGATORIAS:
                     {/* Quick action chips */}
                     <div style={{ padding: '6px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', flexWrap: 'wrap', gap: '5px', flexShrink: 0 }}>
                         {[
-                            '💬 Dame 3 opciones de respuesta',
-                            '💰 Cómo cerrar esta venta',
-                            '🔄 Maneja la objeción de precio',
-                            '📦 Recomienda un producto',
+                            'Dame 3 opciones de respuesta',
+                            'Como cerrar esta venta',
+                            'Maneja la objecion de precio',
+                            'Recomienda un producto',
                         ].map((chip, i) => (
                             <button key={i}
                                 onClick={() => { setAiInput(chip.replace(/^[^\s]+ /, '')); }}

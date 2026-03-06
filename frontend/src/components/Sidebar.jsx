@@ -4,6 +4,33 @@ import moment from 'moment';
 
 const WA_LABEL_COLORS = ['#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#00A884', '#7D8D95'];
 
+const normalizePhoneDigits = (value = '') => String(value || '').replace(/\D/g, '');
+const formatPhone = (value = '') => {
+    const digits = normalizePhoneDigits(value);
+    return digits ? `+${digits}` : '';
+};
+
+const repairMojibake = (value = '') => {
+    let text = String(value || '');
+    if (!text) return '';
+
+    try {
+        const decoded = decodeURIComponent(escape(text));
+        const cleanDecoded = decoded.replace(/\uFFFD/g, '');
+        const cleanOriginal = text.replace(/\uFFFD/g, '');
+        if (decoded && decoded !== text && cleanDecoded.length >= Math.floor(cleanOriginal.length * 0.8)) {
+            text = decoded;
+        }
+    } catch (e) { }
+
+    return text.replace(/\uFFFD/g, '');
+};
+
+const sanitizeDisplayText = (value = '') => repairMojibake(value)
+    .replace(/[\u0000-\u001F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 const Sidebar = ({
     chats,
     activeChatId,
@@ -18,15 +45,18 @@ const Sidebar = ({
     chatsHasMore = false,
     chatsLoadingMore = false,
     chatsTotal = 0,
+    searchQuery = '',
+    onSearchQueryChange,
 }) => {
-    const [searchQuery, setSearchQuery] = useState('');
     const [showMenu, setShowMenu] = useState(false);
     const [labelFilter, setLabelFilter] = useState('all');
 
-    const searchIsPhone = /^\+?\d{8,15}$/.test(searchQuery.trim());
-    const normalizedPhone = searchQuery.replace(/\D/g, '');
+    const localQuery = String(searchQuery || '');
+    const searchIsPhone = /^\+?\d{6,15}$/.test(localQuery.trim());
+    const normalizedPhone = normalizePhoneDigits(localQuery);
 
     const formatTime = (ts) => {
+        if (!Number.isFinite(Number(ts)) || Number(ts) <= 0) return '';
         const m = moment.unix(ts || 0);
         if (!m.isValid()) return '';
         if (m.isSame(moment(), 'day')) return m.format('H:mm');
@@ -61,12 +91,22 @@ const Sidebar = ({
     }, [chats, labelDefinitions]);
 
     const filteredChats = chats.filter((c) => {
-        const q = searchQuery.toLowerCase();
-        const matchesSearch = searchIsPhone
-            ? true
-            : (c.name?.toLowerCase().includes(q) || c.lastMessage?.toLowerCase().includes(q));
         const matchesLabel = labelFilter === 'all' || (c.labels || []).some((l) => l.name === labelFilter);
-        return matchesSearch && matchesLabel;
+
+        const q = String(localQuery || '').trim().toLowerCase();
+        if (!q) return matchesLabel;
+
+        const qDigits = normalizePhoneDigits(q);
+        const name = String(c?.name || '').toLowerCase();
+        const subtitle = String(c?.subtitle || '').toLowerCase();
+        const lastMessage = String(c?.lastMessage || '').toLowerCase();
+        const phone = normalizePhoneDigits(c?.phone || c?.id || '');
+
+        const matchesSearch = qDigits
+            ? phone.includes(qDigits)
+            : (name.includes(q) || subtitle.includes(q) || lastMessage.includes(q));
+
+        return matchesLabel && matchesSearch;
     });
 
     const handleChatListScroll = (e) => {
@@ -83,7 +123,49 @@ const Sidebar = ({
         return colors[name.charCodeAt(0) % colors.length];
     };
 
-    const activeChat = chats.find((c) => c.id === activeChatId);
+    const isInternalIdentifier = (value = '') => {
+        const text = String(value || '').trim();
+        if (!text) return false;
+        return text.includes('@') || /^\d{14,}$/.test(text);
+    };
+
+    const getDisplayName = (chat) => {
+        const rawName = sanitizeDisplayText(chat?.name || '');
+        const phone = formatPhone(chat?.phone || chat?.id || '');
+        if (chat?.isMyContact) {
+            if (rawName && !isInternalIdentifier(rawName)) return rawName;
+            return phone || 'Sin nombre';
+        }
+        if (phone) return phone;
+        if (rawName && !isInternalIdentifier(rawName)) return rawName;
+        return 'Sin nombre';
+    };
+
+    const isHumanSubtitle = (value = '') => {
+        const text = String(value || '').trim();
+        if (!text) return false;
+        if (text.includes('@')) return false;
+        const onlyDigitsAndSymbols = text.replace(/[\d\s+().-]/g, '');
+        if (!onlyDigitsAndSymbols && normalizePhoneDigits(text).length >= 10) return false;
+        return true;
+    };
+
+    const getSubtitle = (chat) => {
+        const statusText = sanitizeDisplayText(chat?.status || '');
+        const subtitleText = sanitizeDisplayText(chat?.subtitle || '');
+        const phone = formatPhone(chat?.phone || chat?.id || '');
+        const candidates = [statusText, subtitleText].filter((v) => isHumanSubtitle(v) && !isInternalIdentifier(v));
+        const profileLabel = candidates.find((v) => v !== getDisplayName(chat)) || '';
+
+        if (chat?.isMyContact) {
+            if (profileLabel && phone && profileLabel !== phone) return `${profileLabel} - ${phone}`;
+            return phone;
+        }
+
+        if (profileLabel) return profileLabel;
+        if (phone && phone !== getDisplayName(chat)) return phone;
+        return '';
+    };
 
     return (
         <div className="sidebar">
@@ -110,7 +192,7 @@ const Sidebar = ({
                             color="#8696a0"
                             style={{ cursor: 'pointer' }}
                             onClick={() => setShowMenu((v) => !v)}
-                            title="Más opciones"
+                            title="Mas opciones"
                         />
                         {showMenu && (
                             <div style={{
@@ -119,10 +201,10 @@ const Sidebar = ({
                                 minWidth: '220px', zIndex: 1000, overflow: 'hidden'
                             }}>
                                 {[
-                                    { label: 'Nuevo chat (número)', action: () => onStartNewChat?.() },
+                                    { label: 'Nuevo chat (numero)', action: () => onStartNewChat?.() },
                                     { label: 'Recargar chats', action: () => onRefreshChats?.() },
                                     { label: 'Crear etiqueta', action: () => onCreateLabel?.() },
-                                    { label: 'Cerrar sesión WhatsApp', action: () => onLogout?.() },
+                                    { label: 'Cerrar sesion WhatsApp', action: () => onLogout?.() },
                                 ].map((item, i) => (
                                     <div key={i}
                                         onClick={() => { item.action(); setShowMenu(false); }}
@@ -144,19 +226,19 @@ const Sidebar = ({
                     <Search size={16} color="#8696a0" style={{ margin: '0 12px', flexShrink: 0 }} />
                     <input
                         type="text"
-                        placeholder="Busca chat o escribe número"
+                        placeholder="Busca chat o escribe numero"
                         className="message-input"
                         style={{ fontSize: '0.85rem', flex: 1 }}
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        value={localQuery}
+                        onChange={(e) => onSearchQueryChange?.(e.target.value)}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter' && searchIsPhone) {
                                 onStartNewChat?.(normalizedPhone, '');
                             }
                         }}
                     />
-                    {searchQuery && (
-                        <X size={16} color="#8696a0" style={{ margin: '0 12px', cursor: 'pointer' }} onClick={() => setSearchQuery('')} />
+                    {localQuery && (
+                        <X size={16} color="#8696a0" style={{ margin: '0 12px', cursor: 'pointer' }} onClick={() => onSearchQueryChange?.('')} />
                     )}
                 </div>
 
@@ -168,7 +250,7 @@ const Sidebar = ({
                             borderRadius: '8px', padding: '8px 10px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem'
                         }}
                     >
-                        Abrir chat con +{normalizedPhone}
+                        Abrir chat con {normalizedPhone}
                     </button>
                 )}
 
@@ -201,54 +283,67 @@ const Sidebar = ({
                     ))
                 ) : filteredChats.length === 0 ? (
                     <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                        Sin resultados para "{searchQuery}"
+                        Sin resultados para "{localQuery}"
                     </div>
                 ) : (
-                    filteredChats.map((chat) => (
-                        <div
-                            key={chat.id}
-                            className={`chat-item ${activeChatId === chat.id ? 'active' : ''}`}
-                            onClick={() => onChatSelect(chat.id)}
-                        >
-                            <div style={{
-                                width: '49px', height: '49px', borderRadius: '50%',
-                                background: chat.profilePicUrl ? `url(${chat.profilePicUrl}) center/cover` : avatarColor(chat.name),
-                                flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: '1.2rem', color: 'white', fontWeight: 500, overflow: 'hidden'
-                            }}>
-                                {!chat.profilePicUrl && avatarLetter(chat.name)}
-                            </div>
-                            <div className="chat-info" style={{ marginLeft: '15px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontSize: '1rem', fontWeight: 400, color: 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: '220px' }}>
-                                        {chat.name}
-                                    </span>
-                                    <span style={{ fontSize: '0.73rem', color: chat.unreadCount > 0 ? '#00a884' : '#8696a0', flexShrink: 0, marginLeft: '8px' }}>
-                                        {formatTime(chat.timestamp)}
-                                    </span>
+                    filteredChats.map((chat) => {
+                        const displayName = getDisplayName(chat);
+                        const subtitle = getSubtitle(chat);
+                        const lastMessage = sanitizeDisplayText(chat.lastMessage || '') || 'Haz clic para chatear';
+                        return (
+                            <div
+                                key={chat.id}
+                                className={`chat-item ${activeChatId === chat.id ? 'active' : ''}`}
+                                onClick={() => onChatSelect(chat.id, { clearSearch: true })}
+                                style={{ height: subtitle ? '88px' : '80px', alignItems: 'flex-start', paddingTop: '10px', paddingBottom: '8px' }}
+                            >
+                                <div style={{
+                                    width: '49px', height: '49px', borderRadius: '50%',
+                                    background: chat.profilePicUrl ? `url(${chat.profilePicUrl}) center/cover` : avatarColor(displayName),
+                                    flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: '1.2rem', color: 'white', fontWeight: 500, overflow: 'hidden'
+                                }}>
+                                    {!chat.profilePicUrl && avatarLetter(displayName)}
                                 </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3px', alignItems: 'center' }}>
-                                    <p style={{ fontSize: '0.875rem', color: '#8696a0', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', display: 'flex', alignItems: 'center', flex: 1 }}>
-                                        {renderStatus(chat)}
-                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {chat.lastMessage || 'Haz clic para chatear'}
+                                <div className="chat-info" style={{ marginLeft: '15px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontSize: '0.97rem', fontWeight: 400, color: 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: '220px' }}>
+                                            {displayName}
                                         </span>
-                                    </p>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px', flexShrink: 0 }}>
-                                        {chat.unreadCount > 0 && (
-                                            <span className="unread-badge">{chat.unreadCount}</span>
-                                        )}
+                                        <span style={{ fontSize: '0.73rem', color: chat.unreadCount > 0 ? '#00a884' : '#8696a0', flexShrink: 0, marginLeft: '8px' }}>
+                                            {formatTime(chat.timestamp)}
+                                        </span>
+                                    </div>
+
+                                    {subtitle && (
+                                        <p style={{ fontSize: '0.73rem', color: '#7d939d', marginTop: '2px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                                            {subtitle}
+                                        </p>
+                                    )}
+
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: subtitle ? '3px' : '5px', alignItems: 'center' }}>
+                                        <p style={{ fontSize: '0.84rem', color: '#9bb0ba', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', display: 'flex', alignItems: 'center', flex: 1 }}>
+                                            {renderStatus(chat)}
+                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {lastMessage}
+                                            </span>
+                                        </p>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px', flexShrink: 0 }}>
+                                            {chat.unreadCount > 0 && (
+                                                <span className="unread-badge">{chat.unreadCount}</span>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    ))
+                        );
+                    })
                 )}
 
                 {chats.length > 0 && (
                     <div style={{ padding: '10px 14px', textAlign: 'center', color: '#8696a0', fontSize: '0.75rem' }}>
                         {chatsLoadingMore
-                            ? 'Cargando más chats...'
+                            ? 'Cargando mas chats...'
                             : (chatsHasMore
                                 ? `Mostrando ${chats.length} de ${chatsTotal || '...'} chats`
                                 : `Mostrando todos los chats (${chats.length})`)}
@@ -260,4 +355,3 @@ const Sidebar = ({
 };
 
 export default Sidebar;
-

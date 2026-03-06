@@ -5,6 +5,7 @@ const EventEmitter = require('events');
 class WhatsAppClient extends EventEmitter {
     constructor() {
         super();
+        this.capabilityWarnings = new Set();
         this.client = new Client({
             authStrategy: new LocalAuth(),
             authTimeoutMs: 120000,
@@ -21,6 +22,12 @@ class WhatsAppClient extends EventEmitter {
         });
         this.isReady = false;
         this.setupEventListeners();
+    }
+
+    warnCapabilityOnce(key, message) {
+        if (this.capabilityWarnings.has(key)) return;
+        this.capabilityWarnings.add(key);
+        console.warn(message);
     }
 
     setupEventListeners() {
@@ -122,9 +129,24 @@ class WhatsAppClient extends EventEmitter {
 
     async getBusinessProfile(contactId) {
         if (!this.isReady) return null;
+        if (typeof this.client.getBusinessProfile !== 'function') {
+            this.warnCapabilityOnce(
+                'business_profile_unsupported',
+                '[WA] getBusinessProfile no esta disponible en esta version de whatsapp-web.js; se omite el perfil business nativo.'
+            );
+            return null;
+        }
         try {
             return await this.client.getBusinessProfile(contactId);
         } catch (e) {
+            const msg = String(e?.message || e || '');
+            if (/not a function|not available/i.test(msg)) {
+                this.warnCapabilityOnce(
+                    'business_profile_unsupported_runtime',
+                    '[WA] getBusinessProfile no esta soportado por la sesion actual; se usa fallback sin perfil business.'
+                );
+                return null;
+            }
             console.error('Error fetching business profile:', e);
             return null;
         }
