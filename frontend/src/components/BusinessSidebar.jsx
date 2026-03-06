@@ -48,104 +48,137 @@ const normalizeCatalogItem = (item = {}, index = 0) => {
 // =========================================================
 export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction }) => {
     if (!contact) return null;
+
     const avatarColor = (name) => {
         const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
         if (!name) return colors[0];
         return colors[name.charCodeAt(0) % colors.length];
     };
+
+    const displayName = String(contact.name || contact.pushname || contact.shortName || 'Contacto').trim();
+    const fallbackPhone = String(contact.id || '').replace('@c.us', '').replace('@g.us', '');
+    const rawPhone = String(contact.phone || fallbackPhone || '').trim();
+    const normalizedPhone = rawPhone.replace(/[^\d+]/g, '');
+    const displayPhone = normalizedPhone
+        ? (normalizedPhone.startsWith('+') ? normalizedPhone : `+${normalizedPhone}`)
+        : 'Sin numero visible';
+
+    const infoRows = [
+        ['Pushname', contact.pushname || '--'],
+        ['Nombre corto', contact.shortName || '--'],
+        ['Business', contact.isBusiness ? 'Si' : 'No'],
+        ['En mis contactos', contact.isMyContact ? 'Si' : 'No'],
+        ['Contacto WA', contact.isWAContact ? 'Si' : 'No'],
+        ['Bloqueado', contact.isBlocked ? 'Si' : 'No'],
+    ];
+
+    const businessRows = [
+        ['Categoria', contact.businessDetails?.category],
+        ['Web', contact.businessDetails?.website],
+        ['Email', contact.businessDetails?.email],
+        ['Direccion', contact.businessDetails?.address],
+        ['Descripcion', contact.businessDetails?.description],
+    ].filter(([, value]) => Boolean(String(value || '').trim()));
+
+    const quickActions = [
+        { label: 'Redactar saludo', prompt: 'Redacta un saludo personalizado y profesional para este cliente.' },
+        { label: 'Crear propuesta de venta', prompt: 'Crea una propuesta de venta persuasiva para este cliente basada en la conversacion.' },
+        { label: 'Mensaje de seguimiento', prompt: 'Redacta un mensaje de seguimiento para este cliente que no ha respondido.' },
+    ];
+
     return (
-        <div style={{
-            position: 'absolute', top: 0, right: 0, width: '340px', height: '100%',
-            background: '#111b21', zIndex: 500, display: 'flex', flexDirection: 'column',
-            boxShadow: '-4px 0 20px rgba(0,0,0,0.5)', borderLeft: '1px solid var(--border-color)',
-            animation: 'slideInRight 0.3s ease-out'
-        }}>
-            <div style={{ background: '#202c33', padding: '14px 18px', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--border-color)' }}>
-                <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8696a0', padding: '4px' }}><X size={20} /></button>
-                <h3 style={{ fontSize: '0.95rem', color: 'var(--text-primary)', fontWeight: 400 }}>Perfil del contacto</h3>
-            </div>
-            <div style={{ background: '#202c33', padding: '28px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                <div style={{
-                    width: '100px', height: '100px', borderRadius: '50%',
-                    background: contact.profilePicUrl ? `url(${contact.profilePicUrl}) center/cover` : avatarColor(contact.name),
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '2.5rem', color: 'white', fontWeight: 500, overflow: 'hidden', flexShrink: 0
-                }}>
-                    {!contact.profilePicUrl && contact.name?.charAt(0)?.toUpperCase()}
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.1rem', color: 'var(--text-primary)', fontWeight: 400 }}>{contact.name}</div>
-                    <div style={{ fontSize: '0.82rem', color: '#8696a0', marginTop: '3px' }}>{contact.phone || contact.id?.replace('@c.us', '').replace('@g.us', '')}</div>
-                    {contact.isBusiness && (
-                        <div style={{ marginTop: '8px', background: '#00a884', color: 'white', fontSize: '0.72rem', padding: '2px 10px', borderRadius: '20px', display: 'inline-block' }}>
-                            Cuenta Business
-                        </div>
-                    )}
+        <aside className="client-profile-panel">
+            <div className="client-profile-header">
+                <button className="client-profile-close" onClick={onClose} aria-label="Cerrar perfil">
+                    <X size={20} />
+                </button>
+                <div className="client-profile-header-copy">
+                    <span className="client-profile-kicker">Ficha del cliente</span>
+                    <h3>Perfil del contacto</h3>
                 </div>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+
+            <div className="client-profile-hero">
+                <div className="client-profile-avatar" style={{ background: contact.profilePicUrl ? `url(${contact.profilePicUrl}) center/cover` : avatarColor(displayName) }}>
+                    {!contact.profilePicUrl && displayName.charAt(0).toUpperCase()}
+                </div>
+                <div className="client-profile-name">{displayName}</div>
+                <div className="client-profile-phone">{displayPhone}</div>
+                <div className="client-profile-badges">
+                    {contact.isBusiness && <span className="client-profile-badge business">Cuenta Business</span>}
+                    {contact.isMyContact && <span className="client-profile-badge">Contacto guardado</span>}
+                </div>
+            </div>
+
+            <div className="client-profile-scroll">
                 {contact.status && (
-                    <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
-                        <div style={{ fontSize: '0.7rem', color: '#00a884', marginBottom: '6px' }}>INFO / ESTADO</div>
-                        <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)' }}>{contact.status}</div>
+                    <div className="client-profile-card">
+                        <div className="client-profile-card-title">Info / Estado</div>
+                        <div className="client-profile-status">{contact.status}</div>
                     </div>
                 )}
+
                 {contact.labels?.length > 0 && (
-                    <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
-                        <div style={{ fontSize: '0.7rem', color: '#00a884', marginBottom: '8px' }}>ETIQUETAS</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                            {contact.labels.map((l, i) => (
-                                <span key={i} style={{ background: l.color || '#3b4a54', color: 'white', padding: '3px 10px', borderRadius: '12px', fontSize: '0.78rem' }}>{l.name}</span>
+                    <div className="client-profile-card">
+                        <div className="client-profile-card-title">Etiquetas</div>
+                        <div className="client-profile-labels">
+                            {contact.labels.map((label, idx) => (
+                                <span key={idx} className="client-profile-label-chip" style={{ '--label-color': label.color || '#5f7380' }}>
+                                    {label.name}
+                                </span>
                             ))}
                         </div>
                     </div>
                 )}
-                <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
-                    <div style={{ fontSize: '0.7rem', color: '#00a884', marginBottom: '8px' }}>DATOS DISPONIBLES</div>
-                    <div style={{ fontSize: '0.78rem', color: '#c9d5db', lineHeight: '1.55' }}>
-                        {contact.pushname && <div>- Pushname: {contact.pushname}</div>}
-                        {contact.shortName && <div>- Nombre corto: {contact.shortName}</div>}
-                        <div>- Business: {contact.isBusiness ? 'Si' : 'No'}</div>
-                        <div>- En mis contactos: {contact.isMyContact ? 'Si' : 'No'}</div>
-                        <div>- Contacto WA: {contact.isWAContact ? 'Si' : 'No'}</div>
-                        <div>- Bloqueado: {contact.isBlocked ? 'Si' : 'No'}</div>
+
+                <div className="client-profile-card">
+                    <div className="client-profile-card-title">Datos disponibles</div>
+                    <div className="client-profile-grid">
+                        {infoRows.map(([label, value]) => (
+                            <React.Fragment key={label}>
+                                <span className="client-profile-key">{label}</span>
+                                <span className="client-profile-value">{value}</span>
+                            </React.Fragment>
+                        ))}
                     </div>
                 </div>
-                {contact.businessDetails && (
-                    <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
-                        <div style={{ fontSize: '0.7rem', color: '#00a884', marginBottom: '8px' }}>PERFIL BUSINESS (WHATSAPP)</div>
-                        <div style={{ fontSize: '0.78rem', color: '#c9d5db', lineHeight: '1.55' }}>
-                            {contact.businessDetails.category && <div>- Categoria: {contact.businessDetails.category}</div>}
-                            {contact.businessDetails.website && <div>- Web: {contact.businessDetails.website}</div>}
-                            {contact.businessDetails.email && <div>- Email: {contact.businessDetails.email}</div>}
-                            {contact.businessDetails.address && <div>- Direccion: {contact.businessDetails.address}</div>}
-                            {contact.businessDetails.description && <div>- Descripcion: {contact.businessDetails.description}</div>}
+
+                {businessRows.length > 0 && (
+                    <div className="client-profile-card">
+                        <div className="client-profile-card-title">Perfil Business (WhatsApp)</div>
+                        <div className="client-profile-grid">
+                            {businessRows.map(([label, value]) => (
+                                <React.Fragment key={label}>
+                                    <span className="client-profile-key">{label}</span>
+                                    <span className="client-profile-value">{value}</span>
+                                </React.Fragment>
+                            ))}
                         </div>
                     </div>
                 )}
-                <div style={{ background: '#202c33', borderRadius: '8px', padding: '12px' }}>
-                    <div style={{ fontSize: '0.7rem', color: '#8a2be2', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Sparkles size={11} /> ACCIONES RAPIDAS IA
+
+                <div className="client-profile-card">
+                    <div className="client-profile-actions-title">
+                        <Sparkles size={12} /> Acciones rapidas IA
                     </div>
-                    {[
-                        { label: 'Redactar saludo', prompt: 'Redacta un saludo personalizado y profesional para este cliente.' },
-                        { label: 'Crear propuesta de venta', prompt: 'Crea una propuesta de venta persuasiva para este cliente basada en la conversacion.' },
-                        { label: 'Mensaje de seguimiento', prompt: 'Redacta un mensaje de seguimiento para este cliente que no ha respondido.' },
-                    ].map((a, i) => (
-                        <div key={i} onClick={() => onQuickAiAction && onQuickAiAction(a.prompt)}
-                            style={{ padding: '9px 12px', marginBottom: '6px', background: '#1a2530', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.84rem', color: 'var(--text-primary)' }}
-                            onMouseEnter={e => e.currentTarget.style.background = '#243040'}
-                            onMouseLeave={e => e.currentTarget.style.background = '#1a2530'}
-                        >
-                            {a.label} <ChevronRight size={13} color="#8696a0" />
-                        </div>
-                    ))}
+                    <div className="client-profile-actions-list">
+                        {quickActions.map((action, idx) => (
+                            <button
+                                key={idx}
+                                className="client-profile-action-btn"
+                                onClick={() => onQuickAiAction && onQuickAiAction(action.prompt)}
+                                type="button"
+                            >
+                                <span>{action.label}</span>
+                                <ChevronRight size={14} />
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
-        </div>
+        </aside>
     );
 };
-
 // =========================================================
 // CATALOG TAB
 // =========================================================
@@ -955,6 +988,7 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
+
 
 
 
