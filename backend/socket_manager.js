@@ -5,6 +5,8 @@ const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./cat
 const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
 const { listQuickReplies, addQuickReply, updateQuickReply, deleteQuickReply } = require('./quick_replies_manager');
 const RateLimiter = require('./rate_limiter');
+const { URL } = require('url');
+const { resolveAndValidatePublicHost } = require('./security_utils');
 
 const eventRateLimiter = new RateLimiter({
     windowMs: Number(process.env.SOCKET_RATE_LIMIT_WINDOW_MS || 10000),
@@ -119,7 +121,113 @@ function extractOrderInfo(msg) {
     }
 }
 
+const CATALOG_IMAGE_EXT_BY_MIME = {
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/gif': 'gif'
+};
 
+function slugifyFileName(value = 'producto') {
+    const clean = String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    return clean || 'producto';
+}
+
+function buildCatalogProductCaption(product = {}) {
+    const title = String(product?.title || product?.name || 'Producto').trim() || 'Producto';
+
+    const parsePrice = (value, fallback = 0) => {
+        const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+        if (Number.isFinite(parsed)) return parsed;
+        return Number.isFinite(fallback) ? fallback : 0;
+    };
+
+    const finalPrice = parsePrice(product?.price, 0);
+    const regularPrice = parsePrice(product?.regularPrice ?? product?.regular_price, finalPrice);
+
+    const lines = [`*${title}*`];
+
+    if (regularPrice > 0 && finalPrice > 0 && finalPrice < regularPrice) {
+        const discountAmount = Math.max(regularPrice - finalPrice, 0);
+        lines.push(`Precio regular: S/ ${regularPrice.toFixed(2)}`);
+        lines.push(`*Descuento: S/ ${discountAmount.toFixed(2)}*`);
+        lines.push(`*PRECIO FINAL: S/ ${finalPrice.toFixed(2)}*`);
+    } else if (finalPrice > 0) {
+        lines.push(`*PRECIO FINAL: S/ ${finalPrice.toFixed(2)}*`);
+    } else {
+        lines.push('*PRECIO FINAL: CONSULTAR*');
+    }
+
+    const description = String(product?.description || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (description) {
+        lines.push('');
+        lines.push(`Detalle: ${description.length > 280 ? `${description.slice(0, 277)}...` : description}`);
+    }
+
+    return lines.join('\n');
+}
+
+async function fetchCatalogProductImage(imageUrl, { maxBytes = 4 * 1024 * 1024, timeoutMs = 7000 } = {}) {
+    const rawUrl = String(imageUrl || '').trim();
+    if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) return null;
+
+    let parsed;
+    try {
+        parsed = new URL(rawUrl);
+    } catch (e) {
+        return null;
+    }
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+
+    try {
+        await resolveAndValidatePublicHost(parsed.hostname);
+    } catch (e) {
+        return null;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    let response;
+    try {
+        response = await fetch(parsed.toString(), {
+            redirect: 'follow',
+            headers: { 'User-Agent': 'Mozilla/5.0 (WhatsApp Business Pro Catalog Fetcher)' },
+            signal: controller.signal
+        });
+    } catch (e) {
+        return null;
+    } finally {
+        clearTimeout(timeout);
+    }
+
+    if (!response?.ok) return null;
+
+    const contentTypeRaw = String(response.headers.get('content-type') || '').toLowerCase();
+    const contentType = contentTypeRaw.split(';')[0] || 'image/jpeg';
+    if (!contentType.startsWith('image/')) return null;
+
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    if (contentLength && contentLength > maxBytes) return null;
+
+    const imageBuffer = Buffer.from(await response.arrayBuffer());
+    if (!imageBuffer.length || imageBuffer.length > maxBytes) return null;
+
+    return {
+        mediaData: imageBuffer.toString('base64'),
+        mimetype: contentType,
+        extension: CATALOG_IMAGE_EXT_BY_MIME[contentType] || 'jpg'
+    };
+}
 
 function resolveChatDisplayName(chat) {
     if (!chat) return 'Sin nombre';
@@ -1408,6 +1516,47 @@ class SocketManager {
                     await waClient.sendMedia(to, mediaData, mimetype, filename, body, isPtt);
                 } catch (e) {
                     socket.emit('error', 'Failed to send media.');
+                }
+            });
+
+            socket.on('send_catalog_product', async (payload = {}) => {
+                if (!guardRateLimit(socket, 'send_catalog_product')) return;
+                try {
+                    const to = String(payload?.to || '').trim();
+                    if (!to) {
+                        socket.emit('error', 'Selecciona un chat antes de enviar producto.');
+                        return;
+                    }
+
+                    const product = payload?.product && typeof payload.product === 'object' ? payload.product : {};
+                    const caption = buildCatalogProductCaption(product);
+                    const imageUrl = String(product?.imageUrl || product?.image || '').trim();
+
+                    let sentWithImage = false;
+                    if (imageUrl) {
+                        const media = await fetchCatalogProductImage(imageUrl, {
+                            maxBytes: Number(process.env.CATALOG_IMAGE_MAX_BYTES || 4 * 1024 * 1024),
+                            timeoutMs: Number(process.env.CATALOG_IMAGE_TIMEOUT_MS || 7000)
+                        });
+                        if (media) {
+                            const baseName = slugifyFileName(product?.title || product?.name || 'producto');
+                            const filename = `${baseName}.${media.extension}`;
+                            await waClient.sendMedia(to, media.mediaData, media.mimetype, filename, caption, false);
+                            sentWithImage = true;
+                        }
+                    }
+
+                    if (!sentWithImage) {
+                        await waClient.sendMessage(to, caption);
+                    }
+
+                    socket.emit('catalog_product_sent', {
+                        to,
+                        title: String(product?.title || product?.name || 'Producto'),
+                        withImage: sentWithImage
+                    });
+                } catch (e) {
+                    socket.emit('error', 'No se pudo enviar el producto del catalogo.');
                 }
             });
 

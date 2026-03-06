@@ -27,13 +27,31 @@ const formatMoney = (value) => Number(value || 0).toFixed(2);
 const normalizeCatalogItem = (item = {}, index = 0) => {
     const safeItem = item && typeof item === 'object' ? item : {};
     const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
-    const rawPrice = safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio ?? 0;
-    const parsedPrice = Number.parseFloat(String(rawPrice).replace(',', '.'));
+
+    const parsePrice = (value, fallback = 0) => {
+        const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+        if (Number.isFinite(parsed)) return parsed;
+        return Number.isFinite(fallback) ? fallback : 0;
+    };
+
+    const priceNum = parsePrice(safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio, 0);
+    const regularNum = parsePrice(safeItem.regularPrice ?? safeItem.regular_price ?? safeItem.price ?? safeItem.amount ?? safeItem.precio, priceNum);
+    const saleNum = parsePrice(safeItem.salePrice ?? safeItem.sale_price, priceNum);
+    const baseFinal = saleNum > 0 && saleNum < regularNum ? saleNum : priceNum;
+    const finalNum = baseFinal > 0 ? baseFinal : regularNum;
+    const computedDiscount = regularNum > 0 && finalNum > 0 && finalNum < regularNum
+        ? Number((((regularNum - finalNum) / regularNum) * 100).toFixed(1))
+        : 0;
+    const rawDiscount = Number.parseFloat(String(safeItem.discountPct ?? safeItem.discount_pct ?? computedDiscount).replace(',', '.'));
+    const discountPct = Number.isFinite(rawDiscount) ? Math.max(0, rawDiscount) : 0;
 
     return {
         id: safeItem.id || safeItem.product_id || `catalog_${index}`,
         title: String(rawTitle || `Producto ${index + 1}`).trim(),
-        price: Number.isFinite(parsedPrice) ? parsedPrice.toFixed(2) : '0.00',
+        price: Number.isFinite(finalNum) ? finalNum.toFixed(2) : '0.00',
+        regularPrice: Number.isFinite(regularNum) ? regularNum.toFixed(2) : (Number.isFinite(finalNum) ? finalNum.toFixed(2) : '0.00'),
+        salePrice: Number.isFinite(saleNum) && saleNum > 0 ? saleNum.toFixed(2) : null,
+        discountPct,
         description: safeItem.description || safeItem.short_description || safeItem.descripcion || '',
         imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
         source: safeItem.source || 'unknown',
@@ -347,11 +365,10 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout, p
 // =========================================================
 // CATALOG TAB
 // =========================================================
-const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) => {
+const CatalogTab = ({ catalog, socket, addToCart, catalogMeta, activeChatId }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({ title: '', price: '', description: '', imageUrl: '' });
-    const [catalogQty, setCatalogQty] = useState({});
     const [catalogSearch, setCatalogSearch] = useState('');
     const isNativeCatalog = catalogMeta?.source === 'native' && catalogMeta?.nativeAvailable;
     const isExternalCatalog = ['native', 'woocommerce'].includes(catalogMeta?.source);
@@ -364,7 +381,12 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
 
     const handleEditClick = (product) => {
         setEditingProduct(product);
-        setFormData({ title: product.title, price: product.price, description: product.description, imageUrl: product.imageUrl || '' });
+        setFormData({
+            title: product.title,
+            price: product.price,
+            description: product.description,
+            imageUrl: product.imageUrl || ''
+        });
         setShowForm(true);
     };
 
@@ -384,43 +406,58 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
         }
     };
 
-    const getCatalogQty = (id) => Math.max(1, catalogQty[id] || 1);
-    const updateCatalogQty = (id, delta) => setCatalogQty(prev => ({ ...prev, [id]: Math.max(1, (prev[id] || 1) + delta) }));
-    const buildProductShareText = (item, i) => {
-        const title = item.title || `Producto ${i + 1}`;
-        const priceLine = item.price ? `Precio: S/ ${formatMoney(item.price)}` : 'Precio: Consultar';
-        const productUrl = item.url || item.permalink || item.productUrl || item.link || '';
-        const mediaRef = item.imageUrl || '';
-        if (productUrl) return `*${title}*\n${priceLine}\n${productUrl}`;
-        if (mediaRef) return `*${title}*\n${priceLine}\nImagen: ${mediaRef}`;
-        return `*${title}*\n${priceLine}`;
+    const sendCatalogProduct = (item, i) => {
+        if (!activeChatId) {
+            window.alert('Selecciona un chat antes de enviar un producto.');
+            return;
+        }
+
+        socket.emit('send_catalog_product', {
+            to: activeChatId,
+            product: {
+                id: item.id || `catalog_${i}`,
+                title: item.title || `Producto ${i + 1}`,
+                price: item.price || '',
+                regularPrice: item.regularPrice || item.price || '',
+                salePrice: item.salePrice || '',
+                discountPct: item.discountPct || 0,
+                description: item.description || '',
+                imageUrl: item.imageUrl || '',
+                url: item.url || item.permalink || item.productUrl || item.link || ''
+            }
+        });
     };
+
     const normalizedSearch = catalogSearch.trim().toLowerCase();
     const visibleCatalog = normalizedSearch
-        ? catalog.filter((item) => `${item.title || ''} ${item.sku || ''}`.toLowerCase().includes(normalizedSearch))
+        ? catalog.filter((item) => `${item.title || ''} ${item.sku || ''} ${item.description || ''}`.toLowerCase().includes(normalizedSearch))
         : catalog;
 
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                    {isNativeCatalog ? 'Catalogo de WhatsApp (nativo)' : catalogMeta?.source === 'woocommerce' ? 'Catalogo de WooCommerce' : 'Gestion de Catalogo'}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <div style={{ fontSize: '0.9rem', color: '#e9f2f7', fontWeight: 700 }}>
+                        {isNativeCatalog ? 'Catalogo de WhatsApp (nativo)' : catalogMeta?.source === 'woocommerce' ? 'Catalogo de WooCommerce' : 'Gestion de Catalogo'}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#8ca3b3' }}>Vista comercial lista para enviar al cliente</div>
                 </div>
                 {!isExternalCatalog && (
-                    <button onClick={handleAddClick} style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <button onClick={handleAddClick} style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '7px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 700 }}>
                         <PlusCircle size={14} /> Nuevo
                     </button>
                 )}
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {isExternalCatalog && (
-                    <div style={{ background: '#1f2c34', color: '#8696a0', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.75rem' }}>
+                    <div style={{ background: '#1f2c34', color: '#9eb2bf', border: '1px solid var(--border-color)', borderRadius: '9px', padding: '8px 10px', fontSize: '0.76rem', lineHeight: 1.45 }}>
                         Este catalogo se sincroniza desde {catalogMeta?.source === 'woocommerce' ? 'WooCommerce' : 'WhatsApp Business'}. Para editar productos, hazlo en el origen.
                     </div>
                 )}
+
                 {catalogMeta?.source === 'local' && catalogMeta?.wooStatus && catalogMeta?.wooStatus !== 'ok' && (
-                    <div style={{ background: '#2f2520', color: '#f7b267', border: '1px solid #7a4d2c', borderRadius: '8px', padding: '8px 10px', fontSize: '0.75rem' }}>
+                    <div style={{ background: '#2f2520', color: '#f7b267', border: '1px solid #7a4d2c', borderRadius: '9px', padding: '8px 10px', fontSize: '0.75rem' }}>
                         WooCommerce no devolvio productos ({catalogMeta?.wooSource || 'sin fuente'}).
                         {catalogMeta?.wooReason ? ` Detalle: ${catalogMeta.wooReason}` : ''}
                     </div>
@@ -431,10 +468,10 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                         type="text"
                         value={catalogSearch}
                         onChange={e => setCatalogSearch(e.target.value)}
-                        placeholder="Buscar por nombre o SKU"
-                        style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none' }}
+                        placeholder="Buscar producto"
+                        style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '9px', padding: '9px 10px', fontSize: '0.79rem', outline: 'none' }}
                     />
-                    <div style={{ fontSize: '0.7rem', color: '#8696a0' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#8ca3b3' }}>
                         Mostrando {visibleCatalog.length} de {catalog.length} productos
                     </div>
                 </div>
@@ -478,61 +515,82 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
                                 </div>
                             </div>
                         ) : (
-                            visibleCatalog.map((item, i) => (
-                                <div key={item.id || i} style={{ background: '#202c33', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', minHeight: '184px', display: 'flex', flexDirection: 'column' }}>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '78px 1fr', gap: '10px', padding: '10px 10px 8px 10px', minHeight: '106px' }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                                            <div style={{ width: '68px', height: '68px', borderRadius: '10px', background: '#3b4a54', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                {item.imageUrl ? <img src={item.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={22} color="#8696a0" />}
-                                            </div>
-                                            <div style={{ fontSize: '0.86rem', color: '#00d4aa', fontWeight: 700, textAlign: 'center', lineHeight: 1.1 }}>
-                                                {item.price ? `S/ ${formatMoney(item.price)}` : 'S/ -'}
-                                            </div>
-                                            {item.sku && <div style={{ fontSize: '0.64rem', color: '#9bb0ba', textAlign: 'center', lineHeight: 1.1 }}>SKU: {item.sku}</div>}
+                            visibleCatalog.map((item, i) => {
+                                const finalPrice = Number.parseFloat(item.price || '0') || 0;
+                                const regularPrice = Number.parseFloat(item.regularPrice || item.price || '0') || finalPrice;
+                                const hasDiscount = regularPrice > 0 && finalPrice > 0 && finalPrice < regularPrice;
+                                const rawDiscount = Number.parseFloat(String(item.discountPct || 0));
+                                const effectiveDiscount = Number.isFinite(rawDiscount) && rawDiscount > 0
+                                    ? rawDiscount
+                                    : (hasDiscount ? Number((((regularPrice - finalPrice) / regularPrice) * 100).toFixed(1)) : 0);
+                                const cleanDescription = String(item.description || '')
+                                    .replace(/<[^>]*>/g, ' ')
+                                    .replace(/\s+/g, ' ')
+                                    .trim();
+
+                                return (
+                                    <div key={item.id || i} style={{ background: '#1b2730', borderRadius: '12px', border: '1px solid #2a3a45', padding: '10px', display: 'grid', gridTemplateColumns: '88px 1fr', gap: '10px', alignItems: 'start' }}>
+                                        <div style={{ width: '88px', height: '88px', borderRadius: '10px', background: '#2a3942', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                            {item.imageUrl
+                                                ? <img src={item.imageUrl} alt={item.title || 'Producto'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                : <Package size={24} color="#98adba" />}
                                         </div>
-                                        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px', justifyContent: 'space-between' }}>
-                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', minHeight: '2.5em' }}>
+
+                                        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '7px', justifyContent: 'flex-start' }}>
+                                            <div style={{ fontSize: '0.88rem', color: '#eef5f9', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                                                 {String(item.title || `Producto ${i + 1}`)}
                                             </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                                {item.regularPrice && Number(item.regularPrice) > Number(item.price || 0) && (
-                                                    <div style={{ fontSize: '0.68rem', color: '#8696a0', textDecoration: 'line-through' }}>
-                                                        S/ {formatMoney(item.regularPrice)}
-                                                    </div>
-                                                )}
-                                                {Number(item.discountPct) > 0 && (
-                                                    <div style={{ fontSize: '0.66rem', color: '#fff', background: '#0b875b', borderRadius: '999px', padding: '1px 6px' }}>
-                                                        -{item.discountPct}%
-                                                    </div>
-                                                )}
-                                                <div style={{ fontSize: '0.66rem', color: '#6f8390' }}>Origen: {item.source || 'catalogo'}</div>
-                                            </div>
-                                        </div>
-                                    </div>
 
-                                    <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border-color)', background: '#111b21', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#22313b', borderRadius: '999px', padding: '3px 7px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                                                <button onClick={() => updateCatalogQty(item.id, -1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#2f3e48', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={11} /></button>
-                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', minWidth: '18px', textAlign: 'center' }}>{getCatalogQty(item.id)}</span>
-                                                <button onClick={() => updateCatalogQty(item.id, 1)} style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus size={11} /></button>
+                                            {cleanDescription && (
+                                                <div style={{ fontSize: '0.72rem', color: '#97acba', lineHeight: 1.35, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                                                    {cleanDescription}
+                                                </div>
+                                            )}
+
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
+                                                {hasDiscount && (
+                                                    <span style={{ fontSize: '0.72rem', color: '#8fa1ad', textDecoration: 'line-through' }}>S/ {formatMoney(regularPrice)}</span>
+                                                )}
+                                                {hasDiscount && (
+                                                    <span style={{ fontSize: '0.7rem', color: '#d5fff4', background: 'rgba(0,168,132,0.26)', border: '1px solid rgba(0,168,132,0.44)', borderRadius: '999px', padding: '2px 7px', fontWeight: 700 }}>
+                                                        -{effectiveDiscount.toFixed(effectiveDiscount % 1 === 0 ? 0 : 1)}%
+                                                    </span>
+                                                )}
                                             </div>
-                                            <button
-                                                onClick={() => { setInputText(buildProductShareText(item, i)); }}
-                                                style={{ padding: '7px 10px', background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '7px', color: '#d6e2e8', cursor: 'pointer', fontSize: '0.71rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', minWidth: '110px' }}
-                                            >
-                                                <Send size={12} /> Enviar prod.
-                                            </button>
+
+                                            <div style={{ fontSize: '1.05rem', color: '#00d7ad', fontWeight: 800 }}>
+                                                {finalPrice > 0 ? `S/ ${formatMoney(finalPrice)}` : 'Precio: Consultar'}
+                                            </div>
+
+                                            <div style={{ marginTop: '6px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', alignItems: 'stretch' }}>
+                                                <button
+                                                    onClick={() => sendCatalogProduct(item, i)}
+                                                    style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 9px', background: '#17323f', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '9px', color: '#d6f7ee', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                                >
+                                                    <Send size={12} /> Enviar
+                                                </button>
+                                                <button
+                                                    onClick={() => addToCart(item, 1)}
+                                                    style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 9px', background: 'linear-gradient(90deg, #00a884 0%, #02c39a 100%)', border: 'none', borderRadius: '9px', color: 'white', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                                >
+                                                    <ShoppingCart size={12} /> Carrito
+                                                </button>
+                                            </div>
+
+                                            {!isExternalCatalog && (
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', alignItems: 'stretch' }}>
+                                                    <button onClick={() => handleEditClick(item)} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#23323c', border: '1px solid rgba(255,255,255,0.13)', borderRadius: '8px', color: '#d8e6ef', cursor: 'pointer', fontSize: '0.71rem', padding: '6px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        Editar
+                                                    </button>
+                                                    <button onClick={() => handleDelete(item.id)} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#2e1f26', border: '1px solid rgba(220,74,95,0.45)', borderRadius: '8px', color: '#ffb8c7', cursor: 'pointer', fontSize: '0.71rem', padding: '6px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        Eliminar
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
-                                        <button
-                                            onClick={() => addToCart(item, getCatalogQty(item.id))}
-                                            style={{ width: '100%', minWidth: 0, padding: '8px 8px', background: '#00a884', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer', fontSize: '0.74rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                                        >
-                                            <ShoppingCart size={13} /> + Carrito
-                                        </button>
                                     </div>
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </>
                 )}
@@ -543,6 +601,8 @@ const CatalogTab = ({ catalog, socket, setInputText, addToCart, catalogMeta }) =
 
 // =========================================================
 // BUSINESS SIDEBAR - Main right panel
+
+
 // =========================================================
 
 const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activeChatId, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {} }) => {
@@ -654,7 +714,7 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
 
     const buildBusinessContext = () => {
         const catalogText = catalog.length > 0
-            ? catalog.map((p, idx) => `${idx + 1}. ${p.title} | Precio: S/ ${p.price || 'consultar'}${p.sku ? ` | SKU: ${p.sku}` : ''}${p.description ? ' | ' + p.description : ''}`).join('\n')
+            ? catalog.map((p, idx) => `${idx + 1}. ${p.title} | Precio: S/ ${p.price || 'consultar'}${p.description ? ' | ' + p.description : ''}`).join('\n')
             : '(sin productos en catalogo)';
         const convText = messages.slice(-15).map(m => `${m.fromMe ? 'VENDEDOR' : 'CLIENTE'}: ${m.body || '[media]'}`).join('\n');
         return `
@@ -959,7 +1019,7 @@ INSTRUCCIONES OBLIGATORIAS:
 
             {/* CATALOG TAB */}
             {activeTab === 'catalog' && (
-                <CatalogTab catalog={catalog} socket={socket} setInputText={setInputText} addToCart={addToCart} catalogMeta={businessData.catalogMeta} />
+                <CatalogTab catalog={catalog} socket={socket} addToCart={addToCart} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} />
             )}
 
             {/* CART TAB */}
