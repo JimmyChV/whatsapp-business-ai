@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -286,6 +286,7 @@ function App() {
   const [activeChatId, setActiveChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
+  const [editingMessage, setEditingMessage] = useState(null);
 
   // --------------------------------------------------------------
   const [myProfile, setMyProfile] = useState(null);
@@ -320,6 +321,7 @@ function App() {
   const chatSearchRef = useRef('');
   const chatFiltersRef = useRef(normalizeChatFilters({ labelTokens: [], unreadOnly: false, unlabeledOnly: false, contactMode: 'all', archivedMode: 'all' }));
   const chatPagingRef = useRef({ offset: 0, hasMore: true, loading: false });
+  const shouldInstantScrollRef = useRef(false);
 
   // --------------------------------------------------------------
   // Notifications
@@ -339,8 +341,11 @@ function App() {
   // --------------------------------------------------------------
   // Auto-scroll
   // --------------------------------------------------------------
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  useLayoutEffect(() => {
+    if (!messagesEndRef.current) return;
+    const behavior = shouldInstantScrollRef.current ? 'auto' : 'smooth';
+    messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    if (shouldInstantScrollRef.current) shouldInstantScrollRef.current = false;
   }, [messages]);
 
   useEffect(() => {
@@ -538,6 +543,7 @@ function App() {
     });
 
     socket.on('chat_history', (data) => {
+      shouldInstantScrollRef.current = true;
       const requestedChatId = String(data?.requestedChatId || '');
       const resolvedChatId = String(data?.chatId || requestedChatId || '');
       const active = String(activeChatIdRef.current || '');
@@ -758,6 +764,7 @@ function App() {
           }
           : m
       )));
+      setEditingMessage((prev) => (prev && String(prev.id || '') === String(messageId || '') ? null : prev));
     });
 
     socket.on('edit_message_error', (msg) => {
@@ -826,6 +833,7 @@ function App() {
       chatPagingRef.current = { offset: 0, hasMore: false, loading: false };
       setIsLoadingMoreChats(false);
       setMessages([]);
+      setEditingMessage(null);
       setActiveChatId(null);
       alert('Sesion de WhatsApp cerrada. Escanea nuevamente el QR.');
     });
@@ -864,7 +872,9 @@ function App() {
 
     activeChatIdRef.current = chatId;
     setActiveChatId(chatId);
+    shouldInstantScrollRef.current = true;
     setMessages([]);
+    setEditingMessage(null);
     setShowClientProfile(false);
     setClientContact(null);
     socket.emit('get_chat_history', chatId);
@@ -875,9 +885,35 @@ function App() {
 
   const handleSendMessage = (e) => {
     e?.preventDefault();
-    if (!inputText.trim() && !attachment) return;
-
     const text = inputText.trim();
+
+    if (editingMessage?.id) {
+      if (!waCapabilities.messageEdit) {
+        alert('La edicion de mensajes no esta disponible en esta sesion de WhatsApp.');
+        return;
+      }
+      if (attachment) {
+        alert('No puedes adjuntar archivos mientras editas un mensaje.');
+        return;
+      }
+      if (!text) return;
+
+      const original = String(editingMessage.originalBody || '').trim();
+      if (text === original) {
+        setEditingMessage(null);
+        setInputText('');
+        return;
+      }
+
+      const activeId = String(activeChatIdRef.current || '');
+      if (!activeId) return;
+      socket.emit('edit_message', { chatId: activeId, messageId: String(editingMessage.id), body: text });
+      setEditingMessage(null);
+      setInputText('');
+      return;
+    }
+
+    if (!text && !attachment) return;
 
     // Command: /ayudar
     if (text === '/ayudar') {
@@ -971,16 +1007,22 @@ function App() {
     socket.emit('start_new_chat', { phone: normalizedPhone, firstMessage });
   };
 
-  const handleEditMessage = (messageId, nextBody) => {
+  const handleEditMessage = (messageId, currentBody) => {
     if (!waCapabilities.messageEdit) {
       alert('La edicion de mensajes no esta disponible en esta sesion de WhatsApp.');
       return;
     }
-    const activeId = String(activeChatIdRef.current || '');
+    removeAttachment();
     const cleanId = String(messageId || '').trim();
-    const cleanBody = String(nextBody || '').trim();
-    if (!activeId || !cleanId || !cleanBody) return;
-    socket.emit('edit_message', { chatId: activeId, messageId: cleanId, body: cleanBody });
+    if (!cleanId) return;
+    const body = String(currentBody || '');
+    setEditingMessage({ id: cleanId, originalBody: body });
+    setInputText(body);
+  };
+
+  const handleCancelEditMessage = () => {
+    setEditingMessage(null);
+    setInputText('');
   };
 
   const handleCreateQuickReply = ({ label, text }) => {
@@ -1171,6 +1213,8 @@ REGLA CRITICA:
               labelDefinitions={labelDefinitions}
               onToggleChatLabel={handleToggleChatLabel}
               onEditMessage={handleEditMessage}
+              onCancelEditMessage={handleCancelEditMessage}
+              editingMessage={editingMessage}
               canEditMessages={waCapabilities.messageEdit}
             />
 
@@ -1241,6 +1285,9 @@ REGLA CRITICA:
 }
 
 export default App;
+
+
+
 
 
 

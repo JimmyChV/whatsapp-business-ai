@@ -56,12 +56,7 @@ const MessageBubble = ({
 
     const handleEditClick = () => {
         if (!canEditMessage || typeof onEditMessage !== 'function') return;
-        const currentBody = String(msg?.body || '');
-        const nextBody = window.prompt('Editar mensaje:', currentBody);
-        if (typeof nextBody !== 'string') return;
-        const trimmed = nextBody.trim();
-        if (!trimmed || trimmed === currentBody.trim()) return;
-        onEditMessage(msg?.id, trimmed);
+        onEditMessage(msg?.id, String(msg?.body || ''));
     };
 
     return (
@@ -220,4 +215,5 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
+
 
