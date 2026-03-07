@@ -466,6 +466,8 @@ function App() {
   const chatFiltersRef = useRef(normalizeChatFilters({ labelTokens: [], unreadOnly: false, unlabeledOnly: false, contactMode: 'all', archivedMode: 'all' }));
   const chatPagingRef = useRef({ offset: 0, hasMore: true, loading: false });
   const shouldInstantScrollRef = useRef(false);
+  const prevMessagesMetaRef = useRef({ count: 0, lastId: '' });
+  const suppressSmoothScrollUntilRef = useRef(0);
 
   // --------------------------------------------------------------
   // Notifications
@@ -486,10 +488,23 @@ function App() {
   // Auto-scroll
   // --------------------------------------------------------------
   useLayoutEffect(() => {
-    if (!messagesEndRef.current) return;
-    const behavior = shouldInstantScrollRef.current ? 'auto' : 'smooth';
-    messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    const endNode = messagesEndRef.current;
+    if (!endNode) return;
+
+    const nextCount = Array.isArray(messages) ? messages.length : 0;
+    const nextLastId = nextCount > 0 ? String(messages[nextCount - 1]?.id || '') : '';
+    const prevMeta = prevMessagesMetaRef.current || { count: 0, lastId: '' };
+    const isNewMessageAppend = nextCount > prevMeta.count;
+    const shouldForceScroll = shouldInstantScrollRef.current || isNewMessageAppend;
+
+    if (shouldForceScroll) {
+      const inQuietWindow = Date.now() < suppressSmoothScrollUntilRef.current;
+      const behavior = (shouldInstantScrollRef.current || inQuietWindow || !isNewMessageAppend) ? 'auto' : 'smooth';
+      endNode.scrollIntoView({ behavior, block: 'end' });
+    }
+
     if (shouldInstantScrollRef.current) shouldInstantScrollRef.current = false;
+    prevMessagesMetaRef.current = { count: nextCount, lastId: nextLastId };
   }, [messages]);
 
   useEffect(() => {
@@ -703,6 +718,8 @@ function App() {
     socket.on('chat_history', (data) => {
 
       shouldInstantScrollRef.current = true;
+      suppressSmoothScrollUntilRef.current = Date.now() + 2200;
+      prevMessagesMetaRef.current = { count: 0, lastId: '' };
       const requestedChatId = String(data?.requestedChatId || '');
       const resolvedChatId = String(data?.chatId || requestedChatId || '');
       const active = String(activeChatIdRef.current || '');
@@ -1090,6 +1107,8 @@ function App() {
     activeChatIdRef.current = chatId;
     setActiveChatId(chatId);
     shouldInstantScrollRef.current = true;
+    suppressSmoothScrollUntilRef.current = Date.now() + 2200;
+    prevMessagesMetaRef.current = { count: 0, lastId: '' };
     setMessages([]);
     setEditingMessage(null);
     setReplyingMessage(null);
@@ -1104,6 +1123,8 @@ function App() {
   const handleExitActiveChat = () => {
     activeChatIdRef.current = null;
     setActiveChatId(null);
+    prevMessagesMetaRef.current = { count: 0, lastId: '' };
+    suppressSmoothScrollUntilRef.current = 0;
     setMessages([]);
     setEditingMessage(null);
     setReplyingMessage(null);
@@ -1615,4 +1636,3 @@ REGLA CRITICA:
 }
 
 export default App;
-

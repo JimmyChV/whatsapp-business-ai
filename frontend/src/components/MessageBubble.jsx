@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import moment from 'moment';
-import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, Trash2 } from 'lucide-react';
+import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const linkPreviewCache = new Map();
@@ -413,7 +413,6 @@ const MessageBubble = ({
     onEditMessage,
     onReplyMessage,
     onForwardMessage,
-    onDeleteMessage,
     forwardChatOptions = [],
     activeChatId = null,
     canEditMessages = true,
@@ -624,8 +623,7 @@ const MessageBubble = ({
 
     const canReplyMessage = Boolean(msg?.id && typeof onReplyMessage === 'function');
     const canForwardMessage = Boolean(msg?.id && typeof onForwardMessage === 'function');
-    const canDeleteMessage = Boolean(msg?.id && isOut && String(msg?.type || '').toLowerCase() !== 'revoked' && typeof onDeleteMessage === 'function');
-    const hasMenuActions = Boolean(canReplyMessage || canForwardMessage || canDeleteMessage || canEditMessage);
+    const hasMenuActions = Boolean(canReplyMessage || canForwardMessage || canEditMessage);
     const forwardNeedle = normalizeSearchText(forwardSearch);
     const forwardCandidates = Array.isArray(forwardChatOptions)
         ? forwardChatOptions.filter((chat) => {
@@ -660,19 +658,6 @@ const MessageBubble = ({
         setShowForwardPicker(false);
         setShowActionsMenu(false);
         setForwardSearch('');
-    };
-
-    const handleDeleteClick = () => {
-        if (!canDeleteMessage) return;
-        const messageId = String(msg?.id || '').trim();
-        if (!messageId) return;
-        onDeleteMessage({
-            id: messageId,
-            chatId: String(activeChatId || '').trim() || null,
-            fromMe: Boolean(msg?.fromMe)
-        });
-        setShowActionsMenu(false);
-        setShowForwardPicker(false);
     };
     const openMapPopup = (payload = {}) => {
         if (typeof onOpenMap !== 'function') return;
@@ -1085,11 +1070,6 @@ const MessageBubble = ({
                                         <Pencil size={13} /> Editar
                                     </button>
                                 )}
-                                {canDeleteMessage && (
-                                    <button type="button" className="message-actions-item danger" onClick={handleDeleteClick}>
-                                        <Trash2 size={13} /> Eliminar
-                                    </button>
-                                )}
                             </div>
                         )}
                     </div>
@@ -1177,4 +1157,3 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
-
