@@ -35,6 +35,19 @@ const normalizeCatalogItem = (item = {}, index = 0) => {
     : 0;
   const rawDiscount = Number.parseFloat(String(safeItem.discountPct ?? safeItem.discount_pct ?? computedDiscount).replace(',', '.'));
   const discountPct = Number.isFinite(rawDiscount) ? Math.max(0, rawDiscount) : 0;
+  const rawCategories = Array.isArray(safeItem.categories)
+    ? safeItem.categories
+    : (typeof safeItem.categories === 'string'
+      ? safeItem.categories.split(',')
+      : (safeItem.category
+        ? [safeItem.category]
+        : (safeItem.categoryName
+          ? [safeItem.categoryName]
+          : (safeItem.category_slug ? [safeItem.category_slug] : []))));
+  const categories = rawCategories
+    .map((entry) => (typeof entry === 'string' ? entry : (entry?.name || entry?.slug || entry?.title || '')))
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean);
 
   return {
     id: safeItem.id || safeItem.product_id || `catalog_${index}`,
@@ -47,7 +60,8 @@ const normalizeCatalogItem = (item = {}, index = 0) => {
     imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
     source: safeItem.source || 'unknown',
     sku: safeItem.sku || null,
-    stockStatus: safeItem.stockStatus || safeItem.stock_status || null
+    stockStatus: safeItem.stockStatus || safeItem.stock_status || null,
+    categories
   };
 };
 
@@ -398,6 +412,7 @@ function App() {
   // --------------------------------------------------------------
   const [showClientProfile, setShowClientProfile] = useState(false);
   const [clientContact, setClientContact] = useState(null);
+  const [openCompanyProfileToken, setOpenCompanyProfileToken] = useState(0);
 
   // --------------------------------------------------------------
   const [attachment, setAttachment] = useState(null);
@@ -855,9 +870,22 @@ function App() {
 
     socket.on('business_data_catalog', (catalog) => {
       const normalizedCatalog = Array.isArray(catalog) ? catalog.map((item, idx) => normalizeCatalogItem(item, idx)) : [];
-      setBusinessData(prev => ({ ...prev, catalog: normalizedCatalog }));
-    });
+      const normalizedCategories = Array.from(new Set(
+        normalizedCatalog
+          .flatMap((item) => (Array.isArray(item?.categories) ? item.categories : []))
+          .map((entry) => String(entry || '').trim())
+          .filter(Boolean)
+      )).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
 
+      setBusinessData(prev => ({
+        ...prev,
+        catalog: normalizedCatalog,
+        catalogMeta: {
+          ...(prev?.catalogMeta || { source: 'local', nativeAvailable: false }),
+          categories: normalizedCategories
+        }
+      }));
+    });
     socket.on('quick_replies', (payload) => {
       const items = Array.isArray(payload?.items) ? payload.items : [];
       const normalized = items
@@ -1095,6 +1123,10 @@ function App() {
     socket.emit('create_label', { name: name.trim() });
   };
 
+  const handleOpenCompanyProfile = () => {
+    setOpenCompanyProfileToken((prev) => prev + 1);
+  };
+
   const handleToggleChatLabel = (chatId, labelId) => {
     if (!chatId || labelId === undefined || labelId === null || labelId === '') return;
     const chat = chats.find((c) => c.id === chatId);
@@ -1323,6 +1355,7 @@ REGLA CRITICA:
         onSearchQueryChange={handleChatSearchChange}
         activeFilters={chatFilters}
         onFiltersChange={handleChatFiltersChange}
+        onOpenCompanyProfile={handleOpenCompanyProfile}
       />
 
       {/* Main Content Area */}
@@ -1425,6 +1458,7 @@ REGLA CRITICA:
           onDeleteQuickReply={handleDeleteQuickReply}
           pendingOrderCartLoad={pendingOrderCartLoad}
           waCapabilities={waCapabilities}
+          openCompanyProfileToken={openCompanyProfileToken}
         />
       </div>
     </div>

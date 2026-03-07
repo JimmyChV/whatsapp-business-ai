@@ -408,6 +408,17 @@ app.get('/api/map-suggest', async (req, res) => {
     }
 });
 
+const scheduleWaInitialize = (delayMs = 0) => {
+    const safeDelay = Math.max(0, Number(delayMs) || 0);
+    setTimeout(() => {
+        waClient.initialize().catch((error) => {
+            const retryDelay = Math.max(2000, Number(process.env.WA_INIT_RESTART_DELAY_MS || 12000));
+            logger.error(`[WA] initialize bootstrap error: ${String(error?.message || error)}`);
+            logger.warn(`[WA] retrying initialize in ${retryDelay}ms...`);
+            scheduleWaInitialize(retryDelay);
+        });
+    }, safeDelay);
+};
 const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
@@ -416,6 +427,6 @@ server.listen(PORT, () => {
         ? waClient.getRuntimeInfo()
         : { requestedTransport: 'webjs', activeTransport: 'webjs', cloudConfigured: false };
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
-    waClient.initialize();
+    scheduleWaInitialize();
 });
 

@@ -2,6 +2,21 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const EventEmitter = require('events');
 
+const TRANSIENT_PROTOCOL_PATTERNS = [
+    'Promise was collected',
+    'Execution context was destroyed',
+    'Cannot find context with specified id',
+    'Target closed',
+    'Session closed',
+];
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+const isTransientProtocolError = (error) => {
+    const message = String(error?.message || error || '');
+    if (!message) return false;
+    return TRANSIENT_PROTOCOL_PATTERNS.some((pattern) => message.includes(pattern));
+};
+
 class WhatsAppClient extends EventEmitter {
     constructor() {
         super();
@@ -21,6 +36,7 @@ class WhatsAppClient extends EventEmitter {
             }
         });
         this.isReady = false;
+        this.initializePromise = null;
         this.setupEventListeners();
     }
 
@@ -85,16 +101,65 @@ class WhatsAppClient extends EventEmitter {
         });
     }
 
-    initialize() {
-        console.log(`[${new Date().toISOString()}] Initializing WhatsApp Client (2.2412.54 forced fallback removed)...`);
-        this.client.initialize();
+    async initialize() {
+        if (this.initializePromise) return this.initializePromise;
+
+        const maxAttempts = Math.max(1, Number(process.env.WA_INIT_RETRIES || 5));
+        const baseWaitMs = Math.max(250, Number(process.env.WA_INIT_RETRY_BASE_MS || 1200));
+
+        this.initializePromise = (async () => {
+            console.log(`[${new Date().toISOString()}] Initializing WhatsApp Client (2.2412.54 forced fallback removed)...`);
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+                try {
+                    await this.client.initialize();
+                    return true;
+                } catch (error) {
+                    const transient = isTransientProtocolError(error);
+                    const canRetry = transient && attempt < maxAttempts;
+                    const message = String(error?.message || error || 'unknown error');
+
+                    if (!canRetry) {
+                        console.error(`[WA] initialize failed (${attempt}/${maxAttempts}): ${message}`);
+                        throw error;
+                    }
+
+                    const waitMs = Math.min(10000, baseWaitMs * attempt);
+                    console.warn(`[WA] initialize transient failure (${attempt}/${maxAttempts}): ${message}. Retrying in ${waitMs}ms...`);
+                    await wait(waitMs);
+                }
+            }
+
+            return false;
+        })();
+
+        try {
+            return await this.initializePromise;
+        } finally {
+            this.initializePromise = null;
+        }
     }
 
     async getChats() {
         if (!this.isReady) return [];
-        return await this.client.getChats();
-    }
+        const maxAttempts = Math.max(1, Number(process.env.WA_GET_CHATS_RETRIES || 3));
+        let lastError = null;
 
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            try {
+                return await this.client.getChats();
+            } catch (error) {
+                lastError = error;
+                const shouldRetry = isTransientProtocolError(error) && attempt < maxAttempts;
+                if (!shouldRetry) throw error;
+                const waitMs = Math.min(1800, 250 * attempt);
+                console.warn(`[WA] getChats transient failure (${attempt}/${maxAttempts}): ${String(error?.message || error)}. Retrying in ${waitMs}ms...`);
+                await wait(waitMs);
+            }
+        }
+
+        throw lastError;
+    }
     async getMessages(chatId, limit = 40) {
         if (!this.isReady) return [];
         const chat = await this.client.getChatById(chatId);
@@ -279,3 +344,4 @@ class WhatsAppClient extends EventEmitter {
 }
 
 module.exports = new WhatsAppClient();
+
