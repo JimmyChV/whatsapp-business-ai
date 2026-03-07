@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Send, X, ShoppingCart, Clock, Sparkles, Trash2, Plus, Minus, ChevronRight, ChevronDown, ChevronUp, Package, MessageSquare, PlusCircle, Edit2, Check } from 'lucide-react';
+import { Bot, Send, X, ShoppingCart, Clock, Sparkles, Trash2, Plus, Minus, ChevronRight, ChevronDown, ChevronUp, Package, MessageSquare, PlusCircle, Edit2, Check, Search, SlidersHorizontal } from 'lucide-react';
 import moment from 'moment';
 
 const repairMojibake = (value = '') => {
@@ -109,6 +109,13 @@ const normalizeCatalogItem = (item = {}, index = 0) => {
         : 0;
     const rawDiscount = Number.parseFloat(String(safeItem.discountPct ?? safeItem.discount_pct ?? computedDiscount).replace(',', '.'));
     const discountPct = Number.isFinite(rawDiscount) ? Math.max(0, rawDiscount) : 0;
+    const rawCategories = Array.isArray(safeItem.categories)
+        ? safeItem.categories
+        : (safeItem.category ? [safeItem.category] : (safeItem.categoryName ? [safeItem.categoryName] : []));
+    const categories = rawCategories
+        .map((entry) => (typeof entry === 'string' ? entry : (entry?.name || entry?.slug || entry?.title || '')))
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean);
 
     return {
         id: safeItem.id || safeItem.product_id || `catalog_${index}`,
@@ -121,7 +128,8 @@ const normalizeCatalogItem = (item = {}, index = 0) => {
         imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
         source: safeItem.source || 'unknown',
         sku: safeItem.sku || null,
-        stockStatus: safeItem.stockStatus || safeItem.stock_status || null
+        stockStatus: safeItem.stockStatus || safeItem.stock_status || null,
+        categories
     };
 };
 const sanitizeProfileText = (value = '') => repairMojibake(String(value || ''))
@@ -435,6 +443,8 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({ title: '', price: '', description: '', imageUrl: '' });
     const [catalogSearch, setCatalogSearch] = useState('');
+    const [catalogCategoryFilter, setCatalogCategoryFilter] = useState('all');
+    const [catalogTypeFilter, setCatalogTypeFilter] = useState('all');
     const isNativeCatalog = catalogMeta?.source === 'native' && catalogMeta?.nativeAvailable;
     const isExternalCatalog = ['native', 'woocommerce'].includes(catalogMeta?.source);
 
@@ -493,11 +503,37 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
         });
     };
 
-    const normalizedSearch = catalogSearch.trim().toLowerCase();
-    const visibleCatalog = normalizedSearch
-        ? catalog.filter((item) => `${item.title || ''} ${item.sku || ''} ${item.description || ''}`.toLowerCase().includes(normalizedSearch))
-        : catalog;
+    const normalizedSearch = normalizeTextKey(catalogSearch);
+    const categoryOptions = Array.from(new Set(
+        catalog
+            .flatMap((item) => (Array.isArray(item?.categories) ? item.categories : []))
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean)
+    )).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
 
+    const visibleCatalog = catalog.filter((item) => {
+        const searchable = normalizeTextKey(String(item?.title || '') + ' ' + String(item?.sku || '') + ' ' + String(item?.description || ''));
+        const searchMatch = !normalizedSearch || searchable.includes(normalizedSearch);
+
+        const itemCategories = Array.isArray(item?.categories)
+            ? item.categories.map((entry) => String(entry || '').trim()).filter(Boolean)
+            : [];
+        const categoryMatch = catalogCategoryFilter === 'all' || itemCategories.includes(catalogCategoryFilter);
+
+        const finalPrice = Number.parseFloat(item?.price || '0') || 0;
+        const regularPrice = Number.parseFloat(item?.regularPrice || item?.price || '0') || finalPrice;
+        const hasDiscount = regularPrice > 0 && finalPrice > 0 && finalPrice < regularPrice;
+        const cartLine = cartItems.find((cartItem) => String(cartItem?.id || '') === String(item?.id || ''));
+        const inCart = Number(cartLine?.qty || 0) > 0;
+
+        const typeMatch = catalogTypeFilter === 'all'
+            || (catalogTypeFilter === 'discount' && hasDiscount)
+            || (catalogTypeFilter === 'regular' && !hasDiscount)
+            || (catalogTypeFilter === 'in_cart' && inCart)
+            || (catalogTypeFilter === 'out_cart' && !inCart);
+
+        return searchMatch && categoryMatch && typeMatch;
+    });
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
@@ -515,12 +551,6 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {isExternalCatalog && (
-                    <div style={{ background: '#1f2c34', color: '#9eb2bf', border: '1px solid var(--border-color)', borderRadius: '9px', padding: '8px 10px', fontSize: '0.76rem', lineHeight: 1.45 }}>
-                        Este catalogo se sincroniza desde {catalogMeta?.source === 'woocommerce' ? 'WooCommerce' : 'WhatsApp Business'}. Para editar productos, hazlo en el origen.
-                    </div>
-                )}
-
                 {catalogMeta?.source === 'local' && catalogMeta?.wooStatus && catalogMeta?.wooStatus !== 'ok' && (
                     <div style={{ background: '#2f2520', color: '#f7b267', border: '1px solid #7a4d2c', borderRadius: '9px', padding: '8px 10px', fontSize: '0.75rem' }}>
                         WooCommerce no devolvio productos ({catalogMeta?.wooSource || 'sin fuente'}).
@@ -528,19 +558,53 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                     </div>
                 )}
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <input
-                        type="text"
-                        value={catalogSearch}
-                        onChange={e => setCatalogSearch(e.target.value)}
-                        placeholder="Buscar producto"
-                        style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '9px', padding: '9px 10px', fontSize: '0.79rem', outline: 'none' }}
-                    />
+                <div style={{ background: '#17242c', border: '1px solid rgba(0,168,132,0.24)', borderRadius: '11px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '9px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#111b21', border: '1px solid rgba(0,168,132,0.4)', borderRadius: '10px', padding: '0 10px' }}>
+                        <Search size={15} color="#76e6d0" />
+                        <input
+                            type="text"
+                            value={catalogSearch}
+                            onChange={e => setCatalogSearch(e.target.value)}
+                            placeholder="Buscar por producto, SKU o detalle"
+                            style={{ width: '100%', background: 'transparent', border: 'none', color: '#e9f2f7', borderRadius: '10px', padding: '10px 0', fontSize: '0.8rem', outline: 'none' }}
+                        />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.7rem', color: '#9eb2bf' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><SlidersHorizontal size={12} /> Categoria</span>
+                            <select
+                                value={catalogCategoryFilter}
+                                onChange={e => setCatalogCategoryFilter(e.target.value)}
+                                style={{ width: '100%', background: '#101a21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '8px', padding: '7px 8px', fontSize: '0.76rem', outline: 'none' }}
+                            >
+                                <option value="all">Todas</option>
+                                {categoryOptions.map((category) => (
+                                    <option key={category} value={category}>{category}</option>
+                                ))}
+                            </select>
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.7rem', color: '#9eb2bf' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>Vista</span>
+                            <select
+                                value={catalogTypeFilter}
+                                onChange={e => setCatalogTypeFilter(e.target.value)}
+                                style={{ width: '100%', background: '#101a21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '8px', padding: '7px 8px', fontSize: '0.76rem', outline: 'none' }}
+                            >
+                                <option value="all">Todos</option>
+                                <option value="discount">Con descuento</option>
+                                <option value="regular">Precio regular</option>
+                                <option value="in_cart">En carrito</option>
+                                <option value="out_cart">Fuera del carrito</option>
+                            </select>
+                        </label>
+                    </div>
+
                     <div style={{ fontSize: '0.72rem', color: '#8ca3b3' }}>
                         Mostrando {visibleCatalog.length} de {catalog.length} productos
                     </div>
                 </div>
-
                 {showForm ? (
                     <form onSubmit={handleSubmit} style={{ background: '#202c33', borderRadius: '10px', padding: '15px', border: '1px solid #00a884', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 600, marginBottom: '5px' }}>{editingProduct ? 'Editar Producto' : 'Nuevo Producto'}</div>
@@ -1582,28 +1646,28 @@ INSTRUCCIONES OBLIGATORIAS:
                             cart.map((item, i) => {
                                 const line = getLineBreakdown(item);
                                 return (
-                                    <div key={item.id || i} style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                    <div key={item.id || i} style={{ background: '#1f2e37', borderRadius: '9px', border: '1px solid rgba(134,150,160,0.26)', padding: '6px 7px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
                                             <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ fontSize: '0.86rem', color: 'var(--text-primary)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
-                                                <div style={{ marginTop: '4px', fontSize: '0.73rem', color: '#97adba', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
+                                                <div style={{ marginTop: '2px', fontSize: '0.7rem', color: '#97adba', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                                     <span>Regular: S/ {formatMoney(line.regularSubtotal)}</span>
                                                     {line.includedDiscount > 0 && <span style={{ color: '#63d1b7' }}>Desc. kit: -S/ {formatMoney(line.includedDiscount)}</span>}
                                                     <span style={{ color: '#00d7ad', fontWeight: 700 }}>Final: S/ {formatMoney(line.lineFinal)}</span>
                                                 </div>
                                             </div>
-                                            <button onClick={() => removeFromCart(item.id)} style={{ background: '#2a3942', border: '1px solid var(--border-color)', cursor: 'pointer', color: '#da3633', padding: '4px 8px', borderRadius: '6px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                                            <button onClick={() => removeFromCart(item.id)} style={{ background: '#2a3942', border: '1px solid var(--border-color)', cursor: 'pointer', color: '#da3633', padding: '3px 6px', borderRadius: '6px', fontSize: '0.69rem', display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
                                                 <Trash2 size={13} /> Eliminar
                                             </button>
                                         </div>
 
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', background: '#17242c', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '6px 8px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', background: '#17242c', border: '1px solid var(--border-color)', borderRadius: '7px', padding: '4px 6px' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <button onClick={() => (line.qty <= 1 ? removeFromCart(item.id) : updateQty(item.id, -1))} style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={10} /></button>
-                                                <span style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 700, minWidth: '22px', textAlign: 'center' }}>{line.qty}</span>
-                                                <button onClick={() => updateQty(item.id, 1)} style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus size={10} /></button>
+                                                <button onClick={() => (line.qty <= 1 ? removeFromCart(item.id) : updateQty(item.id, -1))} style={{ width: '21px', height: '21px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={9} /></button>
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 700, minWidth: '18px', textAlign: 'center' }}>{line.qty}</span>
+                                                <button onClick={() => updateQty(item.id, 1)} style={{ width: '21px', height: '21px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus size={9} /></button>
                                             </div>
-                                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#cfe2ec', fontSize: '0.76rem', cursor: 'pointer' }}>
+                                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#cfe2ec', fontSize: '0.72rem', cursor: 'pointer' }}>
                                                 <input
                                                     type="checkbox"
                                                     checked={line.lineDiscountEnabled}
@@ -1614,7 +1678,7 @@ INSTRUCCIONES OBLIGATORIAS:
                                         </div>
 
                                         {line.lineDiscountEnabled && (
-                                            <div style={{ background: '#17242c', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                            <div style={{ background: '#17242c', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '6px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                                                     <span style={{ fontSize: '0.72rem', color: '#95abba' }}>Tipo de descuento</span>
                                                     <select
@@ -1653,13 +1717,13 @@ INSTRUCCIONES OBLIGATORIAS:
                     </div>
 
                     {cart.length > 0 && (
-                        <div style={{ padding: '8px', borderTop: '1px solid var(--border-color)', background: '#202c33', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
+                        <div style={{ padding: '10px 9px', borderTop: '1px solid var(--border-color)', background: '#1a2b35', display: 'flex', flexDirection: 'column', gap: '10px', flexShrink: 0 }}>
                             <button
                                 type="button"
                                 onClick={() => setShowOrderAdjustments(prev => !prev)}
-                                style={{ width: '100%', background: '#1a2a33', border: '1px solid var(--border-color)', color: '#d3e4ed', borderRadius: '8px', padding: '8px 10px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                                style={{ width: '100%', background: 'linear-gradient(90deg, rgba(0,168,132,0.22), rgba(11,56,69,0.7))', border: '1px solid rgba(0,168,132,0.6)', color: '#e6fff8', borderRadius: '9px', padding: '9px 10px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: 'inset 0 0 0 1px rgba(0,168,132,0.16)' }}
                             >
-                                <span>Ajustes de pago (descuento global y delivery)</span>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><Sparkles size={13} /> Ajustes de pago y envio</span>
                                 {showOrderAdjustments ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                             </button>
 
@@ -1876,12 +1940,4 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
-
-
-
-
-
-
-
-
 

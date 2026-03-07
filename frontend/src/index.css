@@ -1259,9 +1259,9 @@ body {
 }
 
 .business-sidebar.business-sidebar-pro {
-  width: clamp(320px, 25vw, 390px);
-  min-width: 300px;
-  max-width: 390px;
+  width: clamp(340px, 27vw, 430px);
+  min-width: 320px;
+  max-width: 430px;
   border-left: 1px solid var(--wa-border);
   background: var(--wa-panel);
 }
