@@ -145,6 +145,78 @@ function extractMeta(html, property, nameFallback = null) {
     return null;
 }
 
+function parseMapCoordinates(value = '') {
+    const source = String(value || '');
+    if (!source) return null;
+
+    const patterns = [
+        /@(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
+        /[?&](?:q|query|ll|sll|destination|daddr)=(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
+        /\b(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})\b/
+    ];
+
+    for (const pattern of patterns) {
+        const match = source.match(pattern);
+        if (!match) continue;
+        const latitude = Number.parseFloat(match[1]);
+        const longitude = Number.parseFloat(match[2]);
+        if (Number.isFinite(latitude) && Number.isFinite(longitude)
+            && latitude >= -90 && latitude <= 90
+            && longitude >= -180 && longitude <= 180) {
+            return { latitude, longitude };
+        }
+    }
+
+    return null;
+}
+
+function normalizeMapSeedFromUrl(rawUrl = '') {
+    const value = String(rawUrl || '').trim();
+    if (!value) return '';
+
+    let parsed;
+    try {
+        parsed = new URL(value);
+    } catch (error) {
+        return value;
+    }
+
+    for (const key of ['q', 'query', 'll', 'sll', 'destination', 'daddr']) {
+        const fromParam = String(parsed.searchParams.get(key) || '').trim();
+        if (!fromParam) continue;
+        const coords = parseMapCoordinates(fromParam);
+        if (coords) return `${coords.latitude},${coords.longitude}`;
+        return fromParam;
+    }
+
+    const decodedPath = decodeURIComponent(`${parsed.pathname || ''}${parsed.hash || ''}`);
+    const pathCoords = parseMapCoordinates(decodedPath);
+    if (pathCoords) return `${pathCoords.latitude},${pathCoords.longitude}`;
+
+    const placeMatch = decodedPath.match(/\/place\/([^/]+)/i);
+    if (placeMatch?.[1]) return String(placeMatch[1]).replace(/\+/g, ' ');
+
+    const searchMatch = decodedPath.match(/\/search\/([^/]+)/i);
+    if (searchMatch?.[1]) return String(searchMatch[1]).replace(/\+/g, ' ');
+
+    return value;
+}
+
+function isAllowedMapHost(hostname = '') {
+    const host = String(hostname || '').trim().toLowerCase();
+    if (!host) return false;
+
+    if (host === 'maps.app.goo.gl') return true;
+    if (host === 'goo.gl') return true;
+    if (host === 'maps.google.com') return true;
+    if (host.startsWith('maps.google.')) return true;
+    if (host === 'www.google.com') return true;
+    if (host.startsWith('www.google.')) return true;
+    if (host.startsWith('m.google.')) return true;
+
+    return false;
+}
+
 app.get('/api/link-preview', async (req, res) => {
     const url = String(req.query.url || '').trim();
     if (!url || !/^https?:\/\//i.test(url)) {
@@ -211,6 +283,130 @@ app.get('/api/link-preview', async (req, res) => {
     }
 });
 
+app.get('/api/map-resolve', async (req, res) => {
+    const rawUrl = String(req.query.url || '').trim();
+    if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) {
+        return res.status(400).json({ ok: false, error: 'URL de mapa invalida.' });
+    }
+
+    let parsed;
+    try {
+        parsed = new URL(rawUrl);
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: 'URL de mapa invalida.' });
+    }
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return res.status(400).json({ ok: false, error: 'Solo se permiten protocolos http/https.' });
+    }
+
+    if (!isAllowedMapHost(parsed.hostname)) {
+        return res.status(403).json({ ok: false, error: 'Host de mapa no permitido.' });
+    }
+
+    try {
+        await resolveAndValidatePublicHost(parsed.hostname);
+
+        const timeoutMs = Number(process.env.MAP_RESOLVE_TIMEOUT_MS || 6000);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+        let response;
+        try {
+            response = await fetch(parsed.toString(), {
+                redirect: 'follow',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (WhatsApp Business Pro Map Resolver)'
+                },
+                signal: controller.signal
+            });
+        } finally {
+            clearTimeout(timeout);
+        }
+
+        const resolvedUrl = String(response?.url || parsed.toString());
+        const seed = normalizeMapSeedFromUrl(resolvedUrl);
+        const coords = parseMapCoordinates(seed) || parseMapCoordinates(resolvedUrl);
+
+        return res.json({
+            ok: true,
+            inputUrl: parsed.toString(),
+            resolvedUrl,
+            seed,
+            latitude: coords?.latitude ?? null,
+            longitude: coords?.longitude ?? null
+        });
+    } catch (error) {
+        return res.status(502).json({
+            ok: false,
+            error: error?.message || 'No se pudo resolver el enlace de mapa.'
+        });
+    }
+});
+
+app.get('/api/map-suggest', async (req, res) => {
+    const query = String(req.query.q || '').trim();
+    if (query.length < 2) {
+        return res.json({ ok: true, items: [] });
+    }
+
+    try {
+        const timeoutMs = Number(process.env.MAP_SUGGEST_TIMEOUT_MS || 7000);
+        const limit = Math.min(10, Math.max(3, Number.parseInt(String(req.query.limit || '8'), 10) || 8));
+
+        const nominatimUrl = new URL('https://nominatim.openstreetmap.org/search');
+        nominatimUrl.searchParams.set('format', 'jsonv2');
+        nominatimUrl.searchParams.set('addressdetails', '1');
+        nominatimUrl.searchParams.set('limit', String(limit));
+        nominatimUrl.searchParams.set('q', query);
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+        let response;
+        try {
+            response = await fetch(nominatimUrl.toString(), {
+                headers: {
+                    'User-Agent': 'WhatsApp Business Pro/1.0 (map-suggest)'
+                },
+                signal: controller.signal
+            });
+        } finally {
+            clearTimeout(timeout);
+        }
+
+        if (!response.ok) {
+            return res.status(502).json({ ok: false, error: 'No se pudo obtener sugerencias de ubicacion.', items: [] });
+        }
+
+        const payload = await response.json();
+        const rows = Array.isArray(payload) ? payload : [];
+        const items = rows
+            .map((row) => {
+                const latitude = Number.parseFloat(String(row?.lat || ''));
+                const longitude = Number.parseFloat(String(row?.lon || ''));
+                const label = String(row?.display_name || '').trim();
+                if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !label) return null;
+                return {
+                    id: String(row?.place_id || `${latitude},${longitude}`),
+                    label,
+                    latitude,
+                    longitude,
+                    mapUrl: `https://www.google.com/maps?q=${latitude},${longitude}`
+                };
+            })
+            .filter(Boolean)
+            .slice(0, limit);
+
+        return res.json({ ok: true, items });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error?.message || 'Error consultando sugerencias de ubicacion.',
+            items: []
+        });
+    }
+});
 
 const PORT = process.env.PORT || 3001;
 
@@ -222,3 +418,4 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     waClient.initialize();
 });
+
