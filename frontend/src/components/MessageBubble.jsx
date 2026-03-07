@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import moment from 'moment';
 import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink } from 'lucide-react';
 
@@ -102,30 +102,47 @@ const parseLocationCoord = (value) => {
 const isValidLat = (value) => Number.isFinite(value) && value >= -90 && value <= 90;
 const isValidLng = (value) => Number.isFinite(value) && value >= -180 && value <= 180;
 
+const normalizeUrlToken = (value = '') => String(value || '').trim().replace(/[),.;!?]+$/g, '');
+
+const isLikelyMapUrl = (value = '') => {
+    const candidate = normalizeUrlToken(value);
+    if (!candidate) return false;
+    try {
+        const parsed = new URL(candidate);
+        const host = String(parsed.hostname || '').toLowerCase();
+        const path = String(parsed.pathname || '').toLowerCase();
+        if (host.includes('maps.app.goo.gl')) return true;
+        if (host === 'goo.gl' && path.startsWith('/maps')) return true;
+        if (host.startsWith('maps.google.')) return true;
+        if (host.includes('google.') && path.startsWith('/maps')) return true;
+        return false;
+    } catch (e) {
+        return /maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\.com|google\.[^\s/]+\/maps/i.test(candidate);
+    }
+};
+
 const extractMapUrlFromText = (text = '') => {
-    const match = String(text || '').match(/https?:\/\/[^\s]+/i);
-    if (!match) return null;
-    const url = match[0];
-    if (/maps\.app\.goo\.gl|google\.[^\s/]+\/maps|maps\.google\.com/i.test(url)) return url;
+    const urls = String(text || '').match(/https?:\/\/[^\s]+/gi) || [];
+    for (const rawUrl of urls) {
+        const mapUrl = normalizeUrlToken(rawUrl);
+        if (isLikelyMapUrl(mapUrl)) return mapUrl;
+    }
     return null;
 };
 
-const extractCoordsFromText = (text = '') => {
-    const raw = String(text || '');
-    if (!raw) return null;
-    let value = raw;
-    try {
-        value = decodeURIComponent(raw);
-    } catch (e) { }
+const tryExtractCoordinates = (value = '') => {
+    const source = String(value || '');
+    if (!source) return null;
 
     const patterns = [
         /geo:\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
         /[?&](?:q|query|ll)=(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
+        /@(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
         /\b(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})\b/
     ];
 
     for (const pattern of patterns) {
-        const match = value.match(pattern);
+        const match = source.match(pattern);
         if (!match) continue;
         const latitude = parseLocationCoord(match[1]);
         const longitude = parseLocationCoord(match[2]);
@@ -136,10 +153,48 @@ const extractCoordsFromText = (text = '') => {
     return null;
 };
 
+const extractCoordsFromText = (text = '') => {
+    const raw = String(text || '');
+    if (!raw) return null;
+
+    let value = raw;
+    try {
+        value = decodeURIComponent(raw);
+    } catch (e) { }
+
+    const direct = tryExtractCoordinates(value);
+    if (direct) return direct;
+
+    const urls = value.match(/https?:\/\/[^\s]+/gi) || [];
+    for (const rawUrl of urls) {
+        const urlCandidate = normalizeUrlToken(rawUrl);
+        try {
+            const parsed = new URL(urlCandidate);
+            const queryCandidates = [
+                parsed.searchParams.get('q'),
+                parsed.searchParams.get('query'),
+                parsed.searchParams.get('ll'),
+                parsed.searchParams.get('sll'),
+                parsed.searchParams.get('destination'),
+                parsed.searchParams.get('daddr'),
+                `${parsed.pathname || ''}${parsed.hash || ''}`,
+            ].filter(Boolean);
+
+            for (const queryCandidate of queryCandidates) {
+                const parsedCoords = tryExtractCoordinates(String(queryCandidate));
+                if (parsedCoords) return parsedCoords;
+            }
+        } catch (e) { }
+    }
+
+    return null;
+};
+
 const resolveLocationData = (msg = {}) => {
     const type = String(msg?.type || '').toLowerCase();
     const explicit = msg?.location && typeof msg.location === 'object' ? msg.location : null;
     const body = String(msg?.body || '').trim();
+    const isNativeLocationType = type === 'location';
 
     let latitude = parseLocationCoord(explicit?.latitude);
     let longitude = parseLocationCoord(explicit?.longitude);
@@ -153,8 +208,8 @@ const resolveLocationData = (msg = {}) => {
         longitude = coordsFromBody.longitude;
     }
 
-    const explicitMapUrl = String(explicit?.mapUrl || explicit?.url || '').trim();
-    const mapUrl = /^https?:\/\//i.test(explicitMapUrl)
+    const explicitMapUrl = normalizeUrlToken(explicit?.mapUrl || explicit?.url || '');
+    const mapUrl = isLikelyMapUrl(explicitMapUrl)
         ? explicitMapUrl
         : (mapFromBody || ((latitude !== null && longitude !== null) ? `https://www.google.com/maps?q=${latitude},${longitude}` : null));
 
@@ -163,12 +218,11 @@ const resolveLocationData = (msg = {}) => {
 
     const hasExplicitLocation = Boolean(explicit && Object.keys(explicit).length > 0);
     const hasCoordinates = latitude !== null && longitude !== null;
-    const bodyIsMapOnly = Boolean(body)
-        && (/^(https?:\/\/\S+|geo:[^\s]+)\s*$/i.test(body)
-            || /^[-+]?\d{1,2}\.\d+\s*,\s*[-+]?\d{1,3}\.\d+\s*$/.test(body));
-    const looksLikeLocationBody = bodyIsMapOnly && (Boolean(mapUrl) || hasCoordinates);
+    const bodyHasMapLink = Boolean(mapFromBody);
+    const bodyHasCoordHint = hasCoordinates && Boolean(body);
+    const looksLikeLocationBody = bodyHasMapLink || bodyHasCoordHint;
 
-    const hasAny = type === 'location' || hasExplicitLocation || looksLikeLocationBody;
+    const hasAny = isNativeLocationType || hasExplicitLocation || looksLikeLocationBody;
     if (!hasAny) return null;
 
     const resolvedLabel = label
@@ -179,7 +233,8 @@ const resolveLocationData = (msg = {}) => {
         latitude,
         longitude,
         label: resolvedLabel,
-        mapUrl
+        mapUrl,
+        source: (isNativeLocationType || hasExplicitLocation) ? 'native' : 'link'
     };
 };
 const MessageBubble = ({
@@ -443,7 +498,7 @@ const MessageBubble = ({
                     </div>
                 )}
 
-                {String(isCatalogItem ? 'Te gustaria que te lo separemos?' : (isLocationMessage ? '' : (msg.body || ''))).trim() && (
+                {String(isCatalogItem ? 'Te gustaria que te lo separemos?' : ((isLocationMessage && locationData?.source === 'native') ? '' : (msg.body || ''))).trim() && (
                     <span
                         style={{ fontSize: '0.9rem', wordBreak: 'break-word', whiteSpace: 'normal' }}
                         onMouseUp={() => {
@@ -455,7 +510,7 @@ const MessageBubble = ({
                             setSelectedLocationText('');
                         }}
                     >
-                        {renderWhatsAppFormattedText(isCatalogItem ? 'Te gustaria que te lo separemos?' : (isLocationMessage ? '' : msg.body))}
+                        {renderWhatsAppFormattedText(isCatalogItem ? 'Te gustaria que te lo separemos?' : ((isLocationMessage && locationData?.source === 'native') ? '' : msg.body))}
                     </span>
                 )}
 
@@ -513,15 +568,4 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
-
-
-
-
-
-
-
-
-
-
-
 

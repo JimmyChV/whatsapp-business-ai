@@ -1594,6 +1594,72 @@ body {
   border-color: rgba(124, 200, 255, 0.45);
 }
 
+.map-share-btn {
+  border: 1px solid rgba(0, 168, 132, 0.45);
+  border-radius: 8px;
+  padding: 7px 11px;
+  font-size: 0.8rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(0, 168, 132, 0.14);
+  color: #b6f4e5;
+  cursor: pointer;
+}
+
+.map-share-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.map-suggest-list {
+  max-height: 210px;
+  overflow-y: auto;
+  border-bottom: 1px solid rgba(134, 150, 160, 0.2);
+  background: #16252e;
+}
+
+.map-suggest-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: #d9e4e9;
+  text-align: left;
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  cursor: pointer;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.map-suggest-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.map-suggest-item.active {
+  background: rgba(0, 168, 132, 0.14);
+  outline: 1px solid rgba(0, 168, 132, 0.32);
+}
+
+.map-suggest-title {
+  font-size: 0.83rem;
+  line-height: 1.28;
+}
+
+.map-suggest-coords {
+  font-size: 0.72rem;
+  color: #91a9b4;
+}
+
+.map-suggest-empty {
+  padding: 10px 12px;
+  color: #94acb7;
+  font-size: 0.8rem;
+}
+
 .map-lightbox-iframe {
   width: 100%;
   flex: 1;
@@ -2524,6 +2590,4 @@ body {
   border-color: rgba(239, 68, 68, 0.55);
   background: rgba(239, 68, 68, 0.24);
 }
-
-
 
