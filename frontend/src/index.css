@@ -2739,3 +2739,23 @@ body {
 .message-actions-item.danger:hover {
   background: rgba(239, 68, 68, 0.2);
 }
+/* Stable full-screen shell: evita cinta verde/salto inicial */
+body {
+  justify-content: flex-start;
+  align-items: stretch;
+  background: #111b21 !important;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+}
+
+.app-container {
+  width: 100vw !important;
+  height: 100vh !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+}
