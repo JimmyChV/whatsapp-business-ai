@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, MoreVertical, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart, ChevronUp, ChevronDown, Tag } from 'lucide-react';
+import { Search, MoreVertical, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart, ChevronUp, ChevronDown, Tag, MapPin } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import moment from 'moment';
 import EmojiPicker from 'emoji-picker-react';
@@ -340,7 +340,7 @@ const ChatInput = ({
                         { label: 'S', title: 'Tachado', wrap: ['~', '~'] },
                         { label: '</>', title: 'Monoespaciado', wrap: ['`', '`'] },
                         { label: '"', title: 'Cita', mode: 'quote' },
-                        { label: '•', title: 'Vinetas', mode: 'bullet' },
+                        { label: '\u2022', title: 'Vinetas', mode: 'bullet' },
                         { label: '1.', title: 'Numeracion', mode: 'number' },
                         { label: '```', title: 'Bloque de codigo', mode: 'codeblock' },
                     ].map((fmt) => (
@@ -495,6 +495,9 @@ const ChatWindow = ({
     const [showLabelMenu, setShowLabelMenu] = useState(false);
     const [activeMatchIdx, setActiveMatchIdx] = useState(0);
     const [lightboxMedia, setLightboxMedia] = useState(null);
+    const [showMapModal, setShowMapModal] = useState(false);
+    const [mapQuery, setMapQuery] = useState('');
+    const [mapEmbedUrl, setMapEmbedUrl] = useState('');
     const messageRefs = useRef({});
 
     const searchTerm = chatSearch.trim().toLowerCase();
@@ -521,7 +524,7 @@ const ChatWindow = ({
 
     useEffect(() => {
         const onEsc = (event) => {
-            if (event.key === 'Escape') setLightboxMedia(null);
+            if (event.key === 'Escape') { setLightboxMedia(null); setShowMapModal(false); }
         };
         window.addEventListener('keydown', onEsc);
         return () => window.removeEventListener('keydown', onEsc);
@@ -554,6 +557,33 @@ const ChatWindow = ({
         if (m.isSame(moment(), 'day')) return 'Hoy';
         if (m.isSame(moment().subtract(1, 'day'), 'day')) return 'Ayer';
         return m.format('dddd, D [de] MMMM');
+    };
+    const buildMapEmbedUrl = (seed = '') => {
+        const value = String(seed || '').trim();
+        if (!value) return '';
+        return `https://www.google.com/maps?q=${encodeURIComponent(value)}&output=embed`;
+    };
+
+    const openMapModal = ({ query = '', mapUrl = '', latitude = null, longitude = null } = {}) => {
+        const lat = Number.parseFloat(String(latitude ?? '').replace(',', '.'));
+        const lng = Number.parseFloat(String(longitude ?? '').replace(',', '.'));
+        const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+
+        const seed = hasCoords
+            ? `${lat},${lng}`
+            : String(mapUrl || query || '').trim();
+        const embed = buildMapEmbedUrl(seed);
+
+        setMapQuery(seed);
+        setMapEmbedUrl(embed);
+        setShowMapModal(true);
+    };
+
+    const submitMapSearch = (event) => {
+        event.preventDefault();
+        const embed = buildMapEmbedUrl(mapQuery);
+        if (!embed) return;
+        setMapEmbedUrl(embed);
     };
 
     return (
@@ -603,6 +633,11 @@ const ChatWindow = ({
                     <button className={`btn-icon ui-icon-btn chat-header-action-btn ${searchVisible ? 'active' : ''}`}
                         onClick={() => setSearchVisible(v => !v)} title="Buscar en chat">
                         <Search size={20} />
+                    </button>
+                    <button className={`btn-icon ui-icon-btn chat-header-action-btn ${showMapModal ? 'active' : ''}`}
+                        onClick={() => openMapModal({ query: mapQuery || activeChatDetails?.phone || activeChatDetails?.name || '' })}
+                        title="Abrir mapa">
+                        <MapPin size={20} />
                     </button>
                     <div className="chat-header-menu-wrap">
                         <button className={`btn-icon ui-icon-btn chat-header-action-btn ${showLabelMenu ? 'active' : ''}`}
@@ -712,6 +747,7 @@ const ChatWindow = ({
                                     isCurrentHighlighted={isCurrentHighlighted}
                                     onPrefillMessage={(text) => inputProps?.setInputText && inputProps.setInputText(text)}
                                     onOpenMedia={setLightboxMedia}
+                                    onOpenMap={openMapModal}
                                     onEditMessage={onEditMessage}
 
                                     canEditMessages={canEditMessages}
@@ -734,6 +770,48 @@ const ChatWindow = ({
                 </div>
             )}
 
+            {showMapModal && (
+                <div className="chat-lightbox" onClick={() => setShowMapModal(false)}>
+                    <div className="chat-lightbox-content map-lightbox-content" onClick={(e) => e.stopPropagation()}>
+                        <button className="chat-lightbox-close" onClick={() => setShowMapModal(false)} aria-label="Cerrar mapa">
+                            <X size={20} />
+                        </button>
+
+                        <form className="map-search-form" onSubmit={submitMapSearch}>
+                            <input
+                                className="map-search-input"
+                                placeholder="Buscar direccion, referencia o coordenadas"
+                                value={mapQuery}
+                                onChange={(e) => setMapQuery(e.target.value)}
+                            />
+                            <button type="submit" className="map-search-btn">Buscar</button>
+                            {mapEmbedUrl && (
+                                <a
+                                    className="map-open-external"
+                                    href={`https://www.google.com/maps?q=${encodeURIComponent(mapQuery)}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
+                                    Abrir
+                                </a>
+                            )}
+                        </form>
+
+                        {mapEmbedUrl ? (
+                            <iframe
+                                title="Mapa"
+                                src={mapEmbedUrl}
+                                className="map-lightbox-iframe"
+                                loading="lazy"
+                                referrerPolicy="no-referrer-when-downgrade"
+                            />
+                        ) : (
+                            <div className="map-lightbox-empty">Escribe una ubicacion y presiona Buscar.</div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* Input Area */}
             <ChatInput {...inputProps} />
         </div>
@@ -742,6 +820,15 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
+
+
+
+
+
+
+
+
+
 
 
 

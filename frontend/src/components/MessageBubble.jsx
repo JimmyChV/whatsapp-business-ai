@@ -1,4 +1,4 @@
-﻿import React from 'react';
+﻿import React, { useState } from 'react';
 import moment from 'moment';
 import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink } from 'lucide-react';
 
@@ -188,6 +188,7 @@ const MessageBubble = ({
     isHighlighted = false,
     isCurrentHighlighted = false,
     onOpenMedia,
+    onOpenMap,
     onEditMessage,
     canEditMessages = true,
 }) => {
@@ -202,6 +203,15 @@ const MessageBubble = ({
     const orderItems = Array.isArray(msg?.order?.products) ? msg.order.products : [];
     const locationData = resolveLocationData(msg);
     const isLocationMessage = Boolean(locationData);
+    const [selectedLocationText, setSelectedLocationText] = useState('');
+
+    const hasLocationCoords = Number.isFinite(locationData?.latitude) && Number.isFinite(locationData?.longitude);
+    const locationMapQuery = hasLocationCoords
+        ? `${locationData.latitude},${locationData.longitude}`
+        : String(locationData?.mapUrl || locationData?.label || '');
+    const locationEmbedUrl = locationMapQuery
+        ? `https://www.google.com/maps?q=${encodeURIComponent(locationMapQuery)}&output=embed`
+        : '';
 
     const getAckLabel = (ackValue) => {
         const ack = Number.isFinite(Number(ackValue)) ? Number(ackValue) : 0;
@@ -239,6 +249,11 @@ const MessageBubble = ({
     const handleEditClick = () => {
         if (!canEditMessage || typeof onEditMessage !== 'function') return;
         onEditMessage(msg?.id, String(msg?.body || ''));
+    };
+
+    const openMapPopup = (payload = {}) => {
+        if (typeof onOpenMap !== 'function') return;
+        onOpenMap(payload);
     };
 
     return (
@@ -371,7 +386,33 @@ const MessageBubble = ({
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#00c7a0', fontSize: '0.78rem', fontWeight: 700 }}>
                             <MapPin size={14} /> Ubicacion compartida
                         </div>
-                        <div style={{ fontSize: '0.84rem', color: '#e4edf2', marginTop: '3px' }}>
+
+                        {locationEmbedUrl && (
+                            <button
+                                type="button"
+                                onClick={() => openMapPopup({ query: locationMapQuery, mapUrl: locationData?.mapUrl, latitude: locationData?.latitude, longitude: locationData?.longitude })}
+                                style={{
+                                    marginTop: '7px',
+                                    width: '100%',
+                                    border: '1px solid rgba(124,200,255,0.35)',
+                                    borderRadius: '8px',
+                                    overflow: 'hidden',
+                                    padding: 0,
+                                    cursor: 'pointer',
+                                    background: '#17242d'
+                                }}
+                            >
+                                <iframe
+                                    title="Vista previa de ubicacion"
+                                    src={locationEmbedUrl}
+                                    style={{ width: '100%', height: '118px', border: 'none', pointerEvents: 'none' }}
+                                    loading="lazy"
+                                    referrerPolicy="no-referrer-when-downgrade"
+                                />
+                            </button>
+                        )}
+
+                        <div style={{ fontSize: '0.84rem', color: '#e4edf2', marginTop: '6px' }}>
                             {locationData?.label || 'Ubicacion'}
                         </div>
                         {(locationData?.latitude !== null && locationData?.longitude !== null) && (
@@ -379,32 +420,66 @@ const MessageBubble = ({
                                 {locationData.latitude.toFixed(6)}, {locationData.longitude.toFixed(6)}
                             </div>
                         )}
-                        {locationData?.mapUrl && (
-                            <a
-                                href={locationData.mapUrl}
-                                target="_blank"
-                                rel="noreferrer"
+                        <div style={{ marginTop: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button
+                                type="button"
+                                onClick={() => openMapPopup({ query: locationMapQuery, mapUrl: locationData?.mapUrl, latitude: locationData?.latitude, longitude: locationData?.longitude })}
                                 style={{
-                                    marginTop: '7px',
+                                    border: '1px solid rgba(124,200,255,0.45)',
+                                    background: 'rgba(124,200,255,0.12)',
+                                    color: '#cfefff',
+                                    borderRadius: '999px',
+                                    padding: '4px 10px',
+                                    fontSize: '0.74rem',
+                                    cursor: 'pointer',
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: '5px',
-                                    color: '#7cc8ff',
-                                    textDecoration: 'none',
-                                    fontSize: '0.76rem',
-                                    fontWeight: 600
+                                    gap: '5px'
                                 }}
                             >
-                                Abrir en Google Maps <ExternalLink size={12} />
-                            </a>
-                        )}
+                                Ver en popup <ExternalLink size={12} />
+                            </button>
+                        </div>
                     </div>
                 )}
 
                 {String(isCatalogItem ? 'Te gustaria que te lo separemos?' : (isLocationMessage ? '' : (msg.body || ''))).trim() && (
-                    <span style={{ fontSize: '0.9rem', wordBreak: 'break-word', whiteSpace: 'normal' }}>
+                    <span
+                        style={{ fontSize: '0.9rem', wordBreak: 'break-word', whiteSpace: 'normal' }}
+                        onMouseUp={() => {
+                            const selected = String(window.getSelection?.()?.toString?.() || '').trim();
+                            if (selected.length >= 4 && selected.length <= 180) {
+                                setSelectedLocationText(selected);
+                                return;
+                            }
+                            setSelectedLocationText('');
+                        }}
+                    >
                         {renderWhatsAppFormattedText(isCatalogItem ? 'Te gustaria que te lo separemos?' : (isLocationMessage ? '' : msg.body))}
                     </span>
+                )}
+
+                {selectedLocationText && typeof onOpenMap === 'function' && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            openMapPopup({ query: selectedLocationText });
+                            setSelectedLocationText('');
+                        }}
+                        style={{
+                            marginTop: '6px',
+                            border: '1px solid rgba(0,168,132,0.45)',
+                            background: 'rgba(0,168,132,0.14)',
+                            color: '#baf6e8',
+                            borderRadius: '999px',
+                            padding: '4px 10px',
+                            fontSize: '0.73rem',
+                            cursor: 'pointer',
+                            alignSelf: 'flex-start'
+                        }}
+                    >
+                        Buscar en mapa: "{selectedLocationText.slice(0, 60)}{selectedLocationText.length > 60 ? '...' : ''}"
+                    </button>
                 )}
 
                 {canEditMessage && (
@@ -438,6 +513,12 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
+
+
+
+
+
+
 
 
 
