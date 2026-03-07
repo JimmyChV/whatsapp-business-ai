@@ -97,6 +97,42 @@ const renderWhatsAppFormattedText = (text = '') => {
     if (!chunks.length) return renderInlineLines(source, 'plain');
     return chunks;
 };
+const parseOrderMoneyValue = (value) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+
+    const source = String(value || '').trim();
+    if (!source) return null;
+
+    let cleaned = source.replace(/[^\d.,-]/g, '');
+    if (!cleaned || cleaned === '-' || cleaned === '.' || cleaned === ',') return null;
+
+    const hasComma = cleaned.includes(',');
+    const hasDot = cleaned.includes('.');
+
+    if (hasComma && hasDot) {
+        if (cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')) {
+            cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+        } else {
+            cleaned = cleaned.replace(/,/g, '');
+        }
+    } else if (hasComma) {
+        const commaCount = (cleaned.match(/,/g) || []).length;
+        cleaned = commaCount > 1 ? cleaned.replace(/,/g, '') : cleaned.replace(',', '.');
+    }
+
+    const parsed = Number.parseFloat(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const formatOrderMoney = (value, currency = 'PEN') => {
+    const parsed = parseOrderMoneyValue(value);
+    if (!Number.isFinite(parsed)) return null;
+    const code = String(currency || 'PEN').toUpperCase();
+    const prefix = code === 'PEN' ? 'S/ ' : `${code} `;
+    return `${prefix}${parsed.toFixed(2)}`;
+};
+
 const parseLocationCoord = (value) => {
     const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
     return Number.isFinite(parsed) ? parsed : null;
@@ -258,6 +294,7 @@ const resolveLocationData = (msg = {}) => {
 const MessageBubble = ({
     msg,
     onPrefillMessage,
+    onLoadOrderToCart,
     isHighlighted = false,
     isCurrentHighlighted = false,
     onOpenMedia,
@@ -274,6 +311,7 @@ const MessageBubble = ({
 
     const hasOrder = Boolean(msg?.order);
     const orderItems = Array.isArray(msg?.order?.products) ? msg.order.products : [];
+    const orderSubtotalLabel = formatOrderMoney(msg?.order?.subtotal, msg?.order?.currency || 'PEN');
     const locationData = resolveLocationData(msg);
     const isLocationMessage = Boolean(locationData);
     const [selectedLocationText, setSelectedLocationText] = useState('');
@@ -464,15 +502,19 @@ const MessageBubble = ({
                     {msg?.order?.orderId && (
                         <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '2px' }}>ID: {msg.order.orderId}</div>
                     )}
-                    {msg?.order?.subtotal && (
-                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>Subtotal: {msg.order.currency || 'PEN'} {msg.order.subtotal}</div>
+                    {orderSubtotalLabel && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>Subtotal: {orderSubtotalLabel}</div>
                     )}
-                    {orderItems.length > 0 ? orderItems.slice(0, 12).map((item, idx) => (
-                        <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>- {item.name} x{item.quantity || 1}{item.sku ? ` (SKU: ${item.sku})` : ''}</span>
-                            <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{item.lineTotal ? `S/ ${item.lineTotal}` : (item.price ? `S/ ${item.price}` : '')}</span>
-                        </div>
-                    )) : (
+                    {orderItems.length > 0 ? orderItems.slice(0, 16).map((item, idx) => {
+                        const itemAmount = formatOrderMoney(item?.lineTotal ?? item?.price, msg?.order?.currency || 'PEN');
+                        const itemQty = Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1;
+                        return (
+                            <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>- {item?.name || 'Producto'} x{itemQty}{item?.sku ? ` (SKU: ${item.sku})` : ''}</span>
+                                <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{itemAmount || ''}</span>
+                            </div>
+                        );
+                    }) : (
                         <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>Se recibio un pedido desde catalogo de WhatsApp.</div>
                     )}
                     {msg?.order?.rawPreview?.body && (
@@ -485,12 +527,30 @@ const MessageBubble = ({
                             Items reportados: {msg.order.rawPreview.itemCount}
                         </div>
                     )}
-                    <button
-                        onClick={() => onPrefillMessage && onPrefillMessage('Gracias. Ya vi tu carrito del catalogo. Estoy validando stock y en un momento te confirmo el pedido para proceder con el pago y despacho.')}
-                        style={{ marginTop: '8px', background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', fontSize: '0.75rem' }}
-                    >
-                        Aprobar/confirmar pedido
-                    </button>
+                    <div style={{ marginTop: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                            onClick={() => typeof onLoadOrderToCart === 'function' && onLoadOrderToCart(msg?.order || null)}
+                            disabled={typeof onLoadOrderToCart !== 'function'}
+                            style={{
+                                background: '#17323f',
+                                color: '#c7f1ff',
+                                border: '1px solid rgba(124,200,255,0.45)',
+                                borderRadius: '6px',
+                                padding: '6px 10px',
+                                cursor: typeof onLoadOrderToCart === 'function' ? 'pointer' : 'not-allowed',
+                                fontSize: '0.75rem',
+                                opacity: typeof onLoadOrderToCart === 'function' ? 1 : 0.55
+                            }}
+                        >
+                            Ver en carrito
+                        </button>
+                        <button
+                            onClick={() => onPrefillMessage && onPrefillMessage('Gracias. Ya vi tu carrito del catalogo. Estoy validando stock y en un momento te confirmo el pedido para proceder con el pago y despacho.')}
+                            style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', fontSize: '0.75rem' }}
+                        >
+                            Aprobar/confirmar pedido
+                        </button>
+                    </div>
                 </div>
             )}
 

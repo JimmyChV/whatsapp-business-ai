@@ -983,6 +983,7 @@ const ChatWindow = ({
                                     isHighlighted={isHighlighted}
                                     isCurrentHighlighted={isCurrentHighlighted}
                                     onPrefillMessage={(text) => inputProps?.setInputText && inputProps.setInputText(text)}
+                                    onLoadOrderToCart={inputProps?.onLoadOrderToCart}
                                     onOpenMedia={setLightboxMedia}
                                     onOpenMap={openMapModal}
                                     onEditMessage={onEditMessage}
