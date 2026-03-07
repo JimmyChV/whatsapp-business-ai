@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import moment from 'moment';
 import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink } from 'lucide-react';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const linkPreviewCache = new Map();
 
 const INLINE_WA_PATTERN = /(https?:\/\/[^\s]+|\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`)/g;
 
@@ -129,6 +132,16 @@ const extractMapUrlFromText = (text = '') => {
     }
     return null;
 };
+const extractFirstNonMapUrlFromText = (text = '') => {
+    const urls = String(text || '').match(/https?:\/\/[^\s]+/gi) || [];
+    for (const rawUrl of urls) {
+        const candidate = normalizeUrlToken(rawUrl);
+        if (!candidate) continue;
+        if (isLikelyMapUrl(candidate)) continue;
+        return candidate;
+    }
+    return null;
+};
 
 const tryExtractCoordinates = (value = '') => {
     const source = String(value || '');
@@ -225,6 +238,11 @@ const resolveLocationData = (msg = {}) => {
     const hasAny = isNativeLocationType || hasExplicitLocation || looksLikeLocationBody;
     if (!hasAny) return null;
 
+    const explicitSource = String(explicit?.source || '').toLowerCase();
+    const source = (explicitSource === 'native' || explicitSource === 'link')
+        ? explicitSource
+        : (isNativeLocationType ? 'native' : (bodyHasMapLink || bodyHasCoordHint ? 'link' : 'native'));
+
     const resolvedLabel = label
         || ((text && !/^[-+]?\d+(?:\.\d+)?\s*,\s*[-+]?\d+(?:\.\d+)?$/.test(text)) ? text : '')
         || 'Ubicacion compartida';
@@ -234,7 +252,7 @@ const resolveLocationData = (msg = {}) => {
         longitude,
         label: resolvedLabel,
         mapUrl,
-        source: (isNativeLocationType || hasExplicitLocation) ? 'native' : 'link'
+        source
     };
 };
 const MessageBubble = ({
@@ -259,6 +277,53 @@ const MessageBubble = ({
     const locationData = resolveLocationData(msg);
     const isLocationMessage = Boolean(locationData);
     const [selectedLocationText, setSelectedLocationText] = useState('');
+    const [webPreview, setWebPreview] = useState(null);
+    const [webPreviewLoading, setWebPreviewLoading] = useState(false);
+
+    const messageBodyText = String(msg?.body || '');
+    const firstNonMapUrl = extractFirstNonMapUrlFromText(messageBodyText);
+    const showWebPreview = Boolean(firstNonMapUrl && !isLocationMessage && !msg?.hasMedia && !hasOrder && !isCatalogItem);
+
+    useEffect(() => {
+        if (!showWebPreview || !firstNonMapUrl) {
+            setWebPreview(null);
+            setWebPreviewLoading(false);
+            return;
+        }
+
+        const cached = linkPreviewCache.get(firstNonMapUrl);
+        if (cached) {
+            setWebPreview(cached);
+            setWebPreviewLoading(false);
+            return;
+        }
+
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+            try {
+                setWebPreviewLoading(true);
+                const encoded = encodeURIComponent(firstNonMapUrl);
+                const response = await fetch(`${API_URL}/api/link-preview?url=${encoded}`);
+                const payload = await response.json();
+                const nextPreview = payload?.ok
+                    ? payload
+                    : { ok: false, url: firstNonMapUrl, title: firstNonMapUrl };
+                linkPreviewCache.set(firstNonMapUrl, nextPreview);
+                if (!cancelled) setWebPreview(nextPreview);
+            } catch (e) {
+                const fallback = { ok: false, url: firstNonMapUrl, title: firstNonMapUrl };
+                linkPreviewCache.set(firstNonMapUrl, fallback);
+                if (!cancelled) setWebPreview(fallback);
+            } finally {
+                if (!cancelled) setWebPreviewLoading(false);
+            }
+        }, 180);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [firstNonMapUrl, showWebPreview]);
 
     const hasLocationCoords = Number.isFinite(locationData?.latitude) && Number.isFinite(locationData?.longitude);
     const locationMapQuery = hasLocationCoords
@@ -496,6 +561,47 @@ const MessageBubble = ({
                             </button>
                         </div>
                     </div>
+                )}
+
+                {showWebPreview && (webPreviewLoading || webPreview) && (
+                    <a
+                        href={webPreview?.url || firstNonMapUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '10px',
+                            textDecoration: 'none',
+                            color: 'inherit',
+                            border: '1px solid rgba(124,200,255,0.26)',
+                            background: 'rgba(16,26,34,0.72)',
+                            borderRadius: '10px',
+                            padding: '8px',
+                            marginBottom: '6px'
+                        }}
+                    >
+                        {webPreview?.image && (
+                            <img
+                                src={webPreview.image}
+                                alt="Vista previa"
+                                style={{ width: '56px', height: '56px', borderRadius: '8px', objectFit: 'cover', flexShrink: 0 }}
+                            />
+                        )}
+                        <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '0.72rem', color: '#82d0ff', marginBottom: '2px' }}>
+                                {webPreviewLoading ? 'Cargando vista previa...' : 'Enlace'}
+                            </div>
+                            <div style={{ fontSize: '0.84rem', color: '#e8f1f6', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {webPreview?.title || webPreview?.siteName || firstNonMapUrl}
+                            </div>
+                            {webPreview?.description && (
+                                <div style={{ fontSize: '0.74rem', color: '#9cb1ba', marginTop: '2px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                    {webPreview.description}
+                                </div>
+                            )}
+                        </div>
+                    </a>
                 )}
 
                 {String(isCatalogItem ? 'Te gustaria que te lo separemos?' : ((isLocationMessage && locationData?.source === 'native') ? '' : (msg.body || ''))).trim() && (

@@ -90,7 +90,34 @@ function isValidLongitude(value) {
 
 function extractFirstUrlFromText(text = '') {
     const match = String(text || '').match(/https?:\/\/[^\s]+/i);
-    return match ? match[0] : null;
+    return match ? String(match[0]).replace(/[),.;!?]+$/g, '') : null;
+}
+
+function extractMapUrlFromText(text = '') {
+    const matches = String(text || '').match(/https?:\/\/[^\s]+/gi) || [];
+    for (const raw of matches) {
+        const candidate = String(raw || '').replace(/[),.;!?]+$/g, '');
+        if (isLikelyMapUrl(candidate)) return candidate;
+    }
+    return null;
+}
+
+function isLikelyMapUrl(value = '') {
+    const candidate = String(value || '').trim().replace(/[),.;!?]+$/g, '');
+    if (!candidate) return false;
+    try {
+        const parsed = new URL(candidate);
+        const host = String(parsed.hostname || '').toLowerCase();
+        const path = String(parsed.pathname || '').toLowerCase();
+        if (host.includes('maps.app.goo.gl')) return true;
+        if (host === 'goo.gl' && path.startsWith('/maps')) return true;
+        if (host.startsWith('maps.google.')) return true;
+        if (host === 'maps.google.com') return true;
+        if (host.includes('google.') && path.startsWith('/maps')) return true;
+        return false;
+    } catch (e) {
+        return /maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\.com|google\.[^\s/]+\/maps/i.test(candidate);
+    }
 }
 
 function extractCoordsFromText(text = '') {
@@ -154,10 +181,10 @@ function extractLocationInfo(msg) {
             || data?.url
             || ''
         ).trim();
-        const urlFromBody = extractFirstUrlFromText(body);
-        const candidateUrl = /^https?:\/\//i.test(urlFromData)
-            ? urlFromData
-            : (/^https?:\/\//i.test(urlFromBody || '') ? urlFromBody : '');
+        const urlFromBody = extractMapUrlFromText(body);
+        const candidateUrl = isLikelyMapUrl(urlFromData)
+            ? urlFromData.replace(/[),.;!?]+$/g, '')
+            : (isLikelyMapUrl(urlFromBody || '') ? String(urlFromBody || '').replace(/[),.;!?]+$/g, '') : '');
 
         if ((latitude === null || longitude === null) && candidateUrl) {
             const fromUrl = extractCoordsFromText(candidateUrl);
@@ -167,9 +194,11 @@ function extractLocationInfo(msg) {
             }
         }
 
+        let bodyCoords = null;
         if ((latitude === null || longitude === null) && body) {
             const fromBody = extractCoordsFromText(body);
             if (fromBody) {
+                bodyCoords = fromBody;
                 latitude = fromBody.latitude;
                 longitude = fromBody.longitude;
             }
@@ -200,7 +229,8 @@ function extractLocationInfo(msg) {
             longitude: longitude,
             label: label,
             mapUrl: mapUrl,
-            text: label || ((latitude !== null && longitude !== null) ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : 'Ubicacion compartida')
+            text: label || ((latitude !== null && longitude !== null) ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : 'Ubicacion compartida'),
+            source: type === 'location' ? 'native' : ((candidateUrl || bodyCoords) ? 'link' : 'native')
         };
     } catch (e) {
         return null;
@@ -2244,6 +2274,4 @@ class SocketManager {
 
 
 module.exports = SocketManager;
-
-
 
