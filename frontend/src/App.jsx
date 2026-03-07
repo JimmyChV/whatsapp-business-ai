@@ -148,6 +148,69 @@ const sanitizeDisplayText = (value = '') => repairMojibake(value)
   .replace(/\s+/g, ' ')
   .trim();
 
+const normalizeMessageLocation = (location = null) => {
+  if (!location || typeof location !== 'object') return null;
+
+  const parseCoord = (value) => {
+    const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const latitude = parseCoord(location?.latitude);
+  const longitude = parseCoord(location?.longitude);
+  const hasCoords = Number.isFinite(latitude) && Number.isFinite(longitude);
+
+  const rawMapUrl = String(location?.mapUrl || location?.url || '').trim();
+  const mapUrl = /^https?:\/\//i.test(rawMapUrl)
+    ? rawMapUrl
+    : (hasCoords ? `https://www.google.com/maps?q=${latitude},${longitude}` : null);
+
+  const label = sanitizeDisplayText(location?.label || '');
+  const text = sanitizeDisplayText(location?.text || '');
+
+  if (!label && !text && !mapUrl && !hasCoords) return null;
+
+  return {
+    latitude: hasCoords ? latitude : null,
+    longitude: hasCoords ? longitude : null,
+    label: label || null,
+    text: text || null,
+    mapUrl: mapUrl || null
+  };
+};
+
+const getMessagePreviewText = (msg = {}) => {
+  const type = String(msg?.type || '').toLowerCase();
+  const location = normalizeMessageLocation(msg?.location);
+
+  if (type === 'location') {
+    if (location?.label) return `📍 ${location.label}`;
+    if (location?.text) return `📍 ${location.text}`;
+    return '📍 Ubicacion';
+  }
+
+  const body = sanitizeDisplayText(msg?.body || '');
+  if (body) {
+    const looksLikeMaps = /https?:\/\/(?:www\.)?(?:google\.[^\s/]+\/maps|maps\.app\.goo\.gl|maps\.google\.com)|geo:/i.test(body);
+    if (looksLikeMaps) return '📍 Ubicacion';
+    return body;
+  }
+
+  const fallbackByType = {
+    image: 'Imagen',
+    video: 'Video',
+    audio: 'Audio',
+    ptt: 'Nota de voz',
+    document: 'Documento',
+    sticker: 'Sticker',
+    location: '📍 Ubicacion',
+    vcard: 'Contacto',
+    order: 'Pedido',
+    revoked: 'Mensaje eliminado'
+  };
+
+  return fallbackByType[type] || 'Mensaje';
+};
 const isInternalIdentifier = (value = '') => {
   const text = String(value || '').trim();
   if (!text) return false;
@@ -618,6 +681,7 @@ function App() {
         ? data.messages.map((m) => ({
           ...m,
           body: repairMojibake(m?.body || ''),
+          location: normalizeMessageLocation(m?.location),
           ack: Number.isFinite(Number(m?.ack)) ? Number(m.ack) : 0,
           edited: Boolean(m?.edited),
 
@@ -699,7 +763,7 @@ function App() {
 
       if (!msg.fromMe && Notification.permission === 'granted') {
         new Notification(msg.notifyName || 'Nuevo mensaje', {
-          body: msg.body || 'Nuevo mensaje',
+          body: getMessagePreviewText(msg),
           icon: '/favicon.ico'
         });
       }
@@ -710,7 +774,7 @@ function App() {
           id: toastId,
           chatId: relatedChatId,
           title: sanitizeDisplayText(msg.notifyName || msg.from || 'Nuevo mensaje'),
-          body: sanitizeDisplayText(msg.body || 'Nuevo mensaje')
+          body: getMessagePreviewText(msg)
         }].slice(-3));
 
         setTimeout(() => {
@@ -741,7 +805,7 @@ function App() {
           phone: existing?.phone || (isLikelyPhoneDigits(fallbackDigits) ? fallbackDigits : null),
           subtitle: sanitizeDisplayText(existing?.subtitle || fallbackName || '') || existing?.subtitle || null,
           timestamp: msg.timestamp || Math.floor(Date.now() / 1000),
-          lastMessage: sanitizeDisplayText(msg.body || '') || (msg.type === 'image' ? 'Imagen' : 'Mensaje'),
+          lastMessage: getMessagePreviewText(msg),
           lastMessageFromMe: !!msg.fromMe,
           ack: msg.ack || 0,
           isMyContact: existing?.isMyContact === true,
@@ -778,7 +842,7 @@ function App() {
 
         const shouldAdd = sameById || sameByIdDigits || sameByPhone;
         if (!shouldAdd) return prev;
-        return [...prev, { ...msg, body: repairMojibake(msg?.body || ''), canEdit: Boolean(msg?.canEdit) }];
+        return [...prev, { ...msg, body: repairMojibake(msg?.body || ''), location: normalizeMessageLocation(msg?.location), canEdit: Boolean(msg?.canEdit) }];
       });
     });
 
@@ -1357,3 +1421,4 @@ REGLA CRITICA:
 }
 
 export default App;
+

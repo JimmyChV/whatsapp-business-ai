@@ -1,6 +1,6 @@
 ﻿import React from 'react';
 import moment from 'moment';
-import { Check, CheckCheck, ShoppingBag, Pencil } from 'lucide-react';
+import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink } from 'lucide-react';
 
 const INLINE_WA_PATTERN = /(https?:\/\/[^\s]+|\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`)/g;
 
@@ -94,6 +94,94 @@ const renderWhatsAppFormattedText = (text = '') => {
     if (!chunks.length) return renderInlineLines(source, 'plain');
     return chunks;
 };
+const parseLocationCoord = (value) => {
+    const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const isValidLat = (value) => Number.isFinite(value) && value >= -90 && value <= 90;
+const isValidLng = (value) => Number.isFinite(value) && value >= -180 && value <= 180;
+
+const extractMapUrlFromText = (text = '') => {
+    const match = String(text || '').match(/https?:\/\/[^\s]+/i);
+    if (!match) return null;
+    const url = match[0];
+    if (/maps\.app\.goo\.gl|google\.[^\s/]+\/maps|maps\.google\.com/i.test(url)) return url;
+    return null;
+};
+
+const extractCoordsFromText = (text = '') => {
+    const raw = String(text || '');
+    if (!raw) return null;
+    let value = raw;
+    try {
+        value = decodeURIComponent(raw);
+    } catch (e) { }
+
+    const patterns = [
+        /geo:\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
+        /[?&](?:q|query|ll)=(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
+        /\b(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})\b/
+    ];
+
+    for (const pattern of patterns) {
+        const match = value.match(pattern);
+        if (!match) continue;
+        const latitude = parseLocationCoord(match[1]);
+        const longitude = parseLocationCoord(match[2]);
+        if (isValidLat(latitude) && isValidLng(longitude)) {
+            return { latitude, longitude };
+        }
+    }
+    return null;
+};
+
+const resolveLocationData = (msg = {}) => {
+    const type = String(msg?.type || '').toLowerCase();
+    const explicit = msg?.location && typeof msg.location === 'object' ? msg.location : null;
+    const body = String(msg?.body || '').trim();
+
+    let latitude = parseLocationCoord(explicit?.latitude);
+    let longitude = parseLocationCoord(explicit?.longitude);
+    if (!isValidLat(latitude)) latitude = null;
+    if (!isValidLng(longitude)) longitude = null;
+
+    const mapFromBody = extractMapUrlFromText(body);
+    const coordsFromBody = extractCoordsFromText(body);
+    if ((latitude === null || longitude === null) && coordsFromBody) {
+        latitude = coordsFromBody.latitude;
+        longitude = coordsFromBody.longitude;
+    }
+
+    const explicitMapUrl = String(explicit?.mapUrl || explicit?.url || '').trim();
+    const mapUrl = /^https?:\/\//i.test(explicitMapUrl)
+        ? explicitMapUrl
+        : (mapFromBody || ((latitude !== null && longitude !== null) ? `https://www.google.com/maps?q=${latitude},${longitude}` : null));
+
+    const label = String(explicit?.label || '').trim();
+    const text = String(explicit?.text || '').trim();
+
+    const hasExplicitLocation = Boolean(explicit && Object.keys(explicit).length > 0);
+    const hasCoordinates = latitude !== null && longitude !== null;
+    const bodyIsMapOnly = Boolean(body)
+        && (/^(https?:\/\/\S+|geo:[^\s]+)\s*$/i.test(body)
+            || /^[-+]?\d{1,2}\.\d+\s*,\s*[-+]?\d{1,3}\.\d+\s*$/.test(body));
+    const looksLikeLocationBody = bodyIsMapOnly && (Boolean(mapUrl) || hasCoordinates);
+
+    const hasAny = type === 'location' || hasExplicitLocation || looksLikeLocationBody;
+    if (!hasAny) return null;
+
+    const resolvedLabel = label
+        || ((text && !/^[-+]?\d+(?:\.\d+)?\s*,\s*[-+]?\d+(?:\.\d+)?$/.test(text)) ? text : '')
+        || 'Ubicacion compartida';
+
+    return {
+        latitude,
+        longitude,
+        label: resolvedLabel,
+        mapUrl
+    };
+};
 const MessageBubble = ({
     msg,
     onPrefillMessage,
@@ -112,6 +200,8 @@ const MessageBubble = ({
 
     const hasOrder = Boolean(msg?.order);
     const orderItems = Array.isArray(msg?.order?.products) ? msg.order.products : [];
+    const locationData = resolveLocationData(msg);
+    const isLocationMessage = Boolean(locationData);
 
     const getAckLabel = (ackValue) => {
         const ack = Number.isFinite(Number(ackValue)) ? Number(ackValue) : 0;
@@ -270,9 +360,52 @@ const MessageBubble = ({
             )}
 
             <div className={`message-content ${canEditMessage ? 'can-edit' : ''}`} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.9rem', wordBreak: 'break-word', whiteSpace: 'normal' }}>
-                    {renderWhatsAppFormattedText(isCatalogItem ? 'Te gustaria que te lo separemos?' : msg.body)}
-                </span>
+                {isLocationMessage && (
+                    <div style={{
+                        border: '1px solid rgba(0,168,132,0.38)',
+                        background: 'rgba(0,0,0,0.16)',
+                        borderRadius: '9px',
+                        padding: '8px',
+                        marginBottom: '6px'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#00c7a0', fontSize: '0.78rem', fontWeight: 700 }}>
+                            <MapPin size={14} /> Ubicacion compartida
+                        </div>
+                        <div style={{ fontSize: '0.84rem', color: '#e4edf2', marginTop: '3px' }}>
+                            {locationData?.label || 'Ubicacion'}
+                        </div>
+                        {(locationData?.latitude !== null && locationData?.longitude !== null) && (
+                            <div style={{ fontSize: '0.72rem', color: '#97aab4', marginTop: '2px' }}>
+                                {locationData.latitude.toFixed(6)}, {locationData.longitude.toFixed(6)}
+                            </div>
+                        )}
+                        {locationData?.mapUrl && (
+                            <a
+                                href={locationData.mapUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                    marginTop: '7px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    color: '#7cc8ff',
+                                    textDecoration: 'none',
+                                    fontSize: '0.76rem',
+                                    fontWeight: 600
+                                }}
+                            >
+                                Abrir en Google Maps <ExternalLink size={12} />
+                            </a>
+                        )}
+                    </div>
+                )}
+
+                {String(isCatalogItem ? 'Te gustaria que te lo separemos?' : (isLocationMessage ? '' : (msg.body || ''))).trim() && (
+                    <span style={{ fontSize: '0.9rem', wordBreak: 'break-word', whiteSpace: 'normal' }}>
+                        {renderWhatsAppFormattedText(isCatalogItem ? 'Te gustaria que te lo separemos?' : (isLocationMessage ? '' : msg.body))}
+                    </span>
+                )}
 
                 {canEditMessage && (
                     <button
@@ -305,6 +438,8 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
+
+
 
 
 

@@ -75,6 +75,137 @@ function parseProductsFromBodyText(body = '') {
     return parsed;
 }
 
+function parseLocationNumber(value) {
+    const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isValidLatitude(value) {
+    return Number.isFinite(value) && value >= -90 && value <= 90;
+}
+
+function isValidLongitude(value) {
+    return Number.isFinite(value) && value >= -180 && value <= 180;
+}
+
+function extractFirstUrlFromText(text = '') {
+    const match = String(text || '').match(/https?:\/\/[^\s]+/i);
+    return match ? match[0] : null;
+}
+
+function extractCoordsFromText(text = '') {
+    const raw = String(text || '');
+    if (!raw) return null;
+    let value = raw;
+    try {
+        value = decodeURIComponent(raw);
+    } catch (e) { }
+
+    const patterns = [
+        /geo:\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
+        /[?&](?:q|query|ll)=(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
+        /\b(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})\b/
+    ];
+
+    for (const pattern of patterns) {
+        const match = value.match(pattern);
+        if (!match) continue;
+        const lat = parseLocationNumber(match[1]);
+        const lng = parseLocationNumber(match[2]);
+        if (isValidLatitude(lat) && isValidLongitude(lng)) {
+            return { latitude: lat, longitude: lng };
+        }
+    }
+
+    return null;
+}
+
+function extractLocationInfo(msg) {
+    try {
+        const data = msg?._data || {};
+        const type = String(msg?.type || data?.type || '').toLowerCase();
+        const body = String(msg?.body || data?.body || '').trim();
+        const rawLocation = msg?.location || data?.location || data?.loc || {};
+        const locationObj = rawLocation && typeof rawLocation === 'object' ? rawLocation : {};
+
+        const directLat = parseLocationNumber(
+            locationObj?.latitude
+            ?? locationObj?.lat
+            ?? data?.latitude
+            ?? data?.lat
+            ?? data?.latDegrees
+        );
+        const directLng = parseLocationNumber(
+            locationObj?.longitude
+            ?? locationObj?.lng
+            ?? locationObj?.lon
+            ?? data?.longitude
+            ?? data?.lng
+            ?? data?.lon
+            ?? data?.lngDegrees
+        );
+
+        let latitude = isValidLatitude(directLat) ? directLat : null;
+        let longitude = isValidLongitude(directLng) ? directLng : null;
+
+        const urlFromData = String(
+            locationObj?.url
+            || data?.clientUrl
+            || data?.url
+            || ''
+        ).trim();
+        const urlFromBody = extractFirstUrlFromText(body);
+        const candidateUrl = /^https?:\/\//i.test(urlFromData)
+            ? urlFromData
+            : (/^https?:\/\//i.test(urlFromBody || '') ? urlFromBody : '');
+
+        if ((latitude === null || longitude === null) && candidateUrl) {
+            const fromUrl = extractCoordsFromText(candidateUrl);
+            if (fromUrl) {
+                latitude = fromUrl.latitude;
+                longitude = fromUrl.longitude;
+            }
+        }
+
+        if ((latitude === null || longitude === null) && body) {
+            const fromBody = extractCoordsFromText(body);
+            if (fromBody) {
+                latitude = fromBody.latitude;
+                longitude = fromBody.longitude;
+            }
+        }
+
+        const label = truncateDisplayValue(
+            String(
+                locationObj?.description
+                || locationObj?.name
+                || data?.address
+                || data?.name
+                || ''
+            ).trim(),
+            180
+        ) || null;
+
+        const mapUrl = candidateUrl
+            || ((latitude !== null && longitude !== null)
+                ? `https://www.google.com/maps?q=${latitude},${longitude}`
+                : null);
+
+        if (type !== 'location' && !label && !mapUrl && (latitude === null || longitude === null)) {
+            return null;
+        }
+
+        return {
+            latitude: latitude,
+            longitude: longitude,
+            label: label,
+            mapUrl: mapUrl,
+            text: label || ((latitude !== null && longitude !== null) ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : 'Ubicacion compartida')
+        };
+    } catch (e) {
+        return null;
+    }
+}
 function extractOrderInfo(msg) {
     try {
         const data = msg?._data || {};
@@ -607,24 +738,38 @@ function resolveLastMessagePreview(chat = {}) {
     const last = chat?.lastMessage;
     if (!last) return '';
 
-    const body = String(last?.body || '').trim();
-    if (body) return body;
-
     const type = String(last?.type || last?._data?.type || '').toLowerCase();
-    const map = {
+    if (type === 'location') {
+        const location = extractLocationInfo(last);
+        if (location?.label) return `📍 ${location.label}`;
+        return '📍 Ubicacion';
+    }
+
+    const mediaMap = {
         image: 'Imagen',
         video: 'Video',
         audio: 'Audio',
         ptt: 'Nota de voz',
         document: 'Documento',
         sticker: 'Sticker',
-        location: 'Ubicacion',
         vcard: 'Contacto',
         order: 'Pedido',
         revoked: 'Mensaje eliminado'
     };
 
-    return map[type] || 'Mensaje';
+    if (type && type !== 'chat' && mediaMap[type]) {
+        return mediaMap[type];
+    }
+
+    const body = String(last?.body || '').trim();
+    if (body) {
+        const possibleCoords = extractCoordsFromText(body);
+        const hasMapUrl = /https?:\/\/(?:www\.)?(?:google\.[^\s/]+\/maps|maps\.app\.goo\.gl|maps\.google\.com)/i.test(body);
+        if (possibleCoords || hasMapUrl) return '📍 Ubicacion';
+        return body;
+    }
+
+    return 'Mensaje';
 }
 
 function defaultCountryCode() {
@@ -1281,7 +1426,8 @@ class SocketManager {
                         editedAt: Number(m?._data?.latestEditSenderTimestampMs || 0) > 0 ? Math.floor(Number(m._data.latestEditSenderTimestampMs) / 1000) : null,
 
                         canEdit: Boolean(editableMap[String(m?.id?._serialized || '')]),
-                        order: extractOrderInfo(m)
+                        order: extractOrderInfo(m),
+                        location: extractLocationInfo(m)
                     }));
                     socket.emit('chat_history', { chatId: historyChatId, requestedChatId: chatId, messages: formatted });
 
@@ -1981,7 +2127,8 @@ class SocketManager {
                 notifyName: senderMeta.notifyName,
                 senderPhone: senderMeta.senderPhone,
                 canEdit: false,
-                order: extractOrderInfo(msg)
+                order: extractOrderInfo(msg),
+                location: extractLocationInfo(msg)
             });
 
             try {
@@ -2016,7 +2163,8 @@ class SocketManager {
                 notifyName: null,
                 senderPhone: null,
                 canEdit: false,
-                order: extractOrderInfo(msg)
+                order: extractOrderInfo(msg),
+                location: extractLocationInfo(msg)
             });
 
             this.emitMessageEditability(msg.id._serialized, msg.to || msg.from);
@@ -2096,3 +2244,6 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
+
+

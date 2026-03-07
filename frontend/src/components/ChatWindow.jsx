@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Search, MoreVertical, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart, ChevronUp, ChevronDown, Tag } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import moment from 'moment';
@@ -137,6 +137,45 @@ const ChatInput = ({
             inputRef.current.setSelectionRange(start, start + wrapped.length);
             setSelectionState({ start, end: start + wrapped.length });
         });
+    };
+
+    const continueListOnShiftEnter = () => {
+        const el = inputRef.current;
+        if (!el) return false;
+        const start = Number(el.selectionStart || 0);
+        const end = Number(el.selectionEnd || 0);
+        if (start !== end) return false;
+
+        const current = String(inputText || '');
+        const lineStart = current.lastIndexOf('\n', start - 1) + 1;
+        const nextBreak = current.indexOf('\n', start);
+        const lineEnd = nextBreak === -1 ? current.length : nextBreak;
+        const line = current.slice(lineStart, lineEnd);
+
+        const bulletMatch = line.match(/^(\s*[-*]\s+)/);
+        const numberedMatch = line.match(/^(\s*)(\d+)\.\s+/);
+
+        let continuation = '';
+        if (bulletMatch) {
+            continuation = bulletMatch[1];
+        } else if (numberedMatch) {
+            const indent = numberedMatch[1] || '';
+            const currentNumber = Number(numberedMatch[2] || 0);
+            continuation = `${indent}${currentNumber + 1}. `;
+        }
+        if (!continuation) return false;
+
+        const insertion = `\n${continuation}`;
+        const next = `${current.slice(0, start)}${insertion}${current.slice(end)}`;
+        const nextCursor = start + insertion.length;
+        setInputText(next);
+        requestAnimationFrame(() => {
+            if (!inputRef.current) return;
+            inputRef.current.focus();
+            inputRef.current.setSelectionRange(nextCursor, nextCursor);
+            setSelectionState(null);
+        });
+        return true;
     };
 
     const selectCommand = (cmd) => {
@@ -383,7 +422,11 @@ const ChatInput = ({
                             onCancelEditMessage && onCancelEditMessage();
                             return;
                         }
-                        if (e.key === 'Enter' && !e.shiftKey) {
+                        if (e.key === 'Enter' && e.shiftKey && continueListOnShiftEnter()) {
+                            e.preventDefault();
+                            return;
+                        }
+                        if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
                             e.preventDefault();
                             onSendMessage();
                             return;
@@ -699,6 +742,8 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
+
+
 
 
 
