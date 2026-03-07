@@ -451,7 +451,6 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     const [catalogSearch, setCatalogSearch] = useState('');
     const [catalogCategoryFilter, setCatalogCategoryFilter] = useState('all');
     const [catalogTypeFilter, setCatalogTypeFilter] = useState('all');
-    const isNativeCatalog = catalogMeta?.source === 'native' && catalogMeta?.nativeAvailable;
     const isExternalCatalog = ['native', 'woocommerce'].includes(catalogMeta?.source);
 
     const handleAddClick = () => {
@@ -583,21 +582,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     });
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <div style={{ fontSize: '0.9rem', color: '#e9f2f7', fontWeight: 700 }}>
-                        {isNativeCatalog ? 'Catalogo de WhatsApp (nativo)' : catalogMeta?.source === 'woocommerce' ? 'Catalogo de WooCommerce' : 'Gestion de Catalogo'}
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: '#8ca3b3' }}>Vista comercial lista para enviar al cliente</div>
-                </div>
-                {!isExternalCatalog && (
-                    <button onClick={handleAddClick} style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '7px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 700 }}>
-                        <PlusCircle size={14} /> Nuevo
-                    </button>
-                )}
-            </div>
-
-            <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {catalogMeta?.source === 'local' && catalogMeta?.wooStatus && catalogMeta?.wooStatus !== 'ok' && (
                     <div style={{ background: '#2f2520', color: '#f7b267', border: '1px solid #7a4d2c', borderRadius: '9px', padding: '8px 10px', fontSize: '0.75rem' }}>
                         WooCommerce no devolvio productos ({catalogMeta?.wooSource || 'sin fuente'}).
@@ -605,15 +590,15 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                     </div>
                 )}
 
-                <div style={{ background: '#17242c', border: '1px solid rgba(0,168,132,0.24)', borderRadius: '11px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '9px' }}>
+                <div style={{ background: '#17242c', border: '1px solid rgba(0,168,132,0.24)', borderRadius: '11px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '7px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#111b21', border: '1px solid rgba(0,168,132,0.4)', borderRadius: '10px', padding: '0 10px' }}>
                         <Search size={15} color="#76e6d0" />
                         <input
                             type="text"
                             value={catalogSearch}
                             onChange={e => setCatalogSearch(e.target.value)}
-                            placeholder="Buscar por producto, SKU o detalle"
-                            style={{ width: '100%', background: 'transparent', border: 'none', color: '#e9f2f7', borderRadius: '10px', padding: '10px 0', fontSize: '0.8rem', outline: 'none' }}
+                            placeholder="Buscar producto o SKU"
+                            style={{ width: '100%', background: 'transparent', border: 'none', color: '#e9f2f7', borderRadius: '10px', padding: '8px 0', fontSize: '0.78rem', outline: 'none' }}
                         />
                         {catalogSearch.trim() && (
                             <button
@@ -626,7 +611,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                         )}
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px' }}>
                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.7rem', color: '#9eb2bf' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><SlidersHorizontal size={12} /> Categoria</span>
@@ -643,7 +628,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                             <select
                                 value={catalogCategoryFilter}
                                 onChange={e => setCatalogCategoryFilter(e.target.value)}
-                                style={{ width: '100%', background: '#101a21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '8px', padding: '7px 8px', fontSize: '0.76rem', outline: 'none' }}
+                                style={{ width: '100%', background: '#101a21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '8px', padding: '6px 8px', fontSize: '0.75rem', outline: 'none' }}
                             >
                                 <option value="all">Todas</option>
                                 {categoryOptions.map((category) => (
@@ -657,7 +642,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                             <select
                                 value={catalogTypeFilter}
                                 onChange={e => setCatalogTypeFilter(e.target.value)}
-                                style={{ width: '100%', background: '#101a21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '8px', padding: '7px 8px', fontSize: '0.76rem', outline: 'none' }}
+                                style={{ width: '100%', background: '#101a21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '8px', padding: '6px 8px', fontSize: '0.75rem', outline: 'none' }}
                             >
                                 <option value="all">Todos</option>
                                 <option value="discount">Con descuento</option>
@@ -668,22 +653,33 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                         </label>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                        {Boolean(catalogSearch.trim() || catalogCategoryFilter !== 'all' || catalogTypeFilter !== 'all') ? (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setCatalogSearch('');
-                                    setCatalogCategoryFilter('all');
-                                    setCatalogTypeFilter('all');
-                                }}
-                                style={{ background: 'transparent', border: '1px solid rgba(124,200,255,0.35)', color: '#cdeaff', borderRadius: '999px', padding: '4px 10px', fontSize: '0.72rem', cursor: 'pointer' }}
-                            >
-                                Limpiar filtros
-                            </button>
-                        ) : <span />}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            {!isExternalCatalog && (
+                                <button
+                                    type="button"
+                                    onClick={handleAddClick}
+                                    style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '999px', padding: '4px 10px', cursor: 'pointer', fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', gap: '5px', fontWeight: 700 }}
+                                >
+                                    <PlusCircle size={13} /> Nuevo
+                                </button>
+                            )}
+                            {Boolean(catalogSearch.trim() || catalogCategoryFilter !== 'all' || catalogTypeFilter !== 'all') && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setCatalogSearch('');
+                                        setCatalogCategoryFilter('all');
+                                        setCatalogTypeFilter('all');
+                                    }}
+                                    style={{ background: 'transparent', border: '1px solid rgba(124,200,255,0.35)', color: '#cdeaff', borderRadius: '999px', padding: '4px 10px', fontSize: '0.71rem', cursor: 'pointer' }}
+                                >
+                                    Limpiar
+                                </button>
+                            )}
+                        </div>
 
-                        <div style={{ fontSize: '0.72rem', color: '#8ca3b3' }}>
+                        <div style={{ fontSize: '0.7rem', color: '#8ca3b3' }}>
                             Mostrando {visibleCatalog.length} de {catalog.length} productos
                         </div>
                     </div>
@@ -738,29 +734,19 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                 const cartLine = cartItems.find((cartItem) => String(cartItem?.id || '') === String(item?.id || ''));
                                 const cartQty = Math.max(0, Number(cartLine?.qty || 0));
                                 const inCart = cartQty > 0;
-                                const cleanDescription = String(item.description || '')
-                                    .replace(/<[^>]*>/g, ' ')
-                                    .replace(/\s+/g, ' ')
-                                    .trim();
 
                                 return (
-                                    <div key={item.id || i} style={{ background: '#1b2730', borderRadius: '12px', border: '1px solid #2a3a45', padding: '10px', display: 'grid', gridTemplateColumns: '88px 1fr', gap: '10px', alignItems: 'start' }}>
-                                        <div style={{ width: '88px', height: '88px', borderRadius: '10px', background: '#2a3942', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                    <div key={item.id || i} style={{ background: '#1b2730', borderRadius: '11px', border: '1px solid #2a3a45', padding: '8px', display: 'grid', gridTemplateColumns: '74px 1fr', gap: '8px', alignItems: 'start' }}>
+                                        <div style={{ width: '74px', height: '74px', borderRadius: '9px', background: '#2a3942', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.08)' }}>
                                             {item.imageUrl
                                                 ? <img src={item.imageUrl} alt={item.title || 'Producto'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                 : <Package size={24} color="#98adba" />}
                                         </div>
 
-                                        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '7px', justifyContent: 'flex-start' }}>
-                                            <div style={{ fontSize: '0.88rem', color: '#eef5f9', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                                        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '5px', justifyContent: 'flex-start' }}>
+                                            <div style={{ fontSize: '0.84rem', color: '#eef5f9', fontWeight: 700, lineHeight: 1.24, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                                                 {String(item.title || `Producto ${i + 1}`)}
                                             </div>
-
-                                            {cleanDescription && (
-                                                <div style={{ fontSize: '0.72rem', color: '#97acba', lineHeight: 1.35, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                                                    {cleanDescription}
-                                                </div>
-                                            )}
 
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
                                                 {hasDiscount && (
@@ -773,7 +759,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                                 )}
                                             </div>
 
-                                            <div style={{ fontSize: '1.05rem', color: '#00d7ad', fontWeight: 800 }}>
+                                            <div style={{ fontSize: '1rem', color: '#00d7ad', fontWeight: 800 }}>
                                                 {finalPrice > 0 ? `S/ ${formatMoney(finalPrice)}` : 'Precio: Consultar'}
                                             </div>
 
@@ -784,10 +770,10 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                                 </div>
                                             )}
 
-                                            <div style={{ marginTop: '6px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', alignItems: 'stretch' }}>
+                                            <div style={{ marginTop: '4px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '7px', alignItems: 'stretch' }}>
                                                 <button
                                                     onClick={() => sendCatalogProduct(item, i)}
-                                                    style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 9px', background: '#17323f', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '9px', color: '#d6f7ee', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                                    style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: '#17323f', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '9px', color: '#d6f7ee', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                                                 >
                                                     <Send size={12} /> Enviar
                                                 </button>
@@ -810,7 +796,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                                 ) : (
                                                     <button
                                                         onClick={() => addToCart(item, 1)}
-                                                        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 9px', background: 'linear-gradient(90deg, #00a884 0%, #02c39a 100%)', border: 'none', borderRadius: '9px', color: 'white', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                                        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: 'linear-gradient(90deg, #00a884 0%, #02c39a 100%)', border: 'none', borderRadius: '9px', color: 'white', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                                                     >
                                                         <ShoppingCart size={12} /> Carrito
                                                     </button>
@@ -845,11 +831,10 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 
 // =========================================================
 
-const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activeChatId, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {}, pendingOrderCartLoad = null }) => {
+const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activeChatId, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0 }) => {
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     const companyProfileRef = useRef(null);
-    const companyHeaderRef = useRef(null);
     // AI Chat State
     const [aiMessages, setAiMessages] = useState([
         { role: 'assistant', content: 'Hola, soy tu asistente de ventas de Lavitat con IA OpenAI. Estoy viendo la conversacion y te ayudare a cerrar mejor.\n\nPrueba: "Dame 3 opciones de respuesta" o "Como manejo una objecion de precio".' }
@@ -1219,11 +1204,16 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
     }, [activeTab, cart.length]);
 
     useEffect(() => {
+        if (openCompanyProfileToken > 0) {
+            setShowCompanyProfile(true);
+        }
+    }, [openCompanyProfileToken]);
+
+    useEffect(() => {
         if (!showCompanyProfile) return;
         const handleOutsideClick = (event) => {
             const target = event.target;
             if (companyProfileRef.current?.contains(target)) return;
-            if (companyHeaderRef.current?.contains(target)) return;
             setShowCompanyProfile(false);
         };
         document.addEventListener('mousedown', handleOutsideClick);
@@ -1558,35 +1548,6 @@ INSTRUCCIONES OBLIGATORIAS:
 
     return (
         <div className="business-sidebar business-sidebar-pro">
-            {/* Business Profile Header */}
-            <div className="business-sidebar-header">
-                {profile ? (
-                    <div ref={companyHeaderRef} className="business-header-row" style={{ cursor: "pointer" }} onClick={() => setShowCompanyProfile((v) => !v)}>
-                        <div className="business-header-avatar" style={{ background: profile.profilePicUrl ? `url(${profile.profilePicUrl}) center/cover` : '#00a884' }}>
-                            {!profile.profilePicUrl && 'B'}
-                        </div>
-                        <div className="business-header-meta">
-                            <div className="business-header-name">
-                                {profile.name || profile.pushname || 'Mi Negocio'}
-                            </div>
-                            {profile.description && (
-                                <div className="business-header-description">
-                                    {profile.description}
-                                </div>
-                            )}
-                        </div>
-                        <button
-                            onClick={(e) => { e.stopPropagation(); onLogout && onLogout(); }}
-                            className="business-logout-btn"
-                        >
-                            Cerrar sesion
-                        </button>
-                    </div>
-                ) : (
-                    <div style={{ fontSize: '0.83rem', color: '#8696a0' }}>Perfil de Negocio</div>
-                )}
-            </div>
-
             {/* Tabs */}
             <div className="business-tabs">
                 {tabs.map(t => (
@@ -1603,7 +1564,7 @@ INSTRUCCIONES OBLIGATORIAS:
                 ))}
             </div>
 
-            {!quickRepliesEnabled && (
+            {!quickRepliesEnabled && activeTab === 'ai' && (
                 <div style={{ padding: '2px 10px 0', fontSize: '0.66rem', color: '#6f8796', textAlign: 'right' }}>
                     Modo compatibilidad activo (respuestas rapidas nativas no disponibles).
                 </div>
@@ -2039,14 +2000,4 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
-
-
-
-
-
-
-
-
-
-
 

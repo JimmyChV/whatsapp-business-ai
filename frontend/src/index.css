@@ -921,6 +921,24 @@ body {
   min-width: 0;
 }
 
+.sidebar-account-trigger {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-account-trigger:hover .sidebar-account-name {
+  color: #eef5f9;
+}
+
+.sidebar-account-trigger:hover .sidebar-account-avatar {
+  filter: brightness(1.05);
+}
+
 .sidebar-account-avatar {
   width: 40px;
   height: 40px;

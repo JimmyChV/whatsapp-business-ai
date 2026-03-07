@@ -412,6 +412,7 @@ function App() {
   // --------------------------------------------------------------
   const [showClientProfile, setShowClientProfile] = useState(false);
   const [clientContact, setClientContact] = useState(null);
+  const [openCompanyProfileToken, setOpenCompanyProfileToken] = useState(0);
 
   // --------------------------------------------------------------
   const [attachment, setAttachment] = useState(null);
@@ -1122,6 +1123,10 @@ function App() {
     socket.emit('create_label', { name: name.trim() });
   };
 
+  const handleOpenCompanyProfile = () => {
+    setOpenCompanyProfileToken((prev) => prev + 1);
+  };
+
   const handleToggleChatLabel = (chatId, labelId) => {
     if (!chatId || labelId === undefined || labelId === null || labelId === '') return;
     const chat = chats.find((c) => c.id === chatId);
@@ -1350,6 +1355,7 @@ REGLA CRITICA:
         onSearchQueryChange={handleChatSearchChange}
         activeFilters={chatFilters}
         onFiltersChange={handleChatFiltersChange}
+        onOpenCompanyProfile={handleOpenCompanyProfile}
       />
 
       {/* Main Content Area */}
@@ -1452,6 +1458,7 @@ REGLA CRITICA:
           onDeleteQuickReply={handleDeleteQuickReply}
           pendingOrderCartLoad={pendingOrderCartLoad}
           waCapabilities={waCapabilities}
+          openCompanyProfileToken={openCompanyProfileToken}
         />
       </div>
     </div>
@@ -1459,6 +1466,4 @@ REGLA CRITICA:
 }
 
 export default App;
-
-
 

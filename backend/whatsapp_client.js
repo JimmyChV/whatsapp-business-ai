@@ -36,6 +36,7 @@ class WhatsAppClient extends EventEmitter {
             }
         });
         this.isReady = false;
+        this.initializePromise = null;
         this.setupEventListeners();
     }
 
@@ -100,9 +101,43 @@ class WhatsAppClient extends EventEmitter {
         });
     }
 
-    initialize() {
-        console.log(`[${new Date().toISOString()}] Initializing WhatsApp Client (2.2412.54 forced fallback removed)...`);
-        this.client.initialize();
+    async initialize() {
+        if (this.initializePromise) return this.initializePromise;
+
+        const maxAttempts = Math.max(1, Number(process.env.WA_INIT_RETRIES || 5));
+        const baseWaitMs = Math.max(250, Number(process.env.WA_INIT_RETRY_BASE_MS || 1200));
+
+        this.initializePromise = (async () => {
+            console.log(`[${new Date().toISOString()}] Initializing WhatsApp Client (2.2412.54 forced fallback removed)...`);
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+                try {
+                    await this.client.initialize();
+                    return true;
+                } catch (error) {
+                    const transient = isTransientProtocolError(error);
+                    const canRetry = transient && attempt < maxAttempts;
+                    const message = String(error?.message || error || 'unknown error');
+
+                    if (!canRetry) {
+                        console.error(`[WA] initialize failed (${attempt}/${maxAttempts}): ${message}`);
+                        throw error;
+                    }
+
+                    const waitMs = Math.min(10000, baseWaitMs * attempt);
+                    console.warn(`[WA] initialize transient failure (${attempt}/${maxAttempts}): ${message}. Retrying in ${waitMs}ms...`);
+                    await wait(waitMs);
+                }
+            }
+
+            return false;
+        })();
+
+        try {
+            return await this.initializePromise;
+        } finally {
+            this.initializePromise = null;
+        }
     }
 
     async getChats() {

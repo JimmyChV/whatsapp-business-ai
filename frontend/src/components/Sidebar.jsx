@@ -96,6 +96,7 @@ const Sidebar = ({
     onSearchQueryChange,
     activeFilters = {},
     onFiltersChange,
+    onOpenCompanyProfile,
 }) => {
     const [showMenu, setShowMenu] = useState(false);
     const [showLabelPanel, setShowLabelPanel] = useState(false);
@@ -296,7 +297,12 @@ const Sidebar = ({
     return (
         <div className="sidebar sidebar-pro">
             <div className="sidebar-header sidebar-header-pro">
-                <div className="sidebar-account-block">
+                <button
+                    type="button"
+                    className="sidebar-account-block sidebar-account-trigger"
+                    onClick={() => { onOpenCompanyProfile?.(); setShowMenu(false); }}
+                    title="Ver perfil de la empresa"
+                >
                     <div
                         className="sidebar-account-avatar"
                         style={{
@@ -310,7 +316,7 @@ const Sidebar = ({
                     {myProfile?.pushname && (
                         <span className="sidebar-account-name">{myProfile.pushname}</span>
                     )}
-                </div>
+                </button>
 
                 <div className="sidebar-header-actions">
                     <button
@@ -549,9 +555,4 @@ const Sidebar = ({
 };
 
 export default Sidebar;
-
-
-
-
-
 

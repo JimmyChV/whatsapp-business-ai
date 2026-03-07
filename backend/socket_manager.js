@@ -2530,7 +2530,7 @@ class SocketManager {
                 }
                 try {
                     waClient.isReady = false;
-                    waClient.client.initialize();
+                    await waClient.initialize();
                 } catch (e) {
                     console.error('reinitialize after logout failed:', e.message);
                 }
