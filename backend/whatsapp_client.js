@@ -182,9 +182,80 @@ class WhatsAppClient extends EventEmitter {
         };
     }
 
-    async sendMessage(to, body) {
+    async sendMessage(to, body, options = {}) {
         if (!this.isReady) throw new Error('Client not ready');
-        return await this.client.sendMessage(to, body);
+        return await this.client.sendMessage(to, body, options);
+    }
+
+    async getMessageById(messageId) {
+        if (!this.isReady) return null;
+        const cleanId = String(messageId || '').trim();
+        if (!cleanId) return null;
+
+        if (typeof this.client?.getMessageById === 'function') {
+            try {
+                return await this.client.getMessageById(cleanId);
+            } catch (e) {
+            }
+        }
+
+        if (!this.client?.pupPage?.evaluate) return null;
+
+        try {
+            const raw = await this.client.pupPage.evaluate(async (targetId) => {
+                try {
+                    const store = window.Store || {};
+                    const msgStore = store.Msg;
+                    if (!msgStore) return null;
+                    const existing = msgStore.get(targetId);
+                    if (existing && typeof existing.serialize === 'function') return existing.serialize();
+                    const loaded = await msgStore.getMessagesById([targetId]);
+                    const msg = loaded?.messages?.[0];
+                    if (!msg) return null;
+                    return typeof msg.serialize === 'function' ? msg.serialize() : null;
+                } catch (e) {
+                    return null;
+                }
+            }, cleanId);
+            return raw || null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    async replyToMessage(chatId, quotedMessageId, body) {
+        if (!this.isReady) throw new Error('Client not ready');
+        const targetChatId = String(chatId || '').trim();
+        const targetQuotedId = String(quotedMessageId || '').trim();
+        const nextBody = String(body || '');
+        if (!targetChatId || !targetQuotedId) throw new Error('reply parameters missing');
+
+        const quoted = await this.getMessageById(targetQuotedId);
+        if (quoted && typeof quoted.reply === 'function') {
+            return await quoted.reply(nextBody, targetChatId);
+        }
+        return await this.client.sendMessage(targetChatId, nextBody, { quotedMessageId: targetQuotedId });
+    }
+
+    async forwardMessage(messageId, toChatId) {
+        if (!this.isReady) throw new Error('Client not ready');
+        const sourceMessageId = String(messageId || '').trim();
+        const targetChatId = String(toChatId || '').trim();
+        if (!sourceMessageId || !targetChatId) throw new Error('forward parameters missing');
+
+        const sourceMessage = await this.getMessageById(sourceMessageId);
+        if (!sourceMessage) throw new Error('source message not found');
+
+        if (typeof sourceMessage.forward === 'function') {
+            return await sourceMessage.forward(targetChatId);
+        }
+
+        const targetChat = await this.client.getChatById(targetChatId);
+        if (targetChat && typeof targetChat.forwardMessages === 'function') {
+            return await targetChat.forwardMessages([sourceMessage]);
+        }
+
+        throw new Error('forward is not supported in this WhatsApp Web version');
     }
 
     async getMessagesEditability(messageIds = []) {
@@ -247,15 +318,16 @@ class WhatsAppClient extends EventEmitter {
         return map[cleanId] === true;
     }
 
-    async sendMedia(to, mediaData, mimetype, filename, caption, isPtt = false) {
+    async sendMedia(to, mediaData, mimetype, filename, caption, isPtt = false, quotedMessageId = null) {
         if (!this.isReady) throw new Error('Client not ready');
         const media = new MessageMedia(mimetype, mediaData, filename || 'adjunto');
+        const quoted = String(quotedMessageId || '').trim();
         return await this.client.sendMessage(to, media, {
             caption,
-            sendAudioAsVoice: isPtt
+            sendAudioAsVoice: isPtt,
+            ...(quoted ? { quotedMessageId: quoted } : {})
         });
     }
-
     async markAsRead(chatId) {
         if (!this.isReady) return;
         const chat = await this.client.getChatById(chatId);

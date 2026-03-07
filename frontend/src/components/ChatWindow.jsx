@@ -12,6 +12,7 @@ const ChatInput = ({
 
     onRequestAiSuggestion, aiPrompt, setAiPrompt,
     editingMessage, onCancelEditMessage,
+    replyingMessage, onCancelReplyMessage,
     onOpenMapPicker
 }) => {
     const [showEmoji, setShowEmoji] = useState(false);
@@ -294,6 +295,41 @@ const ChatInput = ({
                 </div>
             )}
 
+            {!editingMessage?.id && replyingMessage?.id && (
+                <div style={{
+                    position: 'absolute',
+                    left: '12px',
+                    right: '12px',
+                    bottom: '100%',
+                    marginBottom: '8px',
+                    border: '1px solid rgba(124, 200, 255, 0.45)',
+                    background: '#1b2831',
+                    borderRadius: '10px',
+                    padding: '8px 10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    zIndex: 39
+                }}>
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '0.72rem', color: '#7cc8ff', fontWeight: 700, marginBottom: '2px' }}>
+                            Respondiendo {replyingMessage?.fromMe ? 'tu mensaje' : 'mensaje del cliente'}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: '#b6c7cf', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {String(replyingMessage?.body || '').trim() || 'Mensaje sin texto'}
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => onCancelReplyMessage && onCancelReplyMessage()}
+                        style={{ border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: '#d8e3e8', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
+                    >
+                        Cancelar
+                    </button>
+                </div>
+            )}
+
             {/* Commands popover */}
             {showCommands && (
                 <div className="floating-panel commands-panel">
@@ -423,13 +459,20 @@ const ChatInput = ({
                 <textarea
                     ref={inputRef}
                     className="message-input"
-                    placeholder={editingMessage?.id ? 'Edita el mensaje y presiona Enter...' : 'Escribe un mensaje...'}
+                    placeholder={editingMessage?.id ? 'Edita el mensaje y presiona Enter...' : (replyingMessage?.id ? 'Escribe tu respuesta y presiona Enter...' : 'Escribe un mensaje...')}
                     value={inputText}
                     onChange={handleInputChange}
                     onKeyDown={(e) => {
                         if (editingMessage?.id && e.key === 'Escape') {
                             e.preventDefault();
+                            e.stopPropagation();
                             onCancelEditMessage && onCancelEditMessage();
+                            return;
+                        }
+                        if (!editingMessage?.id && replyingMessage?.id && e.key === 'Escape') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onCancelReplyMessage && onCancelReplyMessage();
                             return;
                         }
                         if (e.key === 'Enter' && e.shiftKey && continueListOnShiftEnter()) {
@@ -466,7 +509,7 @@ const ChatInput = ({
                     className="send-button send-button-modern"
                     onClick={onSendMessage}
 
-                    title={editingMessage?.id ? 'Guardar edicion' : 'Enviar'}
+                    title={editingMessage?.id ? 'Guardar edicion' : (replyingMessage?.id ? 'Enviar respuesta' : 'Enviar')}
                     disabled={!inputText.trim() && !attachment}
                     style={{ opacity: (!inputText.trim() && !attachment) ? 0.55 : 1, cursor: (!inputText.trim() && !attachment) ? 'not-allowed' : 'pointer' }}
                 >
@@ -495,6 +538,10 @@ const ChatWindow = ({
     labelDefinitions = [],
     onToggleChatLabel,
     onEditMessage,
+    onReplyMessage,
+    onForwardMessage,
+    onDeleteMessage,
+    forwardChatOptions = [],
 
     canEditMessages = true,
     ...inputProps
@@ -987,7 +1034,11 @@ const ChatWindow = ({
                                     onOpenMedia={setLightboxMedia}
                                     onOpenMap={openMapModal}
                                     onEditMessage={onEditMessage}
-
+                                    onReplyMessage={onReplyMessage}
+                                    onForwardMessage={onForwardMessage}
+                                    onDeleteMessage={onDeleteMessage}
+                                    forwardChatOptions={forwardChatOptions}
+                                    activeChatId={activeChatDetails?.id}
                                     canEditMessages={canEditMessages}
                                 />
                             </div>
@@ -1084,7 +1135,7 @@ const ChatWindow = ({
             )}
 
             {/* Input Area */}
-            <ChatInput {...inputProps} onOpenMapPicker={() => openMapModal({ query: '' })} />
+            <ChatInput {...inputProps} replyingMessage={inputProps?.replyingMessage} onCancelReplyMessage={inputProps?.onCancelReplyMessage} onOpenMapPicker={() => openMapModal({ query: '' })} />
         </div>
     );
 };
