@@ -797,6 +797,8 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
         const order = pendingOrderCartLoad.order && typeof pendingOrderCartLoad.order === 'object'
             ? pendingOrderCartLoad.order
             : {};
+        const orderType = String(order?.rawPreview?.type || '').toLowerCase();
+        const isProductImport = orderType.includes('product') && !String(order?.orderId || '').trim();
         const sourceItems = Array.isArray(order.products) ? order.products : [];
         const titleFallbackItems = sourceItems.length === 0
             ? parseOrderTitleItems(order?.rawPreview?.title || order?.rawPreview?.orderTitle || '')
@@ -880,7 +882,9 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
             }
 
             const qtyRaw = parseMoney(line.quantity ?? line.qty ?? 1, 1);
-            const qty = Math.max(1, Math.round(Number.isFinite(qtyRaw) ? qtyRaw : 1));
+            const qty = isProductImport
+                ? 1
+                : Math.max(1, Math.round(Number.isFinite(qtyRaw) ? qtyRaw : 1));
             const linePrice = parseMoney(line.price ?? line.unitPrice ?? 0, 0);
             const lineTotal = parseMoney(line.lineTotal ?? line.total ?? 0, 0);
             const derivedUnitPrice = lineTotal > 0 && qty > 0 ? (lineTotal / qty) : linePrice;
@@ -937,7 +941,48 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
             return;
         }
 
-        setCart(importedCart);
+        if (isProductImport) {
+            setCart((prev) => {
+                const safePrev = Array.isArray(prev) ? prev : [];
+                const map = new Map();
+                const buildMergeKey = (item, idx) => {
+                    const sku = normalizeSkuKey(item?.sku);
+                    if (sku) return `sku:${sku}`;
+                    const id = String(item?.id || '').trim();
+                    if (id) return `id:${id}`;
+                    const name = normalizeTextKey(item?.title || item?.name || '');
+                    return name ? `name:${name}` : `line:${idx}`;
+                };
+
+                safePrev.forEach((item, idx) => {
+                    const key = buildMergeKey(item, idx);
+                    map.set(key, {
+                        ...item,
+                        qty: Math.max(1, Number(item?.qty || 1))
+                    });
+                });
+
+                importedCart.forEach((item, idx) => {
+                    const key = buildMergeKey(item, idx);
+                    if (map.has(key)) {
+                        const prevItem = map.get(key);
+                        map.set(key, {
+                            ...prevItem,
+                            qty: Math.max(1, Number(prevItem?.qty || 1) + 1)
+                        });
+                        return;
+                    }
+                    map.set(key, {
+                        ...item,
+                        qty: 1
+                    });
+                });
+
+                return Array.from(map.values());
+            });
+        } else {
+            setCart(importedCart);
+        }
         setShowOrderAdjustments(true);
         setActiveTab('cart');
 
@@ -945,8 +990,8 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
         const hasSubtotal = order?.subtotal !== null && order?.subtotal !== undefined && String(order.subtotal).trim() !== '';
         const subtotalLabel = hasSubtotal ? ` | subtotal ${formatMoney(parseMoney(order.subtotal, 0))}` : '';
         const statusBits = [
-            `Pedido cargado al carrito: ${importedCart.length} productos`,
-            `(items reportados: ${reportedItems})`,
+            isProductImport ? 'Producto agregado al carrito (+1)' : `Pedido cargado al carrito: ${importedCart.length} productos`,
+            isProductImport ? null : `(items reportados: ${reportedItems})`,
             usedTitleFallback ? 'origen: titulo del pedido' : null,
             matchedBySku > 0 ? `SKU: ${matchedBySku}` : null,
             matchedByName > 0 ? `nombre: ${matchedByName}` : null,

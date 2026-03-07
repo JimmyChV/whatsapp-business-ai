@@ -133,6 +133,53 @@ const formatOrderMoney = (value, currency = 'PEN') => {
     return `${prefix}${parsed.toFixed(2)}`;
 };
 
+const isLikelyBinaryBody = (value = '') => {
+    const source = String(value || '').trim();
+    if (!source || source.length < 140) return false;
+    if (/\s/.test(source)) return false;
+    if (!/^[A-Za-z0-9+/=]+$/.test(source)) return false;
+    return source.length % 4 === 0 || source.startsWith('/9j/') || source.startsWith('iVBOR');
+};
+
+const normalizeSearchText = (value = '') => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+const parseQuoteItemsFromBody = (value = '') => {
+    const source = String(value || '');
+    const normalized = normalizeSearchText(source);
+    if (!normalized.includes('cotizacion') || !normalized.includes('detalle de productos')) return [];
+
+    const lines = source.split(/\r?\n/).map((line) => String(line || '').trim()).filter(Boolean);
+    const items = [];
+
+    for (const line of lines) {
+        const cleaned = line.replace(/\u2796/g, '-').trim();
+        let match = cleaned.match(/^(?:[-\u2022])\s*\*(\d+(?:[.,]\d+)?)\*\s+(.+)$/);
+        if (!match) match = cleaned.match(/^(?:[-\u2022])\s*(\d+(?:[.,]\d+)?)\s+(.+)$/);
+        if (!match) continue;
+
+        const qtyParsed = parseOrderMoneyValue(match[1]);
+        const quantity = Number.isFinite(qtyParsed) && qtyParsed > 0
+            ? Math.max(1, Math.round(qtyParsed * 1000) / 1000)
+            : 1;
+        const name = String(match[2] || '').replace(/\*+/g, '').trim();
+        if (!name) continue;
+
+        items.push({
+            name,
+            quantity,
+            price: null,
+            lineTotal: null,
+            sku: null
+        });
+        if (items.length >= 40) break;
+    }
+
+    return items;
+};
+
 const parseLocationCoord = (value) => {
     const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
     return Number.isFinite(parsed) ? parsed : null;
@@ -309,16 +356,44 @@ const MessageBubble = ({
     const productTitle = catalogMatch ? catalogMatch[1] : null;
     const productPrice = catalogMatch ? catalogMatch[2] : null;
 
+    const messageBodyText = String(msg?.body || '');
+    const quoteItemsFromBody = parseQuoteItemsFromBody(messageBodyText);
+    const quoteOrderPayload = quoteItemsFromBody.length > 0
+        ? {
+            orderId: null,
+            currency: 'PEN',
+            subtotal: null,
+            products: quoteItemsFromBody,
+            rawPreview: { type: 'quote', itemCount: quoteItemsFromBody.length, title: 'Cotizacion' }
+        }
+        : null;
+
     const hasOrder = Boolean(msg?.order);
-    const orderItems = Array.isArray(msg?.order?.products) ? msg.order.products : [];
-    const orderSubtotalLabel = formatOrderMoney(msg?.order?.subtotal, msg?.order?.currency || 'PEN');
+    const actionOrder = hasOrder ? msg.order : quoteOrderPayload;
+    const orderRawType = String(actionOrder?.rawPreview?.type || msg?.type || '').toLowerCase();
+    const orderItems = Array.isArray(actionOrder?.products) ? actionOrder.products : [];
+    const firstOrderItem = orderItems[0] || null;
+    const rawItemCount = parseOrderMoneyValue(actionOrder?.rawPreview?.itemCount);
+    const reportedItemCount = Number.isFinite(rawItemCount) ? Math.max(0, Math.round(rawItemCount)) : orderItems.length;
+    const isProductPayload = orderRawType.includes('product');
+    const isOrderPayload = orderRawType.includes('order') || Boolean(actionOrder?.orderId);
+    const bodyNormalized = normalizeSearchText(messageBodyText);
+    const isQuotePayload = orderRawType.includes('quote') || (bodyNormalized.includes('cotizacion') && orderItems.length > 0);
+    const isOrderActionable = Boolean(actionOrder) && (isOrderPayload || isQuotePayload || isProductPayload);
+    const orderActionLabel = isProductPayload ? 'Anadir al carrito' : 'Ver en carrito';
+    const rawOrderNote = String(actionOrder?.rawPreview?.body || '').trim();
+    const safeOrderNote = isLikelyBinaryBody(rawOrderNote) ? '' : rawOrderNote;
+    const orderSubtotalLabel = formatOrderMoney(actionOrder?.subtotal, actionOrder?.currency || 'PEN');
     const locationData = resolveLocationData(msg);
     const isLocationMessage = Boolean(locationData);
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [webPreview, setWebPreview] = useState(null);
     const [webPreviewLoading, setWebPreviewLoading] = useState(false);
 
-    const messageBodyText = String(msg?.body || '');
+    const shouldHideBodyForOrder = hasOrder && isLikelyBinaryBody(messageBodyText);
+    const messageTextToRender = isCatalogItem
+        ? 'Te gustaria que te lo separemos?'
+        : ((isLocationMessage && locationData?.source === 'native') ? '' : (shouldHideBodyForOrder ? '' : (msg.body || '')));
     const firstNonMapUrl = extractFirstNonMapUrlFromText(messageBodyText);
     const showWebPreview = Boolean(firstNonMapUrl && !isLocationMessage && !msg?.hasMedia && !hasOrder && !isCatalogItem);
 
@@ -488,7 +563,7 @@ const MessageBubble = ({
                 </a>
             )}
 
-            {hasOrder && (
+            {isOrderActionable && (
                 <div style={{
                     background: 'rgba(0,168,132,0.12)',
                     border: '1px solid rgba(0,168,132,0.3)',
@@ -497,16 +572,25 @@ const MessageBubble = ({
                     marginBottom: '6px'
                 }}>
                     <div style={{ fontSize: '0.78rem', color: '#00a884', fontWeight: 700, marginBottom: '4px' }}>
-                        Carrito/Pedido del cliente
+                        {isProductPayload ? 'Producto compartido' : 'Carrito/Pedido del cliente'}
                     </div>
-                    {msg?.order?.orderId && (
-                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '2px' }}>ID: {msg.order.orderId}</div>
+                    {actionOrder?.orderId && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '2px' }}>ID: {actionOrder.orderId}</div>
+                    )}
+                    {isProductPayload && firstOrderItem?.name && (
+                        <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', marginBottom: '4px', fontWeight: 600 }}>
+                            {firstOrderItem.name}
+                        </div>
                     )}
                     {orderSubtotalLabel && (
                         <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>Subtotal: {orderSubtotalLabel}</div>
                     )}
-                    {orderItems.length > 0 ? orderItems.slice(0, 16).map((item, idx) => {
-                        const itemAmount = formatOrderMoney(item?.lineTotal ?? item?.price, msg?.order?.currency || 'PEN');
+                    {isProductPayload ? (
+                        <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>
+                            Puedes anadir este producto al carrito para cotizarlo.
+                        </div>
+                    ) : orderItems.length > 0 ? orderItems.slice(0, 16).map((item, idx) => {
+                        const itemAmount = formatOrderMoney(item?.lineTotal ?? item?.price, actionOrder?.currency || 'PEN');
                         const itemQty = Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1;
                         return (
                             <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
@@ -517,19 +601,19 @@ const MessageBubble = ({
                     }) : (
                         <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>Se recibio un pedido desde catalogo de WhatsApp.</div>
                     )}
-                    {msg?.order?.rawPreview?.body && (
+                    {!isProductPayload && safeOrderNote && (
                         <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '6px' }}>
-                            Nota cliente: {msg.order.rawPreview.body}
+                            Nota cliente: {safeOrderNote}
                         </div>
                     )}
-                    {msg?.order?.rawPreview?.itemCount && (
+                    {!isProductPayload && actionOrder?.rawPreview?.itemCount && (
                         <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '2px' }}>
-                            Items reportados: {msg.order.rawPreview.itemCount}
+                            Items reportados: {actionOrder.rawPreview.itemCount}
                         </div>
                     )}
                     <div style={{ marginTop: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                         <button
-                            onClick={() => typeof onLoadOrderToCart === 'function' && onLoadOrderToCart(msg?.order || null)}
+                            onClick={() => typeof onLoadOrderToCart === 'function' && onLoadOrderToCart(actionOrder || null)}
                             disabled={typeof onLoadOrderToCart !== 'function'}
                             style={{
                                 background: '#17323f',
@@ -542,13 +626,7 @@ const MessageBubble = ({
                                 opacity: typeof onLoadOrderToCart === 'function' ? 1 : 0.55
                             }}
                         >
-                            Ver en carrito
-                        </button>
-                        <button
-                            onClick={() => onPrefillMessage && onPrefillMessage('Gracias. Ya vi tu carrito del catalogo. Estoy validando stock y en un momento te confirmo el pedido para proceder con el pago y despacho.')}
-                            style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', fontSize: '0.75rem' }}
-                        >
-                            Aprobar/confirmar pedido
+                            {orderActionLabel}
                         </button>
                     </div>
                 </div>
@@ -664,7 +742,7 @@ const MessageBubble = ({
                     </a>
                 )}
 
-                {String(isCatalogItem ? 'Te gustaria que te lo separemos?' : ((isLocationMessage && locationData?.source === 'native') ? '' : (msg.body || ''))).trim() && (
+                {String(messageTextToRender).trim() && (
                     <span
                         style={{ fontSize: '0.9rem', wordBreak: 'break-word', whiteSpace: 'normal' }}
                         onMouseUp={() => {
@@ -676,7 +754,7 @@ const MessageBubble = ({
                             setSelectedLocationText('');
                         }}
                     >
-                        {renderWhatsAppFormattedText(isCatalogItem ? 'Te gustaria que te lo separemos?' : ((isLocationMessage && locationData?.source === 'native') ? '' : msg.body))}
+                        {renderWhatsAppFormattedText(messageTextToRender)}
                     </span>
                 )}
 

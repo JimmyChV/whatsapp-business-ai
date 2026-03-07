@@ -581,6 +581,8 @@ function extractOrderInfo(msg) {
 
         const maybeOrderType = String(msg?.type || '').toLowerCase().includes('order')
             || String(data?.type || '').toLowerCase().includes('order')
+            || String(msg?.type || '').toLowerCase().includes('product')
+            || String(data?.type || '').toLowerCase().includes('product')
             || products.length > 0
             || Boolean(orderId);
 
