@@ -97,6 +97,153 @@ const renderWhatsAppFormattedText = (text = '') => {
     if (!chunks.length) return renderInlineLines(source, 'plain');
     return chunks;
 };
+const parseOrderMoneyValue = (value) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+
+    const source = String(value || '').trim();
+    if (!source) return null;
+
+    let cleaned = source.replace(/[^\d.,-]/g, '');
+    if (!cleaned || cleaned === '-' || cleaned === '.' || cleaned === ',') return null;
+
+    const hasComma = cleaned.includes(',');
+    const hasDot = cleaned.includes('.');
+
+    if (hasComma && hasDot) {
+        if (cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')) {
+            cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+        } else {
+            cleaned = cleaned.replace(/,/g, '');
+        }
+    } else if (hasComma) {
+        const commaCount = (cleaned.match(/,/g) || []).length;
+        cleaned = commaCount > 1 ? cleaned.replace(/,/g, '') : cleaned.replace(',', '.');
+    }
+
+    const parsed = Number.parseFloat(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const formatOrderMoney = (value, currency = 'PEN') => {
+    const parsed = parseOrderMoneyValue(value);
+    if (!Number.isFinite(parsed)) return null;
+    const code = String(currency || 'PEN').toUpperCase();
+    const prefix = code === 'PEN' ? 'S/ ' : `${code} `;
+    return `${prefix}${parsed.toFixed(2)}`;
+};
+
+const isLikelyBinaryBody = (value = '') => {
+    const source = String(value || '').trim();
+    if (!source || source.length < 140) return false;
+    if (/\s/.test(source)) return false;
+    if (!/^[A-Za-z0-9+/=]+$/.test(source)) return false;
+    return source.length % 4 === 0 || source.startsWith('/9j/') || source.startsWith('iVBOR');
+};
+
+const normalizeSearchText = (value = '') => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+const parseQuoteItemsFromBody = (value = '') => {
+    const source = String(value || '');
+    const normalized = normalizeSearchText(source);
+    if (!normalized.includes('cotizacion') || !normalized.includes('detalle de productos')) return [];
+
+    const lines = source.split(/\r?\n/).map((line) => String(line || '').trim()).filter(Boolean);
+    const items = [];
+
+    for (const line of lines) {
+        const cleaned = line.replace(/\u2796/g, '-').trim();
+        let match = cleaned.match(/^(?:[-\u2022])\s*\*(\d+(?:[.,]\d+)?)\*\s+(.+)$/);
+        if (!match) match = cleaned.match(/^(?:[-\u2022])\s*(\d+(?:[.,]\d+)?)\s+(.+)$/);
+        if (!match) continue;
+
+        const qtyParsed = parseOrderMoneyValue(match[1]);
+        const quantity = Number.isFinite(qtyParsed) && qtyParsed > 0
+            ? Math.max(1, Math.round(qtyParsed * 1000) / 1000)
+            : 1;
+        const name = String(match[2] || '').replace(/[\*_`~]+/g, '').trim();
+        if (!name) continue;
+
+        items.push({
+            name,
+            quantity,
+            price: null,
+            lineTotal: null,
+            sku: null
+        });
+        if (items.length >= 40) break;
+    }
+
+    return items;
+};
+
+const parseQuotePaymentFromBody = (value = '') => {
+    const source = String(value || '');
+    const normalized = normalizeSearchText(source);
+    if (!normalized.includes('detalle de pago')) return null;
+
+    const lines = source.split(/\r?\n/).map((line) => String(line || '').trim()).filter(Boolean);
+    let subtotal = null;
+    let discount = null;
+    let totalAfterDiscount = null;
+    let deliveryAmount = null;
+    let deliveryFree = false;
+    let totalPayable = null;
+
+    const readAmount = (line = '') => {
+        const amountMatch = String(line || '').match(/s\/\s*([0-9.,]+)/i);
+        if (!amountMatch) return null;
+        return parseOrderMoneyValue(amountMatch[1]);
+    };
+
+    for (const line of lines) {
+        const cleanLine = line.replace(/\u2796/g, '-').replace(/[\*_`~]/g, '').trim();
+        const normLine = normalizeSearchText(cleanLine);
+
+        if (normLine.includes('total a pagar')) {
+            totalPayable = readAmount(cleanLine);
+            continue;
+        }
+        if (normLine.includes('total con descuento')) {
+            totalAfterDiscount = readAmount(cleanLine);
+            continue;
+        }
+        if (normLine.includes('descuento')) {
+            discount = readAmount(cleanLine);
+            continue;
+        }
+        if (normLine.includes('delivery') || normLine.includes('envio')) {
+            if (normLine.includes('gratuito')) {
+                deliveryFree = true;
+                deliveryAmount = 0;
+            } else {
+                const parsedDelivery = readAmount(cleanLine);
+                if (Number.isFinite(parsedDelivery)) deliveryAmount = parsedDelivery;
+            }
+            continue;
+        }
+        if (normLine.includes('subtotal')) {
+            subtotal = readAmount(cleanLine);
+            continue;
+        }
+    }
+
+    const hasAny = [subtotal, discount, totalAfterDiscount, deliveryAmount, totalPayable]
+        .some((entry) => Number.isFinite(entry));
+    if (!hasAny && !deliveryFree) return null;
+
+    return {
+        subtotal: Number.isFinite(subtotal) ? subtotal : null,
+        discount: Number.isFinite(discount) ? discount : null,
+        totalAfterDiscount: Number.isFinite(totalAfterDiscount) ? totalAfterDiscount : null,
+        deliveryAmount: Number.isFinite(deliveryAmount) ? deliveryAmount : null,
+        deliveryFree: Boolean(deliveryFree),
+        totalPayable: Number.isFinite(totalPayable) ? totalPayable : null
+    };
+};
 const parseLocationCoord = (value) => {
     const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
     return Number.isFinite(parsed) ? parsed : null;
@@ -258,6 +405,7 @@ const resolveLocationData = (msg = {}) => {
 const MessageBubble = ({
     msg,
     onPrefillMessage,
+    onLoadOrderToCart,
     isHighlighted = false,
     isCurrentHighlighted = false,
     onOpenMedia,
@@ -272,17 +420,76 @@ const MessageBubble = ({
     const productTitle = catalogMatch ? catalogMatch[1] : null;
     const productPrice = catalogMatch ? catalogMatch[2] : null;
 
+    const messageBodyText = String(msg?.body || '');
+    const quoteItemsFromBody = parseQuoteItemsFromBody(messageBodyText);
+    const quotePaymentFromBody = parseQuotePaymentFromBody(messageBodyText);
+    const quoteOrderPayload = quoteItemsFromBody.length > 0
+        ? {
+            orderId: null,
+            currency: 'PEN',
+            subtotal: Number.isFinite(quotePaymentFromBody?.subtotal)
+                ? quotePaymentFromBody.subtotal
+                : (Number.isFinite(quotePaymentFromBody?.totalAfterDiscount) ? quotePaymentFromBody.totalAfterDiscount : null),
+            products: quoteItemsFromBody,
+            rawPreview: {
+                type: 'quote',
+                itemCount: quoteItemsFromBody.length,
+                title: 'Cotizacion',
+                quoteSummary: quotePaymentFromBody || null
+            }
+        }
+        : null;
+
     const hasOrder = Boolean(msg?.order);
-    const orderItems = Array.isArray(msg?.order?.products) ? msg.order.products : [];
+    const actionOrder = hasOrder ? msg.order : quoteOrderPayload;
+    const orderRawType = String(actionOrder?.rawPreview?.type || msg?.type || '').toLowerCase();
+    const orderItems = Array.isArray(actionOrder?.products) ? actionOrder.products : [];
+    const firstOrderItem = orderItems[0] || null;
+    const rawItemCount = parseOrderMoneyValue(actionOrder?.rawPreview?.itemCount);
+    const reportedItemCount = Number.isFinite(rawItemCount) ? Math.max(0, Math.round(rawItemCount)) : orderItems.length;
+    const isProductPayload = orderRawType.includes('product');
+    const isOrderPayload = orderRawType.includes('order') || Boolean(actionOrder?.orderId);
+    const bodyNormalized = normalizeSearchText(messageBodyText);
+    const isQuotePayload = orderRawType.includes('quote') || (bodyNormalized.includes('cotizacion') && orderItems.length > 0);
+    const isOrderActionable = Boolean(actionOrder) && (isOrderPayload || isQuotePayload || isProductPayload);
+    const orderActionLabel = isProductPayload ? 'Anadir al carrito' : 'Ver en carrito';
+    const rawOrderNote = String(actionOrder?.rawPreview?.body || '').trim();
+    const safeOrderNote = isLikelyBinaryBody(rawOrderNote) ? '' : rawOrderNote;
+    const orderSubtotalLabel = formatOrderMoney(actionOrder?.subtotal, actionOrder?.currency || 'PEN');
+    const quoteSummaryRaw = isQuotePayload
+        ? (actionOrder?.rawPreview?.quoteSummary || quotePaymentFromBody || null)
+        : null;
+    const quoteCurrency = actionOrder?.currency || 'PEN';
+    const quoteSubtotal = parseOrderMoneyValue(quoteSummaryRaw?.subtotal ?? actionOrder?.subtotal);
+    const quoteDiscount = parseOrderMoneyValue(quoteSummaryRaw?.discount);
+    const quoteTotalAfterDiscount = parseOrderMoneyValue(quoteSummaryRaw?.totalAfterDiscount)
+        ?? ((Number.isFinite(quoteSubtotal) && Number.isFinite(quoteDiscount))
+            ? Math.max(0, Math.round((quoteSubtotal - quoteDiscount) * 100) / 100)
+            : null);
+    const quoteDelivery = parseOrderMoneyValue(quoteSummaryRaw?.deliveryAmount);
+    const quoteTotalPayable = parseOrderMoneyValue(quoteSummaryRaw?.totalPayable)
+        ?? ((Number.isFinite(quoteTotalAfterDiscount) && Number.isFinite(quoteDelivery))
+            ? Math.max(0, Math.round((quoteTotalAfterDiscount + quoteDelivery) * 100) / 100)
+            : null);
+    const quoteSubtotalLabel = formatOrderMoney(quoteSubtotal, quoteCurrency);
+    const quoteDiscountLabel = formatOrderMoney(quoteDiscount, quoteCurrency);
+    const quoteTotalAfterDiscountLabel = formatOrderMoney(quoteTotalAfterDiscount, quoteCurrency);
+    const quoteDeliveryLabel = quoteSummaryRaw?.deliveryFree
+        ? 'Gratuito'
+        : formatOrderMoney(quoteDelivery, quoteCurrency);
+    const quoteTotalPayableLabel = formatOrderMoney(quoteTotalPayable, quoteCurrency);
     const locationData = resolveLocationData(msg);
     const isLocationMessage = Boolean(locationData);
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [webPreview, setWebPreview] = useState(null);
     const [webPreviewLoading, setWebPreviewLoading] = useState(false);
 
-    const messageBodyText = String(msg?.body || '');
+    const shouldHideBodyForOrder = isQuotePayload || (hasOrder && isLikelyBinaryBody(messageBodyText));
+    const messageTextToRender = isCatalogItem
+        ? 'Te gustaria que te lo separemos?'
+        : ((isLocationMessage && locationData?.source === 'native') ? '' : (shouldHideBodyForOrder ? '' : (msg.body || '')));
     const firstNonMapUrl = extractFirstNonMapUrlFromText(messageBodyText);
-    const showWebPreview = Boolean(firstNonMapUrl && !isLocationMessage && !msg?.hasMedia && !hasOrder && !isCatalogItem);
+    const showWebPreview = Boolean(firstNonMapUrl && !isLocationMessage && !msg?.hasMedia && !hasOrder && !isCatalogItem && !isOrderActionable);
 
     useEffect(() => {
         if (!showWebPreview || !firstNonMapUrl) {
@@ -450,7 +657,7 @@ const MessageBubble = ({
                 </a>
             )}
 
-            {hasOrder && (
+            {isOrderActionable && (
                 <div style={{
                     background: 'rgba(0,168,132,0.12)',
                     border: '1px solid rgba(0,168,132,0.3)',
@@ -459,38 +666,112 @@ const MessageBubble = ({
                     marginBottom: '6px'
                 }}>
                     <div style={{ fontSize: '0.78rem', color: '#00a884', fontWeight: 700, marginBottom: '4px' }}>
-                        Carrito/Pedido del cliente
+                        {isProductPayload ? 'Producto compartido' : (isQuotePayload ? 'Cotizacion' : 'Carrito/Pedido del cliente')}
                     </div>
-                    {msg?.order?.orderId && (
-                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '2px' }}>ID: {msg.order.orderId}</div>
+                    {actionOrder?.orderId && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '2px' }}>ID: {actionOrder.orderId}</div>
                     )}
-                    {msg?.order?.subtotal && (
-                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>Subtotal: {msg.order.currency || 'PEN'} {msg.order.subtotal}</div>
-                    )}
-                    {orderItems.length > 0 ? orderItems.slice(0, 12).map((item, idx) => (
-                        <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>- {item.name} x{item.quantity || 1}{item.sku ? ` (SKU: ${item.sku})` : ''}</span>
-                            <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{item.lineTotal ? `S/ ${item.lineTotal}` : (item.price ? `S/ ${item.price}` : '')}</span>
+                    {isProductPayload && firstOrderItem?.name && (
+                        <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', marginBottom: '4px', fontWeight: 600 }}>
+                            {firstOrderItem.name}
                         </div>
-                    )) : (
+                    )}
+                    {orderSubtotalLabel && !isQuotePayload && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>Subtotal: {orderSubtotalLabel}</div>
+                    )}
+                    {isProductPayload ? (
+                        <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>
+                            Puedes anadir este producto al carrito para cotizarlo.
+                        </div>
+                    ) : isQuotePayload ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ fontSize: '0.75rem', color: '#9bb0ba', marginTop: '1px' }}>Detalle de productos:</div>
+                            {orderItems.length > 0 ? orderItems.slice(0, 40).map((item, idx) => {
+                                const itemQty = Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1;
+                                return (
+                                    <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                        - {itemQty} {item?.name || 'Producto'}
+                                    </div>
+                                );
+                            }) : (
+                                <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>No se pudo leer el detalle de productos.</div>
+                            )}
+                            {(quoteSubtotalLabel || quoteDiscountLabel || quoteTotalAfterDiscountLabel || quoteDeliveryLabel || quoteTotalPayableLabel) && (
+                                <>
+                                    <div style={{ fontSize: '0.75rem', color: '#9bb0ba', marginTop: '6px' }}>Detalle de pago:</div>
+                                    {quoteSubtotalLabel && (
+                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                            <span>Subtotal</span>
+                                            <strong>{quoteSubtotalLabel}</strong>
+                                        </div>
+                                    )}
+                                    {quoteDiscountLabel && (
+                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                            <span>Descuento</span>
+                                            <strong>- {quoteDiscountLabel}</strong>
+                                        </div>
+                                    )}
+                                    {quoteTotalAfterDiscountLabel && (
+                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                            <span>Total con descuento</span>
+                                            <strong>{quoteTotalAfterDiscountLabel}</strong>
+                                        </div>
+                                    )}
+                                    {quoteDeliveryLabel && (
+                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                            <span>Delivery</span>
+                                            <strong>{quoteDeliveryLabel}</strong>
+                                        </div>
+                                    )}
+                                    {quoteTotalPayableLabel && (
+                                        <div style={{ fontSize: '0.82rem', color: '#e8fbf3', display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '2px' }}>
+                                            <span style={{ fontWeight: 700 }}>TOTAL A PAGAR</span>
+                                            <strong style={{ fontWeight: 800 }}>{quoteTotalPayableLabel}</strong>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    ) : orderItems.length > 0 ? orderItems.slice(0, 16).map((item, idx) => {
+                        const itemAmount = formatOrderMoney(item?.lineTotal ?? item?.price, actionOrder?.currency || 'PEN');
+                        const itemQty = Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1;
+                        return (
+                            <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>- {item?.name || 'Producto'} x{itemQty}{item?.sku ? ` (SKU: ${item.sku})` : ''}</span>
+                                <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{itemAmount || ''}</span>
+                            </div>
+                        );
+                    }) : (
                         <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>Se recibio un pedido desde catalogo de WhatsApp.</div>
                     )}
-                    {msg?.order?.rawPreview?.body && (
+                    {!isProductPayload && !isQuotePayload && safeOrderNote && (
                         <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '6px' }}>
-                            Nota cliente: {msg.order.rawPreview.body}
+                            Nota cliente: {safeOrderNote}
                         </div>
                     )}
-                    {msg?.order?.rawPreview?.itemCount && (
+                    {!isProductPayload && !isQuotePayload && actionOrder?.rawPreview?.itemCount && (
                         <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '2px' }}>
-                            Items reportados: {msg.order.rawPreview.itemCount}
+                            Items reportados: {actionOrder.rawPreview.itemCount}
                         </div>
                     )}
-                    <button
-                        onClick={() => onPrefillMessage && onPrefillMessage('Gracias. Ya vi tu carrito del catalogo. Estoy validando stock y en un momento te confirmo el pedido para proceder con el pago y despacho.')}
-                        style={{ marginTop: '8px', background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', fontSize: '0.75rem' }}
-                    >
-                        Aprobar/confirmar pedido
-                    </button>
+                    <div style={{ marginTop: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                            onClick={() => typeof onLoadOrderToCart === 'function' && onLoadOrderToCart(actionOrder || null)}
+                            disabled={typeof onLoadOrderToCart !== 'function'}
+                            style={{
+                                background: '#17323f',
+                                color: '#c7f1ff',
+                                border: '1px solid rgba(124,200,255,0.45)',
+                                borderRadius: '6px',
+                                padding: '6px 10px',
+                                cursor: typeof onLoadOrderToCart === 'function' ? 'pointer' : 'not-allowed',
+                                fontSize: '0.75rem',
+                                opacity: typeof onLoadOrderToCart === 'function' ? 1 : 0.55
+                            }}
+                        >
+                            {orderActionLabel}
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -604,7 +885,7 @@ const MessageBubble = ({
                     </a>
                 )}
 
-                {String(isCatalogItem ? 'Te gustaria que te lo separemos?' : ((isLocationMessage && locationData?.source === 'native') ? '' : (msg.body || ''))).trim() && (
+                {String(messageTextToRender).trim() && (
                     <span
                         style={{ fontSize: '0.9rem', wordBreak: 'break-word', whiteSpace: 'normal' }}
                         onMouseUp={() => {
@@ -616,7 +897,7 @@ const MessageBubble = ({
                             setSelectedLocationText('');
                         }}
                     >
-                        {renderWhatsAppFormattedText(isCatalogItem ? 'Te gustaria que te lo separemos?' : ((isLocationMessage && locationData?.source === 'native') ? '' : msg.body))}
+                        {renderWhatsAppFormattedText(messageTextToRender)}
                     </span>
                 )}
 

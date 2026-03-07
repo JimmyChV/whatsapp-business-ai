@@ -417,6 +417,7 @@ function App() {
 
   const [waCapabilities, setWaCapabilities] = useState({ messageEdit: true, messageEditSync: true, quickReplies: false, quickRepliesRead: false, quickRepliesWrite: false });
   const [toasts, setToasts] = useState([]);
+  const [pendingOrderCartLoad, setPendingOrderCartLoad] = useState(null);
 
   // --------------------------------------------------------------
   const [isDragOver, setIsDragOver] = useState(false);
@@ -1156,6 +1157,16 @@ function App() {
     setInputText('');
   };
 
+  const handleLoadOrderToCart = (orderPayload) => {
+    if (!activeChatIdRef.current || !orderPayload || typeof orderPayload !== 'object') return;
+    const token = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    setPendingOrderCartLoad({
+      token,
+      chatId: String(activeChatIdRef.current),
+      order: orderPayload
+    });
+  };
+
   const handleCreateQuickReply = ({ label, text }) => {
     if (!waCapabilities.quickRepliesWrite) return;
     socket.emit('add_quick_reply', { label, text });
@@ -1346,7 +1357,7 @@ REGLA CRITICA:
               labelDefinitions={labelDefinitions}
               onToggleChatLabel={handleToggleChatLabel}
               onEditMessage={handleEditMessage}
-
+              onLoadOrderToCart={handleLoadOrderToCart}
               onCancelEditMessage={handleCancelEditMessage}
               editingMessage={editingMessage}
               canEditMessages={waCapabilities.messageEdit}
@@ -1412,7 +1423,7 @@ REGLA CRITICA:
           onCreateQuickReply={handleCreateQuickReply}
           onUpdateQuickReply={handleUpdateQuickReply}
           onDeleteQuickReply={handleDeleteQuickReply}
-
+          pendingOrderCartLoad={pendingOrderCartLoad}
           waCapabilities={waCapabilities}
         />
       </div>
