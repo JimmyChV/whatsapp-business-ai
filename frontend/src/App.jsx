@@ -1042,6 +1042,18 @@ function App() {
     setChats((prev) => prev.map((c) => c.id === chatId ? { ...c, unreadCount: 0 } : c));
   };
 
+  const handleExitActiveChat = () => {
+    activeChatIdRef.current = null;
+    setActiveChatId(null);
+    setMessages([]);
+    setEditingMessage(null);
+    setShowClientProfile(false);
+    setClientContact(null);
+    setPendingOrderCartLoad(null);
+    setInputText('');
+    removeAttachment();
+  };
+
   const handleSendMessage = (e) => {
     e?.preventDefault();
     const text = inputText.trim();
@@ -1215,6 +1227,18 @@ function App() {
     if (!waCapabilities.quickRepliesWrite) return;
     socket.emit('delete_quick_reply', { id });
   };
+  useEffect(() => {
+    const onGlobalKeyDown = (event) => {
+      if (event.key !== 'Escape' || event.repeat) return;
+      if (!activeChatIdRef.current) return;
+      event.preventDefault();
+      handleExitActiveChat();
+    };
+
+    window.addEventListener('keydown', onGlobalKeyDown);
+    return () => window.removeEventListener('keydown', onGlobalKeyDown);
+  }, []);
+
   const requestAiSuggestion = (customPromptArg) => {
     if (!activeChatId) return;
     const customPrompt = typeof customPromptArg === 'string' ? customPromptArg : null;
@@ -1444,22 +1468,24 @@ REGLA CRITICA:
         )}
 
         {/* Business Sidebar - AI and Catalog */}
-        <BusinessSidebar
-          setInputText={setInputText}
-          businessData={businessData}
-          messages={messages}
-          activeChatId={activeChatId}
-          socket={socket}
-          myProfile={myProfile || businessData?.profile}
-          onLogout={handleLogoutWhatsapp}
-          quickReplies={quickReplies}
-          onCreateQuickReply={handleCreateQuickReply}
-          onUpdateQuickReply={handleUpdateQuickReply}
-          onDeleteQuickReply={handleDeleteQuickReply}
-          pendingOrderCartLoad={pendingOrderCartLoad}
-          waCapabilities={waCapabilities}
-          openCompanyProfileToken={openCompanyProfileToken}
-        />
+        {activeChatId && (
+          <BusinessSidebar
+            setInputText={setInputText}
+            businessData={businessData}
+            messages={messages}
+            activeChatId={activeChatId}
+            socket={socket}
+            myProfile={myProfile || businessData?.profile}
+            onLogout={handleLogoutWhatsapp}
+            quickReplies={quickReplies}
+            onCreateQuickReply={handleCreateQuickReply}
+            onUpdateQuickReply={handleUpdateQuickReply}
+            onDeleteQuickReply={handleDeleteQuickReply}
+            pendingOrderCartLoad={pendingOrderCartLoad}
+            waCapabilities={waCapabilities}
+            openCompanyProfileToken={openCompanyProfileToken}
+          />
+        )}
       </div>
     </div>
   );
