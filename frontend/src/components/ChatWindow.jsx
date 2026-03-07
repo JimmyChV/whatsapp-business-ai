@@ -1,15 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import { Search, MoreVertical, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart, ChevronUp, ChevronDown, Tag } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import moment from 'moment';
+import EmojiPicker from 'emoji-picker-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-
-// Common emojis for the picker
-const EMOJI_LIST = [
-    ':)', ':D', ';)', ':P', ':-(', ':-|', ':O', '<3',
-    ':+1:', ':ok:', ':fire:', ':sparkles:', ':star:', ':100:', ':wave:', ':clap:'
-];
 
 const ChatInput = ({
     inputText, setInputText, onSendMessage, onKeyDown, onFileClick,
@@ -22,7 +17,9 @@ const ChatInput = ({
     const [showCommands, setShowCommands] = useState(false);
     const [linkPreview, setLinkPreview] = useState(null);
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+    const [selectionState, setSelectionState] = useState(null);
     const inputRef = useRef(null);
+    const chatInputRef = useRef(null);
 
     const handleInputChange = (e) => {
         const val = e.target.value;
@@ -31,9 +28,62 @@ const ChatInput = ({
         if (showEmoji) setShowEmoji(false);
     };
 
+    const updateSelectionState = () => {
+        const el = inputRef.current;
+        if (!el) {
+            setSelectionState(null);
+            return;
+        }
+        const start = Number(el.selectionStart || 0);
+        const end = Number(el.selectionEnd || 0);
+        if (end > start) {
+            setSelectionState({ start, end });
+            return;
+        }
+        setSelectionState(null);
+    };
+
     const insertEmoji = (emoji) => {
-        setInputText(prev => prev + emoji);
+        const el = inputRef.current;
+        if (!el) {
+            setInputText(prev => `${prev}${emoji}`);
+            setShowEmoji(false);
+            return;
+        }
+        const start = Number(el.selectionStart || 0);
+        const end = Number(el.selectionEnd || 0);
+        const current = String(inputText || '');
+        const next = `${current.slice(0, start)}${emoji}${current.slice(end)}`;
+        setInputText(next);
         setShowEmoji(false);
+        requestAnimationFrame(() => {
+            if (!inputRef.current) return;
+            const cursor = start + emoji.length;
+            inputRef.current.focus();
+            inputRef.current.setSelectionRange(cursor, cursor);
+            setSelectionState(null);
+        });
+    };
+
+    const applyInlineFormat = (openToken, closeToken = openToken) => {
+        const el = inputRef.current;
+        if (!el) return;
+        const start = Number(el.selectionStart || 0);
+        const end = Number(el.selectionEnd || 0);
+        if (end <= start) return;
+        const current = String(inputText || '');
+        const selected = current.slice(start, end);
+        const wrapped = `${openToken}${selected}${closeToken}`;
+        const next = `${current.slice(0, start)}${wrapped}${current.slice(end)}`;
+        setInputText(next);
+        requestAnimationFrame(() => {
+            if (!inputRef.current) return;
+            const selStart = start + openToken.length;
+            const selEnd = selStart + selected.length;
+            inputRef.current.focus();
+            inputRef.current.setSelectionRange(selStart, selEnd);
+            setSelectionState({ start: selStart, end: selEnd });
+        });
     };
 
     const selectCommand = (cmd) => {
@@ -55,6 +105,7 @@ const ChatInput = ({
         const next = Math.min(el.scrollHeight, 220);
         el.style.height = `${next}px`;
     }, [inputText]);
+
     useEffect(() => {
         if (!editingMessage?.id) return;
         const timer = setTimeout(() => {
@@ -67,6 +118,24 @@ const ChatInput = ({
         return () => clearTimeout(timer);
     }, [editingMessage?.id]);
 
+    useEffect(() => {
+        if (!selectionState) return;
+        const inputLen = String(inputText || '').length;
+        if (selectionState.start >= inputLen || selectionState.end > inputLen) {
+            setSelectionState(null);
+        }
+    }, [inputText, selectionState]);
+
+    useEffect(() => {
+        if (!showEmoji) return;
+        const onOutside = (event) => {
+            if (!chatInputRef.current) return;
+            if (chatInputRef.current.contains(event.target)) return;
+            setShowEmoji(false);
+        };
+        document.addEventListener('mousedown', onOutside);
+        return () => document.removeEventListener('mousedown', onOutside);
+    }, [showEmoji]);
 
     useEffect(() => {
         const url = extractFirstUrl(inputText);
@@ -98,7 +167,7 @@ const ChatInput = ({
     }, [inputText]);
 
     return (
-        <div className="chat-input-area chat-input-area-pro" style={{ position: 'relative' }}>
+        <div className="chat-input-area chat-input-area-pro" style={{ position: 'relative' }} ref={chatInputRef}>
             {editingMessage?.id && (
                 <div style={{
                     position: 'absolute',
@@ -158,15 +227,38 @@ const ChatInput = ({
             {/* Emoji Picker */}
             {showEmoji && (
                 <div className="floating-panel emoji-panel">
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                        {EMOJI_LIST.map(e => (
-                            <span key={e} onClick={() => insertEmoji(e)}
-                                style={{ fontSize: '1.4rem', cursor: 'pointer', padding: '4px', borderRadius: '6px', transition: 'background 0.1s' }}
-                                onMouseEnter={ev => ev.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-                                onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}
-                            >{e}</span>
-                        ))}
-                    </div>
+                    <EmojiPicker
+                        onEmojiClick={(emojiData) => insertEmoji(emojiData.emoji)}
+                        width="100%"
+                        height={360}
+                        lazyLoadEmojis
+                        skinTonesDisabled={false}
+                        searchDisabled={false}
+                        previewConfig={{ showPreview: false }}
+                        theme="dark"
+                    />
+                </div>
+            )}
+
+            {selectionState && (
+                <div className="input-format-toolbar">
+                    {[
+                        { label: 'B', title: 'Negrita', wrap: ['*', '*'] },
+                        { label: 'I', title: 'Cursiva', wrap: ['_', '_'] },
+                        { label: 'S', title: 'Tachado', wrap: ['~', '~'] },
+                        { label: '</>', title: 'Monoespaciado', wrap: ['`', '`'] },
+                    ].map((fmt) => (
+                        <button
+                            key={fmt.title}
+                            type="button"
+                            className="input-format-btn"
+                            title={fmt.title}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => applyInlineFormat(fmt.wrap[0], fmt.wrap[1])}
+                        >
+                            {fmt.label}
+                        </button>
+                    ))}
                 </div>
             )}
 
@@ -237,7 +329,9 @@ const ChatInput = ({
                     }}
                     rows={1}
                     style={{ padding: '4px 0', minHeight: '24px', maxHeight: '220px', resize: 'none', overflowY: 'auto' }}
-                    onClick={() => { setShowEmoji(false); }}
+                    onClick={() => { setShowEmoji(false); updateSelectionState(); }}
+                    onSelect={updateSelectionState}
+                    onKeyUp={updateSelectionState}
                 />
             </div>
 
@@ -542,6 +636,7 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
+
 
 
 

@@ -1,7 +1,42 @@
-import React from 'react';
+﻿import React from 'react';
 import moment from 'moment';
 import { Check, CheckCheck, ShoppingBag, Pencil } from 'lucide-react';
 
+const INLINE_WA_PATTERN = /(https?:\/\/[^\s]+|\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`)/g;
+
+const renderWhatsAppInline = (text = '') => {
+    const tokens = String(text || '').split(INLINE_WA_PATTERN).filter((token) => token !== '');
+    return tokens.map((token, idx) => {
+        if (/^https?:\/\/[^\s]+$/i.test(token)) {
+            return (
+                <a key={`url_${idx}`} href={token} target="_blank" rel="noreferrer" style={{ color: '#7cc8ff', textDecoration: 'underline' }}>
+                    {token}
+                </a>
+            );
+        }
+        if (/^\*[^*\n]+\*$/.test(token)) return <strong key={`b_${idx}`}>{token.slice(1, -1)}</strong>;
+        if (/^_[^_\n]+_$/.test(token)) return <em key={`i_${idx}`}>{token.slice(1, -1)}</em>;
+        if (/^~[^~\n]+~$/.test(token)) return <s key={`s_${idx}`}>{token.slice(1, -1)}</s>;
+        if (/^`[^`\n]+`$/.test(token)) {
+            return (
+                <code key={`m_${idx}`} style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: '0.88em', background: 'rgba(0,0,0,0.22)', borderRadius: '4px', padding: '1px 4px' }}>
+                    {token.slice(1, -1)}
+                </code>
+            );
+        }
+        return <React.Fragment key={`t_${idx}`}>{token}</React.Fragment>;
+    });
+};
+
+const renderWhatsAppFormattedText = (text = '') => {
+    const lines = String(text || '').split('\n');
+    return lines.map((line, idx) => (
+        <React.Fragment key={`line_${idx}`}>
+            {renderWhatsAppInline(line)}
+            {idx < lines.length - 1 && <br />}
+        </React.Fragment>
+    ));
+};
 const MessageBubble = ({
     msg,
     onPrefillMessage,
@@ -178,8 +213,8 @@ const MessageBubble = ({
             )}
 
             <div className={`message-content ${canEditMessage ? 'can-edit' : ''}`} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.9rem', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
-                    {isCatalogItem ? 'Te gustaria que te lo separemos?' : msg.body}
+                <span style={{ fontSize: '0.9rem', wordBreak: 'break-word', whiteSpace: 'normal' }}>
+                    {renderWhatsAppFormattedText(isCatalogItem ? 'Te gustaria que te lo separemos?' : msg.body)}
                 </span>
 
                 {canEditMessage && (
@@ -213,3 +248,6 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
+
+
+
