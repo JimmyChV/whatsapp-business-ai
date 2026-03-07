@@ -86,6 +86,59 @@ const ChatInput = ({
         });
     };
 
+    const applyLinePrefixFormat = (mode) => {
+        const el = inputRef.current;
+        if (!el) return;
+        const start = Number(el.selectionStart || 0);
+        const end = Number(el.selectionEnd || 0);
+        if (end <= start) return;
+
+        const current = String(inputText || '');
+        const blockStart = current.lastIndexOf('\n', start - 1) + 1;
+        const nextBreak = current.indexOf('\n', end);
+        const blockEnd = nextBreak === -1 ? current.length : nextBreak;
+        const block = current.slice(blockStart, blockEnd);
+
+        const formattedBlock = block
+            .split('\n')
+            .map((line, idx) => {
+                const cleanLine = line.replace(/^\s*(?:>\s+|[-*]\s+|\d+\.\s+)/, '').trimEnd();
+                if (mode === 'number') return `${idx + 1}. ${cleanLine}`;
+                if (mode === 'quote') return `> ${cleanLine}`;
+                return `- ${cleanLine}`;
+            })
+            .join('\n');
+
+        const next = `${current.slice(0, blockStart)}${formattedBlock}${current.slice(blockEnd)}`;
+        setInputText(next);
+        requestAnimationFrame(() => {
+            if (!inputRef.current) return;
+            inputRef.current.focus();
+            inputRef.current.setSelectionRange(blockStart, blockStart + formattedBlock.length);
+            setSelectionState({ start: blockStart, end: blockStart + formattedBlock.length });
+        });
+    };
+
+    const applyCodeBlockFormat = () => {
+        const el = inputRef.current;
+        if (!el) return;
+        const start = Number(el.selectionStart || 0);
+        const end = Number(el.selectionEnd || 0);
+        if (end <= start) return;
+
+        const current = String(inputText || '');
+        const selected = current.slice(start, end);
+        const wrapped = `\`\`\`\n${selected}\n\`\`\``;
+        const next = `${current.slice(0, start)}${wrapped}${current.slice(end)}`;
+        setInputText(next);
+        requestAnimationFrame(() => {
+            if (!inputRef.current) return;
+            inputRef.current.focus();
+            inputRef.current.setSelectionRange(start, start + wrapped.length);
+            setSelectionState({ start, end: start + wrapped.length });
+        });
+    };
+
     const selectCommand = (cmd) => {
         if (cmd === '/ayudar') onRequestAiSuggestion();
         else setInputText(cmd + ' ');
@@ -230,7 +283,7 @@ const ChatInput = ({
                     <EmojiPicker
                         onEmojiClick={(emojiData) => insertEmoji(emojiData.emoji)}
                         width="100%"
-                        height={360}
+                        height={430}
                         lazyLoadEmojis
                         skinTonesDisabled={false}
                         searchDisabled={false}
@@ -247,6 +300,10 @@ const ChatInput = ({
                         { label: 'I', title: 'Cursiva', wrap: ['_', '_'] },
                         { label: 'S', title: 'Tachado', wrap: ['~', '~'] },
                         { label: '</>', title: 'Monoespaciado', wrap: ['`', '`'] },
+                        { label: '"', title: 'Cita', mode: 'quote' },
+                        { label: '•', title: 'Vinetas', mode: 'bullet' },
+                        { label: '1.', title: 'Numeracion', mode: 'number' },
+                        { label: '```', title: 'Bloque de codigo', mode: 'codeblock' },
                     ].map((fmt) => (
                         <button
                             key={fmt.title}
@@ -254,7 +311,13 @@ const ChatInput = ({
                             className="input-format-btn"
                             title={fmt.title}
                             onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => applyInlineFormat(fmt.wrap[0], fmt.wrap[1])}
+                            onClick={() => {
+                                if (fmt.mode === 'quote') return applyLinePrefixFormat('quote');
+                                if (fmt.mode === 'bullet') return applyLinePrefixFormat('bullet');
+                                if (fmt.mode === 'number') return applyLinePrefixFormat('number');
+                                if (fmt.mode === 'codeblock') return applyCodeBlockFormat();
+                                return applyInlineFormat(fmt.wrap[0], fmt.wrap[1]);
+                            }}
                         >
                             {fmt.label}
                         </button>
@@ -636,6 +699,7 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
+
 
 
 

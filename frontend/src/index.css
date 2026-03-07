@@ -772,7 +772,7 @@ body {
   height: 100%;
   background: var(--wa-bg);
   box-sizing: border-box;
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
 }
 
 .main-workspace {
@@ -1150,7 +1150,7 @@ body {
   padding: 8px 10px;
   border-top: 1px solid var(--wa-border);
   background: var(--wa-panel-2);
-  margin-bottom: 6px;
+  margin-bottom: 12px;
 }
 
 .chat-input-left-actions,
@@ -1187,10 +1187,13 @@ body {
 
 .emoji-panel {
   left: 14px;
-  width: 350px;
-  max-height: 390px;
+  width: min(420px, calc(100vw - 36px));
+  max-height: 450px;
   overflow: hidden;
   padding: 0;
+  border-radius: 14px;
+  border: 1px solid rgba(134, 150, 160, 0.35);
+  background: linear-gradient(180deg, #213541, #1b2b34);
 }
 
 .emoji-panel .EmojiPickerReact {
@@ -1205,6 +1208,10 @@ body {
   --epr-hover-bg-color: rgba(255, 255, 255, 0.08);
   --epr-focus-bg-color: rgba(0, 168, 132, 0.22);
   --epr-highlight-color: #00c7a0;
+  --epr-emoji-size: 20px;
+  --epr-emoji-gap: 6px;
+  --epr-category-icon-size: 16px;
+  --epr-search-input-height: 34px;
 }
 
 .input-format-toolbar {
@@ -1212,24 +1219,26 @@ body {
   left: 76px;
   bottom: calc(100% + 8px);
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  padding: 6px 8px;
-  border: 1px solid rgba(134, 150, 160, 0.28);
-  border-radius: 10px;
+  max-width: min(470px, calc(100% - 95px));
+  padding: 7px;
+  border: 1px solid rgba(134, 150, 160, 0.3);
+  border-radius: 12px;
   background: #1f2f39;
   box-shadow: var(--wa-shadow);
   z-index: 70;
 }
 
 .input-format-btn {
-  min-width: 34px;
-  height: 30px;
+  min-width: 30px;
+  height: 28px;
   padding: 0 8px;
   border: 1px solid rgba(134, 150, 160, 0.24);
   border-radius: 7px;
   background: #16242d;
   color: #d8e7ef;
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   font-weight: 700;
   cursor: pointer;
 }
@@ -2446,4 +2455,5 @@ body {
   border-color: rgba(239, 68, 68, 0.55);
   background: rgba(239, 68, 68, 0.24);
 }
+
 

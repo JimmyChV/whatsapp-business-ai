@@ -28,14 +28,71 @@ const renderWhatsAppInline = (text = '') => {
     });
 };
 
-const renderWhatsAppFormattedText = (text = '') => {
+const renderInlineLines = (text = '', keyPrefix = 'inline') => {
     const lines = String(text || '').split('\n');
     return lines.map((line, idx) => (
-        <React.Fragment key={`line_${idx}`}>
+        <React.Fragment key={`${keyPrefix}_line_${idx}`}>
             {renderWhatsAppInline(line)}
             {idx < lines.length - 1 && <br />}
         </React.Fragment>
     ));
+};
+
+const renderWhatsAppFormattedText = (text = '') => {
+    const source = String(text || '');
+    const codeFencePattern = /```([\s\S]*?)```/g;
+    const chunks = [];
+    let lastIndex = 0;
+    let match;
+    let chunkIndex = 0;
+
+    while ((match = codeFencePattern.exec(source)) !== null) {
+        const before = source.slice(lastIndex, match.index);
+        if (before) {
+            const textKey = chunkIndex++;
+            chunks.push(
+                <React.Fragment key={`txt_${textKey}`}>
+                    {renderInlineLines(before, `txt_${textKey}`)}
+                </React.Fragment>
+            );
+        }
+
+        const codeText = String(match[1] || '').replace(/^\n+|\n+$/g, '');
+        const codeKey = chunkIndex++;
+        chunks.push(
+            <pre
+                key={`code_${codeKey}`}
+                style={{
+                    margin: '6px 0 2px',
+                    borderRadius: '7px',
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: 'rgba(0,0,0,0.28)',
+                    padding: '8px',
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                    fontFamily: 'Consolas, Monaco, monospace',
+                    fontSize: '0.82rem'
+                }}
+            >
+                <code>{codeText}</code>
+            </pre>
+        );
+
+        lastIndex = match.index + match[0].length;
+    }
+
+    const tail = source.slice(lastIndex);
+    if (tail) {
+        const tailKey = chunkIndex++;
+        chunks.push(
+            <React.Fragment key={`tail_${tailKey}`}>
+                {renderInlineLines(tail, `tail_${tailKey}`)}
+            </React.Fragment>
+        );
+    }
+
+    if (!chunks.length) return renderInlineLines(source, 'plain');
+    return chunks;
 };
 const MessageBubble = ({
     msg,
@@ -248,6 +305,7 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
+
 
 
 
