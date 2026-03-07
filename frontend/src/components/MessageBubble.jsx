@@ -164,7 +164,7 @@ const parseQuoteItemsFromBody = (value = '') => {
         const quantity = Number.isFinite(qtyParsed) && qtyParsed > 0
             ? Math.max(1, Math.round(qtyParsed * 1000) / 1000)
             : 1;
-        const name = String(match[2] || '').replace(/\*+/g, '').trim();
+        const name = String(match[2] || '').replace(/[\*_`~]+/g, '').trim();
         if (!name) continue;
 
         items.push({
@@ -180,6 +180,70 @@ const parseQuoteItemsFromBody = (value = '') => {
     return items;
 };
 
+const parseQuotePaymentFromBody = (value = '') => {
+    const source = String(value || '');
+    const normalized = normalizeSearchText(source);
+    if (!normalized.includes('detalle de pago')) return null;
+
+    const lines = source.split(/\r?\n/).map((line) => String(line || '').trim()).filter(Boolean);
+    let subtotal = null;
+    let discount = null;
+    let totalAfterDiscount = null;
+    let deliveryAmount = null;
+    let deliveryFree = false;
+    let totalPayable = null;
+
+    const readAmount = (line = '') => {
+        const amountMatch = String(line || '').match(/s\/\s*([0-9.,]+)/i);
+        if (!amountMatch) return null;
+        return parseOrderMoneyValue(amountMatch[1]);
+    };
+
+    for (const line of lines) {
+        const cleanLine = line.replace(/\u2796/g, '-').replace(/[\*_`~]/g, '').trim();
+        const normLine = normalizeSearchText(cleanLine);
+
+        if (normLine.includes('total a pagar')) {
+            totalPayable = readAmount(cleanLine);
+            continue;
+        }
+        if (normLine.includes('total con descuento')) {
+            totalAfterDiscount = readAmount(cleanLine);
+            continue;
+        }
+        if (normLine.includes('descuento')) {
+            discount = readAmount(cleanLine);
+            continue;
+        }
+        if (normLine.includes('delivery') || normLine.includes('envio')) {
+            if (normLine.includes('gratuito')) {
+                deliveryFree = true;
+                deliveryAmount = 0;
+            } else {
+                const parsedDelivery = readAmount(cleanLine);
+                if (Number.isFinite(parsedDelivery)) deliveryAmount = parsedDelivery;
+            }
+            continue;
+        }
+        if (normLine.includes('subtotal')) {
+            subtotal = readAmount(cleanLine);
+            continue;
+        }
+    }
+
+    const hasAny = [subtotal, discount, totalAfterDiscount, deliveryAmount, totalPayable]
+        .some((entry) => Number.isFinite(entry));
+    if (!hasAny && !deliveryFree) return null;
+
+    return {
+        subtotal: Number.isFinite(subtotal) ? subtotal : null,
+        discount: Number.isFinite(discount) ? discount : null,
+        totalAfterDiscount: Number.isFinite(totalAfterDiscount) ? totalAfterDiscount : null,
+        deliveryAmount: Number.isFinite(deliveryAmount) ? deliveryAmount : null,
+        deliveryFree: Boolean(deliveryFree),
+        totalPayable: Number.isFinite(totalPayable) ? totalPayable : null
+    };
+};
 const parseLocationCoord = (value) => {
     const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
     return Number.isFinite(parsed) ? parsed : null;
@@ -358,13 +422,21 @@ const MessageBubble = ({
 
     const messageBodyText = String(msg?.body || '');
     const quoteItemsFromBody = parseQuoteItemsFromBody(messageBodyText);
+    const quotePaymentFromBody = parseQuotePaymentFromBody(messageBodyText);
     const quoteOrderPayload = quoteItemsFromBody.length > 0
         ? {
             orderId: null,
             currency: 'PEN',
-            subtotal: null,
+            subtotal: Number.isFinite(quotePaymentFromBody?.subtotal)
+                ? quotePaymentFromBody.subtotal
+                : (Number.isFinite(quotePaymentFromBody?.totalAfterDiscount) ? quotePaymentFromBody.totalAfterDiscount : null),
             products: quoteItemsFromBody,
-            rawPreview: { type: 'quote', itemCount: quoteItemsFromBody.length, title: 'Cotizacion' }
+            rawPreview: {
+                type: 'quote',
+                itemCount: quoteItemsFromBody.length,
+                title: 'Cotizacion',
+                quoteSummary: quotePaymentFromBody || null
+            }
         }
         : null;
 

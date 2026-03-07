@@ -34,6 +34,8 @@ const normalizeTextKey = (value = '') => String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+    .replace(/(\d+(?:[.,]\d+)?)\s*(?:litros?|lts?|lt|l)\b/g, '$1l')
+    .replace(/(\d+(?:[.,]\d+)?)\s*(?:mililitros?|ml|cc|cm3)\b/g, '$1ml')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -799,6 +801,10 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
             : {};
         const orderType = String(order?.rawPreview?.type || '').toLowerCase();
         const isProductImport = orderType.includes('product') && !String(order?.orderId || '').trim();
+        const isQuoteImport = orderType.includes('quote');
+        const quoteSummary = order?.rawPreview?.quoteSummary && typeof order.rawPreview.quoteSummary === 'object'
+            ? order.rawPreview.quoteSummary
+            : null;
         const sourceItems = Array.isArray(order.products) ? order.products : [];
         const titleFallbackItems = sourceItems.length === 0
             ? parseOrderTitleItems(order?.rawPreview?.title || order?.rawPreview?.orderTitle || '')
@@ -986,6 +992,18 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
         setShowOrderAdjustments(true);
         setActiveTab('cart');
 
+        if (isQuoteImport && quoteSummary) {
+            const quoteDiscountAmount = Math.max(0, parseMoney(quoteSummary?.discount ?? 0, 0));
+            const quoteDeliveryAmount = Math.max(0, parseMoney(quoteSummary?.deliveryAmount ?? 0, 0));
+            const quoteDeliveryFree = Boolean(quoteSummary?.deliveryFree) || quoteDeliveryAmount <= 0;
+
+            setGlobalDiscountEnabled(quoteDiscountAmount > 0);
+            setGlobalDiscountType('amount');
+            setGlobalDiscountValue(quoteDiscountAmount > 0 ? quoteDiscountAmount : 0);
+            setDeliveryType(quoteDeliveryFree ? 'free' : 'amount');
+            setDeliveryAmount(quoteDeliveryFree ? 0 : quoteDeliveryAmount);
+        }
+
         const reportedItems = Number(order?.rawPreview?.itemCount || itemsToImport.length || importedCart.length);
         const hasSubtotal = order?.subtotal !== null && order?.subtotal !== undefined && String(order.subtotal).trim() !== '';
         const subtotalLabel = hasSubtotal ? ` | subtotal ${formatMoney(parseMoney(order.subtotal, 0))}` : '';
@@ -993,6 +1011,8 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
             isProductImport ? 'Producto agregado al carrito (+1)' : `Pedido cargado al carrito: ${importedCart.length} productos`,
             isProductImport ? null : `(items reportados: ${reportedItems})`,
             usedTitleFallback ? 'origen: titulo del pedido' : null,
+            isQuoteImport && quoteSummary?.discount ? `descuento detectado: S/ ${formatMoney(parseMoney(quoteSummary.discount, 0))}` : null,
+            isQuoteImport ? 'descuento aplicado como GLOBAL' : null,
             matchedBySku > 0 ? `SKU: ${matchedBySku}` : null,
             matchedByName > 0 ? `nombre: ${matchedByName}` : null,
             fallbackLines > 0 ? `sin match: ${fallbackLines}` : null,
