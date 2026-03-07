@@ -61,6 +61,9 @@ function normalizeWooV3Product(product) {
     const normalizedPrice = Number.isFinite(price) ? price.toFixed(2) : '0.00';
     const normalizedRegularPrice = Number.isFinite(regularPrice) ? regularPrice.toFixed(2) : normalizedPrice;
     const normalizedSalePrice = Number.isFinite(salePrice) && salePrice > 0 ? salePrice.toFixed(2) : null;
+    const categories = Array.isArray(product?.categories)
+        ? product.categories.map((c) => String(c?.name || c?.slug || '').trim()).filter(Boolean)
+        : [];
 
     return {
         id: `woo_${product.id}`,
@@ -73,6 +76,7 @@ function normalizeWooV3Product(product) {
         imageUrl: product?.images?.[0]?.src || null,
         sku: product?.sku || null,
         stockStatus: product?.stock_status || null,
+        categories,
         source: 'woocommerce'
     };
 }
@@ -82,6 +86,9 @@ function normalizeStoreApiProduct(product) {
     const price = parseStoreApiPrice(product?.prices?.price, minorUnit);
     const regularPrice = parseStoreApiPrice(product?.prices?.regular_price || product?.prices?.price, minorUnit);
     const salePrice = parseStoreApiPrice(product?.prices?.sale_price || '0', minorUnit);
+    const categories = Array.isArray(product?.categories)
+        ? product.categories.map((c) => String(c?.name || c?.slug || '').trim()).filter(Boolean)
+        : [];
 
     return {
         id: `woo_${product.id}`,
@@ -94,6 +101,7 @@ function normalizeStoreApiProduct(product) {
         imageUrl: product?.images?.[0]?.src || null,
         sku: product?.sku || null,
         stockStatus: product?.is_in_stock === false ? 'outofstock' : 'instock',
+        categories,
         source: 'woocommerce'
     };
 }
@@ -169,12 +177,8 @@ async function getWooCatalog() {
                 return { products: normalized, source: 'wc/v3', status: 'ok', reason: null };
             }
 
-            console.log('[Catalog][Woo] wc/v3 returned 0 products, trying Store API fallback.');
         } catch (error) {
-            console.log('[Catalog][Woo] wc/v3 failed, trying Store API fallback.', error.message);
         }
-    } else {
-        console.log('[Catalog][Woo] Credentials not configured; trying public Store API.');
     }
 
     try {
@@ -207,3 +211,4 @@ module.exports = {
     isWooConfigured,
     getWooCatalog
 };
+

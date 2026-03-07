@@ -15,6 +15,9 @@ const eventRateLimiter = new RateLimiter({
 const orderDebugSeen = new Set();
 const ORDER_DEBUG_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.ORDER_DEBUG || '').trim().toLowerCase());
 const ORDER_DEBUG_VERBOSE = ['1', 'true', 'yes', 'on'].includes(String(process.env.ORDER_DEBUG_VERBOSE || '').trim().toLowerCase());
+const CATALOG_DEBUG_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.CATALOG_DEBUG ?? 'true').trim().toLowerCase());
+const CATALOG_DEBUG_MAX_ITEMS = Math.max(1, Number(process.env.CATALOG_DEBUG_MAX_ITEMS || 120));
+let catalogDebugLastSignature = '';
 
 function guardRateLimit(socket, eventName) {
     const key = `${socket.id}:${eventName}`;
@@ -380,6 +383,66 @@ function logOrderDebug({ msg, data, orderId, products, subtotal, subtotalFrom100
     }
 }
 
+function extractCatalogItemCategories(item = {}) {
+    const raw = [];
+    if (Array.isArray(item?.categories)) raw.push(...item.categories);
+    else if (typeof item?.categories === 'string') raw.push(...String(item.categories).split(','));
+    if (item?.category) raw.push(item.category);
+    if (item?.categoryName) raw.push(item.categoryName);
+    if (item?.category_slug) raw.push(item.category_slug);
+
+    return Array.from(new Set(raw
+        .map((entry) => (typeof entry === 'string' ? entry : (entry?.name || entry?.slug || entry?.title || entry?.label || '')))
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean)));
+}
+
+function buildCatalogDebugLine(item = {}, index = 0) {
+    const categories = extractCatalogItemCategories(item);
+    const clean = (value = '') => String(value || '').replace(/\s+/g, ' ').trim();
+    const id = clean(item?.id || `item_${index + 1}`);
+    const sku = clean(item?.sku || '-');
+    const title = clean(item?.title || item?.name || `Producto ${index + 1}`);
+    const categoryText = categories.length > 0 ? categories.join(' | ') : '(sin categoria)';
+    return `[CatalogDebug][${index + 1}] id=${id} sku=${sku} title=${title} categories=${categoryText}`;
+}
+
+function logCatalogDebugSnapshot({ catalog = [], catalogMeta = {} } = {}) {
+    if (!CATALOG_DEBUG_ENABLED) return;
+
+    const safeCatalog = Array.isArray(catalog) ? catalog : [];
+    const categories = Array.isArray(catalogMeta?.categories)
+        ? catalogMeta.categories.map((entry) => String(entry || '').trim()).filter(Boolean)
+        : [];
+
+    const signature = JSON.stringify({
+        source: String(catalogMeta?.source || 'unknown'),
+        totalProducts: safeCatalog.length,
+        categories,
+        sample: safeCatalog.slice(0, 40).map((item) => [
+            String(item?.id || ''),
+            String(item?.sku || ''),
+            extractCatalogItemCategories(item).join('|')
+        ])
+    });
+
+    if (signature === catalogDebugLastSignature) return;
+    catalogDebugLastSignature = signature;
+
+    console.log(`[CatalogDebug] source=${String(catalogMeta?.source || 'unknown')} totalProducts=${safeCatalog.length} totalCategories=${categories.length}`);
+    if (categories.length > 0) {
+        console.log(`[CatalogDebug] categories=${categories.join(' | ')}`);
+    }
+
+    const maxLines = Math.min(Math.max(1, CATALOG_DEBUG_MAX_ITEMS), safeCatalog.length);
+    for (let i = 0; i < maxLines; i += 1) {
+        console.log(buildCatalogDebugLine(safeCatalog[i], i));
+    }
+
+    if (safeCatalog.length > maxLines) {
+        console.log(`[CatalogDebug] ... +${safeCatalog.length - maxLines} productos adicionales`);
+    }
+}
 function parseLocationNumber(value) {
     const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
     return Number.isFinite(parsed) ? parsed : null;
@@ -1344,7 +1407,17 @@ class SocketManager {
             return this.chatListCache.items;
         }
 
-        const chats = await waClient.getChats();
+        let chats = [];
+        try {
+            chats = await waClient.getChats();
+        } catch (error) {
+            if (this.chatListCache.items.length > 0) {
+                console.warn(`[WA] getChats failed; using cache (${this.chatListCache.items.length} chats).`, String(error?.message || error));
+                return this.chatListCache.items;
+            }
+            throw error;
+        }
+
         const sortedChats = [...chats]
             .filter((c) => isVisibleChatId(c?.id?._serialized))
             .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
@@ -1355,7 +1428,6 @@ class SocketManager {
         };
         return sortedChats;
     }
-
     getCachedChatMeta(chatId) {
         const key = String(chatId || '');
         const cached = this.chatMetaCache.get(key);
@@ -2218,10 +2290,8 @@ class SocketManager {
                                 wooConfigured: isWooConfigured(),
                                 wooAvailable: false
                             };
-                            console.log(`[Catalog] Loaded ${catalog.length} native products.`);
                         }
                     } catch (e) {
-                        console.log('[Catalog] Native fetch failed.', e.message);
                     }
 
                     if (!catalog.length) {
@@ -2237,7 +2307,6 @@ class SocketManager {
                                 wooStatus: wooResult.status,
                                 wooReason: wooResult.reason
                             };
-                            console.log(`[Catalog] Loaded ${catalog.length} products from WooCommerce (${wooResult.source}).`);
                         } else {
                             catalogMeta = {
                                 ...catalogMeta,
@@ -2247,7 +2316,6 @@ class SocketManager {
                                 wooStatus: wooResult.status,
                                 wooReason: wooResult.reason
                             };
-                            console.log(`[Catalog] WooCommerce unavailable/empty (${wooResult.source}): ${wooResult.reason || 'sin detalle'}`);
                         }
                     }
 
@@ -2260,9 +2328,20 @@ class SocketManager {
                             wooConfigured: isWooConfigured(),
                             wooAvailable: false
                         };
-                        console.log('[Catalog] Using local catalog fallback.');
                     }
 
+
+                    const catalogCategories = Array.from(new Set(
+                        (catalog || [])
+                            .flatMap((item) => extractCatalogItemCategories(item))
+                            .map((entry) => String(entry || '').trim())
+                            .filter(Boolean)
+                    )).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+                    catalogMeta = {
+                        ...catalogMeta,
+                        categories: catalogCategories
+                    };
+                    logCatalogDebugSnapshot({ catalog, catalogMeta });
                     socket.emit('business_data', { profile, labels, catalog, catalogMeta });
                 } catch (e) {
                     console.error('Error fetching business data:', e);

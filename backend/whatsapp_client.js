@@ -2,6 +2,21 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const EventEmitter = require('events');
 
+const TRANSIENT_PROTOCOL_PATTERNS = [
+    'Promise was collected',
+    'Execution context was destroyed',
+    'Cannot find context with specified id',
+    'Target closed',
+    'Session closed',
+];
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+const isTransientProtocolError = (error) => {
+    const message = String(error?.message || error || '');
+    if (!message) return false;
+    return TRANSIENT_PROTOCOL_PATTERNS.some((pattern) => message.includes(pattern));
+};
+
 class WhatsAppClient extends EventEmitter {
     constructor() {
         super();
@@ -92,9 +107,24 @@ class WhatsAppClient extends EventEmitter {
 
     async getChats() {
         if (!this.isReady) return [];
-        return await this.client.getChats();
-    }
+        const maxAttempts = Math.max(1, Number(process.env.WA_GET_CHATS_RETRIES || 3));
+        let lastError = null;
 
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            try {
+                return await this.client.getChats();
+            } catch (error) {
+                lastError = error;
+                const shouldRetry = isTransientProtocolError(error) && attempt < maxAttempts;
+                if (!shouldRetry) throw error;
+                const waitMs = Math.min(1800, 250 * attempt);
+                console.warn(`[WA] getChats transient failure (${attempt}/${maxAttempts}): ${String(error?.message || error)}. Retrying in ${waitMs}ms...`);
+                await wait(waitMs);
+            }
+        }
+
+        throw lastError;
+    }
     async getMessages(chatId, limit = 40) {
         if (!this.isReady) return [];
         const chat = await this.client.getChatById(chatId);
@@ -279,3 +309,4 @@ class WhatsAppClient extends EventEmitter {
 }
 
 module.exports = new WhatsAppClient();
+
