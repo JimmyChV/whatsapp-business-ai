@@ -456,18 +456,40 @@ const MessageBubble = ({
     const rawOrderNote = String(actionOrder?.rawPreview?.body || '').trim();
     const safeOrderNote = isLikelyBinaryBody(rawOrderNote) ? '' : rawOrderNote;
     const orderSubtotalLabel = formatOrderMoney(actionOrder?.subtotal, actionOrder?.currency || 'PEN');
+    const quoteSummaryRaw = isQuotePayload
+        ? (actionOrder?.rawPreview?.quoteSummary || quotePaymentFromBody || null)
+        : null;
+    const quoteCurrency = actionOrder?.currency || 'PEN';
+    const quoteSubtotal = parseOrderMoneyValue(quoteSummaryRaw?.subtotal ?? actionOrder?.subtotal);
+    const quoteDiscount = parseOrderMoneyValue(quoteSummaryRaw?.discount);
+    const quoteTotalAfterDiscount = parseOrderMoneyValue(quoteSummaryRaw?.totalAfterDiscount)
+        ?? ((Number.isFinite(quoteSubtotal) && Number.isFinite(quoteDiscount))
+            ? Math.max(0, Math.round((quoteSubtotal - quoteDiscount) * 100) / 100)
+            : null);
+    const quoteDelivery = parseOrderMoneyValue(quoteSummaryRaw?.deliveryAmount);
+    const quoteTotalPayable = parseOrderMoneyValue(quoteSummaryRaw?.totalPayable)
+        ?? ((Number.isFinite(quoteTotalAfterDiscount) && Number.isFinite(quoteDelivery))
+            ? Math.max(0, Math.round((quoteTotalAfterDiscount + quoteDelivery) * 100) / 100)
+            : null);
+    const quoteSubtotalLabel = formatOrderMoney(quoteSubtotal, quoteCurrency);
+    const quoteDiscountLabel = formatOrderMoney(quoteDiscount, quoteCurrency);
+    const quoteTotalAfterDiscountLabel = formatOrderMoney(quoteTotalAfterDiscount, quoteCurrency);
+    const quoteDeliveryLabel = quoteSummaryRaw?.deliveryFree
+        ? 'Gratuito'
+        : formatOrderMoney(quoteDelivery, quoteCurrency);
+    const quoteTotalPayableLabel = formatOrderMoney(quoteTotalPayable, quoteCurrency);
     const locationData = resolveLocationData(msg);
     const isLocationMessage = Boolean(locationData);
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [webPreview, setWebPreview] = useState(null);
     const [webPreviewLoading, setWebPreviewLoading] = useState(false);
 
-    const shouldHideBodyForOrder = hasOrder && isLikelyBinaryBody(messageBodyText);
+    const shouldHideBodyForOrder = isQuotePayload || (hasOrder && isLikelyBinaryBody(messageBodyText));
     const messageTextToRender = isCatalogItem
         ? 'Te gustaria que te lo separemos?'
         : ((isLocationMessage && locationData?.source === 'native') ? '' : (shouldHideBodyForOrder ? '' : (msg.body || '')));
     const firstNonMapUrl = extractFirstNonMapUrlFromText(messageBodyText);
-    const showWebPreview = Boolean(firstNonMapUrl && !isLocationMessage && !msg?.hasMedia && !hasOrder && !isCatalogItem);
+    const showWebPreview = Boolean(firstNonMapUrl && !isLocationMessage && !msg?.hasMedia && !hasOrder && !isCatalogItem && !isOrderActionable);
 
     useEffect(() => {
         if (!showWebPreview || !firstNonMapUrl) {
@@ -644,7 +666,7 @@ const MessageBubble = ({
                     marginBottom: '6px'
                 }}>
                     <div style={{ fontSize: '0.78rem', color: '#00a884', fontWeight: 700, marginBottom: '4px' }}>
-                        {isProductPayload ? 'Producto compartido' : 'Carrito/Pedido del cliente'}
+                        {isProductPayload ? 'Producto compartido' : (isQuotePayload ? 'Cotizacion' : 'Carrito/Pedido del cliente')}
                     </div>
                     {actionOrder?.orderId && (
                         <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '2px' }}>ID: {actionOrder.orderId}</div>
@@ -654,12 +676,61 @@ const MessageBubble = ({
                             {firstOrderItem.name}
                         </div>
                     )}
-                    {orderSubtotalLabel && (
+                    {orderSubtotalLabel && !isQuotePayload && (
                         <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>Subtotal: {orderSubtotalLabel}</div>
                     )}
                     {isProductPayload ? (
                         <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>
                             Puedes anadir este producto al carrito para cotizarlo.
+                        </div>
+                    ) : isQuotePayload ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ fontSize: '0.75rem', color: '#9bb0ba', marginTop: '1px' }}>Detalle de productos:</div>
+                            {orderItems.length > 0 ? orderItems.slice(0, 40).map((item, idx) => {
+                                const itemQty = Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1;
+                                return (
+                                    <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                        - {itemQty} {item?.name || 'Producto'}
+                                    </div>
+                                );
+                            }) : (
+                                <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>No se pudo leer el detalle de productos.</div>
+                            )}
+                            {(quoteSubtotalLabel || quoteDiscountLabel || quoteTotalAfterDiscountLabel || quoteDeliveryLabel || quoteTotalPayableLabel) && (
+                                <>
+                                    <div style={{ fontSize: '0.75rem', color: '#9bb0ba', marginTop: '6px' }}>Detalle de pago:</div>
+                                    {quoteSubtotalLabel && (
+                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                            <span>Subtotal</span>
+                                            <strong>{quoteSubtotalLabel}</strong>
+                                        </div>
+                                    )}
+                                    {quoteDiscountLabel && (
+                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                            <span>Descuento</span>
+                                            <strong>- {quoteDiscountLabel}</strong>
+                                        </div>
+                                    )}
+                                    {quoteTotalAfterDiscountLabel && (
+                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                            <span>Total con descuento</span>
+                                            <strong>{quoteTotalAfterDiscountLabel}</strong>
+                                        </div>
+                                    )}
+                                    {quoteDeliveryLabel && (
+                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                            <span>Delivery</span>
+                                            <strong>{quoteDeliveryLabel}</strong>
+                                        </div>
+                                    )}
+                                    {quoteTotalPayableLabel && (
+                                        <div style={{ fontSize: '0.82rem', color: '#e8fbf3', display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '2px' }}>
+                                            <span style={{ fontWeight: 700 }}>TOTAL A PAGAR</span>
+                                            <strong style={{ fontWeight: 800 }}>{quoteTotalPayableLabel}</strong>
+                                        </div>
+                                    )}
+                                </>
+                            )}
                         </div>
                     ) : orderItems.length > 0 ? orderItems.slice(0, 16).map((item, idx) => {
                         const itemAmount = formatOrderMoney(item?.lineTotal ?? item?.price, actionOrder?.currency || 'PEN');
@@ -673,12 +744,12 @@ const MessageBubble = ({
                     }) : (
                         <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>Se recibio un pedido desde catalogo de WhatsApp.</div>
                     )}
-                    {!isProductPayload && safeOrderNote && (
+                    {!isProductPayload && !isQuotePayload && safeOrderNote && (
                         <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '6px' }}>
                             Nota cliente: {safeOrderNote}
                         </div>
                     )}
-                    {!isProductPayload && actionOrder?.rawPreview?.itemCount && (
+                    {!isProductPayload && !isQuotePayload && actionOrder?.rawPreview?.itemCount && (
                         <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '2px' }}>
                             Items reportados: {actionOrder.rawPreview.itemCount}
                         </div>

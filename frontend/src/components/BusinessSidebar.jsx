@@ -992,14 +992,41 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
         setShowOrderAdjustments(true);
         setActiveTab('cart');
 
+        let quoteDiscountAmount = 0;
+        let includedDiscountFromCatalog = 0;
+        let reconstructedGlobalDiscount = 0;
+
         if (isQuoteImport && quoteSummary) {
-            const quoteDiscountAmount = Math.max(0, parseMoney(quoteSummary?.discount ?? 0, 0));
+            const parseMaybe = (value) => {
+                const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+                return Number.isFinite(parsed) ? parsed : null;
+            };
+
+            const summaryDiscount = parseMaybe(quoteSummary?.discount);
+            const summarySubtotal = parseMaybe(quoteSummary?.subtotal);
+            const summaryTotalAfterDiscount = parseMaybe(quoteSummary?.totalAfterDiscount);
+            quoteDiscountAmount = Number.isFinite(summaryDiscount)
+                ? Math.max(0, summaryDiscount)
+                : (Number.isFinite(summarySubtotal) && Number.isFinite(summaryTotalAfterDiscount)
+                    ? Math.max(0, roundMoney(summarySubtotal - summaryTotalAfterDiscount))
+                    : 0);
+
+            includedDiscountFromCatalog = roundMoney(importedCart.reduce((sum, item) => {
+                const qty = Math.max(1, Math.round(parseMoney(item?.qty, 1) || 1));
+                const unitPrice = Math.max(0, parseMoney(item?.price, 0));
+                const regularPrice = Math.max(unitPrice, parseMoney(item?.regularPrice ?? item?.price, unitPrice));
+                const lineIncluded = Math.max(0, roundMoney((regularPrice - unitPrice) * qty));
+                return sum + lineIncluded;
+            }, 0));
+
+            reconstructedGlobalDiscount = roundMoney(Math.max(0, quoteDiscountAmount - includedDiscountFromCatalog));
+
             const quoteDeliveryAmount = Math.max(0, parseMoney(quoteSummary?.deliveryAmount ?? 0, 0));
             const quoteDeliveryFree = Boolean(quoteSummary?.deliveryFree) || quoteDeliveryAmount <= 0;
 
-            setGlobalDiscountEnabled(quoteDiscountAmount > 0);
+            setGlobalDiscountEnabled(reconstructedGlobalDiscount > 0);
             setGlobalDiscountType('amount');
-            setGlobalDiscountValue(quoteDiscountAmount > 0 ? quoteDiscountAmount : 0);
+            setGlobalDiscountValue(reconstructedGlobalDiscount > 0 ? reconstructedGlobalDiscount : 0);
             setDeliveryType(quoteDeliveryFree ? 'free' : 'amount');
             setDeliveryAmount(quoteDeliveryFree ? 0 : quoteDeliveryAmount);
         }
@@ -1011,8 +1038,9 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
             isProductImport ? 'Producto agregado al carrito (+1)' : `Pedido cargado al carrito: ${importedCart.length} productos`,
             isProductImport ? null : `(items reportados: ${reportedItems})`,
             usedTitleFallback ? 'origen: titulo del pedido' : null,
-            isQuoteImport && quoteSummary?.discount ? `descuento detectado: S/ ${formatMoney(parseMoney(quoteSummary.discount, 0))}` : null,
-            isQuoteImport ? 'descuento aplicado como GLOBAL' : null,
+            isQuoteImport && quoteSummary ? `descuento detectado: S/ ${formatMoney(quoteDiscountAmount)}` : null,
+            isQuoteImport && includedDiscountFromCatalog > 0 ? `descuento kit/base: S/ ${formatMoney(includedDiscountFromCatalog)}` : null,
+            isQuoteImport ? `descuento global aplicado: S/ ${formatMoney(reconstructedGlobalDiscount)}` : null,
             matchedBySku > 0 ? `SKU: ${matchedBySku}` : null,
             matchedByName > 0 ? `nombre: ${matchedByName}` : null,
             fallbackLines > 0 ? `sin match: ${fallbackLines}` : null,
