@@ -12,6 +12,9 @@ const authService = require('./auth_service');
 const auditLogService = require('./audit_log_service');
 const tenantService = require('./tenant_service');
 const tenantSettingsService = require('./tenant_settings_service');
+const saasControlService = require('./saas_control_plane_service');
+const planLimitsService = require('./plan_limits_service');
+const aiUsageService = require('./ai_usage_service');
 const messageHistoryService = require('./message_history_service');
 const opsTelemetry = require('./ops_telemetry');
 
@@ -543,6 +546,319 @@ app.get('/api/tenant/me', (req, res) => {
         ok: true,
         tenant: req.tenantContext || tenantService.DEFAULT_TENANT
     });
+});
+
+function getAuthRole(req = {}) {
+    return String(req?.authContext?.user?.role || '').trim().toLowerCase();
+}
+
+function getAllowedTenantIdsFromAuth(req = {}) {
+    const memberships = Array.isArray(req?.authContext?.user?.memberships)
+        ? req.authContext.user.memberships
+        : [];
+    const allowed = memberships
+        .map((membership) => String(membership?.tenantId || '').trim())
+        .filter(Boolean);
+
+    if (!allowed.length) {
+        const fallback = String(req?.authContext?.user?.tenantId || req?.tenantContext?.id || '').trim();
+        if (fallback) return [fallback];
+    }
+
+    return Array.from(new Set(allowed));
+}
+
+function hasSaasControlReadAccess(req = {}) {
+    if (!authService.isAuthEnabled()) return true;
+    const authContext = req.authContext || { isAuthenticated: false, user: null };
+    if (!authContext.isAuthenticated || !authContext.user) return false;
+    const role = getAuthRole(req);
+    return Boolean(authContext.user?.isSuperAdmin || role === 'owner' || role === 'admin');
+}
+
+function hasSaasControlWriteAccess(req = {}, { requireSuperAdmin = false } = {}) {
+    if (!authService.isAuthEnabled()) return true;
+    const authContext = req.authContext || { isAuthenticated: false, user: null };
+    if (!authContext.isAuthenticated || !authContext.user) return false;
+
+    if (requireSuperAdmin) return Boolean(authContext.user?.isSuperAdmin);
+    if (authContext.user?.isSuperAdmin) return true;
+
+    const role = getAuthRole(req);
+    return role === 'owner';
+}
+
+function isTenantAllowedForUser(req = {}, tenantId = '') {
+    const cleanTenantId = String(tenantId || '').trim();
+    if (!cleanTenantId) return false;
+    if (req?.authContext?.user?.isSuperAdmin) return true;
+    const allowed = getAllowedTenantIdsFromAuth(req);
+    return allowed.includes(cleanTenantId);
+}
+
+function filterAdminOverviewByScope(req = {}, overview = {}) {
+    if (req?.authContext?.user?.isSuperAdmin) return overview;
+
+    const allowed = new Set(getAllowedTenantIdsFromAuth(req));
+    const tenants = Array.isArray(overview?.tenants)
+        ? overview.tenants.filter((tenant) => allowed.has(String(tenant?.id || '').trim()))
+        : [];
+    const users = Array.isArray(overview?.users)
+        ? overview.users.filter((user) => (Array.isArray(user?.memberships) ? user.memberships : []).some((membership) => allowed.has(String(membership?.tenantId || '').trim())))
+        : [];
+    const metrics = Array.isArray(overview?.metrics)
+        ? overview.metrics.filter((item) => allowed.has(String(item?.tenantId || '').trim()))
+        : [];
+
+    return { tenants, users, metrics };
+}
+
+function sanitizeMembershipPayload(memberships = []) {
+    const source = Array.isArray(memberships) ? memberships : [];
+    return source
+        .map((item) => ({
+            tenantId: String(item?.tenantId || item?.tenant || item?.id || '').trim(),
+            role: String(item?.role || 'seller').trim().toLowerCase() || 'seller',
+            active: item?.active !== false
+        }))
+        .filter((item) => Boolean(item.tenantId));
+}
+
+app.get('/api/admin/saas/overview', async (req, res) => {
+    try {
+        if (!hasSaasControlReadAccess(req)) {
+            return res.status(403).json({ ok: false, error: 'No tienes permisos para ver el panel SaaS.' });
+        }
+
+        const overview = await saasControlService.getAdminOverview();
+        const scoped = filterAdminOverviewByScope(req, overview);
+        const aiUsage = await Promise.all((scoped.tenants || []).map(async (tenant) => ({
+            tenantId: tenant.id,
+            monthKey: aiUsageService.currentMonthKey(),
+            requests: await aiUsageService.getMonthlyUsage(tenant.id)
+        })));
+
+        return res.json({ ok: true, ...scoped, aiUsage });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: 'No se pudo cargar el panel SaaS.' });
+    }
+});
+
+app.get('/api/admin/saas/tenants', async (req, res) => {
+    try {
+        if (!hasSaasControlReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+        const tenants = await saasControlService.listTenants({ includeInactive: true });
+        const scoped = req?.authContext?.user?.isSuperAdmin
+            ? tenants
+            : tenants.filter((tenant) => isTenantAllowedForUser(req, tenant.id));
+
+        return res.json({ ok: true, items: scoped.map((tenant) => saasControlService.sanitizeTenantPublic(tenant)) });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: 'No se pudieron cargar las empresas.' });
+    }
+});
+
+app.post('/api/admin/saas/tenants', async (req, res) => {
+    try {
+        if (!hasSaasControlWriteAccess(req, { requireSuperAdmin: true })) {
+            return res.status(403).json({ ok: false, error: 'Solo superadmin puede crear empresas.' });
+        }
+
+        const payload = req.body && typeof req.body === 'object' ? req.body : {};
+        const snapshot = await saasControlService.createTenant(payload);
+        const createdId = String(payload.id || payload.tenantId || '').trim();
+        const tenant = Array.isArray(snapshot?.tenants) ? snapshot.tenants.find((item) => item.id === createdId) : null;
+
+        return res.status(201).json({ ok: true, tenant: tenant ? saasControlService.sanitizeTenantPublic(tenant) : null });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear empresa.') });
+    }
+});
+
+app.put('/api/admin/saas/tenants/:tenantId', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasSaasControlWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    if (!isTenantAllowedForUser(req, tenantId) && !req?.authContext?.user?.isSuperAdmin) return res.status(403).json({ ok: false, error: 'No tienes acceso a esta empresa.' });
+
+    try {
+        const payload = req.body && typeof req.body === 'object' ? req.body : {};
+        const snapshot = await saasControlService.updateTenant(tenantId, payload);
+        const tenant = Array.isArray(snapshot?.tenants) ? snapshot.tenants.find((item) => item.id === tenantId) : null;
+        return res.json({ ok: true, tenant: tenant ? saasControlService.sanitizeTenantPublic(tenant) : null });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar empresa.') });
+    }
+});
+
+app.delete('/api/admin/saas/tenants/:tenantId', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasSaasControlWriteAccess(req, { requireSuperAdmin: true })) return res.status(403).json({ ok: false, error: 'Solo superadmin puede eliminar empresas.' });
+
+    try {
+        await saasControlService.deleteTenant(tenantId);
+        return res.json({ ok: true });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar empresa.') });
+    }
+});
+
+app.get('/api/admin/saas/users', async (req, res) => {
+    try {
+        if (!hasSaasControlReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+        const tenantId = String(req.query?.tenantId || '').trim();
+        if (tenantId && !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No tienes acceso a ese tenant.' });
+
+        const users = await saasControlService.listUsers({ includeInactive: true, tenantId: tenantId || '' });
+        const scoped = req?.authContext?.user?.isSuperAdmin
+            ? users
+            : users.filter((user) => (Array.isArray(user?.memberships) ? user.memberships : []).some((membership) => isTenantAllowedForUser(req, membership?.tenantId)));
+
+        return res.json({ ok: true, items: scoped.map((user) => saasControlService.sanitizeUserPublic(user)) });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: 'No se pudieron cargar usuarios.' });
+    }
+});
+
+app.post('/api/admin/saas/users', async (req, res) => {
+    try {
+        if (!hasSaasControlWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para crear usuarios.' });
+
+        const payload = req.body && typeof req.body === 'object' ? { ...req.body } : {};
+        payload.memberships = sanitizeMembershipPayload(payload.memberships);
+
+        if (!req?.authContext?.user?.isSuperAdmin) {
+            const invalid = (payload.memberships || []).some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
+            if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar tenants fuera de tu alcance.' });
+        }
+
+        const snapshot = await saasControlService.createUser(payload);
+        const user = Array.isArray(snapshot?.users)
+            ? snapshot.users.find((item) => item.email === String(payload.email || '').trim().toLowerCase())
+            : null;
+        return res.status(201).json({ ok: true, user: user ? saasControlService.sanitizeUserPublic(user) : null });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear usuario.') });
+    }
+});
+
+app.put('/api/admin/saas/users/:userId', async (req, res) => {
+    try {
+        if (!hasSaasControlWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para editar usuarios.' });
+        const userId = String(req.params?.userId || '').trim();
+        if (!userId) return res.status(400).json({ ok: false, error: 'userId invalido.' });
+
+        const payload = req.body && typeof req.body === 'object' ? { ...req.body } : {};
+        if (payload.memberships) payload.memberships = sanitizeMembershipPayload(payload.memberships);
+
+        if (!req?.authContext?.user?.isSuperAdmin && Array.isArray(payload.memberships)) {
+            const invalid = payload.memberships.some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
+            if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar tenants fuera de tu alcance.' });
+        }
+
+        const snapshot = await saasControlService.updateUser(userId, payload);
+        const user = Array.isArray(snapshot?.users) ? snapshot.users.find((item) => item.id === userId) : null;
+        return res.json({ ok: true, user: user ? saasControlService.sanitizeUserPublic(user) : null });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar usuario.') });
+    }
+});
+
+app.put('/api/admin/saas/users/:userId/memberships', async (req, res) => {
+    try {
+        if (!hasSaasControlWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para editar membresias.' });
+        const userId = String(req.params?.userId || '').trim();
+        if (!userId) return res.status(400).json({ ok: false, error: 'userId invalido.' });
+
+        const memberships = sanitizeMembershipPayload(req.body?.memberships || []);
+        if (!memberships.length) return res.status(400).json({ ok: false, error: 'Debes enviar al menos una membresia.' });
+
+        if (!req?.authContext?.user?.isSuperAdmin) {
+            const invalid = memberships.some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
+            if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar tenants fuera de tu alcance.' });
+        }
+
+        const snapshot = await saasControlService.setUserMemberships(userId, memberships);
+        const user = Array.isArray(snapshot?.users) ? snapshot.users.find((item) => item.id === userId) : null;
+        return res.json({ ok: true, user: user ? saasControlService.sanitizeUserPublic(user) : null });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar membresias.') });
+    }
+});
+
+app.delete('/api/admin/saas/users/:userId', async (req, res) => {
+    try {
+        if (!hasSaasControlWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para eliminar usuarios.' });
+        const userId = String(req.params?.userId || '').trim();
+        if (!userId) return res.status(400).json({ ok: false, error: 'userId invalido.' });
+
+        await saasControlService.deleteUser(userId);
+        return res.json({ ok: true });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar usuario.') });
+    }
+});
+
+app.get('/api/admin/saas/plans', (req, res) => {
+    if (!hasSaasControlReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    return res.json({
+        ok: true,
+        plans: Object.keys(planLimitsService.DEFAULT_LIMITS).map((plan) => ({
+            id: plan,
+            limits: planLimitsService.getPlanLimits(plan)
+        }))
+    });
+});
+
+app.get('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasSaasControlReadAccess(req) || !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const settings = await tenantSettingsService.getTenantSettings(tenantId);
+        return res.json({ ok: true, tenantId, settings });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: 'No se pudo cargar configuracion del tenant.' });
+    }
+});
+
+app.put('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasSaasControlWriteAccess(req) || !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const patch = req.body && typeof req.body === 'object' ? req.body : {};
+        const settings = await tenantSettingsService.updateTenantSettings(tenantId, patch);
+        return res.json({ ok: true, tenantId, settings });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar configuracion del tenant.') });
+    }
+});
+
+app.get('/api/admin/saas/tenants/:tenantId/runtime', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasSaasControlReadAccess(req) || !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const runtime = typeof waClient.getRuntimeInfo === 'function'
+            ? waClient.getRuntimeInfo()
+            : { requestedTransport: 'idle', activeTransport: 'idle' };
+        const aiUsage = await aiUsageService.getMonthlyUsage(tenantId);
+        return res.json({
+            ok: true,
+            tenantId,
+            runtime,
+            aiUsage: { monthKey: aiUsageService.currentMonthKey(), requests: aiUsage }
+        });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: 'No se pudo obtener runtime del tenant.' });
+    }
 });
 
 function hasTenantSettingsWriteAccess(req) {
@@ -1160,6 +1476,10 @@ function registerProcessHandlers() {
 const PORT = process.env.PORT || 3001;
 
 registerProcessHandlers();
+
+saasControlService.ensureLoaded().catch((error) => {
+    logger.warn('[SaaS] no se pudo precargar control plane: ' + String(error?.message || error));
+});
 
 server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
