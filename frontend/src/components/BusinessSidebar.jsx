@@ -166,6 +166,17 @@ const formatPhoneForDisplay = (value = '') => {
     return normalized.startsWith('+') ? normalized : `+${normalized}`;
 };
 
+const normalizeDigits = (value = '') => String(value || '').replace(/\D/g, '');
+const isLikelyPhoneDigits = (value = '') => {
+    const digits = normalizeDigits(value);
+    return digits.length >= 8 && digits.length <= 15;
+};
+const looksLikeInternalId = (value = '') => {
+    const text = String(value || '').trim();
+    if (!text) return false;
+    return text.includes('@') || /^\d{14,}$/.test(text);
+};
+
 const formatBoolValue = (value) => (value ? 'Si' : 'No');
 
 const formatTimestampValue = (value) => {
@@ -184,7 +195,7 @@ const avatarColorForName = (name) => {
 // =========================================================
 // CLIENT PROFILE PANEL
 // =========================================================
-export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction, panelRef }) => {
+export const ClientProfilePanel = ({ contact, chats = [], onClose, onQuickAiAction, panelRef }) => {
     if (!contact) return null;
 
     const displayName = firstValue(contact.name, contact.pushname, contact.shortName, 'Contacto');
@@ -192,6 +203,62 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction, panelRef
     const rawPhone = firstValue(contact.phone, contact.number, contact.user, fallbackPhone);
     const displayPhone = formatPhoneForDisplay(rawPhone);
     const accountType = contact.isBusiness ? 'Business' : 'Personal';
+    const participantNameMap = new Map();
+    if (Array.isArray(chats)) {
+        chats.forEach((chat) => {
+            const rawName = firstValue(chat?.name, chat?.pushname, chat?.shortName, '');
+            const safeName = sanitizeProfileText(rawName);
+            if (!safeName || looksLikeInternalId(safeName)) return;
+
+            const candidates = [
+                chat?.phone,
+                chat?.number,
+                chat?.user,
+                String(chat?.id || '').split('@')[0]
+            ];
+
+            candidates.forEach((candidate) => {
+                const digits = normalizeDigits(candidate);
+                if (!isLikelyPhoneDigits(digits)) return;
+                if (!participantNameMap.has(digits)) participantNameMap.set(digits, safeName);
+            });
+        });
+    }
+
+    const isDisplayPhoneLike = (value = '') => /^\+?\d{8,}$/.test(String(value || '').trim());
+
+    const participantsList = (Array.isArray(contact.participantsList)
+        ? contact.participantsList.filter((participant) => participant && participant.id)
+        : []).map((participant) => {
+            const phoneDigits = normalizeDigits(participant.phone || String(participant.id || '').split('@')[0] || '');
+            const mappedName = sanitizeProfileText(participantNameMap.get(phoneDigits) || '');
+            const waName = sanitizeProfileText(participant.name || '');
+            const waDisplayName = sanitizeProfileText(participant.displayName || '');
+            const waPushname = sanitizeProfileText(participant.pushname || '');
+            const waShortName = sanitizeProfileText(participant.shortName || '');
+            const preferredMappedName = (!mappedName || looksLikeInternalId(mappedName) || isDisplayPhoneLike(mappedName)) ? '' : mappedName;
+            const displayName = firstValue(
+                waDisplayName && !looksLikeInternalId(waDisplayName) ? waDisplayName : '',
+                waName && !looksLikeInternalId(waName) ? waName : '',
+                waPushname && !looksLikeInternalId(waPushname) ? waPushname : '',
+                waShortName && !looksLikeInternalId(waShortName) ? waShortName : '',
+                preferredMappedName,
+                phoneDigits ? `+${phoneDigits}` : '',
+                participant.id
+            );
+
+            return {
+                ...participant,
+                phone: phoneDigits || null,
+                displayName: displayName || 'Participante'
+            };
+        });
+    const participantsCount = Number(
+        contact.participants
+        || contact.chatState?.participantsCount
+        || participantsList.length
+        || 0
+    ) || 0;
 
     const infoRows = [
         ['Nombre', displayName],
@@ -208,8 +275,8 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction, panelRef
         ['No leidos', String(contact.chatState?.unreadCount ?? 0)],
         ['Ultima actividad', formatTimestampValue(contact.chatState?.timestamp)],
     ];
-    if (contact.isGroup && Number(contact.chatState?.participantsCount || 0) > 0) {
-        chatStateRows.push(['Participantes', String(contact.chatState?.participantsCount || 0)]);
+    if (contact.isGroup) {
+        chatStateRows.push(['Participantes', String(participantsCount)]);
     }
 
     const businessRows = [
@@ -296,6 +363,36 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction, panelRef
                     </div>
                 </div>
 
+                {contact.isGroup && (
+                    <div className="client-profile-card">
+                        <div className="client-profile-card-title">Participantes del grupo</div>
+                        {participantsList.length > 0 ? (
+                            <div className="client-profile-participants-list">
+                                {participantsList.map((participant) => {
+                                    const participantName = firstValue(participant.displayName, participant.name, participant.phone ? `+${participant.phone}` : '', participant.id);
+                                    const participantPhone = participant.phone ? `+${participant.phone}` : '';
+                                    return (
+                                        <div key={participant.id} className="client-profile-participant-item">
+                                            <div className="client-profile-participant-main">
+                                                <span className="client-profile-participant-name">{participantName}</span>
+                                                {participantPhone && (
+                                                    <span className="client-profile-participant-phone">{participantPhone}</span>
+                                                )}
+                                            </div>
+                                            <div className="client-profile-participant-tags">
+                                                {participant.isMe && <span className="client-profile-participant-tag me">Tu</span>}
+                                                {participant.isSuperAdmin && <span className="client-profile-participant-tag admin">Superadmin</span>}
+                                                {!participant.isSuperAdmin && participant.isAdmin && <span className="client-profile-participant-tag admin">Admin</span>}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div className="client-profile-participant-empty">No se pudieron cargar participantes de este grupo.</div>
+                        )}
+                    </div>
+                )}
                 {businessRows.length > 0 && (
                     <div className="client-profile-card">
                         <div className="client-profile-card-title">Perfil Business (WhatsApp)</div>

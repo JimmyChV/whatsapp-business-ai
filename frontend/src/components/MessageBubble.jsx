@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import moment from 'moment';
-import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown } from 'lucide-react';
+import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, FileText, FileSpreadsheet, FileArchive, FileType2, Download } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const linkPreviewCache = new Map();
@@ -402,6 +402,214 @@ const resolveLocationData = (msg = {}) => {
         source
     };
 };
+const GROUP_SENDER_COLORS = [
+    '#53bdeb', // azul
+    '#ff8f8f', // coral
+    '#7bc48f', // verde suave
+    '#e6a45c', // naranja
+    '#b39ddb', // lavanda
+    '#4dd0c8', // turquesa
+    '#f48fb1', // rosa
+    '#81c784', // verde
+    '#90caf9', // celeste
+    '#ffd54f', // amarillo
+];
+
+const getStableHash = (seed = '') => {
+    const source = String(seed || '');
+    if (!source) return 0;
+    let hash = 0;
+    for (let i = 0; i < source.length; i += 1) {
+        hash = ((hash << 5) - hash) + source.charCodeAt(i);
+        hash |= 0;
+    }
+    return Math.abs(hash);
+};
+
+const getGroupSenderColor = (seed = '') => {
+    if (!seed) return '#7de6d2';
+    const idx = getStableHash(seed) % GROUP_SENDER_COLORS.length;
+    return GROUP_SENDER_COLORS[idx] || '#7de6d2';
+};
+
+
+const formatFileSizeLabel = (bytes = null) => {
+    const value = Number(bytes);
+    if (!Number.isFinite(value) || value <= 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let size = value;
+    let idx = 0;
+    while (size >= 1024 && idx < units.length - 1) {
+        size /= 1024;
+        idx += 1;
+    }
+    const decimals = size >= 100 || idx === 0 ? 0 : (size >= 10 ? 1 : 2);
+    return String(size.toFixed(decimals) + ' ' + units[idx]);
+};
+
+const guessExtensionFromMime = (mime = '') => {
+    const type = String(mime || '').toLowerCase();
+    if (!type) return '';
+    if (type.includes('pdf')) return 'pdf';
+    if (type.includes('wordprocessingml')) return 'docx';
+    if (type.includes('msword')) return 'doc';
+    if (type.includes('spreadsheetml')) return 'xlsx';
+    if (type.includes('ms-excel') || type.includes('excel')) return 'xls';
+    if (type.includes('presentationml')) return 'pptx';
+    if (type.includes('ms-powerpoint') || type.includes('powerpoint')) return 'ppt';
+    if (type.includes('csv')) return 'csv';
+    if (type.includes('zip')) return 'zip';
+    if (type.includes('rar')) return 'rar';
+    if (type.includes('7z')) return '7z';
+    if (type.includes('text/plain')) return 'txt';
+    if (type.includes('json')) return 'json';
+    if (type.includes('xml')) return 'xml';
+    if (type.includes('video/mp4')) return 'mp4';
+    if (type.includes('audio/mpeg')) return 'mp3';
+    if (type.includes('audio/ogg')) return 'ogg';
+    if (type.includes('application/octet-stream')) return 'bin';
+    return '';
+};
+
+const getFileExtensionFromName = (filename = '') => {
+    const safe = String(filename || '').trim();
+    if (!safe.includes('.')) return '';
+    const ext = safe.split('.').pop();
+    return String(ext || '').trim().toLowerCase();
+};
+
+const sanitizeAttachmentFilename = (value = '') => {
+    let text = String(value || '').trim();
+    if (!text) return null;
+    text = text
+        .replace(/\\/g, '/')
+        .split('/')
+        .filter(Boolean)
+        .pop() || '';
+    text = text.split('?')[0].split('#')[0].trim();
+    text = text
+        .replace(/[\u0000-\u001F]/g, '')
+        .replace(/[<>:"/\\|?*]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/^\.+|\.+$/g, '')
+        .trim();
+    if (!text) return null;
+    if (/^(null|undefined|\[object object\]|unknown)$/i.test(text)) return null;
+    return text;
+};
+
+const isGenericAttachmentFilename = (value = '') => {
+    const base = String(value || '').trim().toLowerCase().replace(/\.[a-z0-9]{1,8}$/i, '');
+    if (!base) return true;
+    return ['archivo', 'file', 'adjunto', 'attachment', 'document', 'documento', 'media', 'download', 'descarga', 'unknown'].includes(base);
+};
+
+const isMachineLikeAttachmentFilename = (value = '') => {
+    const base = String(value || '').trim().replace(/\.[a-z0-9]{1,8}$/i, '').replace(/\s+/g, '');
+    if (!base) return true;
+    if (/^\d{8,}$/.test(base)) return true;
+    if (/^[a-f0-9]{16,}$/i.test(base)) return true;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(base)) return true;
+    if (/^3EB0[A-F0-9]{8,}$/i.test(base)) return true;
+    return false;
+};
+
+const looksLikeFilenameText = (value = '') => {
+    const text = String(value || '').trim();
+    if (!text || text.length > 180) return false;
+    if (/[\r\n]/.test(text)) return false;
+    if (/^[A-Za-z0-9+/=]{160,}$/.test(text)) return false;
+    if (/\.[A-Za-z0-9]{1,8}$/.test(text)) return true;
+    return /^https?:\/\//i.test(text);
+};
+
+const extractFilenameFromBody = (msg = {}) => {
+    const body = String(msg?.body || '').trim();
+    if (!looksLikeFilenameText(body)) return null;
+    return sanitizeAttachmentFilename(body);
+};
+
+const getAttachmentKind = (mimetype = '', extension = '') => {
+    const type = String(mimetype || '').toLowerCase();
+    const ext = String(extension || '').toLowerCase();
+
+    if (type.includes('pdf') || ext === 'pdf') return { icon: 'pdf', label: 'Documento PDF', accentClass: 'is-pdf' };
+    if (type.includes('word') || ['doc', 'docx'].includes(ext)) return { icon: 'doc', label: 'Documento Word', accentClass: 'is-doc' };
+    if (type.includes('excel') || type.includes('spreadsheet') || ['xls', 'xlsx', 'csv'].includes(ext)) return { icon: 'sheet', label: 'Hoja de calculo', accentClass: 'is-sheet' };
+    if (type.includes('powerpoint') || type.includes('presentation') || ['ppt', 'pptx'].includes(ext)) return { icon: 'deck', label: 'Presentacion', accentClass: 'is-deck' };
+    if (type.includes('zip') || type.includes('rar') || type.includes('7z') || ['zip', 'rar', '7z'].includes(ext)) return { icon: 'archive', label: 'Archivo comprimido', accentClass: 'is-archive' };
+    if (type.startsWith('text/') || ['txt', 'json', 'xml'].includes(ext)) return { icon: 'text', label: 'Archivo de texto', accentClass: 'is-text' };
+    return { icon: 'file', label: 'Archivo adjunto', accentClass: 'is-generic' };
+};
+
+const buildAttachmentMeta = (msg = {}) => {
+    const mimetype = String(msg?.mimetype || '').toLowerCase();
+    const extFromMime = guessExtensionFromMime(mimetype);
+
+    const filenameFromMessage = sanitizeAttachmentFilename(msg?.filename);
+    const filenameFromBody = extractFilenameFromBody(msg);
+
+    let resolvedName = filenameFromMessage;
+    if ((!resolvedName || isGenericAttachmentFilename(resolvedName) || isMachineLikeAttachmentFilename(resolvedName)) && filenameFromBody) {
+        resolvedName = filenameFromBody;
+    }
+
+    if (resolvedName && !getFileExtensionFromName(resolvedName) && extFromMime) {
+        resolvedName = `${resolvedName}.${extFromMime}`;
+    }
+    if (resolvedName && (isGenericAttachmentFilename(resolvedName) || isMachineLikeAttachmentFilename(resolvedName)) && extFromMime) {
+        resolvedName = `documento.${extFromMime}`;
+    }
+    if (!resolvedName || isMachineLikeAttachmentFilename(resolvedName)) {
+        resolvedName = extFromMime ? `documento.${extFromMime}` : 'documento';
+    }
+
+    const extension = getFileExtensionFromName(resolvedName) || extFromMime;
+    const extensionBadge = extension ? extension.toUpperCase() : 'FILE';
+    const kind = getAttachmentKind(mimetype, extension);
+    const sizeLabel = formatFileSizeLabel(msg?.fileSizeBytes);
+
+    return {
+        filename: resolvedName,
+        displayName: resolvedName,
+        downloadFilename: resolvedName,
+        extensionBadge,
+        kindLabel: kind.label,
+        accentClass: kind.accentClass,
+        icon: kind.icon,
+        sizeLabel,
+        mimetype: mimetype || 'application/octet-stream'
+    };
+};
+const renderAttachmentIcon = (icon = 'file') => {
+    if (icon === 'pdf') return <FileText size={18} />;
+    if (icon === 'doc') return <FileText size={18} />;
+    if (icon === 'sheet') return <FileSpreadsheet size={18} />;
+    if (icon === 'deck') return <FileType2 size={18} />;
+    if (icon === 'archive') return <FileArchive size={18} />;
+    if (icon === 'text') return <FileText size={18} />;
+    return <FileType2 size={18} />;
+};
+const extractPhoneCandidatesFromText = (text = '') => {
+    const source = String(text || '');
+    if (!source) return [];
+
+    const rawMatches = source.match(/(?:\+?\d[\d\s()\-]{4,}\d)/g) || [];
+    const dedupe = new Set();
+    const phones = [];
+
+    rawMatches.forEach((entry) => {
+        const normalized = String(entry || '').replace(/\D/g, '');
+        if (normalized.length < 8 || normalized.length > 15) return;
+        if (/^(19|20)\d{6}$/.test(normalized)) return;
+        if (dedupe.has(normalized)) return;
+        dedupe.add(normalized);
+        phones.push(normalized);
+    });
+
+    return phones.slice(0, 4);
+};
 const MessageBubble = ({
     msg,
     onPrefillMessage,
@@ -410,12 +618,15 @@ const MessageBubble = ({
     isCurrentHighlighted = false,
     onOpenMedia,
     onOpenMap,
+    onOpenPhoneChat,
     onEditMessage,
     onReplyMessage,
     onForwardMessage,
     forwardChatOptions = [],
     activeChatId = null,
     canEditMessages = true,
+    showSenderName = false,
+    senderDisplayName = '',
 }) => {
     const isOut = msg.fromMe;
 
@@ -498,6 +709,7 @@ const MessageBubble = ({
         : ((isLocationMessage && locationData?.source === 'native') ? '' : (shouldHideBodyForOrder ? '' : (msg.body || '')));
     const firstNonMapUrl = extractFirstNonMapUrlFromText(messageBodyText);
     const showWebPreview = Boolean(firstNonMapUrl && !isLocationMessage && !msg?.hasMedia && !hasOrder && !isCatalogItem && !isOrderActionable);
+    const phoneCandidates = extractPhoneCandidatesFromText(messageTextToRender);
 
     useEffect(() => {
         if (!showWebPreview || !firstNonMapUrl) {
@@ -597,6 +809,128 @@ const MessageBubble = ({
     const mediaDataUrl = msg.hasMedia && msg.mediaData
         ? `data:${msg.mimetype || 'application/octet-stream'};base64,${msg.mediaData}`
         : null;
+
+    const hasBinaryAttachment = Boolean(
+        msg.hasMedia
+        && msg.mediaData
+        && !msg.mimetype?.startsWith('image/')
+        && !msg.mimetype?.startsWith('audio/')
+    );
+    const attachmentMeta = hasBinaryAttachment ? buildAttachmentMeta(msg) : null;
+    const canOpenAttachmentAsPdf = Boolean(attachmentMeta && (((attachmentMeta.mimetype || msg?.mimetype || '').toLowerCase().includes('pdf')) || getFileExtensionFromName(attachmentMeta.downloadFilename || attachmentMeta.filename || '').toLowerCase() === 'pdf'));
+    const normalizeBase64Payload = (value = '') => {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        const stripped = raw.replace(/^data:.*?;base64,/i, '');
+        const cleaned = stripped.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+        const remainder = cleaned.length % 4;
+        if (remainder === 0) return cleaned;
+        if (remainder === 2) return `${cleaned}==`;
+        if (remainder === 3) return `${cleaned}=`;
+        return cleaned;
+    };
+
+    const getAttachmentObjectUrl = () => {
+        if (!attachmentMeta || !msg?.mediaData) return null;
+        try {
+            const payload = normalizeBase64Payload(msg.mediaData);
+            if (!payload) return null;
+            const binary = window.atob(payload);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+            const blob = new Blob([bytes], {
+                type: attachmentMeta.mimetype || msg?.mimetype || 'application/octet-stream'
+            });
+            return URL.createObjectURL(blob);
+        } catch (e) {
+            return null;
+        }
+    };
+
+    const revokeObjectUrlLater = (url, delayMs = 120000) => {
+        if (!url) return;
+        window.setTimeout(() => {
+            try {
+                URL.revokeObjectURL(url);
+            } catch (e) { }
+        }, delayMs);
+    };
+
+    const handleOpenAttachment = (event) => {
+        event.preventDefault();
+        if (!canOpenAttachmentAsPdf) {
+            handleDownloadAttachment(event);
+            return;
+        }
+
+        const objectUrl = getAttachmentObjectUrl();
+        if (objectUrl) {
+            const opened = window.open(objectUrl, '_blank', 'noopener,noreferrer');
+            if (!opened) {
+                const link = document.createElement('a');
+                link.href = objectUrl;
+                link.target = '_blank';
+                link.rel = 'noreferrer';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+            }
+            revokeObjectUrlLater(objectUrl);
+            return;
+        }
+
+        if (mediaDataUrl) {
+            const fallback = document.createElement('a');
+            fallback.href = mediaDataUrl;
+            fallback.target = '_blank';
+            fallback.rel = 'noreferrer';
+            document.body.appendChild(fallback);
+            fallback.click();
+            fallback.remove();
+        }
+    };
+
+    const handleDownloadAttachment = (event) => {
+        event.preventDefault();
+        const objectUrl = getAttachmentObjectUrl();
+        const rawDownloadName = attachmentMeta?.downloadFilename || attachmentMeta?.filename || 'documento';
+        const fallbackExt = getFileExtensionFromName(rawDownloadName) || guessExtensionFromMime(attachmentMeta?.mimetype || msg?.mimetype || '');
+        const downloadName = (isGenericAttachmentFilename(rawDownloadName) || isMachineLikeAttachmentFilename(rawDownloadName))
+            ? (fallbackExt ? `documento.${fallbackExt}` : 'documento')
+            : rawDownloadName;
+
+        if (objectUrl) {
+            const link = document.createElement('a');
+            link.href = objectUrl;
+            link.download = downloadName;
+            link.rel = 'noreferrer';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            revokeObjectUrlLater(objectUrl, 30000);
+            return;
+        }
+
+        if (mediaDataUrl) {
+            const fallback = document.createElement('a');
+            fallback.href = mediaDataUrl;
+            fallback.download = downloadName;
+            fallback.rel = 'noreferrer';
+            document.body.appendChild(fallback);
+            fallback.click();
+            fallback.remove();
+        }
+    };
+
+    const messageSenderName = String(senderDisplayName || msg?.notifyName || msg?.senderPushname || '').trim();
+    const senderIdentityKey = String(
+        msg?.senderId
+        || msg?.author
+        || msg?.senderPhone
+        || messageSenderName
+        || ''
+    ).trim().toLowerCase();
+    const senderNameColor = getGroupSenderColor(senderIdentityKey);
 
     const canEditMessage = Boolean(
         canEditMessages
@@ -712,31 +1046,37 @@ const MessageBubble = ({
                 />
             )}
 
-            {msg.hasMedia && msg.mediaData && !msg.mimetype?.startsWith('image/') && !msg.mimetype?.startsWith('audio/') && (
-                <a
-                    href={mediaDataUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        background: 'rgba(0,0,0,0.18)',
-                        border: '1px solid rgba(255,255,255,0.15)',
-                        borderRadius: '8px',
-                        padding: '7px 10px',
-                        marginBottom: '6px',
-                        color: 'inherit',
-                        textDecoration: 'none',
-                        maxWidth: '210px',
-                        fontSize: '0.76rem'
-                    }}
-                >
-                    <span>Adjunto</span>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {msg.mimetype || 'Archivo'}
-                    </span>
-                </a>
+            {hasBinaryAttachment && attachmentMeta && (
+                <div className={`message-file-card ${attachmentMeta.accentClass}`}>
+                    <div className="message-file-icon" aria-hidden="true">
+                        {renderAttachmentIcon(attachmentMeta.icon)}
+                    </div>
+
+                    <div className="message-file-main">
+                        <div className="message-file-topline">
+                            <span className="message-file-badge">{attachmentMeta.extensionBadge}</span>
+                            <span className="message-file-kind">{attachmentMeta.kindLabel}</span>
+                        </div>
+                        <div className="message-file-name" title={attachmentMeta.filename}>
+                            {attachmentMeta.filename}
+                        </div>
+                        <div className="message-file-meta">
+                            <span>{attachmentMeta.mimetype}</span>
+                            {attachmentMeta.sizeLabel && <span>| {attachmentMeta.sizeLabel}</span>}
+                        </div>
+                    </div>
+
+                    <div className="message-file-actions">
+                        {canOpenAttachmentAsPdf && (
+                            <button type="button" onClick={handleOpenAttachment} className="message-file-action">
+                                Abrir
+                            </button>
+                        )}
+                        <button type="button" onClick={handleDownloadAttachment} className="message-file-action secondary">
+                            <Download size={13} /> Descargar
+                        </button>
+                    </div>
+                </div>
             )}
 
             {isOrderActionable && (
@@ -859,6 +1199,11 @@ const MessageBubble = ({
 
             
             <div className={`message-content ${canEditMessage ? 'can-edit' : ''}`} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                {showSenderName && messageSenderName && (
+                    <div className="message-sender-name" title={messageSenderName} style={{ color: senderNameColor }}>
+                        {messageSenderName}
+                    </div>
+                )}
                 {quotedMessage && (
                     <div style={{
                         borderLeft: '3px solid ' + (quotedMessage.fromMe ? '#73dbf8' : '#00a884'),
@@ -1000,6 +1345,20 @@ const MessageBubble = ({
                     </span>
                 )}
 
+                {phoneCandidates.length > 0 && typeof onOpenPhoneChat === 'function' && (
+                    <div className="message-phone-links">
+                        {phoneCandidates.map((phone) => (
+                            <button
+                                key={phone}
+                                type="button"
+                                className="message-phone-link"
+                                onClick={() => onOpenPhoneChat(phone, '')}
+                            >
+                                Abrir chat +{phone}
+                            </button>
+                        ))}
+                    </div>
+                )}
                 {selectedLocationText && typeof onOpenMap === 'function' && (
                     <button
                         type="button"
@@ -1157,3 +1516,18 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

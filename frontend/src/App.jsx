@@ -162,6 +162,85 @@ const sanitizeDisplayText = (value = '') => repairMojibake(value)
   .replace(/\s+/g, ' ')
   .trim();
 
+const normalizeMessageFilename = (value = '') => {
+  let name = String(value || '').trim();
+  if (!name) return null;
+  name = name
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(Boolean)
+    .pop() || '';
+  name = name.split('?')[0].split('#')[0].trim();
+  name = repairMojibake(name)
+    .replace(/[\u0000-\u001F]/g, '')
+    .replace(/[<>:"/\\|?*]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\.+|\.+$/g, '')
+    .trim();
+  if (!name) return null;
+  return name;
+};
+
+const isGenericFilename = (value = '') => {
+  const base = String(value || '').trim().toLowerCase().replace(/\.[a-z0-9]{1,8}$/i, '');
+  if (!base) return true;
+  return ['archivo', 'file', 'adjunto', 'attachment', 'document', 'documento', 'media', 'download', 'descarga', 'unknown'].includes(base);
+};
+
+const isMachineLikeFilename = (value = '') => {
+  const base = String(value || '').trim().replace(/\.[a-z0-9]{1,8}$/i, '').replace(/\s+/g, '');
+  if (!base) return true;
+  if (/^\d{8,}$/.test(base)) return true;
+  if (/^[a-f0-9]{16,}$/i.test(base)) return true;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(base)) return true;
+  if (/^3EB0[A-F0-9]{8,}$/i.test(base)) return true;
+  return false;
+};
+
+const normalizeParticipantList = (participants = []) => {
+  if (!Array.isArray(participants)) return [];
+
+  const seen = new Set();
+  const normalized = [];
+  for (const entry of participants) {
+    if (!entry || typeof entry !== 'object') continue;
+    const id = String(entry.id || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    const pushname = sanitizeDisplayText(entry.pushname || '');
+    const shortName = sanitizeDisplayText(entry.shortName || '');
+    const displayName = sanitizeDisplayText(entry.displayName || '');
+    const name = sanitizeDisplayText(entry.name || displayName || pushname || shortName || '');
+    const phoneDigits = normalizeDigits(entry.phone || id.split('@')[0] || '');
+    const phone = isLikelyPhoneDigits(phoneDigits) ? phoneDigits : '';
+    const isSuperAdmin = Boolean(entry.isSuperAdmin);
+    const isAdmin = Boolean(entry.isAdmin || isSuperAdmin);
+
+    normalized.push({
+      id,
+      name: name || null,
+      displayName: displayName || name || null,
+      pushname: pushname || null,
+      shortName: shortName || null,
+      phone: phone || null,
+      isAdmin,
+      isSuperAdmin,
+      isMe: Boolean(entry.isMe),
+      role: isSuperAdmin ? 'superadmin' : (isAdmin ? 'admin' : 'member')
+    });
+  }
+
+  return normalized.sort((a, b) => {
+    if (a.isSuperAdmin !== b.isSuperAdmin) return a.isSuperAdmin ? -1 : 1;
+    if (a.isAdmin !== b.isAdmin) return a.isAdmin ? -1 : 1;
+    const aLabel = sanitizeDisplayText(a.displayName || a.name || a.phone || '').toLowerCase();
+    const bLabel = sanitizeDisplayText(b.displayName || b.name || b.phone || '').toLowerCase();
+    return aLabel.localeCompare(bLabel, 'es', { sensitivity: 'base' });
+  });
+};
+
 const normalizeMessageLocation = (location = null) => {
   if (!location || typeof location !== 'object') return null;
 
@@ -744,6 +823,8 @@ function App() {
           ...m,
           body: repairMojibake(m?.body || ''),
           location: normalizeMessageLocation(m?.location),
+          filename: normalizeMessageFilename(m?.filename),
+          fileSizeBytes: Number.isFinite(Number(m?.fileSizeBytes)) ? Number(m.fileSizeBytes) : null,
           ack: Number.isFinite(Number(m?.ack)) ? Number(m.ack) : 0,
           edited: Boolean(m?.edited),
 
@@ -755,7 +836,7 @@ function App() {
       setMessages(sanitizedMessages);
     });
 
-    socket.on('chat_media', ({ chatId, messageId, mediaData, mimetype }) => {
+    socket.on('chat_media', ({ chatId, messageId, mediaData, mimetype, filename, fileSizeBytes }) => {
       const active = String(activeChatIdRef.current || '');
       const incoming = String(chatId || '');
       if (incoming !== active) {
@@ -767,19 +848,38 @@ function App() {
         if (!sameByDigits) return;
       }
       if (!messageId || !mediaData) return;
-      setMessages((prev) => prev.map((m) => (
-        m.id === messageId ? { ...m, mediaData, mimetype: mimetype || m.mimetype } : m
-      )));
+      const nextFilename = normalizeMessageFilename(filename);
+      const nextSize = Number.isFinite(Number(fileSizeBytes)) ? Number(fileSizeBytes) : null;
+      setMessages((prev) => prev.map((m) => {
+        if (m.id !== messageId) return m;
+        const currentFilename = normalizeMessageFilename(m?.filename);
+        const shouldReplaceFilename = Boolean(nextFilename) && (!currentFilename || isGenericFilename(currentFilename) || isMachineLikeFilename(currentFilename));
+        return {
+          ...m,
+          mediaData,
+          mimetype: mimetype || m.mimetype,
+          filename: shouldReplaceFilename ? nextFilename : currentFilename,
+          fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(m?.fileSizeBytes)) ? Number(m.fileSizeBytes) : null)
+        };
+      }));
     });
 
     socket.on('contact_info', (contact) => {
+      const participantsList = normalizeParticipantList(contact?.participantsList);
+      const participantsCount = Number(contact?.participants || contact?.chatState?.participantsCount || participantsList.length || 0) || 0;
       const normalizedContact = {
         ...contact,
         name: sanitizeDisplayText(contact?.name || ''),
         pushname: sanitizeDisplayText(contact?.pushname || ''),
         shortName: sanitizeDisplayText(contact?.shortName || ''),
         profilePicUrl: normalizeProfilePhotoUrl(contact?.profilePicUrl),
-        status: repairMojibake(contact?.status || '')
+        status: repairMojibake(contact?.status || ''),
+        participants: participantsCount,
+        participantsList,
+        chatState: {
+          ...(contact?.chatState || {}),
+          participantsCount
+        }
       };
       setClientContact(normalizedContact);
 
@@ -809,7 +909,9 @@ function App() {
             : (existing?.name || (contactPhone ? ('+' + contactPhone) : 'Contacto')),
           subtitle: subtitleName || existing?.subtitle || null,
           status: normalizedContact.status || existing?.status || '',
-          profilePicUrl: normalizedContact.profilePicUrl || existing?.profilePicUrl || null
+          profilePicUrl: normalizedContact.profilePicUrl || existing?.profilePicUrl || null,
+          participants: normalizedContact.participants || existing?.participants || 0,
+          participantsList: normalizedContact.participantsList || existing?.participantsList || []
         };
 
         if (!chatMatchesQuery(nextChat, chatSearchRef.current) || !chatMatchesFilters(nextChat, chatFiltersRef.current)) {
@@ -905,7 +1007,15 @@ function App() {
 
         const shouldAdd = sameById || sameByIdDigits || sameByPhone;
         if (!shouldAdd) return prev;
-        return [...prev, { ...msg, body: repairMojibake(msg?.body || ''), location: normalizeMessageLocation(msg?.location), canEdit: Boolean(msg?.canEdit), quotedMessage: normalizeQuotedMessage(msg?.quotedMessage) }];
+        return [...prev, {
+          ...msg,
+          body: repairMojibake(msg?.body || ''),
+          location: normalizeMessageLocation(msg?.location),
+          filename: normalizeMessageFilename(msg?.filename),
+          fileSizeBytes: Number.isFinite(Number(msg?.fileSizeBytes)) ? Number(msg.fileSizeBytes) : null,
+          canEdit: Boolean(msg?.canEdit),
+          quotedMessage: normalizeQuotedMessage(msg?.quotedMessage)
+        }];
       });
     });
 
@@ -1564,6 +1674,7 @@ REGLA CRITICA:
               onDeleteMessage={handleDeleteMessage}
               forwardChatOptions={forwardChatOptions}
               onLoadOrderToCart={handleLoadOrderToCart}
+              onStartNewChat={handleStartNewChat}
               onCancelEditMessage={handleCancelEditMessage}
               onCancelReplyMessage={handleCancelReplyMessage}
               editingMessage={editingMessage}
@@ -1575,6 +1686,7 @@ REGLA CRITICA:
             {showClientProfile && (
               <ClientProfilePanel
                 contact={{ ...activeChatDetails, ...clientContact }}
+                chats={chats}
                 onClose={() => setShowClientProfile(false)}
                 onQuickAiAction={requestAiSuggestion}
                 panelRef={clientProfilePanelRef}
@@ -1643,3 +1755,7 @@ REGLA CRITICA:
 }
 
 export default App;
+
+
+
+

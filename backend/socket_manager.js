@@ -18,6 +18,10 @@ const ORDER_DEBUG_VERBOSE = ['1', 'true', 'yes', 'on'].includes(String(process.e
 const CATALOG_DEBUG_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.CATALOG_DEBUG ?? 'true').trim().toLowerCase());
 const CATALOG_DEBUG_MAX_ITEMS = Math.max(1, Number(process.env.CATALOG_DEBUG_MAX_ITEMS || 120));
 let catalogDebugLastSignature = '';
+const SENDER_META_TTL_MS = Math.max(60 * 1000, Number(process.env.SENDER_META_TTL_MS || (10 * 60 * 1000)));
+const senderMetaCache = new Map();
+const GROUP_PARTICIPANT_CONTACT_TTL_MS = Math.max(5 * 60 * 1000, Number(process.env.GROUP_PARTICIPANT_CONTACT_TTL_MS || (30 * 60 * 1000)));
+const groupParticipantContactCache = new Map();
 
 function guardRateLimit(socket, eventName) {
     const key = `${socket.id}:${eventName}`;
@@ -621,6 +625,210 @@ function getMessageTypePreviewLabel(type = '') {
     return 'Mensaje';
 }
 
+
+function guessFileExtensionFromMime(mimetype = '') {
+    const type = String(mimetype || '').toLowerCase();
+    if (!type) return '';
+    if (type.includes('pdf')) return 'pdf';
+    if (type.includes('wordprocessingml')) return 'docx';
+    if (type.includes('msword')) return 'doc';
+    if (type.includes('spreadsheetml')) return 'xlsx';
+    if (type.includes('ms-excel') || type.includes('excel')) return 'xls';
+    if (type.includes('presentationml')) return 'pptx';
+    if (type.includes('ms-powerpoint') || type.includes('powerpoint')) return 'ppt';
+    if (type.includes('text/plain')) return 'txt';
+    if (type.includes('csv')) return 'csv';
+    if (type.includes('json')) return 'json';
+    if (type.includes('xml')) return 'xml';
+    if (type.includes('zip')) return 'zip';
+    if (type.includes('rar')) return 'rar';
+    if (type.includes('7z')) return '7z';
+    if (type.includes('jpeg')) return 'jpg';
+    if (type.includes('png')) return 'png';
+    if (type.includes('webp')) return 'webp';
+    if (type.includes('gif')) return 'gif';
+    if (type.includes('mp4')) return 'mp4';
+    if (type.includes('audio/mpeg')) return 'mp3';
+    if (type.includes('audio/ogg')) return 'ogg';
+    return '';
+}
+
+function sanitizeFilenameCandidate(value = '') {
+    let text = String(value || '').trim();
+    if (!text) return null;
+
+    if (/^https?:\/\//i.test(text)) {
+        try {
+            const parsed = new URL(text);
+            const fromPath = String(parsed.pathname || '').split('/').filter(Boolean).pop() || '';
+            text = fromPath || text;
+        } catch (e) { }
+    }
+
+    text = text
+        .replace(/^['\"]+|['\"]+$/g, '')
+        .replace(/\\/g, '/');
+    if (text.includes('/')) text = text.split('/').pop() || text;
+    text = text.split('?')[0].split('#')[0];
+
+    try {
+        text = decodeURIComponent(text);
+    } catch (e) { }
+
+    text = text
+        .replace(/[\u0000-\u001F]/g, '')
+        .replace(/[<>:\"/\\|?*]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/^\.+|\.+$/g, '')
+        .trim();
+
+    if (!text) return null;
+    if (/^(null|undefined|\[object object\]|unknown)$/i.test(text)) return null;
+    return text;
+}
+
+function getFilenameExtension(filename = '') {
+    const name = String(filename || '').trim();
+    const dotIdx = name.lastIndexOf('.');
+    if (dotIdx <= 0 || dotIdx >= name.length - 1) return '';
+    const ext = name.slice(dotIdx + 1).toLowerCase();
+    if (!/^[a-z0-9]{1,8}$/.test(ext)) return '';
+    return ext;
+}
+
+function isGenericFilename(filename = '') {
+    const base = String(filename || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\.[a-z0-9]{1,8}$/i, '');
+    if (!base) return true;
+    return ['archivo', 'file', 'adjunto', 'attachment', 'document', 'documento', 'media', 'unknown', 'download', 'descarga'].includes(base);
+}
+
+function isMachineLikeFilename(filename = '') {
+    const base = String(filename || '')
+        .trim()
+        .replace(/\.[a-z0-9]{1,8}$/i, '')
+        .replace(/\s+/g, '');
+    if (!base) return true;
+
+    if (/^\d{8,}$/.test(base)) return true;
+    if (/^[a-f0-9]{16,}$/i.test(base)) return true;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(base)) return true;
+    if (/^3EB0[A-F0-9]{8,}$/i.test(base)) return true;
+
+    return false;
+}
+
+function looksLikeBodyFilename(value = '') {
+    const text = String(value || '').trim();
+    if (!text || text.length > 180) return false;
+    if (/[\r\n]/.test(text)) return false;
+    if (/^[A-Za-z0-9+/=]{160,}$/.test(text)) return false;
+    if (/^https?:\/\//i.test(text)) return true;
+    return /\.[A-Za-z0-9]{1,8}$/.test(text);
+}
+
+function extractMessageFileMeta(msg = {}, downloadedMedia = null) {
+    const raw = msg?._data || {};
+    const nestedDocumentName =
+        raw?.message?.documentMessage?.fileName
+        || raw?.message?.documentWithCaptionMessage?.message?.documentMessage?.fileName
+        || raw?.message?.viewOnceMessage?.message?.documentMessage?.fileName
+        || raw?.message?.viewOnceMessageV2?.message?.documentMessage?.fileName
+        || raw?.message?.viewOnceMessageV2Extension?.message?.documentMessage?.fileName
+        || null;
+
+    const bodyCandidateRaw = String(msg?.body || raw?.body || '').trim();
+    const bodyCandidate = looksLikeBodyFilename(bodyCandidateRaw) ? bodyCandidateRaw : null;
+
+    const candidateNames = [
+        msg?.filename,
+        raw?.filename,
+        raw?.fileName,
+        raw?.file_name,
+        raw?.mediaData?.filename,
+        raw?.mediaData?.fileName,
+        raw?.mediaData?.file_name,
+        nestedDocumentName,
+        downloadedMedia?.filename,
+        downloadedMedia?.fileName,
+        raw?.title,
+        bodyCandidate
+    ];
+
+    let filename = null;
+    let fallbackFilename = null;
+    for (const candidate of candidateNames) {
+        const safeName = sanitizeFilenameCandidate(candidate);
+        if (!safeName) continue;
+        if (!fallbackFilename) fallbackFilename = safeName;
+        const ext = getFilenameExtension(safeName);
+        if (!isGenericFilename(safeName) && !isMachineLikeFilename(safeName) && ext) {
+            filename = safeName;
+            break;
+        }
+        if (!filename && !isGenericFilename(safeName) && !isMachineLikeFilename(safeName)) {
+            filename = safeName;
+        }
+    }
+    if (!filename) filename = fallbackFilename;
+
+    const mimetype = String(
+        msg?.mimetype
+        || raw?.mimetype
+        || raw?.mediaData?.mimetype
+        || downloadedMedia?.mimetype
+        || ''
+    ).trim();
+    const mimeExt = guessFileExtensionFromMime(mimetype);
+    const hasAttachment = Boolean(msg?.hasMedia || raw?.hasMedia || mimetype || downloadedMedia);
+
+    if (filename && !getFilenameExtension(filename) && mimeExt) {
+        filename = `${filename}.${mimeExt}`;
+    }
+    if (filename && (isGenericFilename(filename) || isMachineLikeFilename(filename)) && mimeExt) {
+        filename = `documento.${mimeExt}`;
+    }
+    if (!filename && hasAttachment && mimeExt) {
+        filename = `documento.${mimeExt}`;
+    }
+    if (!filename && hasAttachment && String(msg?.type || '').toLowerCase() === 'document') {
+        filename = 'documento';
+    }
+
+    const sizeCandidates = [
+        raw?.size,
+        raw?.fileSize,
+        raw?.fileLength,
+        raw?.mediaData?.size,
+        downloadedMedia?.filesize,
+        downloadedMedia?.fileSize,
+        downloadedMedia?.size
+    ];
+
+    let fileSizeBytes = null;
+    for (const candidate of sizeCandidates) {
+        const parsed = Number(candidate);
+        if (Number.isFinite(parsed) && parsed > 0) {
+            fileSizeBytes = Math.round(parsed);
+            break;
+        }
+    }
+    if (!fileSizeBytes && downloadedMedia?.data) {
+        const base64Length = String(downloadedMedia.data || '').length;
+        if (base64Length > 0) {
+            fileSizeBytes = Math.round((base64Length * 3) / 4);
+        }
+    }
+
+    return {
+        filename,
+        fileSizeBytes
+    };
+}
+
 function normalizeQuotedPayload(raw = {}) {
     if (!raw || typeof raw !== 'object') return null;
 
@@ -1053,7 +1261,7 @@ function extractChatSnapshot(chat = null) {
         unreadCount: Number(chat?.unreadCount || 0) || 0,
         timestamp: Number(chat?.timestamp || 0) || null,
         isGroup: Boolean(chat?.isGroup),
-        participantsCount: Array.isArray(chat?.participants) ? chat.participants.length : null,
+        participantsCount: Boolean(chat?.isGroup) ? (extractGroupParticipants(chat).length || 0) : null,
         rawData: snapshotSerializable(chat?._data || null)
     };
 }
@@ -1061,18 +1269,348 @@ function extractChatSnapshot(chat = null) {
 
 
 
+function toParticipantArray(rawParticipants) {
+    if (!rawParticipants) return [];
+    if (Array.isArray(rawParticipants)) return rawParticipants;
+    if (Array.isArray(rawParticipants?._models)) return rawParticipants._models;
+    if (Array.isArray(rawParticipants?.models)) return rawParticipants.models;
+    if (typeof rawParticipants?.serialize === 'function') {
+        try {
+            const serialized = rawParticipants.serialize();
+            if (Array.isArray(serialized)) return serialized;
+        } catch (e) { }
+    }
+    if (rawParticipants?._map && typeof rawParticipants._map.forEach === 'function') {
+        const models = [];
+        rawParticipants._map.forEach((value) => models.push(value));
+        return models;
+    }
+    return [];
+}
+
+function normalizeGroupParticipant(participant = {}) {
+    const idFromObject = participant?.id && typeof participant.id === 'object'
+        ? (participant.id?._serialized || ((participant.id.user && participant.id.server) ? `${participant.id.user}@${participant.id.server}` : null))
+        : null;
+    const rawId = idFromObject
+        || participant?.id
+        || participant?.wid?._serialized
+        || participant?.wid
+        || participant?._serialized
+        || participant?.participant
+        || null;
+    const id = String(rawId || '').trim();
+    if (!id) return null;
+
+    const isSuperAdmin = Boolean(participant?.isSuperAdmin || participant?.superadmin);
+    const isAdmin = isSuperAdmin || Boolean(participant?.isAdmin || participant?.admin);
+    const phone = coerceHumanPhone(
+        participant?.number
+        || participant?.phone
+        || participant?.id?.user
+        || String(id).split('@')[0]
+        || ''
+    );
+
+    const name = String(
+        participant?.formattedShortName
+        || participant?.shortName
+        || participant?.name
+        || participant?.pushname
+        || participant?.notify
+        || ''
+    ).trim();
+
+    return {
+        id,
+        phone: phone || null,
+        name: name || null,
+        isAdmin,
+        isSuperAdmin,
+        isMe: Boolean(participant?.isMe),
+        role: isSuperAdmin ? 'superadmin' : (isAdmin ? 'admin' : 'member')
+    };
+}
+
+function isInternalLikeName(value = '') {
+    const text = String(value || '').trim();
+    if (!text) return true;
+    return text.includes('@') || /^\d{14,}$/.test(text);
+}
+
+function getGroupParticipantContactCache(key = '') {
+    const safeKey = String(key || '').trim();
+    if (!safeKey) return null;
+    const hit = groupParticipantContactCache.get(safeKey);
+    if (!hit) return null;
+    if (Date.now() - Number(hit.updatedAt || 0) > GROUP_PARTICIPANT_CONTACT_TTL_MS) {
+        groupParticipantContactCache.delete(safeKey);
+        return null;
+    }
+    return hit.value || null;
+}
+
+function setGroupParticipantContactCache(keys = [], value = null) {
+    const payload = value && typeof value === 'object' ? value : null;
+    if (!payload) return;
+    const now = Date.now();
+    keys.forEach((key) => {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return;
+        groupParticipantContactCache.set(safeKey, { value: payload, updatedAt: now });
+    });
+}
+
+async function resolveGroupParticipantContact(client, participant = {}) {
+    const participantId = String(participant?.id || '').trim();
+    const phone = coerceHumanPhone(participant?.phone || participantId.split('@')[0] || '');
+
+    const cacheKeys = [
+        participantId,
+        phone ? `phone:${phone}` : ''
+    ].filter(Boolean);
+
+    for (const key of cacheKeys) {
+        const cached = getGroupParticipantContactCache(key);
+        if (cached) return cached;
+    }
+
+    if (!client?.getContactById) return null;
+
+    const candidateIds = [
+        participantId,
+        phone ? `${phone}@c.us` : '',
+        phone ? `${phone}@s.whatsapp.net` : '',
+        phone ? `${phone}@lid` : ''
+    ].filter(Boolean);
+
+    const tried = new Set();
+    for (const candidateId of candidateIds) {
+        if (tried.has(candidateId)) continue;
+        tried.add(candidateId);
+
+        try {
+            const contact = await client.getContactById(candidateId);
+            const raw = contact?._data || {};
+            const resolved = {
+                name: String(contact?.name || contact?.pushname || contact?.shortName || raw?.verifiedName || '').trim() || null,
+                pushname: String(contact?.pushname || raw?.notifyName || '').trim() || null,
+                shortName: String(contact?.shortName || '').trim() || null,
+                phone: coerceHumanPhone(contact?.number || raw?.userid || phone || '') || phone || null
+            };
+
+            setGroupParticipantContactCache([...cacheKeys, candidateId], resolved);
+            return resolved;
+        } catch (e) { }
+    }
+
+    return null;
+}
+
+async function hydrateGroupParticipantsWithContacts(client, participants = []) {
+    if (!Array.isArray(participants) || participants.length === 0) return [];
+
+    const hydrated = [];
+    const maxItems = Math.min(participants.length, 256);
+    for (let idx = 0; idx < maxItems; idx += 1) {
+        const current = participants[idx];
+        if (!current || typeof current !== 'object') continue;
+
+        const next = { ...current };
+        const hasUsefulName = Boolean(next.name && !isInternalLikeName(next.name));
+
+        if (!hasUsefulName || !next.phone) {
+            const resolved = await resolveGroupParticipantContact(client, next);
+            if (resolved) {
+                const resolvedName = String(resolved.name || resolved.pushname || resolved.shortName || '').trim();
+                if (!hasUsefulName && resolvedName && !isInternalLikeName(resolvedName)) {
+                    next.name = resolvedName;
+                }
+                next.pushname = resolved.pushname || next.pushname || null;
+                next.shortName = resolved.shortName || next.shortName || null;
+                if (!next.phone && resolved.phone) next.phone = resolved.phone;
+            }
+        }
+
+        hydrated.push(next);
+    }
+
+    return hydrated;
+}
+
+function extractGroupParticipants(chat = null) {
+    const participants = [];
+    const seen = new Set();
+    const sources = [
+        chat?.participants,
+        chat?.groupMetadata?.participants,
+        chat?._data?.groupMetadata?.participants,
+        chat?._data?.participants
+    ];
+
+    sources.forEach((source) => {
+        const models = toParticipantArray(source);
+        models.forEach((model) => {
+            const normalized = normalizeGroupParticipant(model);
+            if (!normalized || seen.has(normalized.id)) return;
+            seen.add(normalized.id);
+            participants.push(normalized);
+        });
+    });
+
+    return participants;
+}
+
+async function fetchGroupParticipantsFromStore(client, groupId = '') {
+    if (!client?.pupPage?.evaluate || !groupId) return [];
+    try {
+        const raw = await client.pupPage.evaluate(async (targetGroupId) => {
+            try {
+                const widFactory = window.Store?.WidFactory;
+                const chatStore = window.Store?.Chat;
+                if (!widFactory || !chatStore) return [];
+
+                const groupWid = widFactory.createWid(targetGroupId);
+                const chat = chatStore.get(groupWid) || await chatStore.find(groupWid);
+                if (!chat) return [];
+
+                try {
+                    const groupMetadataStore = window.Store?.GroupMetadata || window.Store?.WAWebGroupMetadataCollection;
+                    if (groupMetadataStore?.update) {
+                        await groupMetadataStore.update(groupWid);
+                    }
+                } catch (e) { }
+
+                const participantsCollection = chat?.groupMetadata?.participants || [];
+                const models = Array.isArray(participantsCollection)
+                    ? participantsCollection
+                    : (participantsCollection?._models || participantsCollection?.models || []);
+
+                return models.map((participant) => ({
+                    id: participant?.id?._serialized || participant?.id || null,
+                    phone: participant?.id?.user || null,
+                    name: participant?.formattedShortName || participant?.name || participant?.notify || participant?.pushname || null,
+                    isAdmin: Boolean(participant?.isAdmin || participant?.isSuperAdmin || participant?.admin || participant?.superadmin),
+                    isSuperAdmin: Boolean(participant?.isSuperAdmin || participant?.superadmin),
+                    isMe: Boolean(participant?.isMe)
+                })).filter((entry) => Boolean(entry?.id));
+            } catch (e) {
+                return [];
+            }
+        }, groupId);
+
+        if (!Array.isArray(raw)) return [];
+        return raw.map((participant) => normalizeGroupParticipant(participant)).filter(Boolean);
+    } catch (e) {
+        return [];
+    }
+}
+function getSenderMetaCache(key = '') {
+    const safeKey = String(key || '').trim();
+    if (!safeKey) return null;
+    const hit = senderMetaCache.get(safeKey);
+    if (!hit) return null;
+    if (Date.now() - Number(hit.updatedAt || 0) > SENDER_META_TTL_MS) {
+        senderMetaCache.delete(safeKey);
+        return null;
+    }
+    return hit.value || null;
+}
+
+function setSenderMetaCache(keys = [], value = null) {
+    const payload = value && typeof value === 'object' ? value : null;
+    if (!payload) return;
+    const now = Date.now();
+    keys.forEach((key) => {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return;
+        senderMetaCache.set(safeKey, { value: payload, updatedAt: now });
+    });
+}
+
 async function resolveMessageSenderMeta(msg) {
     try {
-        if (!msg || msg.fromMe) return { notifyName: null, senderPhone: null };
-        const senderPhone = String(msg.from || '').split('@')[0] || null;
-        let notifyName = msg?._data?.notifyName || null;
-        try {
-            const contact = await msg.getContact();
-            notifyName = contact?.name || contact?.pushname || notifyName;
-        } catch (e) { }
-        return { notifyName, senderPhone };
+        const base = {
+            notifyName: null,
+            senderPhone: null,
+            senderId: null,
+            senderPushname: null,
+            isGroupMessage: false
+        };
+        if (!msg || msg.fromMe) return base;
+
+        const fromId = String(msg?.from || '').trim();
+        const authorId = String(msg?.author || msg?._data?.author || '').trim();
+        const isGroupMessage = fromId.endsWith('@g.us');
+        const senderId = String((isGroupMessage ? authorId : fromId) || '').trim() || null;
+        const senderPhone = coerceHumanPhone(
+            (senderId || '').split('@')[0]
+            || authorId.split('@')[0]
+            || fromId.split('@')[0]
+            || msg?._data?.sender?.id?.user
+            || ''
+        );
+
+        const cacheKeys = [
+            senderId,
+            senderPhone ? `phone:${senderPhone}` : '',
+            fromId,
+            authorId
+        ].filter(Boolean);
+        for (const key of cacheKeys) {
+            const cached = getSenderMetaCache(key);
+            if (cached) return { ...cached, isGroupMessage };
+        }
+
+        let notifyName = String(msg?._data?.notifyName || msg?._data?.senderObj?.pushname || '').trim() || null;
+        let senderPushname = String(msg?._data?.senderObj?.pushname || '').trim() || null;
+
+        const candidateIds = [
+            senderId,
+            authorId,
+            senderPhone ? `${senderPhone}@c.us` : '',
+            senderPhone ? `${senderPhone}@s.whatsapp.net` : '',
+            senderPhone ? `${senderPhone}@lid` : ''
+        ].filter(Boolean);
+
+        const tried = new Set();
+        for (const candidateId of candidateIds) {
+            if (tried.has(candidateId)) continue;
+            tried.add(candidateId);
+            try {
+                const contact = await waClient.client.getContactById(candidateId);
+                const raw = contact?._data || {};
+                notifyName = String(contact?.name || contact?.pushname || contact?.shortName || raw?.verifiedName || notifyName || '').trim() || notifyName;
+                senderPushname = String(contact?.pushname || raw?.notifyName || senderPushname || '').trim() || senderPushname;
+                if (notifyName || senderPushname) break;
+            } catch (e) { }
+        }
+
+        if (!notifyName) {
+            try {
+                const fallbackContact = await msg.getContact();
+                notifyName = String(fallbackContact?.name || fallbackContact?.pushname || fallbackContact?.shortName || '').trim() || null;
+                senderPushname = String(fallbackContact?.pushname || senderPushname || '').trim() || senderPushname;
+            } catch (e) { }
+        }
+
+        const resolved = {
+            notifyName: notifyName || senderPushname || null,
+            senderPhone: senderPhone || null,
+            senderId,
+            senderPushname: senderPushname || null,
+            isGroupMessage
+        };
+        setSenderMetaCache(cacheKeys, resolved);
+        return resolved;
     } catch (e) {
-        return { notifyName: null, senderPhone: null };
+        return {
+            notifyName: null,
+            senderPhone: null,
+            senderId: null,
+            senderPushname: null,
+            isGroupMessage: false
+        };
     }
 }
 
@@ -1256,8 +1794,8 @@ function resolveLastMessagePreview(chat = {}) {
     const type = String(last?.type || last?._data?.type || '').toLowerCase();
     if (type === 'location') {
         const location = extractLocationInfo(last);
-        if (location?.label) return `ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â ${location.label}`;
-        return 'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â Ubicacion';
+        if (location?.label) return `Ubicacion: ${location.label}`;
+        return 'Ubicacion';
     }
 
     const mediaMap = {
@@ -1280,7 +1818,7 @@ function resolveLastMessagePreview(chat = {}) {
     if (body) {
         const possibleCoords = extractCoordsFromText(body);
         const hasMapUrl = /https?:\/\/(?:www\.)?(?:google\.[^\s/]+\/maps|maps\.app\.goo\.gl|maps\.google\.com)/i.test(body);
-        if (possibleCoords || hasMapUrl) return 'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â Ubicacion';
+        if (possibleCoords || hasMapUrl) return 'Ubicacion';
         return body;
     }
 
@@ -1934,7 +2472,10 @@ class SocketManager {
                         ? await waClient.getMessagesEditability(outgoingIds)
                         : {};
 
-                    const formatted = await Promise.all(visible.map(async (m) => ({
+                    const formatted = await Promise.all(visible.map(async (m) => {
+                        const senderMeta = await resolveMessageSenderMeta(m);
+                        const fileMeta = extractMessageFileMeta(m);
+                        return ({
                         id: m.id._serialized,
                         from: m.from,
                         to: m.to,
@@ -1944,7 +2485,15 @@ class SocketManager {
                         hasMedia: m.hasMedia,
                         mediaData: null,
                         mimetype: null,
+                        filename: fileMeta.filename,
+                        fileSizeBytes: fileMeta.fileSizeBytes,
                         type: m.type,
+                        author: m?.author || m?._data?.author || null,
+                        notifyName: senderMeta.notifyName,
+                        senderPhone: senderMeta.senderPhone,
+                        senderId: senderMeta.senderId,
+                        senderPushname: senderMeta.senderPushname,
+                        isGroupMessage: senderMeta.isGroupMessage,
                         ack: Number.isFinite(Number(m.ack)) ? Number(m.ack) : 0,
                         edited: Boolean(m?._data?.latestEditMsgKey || m?._data?.latestEditSenderTimestampMs || m?._data?.edited),
                         editedAt: Number(m?._data?.latestEditSenderTimestampMs || 0) > 0 ? Math.floor(Number(m._data.latestEditSenderTimestampMs) / 1000) : null,
@@ -1952,7 +2501,8 @@ class SocketManager {
                         order: extractOrderInfo(m),
                         location: extractLocationInfo(m),
                         quotedMessage: await extractQuotedMessageInfo(m)
-                    })));
+                        });
+                    }));
                     socket.emit('chat_history', { chatId: historyChatId, requestedChatId: chatId, messages: formatted });
 
                     // Avoid blocking chat open while media is downloaded/cached.
@@ -1963,11 +2513,14 @@ class SocketManager {
                             try {
                                 const media = await mediaManager.processMessageMedia(m);
                                 if (!media) return;
+                                const mediaMeta = extractMessageFileMeta(m, media);
                                 socket.emit('chat_media', {
                                     chatId: historyChatId,
                                     messageId: m.id._serialized,
                                     mediaData: media.data,
-                                    mimetype: media.mimetype
+                                    mimetype: media.mimetype,
+                                    filename: mediaMeta.filename,
+                                    fileSizeBytes: mediaMeta.fileSizeBytes
                                 });
                             } catch (mediaErr) { }
                         });
@@ -2664,9 +3217,25 @@ class SocketManager {
                         labels = chatLabels.map((l) => ({ id: l.id, name: l.name, color: l.color }));
                     } catch (e) { }
 
+                    const isGroupChat = safeContactId.includes('@g.us') || Boolean(contact?.isGroup) || Boolean(chat?.isGroup);
+                    let groupParticipants = [];
+                    if (isGroupChat) {
+                        groupParticipants = extractGroupParticipants(chat);
+                        if (groupParticipants.length === 0) {
+                            groupParticipants = await fetchGroupParticipantsFromStore(waClient.client, safeContactId);
+                        }
+                        groupParticipants = await hydrateGroupParticipantsWithContacts(waClient.client, groupParticipants);
+                    }
+
                     const businessDetails = normalizeBusinessDetailsSnapshot(businessProfile);
                     const contactSnapshot = extractContactSnapshot(contact);
                     const chatSnapshot = extractChatSnapshot(chat);
+                    const participantsCount = isGroupChat
+                        ? (groupParticipants.length || Number(chatSnapshot?.participantsCount || 0) || 0)
+                        : (chatSnapshot?.participantsCount ?? null);
+                    const hydratedChatSnapshot = chatSnapshot
+                        ? { ...chatSnapshot, participantsCount }
+                        : null;
 
                     socket.emit('contact_info', {
                         id: safeContactId,
@@ -2689,15 +3258,17 @@ class SocketManager {
                         isBlocked: Boolean(contact?.isBlocked),
                         isMe: Boolean(contact?.isMe),
                         isUser: Boolean(contact?.isUser),
-                        isGroup: safeContactId.includes('@g.us') || Boolean(contact?.isGroup),
+                        isGroup: isGroupChat,
                         isPSA: Boolean(contact?.isPSA),
+                        participants: participantsCount,
+                        participantsList: isGroupChat ? groupParticipants : [],
                         labels,
-                        chatState: chatSnapshot,
+                        chatState: hydratedChatSnapshot,
                         businessDetails,
                         contactSnapshot,
                         raw: {
                             contact: contactSnapshot?.rawData || null,
-                            chat: chatSnapshot?.rawData || null,
+                            chat: hydratedChatSnapshot?.rawData || null,
                             business: businessDetails?.raw || null
                         }
                     });
@@ -2744,6 +3315,7 @@ class SocketManager {
 
             const media = await mediaManager.processMessageMedia(msg);
             const senderMeta = await resolveMessageSenderMeta(msg);
+            const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
             this.io.emit('message', {
                 id: msg.id._serialized,
@@ -2755,10 +3327,16 @@ class SocketManager {
                 hasMedia: msg.hasMedia,
                 mediaData: media ? media.data : null,
                 mimetype: media ? media.mimetype : null,
+                filename: fileMeta.filename,
+                fileSizeBytes: fileMeta.fileSizeBytes,
                 ack: msg.ack,
                 type: msg.type,
+                author: msg?.author || msg?._data?.author || null,
                 notifyName: senderMeta.notifyName,
                 senderPhone: senderMeta.senderPhone,
+                senderId: senderMeta.senderId,
+                senderPushname: senderMeta.senderPushname,
+                isGroupMessage: senderMeta.isGroupMessage,
                 canEdit: false,
                 order: extractOrderInfo(msg),
                 location: extractLocationInfo(msg),
@@ -2781,6 +3359,7 @@ class SocketManager {
             if (isStatusOrSystemMessage(msg)) return;
             // Emite de vuelta para confirmar en UI si se envio desde otro lugar
             const media = await mediaManager.processMessageMedia(msg);
+            const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
             this.io.emit('message', {
                 id: msg.id._serialized,
@@ -2792,10 +3371,16 @@ class SocketManager {
                 hasMedia: msg.hasMedia,
                 mediaData: media ? media.data : null,
                 mimetype: media ? media.mimetype : null,
+                filename: fileMeta.filename,
+                fileSizeBytes: fileMeta.fileSizeBytes,
                 ack: msg.ack,
                 type: msg.type,
+                author: msg?.author || msg?._data?.author || null,
                 notifyName: null,
                 senderPhone: null,
+                senderId: null,
+                senderPushname: null,
+                isGroupMessage: String(msg?.to || msg?.from || '').includes('@g.us'),
                 canEdit: false,
                 order: extractOrderInfo(msg),
                 location: extractLocationInfo(msg),
@@ -2878,4 +3463,6 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
+
 

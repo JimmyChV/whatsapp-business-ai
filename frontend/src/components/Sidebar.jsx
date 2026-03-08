@@ -110,8 +110,9 @@ const Sidebar = ({
     };
 
     const localQuery = String(searchQuery || '');
-    const searchIsPhone = /^\+?\d{6,15}$/.test(localQuery.trim());
     const normalizedPhone = normalizePhoneDigits(localQuery);
+    const queryHasLetters = /[a-zA-Z]/.test(localQuery);
+    const searchIsPhone = !queryHasLetters && normalizedPhone.length >= 6 && normalizedPhone.length <= 15;
 
     const formatTime = (ts) => {
         if (!Number.isFinite(Number(ts)) || Number(ts) <= 0) return '';
@@ -358,7 +359,9 @@ const Sidebar = ({
                         onChange={(e) => onSearchQueryChange?.(e.target.value)}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter' && searchIsPhone) {
+                                e.preventDefault();
                                 onStartNewChat?.(normalizedPhone, '');
+                                onSearchQueryChange?.('');
                             }
                         }}
                     />
@@ -370,8 +373,15 @@ const Sidebar = ({
                 </div>
 
                 {searchIsPhone && (
-                    <button type="button" className="ui-btn ui-btn--primary ui-btn--block" onClick={() => onStartNewChat?.(normalizedPhone, '')}>
-                        Abrir chat con {normalizedPhone}
+                    <button
+                        type="button"
+                        className="ui-btn ui-btn--primary ui-btn--block"
+                        onClick={() => {
+                            onStartNewChat?.(normalizedPhone, '');
+                            onSearchQueryChange?.('');
+                        }}
+                    >
+                        Abrir chat con +{normalizedPhone}
                     </button>
                 )}
 
