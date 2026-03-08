@@ -20,6 +20,7 @@ function snapshotEnv() {
         SAAS_TOKEN_TTL_SEC: process.env.SAAS_TOKEN_TTL_SEC,
         SAAS_REFRESH_TOKEN_TTL_SEC: process.env.SAAS_REFRESH_TOKEN_TTL_SEC,
         SAAS_USERS_JSON: process.env.SAAS_USERS_JSON,
+        SAAS_TENANTS_JSON: process.env.SAAS_TENANTS_JSON,
         SAAS_STORAGE_DRIVER: process.env.SAAS_STORAGE_DRIVER,
         SAAS_TENANT_DATA_DIR: process.env.SAAS_TENANT_DATA_DIR,
         SAAS_MAX_REFRESH_SESSIONS_PER_USER: process.env.SAAS_MAX_REFRESH_SESSIONS_PER_USER,
@@ -145,6 +146,110 @@ test('auth_service rejects invalid password', async () => {
         await assert.rejects(
             () => authService.login({ email: 'seller@acme.com', password: 'bad-pass', tenantId: 'tenant_acme' }),
             /invalidas/i
+        );
+    } finally {
+        restoreEnv(prev);
+        fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+});
+
+
+test('auth_service supports multi-tenant memberships and tenant switching', async () => {
+    const prev = snapshotEnv();
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auth-test-'));
+
+    try {
+        const passwordHash = crypto.createHash('sha256').update('123456', 'utf8').digest('hex');
+        process.env.SAAS_AUTH_ENABLED = 'true';
+        process.env.SAAS_AUTH_SECRET = 'unit-test-secret';
+        process.env.SAAS_TOKEN_TTL_SEC = '3600';
+        process.env.SAAS_REFRESH_TOKEN_TTL_SEC = '3600';
+        process.env.SAAS_STORAGE_DRIVER = 'file';
+        process.env.SAAS_TENANT_DATA_DIR = tempDir;
+        process.env.SAAS_USERS_JSON = JSON.stringify([
+            {
+                id: 'u_multi',
+                email: 'owner@acme.com',
+                role: 'owner',
+                passwordHash,
+                memberships: [
+                    { tenantId: 'tenant_acme', role: 'owner' },
+                    { tenantId: 'tenant_beta', role: 'admin' }
+                ]
+            }
+        ]);
+        process.env.SAAS_TENANTS_JSON = JSON.stringify([
+            { id: 'tenant_acme', slug: 'acme', name: 'Acme SAC', active: true, plan: 'pro' },
+            { id: 'tenant_beta', slug: 'beta', name: 'Beta SAC', active: true, plan: 'pro' },
+            { id: 'tenant_other', slug: 'other', name: 'Other SAC', active: true, plan: 'starter' }
+        ]);
+
+        const authService = loadAuthServiceFresh();
+        const session = await authService.login({ email: 'owner@acme.com', password: '123456', tenantId: 'tenant_acme' });
+        assert.equal(session.user.tenantId, 'tenant_acme');
+        assert.equal(session.user.canSwitchTenant, true);
+        assert.deepEqual(
+            session.user.memberships.map((item) => item.tenantId).sort(),
+            ['tenant_acme', 'tenant_beta']
+        );
+
+        const allowed = authService.getAllowedTenantsForUser(session.user, [
+            { id: 'tenant_acme' },
+            { id: 'tenant_beta' },
+            { id: 'tenant_other' }
+        ]);
+        assert.deepEqual(allowed.map((tenant) => tenant.id), ['tenant_acme', 'tenant_beta']);
+
+        const switched = await authService.switchTenantSession({
+            accessToken: session.accessToken,
+            refreshToken: session.refreshToken,
+            targetTenantId: 'tenant_beta'
+        });
+        assert.equal(switched.user.tenantId, 'tenant_beta');
+        assert.equal(switched.user.role, 'admin');
+        assert.notEqual(switched.accessToken, session.accessToken);
+        assert.notEqual(switched.refreshToken, session.refreshToken);
+
+        const oldAccess = await authService.verifyAccessTokenAsync(session.accessToken);
+        assert.equal(oldAccess, null);
+
+        const currentAccess = await authService.verifyAccessTokenAsync(switched.accessToken);
+        assert.equal(currentAccess.tenantId, 'tenant_beta');
+
+        await assert.rejects(
+            () => authService.refreshSession({ refreshToken: session.refreshToken }),
+            /invalido|expirado/i
+        );
+    } finally {
+        restoreEnv(prev);
+        fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+});
+
+test('auth_service rejects tenant switch without membership', async () => {
+    const prev = snapshotEnv();
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auth-test-'));
+
+    try {
+        const passwordHash = crypto.createHash('sha256').update('123456', 'utf8').digest('hex');
+        process.env.SAAS_AUTH_ENABLED = 'true';
+        process.env.SAAS_AUTH_SECRET = 'unit-test-secret';
+        process.env.SAAS_STORAGE_DRIVER = 'file';
+        process.env.SAAS_TENANT_DATA_DIR = tempDir;
+        process.env.SAAS_USERS_JSON = JSON.stringify([
+            { id: 'u_1', email: 'seller@acme.com', tenantId: 'tenant_acme', role: 'seller', passwordHash }
+        ]);
+
+        const authService = loadAuthServiceFresh();
+        const session = await authService.login({ email: 'seller@acme.com', password: '123456', tenantId: 'tenant_acme' });
+
+        await assert.rejects(
+            () => authService.switchTenantSession({
+                accessToken: session.accessToken,
+                refreshToken: session.refreshToken,
+                targetTenantId: 'tenant_beta'
+            }),
+            /sin acceso/i
         );
     } finally {
         restoreEnv(prev);

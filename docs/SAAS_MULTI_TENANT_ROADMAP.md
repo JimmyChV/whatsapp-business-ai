@@ -87,3 +87,13 @@ Objetivo: convertirlo en plataforma multiempresa con login por usuario, aislamie
 - [x] Inicio Fase 4
 - [x] Fase 4 bloque 1: login SaaS en frontend + sesion persistente + socket auth dinamico + headers auth en APIs de preview/mapa
 - [x] Fase 4 bloque 2: aislamiento de estado UI por tenant (etiquetas locales, carrito lateral y reset de workspace al cambiar de empresa)
+- [x] Fase 4 bloque 3: membresias multi-tenant por usuario + switch de empresa (API + selector en UI activa)
+- [x] Cerrar Fase 4: operacion multiempresa validada (HTTP + Socket + estado UI por tenant)
+- [ ] Inicio Fase 5
+
+## Criterio de entrada a Fase 5
+- [x] Contexto tenant aplicado en HTTP, Socket y persistencia.
+- [x] Sesion SaaS con refresh/revocacion y cambio de tenant sin relogin completo.
+- [x] Aislamiento de UI por tenant (estado local, carrito, etiquetas y runtime).
+- [x] Suite tecnica verde para esta fase (`backend npm test` + `frontend npm run build`).
+- [ ] Pendiente para Fase 5: observabilidad operativa, backups/recovery, runbook go-live y pruebas de carga.

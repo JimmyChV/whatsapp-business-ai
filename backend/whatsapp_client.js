@@ -1,6 +1,8 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const EventEmitter = require('events');
+const fs = require('fs');
+const path = require('path');
 
 const TRANSIENT_PROTOCOL_PATTERNS = [
     'Promise was collected',
@@ -10,6 +12,12 @@ const TRANSIENT_PROTOCOL_PATTERNS = [
     'Session closed',
 ];
 
+const BROWSER_LOCK_PATTERNS = [
+    'browser is already running for',
+    'Failed to launch the browser process',
+    'SingletonLock'
+];
+
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 const isTransientProtocolError = (error) => {
     const message = String(error?.message || error || '');
@@ -17,12 +25,19 @@ const isTransientProtocolError = (error) => {
     return TRANSIENT_PROTOCOL_PATTERNS.some((pattern) => message.includes(pattern));
 };
 
+const isBrowserLockError = (error) => {
+    const message = String(error?.message || error || '').toLowerCase();
+    if (!message) return false;
+    return BROWSER_LOCK_PATTERNS.some((pattern) => message.includes(String(pattern || '').toLowerCase()));
+};
+
 class WhatsAppClient extends EventEmitter {
     constructor() {
         super();
         this.capabilityWarnings = new Set();
-        this.client = new Client({
-            authStrategy: new LocalAuth(),
+        this.authDataPath = path.resolve(process.cwd(), 'wwebjs_auth');
+        this.clientConfig = {
+            authStrategy: new LocalAuth({ dataPath: this.authDataPath }),
             authTimeoutMs: 120000,
             puppeteer: {
                 headless: true,
@@ -34,10 +49,31 @@ class WhatsAppClient extends EventEmitter {
                     '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
                 ]
             }
-        });
+        };
+        this.client = null;
         this.isReady = false;
         this.initializePromise = null;
-        this.setupEventListeners();
+        this.lastQr = null;
+        this.createClient();
+    }
+
+    createClient() {
+        if (this.client && typeof this.client.removeAllListeners === 'function') {
+            try { this.client.removeAllListeners(); } catch (_) { }
+        }
+        this.client = new Client(this.clientConfig);
+        this.setupEventListeners(this.client);
+    }
+
+    cleanupChromiumSingletonLocks() {
+        const sessionDir = path.resolve(this.authDataPath, 'session');
+        const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
+        lockFiles.forEach((fileName) => {
+            try {
+                const filePath = path.resolve(sessionDir, fileName);
+                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            } catch (_) { }
+        });
     }
 
     warnCapabilityOnce(key, message) {
@@ -46,57 +82,58 @@ class WhatsAppClient extends EventEmitter {
         console.warn(message);
     }
 
-    setupEventListeners() {
-        this.client.on('qr', (qr) => {
+    setupEventListeners(client = this.client) {
+        if (!client || typeof client.on !== 'function') return;
+        client.on('qr', (qr) => {
             console.log(`[${new Date().toISOString()}] New QR Received`);
             qrcode.generate(qr, { small: true });
             this.lastQr = qr;
             this.emit('qr', qr);
         });
 
-        this.client.on('ready', () => {
+        client.on('ready', () => {
             console.log(`[${new Date().toISOString()}] WhatsApp Client is ready!`);
             this.isReady = true;
             this.lastQr = null;
             this.emit('ready');
         });
 
-        this.client.on('authenticated', () => {
+        client.on('authenticated', () => {
             console.log(`[${new Date().toISOString()}] WhatsApp Client authenticated!`);
             this.emit('authenticated');
         });
 
-        this.client.on('auth_failure', (msg) => {
+        client.on('auth_failure', (msg) => {
             console.error(`[${new Date().toISOString()}] Auth failure:`, msg);
             this.emit('auth_failure', msg);
         });
 
-        this.client.on('disconnected', (reason) => {
+        client.on('disconnected', (reason) => {
             console.error(`[${new Date().toISOString()}] Disconnected:`, reason);
             this.isReady = false;
             this.emit('disconnected', reason);
         });
 
-        this.client.on('loading_screen', (percent, message) => {
+        client.on('loading_screen', (percent, message) => {
             console.log(`[${new Date().toISOString()}] Loading: ${percent}% - ${message}`);
             this.emit('loading', { percent, message });
         });
 
-        this.client.on('message', async (message) => {
+        client.on('message', async (message) => {
             this.emit('message', message);
         });
 
-        this.client.on('message_create', async (message) => {
+        client.on('message_create', async (message) => {
             if (message.fromMe) {
                 this.emit('message_sent', message);
             }
         });
 
-        this.client.on('message_ack', (message, ack) => {
+        client.on('message_ack', (message, ack) => {
             this.emit('message_ack', { message, ack });
         });
 
-        this.client.on('message_edit', (message, newBody, prevBody) => {
+        client.on('message_edit', (message, newBody, prevBody) => {
             this.emit('message_edit', { message, newBody, prevBody });
         });
     }
@@ -115,17 +152,24 @@ class WhatsAppClient extends EventEmitter {
                     await this.client.initialize();
                     return true;
                 } catch (error) {
-                    const transient = isTransientProtocolError(error);
-                    const canRetry = transient && attempt < maxAttempts;
                     const message = String(error?.message || error || 'unknown error');
+                    const transient = isTransientProtocolError(error);
+                    const lockError = isBrowserLockError(error);
+                    const canRetry = (transient || lockError) && attempt < maxAttempts;
 
                     if (!canRetry) {
                         console.error(`[WA] initialize failed (${attempt}/${maxAttempts}): ${message}`);
                         throw error;
                     }
 
+                    if (lockError) {
+                        console.warn(`[WA] browser lock detected (${attempt}/${maxAttempts}): ${message}. Cleaning lock and recreating client...`);
+                        await this.shutdown({ recreate: true, emitDisconnected: false, reason: 'lock_recovery' });
+                        this.cleanupChromiumSingletonLocks();
+                    }
+
                     const waitMs = Math.min(10000, baseWaitMs * attempt);
-                    console.warn(`[WA] initialize transient failure (${attempt}/${maxAttempts}): ${message}. Retrying in ${waitMs}ms...`);
+                    console.warn(`[WA] initialize retry (${attempt}/${maxAttempts}) in ${waitMs}ms...`);
                     await wait(waitMs);
                 }
             }
@@ -138,6 +182,41 @@ class WhatsAppClient extends EventEmitter {
         } finally {
             this.initializePromise = null;
         }
+    }
+
+    async shutdown({ recreate = true, emitDisconnected = true, reason = 'shutdown' } = {}) {
+        this.isReady = false;
+        this.lastQr = null;
+        this.initializePromise = null;
+
+        const currentClient = this.client;
+        if (currentClient) {
+            try {
+                await Promise.race([
+                    currentClient.destroy(),
+                    wait(Number(process.env.WA_DESTROY_TIMEOUT_MS || 6000))
+                ]);
+            } catch (_) { }
+
+            try {
+                const browser = currentClient?.pupBrowser;
+                if (browser && typeof browser.isConnected === 'function' && browser.isConnected()) {
+                    await browser.close();
+                }
+            } catch (_) { }
+        }
+
+        this.cleanupChromiumSingletonLocks();
+
+        if (recreate) {
+            this.createClient();
+        }
+
+        if (emitDisconnected) {
+            this.emit('disconnected', reason);
+        }
+
+        return true;
     }
 
     async getChats() {
