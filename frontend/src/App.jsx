@@ -1622,6 +1622,7 @@ REGLA CRITICA:
             {showClientProfile && (
               <ClientProfilePanel
                 contact={{ ...activeChatDetails, ...clientContact }}
+                chats={chats}
                 onClose={() => setShowClientProfile(false)}
                 onQuickAiAction={requestAiSuggestion}
                 panelRef={clientProfilePanelRef}
