@@ -464,7 +464,9 @@ const guessExtensionFromMime = (mime = '') => {
     if (type.includes('text/plain')) return 'txt';
     if (type.includes('json')) return 'json';
     if (type.includes('xml')) return 'xml';
-    if (type.includes('video/')) return 'video';
+    if (type.includes('video/mp4')) return 'mp4';
+    if (type.includes('audio/mpeg')) return 'mp3';
+    if (type.includes('audio/ogg')) return 'ogg';
     if (type.includes('application/octet-stream')) return 'bin';
     return '';
 };
@@ -474,6 +476,58 @@ const getFileExtensionFromName = (filename = '') => {
     if (!safe.includes('.')) return '';
     const ext = safe.split('.').pop();
     return String(ext || '').trim().toLowerCase();
+};
+
+const sanitizeAttachmentFilename = (value = '') => {
+    let text = String(value || '').trim();
+    if (!text) return null;
+    text = text
+        .replace(/\\/g, '/')
+        .split('/')
+        .filter(Boolean)
+        .pop() || '';
+    text = text.split('?')[0].split('#')[0].trim();
+    text = text
+        .replace(/[\u0000-\u001F]/g, '')
+        .replace(/[<>:"/\\|?*]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/^\.+|\.+$/g, '')
+        .trim();
+    if (!text) return null;
+    if (/^(null|undefined|\[object object\]|unknown)$/i.test(text)) return null;
+    return text;
+};
+
+const isGenericAttachmentFilename = (value = '') => {
+    const base = String(value || '').trim().toLowerCase().replace(/\.[a-z0-9]{1,8}$/i, '');
+    if (!base) return true;
+    return ['archivo', 'file', 'adjunto', 'attachment', 'document', 'documento', 'media', 'download', 'descarga', 'unknown'].includes(base);
+};
+
+const isMachineLikeAttachmentFilename = (value = '') => {
+    const base = String(value || '').trim().replace(/\.[a-z0-9]{1,8}$/i, '').replace(/\s+/g, '');
+    if (!base) return true;
+    if (/^\d{8,}$/.test(base)) return true;
+    if (/^[a-f0-9]{16,}$/i.test(base)) return true;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(base)) return true;
+    if (/^3EB0[A-F0-9]{8,}$/i.test(base)) return true;
+    return false;
+};
+
+const looksLikeFilenameText = (value = '') => {
+    const text = String(value || '').trim();
+    if (!text || text.length > 180) return false;
+    if (/[\r\n]/.test(text)) return false;
+    if (/^[A-Za-z0-9+/=]{160,}$/.test(text)) return false;
+    if (/\.[A-Za-z0-9]{1,8}$/.test(text)) return true;
+    return /^https?:\/\//i.test(text);
+};
+
+const extractFilenameFromBody = (msg = {}) => {
+    const body = String(msg?.body || '').trim();
+    if (!looksLikeFilenameText(body)) return null;
+    return sanitizeAttachmentFilename(body);
 };
 
 const getAttachmentKind = (mimetype = '', extension = '') => {
@@ -491,15 +545,35 @@ const getAttachmentKind = (mimetype = '', extension = '') => {
 
 const buildAttachmentMeta = (msg = {}) => {
     const mimetype = String(msg?.mimetype || '').toLowerCase();
-    const rawFilename = String(msg?.filename || '').trim();
-    const extension = getFileExtensionFromName(rawFilename) || guessExtensionFromMime(mimetype);
-    const fallbackName = extension ? ('archivo.' + extension) : 'archivo';
-    const filename = rawFilename || fallbackName;
+    const extFromMime = guessExtensionFromMime(mimetype);
+
+    const filenameFromMessage = sanitizeAttachmentFilename(msg?.filename);
+    const filenameFromBody = extractFilenameFromBody(msg);
+
+    let resolvedName = filenameFromMessage;
+    if ((!resolvedName || isGenericAttachmentFilename(resolvedName) || isMachineLikeAttachmentFilename(resolvedName)) && filenameFromBody) {
+        resolvedName = filenameFromBody;
+    }
+
+    if (resolvedName && !getFileExtensionFromName(resolvedName) && extFromMime) {
+        resolvedName = `${resolvedName}.${extFromMime}`;
+    }
+    if (resolvedName && (isGenericAttachmentFilename(resolvedName) || isMachineLikeAttachmentFilename(resolvedName)) && extFromMime) {
+        resolvedName = `documento.${extFromMime}`;
+    }
+    if (!resolvedName || isMachineLikeAttachmentFilename(resolvedName)) {
+        resolvedName = extFromMime ? `documento.${extFromMime}` : 'documento';
+    }
+
+    const extension = getFileExtensionFromName(resolvedName) || extFromMime;
     const extensionBadge = extension ? extension.toUpperCase() : 'FILE';
     const kind = getAttachmentKind(mimetype, extension);
     const sizeLabel = formatFileSizeLabel(msg?.fileSizeBytes);
+
     return {
-        filename,
+        filename: resolvedName,
+        displayName: resolvedName,
+        downloadFilename: resolvedName,
         extensionBadge,
         kindLabel: kind.label,
         accentClass: kind.accentClass,
@@ -508,7 +582,6 @@ const buildAttachmentMeta = (msg = {}) => {
         mimetype: mimetype || 'application/octet-stream'
     };
 };
-
 const renderAttachmentIcon = (icon = 'file') => {
     if (icon === 'pdf') return <FileText size={18} />;
     if (icon === 'doc') return <FileText size={18} />;
@@ -744,6 +817,110 @@ const MessageBubble = ({
         && !msg.mimetype?.startsWith('audio/')
     );
     const attachmentMeta = hasBinaryAttachment ? buildAttachmentMeta(msg) : null;
+    const canOpenAttachmentAsPdf = Boolean(attachmentMeta && (((attachmentMeta.mimetype || msg?.mimetype || '').toLowerCase().includes('pdf')) || getFileExtensionFromName(attachmentMeta.downloadFilename || attachmentMeta.filename || '').toLowerCase() === 'pdf'));
+    const normalizeBase64Payload = (value = '') => {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        const stripped = raw.replace(/^data:.*?;base64,/i, '');
+        const cleaned = stripped.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+        const remainder = cleaned.length % 4;
+        if (remainder === 0) return cleaned;
+        if (remainder === 2) return `${cleaned}==`;
+        if (remainder === 3) return `${cleaned}=`;
+        return cleaned;
+    };
+
+    const getAttachmentObjectUrl = () => {
+        if (!attachmentMeta || !msg?.mediaData) return null;
+        try {
+            const payload = normalizeBase64Payload(msg.mediaData);
+            if (!payload) return null;
+            const binary = window.atob(payload);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+            const blob = new Blob([bytes], {
+                type: attachmentMeta.mimetype || msg?.mimetype || 'application/octet-stream'
+            });
+            return URL.createObjectURL(blob);
+        } catch (e) {
+            return null;
+        }
+    };
+
+    const revokeObjectUrlLater = (url, delayMs = 120000) => {
+        if (!url) return;
+        window.setTimeout(() => {
+            try {
+                URL.revokeObjectURL(url);
+            } catch (e) { }
+        }, delayMs);
+    };
+
+    const handleOpenAttachment = (event) => {
+        event.preventDefault();
+        if (!canOpenAttachmentAsPdf) {
+            handleDownloadAttachment(event);
+            return;
+        }
+
+        const objectUrl = getAttachmentObjectUrl();
+        if (objectUrl) {
+            const opened = window.open(objectUrl, '_blank', 'noopener,noreferrer');
+            if (!opened) {
+                const link = document.createElement('a');
+                link.href = objectUrl;
+                link.target = '_blank';
+                link.rel = 'noreferrer';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+            }
+            revokeObjectUrlLater(objectUrl);
+            return;
+        }
+
+        if (mediaDataUrl) {
+            const fallback = document.createElement('a');
+            fallback.href = mediaDataUrl;
+            fallback.target = '_blank';
+            fallback.rel = 'noreferrer';
+            document.body.appendChild(fallback);
+            fallback.click();
+            fallback.remove();
+        }
+    };
+
+    const handleDownloadAttachment = (event) => {
+        event.preventDefault();
+        const objectUrl = getAttachmentObjectUrl();
+        const rawDownloadName = attachmentMeta?.downloadFilename || attachmentMeta?.filename || 'documento';
+        const fallbackExt = getFileExtensionFromName(rawDownloadName) || guessExtensionFromMime(attachmentMeta?.mimetype || msg?.mimetype || '');
+        const downloadName = (isGenericAttachmentFilename(rawDownloadName) || isMachineLikeAttachmentFilename(rawDownloadName))
+            ? (fallbackExt ? `documento.${fallbackExt}` : 'documento')
+            : rawDownloadName;
+
+        if (objectUrl) {
+            const link = document.createElement('a');
+            link.href = objectUrl;
+            link.download = downloadName;
+            link.rel = 'noreferrer';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            revokeObjectUrlLater(objectUrl, 30000);
+            return;
+        }
+
+        if (mediaDataUrl) {
+            const fallback = document.createElement('a');
+            fallback.href = mediaDataUrl;
+            fallback.download = downloadName;
+            fallback.rel = 'noreferrer';
+            document.body.appendChild(fallback);
+            fallback.click();
+            fallback.remove();
+        }
+    };
 
     const messageSenderName = String(senderDisplayName || msg?.notifyName || msg?.senderPushname || '').trim();
     const senderIdentityKey = String(
@@ -890,12 +1067,14 @@ const MessageBubble = ({
                     </div>
 
                     <div className="message-file-actions">
-                        <a href={mediaDataUrl} target="_blank" rel="noreferrer" className="message-file-action">
-                            Abrir
-                        </a>
-                        <a href={mediaDataUrl} download={attachmentMeta.filename} className="message-file-action secondary">
+                        {canOpenAttachmentAsPdf && (
+                            <button type="button" onClick={handleOpenAttachment} className="message-file-action">
+                                Abrir
+                            </button>
+                        )}
+                        <button type="button" onClick={handleDownloadAttachment} className="message-file-action secondary">
                             <Download size={13} /> Descargar
-                        </a>
+                        </button>
                     </div>
                 </div>
             )}
@@ -1337,3 +1516,18 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

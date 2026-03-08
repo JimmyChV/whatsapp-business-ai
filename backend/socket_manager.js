@@ -626,21 +626,186 @@ function getMessageTypePreviewLabel(type = '') {
 }
 
 
-function extractMessageFileMeta(msg = {}) {
+function guessFileExtensionFromMime(mimetype = '') {
+    const type = String(mimetype || '').toLowerCase();
+    if (!type) return '';
+    if (type.includes('pdf')) return 'pdf';
+    if (type.includes('wordprocessingml')) return 'docx';
+    if (type.includes('msword')) return 'doc';
+    if (type.includes('spreadsheetml')) return 'xlsx';
+    if (type.includes('ms-excel') || type.includes('excel')) return 'xls';
+    if (type.includes('presentationml')) return 'pptx';
+    if (type.includes('ms-powerpoint') || type.includes('powerpoint')) return 'ppt';
+    if (type.includes('text/plain')) return 'txt';
+    if (type.includes('csv')) return 'csv';
+    if (type.includes('json')) return 'json';
+    if (type.includes('xml')) return 'xml';
+    if (type.includes('zip')) return 'zip';
+    if (type.includes('rar')) return 'rar';
+    if (type.includes('7z')) return '7z';
+    if (type.includes('jpeg')) return 'jpg';
+    if (type.includes('png')) return 'png';
+    if (type.includes('webp')) return 'webp';
+    if (type.includes('gif')) return 'gif';
+    if (type.includes('mp4')) return 'mp4';
+    if (type.includes('audio/mpeg')) return 'mp3';
+    if (type.includes('audio/ogg')) return 'ogg';
+    return '';
+}
+
+function sanitizeFilenameCandidate(value = '') {
+    let text = String(value || '').trim();
+    if (!text) return null;
+
+    if (/^https?:\/\//i.test(text)) {
+        try {
+            const parsed = new URL(text);
+            const fromPath = String(parsed.pathname || '').split('/').filter(Boolean).pop() || '';
+            text = fromPath || text;
+        } catch (e) { }
+    }
+
+    text = text
+        .replace(/^['\"]+|['\"]+$/g, '')
+        .replace(/\\/g, '/');
+    if (text.includes('/')) text = text.split('/').pop() || text;
+    text = text.split('?')[0].split('#')[0];
+
+    try {
+        text = decodeURIComponent(text);
+    } catch (e) { }
+
+    text = text
+        .replace(/[\u0000-\u001F]/g, '')
+        .replace(/[<>:\"/\\|?*]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/^\.+|\.+$/g, '')
+        .trim();
+
+    if (!text) return null;
+    if (/^(null|undefined|\[object object\]|unknown)$/i.test(text)) return null;
+    return text;
+}
+
+function getFilenameExtension(filename = '') {
+    const name = String(filename || '').trim();
+    const dotIdx = name.lastIndexOf('.');
+    if (dotIdx <= 0 || dotIdx >= name.length - 1) return '';
+    const ext = name.slice(dotIdx + 1).toLowerCase();
+    if (!/^[a-z0-9]{1,8}$/.test(ext)) return '';
+    return ext;
+}
+
+function isGenericFilename(filename = '') {
+    const base = String(filename || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\.[a-z0-9]{1,8}$/i, '');
+    if (!base) return true;
+    return ['archivo', 'file', 'adjunto', 'attachment', 'document', 'documento', 'media', 'unknown', 'download', 'descarga'].includes(base);
+}
+
+function isMachineLikeFilename(filename = '') {
+    const base = String(filename || '')
+        .trim()
+        .replace(/\.[a-z0-9]{1,8}$/i, '')
+        .replace(/\s+/g, '');
+    if (!base) return true;
+
+    if (/^\d{8,}$/.test(base)) return true;
+    if (/^[a-f0-9]{16,}$/i.test(base)) return true;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(base)) return true;
+    if (/^3EB0[A-F0-9]{8,}$/i.test(base)) return true;
+
+    return false;
+}
+
+function looksLikeBodyFilename(value = '') {
+    const text = String(value || '').trim();
+    if (!text || text.length > 180) return false;
+    if (/[\r\n]/.test(text)) return false;
+    if (/^[A-Za-z0-9+/=]{160,}$/.test(text)) return false;
+    if (/^https?:\/\//i.test(text)) return true;
+    return /\.[A-Za-z0-9]{1,8}$/.test(text);
+}
+
+function extractMessageFileMeta(msg = {}, downloadedMedia = null) {
     const raw = msg?._data || {};
-    const filename = String(
-        msg?.filename
-        || raw?.filename
-        || raw?.fileName
-        || raw?.mediaData?.filename
+    const nestedDocumentName =
+        raw?.message?.documentMessage?.fileName
+        || raw?.message?.documentWithCaptionMessage?.message?.documentMessage?.fileName
+        || raw?.message?.viewOnceMessage?.message?.documentMessage?.fileName
+        || raw?.message?.viewOnceMessageV2?.message?.documentMessage?.fileName
+        || raw?.message?.viewOnceMessageV2Extension?.message?.documentMessage?.fileName
+        || null;
+
+    const bodyCandidateRaw = String(msg?.body || raw?.body || '').trim();
+    const bodyCandidate = looksLikeBodyFilename(bodyCandidateRaw) ? bodyCandidateRaw : null;
+
+    const candidateNames = [
+        msg?.filename,
+        raw?.filename,
+        raw?.fileName,
+        raw?.file_name,
+        raw?.mediaData?.filename,
+        raw?.mediaData?.fileName,
+        raw?.mediaData?.file_name,
+        nestedDocumentName,
+        downloadedMedia?.filename,
+        downloadedMedia?.fileName,
+        raw?.title,
+        bodyCandidate
+    ];
+
+    let filename = null;
+    let fallbackFilename = null;
+    for (const candidate of candidateNames) {
+        const safeName = sanitizeFilenameCandidate(candidate);
+        if (!safeName) continue;
+        if (!fallbackFilename) fallbackFilename = safeName;
+        const ext = getFilenameExtension(safeName);
+        if (!isGenericFilename(safeName) && !isMachineLikeFilename(safeName) && ext) {
+            filename = safeName;
+            break;
+        }
+        if (!filename && !isGenericFilename(safeName) && !isMachineLikeFilename(safeName)) {
+            filename = safeName;
+        }
+    }
+    if (!filename) filename = fallbackFilename;
+
+    const mimetype = String(
+        msg?.mimetype
+        || raw?.mimetype
+        || raw?.mediaData?.mimetype
+        || downloadedMedia?.mimetype
         || ''
-    ).trim() || null;
+    ).trim();
+    const mimeExt = guessFileExtensionFromMime(mimetype);
+    const hasAttachment = Boolean(msg?.hasMedia || raw?.hasMedia || mimetype || downloadedMedia);
+
+    if (filename && !getFilenameExtension(filename) && mimeExt) {
+        filename = `${filename}.${mimeExt}`;
+    }
+    if (filename && (isGenericFilename(filename) || isMachineLikeFilename(filename)) && mimeExt) {
+        filename = `documento.${mimeExt}`;
+    }
+    if (!filename && hasAttachment && mimeExt) {
+        filename = `documento.${mimeExt}`;
+    }
+    if (!filename && hasAttachment && String(msg?.type || '').toLowerCase() === 'document') {
+        filename = 'documento';
+    }
 
     const sizeCandidates = [
         raw?.size,
         raw?.fileSize,
         raw?.fileLength,
-        raw?.mediaData?.size
+        raw?.mediaData?.size,
+        downloadedMedia?.filesize,
+        downloadedMedia?.fileSize,
+        downloadedMedia?.size
     ];
 
     let fileSizeBytes = null;
@@ -649,6 +814,12 @@ function extractMessageFileMeta(msg = {}) {
         if (Number.isFinite(parsed) && parsed > 0) {
             fileSizeBytes = Math.round(parsed);
             break;
+        }
+    }
+    if (!fileSizeBytes && downloadedMedia?.data) {
+        const base64Length = String(downloadedMedia.data || '').length;
+        if (base64Length > 0) {
+            fileSizeBytes = Math.round((base64Length * 3) / 4);
         }
     }
 
@@ -2342,11 +2513,14 @@ class SocketManager {
                             try {
                                 const media = await mediaManager.processMessageMedia(m);
                                 if (!media) return;
+                                const mediaMeta = extractMessageFileMeta(m, media);
                                 socket.emit('chat_media', {
                                     chatId: historyChatId,
                                     messageId: m.id._serialized,
                                     mediaData: media.data,
-                                    mimetype: media.mimetype
+                                    mimetype: media.mimetype,
+                                    filename: mediaMeta.filename,
+                                    fileSizeBytes: mediaMeta.fileSizeBytes
                                 });
                             } catch (mediaErr) { }
                         });
@@ -3141,7 +3315,7 @@ class SocketManager {
 
             const media = await mediaManager.processMessageMedia(msg);
             const senderMeta = await resolveMessageSenderMeta(msg);
-            const fileMeta = extractMessageFileMeta(msg);
+            const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
             this.io.emit('message', {
                 id: msg.id._serialized,
@@ -3185,7 +3359,7 @@ class SocketManager {
             if (isStatusOrSystemMessage(msg)) return;
             // Emite de vuelta para confirmar en UI si se envio desde otro lugar
             const media = await mediaManager.processMessageMedia(msg);
-            const fileMeta = extractMessageFileMeta(msg);
+            const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
             this.io.emit('message', {
                 id: msg.id._serialized,
@@ -3289,4 +3463,6 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
+
 

@@ -162,6 +162,42 @@ const sanitizeDisplayText = (value = '') => repairMojibake(value)
   .replace(/\s+/g, ' ')
   .trim();
 
+const normalizeMessageFilename = (value = '') => {
+  let name = String(value || '').trim();
+  if (!name) return null;
+  name = name
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(Boolean)
+    .pop() || '';
+  name = name.split('?')[0].split('#')[0].trim();
+  name = repairMojibake(name)
+    .replace(/[\u0000-\u001F]/g, '')
+    .replace(/[<>:"/\\|?*]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\.+|\.+$/g, '')
+    .trim();
+  if (!name) return null;
+  return name;
+};
+
+const isGenericFilename = (value = '') => {
+  const base = String(value || '').trim().toLowerCase().replace(/\.[a-z0-9]{1,8}$/i, '');
+  if (!base) return true;
+  return ['archivo', 'file', 'adjunto', 'attachment', 'document', 'documento', 'media', 'download', 'descarga', 'unknown'].includes(base);
+};
+
+const isMachineLikeFilename = (value = '') => {
+  const base = String(value || '').trim().replace(/\.[a-z0-9]{1,8}$/i, '').replace(/\s+/g, '');
+  if (!base) return true;
+  if (/^\d{8,}$/.test(base)) return true;
+  if (/^[a-f0-9]{16,}$/i.test(base)) return true;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(base)) return true;
+  if (/^3EB0[A-F0-9]{8,}$/i.test(base)) return true;
+  return false;
+};
+
 const normalizeParticipantList = (participants = []) => {
   if (!Array.isArray(participants)) return [];
 
@@ -787,6 +823,8 @@ function App() {
           ...m,
           body: repairMojibake(m?.body || ''),
           location: normalizeMessageLocation(m?.location),
+          filename: normalizeMessageFilename(m?.filename),
+          fileSizeBytes: Number.isFinite(Number(m?.fileSizeBytes)) ? Number(m.fileSizeBytes) : null,
           ack: Number.isFinite(Number(m?.ack)) ? Number(m.ack) : 0,
           edited: Boolean(m?.edited),
 
@@ -798,7 +836,7 @@ function App() {
       setMessages(sanitizedMessages);
     });
 
-    socket.on('chat_media', ({ chatId, messageId, mediaData, mimetype }) => {
+    socket.on('chat_media', ({ chatId, messageId, mediaData, mimetype, filename, fileSizeBytes }) => {
       const active = String(activeChatIdRef.current || '');
       const incoming = String(chatId || '');
       if (incoming !== active) {
@@ -810,9 +848,20 @@ function App() {
         if (!sameByDigits) return;
       }
       if (!messageId || !mediaData) return;
-      setMessages((prev) => prev.map((m) => (
-        m.id === messageId ? { ...m, mediaData, mimetype: mimetype || m.mimetype } : m
-      )));
+      const nextFilename = normalizeMessageFilename(filename);
+      const nextSize = Number.isFinite(Number(fileSizeBytes)) ? Number(fileSizeBytes) : null;
+      setMessages((prev) => prev.map((m) => {
+        if (m.id !== messageId) return m;
+        const currentFilename = normalizeMessageFilename(m?.filename);
+        const shouldReplaceFilename = Boolean(nextFilename) && (!currentFilename || isGenericFilename(currentFilename) || isMachineLikeFilename(currentFilename));
+        return {
+          ...m,
+          mediaData,
+          mimetype: mimetype || m.mimetype,
+          filename: shouldReplaceFilename ? nextFilename : currentFilename,
+          fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(m?.fileSizeBytes)) ? Number(m.fileSizeBytes) : null)
+        };
+      }));
     });
 
     socket.on('contact_info', (contact) => {
@@ -958,7 +1007,15 @@ function App() {
 
         const shouldAdd = sameById || sameByIdDigits || sameByPhone;
         if (!shouldAdd) return prev;
-        return [...prev, { ...msg, body: repairMojibake(msg?.body || ''), location: normalizeMessageLocation(msg?.location), canEdit: Boolean(msg?.canEdit), quotedMessage: normalizeQuotedMessage(msg?.quotedMessage) }];
+        return [...prev, {
+          ...msg,
+          body: repairMojibake(msg?.body || ''),
+          location: normalizeMessageLocation(msg?.location),
+          filename: normalizeMessageFilename(msg?.filename),
+          fileSizeBytes: Number.isFinite(Number(msg?.fileSizeBytes)) ? Number(msg.fileSizeBytes) : null,
+          canEdit: Boolean(msg?.canEdit),
+          quotedMessage: normalizeQuotedMessage(msg?.quotedMessage)
+        }];
       });
     });
 
@@ -1698,3 +1755,7 @@ REGLA CRITICA:
 }
 
 export default App;
+
+
+
+

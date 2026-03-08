@@ -2938,6 +2938,9 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.2;
 }
 
 .message-file-action.secondary {
@@ -2973,3 +2976,4 @@ body {
 .message-phone-link:hover {
   filter: brightness(1.08);
 }
+
