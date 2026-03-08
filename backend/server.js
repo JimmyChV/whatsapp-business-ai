@@ -13,6 +13,7 @@ const auditLogService = require('./audit_log_service');
 const tenantService = require('./tenant_service');
 const tenantSettingsService = require('./tenant_settings_service');
 const messageHistoryService = require('./message_history_service');
+const opsTelemetry = require('./ops_telemetry');
 
 const waClient = require('./wa_provider');
 const SocketManager = require('./socket_manager');
@@ -31,6 +32,8 @@ const socketAuthRequired = parseBooleanEnv(process.env.SOCKET_AUTH_REQUIRED, isP
 const httpRateLimitEnabled = parseBooleanEnv(process.env.HTTP_RATE_LIMIT_ENABLED, true);
 const trustProxyEnabled = parseBooleanEnv(process.env.TRUST_PROXY, false);
 const saasSocketAuthRequired = parseBooleanEnv(process.env.SAAS_SOCKET_AUTH_REQUIRED, parseBooleanEnv(process.env.SAAS_AUTH_ENABLED, false));
+const opsApiToken = String(process.env.OPS_API_TOKEN || '').trim();
+const opsReadyRequireWa = parseBooleanEnv(process.env.OPS_READY_REQUIRE_WA, false);
 const httpRateLimiter = new RateLimiter({
     windowMs: Number(process.env.HTTP_RATE_LIMIT_WINDOW_MS || 10000),
     max: Number(process.env.HTTP_RATE_LIMIT_MAX || 120)
@@ -48,6 +51,59 @@ function isCorsOriginAllowed(origin) {
 
 const app = express();
 app.disable('x-powered-by');
+
+function resolveRequestId(req = {}) {
+    const fromHeader = String(req.headers?.['x-request-id'] || req.headers?.['x-correlation-id'] || '').trim();
+    if (fromHeader) return fromHeader;
+    try {
+        return crypto.randomUUID();
+    } catch (_) {
+        return 'req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+    }
+}
+
+function getOpsTokenFromRequest(req = {}) {
+    const fromHeader = String(req.headers?.['x-ops-token'] || '').trim();
+    if (fromHeader) return fromHeader;
+    const authHeader = String(req.headers?.authorization || '').trim();
+    if (/^bearer\s+/i.test(authHeader)) return authHeader.replace(/^bearer\s+/i, '').trim();
+    return '';
+}
+
+function hasOpsAccess(req = {}) {
+    if (!opsApiToken) return true;
+    const incoming = getOpsTokenFromRequest(req);
+    if (!incoming) return false;
+    const left = Buffer.from(opsApiToken, 'utf8');
+    const right = Buffer.from(incoming, 'utf8');
+    if (left.length !== right.length) return false;
+    try {
+        return crypto.timingSafeEqual(left, right);
+    } catch (_) {
+        return false;
+    }
+}
+
+app.use((req, res, next) => {
+    const startedNs = process.hrtime.bigint();
+    const requestId = resolveRequestId(req);
+    req.requestId = requestId;
+    res.setHeader('X-Request-Id', requestId);
+
+    res.on('finish', () => {
+        const durationMs = Number(process.hrtime.bigint() - startedNs) / 1e6;
+        opsTelemetry.recordHttpRequest({
+            method: req.method,
+            route: req.originalUrl || req.url || '/',
+            statusCode: res.statusCode,
+            durationMs,
+            tenantId: String(req?.tenantContext?.id || 'default')
+        });
+    });
+
+    next();
+});
+
 
 if (trustProxyEnabled) {
     app.set('trust proxy', 1);
@@ -151,6 +207,7 @@ io.use((socket, next) => {
                     logger.warn('SOCKET_AUTH_REQUIRED activo y SOCKET_AUTH_TOKEN vacio; conexiones Socket.IO seran rechazadas.');
                     socketAuthRejectLogged = true;
                 }
+                opsTelemetry.recordSocketReject('legacy_token_required');
                 return next(new Error('Unauthorized'));
             }
 
@@ -159,6 +216,7 @@ io.use((socket, next) => {
                 socketAuthBypassLogged = true;
             }
         } else if (!(legacyToken && legacyToken === expectedToken)) {
+            opsTelemetry.recordSocketReject('legacy_token_invalid');
             return next(new Error('Unauthorized'));
         }
 
@@ -177,11 +235,13 @@ io.use((socket, next) => {
                 logger.warn('SAAS_SOCKET_AUTH_REQUIRED activo y no se recibio un token SaaS valido en el socket.');
                 saasSocketAuthRejectLogged = true;
             }
+            opsTelemetry.recordSocketReject('saas_token_missing_or_invalid');
             return next(new Error('Unauthorized'));
         }
 
         const tenant = tenantService.resolveTenantForSocket(socket, authContext || null);
         if (saasSocketAuthRequired && authContext?.tenantId && authContext.tenantId !== tenant.id) {
+            opsTelemetry.recordSocketReject('tenant_mismatch');
             return next(new Error('Unauthorized'));
         }
 
@@ -192,7 +252,15 @@ io.use((socket, next) => {
         return next();
     })().catch((error) => {
         logger.warn('[Auth] socket middleware failed: ' + String(error?.message || error));
+        opsTelemetry.recordSocketReject('middleware_error');
         return next(new Error('Unauthorized'));
+    });
+});
+
+io.on('connection', (socket) => {
+    opsTelemetry.recordSocketConnect();
+    socket.on('disconnect', () => {
+        opsTelemetry.recordSocketDisconnect();
     });
 });
 
@@ -214,6 +282,61 @@ function toPublicTenant(tenant = null) {
         plan: tenant.plan
     };
 }
+
+app.get('/api/ops/health', (req, res) => {
+    if (!hasOpsAccess(req)) return res.status(401).json({ ok: false, error: 'No autorizado para operacion.' });
+    const runtime = typeof waClient.getRuntimeInfo === 'function'
+        ? waClient.getRuntimeInfo()
+        : { requestedTransport: 'idle', activeTransport: 'idle' };
+
+    return res.json({
+        ok: true,
+        requestId: req.requestId || null,
+        now: new Date().toISOString(),
+        uptimeSec: Math.max(0, Math.floor(process.uptime())),
+        runtime,
+        waReady: Boolean(waClient.isReady)
+    });
+});
+
+app.get('/api/ops/ready', (req, res) => {
+    if (!hasOpsAccess(req)) return res.status(401).json({ ok: false, error: 'No autorizado para operacion.' });
+
+    const runtime = typeof waClient.getRuntimeInfo === 'function'
+        ? waClient.getRuntimeInfo()
+        : { requestedTransport: 'idle', activeTransport: 'idle' };
+    const waReady = Boolean(waClient.isReady);
+    const ready = opsReadyRequireWa ? waReady : true;
+
+    return res.status(ready ? 200 : 503).json({
+        ok: ready,
+        requestId: req.requestId || null,
+        ready,
+        checks: {
+            process: true,
+            wa: waReady,
+            waReady,
+            waRequired: Boolean(opsReadyRequireWa)
+        },
+        runtime
+    });
+});
+
+app.get('/api/ops/metrics', (req, res) => {
+    if (!hasOpsAccess(req)) return res.status(401).json({ ok: false, error: 'No autorizado para operacion.' });
+
+    const runtime = typeof waClient.getRuntimeInfo === 'function'
+        ? waClient.getRuntimeInfo()
+        : { requestedTransport: 'idle', activeTransport: 'idle' };
+    const snapshot = opsTelemetry.buildSnapshot({
+        waRuntime: runtime,
+        waReady: Boolean(waClient.isReady),
+        saasEnabled: tenantService.isSaasEnabled(),
+        authEnabled: authService.isAuthEnabled()
+    });
+
+    return res.json({ ok: true, requestId: req.requestId || null, ...snapshot });
+});
 
 app.get('/api/saas/runtime', async (req, res) => {
     const authContext = req.authContext || { enabled: false, isAuthenticated: false, user: null };
@@ -990,13 +1113,53 @@ const scheduleWaInitialize = (delayMs = 0) => {
     setTimeout(() => {
         waClient.initialize().catch((error) => {
             const retryDelay = Math.max(2000, Number(process.env.WA_INIT_RESTART_DELAY_MS || 12000));
+            opsTelemetry.recordInternalError('wa_initialize', error);
             logger.error(`[WA] initialize bootstrap error: ${String(error?.message || error)}`);
             logger.warn(`[WA] retrying initialize in ${retryDelay}ms...`);
             scheduleWaInitialize(retryDelay);
         });
     }, safeDelay);
 };
+
+function registerProcessHandlers() {
+    process.on('uncaughtException', (error) => {
+        opsTelemetry.recordInternalError('uncaught_exception', error);
+        logger.error('[Process] uncaught exception: ' + String(error?.stack || error?.message || error));
+    });
+
+    process.on('unhandledRejection', (reason) => {
+        opsTelemetry.recordInternalError('unhandled_rejection', reason);
+        logger.error('[Process] unhandled rejection: ' + String(reason?.stack || reason?.message || reason));
+    });
+
+    const graceful = async (signal) => {
+        logger.warn('[Process] graceful shutdown requested by ' + signal);
+        try {
+            if (typeof waClient.setTransportMode === 'function') {
+                await waClient.setTransportMode('idle');
+            }
+        } catch (error) {
+            logger.warn('[Process] failed to stop WA transport: ' + String(error?.message || error));
+        }
+
+        server.close(() => {
+            logger.info('[Process] HTTP server closed.');
+            process.exit(0);
+        });
+
+        setTimeout(() => {
+            logger.warn('[Process] forced shutdown timeout reached.');
+            process.exit(1);
+        }, Number(process.env.SHUTDOWN_FORCE_TIMEOUT_MS || 10000)).unref();
+    };
+
+    process.on('SIGTERM', () => graceful('SIGTERM'));
+    process.on('SIGINT', () => graceful('SIGINT'));
+}
+
 const PORT = process.env.PORT || 3001;
+
+registerProcessHandlers();
 
 server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
@@ -1006,3 +1169,5 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
+
+
