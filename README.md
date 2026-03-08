@@ -111,3 +111,8 @@ Nota: aunque no pongas keys, el sistema intenta `wc/store/v1` (endpoint público
 
 ---
 Desarrollado con ❤️ para potenciar las ventas digitales.
+
+## Production hardening baseline
+- See docs/PRODUCTION_SECURITY_BASELINE.md for the secure production checklist.
+- Use ackend/.env.production.example as your base production env template.
+
