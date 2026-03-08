@@ -10,7 +10,8 @@
     "ops:backup": "node scripts/backup_tenant_data.js",
     "ops:restore": "node scripts/restore_tenant_data.js",
     "ops:load-smoke": "node scripts/load_smoke.js",
-    "ops:kpi-pilot": "node scripts/pilot_kpi_monitor.js"
+    "ops:kpi-pilot": "node scripts/pilot_kpi_monitor.js",
+    "ops:phase5-closeout": "node scripts/phase5_closeout.js"
   },
   "keywords": [],
   "author": "",
@@ -24,3 +25,4 @@
     "whatsapp-web.js": "^1.34.6"
   }
 }
+

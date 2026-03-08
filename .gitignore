@@ -39,3 +39,5 @@ backend/data/tenants/
 # Optional shared data
 # backend/catalog.json
 backend/wwebjs_auth/
+backend/backups/
+
