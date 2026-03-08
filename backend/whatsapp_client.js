@@ -176,6 +176,9 @@ class WhatsAppClient extends EventEmitter {
         return {
             messageEdit: true,
             messageEditSync: true,
+            messageForward: true,
+            messageDelete: true,
+            messageReply: true,
             quickReplies: quickRepliesNative,
             quickRepliesRead: quickRepliesNative,
             quickRepliesWrite: quickRepliesNative

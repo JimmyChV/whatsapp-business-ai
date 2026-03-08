@@ -487,12 +487,20 @@ const upsertAndSortChat = (list = [], incoming = null) => {
 };
 
 const CHAT_PAGE_SIZE = 80;
+const TRANSPORT_STORAGE_KEY = 'wa_transport_mode';
 
 function App() {
   // --------------------------------------------------------------
   const [isConnected, setIsConnected] = useState(false);
   const [qrCode, setQrCode] = useState('');
   const [isClientReady, setIsClientReady] = useState(false);
+  const [selectedTransport, setSelectedTransport] = useState(() => {
+    const saved = String(localStorage.getItem(TRANSPORT_STORAGE_KEY) || '').trim().toLowerCase();
+    return (saved === 'webjs' || saved === 'cloud') ? saved : '';
+  });
+  const [waRuntime, setWaRuntime] = useState({ requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false, cloudReady: false, availableTransports: ['webjs', 'cloud'] });
+  const [transportError, setTransportError] = useState('');
+  const [isSwitchingTransport, setIsSwitchingTransport] = useState(false);
 
   // --------------------------------------------------------------
   const [chats, setChats] = useState([]);
@@ -531,7 +539,7 @@ function App() {
   const [labelDefinitions, setLabelDefinitions] = useState([]);
   const [quickReplies, setQuickReplies] = useState([]);
 
-  const [waCapabilities, setWaCapabilities] = useState({ messageEdit: true, messageEditSync: true, quickReplies: false, quickRepliesRead: false, quickRepliesWrite: false });
+  const [waCapabilities, setWaCapabilities] = useState({ messageEdit: true, messageEditSync: true, messageForward: true, messageDelete: true, messageReply: true, quickReplies: false, quickRepliesRead: false, quickRepliesWrite: false });
   const [toasts, setToasts] = useState([]);
   const [pendingOrderCartLoad, setPendingOrderCartLoad] = useState(null);
 
@@ -547,6 +555,7 @@ function App() {
   const shouldInstantScrollRef = useRef(false);
   const prevMessagesMetaRef = useRef({ count: 0, lastId: '' });
   const suppressSmoothScrollUntilRef = useRef(0);
+  const selectedTransportRef = useRef(selectedTransport);
 
   // --------------------------------------------------------------
   // Notifications
@@ -610,6 +619,20 @@ function App() {
   }, [chatFilters]);
 
   useEffect(() => {
+    selectedTransportRef.current = selectedTransport;
+    if (selectedTransport) localStorage.setItem(TRANSPORT_STORAGE_KEY, selectedTransport);
+    else localStorage.removeItem(TRANSPORT_STORAGE_KEY);
+  }, [selectedTransport]);
+
+  useEffect(() => {
+    if (selectedTransport !== 'cloud') return;
+    if (waRuntime?.activeTransport !== 'cloud') return;
+    if (waRuntime?.cloudConfigured) return;
+    setIsClientReady(false);
+    setTransportError('Cloud API no configurada en backend/.env.');
+  }, [selectedTransport, waRuntime]);
+
+  useEffect(() => {
     if (!showClientProfile) return;
     const handleOutsideClick = (event) => {
       const target = event.target;
@@ -650,17 +673,26 @@ function App() {
   // Socket Events
   // --------------------------------------------------------------
   useEffect(() => {
-    socket.on('connect', () => setIsConnected(true));
+    socket.on('connect', () => {
+      setIsConnected(true);
+      setTransportError('');
+      const mode = selectedTransportRef.current;
+      setIsSwitchingTransport(true);
+      socket.emit('set_transport_mode', { mode: mode || 'idle' });
+      socket.emit('get_wa_capabilities');
+    });
     socket.on('disconnect', () => {
       setIsConnected(false);
+      setIsSwitchingTransport(false);
       chatPagingRef.current.loading = false;
       setIsLoadingMoreChats(false);
     });
 
-    socket.on('qr', (qr) => { setQrCode(qr); setIsClientReady(false); });
+    socket.on('qr', (qr) => { setQrCode(qr); setIsClientReady(false); setIsSwitchingTransport(false); });
 
     socket.on('ready', () => {
       setIsClientReady(true);
+      setIsSwitchingTransport(false);
       setQrCode('');
       requestChatsPage({ reset: true });
       socket.emit('get_business_data');
@@ -677,6 +709,9 @@ function App() {
       const nextCaps = {
         messageEdit: Boolean(caps?.messageEdit),
         messageEditSync: Boolean(caps?.messageEditSync),
+        messageForward: Boolean(caps?.messageForward),
+        messageDelete: Boolean(caps?.messageDelete),
+        messageReply: Boolean(caps?.messageReply),
         quickReplies: Boolean(caps?.quickReplies),
         quickRepliesRead: Boolean(caps?.quickRepliesRead),
         quickRepliesWrite: Boolean(caps?.quickRepliesWrite),
@@ -687,6 +722,33 @@ function App() {
       } else {
         setQuickReplies([]);
       }
+    });
+
+    socket.on('wa_runtime', (runtime) => {
+      const nextRuntime = runtime && typeof runtime === 'object' ? runtime : {};
+      setWaRuntime((prev) => ({
+        ...prev,
+        ...nextRuntime,
+        availableTransports: Array.isArray(nextRuntime?.availableTransports) ? nextRuntime.availableTransports : (prev?.availableTransports || ['webjs', 'cloud'])
+      }));
+    });
+
+    socket.on('transport_mode_set', (runtime) => {
+      const nextRuntime = runtime && typeof runtime === 'object' ? runtime : {};
+      setWaRuntime((prev) => ({
+        ...prev,
+        ...nextRuntime,
+        availableTransports: Array.isArray(nextRuntime?.availableTransports) ? nextRuntime.availableTransports : (prev?.availableTransports || ['webjs', 'cloud'])
+      }));
+      setTransportError('');
+      setIsSwitchingTransport(false);
+    });
+
+    socket.on('transport_mode_error', (msg) => {
+      setIsSwitchingTransport(false);
+      setIsClientReady(false);
+      setQrCode('');
+      setTransportError(String(msg || 'No se pudo cambiar el modo de transporte.'));
     });
 
     socket.on('chats', (payload) => {
@@ -1059,6 +1121,10 @@ function App() {
       if (msg) alert(msg);
     });
 
+    socket.on('error', (msg) => {
+      if (typeof msg === 'string' && msg.trim()) alert(msg);
+    });
+
 
     socket.on('message_edited', ({ chatId, messageId, body, edited, editedAt, canEdit }) => {
       const targetChatId = String(chatId || '');
@@ -1189,9 +1255,9 @@ function App() {
     });
 
     return () => {
-      ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'wa_capabilities', 'chats', 'chat_updated', 'chat_history', 'chat_media',
+      ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'wa_capabilities', 'wa_runtime', 'transport_mode_set', 'transport_mode_error', 'chats', 'chat_updated', 'chat_history', 'chat_media',
         'chat_opened', 'start_new_chat_error', 'chat_labels_updated', 'chat_labels_error', 'chat_labels_saved',
-        'contact_info', 'message', 'business_data', 'business_data_catalog', 'quick_replies', 'quick_reply_error',
+        'contact_info', 'message', 'business_data', 'error', 'business_data_catalog', 'quick_replies', 'quick_reply_error',
         'ai_suggestion_chunk',
 
         'ai_suggestion_complete', 'ai_error', 'message_ack', 'message_editability', 'message_edited', 'edit_message_error', 'message_forwarded', 'forward_message_error', 'message_deleted', 'delete_message_error', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
@@ -1315,6 +1381,55 @@ function App() {
     socket.emit('logout_whatsapp');
   };
 
+  const handleSelectTransport = (mode) => {
+    const safeMode = String(mode || '').trim().toLowerCase();
+    if (safeMode !== 'webjs' && safeMode !== 'cloud') return;
+
+    setSelectedTransport(safeMode);
+    setTransportError('');
+    setIsSwitchingTransport(true);
+    setIsClientReady(false);
+    setQrCode('');
+
+    setChats([]);
+    setChatsTotal(0);
+    setChatsHasMore(true);
+    chatPagingRef.current = { offset: 0, hasMore: true, loading: false };
+    setMessages([]);
+    setActiveChatId(null);
+    setEditingMessage(null);
+    setReplyingMessage(null);
+    setShowClientProfile(false);
+    setClientContact(null);
+
+    if (isConnected) {
+      socket.emit('set_transport_mode', { mode: safeMode });
+    }
+  };
+
+  const handleResetTransportSelection = () => {
+    if (isConnected) {
+      socket.emit('set_transport_mode', { mode: 'idle' });
+    }
+    setSelectedTransport('');
+    setTransportError('');
+    setIsSwitchingTransport(false);
+    setIsClientReady(false);
+    setQrCode('');
+    setWaRuntime({ requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false, cloudReady: false, availableTransports: ['webjs', 'cloud'] });
+    setChats([]);
+    setChatsTotal(0);
+    setChatsHasMore(true);
+    chatPagingRef.current = { offset: 0, hasMore: true, loading: false };
+    setMessages([]);
+    setActiveChatId(null);
+    setEditingMessage(null);
+    setReplyingMessage(null);
+    setShowClientProfile(false);
+    setClientContact(null);
+    setInputText('');
+    removeAttachment();
+  };
   const handleRefreshChats = () => {
     requestChatsPage({ reset: true });
   };
@@ -1547,6 +1662,10 @@ REGLA CRITICA:
     Array.from(e.dataTransfer.files).forEach(processFile);
   };
 
+  const activeTransport = String(waRuntime?.activeTransport || 'idle').toLowerCase();
+  const cloudConfigured = Boolean(waRuntime?.cloudConfigured);
+  const selectedModeLabel = selectedTransport === 'cloud' ? 'WhatsApp Cloud API' : 'WhatsApp Web.js';
+
   // --------------------------------------------------------------
   // Render: Reconnecting
   // --------------------------------------------------------------
@@ -1560,30 +1679,118 @@ REGLA CRITICA:
   }
 
   // --------------------------------------------------------------
-  // Render: QR Screen
+  // Render: Transport Selector
   // --------------------------------------------------------------
-  if (!isClientReady) {
+  if (!selectedTransport) {
     return (
       <div className="login-screen">
-        <div style={{ textAlign: 'center', maxWidth: '500px' }}>
-          <div style={{ marginBottom: '30px' }}>
-            <div style={{ fontSize: '2rem', fontWeight: 300, color: '#e9edef', marginBottom: '10px' }}>WhatsApp Business Pro</div>
-            <p style={{ color: '#8696a0', fontSize: '0.9rem' }}>Escanea el codigo QR con tu telefono para comenzar</p>
+        <div style={{ width: '100%', maxWidth: '700px', background: '#1f2c33', border: '1px solid rgba(134,150,160,0.28)', borderRadius: '16px', padding: '26px', boxSizing: 'border-box' }}>
+          <div style={{ textAlign: 'center', marginBottom: '22px' }}>
+            <div style={{ fontSize: '2rem', fontWeight: 300, color: '#e9edef', marginBottom: '8px' }}>Modo de conexion</div>
+            <p style={{ color: '#9eb2bf', fontSize: '0.9rem' }}>Selecciona como quieres operar WhatsApp en esta sesion.</p>
           </div>
-          <div style={{ background: 'white', padding: '24px', borderRadius: '16px', display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.4)' }}>
-            {qrCode
-              ? <QRCodeSVG value={qrCode} size={260} level="H" includeMargin={true} className="fade-in" />
-              : <div style={{ width: '260px', height: '260px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="loader" /></div>
-            }
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+            <button
+              type="button"
+              onClick={() => handleSelectTransport('webjs')}
+              style={{ textAlign: 'left', padding: '16px', borderRadius: '12px', border: '1px solid rgba(0,168,132,0.45)', background: '#0f191f', color: '#e9edef', cursor: 'pointer' }}
+            >
+              <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '6px' }}>WhatsApp Web.js</div>
+              <div style={{ fontSize: '0.82rem', color: '#9eb2bf', lineHeight: 1.5 }}>Ideal para mantener todas las funciones existentes con QR y sincronia del celular.</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectTransport('cloud')}
+              style={{ textAlign: 'left', padding: '16px', borderRadius: '12px', border: cloudConfigured ? '1px solid rgba(124,200,255,0.45)' : '1px solid rgba(255,170,0,0.45)', background: '#0f191f', color: '#e9edef', cursor: 'pointer' }}
+            >
+              <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '6px' }}>WhatsApp Cloud API</div>
+              <div style={{ fontSize: '0.82rem', color: '#9eb2bf', lineHeight: 1.5 }}>Escalable y estable para produccion. {cloudConfigured ? 'Configurada en backend.' : 'Faltan variables META_* en backend/.env.'}</div>
+            </button>
           </div>
-          <div style={{ marginTop: '30px', padding: '20px', background: '#202c33', borderRadius: '12px', textAlign: 'left' }}>
-            <p style={{ color: '#8696a0', fontSize: '0.85rem', lineHeight: '1.8' }}>
-              1. Abre <strong style={{ color: '#e9edef' }}>WhatsApp</strong> en tu telefono<br />
-              2. Toca <strong style={{ color: '#e9edef' }}>Menu (...)</strong> o <strong style={{ color: '#e9edef' }}>Configuracion</strong><br />
-              3. Selecciona <strong style={{ color: '#e9edef' }}>Dispositivos vinculados</strong><br />
-              4. Toca <strong style={{ color: '#e9edef' }}>Vincular un dispositivo</strong> y escanea
-            </p>
+
+          {transportError && (
+            <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,113,113,0.4)', background: 'rgba(255,113,113,0.08)', color: '#ffd1d1', fontSize: '0.82rem' }}>
+              {transportError}
+            </div>
+          )}
+
+          {activeTransport !== 'idle' && (
+            <div style={{ marginTop: '12px', fontSize: '0.78rem', color: '#8ca3b3' }}>
+              Transporte activo en backend: <strong style={{ color: '#d3e6f3' }}>{activeTransport}</strong>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // --------------------------------------------------------------
+  // Render: Transport Bootstrap
+  // --------------------------------------------------------------
+  if (!isClientReady) {
+    const isCloudMode = selectedTransport === 'cloud';
+    const showCloudConfigError = isCloudMode && activeTransport === 'cloud' && !cloudConfigured;
+
+    return (
+      <div className="login-screen">
+        <div style={{ textAlign: 'center', maxWidth: '520px', width: '100%' }}>
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ fontSize: '1.8rem', fontWeight: 300, color: '#e9edef', marginBottom: '10px' }}>WhatsApp Business Pro</div>
+            <p style={{ color: '#9eb2bf', fontSize: '0.9rem' }}>Conectando con <strong style={{ color: '#e9edef' }}>{selectedModeLabel}</strong>.</p>
           </div>
+
+          {isSwitchingTransport && (
+            <div style={{ marginBottom: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(124,200,255,0.35)', background: 'rgba(124,200,255,0.08)', color: '#cdeaff', fontSize: '0.82rem' }}>
+              Cambiando transporte...
+            </div>
+          )}
+
+          {isCloudMode ? (
+            showCloudConfigError ? (
+              <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid rgba(255,170,0,0.4)', background: 'rgba(255,170,0,0.08)', color: '#ffe1a3', textAlign: 'left', fontSize: '0.83rem', lineHeight: 1.6 }}>
+                Falta configurar Cloud API en backend/.env.<br />
+                Variables minimas: <strong>META_APP_ID</strong>, <strong>META_SYSTEM_USER_TOKEN</strong>, <strong>META_WABA_PHONE_NUMBER_ID</strong>.
+              </div>
+            ) : (
+              <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(124,200,255,0.35)', background: '#202c33' }}>
+                <div className="loader" style={{ margin: '0 auto 12px' }} />
+                <p style={{ color: '#9eb2bf', fontSize: '0.86rem', margin: 0 }}>Esperando inicializacion de Cloud API...</p>
+              </div>
+            )
+          ) : (
+            <>
+              <div style={{ background: 'white', padding: '24px', borderRadius: '16px', display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.4)' }}>
+                {qrCode
+                  ? <QRCodeSVG value={qrCode} size={260} level="H" includeMargin={true} className="fade-in" />
+                  : <div style={{ width: '260px', height: '260px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="loader" /></div>
+                }
+              </div>
+              <div style={{ marginTop: '20px', padding: '20px', background: '#202c33', borderRadius: '12px', textAlign: 'left' }}>
+                <p style={{ color: '#8696a0', fontSize: '0.85rem', lineHeight: '1.8' }}>
+                  1. Abre <strong style={{ color: '#e9edef' }}>WhatsApp</strong> en tu telefono<br />
+                  2. Toca <strong style={{ color: '#e9edef' }}>Menu (...)</strong> o <strong style={{ color: '#e9edef' }}>Configuracion</strong><br />
+                  3. Selecciona <strong style={{ color: '#e9edef' }}>Dispositivos vinculados</strong><br />
+                  4. Toca <strong style={{ color: '#e9edef' }}>Vincular un dispositivo</strong> y escanea
+                </p>
+              </div>
+            </>
+          )}
+
+          {transportError && (
+            <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,113,113,0.4)', background: 'rgba(255,113,113,0.08)', color: '#ffd1d1', fontSize: '0.82rem' }}>
+              {transportError}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleResetTransportSelection}
+            style={{ marginTop: '16px', background: 'transparent', border: '1px solid rgba(134,150,160,0.4)', color: '#c9d5de', borderRadius: '999px', padding: '7px 16px', cursor: 'pointer', fontSize: '0.8rem' }}
+          >
+            Cambiar modo
+          </button>
         </div>
       </div>
     );
@@ -1669,9 +1876,9 @@ REGLA CRITICA:
               labelDefinitions={labelDefinitions}
               onToggleChatLabel={handleToggleChatLabel}
               onEditMessage={handleEditMessage}
-              onReplyMessage={handleReplyMessage}
-              onForwardMessage={handleForwardMessage}
-              onDeleteMessage={handleDeleteMessage}
+              onReplyMessage={waCapabilities.messageReply ? handleReplyMessage : null}
+              onForwardMessage={waCapabilities.messageForward ? handleForwardMessage : null}
+              onDeleteMessage={waCapabilities.messageDelete ? handleDeleteMessage : null}
               forwardChatOptions={forwardChatOptions}
               onLoadOrderToCart={handleLoadOrderToCart}
               onStartNewChat={handleStartNewChat}

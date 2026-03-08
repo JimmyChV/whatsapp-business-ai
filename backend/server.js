@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { URL } = require('url');
+const crypto = require('crypto');
 require('dotenv').config({ quiet: true });
 const logger = require('./logger');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./security_utils');
@@ -11,7 +12,12 @@ const waClient = require('./wa_provider');
 const SocketManager = require('./socket_manager');
 
 const app = express();
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({
+    limit: '1mb',
+    verify: (req, _res, buf) => {
+        req.rawBody = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || '');
+    }
+}));
 
 const allowedOrigins = parseCsvEnv(process.env.ALLOWED_ORIGINS);
 app.use(cors({
@@ -55,6 +61,23 @@ const socketManager = new SocketManager(io);
 // Basic Route
 app.get('/', (req, res) => {
     res.send('WhatsApp Business API V4 - Robust & Modular');
+});
+
+app.get('/api/wa/runtime', (req, res) => {
+    const runtime = typeof waClient.getRuntimeInfo === 'function'
+        ? waClient.getRuntimeInfo()
+        : { requestedTransport: 'idle', activeTransport: 'idle' };
+    const capabilities = typeof waClient.getCapabilities === 'function'
+        ? waClient.getCapabilities()
+        : {};
+
+    return res.json({
+        ok: true,
+        runtime,
+        capabilities,
+        ready: Boolean(waClient.isReady),
+        hasQr: Boolean(waClient.lastQr)
+    });
 });
 
 const PROFILE_PHOTO_ALLOWED_HOST_SUFFIXES = ['whatsapp.net', 'fbcdn.net', 'fbsbx.com'];
@@ -408,6 +431,74 @@ app.get('/api/map-suggest', async (req, res) => {
     }
 });
 
+const META_VERIFY_TOKEN = String(process.env.META_VERIFY_TOKEN || '').trim();
+const META_APP_SECRET = String(process.env.META_APP_SECRET || '').trim();
+const META_ENFORCE_SIGNATURE = String(process.env.META_ENFORCE_SIGNATURE || 'true').trim().toLowerCase() !== 'false';
+
+function timingSafeEqualHex(a = '', b = '') {
+    const left = Buffer.from(String(a || ''), 'utf8');
+    const right = Buffer.from(String(b || ''), 'utf8');
+    if (left.length !== right.length) return false;
+    try {
+        return crypto.timingSafeEqual(left, right);
+    } catch (error) {
+        return false;
+    }
+}
+
+function validateMetaWebhookSignature(req) {
+    if (!META_ENFORCE_SIGNATURE) {
+        return { ok: true, skipped: true };
+    }
+
+    if (!META_APP_SECRET) {
+        return { ok: true, skipped: true };
+    }
+
+    const incoming = String(req.get('x-hub-signature-256') || '').trim();
+    if (!incoming.startsWith('sha256=')) {
+        return { ok: false, reason: 'missing_signature' };
+    }
+
+    const rawBody = Buffer.isBuffer(req.rawBody) ? req.rawBody : Buffer.from('');
+    const expectedHash = crypto
+        .createHmac('sha256', META_APP_SECRET)
+        .update(rawBody)
+        .digest('hex');
+    const expected = 'sha256=' + expectedHash;
+    const ok = timingSafeEqualHex(expected, incoming);
+    return { ok, reason: ok ? 'ok' : 'signature_mismatch' };
+}
+
+app.get('/webhook/whatsapp', (req, res) => {
+    const mode = String(req.query['hub.mode'] || '').trim();
+    const token = String(req.query['hub.verify_token'] || '').trim();
+    const challenge = String(req.query['hub.challenge'] || '').trim();
+
+    if (mode === 'subscribe' && META_VERIFY_TOKEN && token === META_VERIFY_TOKEN) {
+        return res.status(200).send(challenge);
+    }
+
+    return res.sendStatus(403);
+});
+
+app.post('/webhook/whatsapp', async (req, res) => {
+    try {
+        const signatureCheck = validateMetaWebhookSignature(req);
+        if (!signatureCheck.ok) {
+            logger.warn('[WA][Cloud] webhook signature rejected (' + String(signatureCheck.reason || 'invalid') + ').');
+            return res.sendStatus(401);
+        }
+
+        if (typeof waClient.handleWebhookPayload === 'function') {
+            await waClient.handleWebhookPayload(req.body || {});
+        }
+        return res.sendStatus(200);
+    } catch (error) {
+        logger.error(`[WA][Cloud] webhook processing failed: ${String(error?.message || error)}`);
+        return res.sendStatus(500);
+    }
+});
 const scheduleWaInitialize = (delayMs = 0) => {
     const safeDelay = Math.max(0, Number(delayMs) || 0);
     setTimeout(() => {
@@ -425,8 +516,7 @@ server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
     const runtime = typeof waClient.getRuntimeInfo === 'function'
         ? waClient.getRuntimeInfo()
-        : { requestedTransport: 'webjs', activeTransport: 'webjs', cloudConfigured: false };
+        : { requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false };
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
-
