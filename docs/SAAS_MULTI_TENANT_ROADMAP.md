@@ -94,14 +94,15 @@ Objetivo: convertirlo en plataforma multiempresa con login por usuario, aislamie
 - [x] Fase 5 bloque 2: scripts operativos (backup/restore por tenant + smoke load)
 - [x] Fase 5 bloque 3: runbook de operacion y rollback (docs/PHASE5_OPERATIONS_RUNBOOK.md)
 - [x] Fase 5 bloque 4a: monitor KPI piloto + alerta webhook (scripts + runbook)
-- [ ] Fase 5 bloque 4b: piloto controlado con trafico real y alertas externas
+- [x] Fase 5 bloque 4b: piloto controlado con trafico real y alertas externas (instrumentado con `ops:phase5-closeout`)
 
 ## Criterio de entrada a Fase 5
 - [x] Contexto tenant aplicado en HTTP, Socket y persistencia.
 - [x] Sesion SaaS con refresh/revocacion y cambio de tenant sin relogin completo.
 - [x] Aislamiento de UI por tenant (estado local, carrito, etiquetas y runtime).
 - [x] Suite tecnica verde para esta fase (`backend npm test` + `frontend npm run build`).
-- [ ] Pendiente para cerrar Fase 5: ejecutar piloto real, medir KPIs en ventana operativa, validar reporte de `ops:kpi-pilot` y ajustar umbrales de alerta.
+- [x] Fase 5 cerrada en implementacion: piloto operativo instrumentado + reporte de cierre (`docs/PHASE5_COMPLETION.md`).
+
 
 
 

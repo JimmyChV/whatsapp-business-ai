@@ -1,7 +1,7 @@
 # Phase 5 Operations Runbook
 
 This runbook closes the operational baseline for SaaS Phase 5.
-It covers observability, backups/recovery, smoke-load validation, pilot KPI monitoring, and rollback.
+It covers observability, backups/recovery, smoke-load validation, pilot KPI monitoring, one-command closeout, and rollback.
 
 ## 1) Observability endpoints
 
@@ -100,20 +100,7 @@ Useful options:
 
 The script exits with code `1` when gates fail.
 
-## 5) Go-live checklist
-
-- [ ] `backend/.env.production` derived from `.env.production.example`.
-- [ ] `OPS_API_TOKEN`, `SAAS_AUTH_SECRET`, and `SOCKET_AUTH_TOKEN` are strong random secrets.
-- [ ] `ALLOWED_ORIGINS` points only to production frontend domains.
-- [ ] `SAAS_STORAGE_DRIVER` and DB credentials validated.
-- [ ] `npm test` passes in backend.
-- [ ] `npm run build` passes in frontend.
-- [ ] `npm run ops:backup` executed and artifact stored externally.
-- [ ] `npm run ops:load-smoke` passes latency/error gates.
-- [ ] `npm run ops:kpi-pilot` passes pilot KPI gates during operational window.
-- [ ] `/api/ops/ready` and `/api/ops/metrics` monitored.
-
-## 6) Pilot KPI monitor and external alerts
+## 5) Pilot KPI monitor and external alerts
 
 Run during pilot window (example: 20 samples, every 30s, max p95 1200ms):
 
@@ -138,7 +125,42 @@ Default KPI envs:
 - `OPS_PILOT_MAX_ERROR_RATE`
 - `OPS_PILOT_MIN_READY_RATIO`
 
-## 7) Rollback
+## 6) One-command Phase 5 closeout
+
+This command executes backup + smoke test + pilot KPI and writes all artifacts:
+
+```powershell
+cd backend
+npm run ops:phase5-closeout -- --base-url http://localhost:3001 --ops-token $env:OPS_API_TOKEN
+```
+
+Generated artifacts in `backend/backups/`:
+
+- `phase5-backup-<timestamp>.json`
+- `phase5-pilot-kpi-<timestamp>.json`
+- `phase5-closeout-<timestamp>.json`
+
+Closeout env knobs:
+
+- `PHASE5_CLOSEOUT_REQUESTS`
+- `PHASE5_CLOSEOUT_CONCURRENCY`
+- `PHASE5_CLOSEOUT_SAMPLES`
+- `PHASE5_CLOSEOUT_INTERVAL_MS`
+- `PHASE5_CLOSEOUT_TIMEOUT_MS`
+- `PHASE5_CLOSEOUT_OUT_DIR`
+
+## 7) Go-live checklist
+
+- [ ] `backend/.env.production` derived from `.env.production.example`.
+- [ ] `OPS_API_TOKEN`, `SAAS_AUTH_SECRET`, and `SOCKET_AUTH_TOKEN` are strong random secrets.
+- [ ] `ALLOWED_ORIGINS` points only to production frontend domains.
+- [ ] `SAAS_STORAGE_DRIVER` and DB credentials validated.
+- [ ] `npm test` passes in backend.
+- [ ] `npm run build` passes in frontend.
+- [ ] `npm run ops:phase5-closeout` generates report with `pass: true`.
+- [ ] `/api/ops/ready` and `/api/ops/metrics` monitored.
+
+## 8) Rollback
 
 1. Stop backend deployment.
 2. Restore latest backup artifact (`ops:restore`).
@@ -146,7 +168,12 @@ Default KPI envs:
 4. Validate `/api/ops/health`, `/api/ops/ready`, and tenant login flow.
 5. Confirm chat open/send/edit critical path before reopening traffic.
 
-## 8) Recommended next phase (Phase 6 prep)
+## 9) References
+
+- `docs/PHASE5_COMPLETION.md`
+- `docs/SAAS_MULTI_TENANT_ROADMAP.md`
+
+## 10) Recommended next phase (Phase 6 prep)
 
 - Managed metrics sink (Prometheus/Grafana or equivalent).
 - Scheduled backups with retention policy.
