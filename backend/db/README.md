@@ -19,6 +19,7 @@ Run from backend folder in order:
 ```powershell
 psql "$env:DATABASE_URL" -f db/migrations/001_saas_foundation.sql
 psql "$env:DATABASE_URL" -f db/migrations/002_tenant_settings.sql
+psql "$env:DATABASE_URL" -f db/migrations/003_message_history.sql
 ```
 
 Or with split vars already exported:
@@ -26,6 +27,7 @@ Or with split vars already exported:
 ```powershell
 psql -f db/migrations/001_saas_foundation.sql
 psql -f db/migrations/002_tenant_settings.sql
+psql -f db/migrations/003_message_history.sql
 ```
 
 ## 3) Verify
@@ -45,6 +47,8 @@ Expected core tables:
 - `quick_replies`
 - `catalog_items`
 - `tenant_settings`
+- `tenant_chats`
+- `tenant_messages`
 - `audit_logs`
 
 ## 4) Tenant settings API
@@ -63,4 +67,3 @@ Current key settings:
 - Current runtime keeps `file` as default driver for backward compatibility.
 - `postgres` driver is wired for `catalog_manager`, `quick_replies_manager` and `tenant_settings_service`.
 - If `pg` dependency is missing, backend will show a clear error when `SAAS_STORAGE_DRIVER=postgres`.
-

@@ -5,6 +5,7 @@ const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./cat
 const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
 const { listQuickReplies, addQuickReply, updateQuickReply, deleteQuickReply } = require('./quick_replies_manager');
 const tenantSettingsService = require('./tenant_settings_service');
+const messageHistoryService = require('./message_history_service');
 const RateLimiter = require('./rate_limiter');
 const { URL } = require('url');
 const { resolveAndValidatePublicHost } = require('./security_utils');
@@ -2019,6 +2020,100 @@ class SocketManager {
     emitToTenant(tenantId, eventName, payload) {
         this.io.to(this.getTenantRoom(tenantId)).emit(eventName, payload);
     }
+
+    async persistMessageHistory(tenantId, {
+        msg,
+        senderMeta = null,
+        fileMeta = null,
+        order = null,
+        location = null,
+        quotedMessage = null
+    } = {}) {
+        try {
+            if (!msg) return;
+            const messageId = String(msg?.id?._serialized || '').trim();
+            const chatId = String(msg?.fromMe ? msg?.to : msg?.from || '').trim();
+            if (!messageId || !chatId) return;
+
+            await messageHistoryService.upsertMessage(tenantId, {
+                messageId,
+                chatId,
+                fromMe: Boolean(msg?.fromMe),
+                senderId: senderMeta?.senderId || null,
+                senderPhone: senderMeta?.senderPhone || null,
+                authorId: String(msg?.author || msg?._data?.author || '').trim() || null,
+                body: msg?.body || '',
+                messageType: msg?.type || null,
+                timestampUnix: Number(msg?.timestamp || 0) || Math.floor(Date.now() / 1000),
+                ack: Number.isFinite(Number(msg?.ack)) ? Number(msg?.ack) : null,
+                edited: false,
+                hasMedia: Boolean(msg?.hasMedia),
+                mediaMime: fileMeta?.mimetype || null,
+                mediaFilename: fileMeta?.filename || null,
+                mediaSizeBytes: Number(fileMeta?.fileSizeBytes || 0) || null,
+                quotedMessageId: quotedMessage?.id || null,
+                orderPayload: order && typeof order === 'object' ? order : null,
+                locationPayload: location && typeof location === 'object' ? location : null,
+                metadata: {
+                    notifyName: senderMeta?.notifyName || null,
+                    senderPushname: senderMeta?.senderPushname || null,
+                    isGroupMessage: Boolean(senderMeta?.isGroupMessage)
+                },
+                chat: {
+                    id: chatId,
+                    displayName: senderMeta?.notifyName || null,
+                    phone: senderMeta?.senderPhone || null,
+                    subtitle: senderMeta?.senderPushname || null
+                }
+            });
+        } catch (error) {
+        }
+    }
+
+    async persistMessageEdit(tenantId, {
+        messageId,
+        chatId,
+        body,
+        editedAtUnix
+    } = {}) {
+        try {
+            await messageHistoryService.updateMessageEdit(tenantId, {
+                messageId,
+                chatId,
+                body,
+                editedAtUnix
+            });
+        } catch (error) {
+        }
+    }
+
+    async persistMessageAck(tenantId, {
+        messageId,
+        chatId,
+        ack
+    } = {}) {
+        try {
+            await messageHistoryService.updateMessageAck(tenantId, {
+                messageId,
+                chatId,
+                ack
+            });
+        } catch (error) {
+        }
+    }
+
+    resolveHistoryTenantId() {
+        try {
+            const socketsMap = this.io?.sockets?.sockets;
+            const entries = socketsMap ? Array.from(socketsMap.values()) : [];
+            if (!entries.length) return 'default';
+            const tenants = new Set(entries.map((socket) => String(socket?.data?.tenantId || 'default').trim() || 'default'));
+            if (tenants.size === 1) return Array.from(tenants)[0] || 'default';
+            return 'default';
+        } catch (error) {
+            return 'default';
+        }
+    }
     ensureTransportReady(socket, {
         action = 'completar la operacion',
         errorEvent = 'error',
@@ -3489,6 +3584,16 @@ class SocketManager {
             const senderMeta = await resolveMessageSenderMeta(msg);
             const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
+            const order = extractOrderInfo(msg);
+            const location = extractLocationInfo(msg);
+            await this.persistMessageHistory(this.resolveHistoryTenantId(), {
+                msg,
+                senderMeta,
+                fileMeta,
+                order,
+                location,
+                quotedMessage
+            });
             this.io.emit('message', {
                 id: msg.id._serialized,
                 from: msg.from,
@@ -3510,8 +3615,8 @@ class SocketManager {
                 senderPushname: senderMeta.senderPushname,
                 isGroupMessage: senderMeta.isGroupMessage,
                 canEdit: false,
-                order: extractOrderInfo(msg),
-                location: extractLocationInfo(msg),
+                order,
+                location,
                 quotedMessage
             });
 
@@ -3533,6 +3638,16 @@ class SocketManager {
             const media = await mediaManager.processMessageMedia(msg);
             const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
+            const order = extractOrderInfo(msg);
+            const location = extractLocationInfo(msg);
+            await this.persistMessageHistory(this.resolveHistoryTenantId(), {
+                msg,
+                senderMeta: null,
+                fileMeta,
+                order,
+                location,
+                quotedMessage
+            });
             this.io.emit('message', {
                 id: msg.id._serialized,
                 from: msg.from,
@@ -3554,8 +3669,8 @@ class SocketManager {
                 senderPushname: null,
                 isGroupMessage: String(msg?.to || msg?.from || '').includes('@g.us'),
                 canEdit: false,
-                order: extractOrderInfo(msg),
-                location: extractLocationInfo(msg),
+                order,
+                location,
                 quotedMessage
             });
 
@@ -3575,7 +3690,6 @@ class SocketManager {
         waClient.on('message_edit', async ({ message, newBody, prevBody }) => {
             if (!message || isStatusOrSystemMessage(message)) return;
             const chatId = message.fromMe ? message.to : message.from;
-            if (!isVisibleChatId(chatId)) return;
 
             const messageId = message?.id?._serialized;
             if (!messageId) return;
@@ -3587,6 +3701,14 @@ class SocketManager {
 
             const editedAtMs = Number(message?.latestEditSenderTimestampMs || message?._data?.latestEditSenderTimestampMs || 0);
             const editedAt = editedAtMs > 0 ? Math.floor(editedAtMs / 1000) : Math.floor(Date.now() / 1000);
+            await this.persistMessageEdit(this.resolveHistoryTenantId(), {
+                messageId,
+                chatId,
+                body: String(newBody ?? message.body ?? ''),
+                editedAtUnix: editedAt
+            });
+
+            if (!isVisibleChatId(chatId)) return;
 
             this.io.emit('message_edited', {
                 chatId,
@@ -3611,6 +3733,11 @@ class SocketManager {
             const messageId = message?.id?._serialized;
             const chatId = message?.to || message?.from || '';
             const isFromMe = Boolean(message?.fromMe);
+            await this.persistMessageAck(this.resolveHistoryTenantId(), {
+                messageId,
+                chatId,
+                ack
+            });
 
             let canEdit;
             if (isFromMe && messageId) {
@@ -3635,4 +3762,3 @@ class SocketManager {
 
 
 module.exports = SocketManager;
-

@@ -1,4 +1,4 @@
-﻿# WhatsApp Business Pro - Git Ignore
+# WhatsApp Business Pro - Git Ignore
 
 # Node.js
 node_modules/
@@ -34,6 +34,7 @@ Thumbs.db
 # Runtime / local data
 backend/server.log
 backend/media_cache/
+backend/data/tenants/
 
 # Optional shared data
 # backend/catalog.json

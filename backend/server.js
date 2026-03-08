@@ -11,6 +11,7 @@ const RateLimiter = require('./rate_limiter');
 const authService = require('./auth_service');
 const tenantService = require('./tenant_service');
 const tenantSettingsService = require('./tenant_settings_service');
+const messageHistoryService = require('./message_history_service');
 
 const waClient = require('./wa_provider');
 const SocketManager = require('./socket_manager');
@@ -288,6 +289,54 @@ app.put('/api/tenant/settings', async (req, res) => {
     } catch (error) {
         const message = String(error?.message || 'No se pudo actualizar configuracion de empresa.');
         return res.status(400).json({ ok: false, error: message });
+    }
+});
+
+function hasTenantHistoryReadAccess(req) {
+    if (!authService.isAuthEnabled()) return true;
+    const authContext = req.authContext || { isAuthenticated: false, user: null };
+    return Boolean(authContext.isAuthenticated && authContext.user);
+}
+
+app.get('/api/history/chats', async (req, res) => {
+    try {
+        if (!hasTenantHistoryReadAccess(req)) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+        const limit = Number(req.query.limit || 100);
+        const offset = Number(req.query.offset || 0);
+        const rows = await messageHistoryService.listChats(tenant?.id || 'default', { limit, offset });
+        return res.json({ ok: true, tenant, items: rows });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: 'No se pudo cargar historial de chats.' });
+    }
+});
+
+app.get('/api/history/messages', async (req, res) => {
+    try {
+        if (!hasTenantHistoryReadAccess(req)) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+        const chatId = String(req.query.chatId || '').trim();
+        if (!chatId) {
+            return res.status(400).json({ ok: false, error: 'chatId es requerido.' });
+        }
+
+        const limit = Number(req.query.limit || 200);
+        const beforeTimestamp = req.query.beforeTimestamp ? Number(req.query.beforeTimestamp) : null;
+        const rows = await messageHistoryService.listMessages(tenant?.id || 'default', {
+            chatId,
+            limit,
+            beforeTimestamp
+        });
+
+        return res.json({ ok: true, tenant, chatId, items: rows });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: 'No se pudo cargar historial de mensajes.' });
     }
 });
 
@@ -748,4 +797,3 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
-
