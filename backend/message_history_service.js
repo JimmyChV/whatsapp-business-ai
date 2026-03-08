@@ -423,11 +423,15 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
     if (getStorageDriver() === 'postgres') {
         try {
             const { rows } = await queryPostgres(
-                `SELECT chat_id, display_name, phone, subtitle, unread_count, archived, pinned,
-                        last_message_id, last_message_at, metadata
-                   FROM tenant_chats
-                  WHERE tenant_id = $1
-                  ORDER BY last_message_at DESC NULLS LAST, updated_at DESC
+                `SELECT c.chat_id, c.display_name, c.phone, c.subtitle, c.unread_count, c.archived, c.pinned,
+                        c.last_message_id, c.last_message_at, c.metadata,
+                        m.body AS last_message_body, m.from_me AS last_message_from_me, m.ack AS last_message_ack
+                   FROM tenant_chats c
+                   LEFT JOIN tenant_messages m
+                     ON m.tenant_id = c.tenant_id
+                    AND m.message_id = c.last_message_id
+                  WHERE c.tenant_id = $1
+                  ORDER BY c.last_message_at DESC NULLS LAST, c.updated_at DESC
                   LIMIT $2 OFFSET $3`,
                 [cleanTenant, safeLimit, safeOffset]
             );
@@ -441,6 +445,9 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
                 pinned: Boolean(row.pinned),
                 lastMessageId: row.last_message_id,
                 lastMessageAt: Number(row.last_message_at || 0) || null,
+                lastMessageBody: row.last_message_body || '',
+                lastMessageFromMe: Boolean(row.last_message_from_me),
+                lastMessageAck: Number.isFinite(Number(row.last_message_ack)) ? Number(row.last_message_ack) : 0,
                 metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
             }));
         } catch (error) {
@@ -453,18 +460,24 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
     return Object.values(store.chats)
         .sort((a, b) => (Number(b.lastMessageAt || 0) - Number(a.lastMessageAt || 0)))
         .slice(safeOffset, safeOffset + safeLimit)
-        .map((chat) => ({
-            chatId: chat.id,
-            displayName: chat.displayName || null,
-            phone: chat.phone || null,
-            subtitle: chat.subtitle || null,
-            unreadCount: Number(chat.unreadCount || 0),
-            archived: Boolean(chat.archived),
-            pinned: Boolean(chat.pinned),
-            lastMessageId: chat.lastMessageId || null,
-            lastMessageAt: Number(chat.lastMessageAt || 0) || null,
-            metadata: chat.metadata && typeof chat.metadata === 'object' ? chat.metadata : {}
-        }));
+        .map((chat) => {
+            const lastMessage = chat?.lastMessageId ? store.messages[chat.lastMessageId] : null;
+            return {
+                chatId: chat.id,
+                displayName: chat.displayName || null,
+                phone: chat.phone || null,
+                subtitle: chat.subtitle || null,
+                unreadCount: Number(chat.unreadCount || 0),
+                archived: Boolean(chat.archived),
+                pinned: Boolean(chat.pinned),
+                lastMessageId: chat.lastMessageId || null,
+                lastMessageAt: Number(chat.lastMessageAt || 0) || null,
+                lastMessageBody: String(lastMessage?.body || ''),
+                lastMessageFromMe: Boolean(lastMessage?.fromMe),
+                lastMessageAck: Number.isFinite(Number(lastMessage?.ack)) ? Number(lastMessage.ack) : 0,
+                metadata: chat.metadata && typeof chat.metadata === 'object' ? chat.metadata : {}
+            };
+        });
 }
 
 async function listMessages(tenantId = DEFAULT_TENANT_ID, {

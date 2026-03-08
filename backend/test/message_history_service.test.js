@@ -83,6 +83,9 @@ test('message_history_service persists messages with tenant isolation and suppor
         assert.equal(tenantAChats.length, 1);
         assert.equal(tenantAChats[0].chatId, '51911111111@c.us');
         assert.equal(tenantAChats[0].displayName, 'Cliente Uno');
+        assert.equal(tenantAChats[0].lastMessageBody, 'Respuesta');
+        assert.equal(tenantAChats[0].lastMessageFromMe, true);
+        assert.equal(tenantAChats[0].lastMessageAck, 2);
         assert.equal(tenantBChats.length, 1);
         assert.equal(tenantBChats[0].chatId, '51922222222@c.us');
 

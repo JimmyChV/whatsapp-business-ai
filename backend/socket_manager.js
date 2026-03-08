@@ -2114,6 +2114,240 @@ class SocketManager {
             return 'default';
         }
     }
+    normalizeHistoryLabels(labels = []) {
+        if (!Array.isArray(labels)) return [];
+        const seen = new Set();
+        const normalized = [];
+        for (const label of labels) {
+            if (!label) continue;
+            const id = String(label?.id || '').trim();
+            const name = String(label?.name || '').trim();
+            const key = `${id}:${name}`.toLowerCase();
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+            normalized.push({
+                id: id || null,
+                name: name || (id || ''),
+                color: label?.color || null
+            });
+        }
+        return normalized;
+    }
+
+    toHistoryChatSummary(entry = {}) {
+        const chatId = String(entry?.chatId || '').trim();
+        if (!chatId || !isVisibleChatId(chatId)) return null;
+
+        const metadata = entry?.metadata && typeof entry.metadata === 'object' ? entry.metadata : {};
+        const subtitle = String(entry?.subtitle || metadata?.senderPushname || '').trim() || null;
+        const explicitPhone = coerceHumanPhone(entry?.phone || '');
+        const idPhone = isLidIdentifier(chatId) ? null : coerceHumanPhone(chatId.split('@')[0] || '');
+        const subtitlePhone = coerceHumanPhone(extractPhoneFromText(subtitle || '') || '');
+        const phone = explicitPhone || subtitlePhone || idPhone || null;
+
+        const displayName = String(entry?.displayName || metadata?.notifyName || '').trim();
+        const fallbackName = displayName || subtitle || (phone ? `+${phone}` : 'Contacto');
+
+        const labels = this.normalizeHistoryLabels(metadata?.labels || []);
+        const profilePicUrl = String(metadata?.profilePicUrl || '').trim() || null;
+
+        return {
+            id: chatId,
+            name: fallbackName,
+            phone,
+            subtitle,
+            unreadCount: Number(entry?.unreadCount || 0) || 0,
+            timestamp: Number(entry?.lastMessageAt || 0) || 0,
+            lastMessage: String(entry?.lastMessageBody || metadata?.lastMessage || '').trim(),
+            lastMessageFromMe: Boolean(entry?.lastMessageFromMe),
+            ack: Number.isFinite(Number(entry?.lastMessageAck)) ? Number(entry.lastMessageAck) : 0,
+            labels,
+            profilePicUrl,
+            isMyContact: Boolean(metadata?.isMyContact),
+            archived: Boolean(entry?.archived)
+        };
+    }
+
+    historySummaryMatches(summary = {}, { queryLower = '', queryDigits = '', filters = {} } = {}) {
+        if (!summary || typeof summary !== 'object') return false;
+
+        const name = String(summary?.name || '').toLowerCase();
+        const subtitle = String(summary?.subtitle || '').toLowerCase();
+        const lastMessage = String(summary?.lastMessage || '').toLowerCase();
+        const phone = normalizePhoneDigits(summary?.phone || '');
+        const idDigits = normalizePhoneDigits(String(summary?.id || '').split('@')[0] || '');
+
+        if (queryDigits) {
+            const byPhone = phone.includes(queryDigits);
+            const byId = idDigits.includes(queryDigits);
+            if (!byPhone && !byId) return false;
+        } else if (queryLower) {
+            const byText = name.includes(queryLower) || subtitle.includes(queryLower) || lastMessage.includes(queryLower);
+            if (!byText) return false;
+        }
+
+        const unreadOnly = Boolean(filters?.unreadOnly);
+        const unlabeledOnly = Boolean(filters?.unlabeledOnly);
+        const contactMode = ['all', 'my', 'unknown'].includes(String(filters?.contactMode || 'all'))
+            ? String(filters?.contactMode || 'all')
+            : 'all';
+        const archivedMode = ['all', 'archived', 'active'].includes(String(filters?.archivedMode || 'all'))
+            ? String(filters?.archivedMode || 'all')
+            : 'all';
+        const labelTokens = normalizeFilterTokens(filters?.labelTokens);
+
+        if (unreadOnly && Number(summary?.unreadCount || 0) <= 0) return false;
+        if (contactMode === 'my' && !summary?.isMyContact) return false;
+        if (contactMode === 'unknown' && summary?.isMyContact) return false;
+        if (archivedMode === 'archived' && !summary?.archived) return false;
+        if (archivedMode === 'active' && summary?.archived) return false;
+
+        const labels = Array.isArray(summary?.labels) ? summary.labels : [];
+        if (unlabeledOnly && labels.length > 0) return false;
+        if (!unlabeledOnly && labelTokens.length > 0) {
+            const labelTokenSet = toLabelTokenSet(labels);
+            if (!matchesTokenSet(labelTokenSet, labelTokens)) return false;
+        }
+
+        return true;
+    }
+
+    async getHistoryChatsPage(tenantId, {
+        offset = 0,
+        limit = 80,
+        query = '',
+        filters = {},
+        filterKey = ''
+    } = {}) {
+        const safeOffset = Number.isFinite(Number(offset)) ? Math.max(0, Math.floor(Number(offset))) : 0;
+        const safeLimit = Number.isFinite(Number(limit)) ? Math.min(250, Math.max(20, Math.floor(Number(limit)))) : 80;
+        const queryText = String(query || '').trim();
+        const queryLower = queryText.toLowerCase();
+        const queryDigits = normalizePhoneDigits(queryText);
+
+        const allRows = [];
+        let cursor = 0;
+        const batchSize = 500;
+        const maxRows = Math.max(1000, Number(process.env.HISTORY_FALLBACK_MAX_CHATS || 3000));
+
+        while (allRows.length < maxRows) {
+            const batch = await messageHistoryService.listChats(tenantId, { limit: batchSize, offset: cursor });
+            if (!Array.isArray(batch) || batch.length === 0) break;
+            allRows.push(...batch);
+            cursor += batch.length;
+            if (batch.length < batchSize) break;
+        }
+
+        const normalized = allRows
+            .map((entry) => this.toHistoryChatSummary(entry))
+            .filter(Boolean)
+            .filter((summary) => this.historySummaryMatches(summary, {
+                queryLower,
+                queryDigits,
+                filters
+            }))
+            .sort((a, b) => (Number(b?.timestamp || 0) - Number(a?.timestamp || 0)));
+
+        const pageItems = normalized.slice(safeOffset, safeOffset + safeLimit);
+        const nextOffset = safeOffset + pageItems.length;
+        const total = normalized.length;
+        const hasMore = nextOffset < total;
+
+        return {
+            items: pageItems,
+            offset: safeOffset,
+            limit: safeLimit,
+            total,
+            hasMore,
+            nextOffset,
+            query: queryText,
+            filters,
+            filterKey,
+            source: 'history_fallback'
+        };
+    }
+
+    toHistoryMessagePayload(row = {}, chatId = '') {
+        const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+        const senderId = String(row?.senderId || row?.authorId || '').trim() || null;
+        const senderPhone = coerceHumanPhone(row?.senderPhone || (senderId ? senderId.split('@')[0] : '') || '') || null;
+        const timestamp = Number(row?.timestampUnix || 0) || Math.floor(Date.now() / 1000);
+        const type = String(row?.messageType || 'chat').trim() || 'chat';
+        const fromMe = Boolean(row?.fromMe);
+
+        return {
+            id: String(row?.messageId || '').trim(),
+            from: fromMe ? 'me@localhost' : (senderId || chatId),
+            to: fromMe ? chatId : null,
+            body: row?.body === null || row?.body === undefined ? '' : String(row.body),
+            timestamp,
+            fromMe,
+            hasMedia: Boolean(row?.hasMedia),
+            mediaData: null,
+            mimetype: row?.mediaMime || null,
+            filename: row?.mediaFilename || null,
+            fileSizeBytes: Number.isFinite(Number(row?.mediaSizeBytes)) ? Number(row.mediaSizeBytes) : null,
+            type,
+            author: row?.authorId || null,
+            notifyName: String(metadata?.notifyName || '').trim() || null,
+            senderPhone,
+            senderId,
+            senderPushname: String(metadata?.senderPushname || '').trim() || null,
+            isGroupMessage: Boolean(metadata?.isGroupMessage || String(chatId || '').endsWith('@g.us')),
+            ack: Number.isFinite(Number(row?.ack)) ? Number(row.ack) : 0,
+            edited: Boolean(row?.edited),
+            editedAt: Number(row?.editedAtUnix || 0) || null,
+            canEdit: false,
+            order: row?.orderPayload && typeof row.orderPayload === 'object' ? row.orderPayload : null,
+            location: row?.locationPayload && typeof row.locationPayload === 'object' ? row.locationPayload : null,
+            quotedMessage: row?.quotedMessageId ? { id: String(row.quotedMessageId), body: '', fromMe: false } : null
+        };
+    }
+
+    async getHistoryChatHistory(tenantId, { chatId = '', limit = 60 } = {}) {
+        const requestedChatId = String(chatId || '').trim();
+        const safeLimit = Number.isFinite(Number(limit)) ? Math.min(300, Math.max(20, Math.floor(Number(limit)))) : 60;
+
+        let resolvedChatId = requestedChatId;
+        let rows = requestedChatId
+            ? await messageHistoryService.listMessages(tenantId, { chatId: requestedChatId, limit: safeLimit })
+            : [];
+
+        if ((!Array.isArray(rows) || rows.length === 0) && requestedChatId) {
+            const digits = normalizePhoneDigits(requestedChatId.split('@')[0] || '');
+            if (digits) {
+                const candidates = await messageHistoryService.listChats(tenantId, { limit: 500, offset: 0 });
+                const candidate = (Array.isArray(candidates) ? candidates : []).find((entry) => {
+                    const phoneDigits = normalizePhoneDigits(entry?.phone || '');
+                    const idDigits = normalizePhoneDigits(String(entry?.chatId || '').split('@')[0] || '');
+                    return (phoneDigits && (phoneDigits === digits || phoneDigits.endsWith(digits) || digits.endsWith(phoneDigits)))
+                        || (idDigits && (idDigits === digits || idDigits.endsWith(digits) || digits.endsWith(idDigits)));
+                });
+                if (candidate?.chatId) {
+                    resolvedChatId = String(candidate.chatId);
+                    rows = await messageHistoryService.listMessages(tenantId, { chatId: resolvedChatId, limit: safeLimit });
+                }
+            }
+        }
+
+        const messages = (Array.isArray(rows) ? rows : [])
+            .slice()
+            .sort((a, b) => {
+                const aTs = Number(a?.timestampUnix || 0);
+                const bTs = Number(b?.timestampUnix || 0);
+                if (aTs !== bTs) return aTs - bTs;
+                return String(a?.messageId || '').localeCompare(String(b?.messageId || ''));
+            })
+            .map((row) => this.toHistoryMessagePayload(row, resolvedChatId || requestedChatId))
+            .filter((msg) => Boolean(msg?.id));
+
+        return {
+            chatId: resolvedChatId || requestedChatId,
+            requestedChatId,
+            messages,
+            source: 'history_fallback'
+        };
+    }
     ensureTransportReady(socket, {
         action = 'completar la operacion',
         errorEvent = 'error',
@@ -2479,18 +2713,15 @@ class SocketManager {
                         ? Math.min(250, Math.max(20, Math.floor(rawLimit)))
                         : 80;
 
-                    if (!this.ensureTransportReady(socket, { action: 'cargar chats', errorEvent: 'error' })) {
-                        socket.emit('chats', {
-                            items: [],
+                    if (!this.ensureTransportReady(socket, { action: 'cargar chats', errorEvent: 'transport_info' })) {
+                        const fallbackPage = await this.getHistoryChatsPage(tenantId, {
                             offset,
                             limit,
-                            total: 0,
-                            hasMore: false,
-                            nextOffset: 0,
                             query,
                             filters: activeFilters,
                             filterKey
                         });
+                        socket.emit('chats', fallbackPage);
                         return;
                     }
 
@@ -2642,6 +2873,29 @@ class SocketManager {
                     }
                 } catch (e) {
                     console.error('Error fetching chats:', e);
+                    try {
+                        const fallbackPage = await this.getHistoryChatsPage(tenantId, {
+                            offset: Number(payload?.offset ?? 0),
+                            limit: Number(payload?.limit ?? 80),
+                            query: String(payload?.query || '').trim(),
+                            filters: payload?.filters || {},
+                            filterKey: String(payload?.filterKey || '').trim()
+                        });
+                        socket.emit('chats', fallbackPage);
+                    } catch (historyErr) {
+                        socket.emit('chats', {
+                            items: [],
+                            offset: Number(payload?.offset ?? 0) || 0,
+                            limit: Number(payload?.limit ?? 80) || 80,
+                            total: 0,
+                            hasMore: false,
+                            nextOffset: 0,
+                            query: String(payload?.query || '').trim(),
+                            filters: payload?.filters || {},
+                            filterKey: String(payload?.filterKey || '').trim(),
+                            source: 'history_fallback'
+                        });
+                    }
                 }
             });
 
@@ -2649,8 +2903,12 @@ class SocketManager {
                 try {
                     let historyChatId = String(chatId || '');
 
-                    if (!this.ensureTransportReady(socket, { action: 'abrir historial', errorEvent: 'error' })) {
-                        socket.emit('chat_history', { chatId: historyChatId, requestedChatId: chatId, messages: [] });
+                    if (!this.ensureTransportReady(socket, { action: 'abrir historial', errorEvent: 'transport_info' })) {
+                        const fallbackHistory = await this.getHistoryChatHistory(tenantId, {
+                            chatId: historyChatId,
+                            limit: 60
+                        });
+                        socket.emit('chat_history', fallbackHistory);
                         return;
                     }
 
@@ -2735,6 +2993,20 @@ class SocketManager {
                         });
                 } catch (e) {
                     console.error('Error fetching history:', e);
+                    try {
+                        const fallbackHistory = await this.getHistoryChatHistory(tenantId, {
+                            chatId,
+                            limit: 60
+                        });
+                        socket.emit('chat_history', fallbackHistory);
+                    } catch (historyErr) {
+                        socket.emit('chat_history', {
+                            chatId: String(chatId || ''),
+                            requestedChatId: String(chatId || ''),
+                            messages: [],
+                            source: 'history_fallback'
+                        });
+                    }
                 }
             });
 
