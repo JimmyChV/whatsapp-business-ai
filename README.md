@@ -119,4 +119,7 @@ Desarrollado con ❤️ para potenciar las ventas digitales.
 
 ## SaaS multiempresa roadmap
 - Plan y fases: docs/SAAS_MULTI_TENANT_ROADMAP.md.
-- Esta iteracion inicia Fase 1 con contexto tenant + auth base en backend.
+- Estado actual: Fase 1 cerrada y Fase 2 iniciada (persistencia tenant-aware con driver file/postgres).
+- Migraciones Postgres v1: backend/db/migrations/001_saas_foundation.sql (guia en backend/db/README.md).
+
+

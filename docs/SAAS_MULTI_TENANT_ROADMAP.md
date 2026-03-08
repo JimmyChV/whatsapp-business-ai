@@ -75,5 +75,6 @@ Objetivo: convertirlo en plataforma multiempresa con login por usuario, aislamie
 ## Estado de ejecucion
 - [x] Roadmap definido
 - [x] Inicio Fase 1
-- [ ] Cerrar Fase 1
-- [ ] Fase 2+
+- [x] Cerrar Fase 1
+- [x] Inicio Fase 2 (bloque 1: persistencia tenant-aware + schema Postgres v1)
+

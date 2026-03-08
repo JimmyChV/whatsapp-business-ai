@@ -1,7 +1,15 @@
-const fs = require('fs');
 const path = require('path');
+const {
+    DEFAULT_TENANT_ID,
+    getStorageDriver,
+    normalizeTenantId,
+    readTenantJsonFile,
+    writeTenantJsonFile,
+    queryPostgres
+} = require('./persistence_runtime');
 
-const STORE_PATH = path.join(__dirname, 'quick_replies.json');
+const QUICK_REPLIES_FILE = 'quick_replies.json';
+const LEGACY_QUICK_REPLIES_PATH = path.join(__dirname, 'quick_replies.json');
 
 const DEFAULT_QUICK_REPLIES = [
     { id: 'qr_saludo', label: 'Saludo', text: 'Hola. Bienvenido a nuestro negocio. En que puedo ayudarte hoy?' },
@@ -16,9 +24,14 @@ const DEFAULT_QUICK_REPLIES = [
     { id: 'qr_espera', label: 'Espera', text: 'Un momento por favor, estoy verificando la informacion para ti.' }
 ];
 
-function ensureStore() {
-    if (fs.existsSync(STORE_PATH)) return;
-    fs.writeFileSync(STORE_PATH, JSON.stringify(DEFAULT_QUICK_REPLIES, null, 2), 'utf8');
+function resolveTenantId(input = null) {
+    if (typeof input === 'string') {
+        return normalizeTenantId(input || DEFAULT_TENANT_ID);
+    }
+    if (input && typeof input === 'object') {
+        return normalizeTenantId(input.tenantId || DEFAULT_TENANT_ID);
+    }
+    return DEFAULT_TENANT_ID;
 }
 
 function sanitizeEntry(input = {}, { requireAll = false } = {}) {
@@ -36,43 +49,109 @@ function sanitizeEntry(input = {}, { requireAll = false } = {}) {
     };
 }
 
-function readStore() {
-    ensureStore();
+function normalizeStore(items = []) {
+    return (Array.isArray(items) ? items : [])
+        .map((item) => sanitizeEntry(item, { requireAll: true }))
+        .filter(Boolean)
+        .map((item, idx) => ({
+            ...item,
+            id: item.id || `qr_${idx + 1}`,
+        }));
+}
+
+function missingRelation(error) {
+    return String(error?.code || '').trim() === '42P01';
+}
+
+async function readStoreFromFile(tenantId) {
+    const parsed = await readTenantJsonFile(QUICK_REPLIES_FILE, {
+        tenantId,
+        defaultValue: () => DEFAULT_QUICK_REPLIES,
+        legacyPath: LEGACY_QUICK_REPLIES_PATH
+    });
+    return normalizeStore(parsed);
+}
+
+async function writeStoreToFile(items = [], tenantId = DEFAULT_TENANT_ID) {
+    const normalized = normalizeStore(items);
+    await writeTenantJsonFile(QUICK_REPLIES_FILE, normalized, {
+        tenantId,
+        mirrorLegacyPath: LEGACY_QUICK_REPLIES_PATH
+    });
+    return normalized;
+}
+
+async function listFromPostgres(tenantId) {
     try {
-        const raw = fs.readFileSync(STORE_PATH, 'utf8');
-        const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed)) return [];
-        return parsed
-            .map((item) => sanitizeEntry(item, { requireAll: true }))
-            .filter(Boolean)
-            .map((item, idx) => ({
-                ...item,
-                id: item.id || `qr_${idx + 1}`,
-            }));
+        const { rows } = await queryPostgres(
+            `SELECT reply_id, label, body_text
+               FROM quick_replies
+              WHERE tenant_id = $1
+              ORDER BY sort_order ASC, created_at DESC`,
+            [tenantId]
+        );
+
+        return normalizeStore(rows.map((row) => ({
+            id: String(row.reply_id || '').trim(),
+            label: String(row.label || '').trim(),
+            text: String(row.body_text || '').trim()
+        })));
     } catch (error) {
-        return [...DEFAULT_QUICK_REPLIES];
+        if (missingRelation(error)) return [];
+        throw error;
     }
 }
 
-function writeStore(items = []) {
-    fs.writeFileSync(STORE_PATH, JSON.stringify(items, null, 2), 'utf8');
+async function upsertPostgres(item, tenantId, sortOrder = 1000) {
+    await queryPostgres(
+        `INSERT INTO quick_replies (tenant_id, reply_id, label, body_text, sort_order, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+         ON CONFLICT (tenant_id, reply_id)
+         DO UPDATE SET
+            label = EXCLUDED.label,
+            body_text = EXCLUDED.body_text,
+            sort_order = EXCLUDED.sort_order,
+            updated_at = NOW()`,
+        [tenantId, item.id, item.label, item.text, sortOrder]
+    );
 }
 
-function listQuickReplies() {
-    return readStore();
+async function deletePostgres(id, tenantId) {
+    await queryPostgres(
+        `DELETE FROM quick_replies
+          WHERE tenant_id = $1
+            AND reply_id = $2`,
+        [tenantId, id]
+    );
 }
 
-function addQuickReply({ label, text }) {
+async function listQuickReplies(options = null) {
+    const tenantId = resolveTenantId(options);
+    if (getStorageDriver() === 'postgres') {
+        return listFromPostgres(tenantId);
+    }
+    return readStoreFromFile(tenantId);
+}
+
+async function addQuickReply({ label, text }, options = null) {
+    const tenantId = resolveTenantId(options);
     const clean = sanitizeEntry({ label, text, id: `qr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}` }, { requireAll: true });
     if (!clean) throw new Error('Datos invalidos para respuesta rapida.');
 
-    const current = readStore();
+    if (getStorageDriver() === 'postgres') {
+        const current = await listFromPostgres(tenantId);
+        await upsertPostgres(clean, tenantId, Math.max(1, current.length + 1));
+        return clean;
+    }
+
+    const current = await readStoreFromFile(tenantId);
     current.unshift(clean);
-    writeStore(current);
+    await writeStoreToFile(current, tenantId);
     return clean;
 }
 
-function updateQuickReply({ id, label, text }) {
+async function updateQuickReply({ id, label, text }, options = null) {
+    const tenantId = resolveTenantId(options);
     const cleanId = String(id || '').trim();
     if (!cleanId) throw new Error('ID de respuesta rapida invalido.');
 
@@ -80,23 +159,37 @@ function updateQuickReply({ id, label, text }) {
     const cleanText = String(text || '').trim();
     if (!cleanLabel || !cleanText) throw new Error('La respuesta rapida requiere titulo y texto.');
 
-    const current = readStore();
-    const next = current.map((item) => item.id === cleanId ? { ...item, label: cleanLabel, text: cleanText } : item);
-    if (!next.some((item) => item.id === cleanId)) throw new Error('Respuesta rapida no encontrada.');
+    const current = await listQuickReplies({ tenantId });
+    const target = current.find((item) => item.id === cleanId);
+    if (!target) throw new Error('Respuesta rapida no encontrada.');
 
-    writeStore(next);
-    return next.find((item) => item.id === cleanId);
+    const updated = { ...target, label: cleanLabel, text: cleanText };
+
+    if (getStorageDriver() === 'postgres') {
+        await upsertPostgres(updated, tenantId, current.findIndex((item) => item.id === cleanId) + 1);
+        return updated;
+    }
+
+    const next = current.map((item) => item.id === cleanId ? updated : item);
+    await writeStoreToFile(next, tenantId);
+    return updated;
 }
 
-function deleteQuickReply(id) {
+async function deleteQuickReply(id, options = null) {
+    const tenantId = resolveTenantId(options);
     const cleanId = String(id || '').trim();
     if (!cleanId) throw new Error('ID de respuesta rapida invalido.');
 
-    const current = readStore();
+    if (getStorageDriver() === 'postgres') {
+        await deletePostgres(cleanId, tenantId);
+        return { id: cleanId };
+    }
+
+    const current = await readStoreFromFile(tenantId);
     const next = current.filter((item) => item.id !== cleanId);
     if (next.length === current.length) throw new Error('Respuesta rapida no encontrada.');
 
-    writeStore(next);
+    await writeStoreToFile(next, tenantId);
     return { id: cleanId };
 }
 
