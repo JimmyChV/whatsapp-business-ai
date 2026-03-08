@@ -2840,9 +2840,11 @@ body {
 }
 
 .message-file-card {
+  --file-accent-rgb: 124, 200, 255;
   width: min(360px, 62vw);
-  border: 1px solid rgba(124, 200, 255, 0.28);
+  border: 1px solid rgba(var(--file-accent-rgb), 0.44);
   background: linear-gradient(160deg, rgba(19, 33, 43, 0.88), rgba(13, 23, 31, 0.9));
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
   border-radius: 12px;
   padding: 10px;
   margin-bottom: 7px;
@@ -2851,36 +2853,24 @@ body {
   gap: 10px;
 }
 
-.message-file-card.is-pdf {
-  border-color: rgba(255, 107, 107, 0.45);
-}
-
-.message-file-card.is-doc {
-  border-color: rgba(97, 177, 255, 0.45);
-}
-
-.message-file-card.is-sheet {
-  border-color: rgba(124, 215, 166, 0.48);
-}
-
-.message-file-card.is-deck {
-  border-color: rgba(255, 189, 107, 0.48);
-}
-
-.message-file-card.is-archive {
-  border-color: rgba(180, 165, 255, 0.48);
-}
+.message-file-card.is-pdf { --file-accent-rgb: 255, 107, 107; }
+.message-file-card.is-doc { --file-accent-rgb: 97, 177, 255; }
+.message-file-card.is-sheet { --file-accent-rgb: 124, 215, 166; }
+.message-file-card.is-deck { --file-accent-rgb: 255, 189, 107; }
+.message-file-card.is-archive { --file-accent-rgb: 180, 165, 255; }
+.message-file-card.is-text { --file-accent-rgb: 154, 201, 242; }
+.message-file-card.is-generic { --file-accent-rgb: 156, 176, 190; }
 
 .message-file-icon {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(var(--file-accent-rgb), 0.16);
+  border: 1px solid rgba(var(--file-accent-rgb), 0.48);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #d9ebf5;
+  color: rgb(var(--file-accent-rgb));
 }
 
 .message-file-main {
@@ -2897,9 +2887,10 @@ body {
 .message-file-badge {
   font-size: 0.62rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(var(--file-accent-rgb), 0.58);
+  background: rgba(var(--file-accent-rgb), 0.16);
   padding: 1px 7px;
-  color: #e6f4ff;
+  color: rgb(var(--file-accent-rgb));
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -2937,9 +2928,9 @@ body {
 }
 
 .message-file-action {
-  border: 1px solid rgba(124, 200, 255, 0.44);
-  background: rgba(124, 200, 255, 0.12);
-  color: #d6f1ff;
+  border: 1px solid rgba(var(--file-accent-rgb), 0.58);
+  background: rgba(var(--file-accent-rgb), 0.14);
+  color: #e6f4ff;
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 0.72rem;
