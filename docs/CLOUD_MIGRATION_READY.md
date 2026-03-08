@@ -1,39 +1,36 @@
 # Cloud Migration Ready Plan
 
-This project currently runs on `whatsapp-web.js` (QR session) and now includes a transport selector via `WA_TRANSPORT`.
+This project now runs in dual transport mode through `backend/wa_provider.js`.
 
 ## Current runtime behavior
-- `WA_TRANSPORT=webjs`: uses the current provider.
-- `WA_TRANSPORT=cloud`: currently logs fallback and still runs on `webjs` (safe mode).
+- `WA_TRANSPORT=dual` (recommended): frontend asks user to choose `webjs` or `cloud` per session.
+- `WA_TRANSPORT=webjs`: starts QR/Web.js flow.
+- `WA_TRANSPORT=cloud`: starts Cloud API flow (requires `META_*` variables).
+- Runtime and capabilities are exposed at `GET /api/wa/runtime`.
 
-## Goal
-Keep all current UX/features and switch backend transport to Cloud API when ready, without rewriting frontend.
+## Security and webhook status
+- Cloud webhook verify endpoint: `GET /webhook/whatsapp`.
+- Cloud webhook ingest endpoint: `POST /webhook/whatsapp`.
+- Signature validation (`X-Hub-Signature-256`) is enforced when:
+  - `META_APP_SECRET` is configured, and
+  - `META_ENFORCE_SIGNATURE=true` (default).
 
-## Backend contract to preserve
-Socket events and payloads should stay stable:
+## Contract parity preserved for frontend
+Socket events remain stable across transports:
 - inbound/outbound: `message`
 - acks: `message_ack`
-- edit sync: `message_edited`, `message_editability`
 - chat loading: `chats`, `chat_history`, `chat_updated`
-- business data: `business_data`, `business_data_catalog`
-- quick replies: `quick_replies`
+- business/profile data: `business_data`, `my_profile`, `contact_info`
+- capabilities/runtime: `wa_capabilities`, `wa_runtime`
 
-## Migration phases
-1. Add Cloud webhook receiver and signature validation.
-2. Implement Cloud provider adapter for send/receive/read.
-3. Map Cloud webhooks to existing socket payload contract.
-4. Keep catalog source as Meta/Woo and enrich order line items by `product_retailer_id`.
-5. Enable `WA_TRANSPORT=cloud` in staging and compare parity.
-6. Cut over production transport.
+## Known capability differences
+- `webjs`: edit/forward/delete/reply available (subject to WhatsApp rules and version).
+- `cloud`: reply available; edit/forward/delete currently disabled.
+- Quick replies native CRUD are not exposed in current WA Web.js API version.
 
-## Environment keys for Cloud phase
-- `META_APP_ID`
-- `META_APP_SECRET`
-- `META_SYSTEM_USER_TOKEN`
-- `META_WABA_ID`
-- `META_WABA_PHONE_NUMBER_ID`
-- `META_VERIFY_TOKEN`
-
-## Non-goals for current stage
-- No Cloud calls are executed yet.
-- No frontend behavior changes are required now.
+## Migration checklist to production Cloud-first
+1. Keep webhook publicly reachable with TLS.
+2. Configure and verify all `META_*` variables.
+3. Validate parity for high-volume flows (orders, product shares, quoted replies).
+4. Enable Cloud for pilot users, monitor `message_ack` and `chat_updated` latency.
+5. Switch default `WA_TRANSPORT` from `dual` to `cloud` when KPI parity is acceptable.

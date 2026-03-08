@@ -898,7 +898,7 @@ async function extractQuotedMessageInfo(msg) {
 function extractOrderInfo(msg) {
     try {
         const data = msg?._data || {};
-        const orderTitle = data?.orderTitle || data?.title || msg?.orderTitle || msg?.title || '';
+        const orderTitle = data?.orderTitle || data?.title || msg?.orderTitle || msg?.title || msg?.order?.order_title || msg?.order?.catalog_name || msg?.order?.text || '';
         let products = collectProductsFromUnknownShape({
             msgOrder: msg?.order,
             msgOrderProducts: msg?.orderProducts,
@@ -914,31 +914,39 @@ function extractOrderInfo(msg) {
         }
         products = dedupeOrderProducts(products);
 
-        const orderId = msg?.orderId || data?.orderId || data?.orderToken || data?.token || null;
+        const orderId = msg?.orderId || msg?.order?.id || msg?.order?.order_id || data?.orderId || data?.orderToken || data?.token || null;
         const subtotalFrom1000 = normalizeOrderCurrencyAmount(
             msg?.totalAmount1000
+            ?? msg?.order?.total_amount_1000
+            ?? msg?.order?.subtotal_amount_1000
+            ?? msg?.order?.total_amount
             ?? data?.totalAmount1000
+            ?? data?.total_amount_1000
             ?? data?.subtotalAmount1000
+            ?? data?.subtotal_amount_1000
             ?? data?.priceTotalAmount1000,
             { scaleHint: '1000' }
         );
         const subtotalFallback = normalizeOrderCurrencyAmount(
             msg?.subtotal
-            ?? data?.subtotal
+            ?? msg?.order?.subtotal
+            ?? msg?.order?.total
             ?? msg?.total
+            ?? data?.subtotal
             ?? data?.total
             ?? data?.totalAmount,
             { scaleHint: 'subtotal' }
         );
         const subtotal = Number.isFinite(subtotalFrom1000) ? subtotalFrom1000 : subtotalFallback;
-        const currency = msg?.currency || data?.currency || 'PEN';
+        const currency = msg?.currency || msg?.order?.currency || msg?.order?.currency_code || data?.totalCurrencyCode || data?.currency || 'PEN';
 
         const maybeOrderType = String(msg?.type || '').toLowerCase().includes('order')
             || String(data?.type || '').toLowerCase().includes('order')
             || String(msg?.type || '').toLowerCase().includes('product')
             || String(data?.type || '').toLowerCase().includes('product')
             || products.length > 0
-            || Boolean(orderId);
+            || Boolean(orderId)
+            || Boolean(msg?.order);
 
         if (!maybeOrderType) return null;
 
@@ -946,9 +954,9 @@ function extractOrderInfo(msg) {
             type: msg?.type || data?.type || null,
             body: msg?.body || data?.body || null,
             title: orderTitle || null,
-            itemCount: data?.itemCount || data?.orderItemCount || products.length || null,
-            sellerJid: data?.sellerJid || null,
-            token: data?.orderToken || data?.token || null
+            itemCount: data?.itemCount || data?.orderItemCount || msg?.itemCount || msg?.order?.item_count || products.length || null,
+            sellerJid: data?.sellerJid || msg?.order?.seller_jid || null,
+            token: data?.orderToken || data?.token || msg?.order?.token || null
         };
 
         logOrderDebug({
@@ -1961,11 +1969,12 @@ class SocketManager {
             ? waClient.getRuntimeInfo()
             : {};
         return {
-            requestedTransport: String(runtime?.requestedTransport || process.env.WA_TRANSPORT || 'webjs').toLowerCase(),
-            activeTransport: String(runtime?.activeTransport || 'webjs').toLowerCase(),
+            requestedTransport: String(runtime?.requestedTransport || process.env.WA_TRANSPORT || 'idle').toLowerCase(),
+            activeTransport: String(runtime?.activeTransport || 'idle').toLowerCase(),
             cloudRequested: Boolean(runtime?.cloudRequested),
             cloudConfigured: Boolean(runtime?.cloudConfigured),
             cloudReady: Boolean(runtime?.cloudReady),
+            availableTransports: Array.isArray(runtime?.availableTransports) ? runtime.availableTransports : ['webjs', 'cloud'],
             migrationReady: runtime?.migrationReady !== false
         };
     }
@@ -1976,13 +1985,17 @@ class SocketManager {
         return {
             messageEdit: Boolean(caps?.messageEdit),
             messageEditSync: Boolean(caps?.messageEditSync),
+            messageForward: Boolean(caps?.messageForward),
+            messageDelete: Boolean(caps?.messageDelete),
+            messageReply: Boolean(caps?.messageReply),
             quickReplies: Boolean(caps?.quickReplies),
             quickRepliesRead: Boolean(caps?.quickRepliesRead),
-
             quickRepliesWrite: Boolean(caps?.quickRepliesWrite),
             transport: runtime.activeTransport,
             requestedTransport: runtime.requestedTransport,
             cloudConfigured: runtime.cloudConfigured,
+            cloudReady: runtime.cloudReady,
+            availableTransports: runtime.availableTransports,
             migrationReady: runtime.migrationReady
         };
     }
@@ -1991,6 +2004,36 @@ class SocketManager {
         socket.emit('wa_capabilities', this.getWaCapabilities());
 
         socket.emit('wa_runtime', this.getWaRuntime());
+    }
+
+
+    ensureTransportReady(socket, {
+        action = 'completar la operacion',
+        errorEvent = 'error',
+        requireReady = true
+    } = {}) {
+        const runtime = this.getWaRuntime();
+        const activeTransport = String(runtime?.activeTransport || 'idle').toLowerCase();
+
+        if (activeTransport === 'idle') {
+            socket.emit(errorEvent, `Selecciona un modo de transporte antes de ${action}.`);
+            socket.emit('wa_runtime', runtime);
+            return false;
+        }
+
+        if (requireReady && !waClient.isReady) {
+            const message = activeTransport === 'webjs'
+                ? `WhatsApp aun no esta listo. Escanea el QR y espera sincronizacion para ${action}.`
+                : `Cloud API aun no esta lista para ${action}.`;
+            socket.emit(errorEvent, message);
+            if (activeTransport === 'webjs' && waClient.lastQr) {
+                socket.emit('qr', waClient.lastQr);
+            }
+            socket.emit('wa_runtime', runtime);
+            return false;
+        }
+
+        return true;
     }
 
     async emitMessageEditability(messageId, chatId) {
@@ -2264,6 +2307,31 @@ class SocketManager {
                 this.emitWaCapabilities(socket);
             });
 
+            socket.on('set_transport_mode', async ({ mode } = {}) => {
+                try {
+                    const nextMode = String(mode || '').trim().toLowerCase();
+                    if (!nextMode) {
+                        socket.emit('transport_mode_error', 'Debes seleccionar un modo de transporte.');
+                        return;
+                    }
+
+                    const runtime = await waClient.setTransportMode(nextMode);
+                    this.invalidateChatListCache();
+                    this.contactListCache = { items: [], updatedAt: 0 };
+                    this.emitWaCapabilities(socket);
+                    socket.emit('transport_mode_set', runtime);
+
+                    if (waClient.isReady) {
+                        socket.emit('ready', { message: 'WhatsApp transport listo' });
+                    } else if (waClient.lastQr) {
+                        socket.emit('qr', waClient.lastQr);
+                    }
+                } catch (error) {
+                    socket.emit('transport_mode_error', String(error?.message || 'No se pudo cambiar el modo de transporte.'));
+                    this.emitWaCapabilities(socket);
+                }
+            });
+
             // --- Chat info ---
             socket.on('get_chats', async (payload = {}) => {
                 try {
@@ -2291,6 +2359,22 @@ class SocketManager {
                     const limit = Number.isFinite(rawLimit)
                         ? Math.min(250, Math.max(20, Math.floor(rawLimit)))
                         : 80;
+
+                    if (!this.ensureTransportReady(socket, { action: 'cargar chats', errorEvent: 'error' })) {
+                        socket.emit('chats', {
+                            items: [],
+                            offset,
+                            limit,
+                            total: 0,
+                            hasMore: false,
+                            nextOffset: 0,
+                            query,
+                            filters: activeFilters,
+                            filterKey
+                        });
+                        return;
+                    }
+
 
                     const hasActiveFilters = activeFilters.unreadOnly || activeFilters.unlabeledOnly || activeFilters.contactMode !== 'all' || activeFilters.archivedMode !== 'all' || activeFilters.labelTokens.length > 0;
                     let sortedChats = await this.getSortedVisibleChats({ forceRefresh: reset || Boolean(query) || hasActiveFilters });
@@ -2445,6 +2529,12 @@ class SocketManager {
             socket.on('get_chat_history', async (chatId) => {
                 try {
                     let historyChatId = String(chatId || '');
+
+                    if (!this.ensureTransportReady(socket, { action: 'abrir historial', errorEvent: 'error' })) {
+                        socket.emit('chat_history', { chatId: historyChatId, requestedChatId: chatId, messages: [] });
+                        return;
+                    }
+
                     let messages = [];
                     try {
                         messages = await waClient.getMessages(historyChatId, 30);
@@ -2531,6 +2621,9 @@ class SocketManager {
 
             socket.on('start_new_chat', async ({ phone, firstMessage }) => {
                 try {
+                    if (!this.ensureTransportReady(socket, { action: 'abrir un chat nuevo', errorEvent: 'start_new_chat_error' })) {
+                        return;
+                    }
                     const clean = normalizePhoneDigits(phone);
                     if (!clean) {
                         socket.emit('start_new_chat_error', 'Numero invalido.');
@@ -2586,6 +2679,9 @@ class SocketManager {
 
             socket.on('set_chat_labels', async ({ chatId, labelIds }) => {
                 try {
+                    if (!this.ensureTransportReady(socket, { action: 'gestionar etiquetas', errorEvent: 'chat_labels_error' })) {
+                        return;
+                    }
                     if (!chatId) {
                         socket.emit('chat_labels_error', 'Chat invalido para etiquetar.');
                         return;
@@ -2668,6 +2764,7 @@ class SocketManager {
             // --- Messaging ---
             socket.on('send_message', async ({ to, body, quotedMessageId }) => {
                 if (!guardRateLimit(socket, 'send_message')) return;
+                if (!this.ensureTransportReady(socket, { action: 'enviar mensajes', errorEvent: 'error' })) return;
                 try {
                     const targetChatId = String(to || '').trim();
                     const text = String(body || '');
@@ -2704,6 +2801,12 @@ class SocketManager {
             });
             socket.on('edit_message', async ({ chatId, messageId, body }) => {
                 if (!guardRateLimit(socket, 'edit_message')) return;
+                if (!this.ensureTransportReady(socket, { action: 'editar mensajes', errorEvent: 'edit_message_error' })) return;
+                const caps = this.getWaCapabilities();
+                if (!caps.messageEdit) {
+                    socket.emit('edit_message_error', 'La edicion de mensajes no esta disponible en este transporte.');
+                    return;
+                }
                 try {
                     const targetChatId = String(chatId || '').trim();
                     const targetMessageId = String(messageId || '').trim();
@@ -2757,6 +2860,7 @@ class SocketManager {
             });
             socket.on('send_media_message', async (data) => {
                 if (!guardRateLimit(socket, 'send_media_message')) return;
+                if (!this.ensureTransportReady(socket, { action: 'enviar adjuntos', errorEvent: 'error' })) return;
                 try {
                     const { to, body, mediaData, mimetype, filename, isPtt, quotedMessageId } = data;
                     if (isPtt) {
@@ -2771,6 +2875,12 @@ class SocketManager {
 
             socket.on('forward_message', async ({ messageId, toChatId }) => {
                 if (!guardRateLimit(socket, 'forward_message')) return;
+                if (!this.ensureTransportReady(socket, { action: 'reenviar mensajes', errorEvent: 'forward_message_error' })) return;
+                const caps = this.getWaCapabilities();
+                if (!caps.messageForward) {
+                    socket.emit('forward_message_error', 'Reenviar mensajes no esta disponible en este transporte.');
+                    return;
+                }
                 try {
                     const sourceMessageId = String(messageId || '').trim();
                     const targetChatId = String(toChatId || '').trim();
@@ -2791,6 +2901,12 @@ class SocketManager {
 
             socket.on('delete_message', async ({ chatId, messageId }) => {
                 if (!guardRateLimit(socket, 'delete_message')) return;
+                if (!this.ensureTransportReady(socket, { action: 'eliminar mensajes', errorEvent: 'delete_message_error' })) return;
+                const caps = this.getWaCapabilities();
+                if (!caps.messageDelete) {
+                    socket.emit('delete_message_error', 'Eliminar mensajes no esta disponible en este transporte.');
+                    return;
+                }
                 try {
                     const targetMessageId = String(messageId || '').trim();
                     const incomingChatId = String(chatId || '').trim();
@@ -2845,6 +2961,7 @@ class SocketManager {
             });
             socket.on('send_catalog_product', async (payload = {}) => {
                 if (!guardRateLimit(socket, 'send_catalog_product')) return;
+                if (!this.ensureTransportReady(socket, { action: 'enviar productos de catalogo', errorEvent: 'error' })) return;
                 try {
                     const to = String(payload?.to || '').trim();
                     if (!to) {
@@ -2937,6 +3054,15 @@ class SocketManager {
 
             socket.on('get_business_data', async () => {
                 try {
+                    if (!this.ensureTransportReady(socket, { action: 'cargar datos del negocio', errorEvent: 'error' })) {
+                        socket.emit('business_data', {
+                            profile: null,
+                            labels: [],
+                            catalog: loadCatalog(),
+                            catalogMeta: { source: 'local', nativeAvailable: false, wooConfigured: isWooConfigured(), wooAvailable: false }
+                        });
+                        return;
+                    }
                     const me = waClient.client.info;
                     const meId = me.wid._serialized;
 
@@ -3117,6 +3243,10 @@ class SocketManager {
 
             socket.on('get_my_profile', async () => {
                 try {
+                    if (!this.ensureTransportReady(socket, { action: 'cargar perfil de empresa', errorEvent: 'error' })) {
+                        socket.emit('my_profile', null);
+                        return;
+                    }
                     const me = waClient.client.info || {};
                     const meId = me?.wid?._serialized || null;
                     let meContact = null;
@@ -3178,6 +3308,9 @@ class SocketManager {
 
             socket.on('get_contact_info', async (contactId) => {
                 try {
+                    if (!this.ensureTransportReady(socket, { action: 'cargar perfil de contacto', errorEvent: 'error' })) {
+                        return;
+                    }
                     const safeContactId = String(contactId || '').trim();
                     if (!safeContactId) return;
 
@@ -3463,6 +3596,3 @@ class SocketManager {
 
 
 module.exports = SocketManager;
-
-
-
