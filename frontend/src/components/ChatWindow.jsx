@@ -606,8 +606,14 @@ const ChatWindow = ({
     };
 
     const headerPhone = formatHeaderPhone(activeChatDetails?.phone);
+    const headerParticipantsCount = Number(
+        activeChatDetails?.participants
+        || activeChatDetails?.chatState?.participantsCount
+        || (Array.isArray(activeChatDetails?.participantsList) ? activeChatDetails.participantsList.length : 0)
+        || 0
+    ) || 0;
     const headerSubline = activeChatDetails?.isGroup
-        ? `${activeChatDetails?.participants || 0} participantes`
+        ? `${headerParticipantsCount} participantes`
         : (headerPhone || 'Sin numero visible');
     const headerHint = activeChatDetails?.isGroup
         ? 'Grupo'

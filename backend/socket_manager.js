@@ -1053,7 +1053,7 @@ function extractChatSnapshot(chat = null) {
         unreadCount: Number(chat?.unreadCount || 0) || 0,
         timestamp: Number(chat?.timestamp || 0) || null,
         isGroup: Boolean(chat?.isGroup),
-        participantsCount: Array.isArray(chat?.participants) ? chat.participants.length : null,
+        participantsCount: Boolean(chat?.isGroup) ? (extractGroupParticipants(chat).length || 0) : null,
         rawData: snapshotSerializable(chat?._data || null)
     };
 }
@@ -1061,6 +1061,136 @@ function extractChatSnapshot(chat = null) {
 
 
 
+function toParticipantArray(rawParticipants) {
+    if (!rawParticipants) return [];
+    if (Array.isArray(rawParticipants)) return rawParticipants;
+    if (Array.isArray(rawParticipants?._models)) return rawParticipants._models;
+    if (Array.isArray(rawParticipants?.models)) return rawParticipants.models;
+    if (typeof rawParticipants?.serialize === 'function') {
+        try {
+            const serialized = rawParticipants.serialize();
+            if (Array.isArray(serialized)) return serialized;
+        } catch (e) { }
+    }
+    if (rawParticipants?._map && typeof rawParticipants._map.forEach === 'function') {
+        const models = [];
+        rawParticipants._map.forEach((value) => models.push(value));
+        return models;
+    }
+    return [];
+}
+
+function normalizeGroupParticipant(participant = {}) {
+    const idFromObject = participant?.id && typeof participant.id === 'object'
+        ? (participant.id?._serialized || ((participant.id.user && participant.id.server) ? `${participant.id.user}@${participant.id.server}` : null))
+        : null;
+    const rawId = idFromObject
+        || participant?.id
+        || participant?.wid?._serialized
+        || participant?.wid
+        || participant?._serialized
+        || participant?.participant
+        || null;
+    const id = String(rawId || '').trim();
+    if (!id) return null;
+
+    const isSuperAdmin = Boolean(participant?.isSuperAdmin || participant?.superadmin);
+    const isAdmin = isSuperAdmin || Boolean(participant?.isAdmin || participant?.admin);
+    const phone = coerceHumanPhone(
+        participant?.number
+        || participant?.phone
+        || participant?.id?.user
+        || String(id).split('@')[0]
+        || ''
+    );
+
+    const name = String(
+        participant?.formattedShortName
+        || participant?.shortName
+        || participant?.name
+        || participant?.pushname
+        || participant?.notify
+        || ''
+    ).trim();
+
+    return {
+        id,
+        phone: phone || null,
+        name: name || null,
+        isAdmin,
+        isSuperAdmin,
+        isMe: Boolean(participant?.isMe),
+        role: isSuperAdmin ? 'superadmin' : (isAdmin ? 'admin' : 'member')
+    };
+}
+
+function extractGroupParticipants(chat = null) {
+    const participants = [];
+    const seen = new Set();
+    const sources = [
+        chat?.participants,
+        chat?.groupMetadata?.participants,
+        chat?._data?.groupMetadata?.participants,
+        chat?._data?.participants
+    ];
+
+    sources.forEach((source) => {
+        const models = toParticipantArray(source);
+        models.forEach((model) => {
+            const normalized = normalizeGroupParticipant(model);
+            if (!normalized || seen.has(normalized.id)) return;
+            seen.add(normalized.id);
+            participants.push(normalized);
+        });
+    });
+
+    return participants;
+}
+
+async function fetchGroupParticipantsFromStore(client, groupId = '') {
+    if (!client?.pupPage?.evaluate || !groupId) return [];
+    try {
+        const raw = await client.pupPage.evaluate(async (targetGroupId) => {
+            try {
+                const widFactory = window.Store?.WidFactory;
+                const chatStore = window.Store?.Chat;
+                if (!widFactory || !chatStore) return [];
+
+                const groupWid = widFactory.createWid(targetGroupId);
+                const chat = chatStore.get(groupWid) || await chatStore.find(groupWid);
+                if (!chat) return [];
+
+                try {
+                    const groupMetadataStore = window.Store?.GroupMetadata || window.Store?.WAWebGroupMetadataCollection;
+                    if (groupMetadataStore?.update) {
+                        await groupMetadataStore.update(groupWid);
+                    }
+                } catch (e) { }
+
+                const participantsCollection = chat?.groupMetadata?.participants || [];
+                const models = Array.isArray(participantsCollection)
+                    ? participantsCollection
+                    : (participantsCollection?._models || participantsCollection?.models || []);
+
+                return models.map((participant) => ({
+                    id: participant?.id?._serialized || participant?.id || null,
+                    phone: participant?.id?.user || null,
+                    name: participant?.formattedShortName || participant?.name || participant?.notify || participant?.pushname || null,
+                    isAdmin: Boolean(participant?.isAdmin || participant?.isSuperAdmin || participant?.admin || participant?.superadmin),
+                    isSuperAdmin: Boolean(participant?.isSuperAdmin || participant?.superadmin),
+                    isMe: Boolean(participant?.isMe)
+                })).filter((entry) => Boolean(entry?.id));
+            } catch (e) {
+                return [];
+            }
+        }, groupId);
+
+        if (!Array.isArray(raw)) return [];
+        return raw.map((participant) => normalizeGroupParticipant(participant)).filter(Boolean);
+    } catch (e) {
+        return [];
+    }
+}
 async function resolveMessageSenderMeta(msg) {
     try {
         if (!msg || msg.fromMe) return { notifyName: null, senderPhone: null };
@@ -1256,8 +1386,8 @@ function resolveLastMessagePreview(chat = {}) {
     const type = String(last?.type || last?._data?.type || '').toLowerCase();
     if (type === 'location') {
         const location = extractLocationInfo(last);
-        if (location?.label) return `ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â ${location.label}`;
-        return 'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â Ubicacion';
+        if (location?.label) return `Ubicacion: ${location.label}`;
+        return 'Ubicacion';
     }
 
     const mediaMap = {
@@ -1280,7 +1410,7 @@ function resolveLastMessagePreview(chat = {}) {
     if (body) {
         const possibleCoords = extractCoordsFromText(body);
         const hasMapUrl = /https?:\/\/(?:www\.)?(?:google\.[^\s/]+\/maps|maps\.app\.goo\.gl|maps\.google\.com)/i.test(body);
-        if (possibleCoords || hasMapUrl) return 'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â Ubicacion';
+        if (possibleCoords || hasMapUrl) return 'Ubicacion';
         return body;
     }
 
@@ -2664,9 +2794,24 @@ class SocketManager {
                         labels = chatLabels.map((l) => ({ id: l.id, name: l.name, color: l.color }));
                     } catch (e) { }
 
+                    const isGroupChat = safeContactId.includes('@g.us') || Boolean(contact?.isGroup) || Boolean(chat?.isGroup);
+                    let groupParticipants = [];
+                    if (isGroupChat) {
+                        groupParticipants = extractGroupParticipants(chat);
+                        if (groupParticipants.length === 0) {
+                            groupParticipants = await fetchGroupParticipantsFromStore(waClient.client, safeContactId);
+                        }
+                    }
+
                     const businessDetails = normalizeBusinessDetailsSnapshot(businessProfile);
                     const contactSnapshot = extractContactSnapshot(contact);
                     const chatSnapshot = extractChatSnapshot(chat);
+                    const participantsCount = isGroupChat
+                        ? (groupParticipants.length || Number(chatSnapshot?.participantsCount || 0) || 0)
+                        : (chatSnapshot?.participantsCount ?? null);
+                    const hydratedChatSnapshot = chatSnapshot
+                        ? { ...chatSnapshot, participantsCount }
+                        : null;
 
                     socket.emit('contact_info', {
                         id: safeContactId,
@@ -2689,15 +2834,17 @@ class SocketManager {
                         isBlocked: Boolean(contact?.isBlocked),
                         isMe: Boolean(contact?.isMe),
                         isUser: Boolean(contact?.isUser),
-                        isGroup: safeContactId.includes('@g.us') || Boolean(contact?.isGroup),
+                        isGroup: isGroupChat,
                         isPSA: Boolean(contact?.isPSA),
+                        participants: participantsCount,
+                        participantsList: isGroupChat ? groupParticipants : [],
                         labels,
-                        chatState: chatSnapshot,
+                        chatState: hydratedChatSnapshot,
                         businessDetails,
                         contactSnapshot,
                         raw: {
                             contact: contactSnapshot?.rawData || null,
-                            chat: chatSnapshot?.rawData || null,
+                            chat: hydratedChatSnapshot?.rawData || null,
                             business: businessDetails?.raw || null
                         }
                     });

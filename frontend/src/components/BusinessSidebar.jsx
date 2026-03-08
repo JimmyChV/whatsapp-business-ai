@@ -192,6 +192,15 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction, panelRef
     const rawPhone = firstValue(contact.phone, contact.number, contact.user, fallbackPhone);
     const displayPhone = formatPhoneForDisplay(rawPhone);
     const accountType = contact.isBusiness ? 'Business' : 'Personal';
+    const participantsList = Array.isArray(contact.participantsList)
+        ? contact.participantsList.filter((participant) => participant && participant.id)
+        : [];
+    const participantsCount = Number(
+        contact.participants
+        || contact.chatState?.participantsCount
+        || participantsList.length
+        || 0
+    ) || 0;
 
     const infoRows = [
         ['Nombre', displayName],
@@ -208,8 +217,8 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction, panelRef
         ['No leidos', String(contact.chatState?.unreadCount ?? 0)],
         ['Ultima actividad', formatTimestampValue(contact.chatState?.timestamp)],
     ];
-    if (contact.isGroup && Number(contact.chatState?.participantsCount || 0) > 0) {
-        chatStateRows.push(['Participantes', String(contact.chatState?.participantsCount || 0)]);
+    if (contact.isGroup) {
+        chatStateRows.push(['Participantes', String(participantsCount)]);
     }
 
     const businessRows = [
@@ -296,6 +305,36 @@ export const ClientProfilePanel = ({ contact, onClose, onQuickAiAction, panelRef
                     </div>
                 </div>
 
+                {contact.isGroup && (
+                    <div className="client-profile-card">
+                        <div className="client-profile-card-title">Participantes del grupo</div>
+                        {participantsList.length > 0 ? (
+                            <div className="client-profile-participants-list">
+                                {participantsList.map((participant) => {
+                                    const participantName = firstValue(participant.name, participant.phone ? `+${participant.phone}` : '', participant.id);
+                                    const participantPhone = participant.phone ? `+${participant.phone}` : '';
+                                    return (
+                                        <div key={participant.id} className="client-profile-participant-item">
+                                            <div className="client-profile-participant-main">
+                                                <span className="client-profile-participant-name">{participantName}</span>
+                                                {participantPhone && (
+                                                    <span className="client-profile-participant-phone">{participantPhone}</span>
+                                                )}
+                                            </div>
+                                            <div className="client-profile-participant-tags">
+                                                {participant.isMe && <span className="client-profile-participant-tag me">Tu</span>}
+                                                {participant.isSuperAdmin && <span className="client-profile-participant-tag admin">Superadmin</span>}
+                                                {!participant.isSuperAdmin && participant.isAdmin && <span className="client-profile-participant-tag admin">Admin</span>}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div className="client-profile-participant-empty">No se pudieron cargar participantes de este grupo.</div>
+                        )}
+                    </div>
+                )}
                 {businessRows.length > 0 && (
                     <div className="client-profile-card">
                         <div className="client-profile-card-title">Perfil Business (WhatsApp)</div>

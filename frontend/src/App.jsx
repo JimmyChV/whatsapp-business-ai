@@ -162,6 +162,43 @@ const sanitizeDisplayText = (value = '') => repairMojibake(value)
   .replace(/\s+/g, ' ')
   .trim();
 
+const normalizeParticipantList = (participants = []) => {
+  if (!Array.isArray(participants)) return [];
+
+  const seen = new Set();
+  const normalized = [];
+  for (const entry of participants) {
+    if (!entry || typeof entry !== 'object') continue;
+    const id = String(entry.id || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    const name = sanitizeDisplayText(entry.name || '');
+    const phoneDigits = normalizeDigits(entry.phone || id.split('@')[0] || '');
+    const phone = isLikelyPhoneDigits(phoneDigits) ? phoneDigits : '';
+    const isSuperAdmin = Boolean(entry.isSuperAdmin);
+    const isAdmin = Boolean(entry.isAdmin || isSuperAdmin);
+
+    normalized.push({
+      id,
+      name: name || null,
+      phone: phone || null,
+      isAdmin,
+      isSuperAdmin,
+      isMe: Boolean(entry.isMe),
+      role: isSuperAdmin ? 'superadmin' : (isAdmin ? 'admin' : 'member')
+    });
+  }
+
+  return normalized.sort((a, b) => {
+    if (a.isSuperAdmin !== b.isSuperAdmin) return a.isSuperAdmin ? -1 : 1;
+    if (a.isAdmin !== b.isAdmin) return a.isAdmin ? -1 : 1;
+    const aLabel = sanitizeDisplayText(a.name || a.phone || '').toLowerCase();
+    const bLabel = sanitizeDisplayText(b.name || b.phone || '').toLowerCase();
+    return aLabel.localeCompare(bLabel, 'es', { sensitivity: 'base' });
+  });
+};
+
 const normalizeMessageLocation = (location = null) => {
   if (!location || typeof location !== 'object') return null;
 
@@ -773,13 +810,21 @@ function App() {
     });
 
     socket.on('contact_info', (contact) => {
+      const participantsList = normalizeParticipantList(contact?.participantsList);
+      const participantsCount = Number(contact?.participants || contact?.chatState?.participantsCount || participantsList.length || 0) || 0;
       const normalizedContact = {
         ...contact,
         name: sanitizeDisplayText(contact?.name || ''),
         pushname: sanitizeDisplayText(contact?.pushname || ''),
         shortName: sanitizeDisplayText(contact?.shortName || ''),
         profilePicUrl: normalizeProfilePhotoUrl(contact?.profilePicUrl),
-        status: repairMojibake(contact?.status || '')
+        status: repairMojibake(contact?.status || ''),
+        participants: participantsCount,
+        participantsList,
+        chatState: {
+          ...(contact?.chatState || {}),
+          participantsCount
+        }
       };
       setClientContact(normalizedContact);
 
@@ -809,7 +854,9 @@ function App() {
             : (existing?.name || (contactPhone ? ('+' + contactPhone) : 'Contacto')),
           subtitle: subtitleName || existing?.subtitle || null,
           status: normalizedContact.status || existing?.status || '',
-          profilePicUrl: normalizedContact.profilePicUrl || existing?.profilePicUrl || null
+          profilePicUrl: normalizedContact.profilePicUrl || existing?.profilePicUrl || null,
+          participants: normalizedContact.participants || existing?.participants || 0,
+          participantsList: normalizedContact.participantsList || existing?.participantsList || []
         };
 
         if (!chatMatchesQuery(nextChat, chatSearchRef.current) || !chatMatchesFilters(nextChat, chatFiltersRef.current)) {
