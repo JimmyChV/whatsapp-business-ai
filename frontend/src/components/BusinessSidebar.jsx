@@ -225,15 +225,24 @@ export const ClientProfilePanel = ({ contact, chats = [], onClose, onQuickAiActi
         });
     }
 
+    const isDisplayPhoneLike = (value = '') => /^\+?\d{8,}$/.test(String(value || '').trim());
+
     const participantsList = (Array.isArray(contact.participantsList)
         ? contact.participantsList.filter((participant) => participant && participant.id)
         : []).map((participant) => {
             const phoneDigits = normalizeDigits(participant.phone || String(participant.id || '').split('@')[0] || '');
-            const mappedName = participantNameMap.get(phoneDigits) || '';
+            const mappedName = sanitizeProfileText(participantNameMap.get(phoneDigits) || '');
             const waName = sanitizeProfileText(participant.name || '');
+            const waDisplayName = sanitizeProfileText(participant.displayName || '');
+            const waPushname = sanitizeProfileText(participant.pushname || '');
+            const waShortName = sanitizeProfileText(participant.shortName || '');
+            const preferredMappedName = (!mappedName || looksLikeInternalId(mappedName) || isDisplayPhoneLike(mappedName)) ? '' : mappedName;
             const displayName = firstValue(
-                mappedName,
+                waDisplayName && !looksLikeInternalId(waDisplayName) ? waDisplayName : '',
                 waName && !looksLikeInternalId(waName) ? waName : '',
+                waPushname && !looksLikeInternalId(waPushname) ? waPushname : '',
+                waShortName && !looksLikeInternalId(waShortName) ? waShortName : '',
+                preferredMappedName,
                 phoneDigits ? `+${phoneDigits}` : '',
                 participant.id
             );
@@ -244,7 +253,6 @@ export const ClientProfilePanel = ({ contact, chats = [], onClose, onQuickAiActi
                 displayName: displayName || 'Participante'
             };
         });
-
     const participantsCount = Number(
         contact.participants
         || contact.chatState?.participantsCount

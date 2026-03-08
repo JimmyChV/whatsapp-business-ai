@@ -416,6 +416,8 @@ const MessageBubble = ({
     forwardChatOptions = [],
     activeChatId = null,
     canEditMessages = true,
+    showSenderName = false,
+    senderDisplayName = '',
 }) => {
     const isOut = msg.fromMe;
 
@@ -597,6 +599,8 @@ const MessageBubble = ({
     const mediaDataUrl = msg.hasMedia && msg.mediaData
         ? `data:${msg.mimetype || 'application/octet-stream'};base64,${msg.mediaData}`
         : null;
+
+    const messageSenderName = String(senderDisplayName || msg?.notifyName || msg?.senderPushname || '').trim();
 
     const canEditMessage = Boolean(
         canEditMessages
@@ -859,6 +863,11 @@ const MessageBubble = ({
 
             
             <div className={`message-content ${canEditMessage ? 'can-edit' : ''}`} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                {showSenderName && messageSenderName && (
+                    <div className="message-sender-name" title={messageSenderName}>
+                        {messageSenderName}
+                    </div>
+                )}
                 {quotedMessage && (
                     <div style={{
                         borderLeft: '3px solid ' + (quotedMessage.fromMe ? '#73dbf8' : '#00a884'),

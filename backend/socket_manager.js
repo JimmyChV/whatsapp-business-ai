@@ -18,6 +18,10 @@ const ORDER_DEBUG_VERBOSE = ['1', 'true', 'yes', 'on'].includes(String(process.e
 const CATALOG_DEBUG_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.CATALOG_DEBUG ?? 'true').trim().toLowerCase());
 const CATALOG_DEBUG_MAX_ITEMS = Math.max(1, Number(process.env.CATALOG_DEBUG_MAX_ITEMS || 120));
 let catalogDebugLastSignature = '';
+const SENDER_META_TTL_MS = Math.max(60 * 1000, Number(process.env.SENDER_META_TTL_MS || (10 * 60 * 1000)));
+const senderMetaCache = new Map();
+const GROUP_PARTICIPANT_CONTACT_TTL_MS = Math.max(5 * 60 * 1000, Number(process.env.GROUP_PARTICIPANT_CONTACT_TTL_MS || (30 * 60 * 1000)));
+const groupParticipantContactCache = new Map();
 
 function guardRateLimit(socket, eventName) {
     const key = `${socket.id}:${eventName}`;
@@ -1124,6 +1128,112 @@ function normalizeGroupParticipant(participant = {}) {
     };
 }
 
+function isInternalLikeName(value = '') {
+    const text = String(value || '').trim();
+    if (!text) return true;
+    return text.includes('@') || /^\d{14,}$/.test(text);
+}
+
+function getGroupParticipantContactCache(key = '') {
+    const safeKey = String(key || '').trim();
+    if (!safeKey) return null;
+    const hit = groupParticipantContactCache.get(safeKey);
+    if (!hit) return null;
+    if (Date.now() - Number(hit.updatedAt || 0) > GROUP_PARTICIPANT_CONTACT_TTL_MS) {
+        groupParticipantContactCache.delete(safeKey);
+        return null;
+    }
+    return hit.value || null;
+}
+
+function setGroupParticipantContactCache(keys = [], value = null) {
+    const payload = value && typeof value === 'object' ? value : null;
+    if (!payload) return;
+    const now = Date.now();
+    keys.forEach((key) => {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return;
+        groupParticipantContactCache.set(safeKey, { value: payload, updatedAt: now });
+    });
+}
+
+async function resolveGroupParticipantContact(client, participant = {}) {
+    const participantId = String(participant?.id || '').trim();
+    const phone = coerceHumanPhone(participant?.phone || participantId.split('@')[0] || '');
+
+    const cacheKeys = [
+        participantId,
+        phone ? `phone:${phone}` : ''
+    ].filter(Boolean);
+
+    for (const key of cacheKeys) {
+        const cached = getGroupParticipantContactCache(key);
+        if (cached) return cached;
+    }
+
+    if (!client?.getContactById) return null;
+
+    const candidateIds = [
+        participantId,
+        phone ? `${phone}@c.us` : '',
+        phone ? `${phone}@s.whatsapp.net` : '',
+        phone ? `${phone}@lid` : ''
+    ].filter(Boolean);
+
+    const tried = new Set();
+    for (const candidateId of candidateIds) {
+        if (tried.has(candidateId)) continue;
+        tried.add(candidateId);
+
+        try {
+            const contact = await client.getContactById(candidateId);
+            const raw = contact?._data || {};
+            const resolved = {
+                name: String(contact?.name || contact?.pushname || contact?.shortName || raw?.verifiedName || '').trim() || null,
+                pushname: String(contact?.pushname || raw?.notifyName || '').trim() || null,
+                shortName: String(contact?.shortName || '').trim() || null,
+                phone: coerceHumanPhone(contact?.number || raw?.userid || phone || '') || phone || null
+            };
+
+            setGroupParticipantContactCache([...cacheKeys, candidateId], resolved);
+            return resolved;
+        } catch (e) { }
+    }
+
+    return null;
+}
+
+async function hydrateGroupParticipantsWithContacts(client, participants = []) {
+    if (!Array.isArray(participants) || participants.length === 0) return [];
+
+    const hydrated = [];
+    const maxItems = Math.min(participants.length, 256);
+    for (let idx = 0; idx < maxItems; idx += 1) {
+        const current = participants[idx];
+        if (!current || typeof current !== 'object') continue;
+
+        const next = { ...current };
+        const hasUsefulName = Boolean(next.name && !isInternalLikeName(next.name));
+
+        if (!hasUsefulName || !next.phone) {
+            const resolved = await resolveGroupParticipantContact(client, next);
+            if (resolved) {
+                const resolvedName = String(resolved.name || resolved.pushname || resolved.shortName || '').trim();
+                if (!hasUsefulName && resolvedName && !isInternalLikeName(resolvedName)) {
+                    next.name = resolvedName;
+                }
+                next.pushname = resolved.pushname || next.pushname || null;
+                next.shortName = resolved.shortName || next.shortName || null;
+                if (!next.phone && resolved.phone) next.phone = resolved.phone;
+            }
+        }
+
+        hydrated.push(next);
+    }
+
+    return hydrated;
+}
+
 function extractGroupParticipants(chat = null) {
     const participants = [];
     const seen = new Set();
@@ -1191,18 +1301,112 @@ async function fetchGroupParticipantsFromStore(client, groupId = '') {
         return [];
     }
 }
+function getSenderMetaCache(key = '') {
+    const safeKey = String(key || '').trim();
+    if (!safeKey) return null;
+    const hit = senderMetaCache.get(safeKey);
+    if (!hit) return null;
+    if (Date.now() - Number(hit.updatedAt || 0) > SENDER_META_TTL_MS) {
+        senderMetaCache.delete(safeKey);
+        return null;
+    }
+    return hit.value || null;
+}
+
+function setSenderMetaCache(keys = [], value = null) {
+    const payload = value && typeof value === 'object' ? value : null;
+    if (!payload) return;
+    const now = Date.now();
+    keys.forEach((key) => {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return;
+        senderMetaCache.set(safeKey, { value: payload, updatedAt: now });
+    });
+}
+
 async function resolveMessageSenderMeta(msg) {
     try {
-        if (!msg || msg.fromMe) return { notifyName: null, senderPhone: null };
-        const senderPhone = String(msg.from || '').split('@')[0] || null;
-        let notifyName = msg?._data?.notifyName || null;
-        try {
-            const contact = await msg.getContact();
-            notifyName = contact?.name || contact?.pushname || notifyName;
-        } catch (e) { }
-        return { notifyName, senderPhone };
+        const base = {
+            notifyName: null,
+            senderPhone: null,
+            senderId: null,
+            senderPushname: null,
+            isGroupMessage: false
+        };
+        if (!msg || msg.fromMe) return base;
+
+        const fromId = String(msg?.from || '').trim();
+        const authorId = String(msg?.author || msg?._data?.author || '').trim();
+        const isGroupMessage = fromId.endsWith('@g.us');
+        const senderId = String((isGroupMessage ? authorId : fromId) || '').trim() || null;
+        const senderPhone = coerceHumanPhone(
+            (senderId || '').split('@')[0]
+            || authorId.split('@')[0]
+            || fromId.split('@')[0]
+            || msg?._data?.sender?.id?.user
+            || ''
+        );
+
+        const cacheKeys = [
+            senderId,
+            senderPhone ? `phone:${senderPhone}` : '',
+            fromId,
+            authorId
+        ].filter(Boolean);
+        for (const key of cacheKeys) {
+            const cached = getSenderMetaCache(key);
+            if (cached) return { ...cached, isGroupMessage };
+        }
+
+        let notifyName = String(msg?._data?.notifyName || msg?._data?.senderObj?.pushname || '').trim() || null;
+        let senderPushname = String(msg?._data?.senderObj?.pushname || '').trim() || null;
+
+        const candidateIds = [
+            senderId,
+            authorId,
+            senderPhone ? `${senderPhone}@c.us` : '',
+            senderPhone ? `${senderPhone}@s.whatsapp.net` : '',
+            senderPhone ? `${senderPhone}@lid` : ''
+        ].filter(Boolean);
+
+        const tried = new Set();
+        for (const candidateId of candidateIds) {
+            if (tried.has(candidateId)) continue;
+            tried.add(candidateId);
+            try {
+                const contact = await waClient.client.getContactById(candidateId);
+                const raw = contact?._data || {};
+                notifyName = String(contact?.name || contact?.pushname || contact?.shortName || raw?.verifiedName || notifyName || '').trim() || notifyName;
+                senderPushname = String(contact?.pushname || raw?.notifyName || senderPushname || '').trim() || senderPushname;
+                if (notifyName || senderPushname) break;
+            } catch (e) { }
+        }
+
+        if (!notifyName) {
+            try {
+                const fallbackContact = await msg.getContact();
+                notifyName = String(fallbackContact?.name || fallbackContact?.pushname || fallbackContact?.shortName || '').trim() || null;
+                senderPushname = String(fallbackContact?.pushname || senderPushname || '').trim() || senderPushname;
+            } catch (e) { }
+        }
+
+        const resolved = {
+            notifyName: notifyName || senderPushname || null,
+            senderPhone: senderPhone || null,
+            senderId,
+            senderPushname: senderPushname || null,
+            isGroupMessage
+        };
+        setSenderMetaCache(cacheKeys, resolved);
+        return resolved;
     } catch (e) {
-        return { notifyName: null, senderPhone: null };
+        return {
+            notifyName: null,
+            senderPhone: null,
+            senderId: null,
+            senderPushname: null,
+            isGroupMessage: false
+        };
     }
 }
 
@@ -2064,7 +2268,9 @@ class SocketManager {
                         ? await waClient.getMessagesEditability(outgoingIds)
                         : {};
 
-                    const formatted = await Promise.all(visible.map(async (m) => ({
+                    const formatted = await Promise.all(visible.map(async (m) => {
+                        const senderMeta = await resolveMessageSenderMeta(m);
+                        return ({
                         id: m.id._serialized,
                         from: m.from,
                         to: m.to,
@@ -2075,6 +2281,12 @@ class SocketManager {
                         mediaData: null,
                         mimetype: null,
                         type: m.type,
+                        author: m?.author || m?._data?.author || null,
+                        notifyName: senderMeta.notifyName,
+                        senderPhone: senderMeta.senderPhone,
+                        senderId: senderMeta.senderId,
+                        senderPushname: senderMeta.senderPushname,
+                        isGroupMessage: senderMeta.isGroupMessage,
                         ack: Number.isFinite(Number(m.ack)) ? Number(m.ack) : 0,
                         edited: Boolean(m?._data?.latestEditMsgKey || m?._data?.latestEditSenderTimestampMs || m?._data?.edited),
                         editedAt: Number(m?._data?.latestEditSenderTimestampMs || 0) > 0 ? Math.floor(Number(m._data.latestEditSenderTimestampMs) / 1000) : null,
@@ -2082,7 +2294,8 @@ class SocketManager {
                         order: extractOrderInfo(m),
                         location: extractLocationInfo(m),
                         quotedMessage: await extractQuotedMessageInfo(m)
-                    })));
+                        });
+                    }));
                     socket.emit('chat_history', { chatId: historyChatId, requestedChatId: chatId, messages: formatted });
 
                     // Avoid blocking chat open while media is downloaded/cached.
@@ -2801,6 +3014,7 @@ class SocketManager {
                         if (groupParticipants.length === 0) {
                             groupParticipants = await fetchGroupParticipantsFromStore(waClient.client, safeContactId);
                         }
+                        groupParticipants = await hydrateGroupParticipantsWithContacts(waClient.client, groupParticipants);
                     }
 
                     const businessDetails = normalizeBusinessDetailsSnapshot(businessProfile);
@@ -2904,8 +3118,12 @@ class SocketManager {
                 mimetype: media ? media.mimetype : null,
                 ack: msg.ack,
                 type: msg.type,
+                author: msg?.author || msg?._data?.author || null,
                 notifyName: senderMeta.notifyName,
                 senderPhone: senderMeta.senderPhone,
+                senderId: senderMeta.senderId,
+                senderPushname: senderMeta.senderPushname,
+                isGroupMessage: senderMeta.isGroupMessage,
                 canEdit: false,
                 order: extractOrderInfo(msg),
                 location: extractLocationInfo(msg),
@@ -2941,8 +3159,12 @@ class SocketManager {
                 mimetype: media ? media.mimetype : null,
                 ack: msg.ack,
                 type: msg.type,
+                author: msg?.author || msg?._data?.author || null,
                 notifyName: null,
                 senderPhone: null,
+                senderId: null,
+                senderPushname: null,
+                isGroupMessage: String(msg?.to || msg?.from || '').includes('@g.us'),
                 canEdit: false,
                 order: extractOrderInfo(msg),
                 location: extractLocationInfo(msg),

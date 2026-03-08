@@ -618,6 +618,47 @@ const ChatWindow = ({
     const headerHint = activeChatDetails?.isGroup
         ? 'Grupo'
         : (activeChatDetails?.pushname ? `Pushname: ${activeChatDetails.pushname}` : 'Haz clic para ver el perfil');
+    const normalizeSenderDigits = (value = '') => String(value || '').replace(/\D/g, '');
+    const participantRecords = Array.isArray(activeChatDetails?.participantsList) ? activeChatDetails.participantsList : [];
+    const participantNameById = new Map();
+    const participantNameByPhone = new Map();
+
+    participantRecords.forEach((participant) => {
+        if (!participant || typeof participant !== 'object') return;
+        const id = String(participant.id || '').trim();
+        const name = String(participant.displayName || participant.name || participant.pushname || participant.shortName || '').trim();
+        const phoneDigits = normalizeSenderDigits(participant.phone || id.split('@')[0] || '');
+        if (id && name) participantNameById.set(id, name);
+        if (phoneDigits && name) participantNameByPhone.set(phoneDigits, name);
+    });
+
+    const isHumanSenderLabel = (value = '') => {
+        const label = String(value || '').trim();
+        if (!label) return false;
+        if (label.includes('@')) return false;
+        if (/^\+?\d{8,}$/.test(label)) return false;
+        if (/^\d{14,}$/.test(label)) return false;
+        return true;
+    };
+
+    const resolveGroupSenderName = (msg = {}) => {
+        if (!activeChatDetails?.isGroup || msg?.fromMe) return '';
+
+        const senderId = String(msg?.senderId || msg?.author || '').trim();
+        if (senderId && participantNameById.has(senderId)) return participantNameById.get(senderId);
+
+        const senderDigits = normalizeSenderDigits(msg?.senderPhone || senderId.split('@')[0] || '');
+        if (senderDigits && participantNameByPhone.has(senderDigits)) return participantNameByPhone.get(senderDigits);
+
+        const notifyName = String(msg?.notifyName || '').trim();
+        if (isHumanSenderLabel(notifyName)) return notifyName;
+
+        const senderPushname = String(msg?.senderPushname || '').trim();
+        if (isHumanSenderLabel(senderPushname)) return senderPushname;
+
+        if (senderDigits) return `+${senderDigits}`;
+        return 'Participante';
+    };
     const formatDayLabel = (unixTs) => {
         const m = moment.unix(unixTs || 0);
         if (!m.isValid()) return '';
@@ -1023,6 +1064,7 @@ const ChatWindow = ({
                     const isHighlighted = matchIdx !== -1;
                     const isCurrentHighlighted = isHighlighted && matchIdx === activeMatchIdx;
                     const messageKey = msg.id || `idx_${idx}`;
+                    const senderDisplayName = resolveGroupSenderName(msg);
                     return (
                         <React.Fragment key={messageKey}>
                             {showDay && (
@@ -1045,6 +1087,8 @@ const ChatWindow = ({
                                     onDeleteMessage={onDeleteMessage}
                                     forwardChatOptions={forwardChatOptions}
                                     activeChatId={activeChatDetails?.id}
+                                    showSenderName={Boolean(activeChatDetails?.isGroup && !msg?.fromMe)}
+                                    senderDisplayName={senderDisplayName}
                                     canEditMessages={canEditMessages}
                                 />
                             </div>

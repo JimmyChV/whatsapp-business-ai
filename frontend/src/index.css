@@ -2714,6 +2714,18 @@ body {
   position: relative;
 }
 
+.message-sender-name {
+  font-size: 0.71rem;
+  line-height: 1.25;
+  font-weight: 700;
+  color: #7de6d2;
+  margin-bottom: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .message-content > * {
   max-width: 100%;
 }

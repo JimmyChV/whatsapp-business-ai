@@ -173,7 +173,10 @@ const normalizeParticipantList = (participants = []) => {
     if (!id || seen.has(id)) continue;
     seen.add(id);
 
-    const name = sanitizeDisplayText(entry.name || '');
+    const pushname = sanitizeDisplayText(entry.pushname || '');
+    const shortName = sanitizeDisplayText(entry.shortName || '');
+    const displayName = sanitizeDisplayText(entry.displayName || '');
+    const name = sanitizeDisplayText(entry.name || displayName || pushname || shortName || '');
     const phoneDigits = normalizeDigits(entry.phone || id.split('@')[0] || '');
     const phone = isLikelyPhoneDigits(phoneDigits) ? phoneDigits : '';
     const isSuperAdmin = Boolean(entry.isSuperAdmin);
@@ -182,6 +185,9 @@ const normalizeParticipantList = (participants = []) => {
     normalized.push({
       id,
       name: name || null,
+      displayName: displayName || name || null,
+      pushname: pushname || null,
+      shortName: shortName || null,
       phone: phone || null,
       isAdmin,
       isSuperAdmin,
@@ -193,8 +199,8 @@ const normalizeParticipantList = (participants = []) => {
   return normalized.sort((a, b) => {
     if (a.isSuperAdmin !== b.isSuperAdmin) return a.isSuperAdmin ? -1 : 1;
     if (a.isAdmin !== b.isAdmin) return a.isAdmin ? -1 : 1;
-    const aLabel = sanitizeDisplayText(a.name || a.phone || '').toLowerCase();
-    const bLabel = sanitizeDisplayText(b.name || b.phone || '').toLowerCase();
+    const aLabel = sanitizeDisplayText(a.displayName || a.name || a.phone || '').toLowerCase();
+    const bLabel = sanitizeDisplayText(b.displayName || b.name || b.phone || '').toLowerCase();
     return aLabel.localeCompare(bLabel, 'es', { sensitivity: 'base' });
   });
 };
