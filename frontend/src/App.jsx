@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -10,11 +10,46 @@ import './index.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const SOCKET_AUTH_TOKEN = import.meta.env.VITE_SOCKET_AUTH_TOKEN || '';
+const SAAS_SESSION_STORAGE_KEY = 'wa_saas_session_v1';
 
-export const socket = io(API_URL, {
+const socket = io(API_URL, {
+  autoConnect: false,
   auth: SOCKET_AUTH_TOKEN ? { token: SOCKET_AUTH_TOKEN } : undefined
 });
 
+const loadStoredSaasSession = () => {
+  try {
+    const raw = localStorage.getItem(SAAS_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const accessToken = String(parsed.accessToken || '').trim();
+    const refreshToken = String(parsed.refreshToken || '').trim();
+    if (!accessToken || !refreshToken) return null;
+    return {
+      accessToken,
+      refreshToken,
+      tokenType: String(parsed.tokenType || 'Bearer').trim() || 'Bearer',
+      accessExpiresAtUnix: Number(parsed.accessExpiresAtUnix || 0) || 0,
+      refreshExpiresAtUnix: Number(parsed.refreshExpiresAtUnix || 0) || 0,
+      user: parsed.user && typeof parsed.user === 'object' ? parsed.user : null
+    };
+  } catch (error) {
+    return null;
+  }
+};
+
+const persistSaasSession = (session = null) => {
+  try {
+    if (!session) {
+      localStorage.removeItem(SAAS_SESSION_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(SAAS_SESSION_STORAGE_KEY, JSON.stringify(session));
+  } catch (error) {
+    // ignore storage errors
+  }
+};
 const normalizeCatalogItem = (item = {}, index = 0) => {
   const safeItem = item && typeof item === 'object' ? item : {};
   const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
@@ -488,6 +523,13 @@ const upsertAndSortChat = (list = [], incoming = null) => {
 
 const CHAT_PAGE_SIZE = 80;
 const TRANSPORT_STORAGE_KEY = 'wa_transport_mode';
+const LABEL_DEFS_STORAGE_PREFIX = 'wa_custom_label_defs';
+
+const buildScopedStorageKey = (prefix = '', scope = 'default') => {
+  const cleanPrefix = String(prefix || '').trim();
+  const cleanScope = String(scope || 'default').trim().toLowerCase() || 'default';
+  return `${cleanPrefix}:${cleanScope}`;
+};
 
 function App() {
   // --------------------------------------------------------------
@@ -501,6 +543,22 @@ function App() {
   const [waRuntime, setWaRuntime] = useState({ requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false, cloudReady: false, availableTransports: ['webjs', 'cloud'] });
   const [transportError, setTransportError] = useState('');
   const [isSwitchingTransport, setIsSwitchingTransport] = useState(false);
+
+  const [saasRuntime, setSaasRuntime] = useState({
+    loaded: false,
+    authEnabled: false,
+    tenant: null,
+    tenants: [],
+    authContext: { enabled: false, isAuthenticated: false, user: null }
+  });
+  const [saasSession, setSaasSession] = useState(() => loadStoredSaasSession());
+  const [saasAuthBusy, setSaasAuthBusy] = useState(false);
+  const [saasAuthError, setSaasAuthError] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginTenantId, setLoginTenantId] = useState('');
+  const tenantScopeId = String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || 'default').trim() || 'default';
+  const labelDefsStorageKey = buildScopedStorageKey(LABEL_DEFS_STORAGE_PREFIX, tenantScopeId);
 
   // --------------------------------------------------------------
   const [chats, setChats] = useState([]);
@@ -556,6 +614,10 @@ function App() {
   const prevMessagesMetaRef = useRef({ count: 0, lastId: '' });
   const suppressSmoothScrollUntilRef = useRef(0);
   const selectedTransportRef = useRef(selectedTransport);
+  const saasSessionRef = useRef(saasSession);
+  const saasRuntimeRef = useRef(saasRuntime);
+  const labelDefsPersistenceStateRef = useRef({ key: '', loaded: false });
+  const tenantScopeRef = useRef(tenantScopeId);
 
   // --------------------------------------------------------------
   // Notifications
@@ -564,13 +626,239 @@ function App() {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
-    try {
-      const savedDefs = JSON.parse(localStorage.getItem('wa_custom_label_defs') || '[]');
-      if (Array.isArray(savedDefs)) setLabelDefinitions(savedDefs);
-    } catch (e) {
-      console.warn('No se pudieron leer etiquetas locales', e.message);
-    }
   }, []);
+
+  useEffect(() => {
+    try {
+      const scopedRaw = localStorage.getItem(labelDefsStorageKey);
+      const legacyRaw = localStorage.getItem(LABEL_DEFS_STORAGE_PREFIX);
+      const rawToUse = scopedRaw ?? legacyRaw ?? '[]';
+      const parsed = JSON.parse(rawToUse);
+      labelDefsPersistenceStateRef.current = { key: labelDefsStorageKey, loaded: true };
+      setLabelDefinitions(Array.isArray(parsed) ? parsed : []);
+    } catch (error) {
+      labelDefsPersistenceStateRef.current = { key: labelDefsStorageKey, loaded: true };
+      setLabelDefinitions([]);
+      console.warn('No se pudieron leer etiquetas locales', error?.message || error);
+    }
+  }, [labelDefsStorageKey]);
+
+  useEffect(() => {
+    const persistence = labelDefsPersistenceStateRef.current;
+    if (!persistence?.loaded || persistence.key !== labelDefsStorageKey) return;
+    try {
+      localStorage.setItem(labelDefsStorageKey, JSON.stringify(Array.isArray(labelDefinitions) ? labelDefinitions : []));
+    } catch (error) {
+      console.warn('No se pudieron guardar etiquetas locales', error?.message || error);
+    }
+  }, [labelDefinitions, labelDefsStorageKey]);
+
+  const buildApiHeaders = useCallback((options = {}) => {
+    const includeJson = Boolean(options?.includeJson);
+    const tokenOverride = String(options?.tokenOverride || '').trim();
+    const tenantIdOverride = String(options?.tenantIdOverride || '').trim();
+
+    const session = saasSessionRef.current;
+    const runtime = saasRuntimeRef.current;
+    const accessToken = tokenOverride || String(session?.accessToken || '').trim();
+    const tenantId = tenantIdOverride || String(session?.user?.tenantId || runtime?.tenant?.id || '').trim();
+
+    const headers = {};
+    if (includeJson) headers['Content-Type'] = 'application/json';
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+    if (tenantId) headers['X-Tenant-Id'] = tenantId;
+    return headers;
+  }, []);
+
+  const normalizeSaasSessionPayload = useCallback((payload = {}, previousSession = null) => {
+    const accessToken = String(payload?.accessToken || '').trim();
+    const refreshToken = String(payload?.refreshToken || '').trim() || String(previousSession?.refreshToken || '').trim();
+    if (!accessToken || !refreshToken) return null;
+
+    const now = Math.floor(Date.now() / 1000);
+    const accessExpiresIn = Number(payload?.expiresInSec || 0);
+    const accessExpiresAtUnix = accessExpiresIn > 0 ? (now + accessExpiresIn) : (Number(previousSession?.accessExpiresAtUnix || 0) || 0);
+    const refreshExpiresAtUnix = Number(payload?.refreshExpiresAtUnix || 0)
+      || (Number(payload?.refreshExpiresInSec || 0) > 0 ? (now + Number(payload.refreshExpiresInSec)) : 0)
+      || (Number(previousSession?.refreshExpiresAtUnix || 0) || 0);
+
+    return {
+      accessToken,
+      refreshToken,
+      tokenType: String(payload?.tokenType || previousSession?.tokenType || 'Bearer').trim() || 'Bearer',
+      accessExpiresAtUnix,
+      refreshExpiresAtUnix,
+      user: payload?.user && typeof payload.user === 'object'
+        ? payload.user
+        : (previousSession?.user && typeof previousSession.user === 'object' ? previousSession.user : null)
+    };
+  }, []);
+
+  const refreshSaasSession = useCallback(async (refreshTokenOverride = '') => {
+    const current = saasSessionRef.current;
+    const refreshToken = String(refreshTokenOverride || current?.refreshToken || '').trim();
+    if (!refreshToken) throw new Error('No hay refresh token disponible.');
+
+    const response = await fetch(`${API_URL}/api/auth/refresh`, {
+      method: 'POST',
+      headers: buildApiHeaders({ includeJson: true, tokenOverride: String(current?.accessToken || '').trim() }),
+      body: JSON.stringify({ refreshToken })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.ok) {
+      throw new Error(String(payload?.error || 'No se pudo renovar sesion.'));
+    }
+
+    const nextSession = normalizeSaasSessionPayload(payload, current);
+    if (!nextSession) throw new Error('Sesion renovada invalida.');
+    setSaasSession(nextSession);
+    return nextSession;
+  }, [buildApiHeaders, normalizeSaasSessionPayload]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchRuntime = async (tokenOverride = '') => {
+      try {
+        const response = await fetch(`${API_URL}/api/saas/runtime`, {
+          headers: buildApiHeaders({ tokenOverride })
+        });
+        const payload = await response.json().catch(() => ({}));
+        return {
+          ok: response.ok,
+          payload: payload && typeof payload === 'object' ? payload : {},
+          error: String(payload?.error || '')
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          payload: {},
+          error: String(error?.message || 'No se pudo cargar runtime SaaS.')
+        };
+      }
+    };
+
+    (async () => {
+      setSaasAuthBusy(true);
+      setSaasAuthError('');
+
+      const existing = saasSessionRef.current;
+      let nextSession = existing;
+
+      let runtimeResult = await fetchRuntime(String(existing?.accessToken || ''));
+      let runtimePayload = runtimeResult.payload || {};
+      const authEnabled = Boolean(runtimePayload?.authEnabled);
+      const runtimeAuthed = Boolean(runtimePayload?.authContext?.isAuthenticated && runtimePayload?.authContext?.user);
+
+      if (authEnabled) {
+        if (runtimeAuthed && existing?.accessToken) {
+          nextSession = { ...existing, user: runtimePayload.authContext.user };
+        } else if (existing?.refreshToken) {
+          try {
+            const refreshed = await refreshSaasSession(existing.refreshToken);
+            nextSession = refreshed;
+            runtimeResult = await fetchRuntime(String(refreshed?.accessToken || ''));
+            runtimePayload = runtimeResult.payload || runtimePayload;
+            if (runtimePayload?.authContext?.isAuthenticated && runtimePayload?.authContext?.user) {
+              nextSession = { ...refreshed, user: runtimePayload.authContext.user };
+            }
+          } catch (_error) {
+            nextSession = null;
+          }
+        } else {
+          nextSession = null;
+        }
+      }
+
+      if (cancelled) return;
+
+      const runtimeTenant = runtimePayload?.tenant || null;
+      const runtimeUser = runtimePayload?.authContext?.user || nextSession?.user || null;
+      setSaasSession(nextSession);
+      setSaasRuntime({
+        loaded: true,
+        authEnabled,
+        tenant: runtimeTenant,
+        tenants: Array.isArray(runtimePayload?.tenants) ? runtimePayload.tenants : [],
+        authContext: {
+          enabled: authEnabled,
+          isAuthenticated: Boolean(runtimePayload?.authContext?.isAuthenticated),
+          user: runtimeUser
+        }
+      });
+
+      const suggestedTenant = String(runtimeTenant?.id || runtimeUser?.tenantId || '').trim();
+      if (suggestedTenant) setLoginTenantId((prev) => prev || suggestedTenant);
+      const suggestedEmail = String(runtimeUser?.email || '').trim();
+      if (suggestedEmail) setLoginEmail((prev) => prev || suggestedEmail);
+
+      if (!runtimeResult.ok) {
+        setSaasAuthError(runtimeResult.error || 'No se pudo cargar runtime SaaS.');
+      }
+      setSaasAuthBusy(false);
+    })().catch((error) => {
+      if (cancelled) return;
+      setSaasRuntime((prev) => ({ ...prev, loaded: true }));
+      setSaasAuthBusy(false);
+      setSaasAuthError(String(error?.message || 'No se pudo inicializar SaaS.'));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [buildApiHeaders, refreshSaasSession]);
+
+  useEffect(() => {
+    if (!saasRuntime?.authEnabled) return;
+    if (!saasSession?.refreshToken) return;
+    if (!Number.isFinite(Number(saasSession?.accessExpiresAtUnix)) || Number(saasSession.accessExpiresAtUnix) <= 0) return;
+
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      const expiresAt = Number(saasSessionRef.current?.accessExpiresAtUnix || 0);
+      const now = Math.floor(Date.now() / 1000);
+      if (!expiresAt || (expiresAt - now) > 120) return;
+
+      try {
+        await refreshSaasSession();
+      } catch (_error) {
+        if (cancelled) return;
+        setSaasSession(null);
+        setSaasAuthError('Sesion expirada. Inicia sesion nuevamente.');
+      }
+    };
+
+    const interval = setInterval(tick, 30000);
+    tick();
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [saasRuntime?.authEnabled, saasSession?.refreshToken, saasSession?.accessExpiresAtUnix, refreshSaasSession]);
+
+  useEffect(() => {
+    if (!saasRuntime?.loaded) return;
+
+    const authRequired = Boolean(saasRuntime?.authEnabled);
+    const accessToken = String(saasSession?.accessToken || '').trim();
+    const tenantId = String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || '').trim();
+
+    if (authRequired && !accessToken) {
+      if (socket.connected) socket.disconnect();
+      setIsConnected(false);
+      setIsClientReady(false);
+      return;
+    }
+
+    const auth = {};
+    if (SOCKET_AUTH_TOKEN) auth.token = SOCKET_AUTH_TOKEN;
+    if (accessToken) auth.accessToken = accessToken;
+    if (tenantId) auth.tenantId = tenantId;
+    socket.auth = Object.keys(auth).length > 0 ? auth : undefined;
+
+    if (!socket.connected) socket.connect();
+  }, [saasRuntime?.loaded, saasRuntime?.authEnabled, saasRuntime?.tenant?.id, saasSession?.accessToken, saasSession?.user?.tenantId]);
 
   // --------------------------------------------------------------
   // Auto-scroll
@@ -623,6 +911,15 @@ function App() {
     if (selectedTransport) localStorage.setItem(TRANSPORT_STORAGE_KEY, selectedTransport);
     else localStorage.removeItem(TRANSPORT_STORAGE_KEY);
   }, [selectedTransport]);
+
+  useEffect(() => {
+    saasSessionRef.current = saasSession;
+    persistSaasSession(saasSession);
+  }, [saasSession]);
+
+  useEffect(() => {
+    saasRuntimeRef.current = saasRuntime;
+  }, [saasRuntime]);
 
   useEffect(() => {
     if (selectedTransport !== 'cloud') return;
@@ -681,6 +978,39 @@ function App() {
       socket.emit('set_transport_mode', { mode: mode || 'idle' });
       socket.emit('get_wa_capabilities');
     });
+    socket.on('connect_error', (error) => {
+      setIsConnected(false);
+      const message = String(error?.message || '').trim();
+      if (saasRuntimeRef.current?.authEnabled && /unauthorized/i.test(message)) {
+        setSaasSession(null);
+        setSaasAuthError('Sesion SaaS expirada o invalida. Inicia sesion nuevamente.');
+      }
+    });
+
+    socket.on('tenant_context', (ctx) => {
+      if (!ctx || typeof ctx !== 'object') return;
+      const tenantId = String(ctx?.tenantId || '').trim();
+      const authUser = ctx?.auth?.user && typeof ctx.auth.user === 'object' ? ctx.auth.user : null;
+
+      if (tenantId) {
+        setSaasRuntime((prev) => ({
+          ...prev,
+          tenant: {
+            ...(prev?.tenant || {}),
+            id: tenantId,
+            slug: prev?.tenant?.slug || tenantId,
+            name: prev?.tenant?.name || tenantId,
+            active: prev?.tenant?.active !== false,
+            plan: prev?.tenant?.plan || 'starter'
+          }
+        }));
+      }
+
+      if (authUser && saasSessionRef.current?.accessToken) {
+        setSaasSession((prev) => prev ? ({ ...prev, user: authUser }) : prev);
+      }
+    });
+
     socket.on('disconnect', () => {
       setIsConnected(false);
       setIsSwitchingTransport(false);
@@ -1254,8 +1584,16 @@ function App() {
       alert('Sesion de WhatsApp cerrada. Escanea nuevamente el QR.');
     });
 
+    if (socket.connected) {
+      setIsConnected(true);
+      const mode = selectedTransportRef.current;
+      setIsSwitchingTransport(true);
+      socket.emit('set_transport_mode', { mode: mode || 'idle' });
+      socket.emit('get_wa_capabilities');
+    }
+
     return () => {
-      ['connect', 'disconnect', 'qr', 'ready', 'my_profile', 'wa_capabilities', 'wa_runtime', 'transport_mode_set', 'transport_mode_error', 'chats', 'chat_updated', 'chat_history', 'chat_media',
+      ['connect', 'connect_error', 'tenant_context', 'disconnect', 'qr', 'ready', 'my_profile', 'wa_capabilities', 'wa_runtime', 'transport_mode_set', 'transport_mode_error', 'chats', 'chat_updated', 'chat_history', 'chat_media',
         'chat_opened', 'start_new_chat_error', 'chat_labels_updated', 'chat_labels_error', 'chat_labels_saved',
         'contact_info', 'message', 'business_data', 'error', 'business_data_catalog', 'quick_replies', 'quick_reply_error',
         'ai_suggestion_chunk',
@@ -1278,6 +1616,101 @@ function App() {
   // --------------------------------------------------------------
   // Handlers
   // --------------------------------------------------------------
+  const resetWorkspaceState = () => {
+    setIsClientReady(false);
+    setQrCode('');
+    setChats([]);
+    setChatsTotal(0);
+    setChatsHasMore(true);
+    chatPagingRef.current = { offset: 0, hasMore: true, loading: false };
+    setIsLoadingMoreChats(false);
+    setMessages([]);
+    setActiveChatId(null);
+    activeChatIdRef.current = null;
+    setEditingMessage(null);
+    setReplyingMessage(null);
+    setShowClientProfile(false);
+    setClientContact(null);
+    setBusinessData({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
+    setQuickReplies([]);
+    setPendingOrderCartLoad(null);
+    setToasts([]);
+    setInputText('');
+    removeAttachment();
+  };
+
+  useEffect(() => {
+    const previousTenant = String(tenantScopeRef.current || '').trim() || 'default';
+    if (previousTenant === tenantScopeId) return;
+    tenantScopeRef.current = tenantScopeId;
+    resetWorkspaceState();
+  }, [tenantScopeId]);
+
+  const handleSaasLogin = async (event) => {
+    event?.preventDefault();
+    const email = String(loginEmail || '').trim().toLowerCase();
+    const password = String(loginPassword || '');
+    const tenantId = String(loginTenantId || '').trim();
+
+    if (!email || !password) {
+      setSaasAuthError('Ingresa correo y contrasena para continuar.');
+      return;
+    }
+
+    setSaasAuthBusy(true);
+    setSaasAuthError('');
+
+    try {
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: buildApiHeaders({ includeJson: true, tenantIdOverride: tenantId }),
+        body: JSON.stringify({ email, password, tenantId: tenantId || undefined })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        throw new Error(String(payload?.error || 'No se pudo iniciar sesion.'));
+      }
+
+      const session = normalizeSaasSessionPayload(payload, null);
+      if (!session) throw new Error('Respuesta de autenticacion invalida.');
+      if (payload?.user && typeof payload.user === 'object') {
+        session.user = payload.user;
+      }
+      setSaasSession(session);
+      setLoginPassword('');
+      setLoginEmail(String(payload?.user?.email || email));
+      if (payload?.user?.tenantId) setLoginTenantId(String(payload.user.tenantId));
+    } catch (error) {
+      setSaasAuthError(String(error?.message || 'No se pudo iniciar sesion.'));
+    } finally {
+      setSaasAuthBusy(false);
+    }
+  };
+
+  const handleSaasLogout = async () => {
+    if (!window.confirm('Cerrar sesion SaaS de esta empresa?')) return;
+    const current = saasSessionRef.current;
+    try {
+      if (current?.accessToken || current?.refreshToken) {
+        await fetch(`${API_URL}/api/auth/logout`, {
+          method: 'POST',
+          headers: buildApiHeaders({ includeJson: true, tokenOverride: String(current?.accessToken || '') }),
+          body: JSON.stringify({
+            accessToken: String(current?.accessToken || ''),
+            refreshToken: String(current?.refreshToken || '')
+          })
+        });
+      }
+    } catch (_error) {
+      // best effort
+    }
+    setSaasSession(null);
+    setSaasAuthError('');
+    if (socket.connected) socket.disconnect();
+    setIsConnected(false);
+    resetWorkspaceState();
+  };
+
   const handleChatSelect = (chatId, options = {}) => {
     if (!chatId) return;
     const clearSearch = Boolean(options?.clearSearch);
@@ -1665,6 +2098,86 @@ REGLA CRITICA:
   const activeTransport = String(waRuntime?.activeTransport || 'idle').toLowerCase();
   const cloudConfigured = Boolean(waRuntime?.cloudConfigured);
   const selectedModeLabel = selectedTransport === 'cloud' ? 'WhatsApp Cloud API' : 'WhatsApp Web.js';
+  const saasAuthEnabled = Boolean(saasRuntime?.authEnabled);
+  const isSaasAuthenticated = !saasAuthEnabled || Boolean(saasSession?.accessToken);
+  const loginTenantOptions = Array.isArray(saasRuntime?.tenants) ? saasRuntime.tenants : [];
+
+  if (!saasRuntime?.loaded) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#111b21', gap: '20px' }}>
+        <div className='loader' />
+        <p style={{ color: '#8696a0', fontSize: '0.9rem' }}>Inicializando plataforma SaaS...</p>
+      </div>
+    );
+  }
+
+  if (saasAuthEnabled && !isSaasAuthenticated) {
+    return (
+      <div className='login-screen'>
+        <form onSubmit={handleSaasLogin} style={{ width: '100%', maxWidth: '460px', background: '#1f2c33', border: '1px solid rgba(134,150,160,0.28)', borderRadius: '16px', padding: '24px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ textAlign: 'center', marginBottom: '6px' }}>
+            <div style={{ fontSize: '1.6rem', fontWeight: 500, color: '#e9edef', marginBottom: '6px' }}>Acceso de empresa</div>
+            <p style={{ color: '#9eb2bf', fontSize: '0.86rem', margin: 0 }}>Inicia sesion para continuar con tu tenant SaaS.</p>
+          </div>
+
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', color: '#9eb2bf', fontSize: '0.78rem' }}>
+            Correo
+            <input
+              type='email'
+              value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)}
+              autoComplete='username'
+              style={{ borderRadius: '10px', border: '1px solid rgba(134,150,160,0.25)', background: '#101a21', color: '#e9edef', padding: '10px 12px', outline: 'none' }}
+              placeholder='usuario@empresa.com'
+            />
+          </label>
+
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', color: '#9eb2bf', fontSize: '0.78rem' }}>
+            Contrasena
+            <input
+              type='password'
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              autoComplete='current-password'
+              style={{ borderRadius: '10px', border: '1px solid rgba(134,150,160,0.25)', background: '#101a21', color: '#e9edef', padding: '10px 12px', outline: 'none' }}
+              placeholder='********'
+            />
+          </label>
+
+          {loginTenantOptions.length > 0 && (
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', color: '#9eb2bf', fontSize: '0.78rem' }}>
+              Empresa
+              <select
+                value={loginTenantId}
+                onChange={(e) => setLoginTenantId(e.target.value)}
+                style={{ borderRadius: '10px', border: '1px solid rgba(134,150,160,0.25)', background: '#101a21', color: '#e9edef', padding: '10px 12px', outline: 'none' }}
+              >
+                <option value=''>Seleccionar empresa</option>
+                {loginTenantOptions.map((tenant) => (
+                  <option key={tenant.id} value={tenant.id}>{tenant.name || tenant.id}</option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {saasAuthError && (
+            <div style={{ borderRadius: '10px', border: '1px solid rgba(255,113,113,0.35)', background: 'rgba(255,113,113,0.08)', color: '#ffd1d1', padding: '8px 10px', fontSize: '0.8rem' }}>
+              {saasAuthError}
+            </div>
+          )}
+
+          <button
+            type='submit'
+            disabled={saasAuthBusy}
+            style={{ marginTop: '4px', border: 'none', borderRadius: '10px', background: '#00a884', color: '#fff', padding: '10px 12px', fontWeight: 700, cursor: saasAuthBusy ? 'not-allowed' : 'pointer', opacity: saasAuthBusy ? 0.7 : 1 }}
+          >
+            {saasAuthBusy ? 'Ingresando...' : 'Iniciar sesion'}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
 
   // --------------------------------------------------------------
   // Render: Reconnecting
@@ -1688,6 +2201,20 @@ REGLA CRITICA:
           <div style={{ textAlign: 'center', marginBottom: '22px' }}>
             <div style={{ fontSize: '2rem', fontWeight: 300, color: '#e9edef', marginBottom: '8px' }}>Modo de conexion</div>
             <p style={{ color: '#9eb2bf', fontSize: '0.9rem' }}>Selecciona como quieres operar WhatsApp en esta sesion.</p>
+            {saasAuthEnabled && (
+              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <span style={{ color: '#8ca3b3', fontSize: '0.78rem' }}>
+                  Tenant: <strong style={{ color: '#d3e6f3' }}>{saasSession?.user?.tenantId || saasRuntime?.tenant?.id || 'default'}</strong>
+                </span>
+                <button
+                  type='button'
+                  onClick={handleSaasLogout}
+                  style={{ background: 'transparent', border: '1px solid rgba(255,113,113,0.45)', color: '#ffd1d1', borderRadius: '999px', padding: '4px 10px', fontSize: '0.74rem', cursor: 'pointer' }}
+                >
+                  Cerrar sesion SaaS
+                </button>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
@@ -1886,6 +2413,7 @@ REGLA CRITICA:
               onCancelReplyMessage={handleCancelReplyMessage}
               editingMessage={editingMessage}
               replyingMessage={replyingMessage}
+              buildApiHeaders={buildApiHeaders}
               canEditMessages={waCapabilities.messageEdit}
             />
 
@@ -1940,6 +2468,7 @@ REGLA CRITICA:
         {/* Business Sidebar - AI and Catalog */}
         {activeChatId && (
           <BusinessSidebar
+            tenantScopeKey={tenantScopeId}
             setInputText={setInputText}
             businessData={businessData}
             messages={messages}
@@ -1962,7 +2491,3 @@ REGLA CRITICA:
 }
 
 export default App;
-
-
-
-

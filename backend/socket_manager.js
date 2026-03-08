@@ -6,6 +6,7 @@ const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
 const { listQuickReplies, addQuickReply, updateQuickReply, deleteQuickReply } = require('./quick_replies_manager');
 const tenantSettingsService = require('./tenant_settings_service');
 const messageHistoryService = require('./message_history_service');
+const auditLogService = require('./audit_log_service');
 const RateLimiter = require('./rate_limiter');
 const { URL } = require('url');
 const { resolveAndValidatePublicHost } = require('./security_utils');
@@ -25,6 +26,7 @@ const SENDER_META_TTL_MS = Math.max(60 * 1000, Number(process.env.SENDER_META_TT
 const senderMetaCache = new Map();
 const GROUP_PARTICIPANT_CONTACT_TTL_MS = Math.max(5 * 60 * 1000, Number(process.env.GROUP_PARTICIPANT_CONTACT_TTL_MS || (30 * 60 * 1000)));
 const groupParticipantContactCache = new Map();
+const SOCKET_RBAC_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAAS_AUTH_ENABLED || '').trim().toLowerCase());
 
 function guardRateLimit(socket, eventName) {
     const key = `${socket.id}:${eventName}`;
@@ -2637,6 +2639,51 @@ class SocketManager {
         this.io.on('connection', (socket) => {
             const tenantId = String(socket?.data?.tenantId || 'default');
             const authContext = socket?.data?.authContext || null;
+            const userRole = String(authContext?.role || '').trim().toLowerCase() || 'seller';
+            const roleWeight = { seller: 1, admin: 2, owner: 3 };
+            const effectiveRoleWeight = roleWeight[userRole] || 0;
+
+            const requireRole = (allowedRoles = [], {
+                errorEvent = 'permission_error',
+                action = 'realizar esta accion'
+            } = {}) => {
+                if (!SOCKET_RBAC_ENABLED) return true;
+                const allowSet = new Set((Array.isArray(allowedRoles) ? allowedRoles : [])
+                    .map((role) => String(role || '').trim().toLowerCase())
+                    .filter(Boolean));
+                if (allowSet.size === 0) return true;
+                if (!authContext) {
+                    socket.emit(errorEvent, 'No autorizado para ' + action + '. Inicia sesion nuevamente.');
+                    return false;
+                }
+                const minimumWeight = Math.min(...Array.from(allowSet)
+                    .map((role) => roleWeight[role] || 999)
+                    .filter((weight) => Number.isFinite(weight)));
+                if (effectiveRoleWeight >= minimumWeight) return true;
+                socket.emit(errorEvent, 'No tienes permisos para ' + action + '.');
+                return false;
+            };
+
+            const auditSocketAction = async (action = '', {
+                resourceType = 'socket',
+                resourceId = null,
+                payload = {}
+            } = {}) => {
+                try {
+                    await auditLogService.writeAuditLog(tenantId, {
+                        userId: authContext?.userId || null,
+                        userEmail: authContext?.email || null,
+                        role: userRole,
+                        action: String(action || '').trim() || 'socket.action',
+                        resourceType,
+                        resourceId,
+                        source: 'socket',
+                        socketId: socket.id,
+                        payload
+                    });
+                } catch (_) { }
+            };
+
             console.log('Web client connected:', socket.id, '| tenant:', tenantId);
             socket.join(this.getTenantRoom(tenantId));
             socket.emit('tenant_context', {
@@ -2661,6 +2708,7 @@ class SocketManager {
             });
 
             socket.on('set_transport_mode', async ({ mode } = {}) => {
+                if (!requireRole(['owner', 'admin'], { errorEvent: 'transport_mode_error', action: 'cambiar el modo de transporte' })) return;
                 try {
                     const nextMode = String(mode || '').trim().toLowerCase();
                     if (!nextMode) {
@@ -2673,6 +2721,11 @@ class SocketManager {
                     this.contactListCache = { items: [], updatedAt: 0 };
                     this.emitWaCapabilities(socket);
                     socket.emit('transport_mode_set', runtime);
+                    await auditSocketAction('wa.transport_mode.changed', {
+                        resourceType: 'wa_runtime',
+                        resourceId: runtime?.activeTransport || nextMode,
+                        payload: { requestedMode: nextMode, runtime }
+                    });
 
                     if (waClient.isReady) {
                         socket.emit('ready', { message: 'WhatsApp transport listo' });
@@ -3069,6 +3122,7 @@ class SocketManager {
             });
 
             socket.on('set_chat_labels', async ({ chatId, labelIds }) => {
+                if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'chat_labels_error', action: 'gestionar etiquetas' })) return;
                 try {
                     if (!this.ensureTransportReady(socket, { action: 'gestionar etiquetas', errorEvent: 'chat_labels_error' })) {
                         return;
@@ -3106,6 +3160,11 @@ class SocketManager {
                     });
                     this.emitToTenant(tenantId, 'chat_labels_updated', payload);
                     socket.emit('chat_labels_saved', { chatId, ok: true });
+                    await auditSocketAction('chat.labels.updated', {
+                        resourceType: 'chat',
+                        resourceId: chatId,
+                        payload: { labelIds: ids, labels: payload.labels }
+                    });
                 } catch (e) {
                     console.error('set_chat_labels error:', e.message);
                     socket.emit('chat_labels_error', 'No se pudieron actualizar las etiquetas en WhatsApp.');
@@ -3113,6 +3172,7 @@ class SocketManager {
             });
 
             socket.on('create_label', async ({ name }) => {
+                if (!requireRole(['owner', 'admin'], { errorEvent: 'chat_labels_error', action: 'crear etiquetas' })) return;
                 try {
                     const clean = String(name || '').trim();
                     if (!clean) {
@@ -3192,6 +3252,7 @@ class SocketManager {
             });
             socket.on('edit_message', async ({ chatId, messageId, body }) => {
                 if (!guardRateLimit(socket, 'edit_message')) return;
+                if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'edit_message_error', action: 'editar mensajes' })) return;
                 if (!this.ensureTransportReady(socket, { action: 'editar mensajes', errorEvent: 'edit_message_error' })) return;
                 const caps = this.getWaCapabilities();
                 if (!caps.messageEdit) {
@@ -3240,6 +3301,11 @@ class SocketManager {
                     }
 
                     this.emitMessageEditability(targetMessageId, targetChatId);
+                    await auditSocketAction('message.edited', {
+                        resourceType: 'message',
+                        resourceId: targetMessageId,
+                        payload: { chatId: targetChatId }
+                    });
                 } catch (e) {
                     const detail = String(e?.message || '').toLowerCase();
                     if (detail.includes('revoke') || detail.includes('time') || detail.includes('edit')) {
@@ -3266,6 +3332,7 @@ class SocketManager {
 
             socket.on('forward_message', async ({ messageId, toChatId }) => {
                 if (!guardRateLimit(socket, 'forward_message')) return;
+                if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'forward_message_error', action: 'reenviar mensajes' })) return;
                 if (!this.ensureTransportReady(socket, { action: 'reenviar mensajes', errorEvent: 'forward_message_error' })) return;
                 const caps = this.getWaCapabilities();
                 if (!caps.messageForward) {
@@ -3285,6 +3352,11 @@ class SocketManager {
                         messageId: sourceMessageId,
                         toChatId: targetChatId
                     });
+                    await auditSocketAction('message.forwarded', {
+                        resourceType: 'message',
+                        resourceId: sourceMessageId,
+                        payload: { toChatId: targetChatId }
+                    });
                 } catch (e) {
                     socket.emit('forward_message_error', 'No se pudo reenviar el mensaje en esta version de WhatsApp.');
                 }
@@ -3292,6 +3364,7 @@ class SocketManager {
 
             socket.on('delete_message', async ({ chatId, messageId }) => {
                 if (!guardRateLimit(socket, 'delete_message')) return;
+                if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'delete_message_error', action: 'eliminar mensajes' })) return;
                 if (!this.ensureTransportReady(socket, { action: 'eliminar mensajes', errorEvent: 'delete_message_error' })) return;
                 const caps = this.getWaCapabilities();
                 if (!caps.messageDelete) {
@@ -3345,6 +3418,11 @@ class SocketManager {
                     this.io.emit('message_deleted', {
                         chatId: targetChatId,
                         messageId: targetMessageId
+                    });
+                    await auditSocketAction('message.deleted', {
+                        resourceType: 'message',
+                        resourceId: targetMessageId,
+                        payload: { chatId: targetChatId }
                     });
                 } catch (e) {
                     socket.emit('delete_message_error', 'No se pudo eliminar el mensaje.');
@@ -3622,28 +3700,46 @@ class SocketManager {
 
             // --- Catalog CRUD ---
             socket.on('add_product', async (product) => {
+                if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'agregar productos al catalogo' })) return;
                 try {
                     const newProduct = await addProduct(product, { tenantId });
                     const tenantCatalog = await loadCatalog({ tenantId });
                     this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
                     socket.emit('product_added', newProduct);
+                    await auditSocketAction('catalog.product.added', {
+                        resourceType: 'catalog_item',
+                        resourceId: newProduct?.id || null,
+                        payload: { title: newProduct?.title || null }
+                    });
                 } catch (e) { console.error('add_product error:', e); }
             });
 
             socket.on('update_product', async ({ id, updates }) => {
+                if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'editar productos del catalogo' })) return;
                 try {
                     const updated = await updateProduct(id, updates, { tenantId });
                     const tenantCatalog = await loadCatalog({ tenantId });
                     this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
                     socket.emit('product_updated', updated);
+                    await auditSocketAction('catalog.product.updated', {
+                        resourceType: 'catalog_item',
+                        resourceId: updated?.id || id || null,
+                        payload: { updates }
+                    });
                 } catch (e) { console.error('update_product error:', e); }
             });
 
             socket.on('delete_product', async (id) => {
+                if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'eliminar productos del catalogo' })) return;
                 try {
                     await deleteProduct(id, { tenantId });
                     const tenantCatalog = await loadCatalog({ tenantId });
                     this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
+                    await auditSocketAction('catalog.product.deleted', {
+                        resourceType: 'catalog_item',
+                        resourceId: String(id || '').trim() || null,
+                        payload: {}
+                    });
                 } catch (e) { console.error('delete_product error:', e); }
             });
 
@@ -3817,6 +3913,7 @@ class SocketManager {
             });
 
             socket.on('logout_whatsapp', async () => {
+                if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'cerrar sesion de WhatsApp' })) return;
                 try {
                     await waClient.client.logout();
                 } catch (e) {
@@ -3829,6 +3926,11 @@ class SocketManager {
                     console.error('reinitialize after logout failed:', e.message);
                 }
                 socket.emit('logout_done', { ok: true });
+                await auditSocketAction('wa.logout.requested', {
+                    resourceType: 'wa_runtime',
+                    resourceId: 'logout',
+                    payload: {}
+                });
             });
 
             socket.on('disconnect', () => {

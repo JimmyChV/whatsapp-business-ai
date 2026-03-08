@@ -20,6 +20,7 @@ Run from backend folder in order:
 psql "$env:DATABASE_URL" -f db/migrations/001_saas_foundation.sql
 psql "$env:DATABASE_URL" -f db/migrations/002_tenant_settings.sql
 psql "$env:DATABASE_URL" -f db/migrations/003_message_history.sql
+psql "$env:DATABASE_URL" -f db/migrations/004_auth_sessions.sql
 ```
 
 Or with split vars already exported:
@@ -28,6 +29,7 @@ Or with split vars already exported:
 psql -f db/migrations/001_saas_foundation.sql
 psql -f db/migrations/002_tenant_settings.sql
 psql -f db/migrations/003_message_history.sql
+psql -f db/migrations/004_auth_sessions.sql
 ```
 
 ## 3) Verify
@@ -50,6 +52,8 @@ Expected core tables:
 - `tenant_chats`
 - `tenant_messages`
 - `audit_logs`
+- `auth_sessions`
+- `auth_token_revocations`
 
 ## 4) Tenant settings API
 

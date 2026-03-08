@@ -1,4 +1,5 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
+const authSessionService = require('./auth_session_service');
 
 function parseBooleanEnv(value, defaultValue = false) {
     const raw = String(value ?? '').trim().toLowerCase();
@@ -39,6 +40,10 @@ function nowEpochSeconds() {
 
 function sha256Hex(value = '') {
     return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
+}
+
+function randomTokenId(prefix = 'tok') {
+    return `${prefix}_${crypto.randomBytes(12).toString('hex')}`;
 }
 
 function parseUsersFromEnv() {
@@ -136,17 +141,46 @@ function verifyUserPassword(user = {}, password = '') {
     return false;
 }
 
+function normalizeRole(value = '') {
+    const role = String(value || '').trim().toLowerCase();
+    if (['owner', 'admin', 'seller'].includes(role)) return role;
+    return 'seller';
+}
+
 function sanitizeUser(user = {}) {
     return {
         id: user.id,
         email: user.email,
         tenantId: user.tenantId,
-        role: user.role,
+        role: normalizeRole(user.role),
         name: user.name
     };
 }
 
-function login({ email = '', password = '', tenantId = '', tenantSlug = '' } = {}) {
+function buildAccessSessionForUser(user = {}) {
+    const now = nowEpochSeconds();
+    const ttl = getTokenTtlSec();
+    const payload = {
+        sub: String(user.id || '').trim(),
+        email: String(user.email || '').trim().toLowerCase(),
+        tenantId: String(user.tenantId || 'default').trim(),
+        role: normalizeRole(user.role),
+        name: String(user.name || '').trim() || null,
+        iat: now,
+        exp: now + ttl,
+        jti: randomTokenId('jti')
+    };
+
+    const accessToken = buildAccessToken(payload);
+    return {
+        accessToken,
+        tokenType: 'Bearer',
+        expiresInSec: ttl,
+        payload
+    };
+}
+
+async function login({ email = '', password = '', tenantId = '', tenantSlug = '' } = {}) {
     if (!isAuthEnabled()) {
         throw new Error('Autenticacion SaaS deshabilitada. Activa SAAS_AUTH_ENABLED=true.');
     }
@@ -175,24 +209,64 @@ function login({ email = '', password = '', tenantId = '', tenantSlug = '' } = {
         throw new Error('Credenciales invalidas.');
     }
 
-    const now = nowEpochSeconds();
-    const ttl = getTokenTtlSec();
-    const payload = {
-        sub: target.id,
-        email: target.email,
+    const accessSession = buildAccessSessionForUser(target);
+    const refresh = await authSessionService.issueRefreshSession({
         tenantId: target.tenantId,
-        role: target.role,
-        name: target.name,
-        iat: now,
-        exp: now + ttl
-    };
+        user: {
+            id: target.id,
+            email: target.email,
+            role: target.role,
+            name: target.name
+        }
+    });
 
-    const accessToken = buildAccessToken(payload);
     return {
-        accessToken,
-        tokenType: 'Bearer',
-        expiresInSec: ttl,
+        accessToken: accessSession.accessToken,
+        tokenType: accessSession.tokenType,
+        expiresInSec: accessSession.expiresInSec,
+        refreshToken: refresh.refreshToken,
+        refreshExpiresInSec: refresh.expiresInSec,
+        refreshExpiresAtUnix: refresh.expiresAtUnix,
         user: sanitizeUser(target)
+    };
+}
+
+async function refreshSession({ refreshToken = '' } = {}) {
+    if (!isAuthEnabled()) {
+        throw new Error('Autenticacion SaaS deshabilitada.');
+    }
+
+    if (!getAuthSecret()) {
+        throw new Error('Falta SAAS_AUTH_SECRET para renovar sesion.');
+    }
+
+    const cleanRefreshToken = String(refreshToken || '').trim();
+    if (!cleanRefreshToken) {
+        throw new Error('Refresh token requerido.');
+    }
+
+    const rotated = await authSessionService.rotateRefreshSession(cleanRefreshToken);
+    if (!rotated) {
+        throw new Error('Refresh token invalido o expirado.');
+    }
+
+    const user = {
+        id: rotated.userId,
+        email: rotated.email,
+        tenantId: rotated.tenantId,
+        role: normalizeRole(rotated.role),
+        name: null
+    };
+    const accessSession = buildAccessSessionForUser(user);
+
+    return {
+        accessToken: accessSession.accessToken,
+        tokenType: accessSession.tokenType,
+        expiresInSec: accessSession.expiresInSec,
+        refreshToken: rotated.refreshToken,
+        refreshExpiresInSec: rotated.refreshExpiresInSec,
+        refreshExpiresAtUnix: rotated.refreshExpiresAtUnix,
+        user: sanitizeUser(user)
     };
 }
 
@@ -212,10 +286,87 @@ function verifyAccessToken(token = '') {
         userId: String(payload.sub || '').trim(),
         email: String(payload.email || '').trim().toLowerCase(),
         tenantId: String(payload.tenantId || 'default').trim(),
-        role: String(payload.role || 'seller').trim().toLowerCase(),
+        role: normalizeRole(payload.role),
         name: String(payload.name || '').trim() || null,
         exp: Number(payload.exp || 0),
-        iat: Number(payload.iat || 0)
+        iat: Number(payload.iat || 0),
+        jti: String(payload.jti || '').trim() || null
+    };
+}
+
+async function verifyAccessTokenAsync(token = '') {
+    const cleanToken = String(token || '').trim();
+    const auth = verifyAccessToken(cleanToken);
+    if (!auth) return null;
+
+    const revoked = await authSessionService.isAccessTokenRevoked({
+        tenantId: auth.tenantId,
+        tokenHash: authSessionService.buildAccessTokenHash(cleanToken),
+        jti: auth.jti
+    });
+    if (revoked) return null;
+
+    return auth;
+}
+
+async function logoutSession({ accessToken = '', refreshToken = '', reason = 'logout' } = {}) {
+    const cleanAccessToken = String(accessToken || '').trim();
+    const cleanRefreshToken = String(refreshToken || '').trim();
+
+    let auth = null;
+    if (cleanAccessToken) {
+        auth = verifyAccessToken(cleanAccessToken);
+    }
+
+    let revokedAccess = false;
+    if (auth && cleanAccessToken) {
+        await authSessionService.revokeAccessToken({
+            tenantId: auth.tenantId,
+            accessToken: cleanAccessToken,
+            jti: auth.jti,
+            userId: auth.userId,
+            expiresAtUnix: auth.exp,
+            reason
+        });
+        revokedAccess = true;
+    }
+
+    let revokedRefresh = false;
+    if (cleanRefreshToken) {
+        const revoked = await authSessionService.revokeRefreshToken(cleanRefreshToken, { reason });
+        revokedRefresh = Boolean(revoked?.ok && Number(revoked?.updated || 0) > 0);
+    }
+
+    if (!revokedAccess && !revokedRefresh) {
+        return {
+            ok: false,
+            revokedAccess: false,
+            revokedRefresh: false,
+            user: auth
+                ? {
+                    id: auth.userId,
+                    email: auth.email,
+                    tenantId: auth.tenantId,
+                    role: auth.role,
+                    name: auth.name
+                }
+                : null
+        };
+    }
+
+    return {
+        ok: true,
+        revokedAccess,
+        revokedRefresh,
+        user: auth
+            ? {
+                id: auth.userId,
+                email: auth.email,
+                tenantId: auth.tenantId,
+                role: auth.role,
+                name: auth.name
+            }
+            : null
     };
 }
 
@@ -230,10 +381,25 @@ function getRequestAuthContext(req = {}) {
     };
 }
 
+async function getRequestAuthContextAsync(req = {}) {
+    const token = getTokenFromRequest(req);
+    const auth = await verifyAccessTokenAsync(token);
+    return {
+        enabled: isAuthEnabled(),
+        tokenPresent: Boolean(token),
+        isAuthenticated: Boolean(auth),
+        user: auth
+    };
+}
+
 module.exports = {
     isAuthEnabled,
     login,
+    refreshSession,
+    logoutSession,
     verifyAccessToken,
+    verifyAccessTokenAsync,
     getTokenFromRequest,
-    getRequestAuthContext
+    getRequestAuthContext,
+    getRequestAuthContextAsync
 };

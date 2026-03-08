@@ -13,7 +13,8 @@ const ChatInput = ({
     onRequestAiSuggestion, aiPrompt, setAiPrompt,
     editingMessage, onCancelEditMessage,
     replyingMessage, onCancelReplyMessage,
-    onOpenMapPicker
+    onOpenMapPicker,
+    buildApiHeaders
 }) => {
     const [showEmoji, setShowEmoji] = useState(false);
     const [showCommands, setShowCommands] = useState(false);
@@ -244,7 +245,9 @@ const ChatInput = ({
             try {
                 setIsLoadingPreview(true);
                 const encoded = encodeURIComponent(url);
-                const resp = await fetch(`${API_URL}/api/link-preview?url=${encoded}`);
+                const resp = await fetch(`${API_URL}/api/link-preview?url=${encoded}`, {
+                    headers: typeof buildApiHeaders === 'function' ? buildApiHeaders() : undefined
+                });
                 const data = await resp.json();
                 if (!cancelled) setLinkPreview(data?.ok ? data : { ok: false, url });
             } catch (e) {
@@ -544,6 +547,7 @@ const ChatWindow = ({
     forwardChatOptions = [],
 
     canEditMessages = true,
+    buildApiHeaders,
     ...inputProps
 }) => {
     const [showMenu, setShowMenu] = useState(false);
@@ -761,7 +765,9 @@ const ChatWindow = ({
         if (!/^https?:\/\//i.test(cleanUrl)) return null;
         try {
             const encoded = encodeURIComponent(cleanUrl);
-            const response = await fetch(`${API_URL}/api/map-resolve?url=${encoded}`);
+            const response = await fetch(`${API_URL}/api/map-resolve?url=${encoded}`, {
+                headers: typeof buildApiHeaders === 'function' ? buildApiHeaders() : undefined
+            });
             const payload = await response.json();
             if (!payload?.ok) return null;
             return {
@@ -879,7 +885,9 @@ const ChatWindow = ({
             try {
                 setMapSuggestionsLoading(true);
                 const encoded = encodeURIComponent(query);
-                const response = await fetch(`${API_URL}/api/map-suggest?q=${encoded}&limit=8`);
+                const response = await fetch(`${API_URL}/api/map-suggest?q=${encoded}&limit=8`, {
+                    headers: typeof buildApiHeaders === 'function' ? buildApiHeaders() : undefined
+                });
                 const payload = await response.json();
                 if (cancelled) return;
                 const items = Array.isArray(payload?.items)
@@ -1091,6 +1099,7 @@ const ChatWindow = ({
                                     showSenderName={Boolean(activeChatDetails?.isGroup && !msg?.fromMe)}
                                     senderDisplayName={senderDisplayName}
                                     canEditMessages={canEditMessages}
+                                    buildApiHeaders={buildApiHeaders}
                                 />
                             </div>
                         </React.Fragment>
@@ -1186,7 +1195,7 @@ const ChatWindow = ({
             )}
 
             {/* Input Area */}
-            <ChatInput {...inputProps} replyingMessage={inputProps?.replyingMessage} onCancelReplyMessage={inputProps?.onCancelReplyMessage} onOpenMapPicker={() => openMapModal({ query: '' })} />
+            <ChatInput {...inputProps} replyingMessage={inputProps?.replyingMessage} onCancelReplyMessage={inputProps?.onCancelReplyMessage} onOpenMapPicker={() => openMapModal({ query: '' })} buildApiHeaders={buildApiHeaders} />
         </div>
     );
 };
