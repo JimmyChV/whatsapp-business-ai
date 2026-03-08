@@ -1617,6 +1617,7 @@ REGLA CRITICA:
               onDeleteMessage={handleDeleteMessage}
               forwardChatOptions={forwardChatOptions}
               onLoadOrderToCart={handleLoadOrderToCart}
+              onStartNewChat={handleStartNewChat}
               onCancelEditMessage={handleCancelEditMessage}
               onCancelReplyMessage={handleCancelReplyMessage}
               editingMessage={editingMessage}

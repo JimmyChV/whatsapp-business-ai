@@ -518,6 +518,25 @@ const renderAttachmentIcon = (icon = 'file') => {
     if (icon === 'text') return <FileText size={18} />;
     return <FileType2 size={18} />;
 };
+const extractPhoneCandidatesFromText = (text = '') => {
+    const source = String(text || '');
+    if (!source) return [];
+
+    const rawMatches = source.match(/(?:\+?\d[\d\s()\-]{4,}\d)/g) || [];
+    const dedupe = new Set();
+    const phones = [];
+
+    rawMatches.forEach((entry) => {
+        const normalized = String(entry || '').replace(/\D/g, '');
+        if (normalized.length < 8 || normalized.length > 15) return;
+        if (/^(19|20)\d{6}$/.test(normalized)) return;
+        if (dedupe.has(normalized)) return;
+        dedupe.add(normalized);
+        phones.push(normalized);
+    });
+
+    return phones.slice(0, 4);
+};
 const MessageBubble = ({
     msg,
     onPrefillMessage,
@@ -526,6 +545,7 @@ const MessageBubble = ({
     isCurrentHighlighted = false,
     onOpenMedia,
     onOpenMap,
+    onOpenPhoneChat,
     onEditMessage,
     onReplyMessage,
     onForwardMessage,
@@ -616,6 +636,7 @@ const MessageBubble = ({
         : ((isLocationMessage && locationData?.source === 'native') ? '' : (shouldHideBodyForOrder ? '' : (msg.body || '')));
     const firstNonMapUrl = extractFirstNonMapUrlFromText(messageBodyText);
     const showWebPreview = Boolean(firstNonMapUrl && !isLocationMessage && !msg?.hasMedia && !hasOrder && !isCatalogItem && !isOrderActionable);
+    const phoneCandidates = extractPhoneCandidatesFromText(messageTextToRender);
 
     useEffect(() => {
         if (!showWebPreview || !firstNonMapUrl) {
@@ -1145,6 +1166,20 @@ const MessageBubble = ({
                     </span>
                 )}
 
+                {phoneCandidates.length > 0 && typeof onOpenPhoneChat === 'function' && (
+                    <div className="message-phone-links">
+                        {phoneCandidates.map((phone) => (
+                            <button
+                                key={phone}
+                                type="button"
+                                className="message-phone-link"
+                                onClick={() => onOpenPhoneChat(phone, '')}
+                            >
+                                Abrir chat +{phone}
+                            </button>
+                        ))}
+                    </div>
+                )}
                 {selectedLocationText && typeof onOpenMap === 'function' && (
                     <button
                         type="button"
@@ -1302,4 +1337,3 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
-

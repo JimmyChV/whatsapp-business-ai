@@ -1081,6 +1081,7 @@ const ChatWindow = ({
                                     onLoadOrderToCart={inputProps?.onLoadOrderToCart}
                                     onOpenMedia={setLightboxMedia}
                                     onOpenMap={openMapModal}
+                                    onOpenPhoneChat={inputProps?.onStartNewChat}
                                     onEditMessage={onEditMessage}
                                     onReplyMessage={onReplyMessage}
                                     onForwardMessage={onForwardMessage}
@@ -1192,4 +1193,3 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
-
