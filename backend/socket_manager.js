@@ -604,6 +604,89 @@ function extractLocationInfo(msg) {
         return null;
     }
 }
+function getMessageTypePreviewLabel(type = '') {
+    const value = String(type || '').toLowerCase();
+    if (!value) return 'Mensaje';
+    if (value === 'image') return 'Imagen';
+    if (value === 'video') return 'Video';
+    if (value === 'audio') return 'Audio';
+    if (value === 'ptt') return 'Nota de voz';
+    if (value === 'document') return 'Documento';
+    if (value === 'sticker') return 'Sticker';
+    if (value === 'location') return 'Ubicacion';
+    if (value === 'vcard') return 'Contacto';
+    if (value === 'revoked') return 'Mensaje eliminado';
+    if (value === 'order') return 'Pedido';
+    if (value === 'product') return 'Producto';
+    return 'Mensaje';
+}
+
+function normalizeQuotedPayload(raw = {}) {
+    if (!raw || typeof raw !== 'object') return null;
+
+    const rawId = raw?.id?._serialized || raw?.id || raw?.quotedStanzaID || raw?.quotedMsgId || raw?.quotedMsgKey || null;
+    const id = rawId ? String(rawId).trim() : null;
+    const body = truncateDisplayValue(String(raw?.body || raw?.caption || raw?.text || '').trim(), 180);
+    const type = String(raw?.type || '').trim() || null;
+    const fromMe = Boolean(raw?.fromMe || raw?.id?.fromMe || raw?.isFromMe);
+    const timestamp = Number(raw?.timestamp || raw?.t || 0) || null;
+    const hasMedia = Boolean(raw?.hasMedia || raw?.mimetype || raw?.mediaData || raw?.isMedia);
+
+    if (!id && !body && !type && !hasMedia) return null;
+
+    const preview = body || getMessageTypePreviewLabel(type);
+    return {
+        id: id || null,
+        body: preview,
+        type: type || 'chat',
+        fromMe,
+        timestamp,
+        hasMedia
+    };
+}
+
+async function extractQuotedMessageInfo(msg) {
+    try {
+        if (!msg) return null;
+        const data = msg?._data || {};
+        const quick = normalizeQuotedPayload({
+            id: data?.quotedStanzaID,
+            body: data?.quotedMsg?.body || data?.quotedMsg?.caption,
+            type: data?.quotedMsg?.type,
+            fromMe: data?.quotedMsg?.id?.fromMe || data?.quotedMsg?.fromMe,
+            timestamp: data?.quotedMsg?.t,
+            hasMedia: data?.quotedMsg?.isMedia || data?.quotedMsg?.mediaData || data?.quotedMsg?.mimetype
+        });
+
+        if (quick && quick.body && quick.id) return quick;
+
+        if (msg?.hasQuotedMsg && typeof msg.getQuotedMessage === 'function') {
+            try {
+                const quoted = await msg.getQuotedMessage();
+                const parsedQuoted = normalizeQuotedPayload({
+                    id: quoted?.id?._serialized,
+                    body: quoted?.body,
+                    caption: quoted?._data?.caption,
+                    type: quoted?.type,
+                    fromMe: quoted?.fromMe,
+                    timestamp: quoted?.timestamp,
+                    hasMedia: quoted?.hasMedia
+                });
+
+                if (parsedQuoted) {
+                    if (quick?.id && !parsedQuoted.id) parsedQuoted.id = quick.id;
+                    return parsedQuoted;
+                }
+            } catch (e) {
+            }
+        }
+
+        return quick;
+    } catch (e) {
+        return null;
+    }
+}
+
 function extractOrderInfo(msg) {
     try {
         const data = msg?._data || {};
@@ -1173,8 +1256,8 @@ function resolveLastMessagePreview(chat = {}) {
     const type = String(last?.type || last?._data?.type || '').toLowerCase();
     if (type === 'location') {
         const location = extractLocationInfo(last);
-        if (location?.label) return `📍 ${location.label}`;
-        return '📍 Ubicacion';
+        if (location?.label) return `ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â ${location.label}`;
+        return 'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â Ubicacion';
     }
 
     const mediaMap = {
@@ -1197,7 +1280,7 @@ function resolveLastMessagePreview(chat = {}) {
     if (body) {
         const possibleCoords = extractCoordsFromText(body);
         const hasMapUrl = /https?:\/\/(?:www\.)?(?:google\.[^\s/]+\/maps|maps\.app\.goo\.gl|maps\.google\.com)/i.test(body);
-        if (possibleCoords || hasMapUrl) return '📍 Ubicacion';
+        if (possibleCoords || hasMapUrl) return 'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â Ubicacion';
         return body;
     }
 
@@ -1851,7 +1934,7 @@ class SocketManager {
                         ? await waClient.getMessagesEditability(outgoingIds)
                         : {};
 
-                    const formatted = visible.map((m) => ({
+                    const formatted = await Promise.all(visible.map(async (m) => ({
                         id: m.id._serialized,
                         from: m.from,
                         to: m.to,
@@ -1865,11 +1948,11 @@ class SocketManager {
                         ack: Number.isFinite(Number(m.ack)) ? Number(m.ack) : 0,
                         edited: Boolean(m?._data?.latestEditMsgKey || m?._data?.latestEditSenderTimestampMs || m?._data?.edited),
                         editedAt: Number(m?._data?.latestEditSenderTimestampMs || 0) > 0 ? Math.floor(Number(m._data.latestEditSenderTimestampMs) / 1000) : null,
-
                         canEdit: Boolean(editableMap[String(m?.id?._serialized || '')]),
                         order: extractOrderInfo(m),
-                        location: extractLocationInfo(m)
-                    }));
+                        location: extractLocationInfo(m),
+                        quotedMessage: await extractQuotedMessageInfo(m)
+                    })));
                     socket.emit('chat_history', { chatId: historyChatId, requestedChatId: chatId, messages: formatted });
 
                     // Avoid blocking chat open while media is downloaded/cached.
@@ -2030,15 +2113,42 @@ class SocketManager {
             });
 
             // --- Messaging ---
-            socket.on('send_message', async ({ to, body }) => {
+            socket.on('send_message', async ({ to, body, quotedMessageId }) => {
                 if (!guardRateLimit(socket, 'send_message')) return;
                 try {
-                    await waClient.sendMessage(to, body);
+                    const targetChatId = String(to || '').trim();
+                    const text = String(body || '');
+                    const quoted = String(quotedMessageId || '').trim();
+                    if (!targetChatId || !text.trim()) {
+                        socket.emit('error', 'Datos invalidos para enviar mensaje.');
+                        return;
+                    }
+
+                    if (quoted) {
+                        let quotedTargetChatId = targetChatId;
+                        try {
+                            const quotedMsg = await waClient.getMessageById(quoted);
+                            const fromQuoted = String(quotedMsg?.fromMe ? quotedMsg?.to : quotedMsg?.from || '').trim();
+                            if (fromQuoted && isVisibleChatId(fromQuoted)) {
+                                quotedTargetChatId = fromQuoted;
+                            }
+                        } catch (resolveQuotedError) {
+                        }
+
+                        try {
+                            // Prefer native quotedMessageId path so replies stay linked on WhatsApp mobile.
+                            await waClient.sendMessage(quotedTargetChatId, text, { quotedMessageId: quoted });
+                        } catch (sendWithQuoteError) {
+                            // Fallback for runtime variants where quotedMessageId is not accepted directly.
+                            await waClient.replyToMessage(quotedTargetChatId, quoted, text);
+                        }
+                    } else {
+                        await waClient.sendMessage(targetChatId, text);
+                    }
                 } catch (e) {
                     socket.emit('error', 'Failed to send message.');
                 }
             });
-
             socket.on('edit_message', async ({ chatId, messageId, body }) => {
                 if (!guardRateLimit(socket, 'edit_message')) return;
                 try {
@@ -2095,17 +2205,91 @@ class SocketManager {
             socket.on('send_media_message', async (data) => {
                 if (!guardRateLimit(socket, 'send_media_message')) return;
                 try {
-                    const { to, body, mediaData, mimetype, filename, isPtt } = data;
+                    const { to, body, mediaData, mimetype, filename, isPtt, quotedMessageId } = data;
                     if (isPtt) {
                         socket.emit('error', 'El envio de notas de voz esta deshabilitado temporalmente.');
                         return;
                     }
-                    await waClient.sendMedia(to, mediaData, mimetype, filename, body, isPtt);
+                    await waClient.sendMedia(to, mediaData, mimetype, filename, body, isPtt, quotedMessageId);
                 } catch (e) {
                     socket.emit('error', 'Failed to send media.');
                 }
             });
 
+            socket.on('forward_message', async ({ messageId, toChatId }) => {
+                if (!guardRateLimit(socket, 'forward_message')) return;
+                try {
+                    const sourceMessageId = String(messageId || '').trim();
+                    const targetChatId = String(toChatId || '').trim();
+                    if (!sourceMessageId || !targetChatId) {
+                        socket.emit('forward_message_error', 'Datos invalidos para reenviar.');
+                        return;
+                    }
+
+                    await waClient.forwardMessage(sourceMessageId, targetChatId);
+                    socket.emit('message_forwarded', {
+                        messageId: sourceMessageId,
+                        toChatId: targetChatId
+                    });
+                } catch (e) {
+                    socket.emit('forward_message_error', 'No se pudo reenviar el mensaje en esta version de WhatsApp.');
+                }
+            });
+
+            socket.on('delete_message', async ({ chatId, messageId }) => {
+                if (!guardRateLimit(socket, 'delete_message')) return;
+                try {
+                    const targetMessageId = String(messageId || '').trim();
+                    const incomingChatId = String(chatId || '').trim();
+                    if (!targetMessageId) {
+                        socket.emit('delete_message_error', 'Datos invalidos para eliminar mensaje.');
+                        return;
+                    }
+
+                    let targetMessage = await waClient.getMessageById(targetMessageId);
+                    if ((!targetMessage || typeof targetMessage.delete !== 'function')) {
+                        const safeChatId = incomingChatId;
+                        if (!safeChatId) {
+                            if (!targetMessage) {
+                                socket.emit('delete_message_error', 'No se encontro el chat del mensaje.');
+                                return;
+                            }
+                        } else {
+                            const chat = await waClient.client.getChatById(safeChatId);
+                            const candidates = await chat.fetchMessages({ limit: 250 });
+                            targetMessage = candidates.find((m) => String(m?.id?._serialized || '') === targetMessageId) || targetMessage;
+                        }
+                    }
+
+                    if (!targetMessage) {
+                        socket.emit('delete_message_error', 'No se encontro el mensaje para eliminar.');
+                        return;
+                    }
+
+                    if (typeof targetMessage.delete !== 'function') {
+                        socket.emit('delete_message_error', 'Esta version no permite eliminar mensajes por API.');
+                        return;
+                    }
+
+                    const targetChatId = String(incomingChatId || (targetMessage.fromMe ? targetMessage.to : targetMessage.from) || '').trim();
+                    const attemptDeleteForEveryone = Boolean(targetMessage.fromMe);
+
+                    try {
+                        await targetMessage.delete(attemptDeleteForEveryone);
+                    } catch (deleteErr) {
+                        if (!attemptDeleteForEveryone) throw deleteErr;
+                        // Fallback to local delete when revoke-for-everyone is no longer allowed.
+                        await targetMessage.delete(false);
+                    }
+
+                    this.io.emit('message_deleted', {
+                        chatId: targetChatId,
+                        messageId: targetMessageId
+                    });
+                } catch (e) {
+                    socket.emit('delete_message_error', 'No se pudo eliminar el mensaje.');
+                }
+            });
             socket.on('send_catalog_product', async (payload = {}) => {
                 if (!guardRateLimit(socket, 'send_catalog_product')) return;
                 try {
@@ -2560,6 +2744,7 @@ class SocketManager {
 
             const media = await mediaManager.processMessageMedia(msg);
             const senderMeta = await resolveMessageSenderMeta(msg);
+            const quotedMessage = await extractQuotedMessageInfo(msg);
             this.io.emit('message', {
                 id: msg.id._serialized,
                 from: msg.from,
@@ -2576,7 +2761,8 @@ class SocketManager {
                 senderPhone: senderMeta.senderPhone,
                 canEdit: false,
                 order: extractOrderInfo(msg),
-                location: extractLocationInfo(msg)
+                location: extractLocationInfo(msg),
+                quotedMessage
             });
 
             try {
@@ -2591,11 +2777,11 @@ class SocketManager {
                 // silent: message delivery should not fail by chat refresh issues
             }
         });
-
         waClient.on('message_sent', async (msg) => {
             if (isStatusOrSystemMessage(msg)) return;
             // Emite de vuelta para confirmar en UI si se envio desde otro lugar
             const media = await mediaManager.processMessageMedia(msg);
+            const quotedMessage = await extractQuotedMessageInfo(msg);
             this.io.emit('message', {
                 id: msg.id._serialized,
                 from: msg.from,
@@ -2612,7 +2798,8 @@ class SocketManager {
                 senderPhone: null,
                 canEdit: false,
                 order: extractOrderInfo(msg),
-                location: extractLocationInfo(msg)
+                location: extractLocationInfo(msg),
+                quotedMessage
             });
 
             this.emitMessageEditability(msg.id._serialized, msg.to || msg.from);
@@ -2628,7 +2815,6 @@ class SocketManager {
                 }
             } catch (e) { }
         });
-
         waClient.on('message_edit', async ({ message, newBody, prevBody }) => {
             if (!message || isStatusOrSystemMessage(message)) return;
             const chatId = message.fromMe ? message.to : message.from;

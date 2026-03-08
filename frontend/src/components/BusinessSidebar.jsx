@@ -451,6 +451,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     const [catalogSearch, setCatalogSearch] = useState('');
     const [catalogCategoryFilter, setCatalogCategoryFilter] = useState('all');
     const [catalogTypeFilter, setCatalogTypeFilter] = useState('all');
+    const [showCatalogFilters, setShowCatalogFilters] = useState(false);
     const isExternalCatalog = ['native', 'woocommerce'].includes(catalogMeta?.source);
 
     const handleAddClick = () => {
@@ -580,9 +581,12 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 
         return searchMatch && categoryMatch && typeMatch;
     });
+    const hasCatalogFilters = catalogCategoryFilter !== 'all' || catalogTypeFilter !== 'all';
+    const hasAnyCatalogCriteria = Boolean(catalogSearch.trim() || hasCatalogFilters);
+
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ padding: '8px 8px 6px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px', background: '#111b21', borderBottom: '1px solid rgba(134,150,160,0.16)' }}>
                 {catalogMeta?.source === 'local' && catalogMeta?.wooStatus && catalogMeta?.wooStatus !== 'ok' && (
                     <div style={{ background: '#2f2520', color: '#f7b267', border: '1px solid #7a4d2c', borderRadius: '9px', padding: '8px 10px', fontSize: '0.75rem' }}>
                         WooCommerce no devolvio productos ({catalogMeta?.wooSource || 'sin fuente'}).
@@ -591,67 +595,84 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                 )}
 
                 <div style={{ background: '#17242c', border: '1px solid rgba(0,168,132,0.24)', borderRadius: '11px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '7px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#111b21', border: '1px solid rgba(0,168,132,0.4)', borderRadius: '10px', padding: '0 10px' }}>
-                        <Search size={15} color="#76e6d0" />
-                        <input
-                            type="text"
-                            value={catalogSearch}
-                            onChange={e => setCatalogSearch(e.target.value)}
-                            placeholder="Buscar producto o SKU"
-                            style={{ width: '100%', background: 'transparent', border: 'none', color: '#e9f2f7', borderRadius: '10px', padding: '8px 0', fontSize: '0.78rem', outline: 'none' }}
-                        />
-                        {catalogSearch.trim() && (
-                            <button
-                                type="button"
-                                onClick={() => setCatalogSearch('')}
-                                style={{ background: 'transparent', border: 'none', color: '#8fb0c3', cursor: 'pointer', fontSize: '0.72rem', padding: 0, whiteSpace: 'nowrap' }}
-                            >
-                                Limpiar
-                            </button>
-                        )}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#111b21', border: '1px solid rgba(0,168,132,0.4)', borderRadius: '10px', padding: '0 10px', minWidth: 0 }}>
+                            <Search size={15} color="#76e6d0" />
+                            <input
+                                type="text"
+                                value={catalogSearch}
+                                onChange={e => setCatalogSearch(e.target.value)}
+                                placeholder="Buscar producto o SKU"
+                                style={{ width: '100%', minWidth: 0, background: 'transparent', border: 'none', color: '#e9f2f7', borderRadius: '10px', padding: '8px 0', fontSize: '0.78rem', outline: 'none' }}
+                            />
+                            {catalogSearch.trim() && (
+                                <button
+                                    type="button"
+                                    onClick={() => setCatalogSearch('')}
+                                    style={{ background: 'transparent', border: 'none', color: '#8fb0c3', cursor: 'pointer', fontSize: '0.72rem', padding: 0, whiteSpace: 'nowrap' }}
+                                >
+                                    Limpiar
+                                </button>
+                            )}
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => setShowCatalogFilters(prev => !prev)}
+                            title="Filtros"
+                            style={{
+                                height: '36px',
+                                minWidth: '40px',
+                                borderRadius: '10px',
+                                border: hasCatalogFilters || showCatalogFilters ? '1px solid rgba(0,168,132,0.6)' : '1px solid rgba(134,150,160,0.3)',
+                                background: hasCatalogFilters || showCatalogFilters ? 'rgba(0,168,132,0.18)' : '#111b21',
+                                color: hasCatalogFilters || showCatalogFilters ? '#baf6e8' : '#9eb2bf',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                position: 'relative'
+                            }}
+                        >
+                            <SlidersHorizontal size={15} />
+                            {hasCatalogFilters && (
+                                <span style={{ position: 'absolute', top: '-4px', right: '-4px', width: '8px', height: '8px', borderRadius: '50%', background: '#00d7ad', boxShadow: '0 0 0 2px #111b21' }} />
+                            )}
+                        </button>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px' }}>
-                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.7rem', color: '#9eb2bf' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                    {showCatalogFilters && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px' }}>
+                            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.7rem', color: '#9eb2bf' }}>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><SlidersHorizontal size={12} /> Categoria</span>
-                                {catalogCategoryFilter !== 'all' && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setCatalogCategoryFilter('all')}
-                                        style={{ background: 'transparent', border: 'none', color: '#7cc8ff', fontSize: '0.68rem', cursor: 'pointer', padding: 0 }}
-                                    >
-                                        Quitar
-                                    </button>
-                                )}
-                            </div>
-                            <select
-                                value={catalogCategoryFilter}
-                                onChange={e => setCatalogCategoryFilter(e.target.value)}
-                                style={{ width: '100%', background: '#101a21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '8px', padding: '6px 8px', fontSize: '0.75rem', outline: 'none' }}
-                            >
-                                <option value="all">Todas</option>
-                                {categoryOptions.map((category) => (
-                                    <option key={category.label} value={category.label}>{category.label}</option>
-                                ))}
-                            </select>
-                        </label>
+                                <select
+                                    value={catalogCategoryFilter}
+                                    onChange={e => setCatalogCategoryFilter(e.target.value)}
+                                    style={{ width: '100%', background: '#101a21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '8px', padding: '6px 8px', fontSize: '0.75rem', outline: 'none' }}
+                                >
+                                    <option value="all">Todas</option>
+                                    {categoryOptions.map((category) => (
+                                        <option key={category.label} value={category.label}>{category.label}</option>
+                                    ))}
+                                </select>
+                            </label>
 
-                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.7rem', color: '#9eb2bf' }}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>Vista</span>
-                            <select
-                                value={catalogTypeFilter}
-                                onChange={e => setCatalogTypeFilter(e.target.value)}
-                                style={{ width: '100%', background: '#101a21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '8px', padding: '6px 8px', fontSize: '0.75rem', outline: 'none' }}
-                            >
-                                <option value="all">Todos</option>
-                                <option value="discount">Con descuento</option>
-                                <option value="regular">Precio regular</option>
-                                <option value="in_cart">En carrito</option>
-                                <option value="out_cart">Fuera del carrito</option>
-                            </select>
-                        </label>
-                    </div>
+                            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.7rem', color: '#9eb2bf' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>Vista</span>
+                                <select
+                                    value={catalogTypeFilter}
+                                    onChange={e => setCatalogTypeFilter(e.target.value)}
+                                    style={{ width: '100%', background: '#101a21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '8px', padding: '6px 8px', fontSize: '0.75rem', outline: 'none' }}
+                                >
+                                    <option value="all">Todos</option>
+                                    <option value="discount">Con descuento</option>
+                                    <option value="regular">Precio regular</option>
+                                    <option value="in_cart">En carrito</option>
+                                    <option value="out_cart">Fuera del carrito</option>
+                                </select>
+                            </label>
+                        </div>
+                    )}
 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
@@ -664,7 +685,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                     <PlusCircle size={13} /> Nuevo
                                 </button>
                             )}
-                            {Boolean(catalogSearch.trim() || catalogCategoryFilter !== 'all' || catalogTypeFilter !== 'all') && (
+                            {hasAnyCatalogCriteria && (
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -684,6 +705,9 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {showForm ? (
                     <form onSubmit={handleSubmit} style={{ background: '#202c33', borderRadius: '10px', padding: '15px', border: '1px solid #00a884', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 600, marginBottom: '5px' }}>{editingProduct ? 'Editar Producto' : 'Nuevo Producto'}</div>

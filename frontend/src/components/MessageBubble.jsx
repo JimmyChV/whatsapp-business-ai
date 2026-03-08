@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import moment from 'moment';
-import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink } from 'lucide-react';
+import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const linkPreviewCache = new Map();
@@ -411,6 +411,10 @@ const MessageBubble = ({
     onOpenMedia,
     onOpenMap,
     onEditMessage,
+    onReplyMessage,
+    onForwardMessage,
+    forwardChatOptions = [],
+    activeChatId = null,
     canEditMessages = true,
 }) => {
     const isOut = msg.fromMe;
@@ -483,6 +487,10 @@ const MessageBubble = ({
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [webPreview, setWebPreview] = useState(null);
     const [webPreviewLoading, setWebPreviewLoading] = useState(false);
+    const [showForwardPicker, setShowForwardPicker] = useState(false);
+    const [forwardSearch, setForwardSearch] = useState('');
+    const [showActionsMenu, setShowActionsMenu] = useState(false);
+    const bubbleRef = useRef(null);
 
     const shouldHideBodyForOrder = isQuotePayload || (hasOrder && isLikelyBinaryBody(messageBodyText));
     const messageTextToRender = isCatalogItem
@@ -532,6 +540,31 @@ const MessageBubble = ({
         };
     }, [firstNonMapUrl, showWebPreview]);
 
+    useEffect(() => {
+        if (!showActionsMenu && !showForwardPicker) return;
+
+        const handleOutsideClick = (event) => {
+            if (!bubbleRef.current) return;
+            if (bubbleRef.current.contains(event.target)) return;
+            setShowActionsMenu(false);
+            setShowForwardPicker(false);
+        };
+
+        const handleEscape = (event) => {
+            if (event.key === 'Escape') {
+                setShowActionsMenu(false);
+                setShowForwardPicker(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleOutsideClick);
+        document.addEventListener('keydown', handleEscape);
+        return () => {
+            document.removeEventListener('mousedown', handleOutsideClick);
+            document.removeEventListener('keydown', handleEscape);
+        };
+    }, [showActionsMenu, showForwardPicker]);
+
     const hasLocationCoords = Number.isFinite(locationData?.latitude) && Number.isFinite(locationData?.longitude);
     const locationMapQuery = hasLocationCoords
         ? `${locationData.latitude},${locationData.longitude}`
@@ -578,6 +611,54 @@ const MessageBubble = ({
         onEditMessage(msg?.id, String(msg?.body || ''));
     };
 
+    const quotedMessage = msg?.quotedMessage && typeof msg.quotedMessage === 'object'
+        ? {
+            id: String(msg.quotedMessage?.id || '').trim() || null,
+            body: String(msg.quotedMessage?.body || '').trim() || (msg.quotedMessage?.hasMedia ? 'Adjunto' : 'Mensaje'),
+            fromMe: Boolean(msg.quotedMessage?.fromMe),
+            hasMedia: Boolean(msg.quotedMessage?.hasMedia),
+            type: String(msg.quotedMessage?.type || 'chat')
+        }
+        : null;
+
+    const canReplyMessage = Boolean(msg?.id && typeof onReplyMessage === 'function');
+    const canForwardMessage = Boolean(msg?.id && typeof onForwardMessage === 'function');
+    const hasMenuActions = Boolean(canReplyMessage || canForwardMessage || canEditMessage);
+    const forwardNeedle = normalizeSearchText(forwardSearch);
+    const forwardCandidates = Array.isArray(forwardChatOptions)
+        ? forwardChatOptions.filter((chat) => {
+            const id = String(chat?.id || '').trim();
+            if (!id) return false;
+            if (id === String(activeChatId || '')) return false;
+            if (!forwardNeedle) return true;
+            const haystack = normalizeSearchText(`${chat?.name || ''} ${chat?.phone || ''} ${chat?.subtitle || ''}`);
+            return haystack.includes(forwardNeedle);
+        }).slice(0, 40)
+        : [];
+
+    const handleReplyClick = () => {
+        if (!canReplyMessage) return;
+        onReplyMessage({
+            id: msg?.id,
+            body: String(msg?.body || ''),
+            hasMedia: Boolean(msg?.hasMedia),
+            fromMe: Boolean(msg?.fromMe),
+            type: String(msg?.type || 'chat')
+        });
+        setShowActionsMenu(false);
+        setShowForwardPicker(false);
+    };
+
+    const handleForwardSelect = (targetChatId) => {
+        if (!canForwardMessage) return;
+        const sourceMessageId = String(msg?.id || '').trim();
+        const chatId = String(targetChatId || '').trim();
+        if (!sourceMessageId || !chatId) return;
+        onForwardMessage(sourceMessageId, chatId);
+        setShowForwardPicker(false);
+        setShowActionsMenu(false);
+        setForwardSearch('');
+    };
     const openMapPopup = (payload = {}) => {
         if (typeof onOpenMap !== 'function') return;
         onOpenMap(payload);
@@ -585,7 +666,8 @@ const MessageBubble = ({
 
     return (
         <div
-            className={`message ${isOut ? 'out' : 'in'}`}
+            ref={bubbleRef}
+            className={`message ${isOut ? 'out' : 'in'}${hasMenuActions ? ' has-menu-actions' : ''}`}
             style={isHighlighted ? { outline: `2px solid ${isCurrentHighlighted ? '#00a884' : 'rgba(0,168,132,0.35)'}`, borderRadius: '10px', padding: '2px' } : undefined}
         >
             {isCatalogItem && (
@@ -611,8 +693,8 @@ const MessageBubble = ({
                     style={{
                         borderRadius: '8px',
                         marginBottom: '4px',
-                        maxWidth: '190px',
-                        maxHeight: '145px',
+                        maxWidth: 'min(320px, 56vw)',
+                        maxHeight: '260px',
                         objectFit: 'cover',
                         cursor: 'zoom-in',
                         display: 'block'
@@ -775,7 +857,24 @@ const MessageBubble = ({
                 </div>
             )}
 
+            
             <div className={`message-content ${canEditMessage ? 'can-edit' : ''}`} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                {quotedMessage && (
+                    <div style={{
+                        borderLeft: '3px solid ' + (quotedMessage.fromMe ? '#73dbf8' : '#00a884'),
+                        background: 'rgba(0,0,0,0.16)',
+                        borderRadius: '8px',
+                        padding: '6px 8px',
+                        marginBottom: '6px'
+                    }}>
+                        <div style={{ fontSize: '0.68rem', fontWeight: 700, color: quotedMessage.fromMe ? '#9fe9ff' : '#72f3d3', marginBottom: '2px' }}>
+                            {quotedMessage.fromMe ? 'Tu mensaje' : 'Mensaje respondido'}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: '#c8d8e0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {quotedMessage.body}
+                        </div>
+                    </div>
+                )}
                 {isLocationMessage && (
                     <div style={{
                         border: '1px solid rgba(0,168,132,0.38)',
@@ -923,16 +1022,119 @@ const MessageBubble = ({
                         Buscar en mapa: "{selectedLocationText.slice(0, 60)}{selectedLocationText.length > 60 ? '...' : ''}"
                     </button>
                 )}
+                {hasMenuActions && (
+                    <div className={`message-actions-anchor ${showActionsMenu ? 'open' : ''}`}>
+                        <button
+                            type="button"
+                            className={`message-actions-toggle ${showActionsMenu ? 'open' : ''}`}
+                            title="Opciones"
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                setShowActionsMenu((prev) => {
+                                    const next = !prev;
+                                    if (!next) setShowForwardPicker(false);
+                                    return next;
+                                });
+                            }}
+                        >
+                            <ChevronDown size={13} />
+                        </button>
+                        {showActionsMenu && (
+                            <div className="message-actions-menu" onClick={(event) => event.stopPropagation()}>
+                                {canReplyMessage && (
+                                    <button type="button" className="message-actions-item" onClick={handleReplyClick}>
+                                        <Reply size={13} /> Responder
+                                    </button>
+                                )}
+                                {canForwardMessage && (
+                                    <button
+                                        type="button"
+                                        className="message-actions-item"
+                                        onClick={() => {
+                                            setShowForwardPicker((prev) => !prev);
+                                            setShowActionsMenu(false);
+                                        }}
+                                    >
+                                        <Forward size={13} /> Reenviar
+                                    </button>
+                                )}
+                                {canEditMessage && (
+                                    <button
+                                        type="button"
+                                        className="message-actions-item"
+                                        onClick={() => {
+                                            handleEditClick();
+                                            setShowActionsMenu(false);
+                                        }}
+                                    >
+                                        <Pencil size={13} /> Editar
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
 
-                {canEditMessage && (
-                    <button
-                        type="button"
-                        onClick={handleEditClick}
-                        className="message-edit-btn"
-                        title="Editar este mensaje"
-                    >
-                        <Pencil size={11} /> Editar
-                    </button>
+                {showForwardPicker && canForwardMessage && (
+                    <div style={{
+                        marginTop: '6px',
+                        border: '1px solid rgba(124,200,255,0.32)',
+                        background: 'rgba(15,26,34,0.96)',
+                        borderRadius: '10px',
+                        padding: '8px',
+                        minWidth: '220px',
+                        maxWidth: '320px',
+                        alignSelf: isOut ? 'flex-end' : 'flex-start'
+                    }}>
+                        <div style={{ fontSize: '0.72rem', color: '#7cc8ff', fontWeight: 700, marginBottom: '6px' }}>
+                            Reenviar a...
+                        </div>
+                        <input
+                            type="text"
+                            value={forwardSearch}
+                            onChange={(event) => setForwardSearch(event.target.value)}
+                            placeholder="Buscar chat"
+                            style={{
+                                width: '100%',
+                                borderRadius: '8px',
+                                border: '1px solid rgba(255,255,255,0.18)',
+                                background: 'rgba(255,255,255,0.04)',
+                                color: '#e8f1f6',
+                                padding: '5px 8px',
+                                fontSize: '0.75rem',
+                                marginBottom: '6px'
+                            }}
+                        />
+                        <div style={{ maxHeight: '170px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {forwardCandidates.length > 0 ? forwardCandidates.map((chat) => (
+                                <button
+                                    key={chat.id}
+                                    type="button"
+                                    onClick={() => handleForwardSelect(chat.id)}
+                                    style={{
+                                        textAlign: 'left',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        background: 'rgba(255,255,255,0.02)',
+                                        color: '#e8f1f6',
+                                        borderRadius: '8px',
+                                        padding: '5px 7px',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {chat.name || chat.phone || 'Chat'}
+                                    </div>
+                                    {(chat.phone || chat.subtitle) && (
+                                        <div style={{ fontSize: '0.68rem', color: '#9db0ba', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {chat.phone || chat.subtitle}
+                                        </div>
+                                    )}
+                                </button>
+                            )) : (
+                                <div style={{ fontSize: '0.72rem', color: '#9db0ba' }}>No se encontraron chats.</div>
+                            )}
+                        </div>
+                    </div>
                 )}
 
                 <div className="message-meta" style={{
@@ -955,4 +1157,3 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
-

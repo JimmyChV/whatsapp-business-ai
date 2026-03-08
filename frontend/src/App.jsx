@@ -193,20 +193,41 @@ const normalizeMessageLocation = (location = null) => {
   };
 };
 
+const normalizeQuotedMessage = (quoted = null) => {
+  if (!quoted || typeof quoted !== 'object') return null;
+  const id = String(quoted?.id || '').trim();
+  const body = sanitizeDisplayText(quoted?.body || '');
+  const type = String(quoted?.type || 'chat').trim() || 'chat';
+  const fromMe = Boolean(quoted?.fromMe);
+  const hasMedia = Boolean(quoted?.hasMedia);
+  const timestamp = Number(quoted?.timestamp || 0) || null;
+
+  if (!id && !body && !hasMedia) return null;
+
+  const preview = body || (hasMedia ? 'Adjunto' : 'Mensaje');
+  return {
+    id: id || null,
+    body: preview,
+    type,
+    fromMe,
+    hasMedia,
+    timestamp
+  };
+};
 const getMessagePreviewText = (msg = {}) => {
   const type = String(msg?.type || '').toLowerCase();
   const location = normalizeMessageLocation(msg?.location);
 
   if (type === 'location') {
-    if (location?.label) return `📍 ${location.label}`;
-    if (location?.text) return `📍 ${location.text}`;
-    return '📍 Ubicacion';
+    if (location?.label) return 'Ubicacion: ' + location.label;
+    if (location?.text) return 'Ubicacion: ' + location.text;
+    return 'Ubicacion';
   }
 
   const body = sanitizeDisplayText(msg?.body || '');
   if (body) {
     const looksLikeMaps = /https?:\/\/(?:www\.)?(?:google\.[^\s/]+\/maps|maps\.app\.goo\.gl|maps\.google\.com)|geo:/i.test(body);
-    if (looksLikeMaps) return '📍 Ubicacion';
+    if (looksLikeMaps) return 'Ubicacion';
     return body;
   }
 
@@ -217,7 +238,7 @@ const getMessagePreviewText = (msg = {}) => {
     ptt: 'Nota de voz',
     document: 'Documento',
     sticker: 'Sticker',
-    location: '📍 Ubicacion',
+    location: 'Ubicacion',
     vcard: 'Contacto',
     order: 'Pedido',
     revoked: 'Mensaje eliminado'
@@ -405,6 +426,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [editingMessage, setEditingMessage] = useState(null);
+  const [replyingMessage, setReplyingMessage] = useState(null);
 
   // --------------------------------------------------------------
   const [myProfile, setMyProfile] = useState(null);
@@ -444,6 +466,8 @@ function App() {
   const chatFiltersRef = useRef(normalizeChatFilters({ labelTokens: [], unreadOnly: false, unlabeledOnly: false, contactMode: 'all', archivedMode: 'all' }));
   const chatPagingRef = useRef({ offset: 0, hasMore: true, loading: false });
   const shouldInstantScrollRef = useRef(false);
+  const prevMessagesMetaRef = useRef({ count: 0, lastId: '' });
+  const suppressSmoothScrollUntilRef = useRef(0);
 
   // --------------------------------------------------------------
   // Notifications
@@ -464,10 +488,30 @@ function App() {
   // Auto-scroll
   // --------------------------------------------------------------
   useLayoutEffect(() => {
-    if (!messagesEndRef.current) return;
-    const behavior = shouldInstantScrollRef.current ? 'auto' : 'smooth';
-    messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    const endNode = messagesEndRef.current;
+    if (!endNode) return;
+    const messagesContainer = endNode.parentElement;
+    if (!messagesContainer) return;
+
+    const nextCount = Array.isArray(messages) ? messages.length : 0;
+    const nextLastId = nextCount > 0 ? String(messages[nextCount - 1]?.id || '') : '';
+    const prevMeta = prevMessagesMetaRef.current || { count: 0, lastId: '' };
+    const isNewMessageAppend = nextCount > prevMeta.count;
+    const shouldForceScroll = shouldInstantScrollRef.current || isNewMessageAppend;
+
+    if (shouldForceScroll) {
+      const inQuietWindow = Date.now() < suppressSmoothScrollUntilRef.current;
+      const behavior = (shouldInstantScrollRef.current || inQuietWindow || !isNewMessageAppend) ? 'auto' : 'smooth';
+      const targetTop = messagesContainer.scrollHeight;
+      if (behavior === 'smooth') {
+        messagesContainer.scrollTo({ top: targetTop, behavior: 'smooth' });
+      } else {
+        messagesContainer.scrollTop = targetTop;
+      }
+    }
+
     if (shouldInstantScrollRef.current) shouldInstantScrollRef.current = false;
+    prevMessagesMetaRef.current = { count: nextCount, lastId: nextLastId };
   }, [messages]);
 
   useEffect(() => {
@@ -681,6 +725,8 @@ function App() {
     socket.on('chat_history', (data) => {
 
       shouldInstantScrollRef.current = true;
+      suppressSmoothScrollUntilRef.current = Date.now() + 2200;
+      prevMessagesMetaRef.current = { count: 0, lastId: '' };
       const requestedChatId = String(data?.requestedChatId || '');
       const resolvedChatId = String(data?.chatId || requestedChatId || '');
       const active = String(activeChatIdRef.current || '');
@@ -702,7 +748,8 @@ function App() {
           edited: Boolean(m?.edited),
 
           editedAt: Number(m?.editedAt || 0) || null,
-          canEdit: Boolean(m?.canEdit)
+          canEdit: Boolean(m?.canEdit),
+          quotedMessage: normalizeQuotedMessage(m?.quotedMessage)
         }))
         : [];
       setMessages(sanitizedMessages);
@@ -858,7 +905,7 @@ function App() {
 
         const shouldAdd = sameById || sameByIdDigits || sameByPhone;
         if (!shouldAdd) return prev;
-        return [...prev, { ...msg, body: repairMojibake(msg?.body || ''), location: normalizeMessageLocation(msg?.location), canEdit: Boolean(msg?.canEdit) }];
+        return [...prev, { ...msg, body: repairMojibake(msg?.body || ''), location: normalizeMessageLocation(msg?.location), canEdit: Boolean(msg?.canEdit), quotedMessage: normalizeQuotedMessage(msg?.quotedMessage) }];
       });
     });
 
@@ -927,6 +974,40 @@ function App() {
       if (msg) alert(msg);
     });
 
+    socket.on('message_forwarded', () => {
+      // El mensaje reenviado llega por el evento message cuando WhatsApp lo confirma.
+    });
+
+    socket.on('forward_message_error', (msg) => {
+      if (msg) alert(msg);
+    });
+
+    socket.on('message_deleted', ({ chatId, messageId }) => {
+      const deletedId = String(messageId || '').trim();
+      if (!deletedId) return;
+
+      const incomingChatId = String(chatId || '');
+      const active = String(activeChatIdRef.current || '');
+      if (incomingChatId && active && incomingChatId !== active) return;
+
+      setMessages((prev) => prev.map((m) => (
+        String(m?.id || '') === deletedId
+          ? {
+            ...m,
+            type: 'revoked',
+            body: 'Mensaje eliminado',
+            hasMedia: false,
+            mediaData: null,
+            mimetype: null,
+            edited: false
+          }
+          : m
+      )));
+    });
+
+    socket.on('delete_message_error', (msg) => {
+      if (msg) alert(msg);
+    });
 
     socket.on('message_editability', ({ id, chatId, canEdit }) => {
       if (!id || typeof canEdit !== 'boolean') return;
@@ -992,6 +1073,7 @@ function App() {
       setIsLoadingMoreChats(false);
       setMessages([]);
       setEditingMessage(null);
+      setReplyingMessage(null);
       setActiveChatId(null);
       alert('Sesion de WhatsApp cerrada. Escanea nuevamente el QR.');
     });
@@ -1002,7 +1084,7 @@ function App() {
         'contact_info', 'message', 'business_data', 'business_data_catalog', 'quick_replies', 'quick_reply_error',
         'ai_suggestion_chunk',
 
-        'ai_suggestion_complete', 'ai_error', 'message_ack', 'message_editability', 'message_edited', 'edit_message_error', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
+        'ai_suggestion_complete', 'ai_error', 'message_ack', 'message_editability', 'message_edited', 'edit_message_error', 'message_forwarded', 'forward_message_error', 'message_deleted', 'delete_message_error', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
       ].forEach(ev => socket.off(ev));
     };
   }, []);
@@ -1032,14 +1114,32 @@ function App() {
     activeChatIdRef.current = chatId;
     setActiveChatId(chatId);
     shouldInstantScrollRef.current = true;
+    suppressSmoothScrollUntilRef.current = Date.now() + 2200;
+    prevMessagesMetaRef.current = { count: 0, lastId: '' };
     setMessages([]);
     setEditingMessage(null);
+    setReplyingMessage(null);
     setShowClientProfile(false);
     setClientContact(null);
     socket.emit('get_chat_history', chatId);
     socket.emit('mark_chat_read', chatId);
     socket.emit('get_contact_info', chatId);
     setChats((prev) => prev.map((c) => c.id === chatId ? { ...c, unreadCount: 0 } : c));
+  };
+
+  const handleExitActiveChat = () => {
+    activeChatIdRef.current = null;
+    setActiveChatId(null);
+    prevMessagesMetaRef.current = { count: 0, lastId: '' };
+    suppressSmoothScrollUntilRef.current = 0;
+    setMessages([]);
+    setEditingMessage(null);
+    setReplyingMessage(null);
+    setShowClientProfile(false);
+    setClientContact(null);
+    setPendingOrderCartLoad(null);
+    setInputText('');
+    removeAttachment();
   };
 
   const handleSendMessage = (e) => {
@@ -1081,6 +1181,8 @@ function App() {
       return;
     }
 
+    const quotedMessageId = String(replyingMessage?.id || '').trim() || null;
+
     if (attachment) {
       socket.emit('send_media_message', {
         to: activeChatId,
@@ -1088,12 +1190,14 @@ function App() {
         mediaData: attachment.data,
         mimetype: attachment.mimetype,
         filename: attachment.filename,
+        quotedMessageId
       });
       removeAttachment();
     } else {
-      socket.emit('send_message', { to: activeChatId, body: inputText });
+      socket.emit('send_message', { to: activeChatId, body: inputText, quotedMessageId });
     }
     setInputText('');
+    setReplyingMessage(null);
   };
 
   const handleLogoutWhatsapp = () => {
@@ -1180,6 +1284,7 @@ function App() {
     const cleanId = String(messageId || '').trim();
     if (!cleanId) return;
     const body = String(currentBody || '');
+    setReplyingMessage(null);
     setEditingMessage({ id: cleanId, originalBody: body });
     setInputText(body);
   };
@@ -1189,6 +1294,48 @@ function App() {
     setInputText('');
   };
 
+  const handleReplyMessage = (message = null) => {
+    const cleanId = String(message?.id || '').trim();
+    if (!cleanId) return;
+
+    const bodyText = sanitizeDisplayText(message?.body || '');
+    const hasMedia = Boolean(message?.hasMedia);
+    const preview = bodyText || (hasMedia ? 'Adjunto' : 'Mensaje');
+
+    setEditingMessage(null);
+    setReplyingMessage({
+      id: cleanId,
+      body: preview,
+      fromMe: Boolean(message?.fromMe),
+      type: String(message?.type || 'chat')
+    });
+  };
+
+  const handleCancelReplyMessage = () => {
+    setReplyingMessage(null);
+  };
+
+  const handleForwardMessage = (messageId, toChatId) => {
+    const sourceMessageId = String(messageId || '').trim();
+    const targetChatId = String(toChatId || '').trim();
+    if (!sourceMessageId || !targetChatId) return;
+    socket.emit('forward_message', {
+      messageId: sourceMessageId,
+      toChatId: targetChatId
+    });
+  };
+  const handleDeleteMessage = (payload = {}) => {
+    const messageId = String(payload?.id || '').trim();
+    if (!messageId || !activeChatIdRef.current) return;
+
+    const ok = window.confirm('Eliminar este mensaje? WhatsApp solo lo permite en algunos casos.');
+    if (!ok) return;
+
+    socket.emit('delete_message', {
+      chatId: String(payload?.chatId || activeChatIdRef.current || '').trim(),
+      messageId
+    });
+  };
   const handleLoadOrderToCart = (orderPayload) => {
     if (!activeChatIdRef.current || !orderPayload || typeof orderPayload !== 'object') return;
     const token = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -1215,6 +1362,18 @@ function App() {
     if (!waCapabilities.quickRepliesWrite) return;
     socket.emit('delete_quick_reply', { id });
   };
+  useEffect(() => {
+    const onGlobalKeyDown = (event) => {
+      if (event.key !== 'Escape' || event.repeat) return;
+      if (!activeChatIdRef.current) return;
+      event.preventDefault();
+      handleExitActiveChat();
+    };
+
+    window.addEventListener('keydown', onGlobalKeyDown);
+    return () => window.removeEventListener('keydown', onGlobalKeyDown);
+  }, []);
+
   const requestAiSuggestion = (customPromptArg) => {
     if (!activeChatId) return;
     const customPrompt = typeof customPromptArg === 'string' ? customPromptArg : null;
@@ -1324,6 +1483,16 @@ REGLA CRITICA:
   // Render: Main App
   // --------------------------------------------------------------
   const activeChatDetails = chats.find(c => c.id === activeChatId) || null;
+  const forwardChatOptions = chats
+    .filter((chat) => chat?.id && String(chat.id) !== String(activeChatId || ''))
+    .map((chat) => ({
+      id: chat.id,
+      name: sanitizeDisplayText(chat?.name || '') || 'Contacto',
+      phone: sanitizeDisplayText(chat?.phone || ''),
+      subtitle: sanitizeDisplayText(chat?.subtitle || ''),
+      timestamp: Number(chat?.timestamp || 0) || 0
+    }))
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
   return (
     <div className="app-container">
@@ -1390,9 +1559,15 @@ REGLA CRITICA:
               labelDefinitions={labelDefinitions}
               onToggleChatLabel={handleToggleChatLabel}
               onEditMessage={handleEditMessage}
+              onReplyMessage={handleReplyMessage}
+              onForwardMessage={handleForwardMessage}
+              onDeleteMessage={handleDeleteMessage}
+              forwardChatOptions={forwardChatOptions}
               onLoadOrderToCart={handleLoadOrderToCart}
               onCancelEditMessage={handleCancelEditMessage}
+              onCancelReplyMessage={handleCancelReplyMessage}
               editingMessage={editingMessage}
+              replyingMessage={replyingMessage}
               canEditMessages={waCapabilities.messageEdit}
             />
 
@@ -1444,26 +1619,27 @@ REGLA CRITICA:
         )}
 
         {/* Business Sidebar - AI and Catalog */}
-        <BusinessSidebar
-          setInputText={setInputText}
-          businessData={businessData}
-          messages={messages}
-          activeChatId={activeChatId}
-          socket={socket}
-          myProfile={myProfile || businessData?.profile}
-          onLogout={handleLogoutWhatsapp}
-          quickReplies={quickReplies}
-          onCreateQuickReply={handleCreateQuickReply}
-          onUpdateQuickReply={handleUpdateQuickReply}
-          onDeleteQuickReply={handleDeleteQuickReply}
-          pendingOrderCartLoad={pendingOrderCartLoad}
-          waCapabilities={waCapabilities}
-          openCompanyProfileToken={openCompanyProfileToken}
-        />
+        {activeChatId && (
+          <BusinessSidebar
+            setInputText={setInputText}
+            businessData={businessData}
+            messages={messages}
+            activeChatId={activeChatId}
+            socket={socket}
+            myProfile={myProfile || businessData?.profile}
+            onLogout={handleLogoutWhatsapp}
+            quickReplies={quickReplies}
+            onCreateQuickReply={handleCreateQuickReply}
+            onUpdateQuickReply={handleUpdateQuickReply}
+            onDeleteQuickReply={handleDeleteQuickReply}
+            pendingOrderCartLoad={pendingOrderCartLoad}
+            waCapabilities={waCapabilities}
+            openCompanyProfileToken={openCompanyProfileToken}
+          />
+        )}
       </div>
     </div>
   );
 }
 
 export default App;
-
