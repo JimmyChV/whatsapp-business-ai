@@ -4,6 +4,7 @@ const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
 const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
 const { listQuickReplies, addQuickReply, updateQuickReply, deleteQuickReply } = require('./quick_replies_manager');
+const tenantSettingsService = require('./tenant_settings_service');
 const RateLimiter = require('./rate_limiter');
 const { URL } = require('url');
 const { resolveAndValidatePublicHost } = require('./security_utils');
@@ -3147,10 +3148,17 @@ class SocketManager {
                         profile.labelsCount = labels.length;
                     } catch (e) { console.log('Labels:', e.message); }
 
-                    // Catalog priority: WhatsApp native -> WooCommerce -> local file fallback.
+                    const tenantSettings = await tenantSettingsService.getTenantSettings(tenantId);
+                    const catalogMode = String(tenantSettings?.catalogMode || 'hybrid').trim().toLowerCase();
+
+                    // Catalog source by tenant setting:
+                    // hybrid: native -> woo -> local
+                    // woo_only: woo -> local
+                    // local_only: local only
                     let catalog = [];
                     let catalogMeta = {
                         source: 'native',
+                        mode: catalogMode,
                         nativeAvailable: false,
                         wooConfigured: isWooConfigured(),
                         wooAvailable: false,
@@ -3159,35 +3167,40 @@ class SocketManager {
                         wooReason: null
                     };
 
-                    try {
-                        const nativeProducts = await waClient.getCatalog(meId);
-                        if (nativeProducts && nativeProducts.length > 0) {
-                            catalog = nativeProducts.map(p => ({
-                                id: p.id,
-                                title: p.name,
-                                price: p.price ? Number.parseFloat(String(p.price)).toFixed(2) : '0.00',
-                                description: p.description,
-                                imageUrl: p.imageUrls ? p.imageUrls[0] : null,
-                                source: 'native'
-                            }));
-                            catalogMeta = {
-                                source: 'native',
-                                nativeAvailable: true,
-                                wooConfigured: isWooConfigured(),
-                                wooAvailable: false
-                            };
+                    const enableNative = catalogMode === 'hybrid';
+                    const enableWoo = catalogMode === 'hybrid' || catalogMode === 'woo_only';
+
+                    if (enableNative) {
+                        try {
+                            const nativeProducts = await waClient.getCatalog(meId);
+                            if (nativeProducts && nativeProducts.length > 0) {
+                                catalog = nativeProducts.map(p => ({
+                                    id: p.id,
+                                    title: p.name,
+                                    price: p.price ? Number.parseFloat(String(p.price)).toFixed(2) : '0.00',
+                                    description: p.description,
+                                    imageUrl: p.imageUrls ? p.imageUrls[0] : null,
+                                    source: 'native'
+                                }));
+                                catalogMeta = {
+                                    ...catalogMeta,
+                                    source: 'native',
+                                    nativeAvailable: true,
+                                    wooAvailable: false
+                                };
+                            }
+                        } catch (e) {
                         }
-                    } catch (e) {
                     }
 
-                    if (!catalog.length) {
+                    if (!catalog.length && enableWoo) {
                         const wooResult = await getWooCatalog();
                         if (wooResult.products.length > 0) {
                             catalog = wooResult.products;
                             catalogMeta = {
+                                ...catalogMeta,
                                 source: 'woocommerce',
                                 nativeAvailable: false,
-                                wooConfigured: isWooConfigured(),
                                 wooAvailable: true,
                                 wooSource: wooResult.source,
                                 wooStatus: wooResult.status,
@@ -3216,7 +3229,6 @@ class SocketManager {
                         };
                     }
 
-
                     const catalogCategories = Array.from(new Set(
                         (catalog || [])
                             .flatMap((item) => extractCatalogItemCategories(item))
@@ -3228,14 +3240,15 @@ class SocketManager {
                         categories: catalogCategories
                     };
                     logCatalogDebugSnapshot({ catalog, catalogMeta });
-                    socket.emit('business_data', { profile, labels, catalog, catalogMeta });
+                    socket.emit('business_data', { profile, labels, catalog, catalogMeta, tenantSettings });
                 } catch (e) {
                     console.error('Error fetching business data:', e);
                     socket.emit('business_data', {
                         profile: null,
                         labels: [],
                         catalog: await loadCatalog({ tenantId }),
-                        catalogMeta: { source: 'local', nativeAvailable: false, wooConfigured: isWooConfigured(), wooAvailable: false, wooSource: null, wooStatus: 'error', wooReason: 'Error al obtener datos de negocio' }
+                        catalogMeta: { source: 'local', mode: 'hybrid', nativeAvailable: false, wooConfigured: isWooConfigured(), wooAvailable: false, wooSource: null, wooStatus: 'error', wooReason: 'Error al obtener datos de negocio' },
+                        tenantSettings: await tenantSettingsService.getTenantSettings(tenantId)
                     });
                 }
             });

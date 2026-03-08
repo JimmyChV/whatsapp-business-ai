@@ -77,4 +77,5 @@ Objetivo: convertirlo en plataforma multiempresa con login por usuario, aislamie
 - [x] Inicio Fase 1
 - [x] Cerrar Fase 1
 - [x] Inicio Fase 2 (bloque 1: persistencia tenant-aware + schema Postgres v1)
+- [x] Fase 2 bloque 2: modulo de tenant settings (catalog mode + modulos habilitados)
 

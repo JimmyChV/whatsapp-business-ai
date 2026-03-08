@@ -10,6 +10,7 @@ const { parseCsvEnv, resolveAndValidatePublicHost } = require('./security_utils'
 const RateLimiter = require('./rate_limiter');
 const authService = require('./auth_service');
 const tenantService = require('./tenant_service');
+const tenantSettingsService = require('./tenant_settings_service');
 
 const waClient = require('./wa_provider');
 const SocketManager = require('./socket_manager');
@@ -186,15 +187,17 @@ app.get('/', (req, res) => {
     res.send('WhatsApp Business API V4 - Robust & Modular');
 });
 
-app.get('/api/saas/runtime', (req, res) => {
+app.get('/api/saas/runtime', async (req, res) => {
     const authContext = req.authContext || { enabled: false, isAuthenticated: false, user: null };
     const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+    const tenantSettings = await tenantSettingsService.getTenantSettings(tenant?.id || 'default');
     return res.json({
         ok: true,
         saasEnabled: tenantService.isSaasEnabled(),
         authEnabled: authService.isAuthEnabled(),
         socketAuthRequired: saasSocketAuthRequired,
         tenant,
+        tenantSettings,
         tenants: tenantService.getTenants().map((item) => ({
             id: item.id,
             slug: item.slug,
@@ -244,6 +247,48 @@ app.get('/api/tenant/me', (req, res) => {
         ok: true,
         tenant: req.tenantContext || tenantService.DEFAULT_TENANT
     });
+});
+
+function hasTenantSettingsWriteAccess(req) {
+    if (!authService.isAuthEnabled()) return true;
+    const authContext = req.authContext || { isAuthenticated: false, user: null };
+    if (!authContext.isAuthenticated || !authContext.user) return false;
+    const role = String(authContext.user.role || '').trim().toLowerCase();
+    return role === 'owner' || role === 'admin';
+}
+
+app.get('/api/tenant/settings', async (req, res) => {
+    try {
+        const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+        const settings = await tenantSettingsService.getTenantSettings(tenant?.id || 'default');
+        return res.json({
+            ok: true,
+            tenant,
+            settings
+        });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: 'No se pudo cargar la configuracion de la empresa.' });
+    }
+});
+
+app.put('/api/tenant/settings', async (req, res) => {
+    try {
+        if (!hasTenantSettingsWriteAccess(req)) {
+            return res.status(403).json({ ok: false, error: 'No tienes permisos para editar configuracion de empresa.' });
+        }
+
+        const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+        const patch = req.body && typeof req.body === 'object' ? req.body : {};
+        const settings = await tenantSettingsService.updateTenantSettings(tenant?.id || 'default', patch);
+        return res.json({
+            ok: true,
+            tenant,
+            settings
+        });
+    } catch (error) {
+        const message = String(error?.message || 'No se pudo actualizar configuracion de empresa.');
+        return res.status(400).json({ ok: false, error: message });
+    }
 });
 
 app.get('/api/wa/runtime', (req, res) => {
@@ -703,3 +748,4 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
+
