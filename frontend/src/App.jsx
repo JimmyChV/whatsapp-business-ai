@@ -1962,3 +1962,7 @@ REGLA CRITICA:
 }
 
 export default App;
+
+
+
+
