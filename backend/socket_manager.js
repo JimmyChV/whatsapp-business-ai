@@ -625,6 +625,39 @@ function getMessageTypePreviewLabel(type = '') {
     return 'Mensaje';
 }
 
+
+function extractMessageFileMeta(msg = {}) {
+    const raw = msg?._data || {};
+    const filename = String(
+        msg?.filename
+        || raw?.filename
+        || raw?.fileName
+        || raw?.mediaData?.filename
+        || ''
+    ).trim() || null;
+
+    const sizeCandidates = [
+        raw?.size,
+        raw?.fileSize,
+        raw?.fileLength,
+        raw?.mediaData?.size
+    ];
+
+    let fileSizeBytes = null;
+    for (const candidate of sizeCandidates) {
+        const parsed = Number(candidate);
+        if (Number.isFinite(parsed) && parsed > 0) {
+            fileSizeBytes = Math.round(parsed);
+            break;
+        }
+    }
+
+    return {
+        filename,
+        fileSizeBytes
+    };
+}
+
 function normalizeQuotedPayload(raw = {}) {
     if (!raw || typeof raw !== 'object') return null;
 
@@ -2270,6 +2303,7 @@ class SocketManager {
 
                     const formatted = await Promise.all(visible.map(async (m) => {
                         const senderMeta = await resolveMessageSenderMeta(m);
+                        const fileMeta = extractMessageFileMeta(m);
                         return ({
                         id: m.id._serialized,
                         from: m.from,
@@ -2280,6 +2314,8 @@ class SocketManager {
                         hasMedia: m.hasMedia,
                         mediaData: null,
                         mimetype: null,
+                        filename: fileMeta.filename,
+                        fileSizeBytes: fileMeta.fileSizeBytes,
                         type: m.type,
                         author: m?.author || m?._data?.author || null,
                         notifyName: senderMeta.notifyName,
@@ -3105,6 +3141,7 @@ class SocketManager {
 
             const media = await mediaManager.processMessageMedia(msg);
             const senderMeta = await resolveMessageSenderMeta(msg);
+            const fileMeta = extractMessageFileMeta(msg);
             const quotedMessage = await extractQuotedMessageInfo(msg);
             this.io.emit('message', {
                 id: msg.id._serialized,
@@ -3116,6 +3153,8 @@ class SocketManager {
                 hasMedia: msg.hasMedia,
                 mediaData: media ? media.data : null,
                 mimetype: media ? media.mimetype : null,
+                filename: fileMeta.filename,
+                fileSizeBytes: fileMeta.fileSizeBytes,
                 ack: msg.ack,
                 type: msg.type,
                 author: msg?.author || msg?._data?.author || null,
@@ -3146,6 +3185,7 @@ class SocketManager {
             if (isStatusOrSystemMessage(msg)) return;
             // Emite de vuelta para confirmar en UI si se envio desde otro lugar
             const media = await mediaManager.processMessageMedia(msg);
+            const fileMeta = extractMessageFileMeta(msg);
             const quotedMessage = await extractQuotedMessageInfo(msg);
             this.io.emit('message', {
                 id: msg.id._serialized,
@@ -3157,6 +3197,8 @@ class SocketManager {
                 hasMedia: msg.hasMedia,
                 mediaData: media ? media.data : null,
                 mimetype: media ? media.mimetype : null,
+                filename: fileMeta.filename,
+                fileSizeBytes: fileMeta.fileSizeBytes,
                 ack: msg.ack,
                 type: msg.type,
                 author: msg?.author || msg?._data?.author || null,

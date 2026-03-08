@@ -2838,3 +2838,123 @@ body {
   border: none !important;
   box-shadow: none !important;
 }
+
+.message-file-card {
+  width: min(360px, 62vw);
+  border: 1px solid rgba(124, 200, 255, 0.28);
+  background: linear-gradient(160deg, rgba(19, 33, 43, 0.88), rgba(13, 23, 31, 0.9));
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 7px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+}
+
+.message-file-card.is-pdf {
+  border-color: rgba(255, 107, 107, 0.45);
+}
+
+.message-file-card.is-doc {
+  border-color: rgba(97, 177, 255, 0.45);
+}
+
+.message-file-card.is-sheet {
+  border-color: rgba(124, 215, 166, 0.48);
+}
+
+.message-file-card.is-deck {
+  border-color: rgba(255, 189, 107, 0.48);
+}
+
+.message-file-card.is-archive {
+  border-color: rgba(180, 165, 255, 0.48);
+}
+
+.message-file-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #d9ebf5;
+}
+
+.message-file-main {
+  min-width: 0;
+}
+
+.message-file-topline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.message-file-badge {
+  font-size: 0.62rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 1px 7px;
+  color: #e6f4ff;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.message-file-kind {
+  font-size: 0.68rem;
+  color: #9db3c0;
+}
+
+.message-file-name {
+  font-size: 0.82rem;
+  color: #f2f8fb;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-file-meta {
+  margin-top: 3px;
+  font-size: 0.68rem;
+  color: #9bb0bc;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.message-file-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.message-file-action {
+  border: 1px solid rgba(124, 200, 255, 0.44);
+  background: rgba(124, 200, 255, 0.12);
+  color: #d6f1ff;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.message-file-action.secondary {
+  border-color: rgba(134, 150, 160, 0.36);
+  background: rgba(134, 150, 160, 0.12);
+  color: #d4e0e6;
+}
+
+.message-file-action:hover {
+  filter: brightness(1.08);
+}

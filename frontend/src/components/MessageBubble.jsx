@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import moment from 'moment';
-import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown } from 'lucide-react';
+import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, FileText, FileSpreadsheet, FileArchive, FileType2, Download } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const linkPreviewCache = new Map();
@@ -432,6 +432,92 @@ const getGroupSenderColor = (seed = '') => {
     return GROUP_SENDER_COLORS[idx] || '#7de6d2';
 };
 
+
+const formatFileSizeLabel = (bytes = null) => {
+    const value = Number(bytes);
+    if (!Number.isFinite(value) || value <= 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let size = value;
+    let idx = 0;
+    while (size >= 1024 && idx < units.length - 1) {
+        size /= 1024;
+        idx += 1;
+    }
+    const decimals = size >= 100 || idx === 0 ? 0 : (size >= 10 ? 1 : 2);
+    return String(size.toFixed(decimals) + ' ' + units[idx]);
+};
+
+const guessExtensionFromMime = (mime = '') => {
+    const type = String(mime || '').toLowerCase();
+    if (!type) return '';
+    if (type.includes('pdf')) return 'pdf';
+    if (type.includes('wordprocessingml')) return 'docx';
+    if (type.includes('msword')) return 'doc';
+    if (type.includes('spreadsheetml')) return 'xlsx';
+    if (type.includes('ms-excel') || type.includes('excel')) return 'xls';
+    if (type.includes('presentationml')) return 'pptx';
+    if (type.includes('ms-powerpoint') || type.includes('powerpoint')) return 'ppt';
+    if (type.includes('csv')) return 'csv';
+    if (type.includes('zip')) return 'zip';
+    if (type.includes('rar')) return 'rar';
+    if (type.includes('7z')) return '7z';
+    if (type.includes('text/plain')) return 'txt';
+    if (type.includes('json')) return 'json';
+    if (type.includes('xml')) return 'xml';
+    if (type.includes('video/')) return 'video';
+    if (type.includes('application/octet-stream')) return 'bin';
+    return '';
+};
+
+const getFileExtensionFromName = (filename = '') => {
+    const safe = String(filename || '').trim();
+    if (!safe.includes('.')) return '';
+    const ext = safe.split('.').pop();
+    return String(ext || '').trim().toLowerCase();
+};
+
+const getAttachmentKind = (mimetype = '', extension = '') => {
+    const type = String(mimetype || '').toLowerCase();
+    const ext = String(extension || '').toLowerCase();
+
+    if (type.includes('pdf') || ext === 'pdf') return { icon: 'pdf', label: 'Documento PDF', accentClass: 'is-pdf' };
+    if (type.includes('word') || ['doc', 'docx'].includes(ext)) return { icon: 'doc', label: 'Documento Word', accentClass: 'is-doc' };
+    if (type.includes('excel') || type.includes('spreadsheet') || ['xls', 'xlsx', 'csv'].includes(ext)) return { icon: 'sheet', label: 'Hoja de calculo', accentClass: 'is-sheet' };
+    if (type.includes('powerpoint') || type.includes('presentation') || ['ppt', 'pptx'].includes(ext)) return { icon: 'deck', label: 'Presentacion', accentClass: 'is-deck' };
+    if (type.includes('zip') || type.includes('rar') || type.includes('7z') || ['zip', 'rar', '7z'].includes(ext)) return { icon: 'archive', label: 'Archivo comprimido', accentClass: 'is-archive' };
+    if (type.startsWith('text/') || ['txt', 'json', 'xml'].includes(ext)) return { icon: 'text', label: 'Archivo de texto', accentClass: 'is-text' };
+    return { icon: 'file', label: 'Archivo adjunto', accentClass: 'is-generic' };
+};
+
+const buildAttachmentMeta = (msg = {}) => {
+    const mimetype = String(msg?.mimetype || '').toLowerCase();
+    const rawFilename = String(msg?.filename || '').trim();
+    const extension = getFileExtensionFromName(rawFilename) || guessExtensionFromMime(mimetype);
+    const fallbackName = extension ? ('archivo.' + extension) : 'archivo';
+    const filename = rawFilename || fallbackName;
+    const extensionBadge = extension ? extension.toUpperCase() : 'FILE';
+    const kind = getAttachmentKind(mimetype, extension);
+    const sizeLabel = formatFileSizeLabel(msg?.fileSizeBytes);
+    return {
+        filename,
+        extensionBadge,
+        kindLabel: kind.label,
+        accentClass: kind.accentClass,
+        icon: kind.icon,
+        sizeLabel,
+        mimetype: mimetype || 'application/octet-stream'
+    };
+};
+
+const renderAttachmentIcon = (icon = 'file') => {
+    if (icon === 'pdf') return <FileText size={18} />;
+    if (icon === 'doc') return <FileText size={18} />;
+    if (icon === 'sheet') return <FileSpreadsheet size={18} />;
+    if (icon === 'deck') return <FileType2 size={18} />;
+    if (icon === 'archive') return <FileArchive size={18} />;
+    if (icon === 'text') return <FileText size={18} />;
+    return <FileType2 size={18} />;
+};
 const MessageBubble = ({
     msg,
     onPrefillMessage,
@@ -630,6 +716,14 @@ const MessageBubble = ({
         ? `data:${msg.mimetype || 'application/octet-stream'};base64,${msg.mediaData}`
         : null;
 
+    const hasBinaryAttachment = Boolean(
+        msg.hasMedia
+        && msg.mediaData
+        && !msg.mimetype?.startsWith('image/')
+        && !msg.mimetype?.startsWith('audio/')
+    );
+    const attachmentMeta = hasBinaryAttachment ? buildAttachmentMeta(msg) : null;
+
     const messageSenderName = String(senderDisplayName || msg?.notifyName || msg?.senderPushname || '').trim();
     const senderIdentityKey = String(
         msg?.senderId
@@ -754,31 +848,35 @@ const MessageBubble = ({
                 />
             )}
 
-            {msg.hasMedia && msg.mediaData && !msg.mimetype?.startsWith('image/') && !msg.mimetype?.startsWith('audio/') && (
-                <a
-                    href={mediaDataUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        background: 'rgba(0,0,0,0.18)',
-                        border: '1px solid rgba(255,255,255,0.15)',
-                        borderRadius: '8px',
-                        padding: '7px 10px',
-                        marginBottom: '6px',
-                        color: 'inherit',
-                        textDecoration: 'none',
-                        maxWidth: '210px',
-                        fontSize: '0.76rem'
-                    }}
-                >
-                    <span>Adjunto</span>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {msg.mimetype || 'Archivo'}
-                    </span>
-                </a>
+            {hasBinaryAttachment && attachmentMeta && (
+                <div className={`message-file-card ${attachmentMeta.accentClass}`}>
+                    <div className="message-file-icon" aria-hidden="true">
+                        {renderAttachmentIcon(attachmentMeta.icon)}
+                    </div>
+
+                    <div className="message-file-main">
+                        <div className="message-file-topline">
+                            <span className="message-file-badge">{attachmentMeta.extensionBadge}</span>
+                            <span className="message-file-kind">{attachmentMeta.kindLabel}</span>
+                        </div>
+                        <div className="message-file-name" title={attachmentMeta.filename}>
+                            {attachmentMeta.filename}
+                        </div>
+                        <div className="message-file-meta">
+                            <span>{attachmentMeta.mimetype}</span>
+                            {attachmentMeta.sizeLabel && <span>| {attachmentMeta.sizeLabel}</span>}
+                        </div>
+                    </div>
+
+                    <div className="message-file-actions">
+                        <a href={mediaDataUrl} target="_blank" rel="noreferrer" className="message-file-action">
+                            Abrir
+                        </a>
+                        <a href={mediaDataUrl} download={attachmentMeta.filename} className="message-file-action secondary">
+                            <Download size={13} /> Descargar
+                        </a>
+                    </div>
+                </div>
             )}
 
             {isOrderActionable && (
@@ -1204,3 +1302,4 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
+
