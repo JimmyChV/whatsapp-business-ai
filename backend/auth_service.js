@@ -1,5 +1,6 @@
-﻿const crypto = require('crypto');
+const crypto = require('crypto');
 const authSessionService = require('./auth_session_service');
+const tenantService = require('./tenant_service');
 
 function parseBooleanEnv(value, defaultValue = false) {
     const raw = String(value ?? '').trim().toLowerCase();
@@ -46,6 +47,73 @@ function randomTokenId(prefix = 'tok') {
     return `${prefix}_${crypto.randomBytes(12).toString('hex')}`;
 }
 
+function normalizeRole(value = '') {
+    const role = String(value || '').trim().toLowerCase();
+    if (['owner', 'admin', 'seller'].includes(role)) return role;
+    return 'seller';
+}
+
+function roleWeight(role = '') {
+    const normalized = normalizeRole(role);
+    if (normalized === 'owner') return 3;
+    if (normalized === 'admin') return 2;
+    return 1;
+}
+
+function normalizeTenantId(value = '') {
+    return String(value || '').trim();
+}
+
+function normalizeMembership(entry, fallbackRole = 'seller') {
+    if (typeof entry === 'string') {
+        const tenantId = normalizeTenantId(entry);
+        if (!tenantId) return null;
+        return { tenantId, role: normalizeRole(fallbackRole) };
+    }
+
+    if (!entry || typeof entry !== 'object') return null;
+    const tenantId = normalizeTenantId(entry.tenantId || entry.tenant || entry.id || entry.slug || '');
+    if (!tenantId) return null;
+    return {
+        tenantId,
+        role: normalizeRole(entry.role || fallbackRole)
+    };
+}
+
+function sanitizeMemberships(memberships = []) {
+    return (Array.isArray(memberships) ? memberships : [])
+        .map((item) => ({
+            tenantId: normalizeTenantId(item?.tenantId),
+            role: normalizeRole(item?.role)
+        }))
+        .filter((item) => item.tenantId);
+}
+
+function buildMemberships(entry = {}) {
+    const fallbackRole = normalizeRole(entry.role || 'seller');
+    const map = new Map();
+
+    const pushMembership = (membership) => {
+        const normalized = normalizeMembership(membership, fallbackRole);
+        if (!normalized) return;
+        const current = map.get(normalized.tenantId);
+        if (!current || roleWeight(normalized.role) > roleWeight(current.role)) {
+            map.set(normalized.tenantId, normalized);
+        }
+    };
+
+    pushMembership({ tenantId: entry.tenantId || entry.tenant, role: entry.role });
+    if (Array.isArray(entry.tenantIds)) entry.tenantIds.forEach((item) => pushMembership(item));
+    if (Array.isArray(entry.tenants)) entry.tenants.forEach((item) => pushMembership(item));
+    if (Array.isArray(entry.memberships)) entry.memberships.forEach((item) => pushMembership(item));
+
+    if (map.size === 0) {
+        pushMembership({ tenantId: 'default', role: fallbackRole });
+    }
+
+    return sanitizeMemberships(Array.from(map.values()));
+}
+
 function parseUsersFromEnv() {
     const raw = String(process.env.SAAS_USERS_JSON || '').trim();
     if (!raw) return [];
@@ -57,19 +125,38 @@ function parseUsersFromEnv() {
                 if (!entry || typeof entry !== 'object') return null;
                 const id = String(entry.id || `user_${idx + 1}`).trim();
                 const email = String(entry.email || '').trim().toLowerCase();
-                const tenantId = String(entry.tenantId || entry.tenant || 'default').trim();
-                const role = String(entry.role || 'seller').trim().toLowerCase();
+                const memberships = buildMemberships(entry);
+                const tenantId = normalizeTenantId(entry.tenantId || entry.tenant || memberships?.[0]?.tenantId || 'default');
+                const role = normalizeRole(entry.role || memberships?.[0]?.role || 'seller');
                 const name = String(entry.name || entry.displayName || email || id).trim();
                 const password = String(entry.password || '');
                 const passwordHash = String(entry.passwordHash || entry.sha256 || '').trim().toLowerCase();
                 if (!id || !email || !tenantId) return null;
                 if (!password && !passwordHash) return null;
-                return { id, email, tenantId, role, name, password, passwordHash };
+                return { id, email, tenantId, role, memberships, name, password, passwordHash };
             })
             .filter(Boolean);
     } catch (error) {
         return [];
     }
+}
+
+function findUserRecord({ userId = '', email = '' } = {}) {
+    const cleanUserId = String(userId || '').trim();
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const users = parseUsersFromEnv();
+
+    if (cleanUserId) {
+        const byId = users.find((item) => String(item?.id || '').trim() === cleanUserId);
+        if (byId) return byId;
+    }
+
+    if (cleanEmail) {
+        const byEmail = users.find((item) => String(item?.email || '').trim().toLowerCase() === cleanEmail);
+        if (byEmail) return byEmail;
+    }
+
+    return null;
 }
 
 function getAuthSecret() {
@@ -141,20 +228,105 @@ function verifyUserPassword(user = {}, password = '') {
     return false;
 }
 
-function normalizeRole(value = '') {
-    const role = String(value || '').trim().toLowerCase();
-    if (['owner', 'admin', 'seller'].includes(role)) return role;
-    return 'seller';
+function resolveRequestedTenantId({ tenantId = '', tenantSlug = '' } = {}) {
+    const explicit = normalizeTenantId(tenantId);
+    if (explicit) return explicit;
+
+    const slug = String(tenantSlug || '').trim().toLowerCase();
+    if (!slug) return '';
+    const tenant = tenantService.findTenantBySlug(slug);
+    return tenant?.id ? normalizeTenantId(tenant.id) : '';
+}
+
+function hasTenantMembership(user = {}, tenantId = '') {
+    const cleanTenant = normalizeTenantId(tenantId);
+    if (!cleanTenant) return false;
+    const memberships = sanitizeMemberships(user?.memberships || []);
+    return memberships.some((item) => item.tenantId === cleanTenant);
+}
+
+function resolveScopedUser(user = {}, requestedTenantId = '') {
+    const memberships = sanitizeMemberships(user?.memberships || []);
+    const preferredTenant = normalizeTenantId(requestedTenantId)
+        || normalizeTenantId(user?.tenantId)
+        || normalizeTenantId(memberships?.[0]?.tenantId)
+        || 'default';
+    const matched = memberships.find((item) => item.tenantId === preferredTenant) || null;
+    const role = normalizeRole(matched?.role || user?.role);
+
+    return {
+        ...user,
+        tenantId: preferredTenant,
+        role,
+        memberships: memberships.length > 0 ? memberships : [{ tenantId: preferredTenant, role }]
+    };
 }
 
 function sanitizeUser(user = {}) {
+    const scoped = resolveScopedUser(user, user?.tenantId);
+    const memberships = sanitizeMemberships(scoped.memberships);
     return {
-        id: user.id,
-        email: user.email,
-        tenantId: user.tenantId,
-        role: normalizeRole(user.role),
-        name: user.name
+        id: scoped.id,
+        email: scoped.email,
+        tenantId: scoped.tenantId,
+        role: normalizeRole(scoped.role),
+        name: scoped.name,
+        memberships,
+        canSwitchTenant: memberships.length > 1
     };
+}
+
+function hydrateAuthUser(auth = null) {
+    if (!auth || typeof auth !== 'object') return null;
+    const userRecord = findUserRecord({ userId: auth.userId, email: auth.email });
+
+    if (!userRecord) {
+        const fallback = {
+            id: auth.userId,
+            email: auth.email,
+            tenantId: auth.tenantId,
+            role: normalizeRole(auth.role),
+            name: auth.name,
+            memberships: [{ tenantId: auth.tenantId, role: normalizeRole(auth.role) }]
+        };
+        const safeFallback = sanitizeUser(fallback);
+        return {
+            ...auth,
+            role: safeFallback.role,
+            name: safeFallback.name,
+            memberships: safeFallback.memberships,
+            canSwitchTenant: safeFallback.canSwitchTenant
+        };
+    }
+
+    const scoped = resolveScopedUser({
+        ...userRecord,
+        role: normalizeRole(auth.role || userRecord.role),
+        name: String(auth.name || userRecord.name || '').trim() || null
+    }, auth.tenantId);
+    const safeScoped = sanitizeUser(scoped);
+
+    return {
+        ...auth,
+        role: safeScoped.role,
+        name: safeScoped.name,
+        memberships: safeScoped.memberships,
+        canSwitchTenant: safeScoped.canSwitchTenant
+    };
+}
+
+function getAllowedTenantsForUser(user = {}, tenants = []) {
+    const safeTenants = Array.isArray(tenants) ? tenants : [];
+    const memberships = sanitizeMemberships(user?.memberships || []);
+    if (memberships.length === 0) return safeTenants;
+
+    const allowedIds = new Set(memberships.map((item) => item.tenantId));
+    const scoped = safeTenants.filter((tenant) => allowedIds.has(String(tenant?.id || '').trim()));
+    if (scoped.length > 0) return scoped;
+
+    const fallbackTenantId = normalizeTenantId(user?.tenantId);
+    if (!fallbackTenantId) return [];
+    return safeTenants.filter((tenant) => String(tenant?.id || '').trim() === fallbackTenantId);
 }
 
 function buildAccessSessionForUser(user = {}) {
@@ -180,43 +352,16 @@ function buildAccessSessionForUser(user = {}) {
     };
 }
 
-async function login({ email = '', password = '', tenantId = '', tenantSlug = '' } = {}) {
-    if (!isAuthEnabled()) {
-        throw new Error('Autenticacion SaaS deshabilitada. Activa SAAS_AUTH_ENABLED=true.');
-    }
-
-    if (!getAuthSecret()) {
-        throw new Error('Falta SAAS_AUTH_SECRET para generar tokens de acceso.');
-    }
-
-    const cleanEmail = String(email || '').trim().toLowerCase();
-    const users = parseUsersFromEnv();
-    if (!users.length) {
-        throw new Error('No hay usuarios configurados en SAAS_USERS_JSON.');
-    }
-
-    const candidates = users.filter((user) => user.email === cleanEmail);
-    const tenantFilter = String(tenantId || '').trim();
-    const tenantSlugFilter = String(tenantSlug || '').trim().toLowerCase();
-    const filtered = candidates.filter((user) => {
-        if (tenantFilter && user.tenantId !== tenantFilter) return false;
-        if (tenantSlugFilter && user.tenantId.toLowerCase() !== tenantSlugFilter) return false;
-        return true;
-    });
-
-    const target = (filtered[0] || candidates[0] || null);
-    if (!target || !verifyUserPassword(target, password)) {
-        throw new Error('Credenciales invalidas.');
-    }
-
-    const accessSession = buildAccessSessionForUser(target);
+async function issueSessionForScopedUser(user = {}) {
+    const scoped = resolveScopedUser(user, user?.tenantId);
+    const accessSession = buildAccessSessionForUser(scoped);
     const refresh = await authSessionService.issueRefreshSession({
-        tenantId: target.tenantId,
+        tenantId: scoped.tenantId,
         user: {
-            id: target.id,
-            email: target.email,
-            role: target.role,
-            name: target.name
+            id: scoped.id,
+            email: scoped.email,
+            role: scoped.role,
+            name: scoped.name
         }
     });
 
@@ -227,8 +372,47 @@ async function login({ email = '', password = '', tenantId = '', tenantSlug = ''
         refreshToken: refresh.refreshToken,
         refreshExpiresInSec: refresh.expiresInSec,
         refreshExpiresAtUnix: refresh.expiresAtUnix,
-        user: sanitizeUser(target)
+        user: sanitizeUser(scoped)
     };
+}
+
+async function login({ email = '', password = '', tenantId = '', tenantSlug = '' } = {}) {
+    if (!isAuthEnabled()) {
+        throw new Error('Autenticacion SaaS deshabilitada. Activa SAAS_AUTH_ENABLED=true.');
+    }
+
+    if (!getAuthSecret()) {
+        throw new Error('Falta SAAS_AUTH_SECRET para generar tokens de acceso.');
+    }
+
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const requestedTenantId = resolveRequestedTenantId({ tenantId, tenantSlug });
+    const users = parseUsersFromEnv();
+    if (!users.length) {
+        throw new Error('No hay usuarios configurados en SAAS_USERS_JSON.');
+    }
+
+    const candidates = users.filter((user) => user.email === cleanEmail && verifyUserPassword(user, password));
+    if (!candidates.length) {
+        throw new Error('Credenciales invalidas.');
+    }
+
+    let target = null;
+    if (requestedTenantId) {
+        target = candidates.find((user) => hasTenantMembership(user, requestedTenantId)) || null;
+        if (!target) {
+            throw new Error('Usuario sin acceso al tenant seleccionado.');
+        }
+    } else {
+        target = candidates[0] || null;
+    }
+
+    if (!target) {
+        throw new Error('Credenciales invalidas.');
+    }
+
+    const scoped = resolveScopedUser(target, requestedTenantId || target.tenantId);
+    return issueSessionForScopedUser(scoped);
 }
 
 async function refreshSession({ refreshToken = '' } = {}) {
@@ -250,14 +434,19 @@ async function refreshSession({ refreshToken = '' } = {}) {
         throw new Error('Refresh token invalido o expirado.');
     }
 
-    const user = {
-        id: rotated.userId,
-        email: rotated.email,
-        tenantId: rotated.tenantId,
-        role: normalizeRole(rotated.role),
-        name: null
-    };
-    const accessSession = buildAccessSessionForUser(user);
+    const userRecord = findUserRecord({ userId: rotated.userId, email: rotated.email });
+    const scopedUser = userRecord && hasTenantMembership(userRecord, rotated.tenantId)
+        ? resolveScopedUser(userRecord, rotated.tenantId)
+        : resolveScopedUser({
+            id: rotated.userId,
+            email: rotated.email,
+            tenantId: rotated.tenantId,
+            role: normalizeRole(rotated.role),
+            name: null,
+            memberships: [{ tenantId: rotated.tenantId, role: normalizeRole(rotated.role) }]
+        }, rotated.tenantId);
+
+    const accessSession = buildAccessSessionForUser(scopedUser);
 
     return {
         accessToken: accessSession.accessToken,
@@ -266,8 +455,68 @@ async function refreshSession({ refreshToken = '' } = {}) {
         refreshToken: rotated.refreshToken,
         refreshExpiresInSec: rotated.refreshExpiresInSec,
         refreshExpiresAtUnix: rotated.refreshExpiresAtUnix,
-        user: sanitizeUser(user)
+        user: sanitizeUser(scopedUser)
     };
+}
+
+async function switchTenantSession({ accessToken = '', refreshToken = '', targetTenantId = '' } = {}) {
+    if (!isAuthEnabled()) {
+        throw new Error('Autenticacion SaaS deshabilitada.');
+    }
+
+    if (!getAuthSecret()) {
+        throw new Error('Falta SAAS_AUTH_SECRET para cambiar de tenant.');
+    }
+
+    const cleanTargetTenantId = normalizeTenantId(targetTenantId);
+    if (!cleanTargetTenantId) {
+        throw new Error('targetTenantId es requerido.');
+    }
+
+    const cleanAccessToken = String(accessToken || '').trim();
+    if (!cleanAccessToken) {
+        throw new Error('accessToken es requerido para cambiar de tenant.');
+    }
+
+    const auth = await verifyAccessTokenAsync(cleanAccessToken);
+    if (!auth) {
+        throw new Error('Sesion invalida o expirada.');
+    }
+
+    if (normalizeTenantId(auth.tenantId) === cleanTargetTenantId) {
+        return refreshSession({ refreshToken: String(refreshToken || '').trim() });
+    }
+
+    const userRecord = findUserRecord({ userId: auth.userId, email: auth.email });
+    if (!userRecord) {
+        throw new Error('No se encontro el usuario para cambiar de tenant.');
+    }
+    if (!hasTenantMembership(userRecord, cleanTargetTenantId)) {
+        throw new Error('Usuario sin acceso al tenant seleccionado.');
+    }
+
+    const cleanRefreshToken = String(refreshToken || '').trim();
+    if (cleanRefreshToken) {
+        try {
+            await authSessionService.revokeRefreshToken(cleanRefreshToken, { reason: 'tenant_switch' });
+        } catch (_) {
+        }
+    }
+
+    try {
+        await authSessionService.revokeAccessToken({
+            tenantId: auth.tenantId,
+            accessToken: cleanAccessToken,
+            jti: auth.jti,
+            userId: auth.userId,
+            expiresAtUnix: auth.exp,
+            reason: 'tenant_switch'
+        });
+    } catch (_) {
+    }
+
+    const scoped = resolveScopedUser(userRecord, cleanTargetTenantId);
+    return issueSessionForScopedUser(scoped);
 }
 
 function getTokenFromRequest(req = {}) {
@@ -282,7 +531,7 @@ function verifyAccessToken(token = '') {
     if (!isAuthEnabled()) return null;
     const payload = parseAccessToken(token);
     if (!payload) return null;
-    return {
+    const baseAuth = {
         userId: String(payload.sub || '').trim(),
         email: String(payload.email || '').trim().toLowerCase(),
         tenantId: String(payload.tenantId || 'default').trim(),
@@ -292,6 +541,7 @@ function verifyAccessToken(token = '') {
         iat: Number(payload.iat || 0),
         jti: String(payload.jti || '').trim() || null
     };
+    return hydrateAuthUser(baseAuth);
 }
 
 async function verifyAccessTokenAsync(token = '') {
@@ -348,7 +598,9 @@ async function logoutSession({ accessToken = '', refreshToken = '', reason = 'lo
                     email: auth.email,
                     tenantId: auth.tenantId,
                     role: auth.role,
-                    name: auth.name
+                    name: auth.name,
+                    memberships: sanitizeMemberships(auth.memberships || []),
+                    canSwitchTenant: Boolean(auth.canSwitchTenant)
                 }
                 : null
         };
@@ -364,7 +616,9 @@ async function logoutSession({ accessToken = '', refreshToken = '', reason = 'lo
                 email: auth.email,
                 tenantId: auth.tenantId,
                 role: auth.role,
-                name: auth.name
+                name: auth.name,
+                memberships: sanitizeMemberships(auth.memberships || []),
+                canSwitchTenant: Boolean(auth.canSwitchTenant)
             }
             : null
     };
@@ -396,10 +650,13 @@ module.exports = {
     isAuthEnabled,
     login,
     refreshSession,
+    switchTenantSession,
     logoutSession,
     verifyAccessToken,
     verifyAccessTokenAsync,
     getTokenFromRequest,
     getRequestAuthContext,
-    getRequestAuthContextAsync
+    getRequestAuthContextAsync,
+    getAllowedTenantsForUser,
+    findUserRecord
 };

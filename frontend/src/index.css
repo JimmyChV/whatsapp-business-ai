@@ -994,6 +994,49 @@ body {
   color: #ffb4b4;
 }
 
+.sidebar-menu-section {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(134, 150, 160, 0.18);
+  display: grid;
+  gap: 6px;
+}
+
+.sidebar-menu-section-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8ea3ad;
+}
+
+.sidebar-tenant-select {
+  width: 100%;
+  background: #111b21;
+  border: 1px solid rgba(124, 200, 255, 0.35);
+  color: #dce9f0;
+  border-radius: 8px;
+  font-size: 0.79rem;
+  padding: 7px 9px;
+  outline: none;
+}
+
+.sidebar-menu-tenant-label {
+  font-size: 0.8rem;
+  color: #dce9f0;
+  background: rgba(124, 200, 255, 0.08);
+  border: 1px solid rgba(124, 200, 255, 0.26);
+  border-radius: 8px;
+  padding: 7px 9px;
+}
+
+.sidebar-menu-error {
+  font-size: 0.72rem;
+  color: #ffd1d1;
+  background: rgba(255, 113, 113, 0.1);
+  border: 1px solid rgba(255, 113, 113, 0.35);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
 .sidebar-search-zone {
   padding: 10px 10px 8px;
   border-bottom: 1px solid rgba(134, 150, 160, 0.14);

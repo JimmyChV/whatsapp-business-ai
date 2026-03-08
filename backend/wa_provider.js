@@ -26,6 +26,7 @@ class WAProvider extends EventEmitter {
         this.activeAdapter = null;
         this.boundEvents = [];
         this.client = null;
+        this.transportSwitchPromise = Promise.resolve();
 
         if (ACTIVE_TRANSPORTS.has(this.requestedTransport)) {
             if (this.requestedTransport === 'cloud' && !cloudClient.isConfigured()) {
@@ -84,29 +85,68 @@ class WAProvider extends EventEmitter {
         this.client = null;
     }
 
+    async stopAdapter(adapter, reason = 'transport_switch') {
+        if (!adapter) return;
+
+        if (typeof adapter.shutdown === 'function') {
+            try {
+                await adapter.shutdown({ recreate: true, emitDisconnected: false, reason });
+                return;
+            } catch (error) {
+                console.warn('[WA][Provider] adapter shutdown warning:', String(error?.message || error));
+            }
+        }
+
+        try {
+            if (adapter?.client && typeof adapter.client.logout === 'function') {
+                await adapter.client.logout();
+            }
+        } catch (_) { }
+
+        try {
+            if (adapter?.client && typeof adapter.client.destroy === 'function') {
+                await adapter.client.destroy();
+            }
+        } catch (_) { }
+
+        if (Object.prototype.hasOwnProperty.call(adapter || {}, 'isReady')) {
+            adapter.isReady = false;
+        }
+    }
+
     async setTransportMode(mode) {
-        const safeMode = normalizeMode(mode);
-        if (!TRANSPORTS.has(safeMode)) {
-            throw new Error('Modo de transporte invalido. Usa webjs o cloud.');
-        }
+        const execute = async () => {
+            const safeMode = normalizeMode(mode);
+            if (!TRANSPORTS.has(safeMode)) {
+                throw new Error('Modo de transporte invalido. Usa webjs o cloud.');
+            }
 
-        if (safeMode === 'cloud' && !cloudClient.isConfigured()) {
-            throw new Error('Cloud API no configurada. Completa META_* en backend/.env.');
-        }
+            if (safeMode === 'cloud' && !cloudClient.isConfigured()) {
+                throw new Error('Cloud API no configurada. Completa META_* en backend/.env.');
+            }
 
-        this.requestedTransport = safeMode;
+            this.requestedTransport = safeMode;
 
-        if (safeMode === 'idle') {
-            this.deactivateTransport();
+            if (safeMode === 'idle') {
+                await this.stopAdapter(this.activeAdapter, 'transport_idle');
+                this.deactivateTransport();
+                return this.getRuntimeInfo();
+            }
+
+            if (this.activeTransport !== safeMode) {
+                await this.stopAdapter(this.activeAdapter, 'transport_switch');
+                this.useTransport(safeMode);
+            }
+
+            if (this.activeAdapter?.isReady !== true) {
+                await this.initialize();
+            }
+
             return this.getRuntimeInfo();
-        }
+        };
 
-        if (this.activeTransport !== safeMode) {
-            this.useTransport(safeMode);
-        }
-
-        await this.initialize();
-        return this.getRuntimeInfo();
+        this.transportSwitchPromise = this.transportSwitchPromise.then(execute, execute);
+        return this.transportSwitchPromise;
     }
 
     async initialize() {

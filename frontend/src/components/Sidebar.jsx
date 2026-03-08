@@ -97,6 +97,13 @@ const Sidebar = ({
     activeFilters = {},
     onFiltersChange,
     onOpenCompanyProfile,
+    saasAuthEnabled = false,
+    tenantOptions = [],
+    activeTenantId = '',
+    onSwitchTenant,
+    tenantSwitchBusy = false,
+    tenantSwitchError = '',
+    onSaasLogout,
 }) => {
     const [showMenu, setShowMenu] = useState(false);
     const [showLabelPanel, setShowLabelPanel] = useState(false);
@@ -287,6 +294,12 @@ const Sidebar = ({
         }));
     };
 
+    const canSwitchTenant = Boolean(saasAuthEnabled && Array.isArray(tenantOptions) && tenantOptions.length > 1);
+    const currentTenantId = String(activeTenantId || '').trim();
+    const sortedTenantOptions = Array.isArray(tenantOptions)
+        ? [...tenantOptions].sort((a, b) => String(a?.name || a?.id || '').localeCompare(String(b?.name || b?.id || '')))
+        : [];
+
     const toggleLabel = (token) => {
         const clean = normalizeFilterToken(token);
         if (!clean) return;
@@ -331,6 +344,32 @@ const Sidebar = ({
 
                     {showMenu && (
                         <div className="sidebar-dropdown-menu">
+                            {saasAuthEnabled && (
+                                <div className="sidebar-menu-section">
+                                    <div className="sidebar-menu-section-title">Empresa activa</div>
+                                    {canSwitchTenant ? (
+                                        <select
+                                            className="sidebar-tenant-select"
+                                            value={currentTenantId}
+                                            onChange={(e) => onSwitchTenant?.(e.target.value)}
+                                            disabled={tenantSwitchBusy}
+                                        >
+                                            {sortedTenantOptions.map((tenant) => (
+                                                <option key={tenant.id} value={tenant.id}>
+                                                    {tenant.name || tenant.id}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <div className="sidebar-menu-tenant-label">
+                                            {sortedTenantOptions[0]?.name || sortedTenantOptions[0]?.id || currentTenantId || 'default'}
+                                        </div>
+                                    )}
+                                    {tenantSwitchError && (
+                                        <div className="sidebar-menu-error">{tenantSwitchError}</div>
+                                    )}
+                                </div>
+                            )}
                             <button type="button" className="sidebar-menu-item" onClick={() => { onStartNewChat?.(); setShowMenu(false); }}>
                                 Nuevo chat (numero)
                             </button>
@@ -343,6 +382,11 @@ const Sidebar = ({
                             <button type="button" className="sidebar-menu-item sidebar-menu-item-danger" onClick={() => { onLogout?.(); setShowMenu(false); }}>
                                 Cerrar sesion WhatsApp
                             </button>
+                            {saasAuthEnabled && (
+                                <button type="button" className="sidebar-menu-item sidebar-menu-item-danger" onClick={() => { onSaasLogout?.(); setShowMenu(false); }}>
+                                    Cerrar sesion SaaS
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>

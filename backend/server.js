@@ -204,24 +204,40 @@ app.get('/', (req, res) => {
     res.send('WhatsApp Business API V4 - Robust & Modular');
 });
 
+function toPublicTenant(tenant = null) {
+    if (!tenant || typeof tenant !== 'object') return null;
+    return {
+        id: tenant.id,
+        slug: tenant.slug,
+        name: tenant.name,
+        active: tenant.active,
+        plan: tenant.plan
+    };
+}
+
 app.get('/api/saas/runtime', async (req, res) => {
     const authContext = req.authContext || { enabled: false, isAuthenticated: false, user: null };
-    const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
-    const tenantSettings = await tenantSettingsService.getTenantSettings(tenant?.id || 'default');
+    const allTenants = tenantService.getTenants();
+    const allowedTenants = authContext?.isAuthenticated
+        ? authService.getAllowedTenantsForUser(authContext?.user || {}, allTenants)
+        : allTenants;
+
+    const requestedTenantId = String(req?.tenantContext?.id || '').trim();
+    const effectiveTenant = allowedTenants.find((tenant) => String(tenant?.id || '').trim() === requestedTenantId)
+        || allowedTenants[0]
+        || req.tenantContext
+        || tenantService.DEFAULT_TENANT;
+
+    const tenantSettings = await tenantSettingsService.getTenantSettings(String(effectiveTenant?.id || 'default'));
+
     return res.json({
         ok: true,
         saasEnabled: tenantService.isSaasEnabled(),
         authEnabled: authService.isAuthEnabled(),
         socketAuthRequired: saasSocketAuthRequired,
-        tenant,
+        tenant: toPublicTenant(effectiveTenant),
         tenantSettings,
-        tenants: tenantService.getTenants().map((item) => ({
-            id: item.id,
-            slug: item.slug,
-            name: item.name,
-            active: item.active,
-            plan: item.plan
-        })),
+        tenants: (allowedTenants || []).map(toPublicTenant).filter(Boolean),
         authContext: {
             enabled: Boolean(authContext.enabled),
             isAuthenticated: Boolean(authContext.isAuthenticated),
@@ -295,6 +311,50 @@ app.post('/api/auth/refresh', async (req, res) => {
     }
 });
 
+app.post('/api/auth/switch-tenant', async (req, res) => {
+    try {
+        const authContext = req.authContext || { isAuthenticated: false, user: null };
+        if (authService.isAuthEnabled() && (!authContext.isAuthenticated || !authContext.user)) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        const accessToken = String(authService.getTokenFromRequest(req) || req.body?.accessToken || '').trim();
+        const refreshToken = String(req.body?.refreshToken || '').trim();
+        const targetTenantId = String(req.body?.targetTenantId || '').trim();
+
+        if (!targetTenantId) {
+            return res.status(400).json({ ok: false, error: 'targetTenantId es requerido.' });
+        }
+
+        const session = await authService.switchTenantSession({
+            accessToken,
+            refreshToken,
+            targetTenantId
+        });
+
+        await auditLogService.writeAuditLog(targetTenantId, {
+            userId: session?.user?.id || authContext?.user?.userId || null,
+            userEmail: session?.user?.email || authContext?.user?.email || null,
+            role: session?.user?.role || authContext?.user?.role || 'seller',
+            action: 'auth.tenant.switch.success',
+            resourceType: 'auth',
+            resourceId: session?.user?.id || null,
+            source: 'api',
+            ip: String(req.ip || ''),
+            payload: {
+                fromTenantId: authContext?.user?.tenantId || null,
+                toTenantId: targetTenantId
+            }
+        });
+
+        return res.json({ ok: true, ...session });
+    } catch (error) {
+        const message = String(error?.message || 'No se pudo cambiar de empresa.');
+        const status = /acceso|requerido|invalida|expirada/i.test(message) ? 400 : 500;
+        return res.status(status).json({ ok: false, error: message });
+    }
+});
+
 app.post('/api/auth/logout', async (req, res) => {
     try {
         const accessTokenFromRequest = authService.getTokenFromRequest(req);
@@ -342,10 +402,16 @@ app.get('/api/auth/me', (req, res) => {
         return res.status(401).json({ ok: false, error: 'No autenticado.' });
     }
 
+    const allowedTenants = authService
+        .getAllowedTenantsForUser(authContext.user || {}, tenantService.getTenants())
+        .map(toPublicTenant)
+        .filter(Boolean);
+
     return res.json({
         ok: true,
         user: authContext.user,
-        tenant: req.tenantContext || tenantService.DEFAULT_TENANT
+        tenant: toPublicTenant(req.tenantContext || tenantService.DEFAULT_TENANT),
+        tenants: allowedTenants
     });
 });
 

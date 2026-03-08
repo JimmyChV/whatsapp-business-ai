@@ -536,10 +536,7 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [qrCode, setQrCode] = useState('');
   const [isClientReady, setIsClientReady] = useState(false);
-  const [selectedTransport, setSelectedTransport] = useState(() => {
-    const saved = String(localStorage.getItem(TRANSPORT_STORAGE_KEY) || '').trim().toLowerCase();
-    return (saved === 'webjs' || saved === 'cloud') ? saved : '';
-  });
+  const [selectedTransport, setSelectedTransport] = useState('');
   const [waRuntime, setWaRuntime] = useState({ requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false, cloudReady: false, availableTransports: ['webjs', 'cloud'] });
   const [transportError, setTransportError] = useState('');
   const [isSwitchingTransport, setIsSwitchingTransport] = useState(false);
@@ -554,6 +551,8 @@ function App() {
   const [saasSession, setSaasSession] = useState(() => loadStoredSaasSession());
   const [saasAuthBusy, setSaasAuthBusy] = useState(false);
   const [saasAuthError, setSaasAuthError] = useState('');
+  const [tenantSwitchBusy, setTenantSwitchBusy] = useState(false);
+  const [tenantSwitchError, setTenantSwitchError] = useState('');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginTenantId, setLoginTenantId] = useState('');
@@ -908,8 +907,9 @@ function App() {
 
   useEffect(() => {
     selectedTransportRef.current = selectedTransport;
-    if (selectedTransport) localStorage.setItem(TRANSPORT_STORAGE_KEY, selectedTransport);
-    else localStorage.removeItem(TRANSPORT_STORAGE_KEY);
+    try {
+      localStorage.removeItem(TRANSPORT_STORAGE_KEY);
+    } catch (_) { }
   }, [selectedTransport]);
 
   useEffect(() => {
@@ -1659,6 +1659,7 @@ function App() {
 
     setSaasAuthBusy(true);
     setSaasAuthError('');
+    setTenantSwitchError('');
 
     try {
       const response = await fetch(`${API_URL}/api/auth/login`, {
@@ -1706,9 +1707,68 @@ function App() {
     }
     setSaasSession(null);
     setSaasAuthError('');
+    setTenantSwitchError('');
+    setTenantSwitchBusy(false);
     if (socket.connected) socket.disconnect();
     setIsConnected(false);
     resetWorkspaceState();
+  };
+
+  const handleSwitchTenant = async (nextTenantId = '') => {
+    if (!saasRuntimeRef.current?.authEnabled) return;
+    const current = saasSessionRef.current;
+    if (!current?.accessToken || !current?.refreshToken) return;
+
+    const targetTenantId = String(nextTenantId || '').trim();
+    const currentTenantId = String(current?.user?.tenantId || saasRuntimeRef.current?.tenant?.id || '').trim();
+    if (!targetTenantId || targetTenantId === currentTenantId) return;
+
+    setTenantSwitchError('');
+    setTenantSwitchBusy(true);
+
+    try {
+      const response = await fetch(`${API_URL}/api/auth/switch-tenant`, {
+        method: 'POST',
+        headers: buildApiHeaders({ includeJson: true, tokenOverride: String(current?.accessToken || ''), tenantIdOverride: currentTenantId }),
+        body: JSON.stringify({
+          targetTenantId,
+          refreshToken: String(current?.refreshToken || '')
+        })
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        throw new Error(String(payload?.error || 'No se pudo cambiar de empresa.'));
+      }
+
+      const nextSession = normalizeSaasSessionPayload(payload, current);
+      if (!nextSession) throw new Error('Sesion invalida al cambiar de empresa.');
+      if (payload?.user && typeof payload.user === 'object') nextSession.user = payload.user;
+
+      const targetTenant = (Array.isArray(saasRuntimeRef.current?.tenants) ? saasRuntimeRef.current.tenants : [])
+        .find((item) => String(item?.id || '').trim() === targetTenantId) || null;
+
+      setSaasSession(nextSession);
+      setSaasRuntime((prev) => ({
+        ...prev,
+        tenant: targetTenant || { id: targetTenantId, slug: targetTenantId, name: targetTenantId, active: true, plan: prev?.tenant?.plan || 'starter' },
+        authContext: {
+          ...(prev?.authContext || {}),
+          enabled: true,
+          isAuthenticated: true,
+          user: nextSession.user || prev?.authContext?.user || null
+        }
+      }));
+
+      if (socket.connected) socket.disconnect();
+      setIsConnected(false);
+      resetWorkspaceState();
+      setLoginTenantId(targetTenantId);
+    } catch (error) {
+      setTenantSwitchError(String(error?.message || 'No se pudo cambiar de empresa.'));
+    } finally {
+      setTenantSwitchBusy(false);
+    }
   };
 
   const handleChatSelect = (chatId, options = {}) => {
@@ -2100,7 +2160,22 @@ REGLA CRITICA:
   const selectedModeLabel = selectedTransport === 'cloud' ? 'WhatsApp Cloud API' : 'WhatsApp Web.js';
   const saasAuthEnabled = Boolean(saasRuntime?.authEnabled);
   const isSaasAuthenticated = !saasAuthEnabled || Boolean(saasSession?.accessToken);
-  const loginTenantOptions = Array.isArray(saasRuntime?.tenants) ? saasRuntime.tenants : [];
+  const runtimeTenantOptions = Array.isArray(saasRuntime?.tenants) ? saasRuntime.tenants : [];
+  const sessionMemberships = Array.isArray(saasSession?.user?.memberships) ? saasSession.user.memberships : [];
+  const tenantOptionsById = new Map();
+  runtimeTenantOptions.forEach((tenant) => {
+    const tenantId = String(tenant?.id || '').trim();
+    if (!tenantId) return;
+    tenantOptionsById.set(tenantId, tenant);
+  });
+  sessionMemberships.forEach((membership) => {
+    const tenantId = String(membership?.tenantId || '').trim();
+    if (!tenantId || tenantOptionsById.has(tenantId)) return;
+    tenantOptionsById.set(tenantId, { id: tenantId, slug: tenantId, name: tenantId, active: true, plan: 'starter' });
+  });
+  const availableTenantOptions = Array.from(tenantOptionsById.values());
+  const loginTenantOptions = runtimeTenantOptions;
+  const canSwitchTenant = saasAuthEnabled && isSaasAuthenticated && availableTenantOptions.length > 1;
 
   if (!saasRuntime?.loaded) {
     return (
@@ -2206,6 +2281,18 @@ REGLA CRITICA:
                 <span style={{ color: '#8ca3b3', fontSize: '0.78rem' }}>
                   Tenant: <strong style={{ color: '#d3e6f3' }}>{saasSession?.user?.tenantId || saasRuntime?.tenant?.id || 'default'}</strong>
                 </span>
+                {canSwitchTenant && (
+                  <select
+                    value={String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || '')}
+                    onChange={(e) => handleSwitchTenant(e.target.value)}
+                    disabled={tenantSwitchBusy}
+                    style={{ borderRadius: '999px', border: '1px solid rgba(124,200,255,0.45)', background: '#101a21', color: '#d3e6f3', padding: '4px 10px', fontSize: '0.74rem', outline: 'none', minWidth: '150px' }}
+                  >
+                    {availableTenantOptions.map((tenant) => (
+                      <option key={tenant.id} value={tenant.id}>{tenant.name || tenant.id}</option>
+                    ))}
+                  </select>
+                )}
                 <button
                   type='button'
                   onClick={handleSaasLogout}
@@ -2240,6 +2327,12 @@ REGLA CRITICA:
           {transportError && (
             <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,113,113,0.4)', background: 'rgba(255,113,113,0.08)', color: '#ffd1d1', fontSize: '0.82rem' }}>
               {transportError}
+            </div>
+          )}
+
+          {tenantSwitchError && (
+            <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,113,113,0.4)', background: 'rgba(255,113,113,0.08)', color: '#ffd1d1', fontSize: '0.82rem' }}>
+              {tenantSwitchError}
             </div>
           )}
 
@@ -2369,6 +2462,13 @@ REGLA CRITICA:
         activeFilters={chatFilters}
         onFiltersChange={handleChatFiltersChange}
         onOpenCompanyProfile={handleOpenCompanyProfile}
+        saasAuthEnabled={saasAuthEnabled}
+        tenantOptions={availableTenantOptions}
+        activeTenantId={tenantScopeId}
+        onSwitchTenant={handleSwitchTenant}
+        tenantSwitchBusy={tenantSwitchBusy}
+        tenantSwitchError={tenantSwitchError}
+        onSaasLogout={handleSaasLogout}
       />
 
       {/* Main Content Area */}
