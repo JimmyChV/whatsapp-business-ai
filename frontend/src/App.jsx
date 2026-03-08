@@ -2180,6 +2180,10 @@ REGLA CRITICA:
   const canSwitchTenant = saasAuthEnabled && isSaasAuthenticated && availableTenantOptions.length > 1;
   const canManageSaas = !saasAuthEnabled || Boolean(saasSession?.user?.canManageSaas || saasSession?.user?.isSuperAdmin);
 
+  useEffect(() => {
+    if (canManageSaas) return;
+    if (showSaasAdminPanel) setShowSaasAdminPanel(false);
+  }, [canManageSaas, showSaasAdminPanel]);
 
   if (!saasRuntime?.loaded) {
     return (
@@ -2304,6 +2308,15 @@ REGLA CRITICA:
                 >
                   Cerrar sesion SaaS
                 </button>
+                {canManageSaas && (
+                  <button
+                    type='button'
+                    onClick={() => setShowSaasAdminPanel(true)}
+                    style={{ background: 'transparent', border: '1px solid rgba(0,168,132,0.55)', color: '#baf6e8', borderRadius: '999px', padding: '4px 10px', fontSize: '0.74rem', cursor: 'pointer' }}
+                  >
+                    Panel SaaS
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -2326,6 +2339,13 @@ REGLA CRITICA:
               <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '6px' }}>WhatsApp Cloud API</div>
               <div style={{ fontSize: '0.82rem', color: '#9eb2bf', lineHeight: 1.5 }}>Escalable y estable para produccion. {cloudConfigured ? 'Configurada en backend.' : 'Faltan variables META_* en backend/.env.'}</div>
             </button>
+          </div>
+
+          <div style={{ marginTop: '12px', fontSize: '0.78rem', color: '#8ca3b3', lineHeight: 1.5 }}>
+            Regla actual de backend: <strong style={{ color: '#d3e6f3' }}>{String(waRuntime?.requestedTransport || 'dual')}</strong>.
+            {String(waRuntime?.requestedTransport || '').toLowerCase() === 'dual'
+              ? ' Dual significa que el usuario elige Web.js o Cloud al iniciar.'
+              : ' Si esta en webjs o cloud, ese modo queda forzado para todos.'}
           </div>
 
           {transportError && (
@@ -2605,6 +2625,9 @@ REGLA CRITICA:
 }
 
 export default App;
+
+
+
 
 
 

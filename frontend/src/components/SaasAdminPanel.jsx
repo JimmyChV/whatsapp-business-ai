@@ -47,6 +47,18 @@ function normalizeOverview(payload = {}) {
     };
 }
 
+function sanitizeMemberships(memberships = []) {
+    return (Array.isArray(memberships) ? memberships : [])
+        .map((entry) => ({
+            tenantId: String(entry?.tenantId || '').trim(),
+            role: ROLE_OPTIONS.includes(String(entry?.role || '').trim().toLowerCase())
+                ? String(entry?.role || '').trim().toLowerCase()
+                : 'seller',
+            active: entry?.active !== false
+        }))
+        .filter((entry) => entry.tenantId);
+}
+
 export default function SaasAdminPanel({
     isOpen = false,
     onClose,
@@ -59,6 +71,8 @@ export default function SaasAdminPanel({
     const [userForm, setUserForm] = useState(EMPTY_USER_FORM);
     const [settingsTenantId, setSettingsTenantId] = useState('');
     const [tenantSettings, setTenantSettings] = useState(EMPTY_SETTINGS);
+    const [editingMembershipUserId, setEditingMembershipUserId] = useState('');
+    const [membershipDraft, setMembershipDraft] = useState([]);
 
     const [busy, setBusy] = useState(false);
     const [loadingSettings, setLoadingSettings] = useState(false);
@@ -146,6 +160,43 @@ export default function SaasAdminPanel({
         }
     };
 
+    const openMembershipEditor = (user) => {
+        const cleanUserId = String(user?.id || '').trim();
+        if (!cleanUserId) return;
+        if (editingMembershipUserId === cleanUserId) {
+            setEditingMembershipUserId('');
+            setMembershipDraft([]);
+            return;
+        }
+        setEditingMembershipUserId(cleanUserId);
+        setMembershipDraft(sanitizeMemberships(user?.memberships || []));
+    };
+
+    const updateMembershipDraft = (index, patch = {}) => {
+        setMembershipDraft((prev) => prev.map((entry, entryIndex) => {
+            if (entryIndex !== index) return entry;
+            return {
+                ...entry,
+                ...patch,
+                role: ROLE_OPTIONS.includes(String(patch?.role || entry.role || '').trim().toLowerCase())
+                    ? String(patch?.role || entry.role).trim().toLowerCase()
+                    : 'seller'
+            };
+        }));
+    };
+
+    const removeMembershipDraft = (index) => {
+        setMembershipDraft((prev) => prev.filter((_, entryIndex) => entryIndex !== index));
+    };
+
+    const addMembershipDraft = () => {
+        const fallbackTenant = String(settingsTenantId || tenantOptions[0]?.id || '').trim();
+        setMembershipDraft((prev) => [
+            ...prev,
+            { tenantId: fallbackTenant, role: 'seller', active: true }
+        ]);
+    };
+
     useEffect(() => {
         if (!isOpen || !canManageSaas) return;
         runAction('Carga inicial', async () => {
@@ -218,6 +269,14 @@ export default function SaasAdminPanel({
                         <strong>{String(activeTenantId || '-')}</strong>
                     </div>
                 </div>
+
+                <section className="saas-admin-card saas-admin-card--full saas-admin-flow-card">
+                    <h3>Flujo operativo recomendado</h3>
+                    <p>1) Superadmin crea empresa(s) y define plan/modulos.</p>
+                    <p>2) Superadmin crea usuarios y asigna membresias (empresa + rol).</p>
+                    <p>3) Usuario de empresa inicia sesion, elige su empresa y luego el modo WhatsApp (Dual/Webjs/Cloud segun backend).</p>
+                    <p>4) La operacion diaria (chats, catalogo, IA) corre aislada por tenant activo.</p>
+                </section>
 
                 <div className="saas-admin-grid">
                     <section className="saas-admin-card">
@@ -336,7 +395,7 @@ export default function SaasAdminPanel({
                         </div>
                         <div className="saas-admin-form-row">
                             <select value={userForm.tenantId} onChange={(event) => setUserForm((prev) => ({ ...prev, tenantId: event.target.value }))}>
-                                <option value="">Tenant</option>
+                                <option value="">Tenant inicial</option>
                                 {tenantOptions.map((tenant) => (
                                     <option key={tenant.id} value={tenant.id}>{tenant.name || tenant.id}</option>
                                 ))}
@@ -368,42 +427,106 @@ export default function SaasAdminPanel({
                         </button>
 
                         <div className="saas-admin-list">
-                            {(overview.users || []).map((user) => (
-                                <div key={user.id} className="saas-admin-list-item">
-                                    <div>
-                                        <strong>{user.name || user.email}</strong>
-                                        <small>{user.email}</small>
-                                        <small>
-                                            {(user.memberships || []).map((membership) => `${membership.tenantId}:${membership.role}`).join(' · ') || 'sin membresias'}
-                                        </small>
+                            {(overview.users || []).map((user) => {
+                                const userMemberships = sanitizeMemberships(user?.memberships || []);
+                                const isEditing = editingMembershipUserId === user.id;
+                                return (
+                                    <div key={user.id} className="saas-admin-list-item saas-admin-list-item--stacked">
+                                        <div>
+                                            <strong>{user.name || user.email}</strong>
+                                            <small>{user.email}</small>
+                                            <small>
+                                                {userMemberships.map((membership) => `${membership.tenantId}:${membership.role}${membership.active ? '' : '(off)'}`).join(' · ') || 'sin membresias'}
+                                            </small>
+                                        </div>
+
+                                        <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                            <button type="button" disabled={busy} onClick={() => openMembershipEditor(user)}>
+                                                {isEditing ? 'Cerrar membresias' : 'Membresias'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={busy}
+                                                onClick={() => runAction('Usuario actualizado', async () => {
+                                                    await requestJson(`/api/admin/saas/users/${encodeURIComponent(user.id)}`, {
+                                                        method: 'PUT',
+                                                        body: { active: user.active === false }
+                                                    });
+                                                })}
+                                            >
+                                                {user.active === false ? 'Activar' : 'Desactivar'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={busy}
+                                                onClick={() => runAction('Usuario eliminado', async () => {
+                                                    await requestJson(`/api/admin/saas/users/${encodeURIComponent(user.id)}`, {
+                                                        method: 'DELETE'
+                                                    });
+                                                })}
+                                            >
+                                                Eliminar
+                                            </button>
+                                        </div>
+
+                                        {isEditing && (
+                                            <div className="saas-admin-membership-editor">
+                                                {(membershipDraft || []).map((membership, index) => (
+                                                    <div key={`${user.id}_membership_${index}`} className="saas-admin-membership-row">
+                                                        <select
+                                                            value={membership.tenantId}
+                                                            onChange={(event) => updateMembershipDraft(index, { tenantId: event.target.value })}
+                                                            disabled={busy}
+                                                        >
+                                                            <option value="">Tenant</option>
+                                                            {tenantOptions.map((tenant) => (
+                                                                <option key={tenant.id} value={tenant.id}>{tenant.name || tenant.id}</option>
+                                                            ))}
+                                                        </select>
+                                                        <select
+                                                            value={membership.role}
+                                                            onChange={(event) => updateMembershipDraft(index, { role: event.target.value })}
+                                                            disabled={busy}
+                                                        >
+                                                            {ROLE_OPTIONS.map((role) => (
+                                                                <option key={role} value={role}>{role}</option>
+                                                            ))}
+                                                        </select>
+                                                        <label className="saas-admin-membership-active">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={membership.active !== false}
+                                                                onChange={(event) => updateMembershipDraft(index, { active: event.target.checked })}
+                                                                disabled={busy}
+                                                            />
+                                                            Activo
+                                                        </label>
+                                                        <button type="button" disabled={busy} onClick={() => removeMembershipDraft(index)}>Quitar</button>
+                                                    </div>
+                                                ))}
+
+                                                <div className="saas-admin-membership-actions">
+                                                    <button type="button" disabled={busy} onClick={addMembershipDraft}>Agregar fila</button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={busy || sanitizeMemberships(membershipDraft).length === 0}
+                                                        onClick={() => runAction('Membresias actualizadas', async () => {
+                                                            await requestJson(`/api/admin/saas/users/${encodeURIComponent(user.id)}/memberships`, {
+                                                                method: 'PUT',
+                                                                body: { memberships: sanitizeMemberships(membershipDraft) }
+                                                            });
+                                                            setEditingMembershipUserId('');
+                                                            setMembershipDraft([]);
+                                                        })}
+                                                    >
+                                                        Guardar membresias
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="saas-admin-list-actions">
-                                        <button
-                                            type="button"
-                                            disabled={busy}
-                                            onClick={() => runAction('Usuario actualizado', async () => {
-                                                await requestJson(`/api/admin/saas/users/${encodeURIComponent(user.id)}`, {
-                                                    method: 'PUT',
-                                                    body: { active: user.active === false }
-                                                });
-                                            })}
-                                        >
-                                            {user.active === false ? 'Activar' : 'Desactivar'}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            disabled={busy}
-                                            onClick={() => runAction('Usuario eliminado', async () => {
-                                                await requestJson(`/api/admin/saas/users/${encodeURIComponent(user.id)}`, {
-                                                    method: 'DELETE'
-                                                });
-                                            })}
-                                        >
-                                            Eliminar
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </section>
 
