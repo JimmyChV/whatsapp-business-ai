@@ -402,6 +402,36 @@ const resolveLocationData = (msg = {}) => {
         source
     };
 };
+const GROUP_SENDER_COLORS = [
+    '#53bdeb', // azul
+    '#ff8f8f', // coral
+    '#7bc48f', // verde suave
+    '#e6a45c', // naranja
+    '#b39ddb', // lavanda
+    '#4dd0c8', // turquesa
+    '#f48fb1', // rosa
+    '#81c784', // verde
+    '#90caf9', // celeste
+    '#ffd54f', // amarillo
+];
+
+const getStableHash = (seed = '') => {
+    const source = String(seed || '');
+    if (!source) return 0;
+    let hash = 0;
+    for (let i = 0; i < source.length; i += 1) {
+        hash = ((hash << 5) - hash) + source.charCodeAt(i);
+        hash |= 0;
+    }
+    return Math.abs(hash);
+};
+
+const getGroupSenderColor = (seed = '') => {
+    if (!seed) return '#7de6d2';
+    const idx = getStableHash(seed) % GROUP_SENDER_COLORS.length;
+    return GROUP_SENDER_COLORS[idx] || '#7de6d2';
+};
+
 const MessageBubble = ({
     msg,
     onPrefillMessage,
@@ -601,6 +631,14 @@ const MessageBubble = ({
         : null;
 
     const messageSenderName = String(senderDisplayName || msg?.notifyName || msg?.senderPushname || '').trim();
+    const senderIdentityKey = String(
+        msg?.senderId
+        || msg?.author
+        || msg?.senderPhone
+        || messageSenderName
+        || ''
+    ).trim().toLowerCase();
+    const senderNameColor = getGroupSenderColor(senderIdentityKey);
 
     const canEditMessage = Boolean(
         canEditMessages
@@ -864,7 +902,7 @@ const MessageBubble = ({
             
             <div className={`message-content ${canEditMessage ? 'can-edit' : ''}`} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
                 {showSenderName && messageSenderName && (
-                    <div className="message-sender-name" title={messageSenderName}>
+                    <div className="message-sender-name" title={messageSenderName} style={{ color: senderNameColor }}>
                         {messageSenderName}
                     </div>
                 )}
