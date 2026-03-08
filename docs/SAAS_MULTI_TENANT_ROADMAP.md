@@ -109,3 +109,23 @@ Objetivo: convertirlo en plataforma multiempresa con login por usuario, aislamie
 
 
 
+
+## Fase 6 - Control Plane SaaS (actual)
+- Backend:
+  - Servicio de control plane (`saas_control_plane_service`) para CRUD de empresas/usuarios/membresias.
+  - Limites por plan y modulos (`plan_limits_service`) con override por `SAAS_PLAN_LIMITS_JSON`.
+  - Contador de uso IA mensual por tenant (`ai_usage_service`) persistido por tenant.
+  - Endpoints admin SaaS para overview, CRUD de empresas/usuarios y configuracion por tenant.
+- Frontend:
+  - Panel SaaS para administrar empresas, usuarios y modulos por tenant.
+  - Acceso al panel desde el menu lateral para usuarios con permisos.
+- Enforcement:
+  - IA sujeta a modulo `aiPro` y cuota mensual por plan.
+  - Catalogo y respuestas rapidas sujetos a modulos habilitados por tenant.
+
+### Estado Fase 6
+- [x] Bloque 1: control plane backend (empresas/usuarios/membresias)
+- [x] Bloque 2: limites por plan + cuota IA mensual
+- [x] Bloque 3: API admin SaaS (overview + CRUD + settings)
+- [x] Bloque 4: panel SaaS en frontend
+- [x] Bloque 5: enforcement por modulos/plan en socket

@@ -104,6 +104,8 @@ const Sidebar = ({
     tenantSwitchBusy = false,
     tenantSwitchError = '',
     onSaasLogout,
+    canManageSaas = false,
+    onOpenSaasAdmin,
 }) => {
     const [showMenu, setShowMenu] = useState(false);
     const [showLabelPanel, setShowLabelPanel] = useState(false);
@@ -370,6 +372,11 @@ const Sidebar = ({
                                     )}
                                 </div>
                             )}
+                            {saasAuthEnabled && canManageSaas && (
+                                <button type="button" className="sidebar-menu-item" onClick={() => { onOpenSaasAdmin?.(); setShowMenu(false); }}>
+                                    Panel SaaS
+                                </button>
+                            )}
                             <button type="button" className="sidebar-menu-item" onClick={() => { onStartNewChat?.(); setShowMenu(false); }}>
                                 Nuevo chat (numero)
                             </button>
@@ -609,4 +616,6 @@ const Sidebar = ({
 };
 
 export default Sidebar;
+
+
 

@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import Sidebar from './components/Sidebar';
 import BusinessSidebar, { ClientProfilePanel } from './components/BusinessSidebar';
 import ChatWindow from './components/ChatWindow';
+import SaasAdminPanel from './components/SaasAdminPanel';
 
 import './index.css';
 
@@ -553,6 +554,7 @@ function App() {
   const [saasAuthError, setSaasAuthError] = useState('');
   const [tenantSwitchBusy, setTenantSwitchBusy] = useState(false);
   const [tenantSwitchError, setTenantSwitchError] = useState('');
+  const [showSaasAdminPanel, setShowSaasAdminPanel] = useState(false);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginTenantId, setLoginTenantId] = useState('');
@@ -2176,6 +2178,8 @@ REGLA CRITICA:
   const availableTenantOptions = Array.from(tenantOptionsById.values());
   const loginTenantOptions = runtimeTenantOptions;
   const canSwitchTenant = saasAuthEnabled && isSaasAuthenticated && availableTenantOptions.length > 1;
+  const canManageSaas = !saasAuthEnabled || Boolean(saasSession?.user?.canManageSaas || saasSession?.user?.isSuperAdmin);
+
 
   if (!saasRuntime?.loaded) {
     return (
@@ -2469,6 +2473,8 @@ REGLA CRITICA:
         tenantSwitchBusy={tenantSwitchBusy}
         tenantSwitchError={tenantSwitchError}
         onSaasLogout={handleSaasLogout}
+        canManageSaas={canManageSaas}
+        onOpenSaasAdmin={() => setShowSaasAdminPanel(true)}
       />
 
       {/* Main Content Area */}
@@ -2586,8 +2592,24 @@ REGLA CRITICA:
           />
         )}
       </div>
+
+      <SaasAdminPanel
+        isOpen={showSaasAdminPanel}
+        onClose={() => setShowSaasAdminPanel(false)}
+        buildApiHeaders={buildApiHeaders}
+        activeTenantId={tenantScopeId}
+        canManageSaas={canManageSaas}
+      />
     </div>
   );
 }
 
 export default App;
+
+
+
+
+
+
+
+

@@ -1,4 +1,5 @@
 const { parseCsvEnv } = require('./security_utils');
+const saasControlService = require('./saas_control_plane_service');
 
 function parseBooleanEnv(value, defaultValue = false) {
     const raw = String(value ?? '').trim().toLowerCase();
@@ -47,18 +48,33 @@ function parseTenantsFromEnv() {
     }
 }
 
+function fromControlPlaneSync() {
+    try {
+        const items = saasControlService.listTenantsSync({ includeInactive: true });
+        return (Array.isArray(items) ? items : [])
+            .map((tenant, idx) => normalizeTenant(tenant, idx))
+            .filter(Boolean);
+    } catch (_) {
+        return [];
+    }
+}
+
 function getTenants() {
     const saasEnabled = parseBooleanEnv(process.env.SAAS_ENABLED, false);
     if (!saasEnabled) return [DEFAULT_TENANT];
 
+    const fromControl = fromControlPlaneSync();
     const envTenants = parseTenantsFromEnv();
-    if (!envTenants.length) return [DEFAULT_TENANT];
 
     const dedup = new Map();
-    envTenants.forEach((tenant) => {
+    [...envTenants, ...fromControl].forEach((tenant) => {
         if (!tenant?.id) return;
         dedup.set(tenant.id, tenant);
     });
+
+    if (!dedup.size) {
+        dedup.set(DEFAULT_TENANT.id, DEFAULT_TENANT);
+    }
 
     if (!dedup.has(DEFAULT_TENANT.id)) {
         dedup.set(DEFAULT_TENANT.id, DEFAULT_TENANT);

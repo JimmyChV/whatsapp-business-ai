@@ -5,6 +5,9 @@ const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./cat
 const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
 const { listQuickReplies, addQuickReply, updateQuickReply, deleteQuickReply } = require('./quick_replies_manager');
 const tenantSettingsService = require('./tenant_settings_service');
+const tenantService = require('./tenant_service');
+const planLimitsService = require('./plan_limits_service');
+const aiUsageService = require('./ai_usage_service');
 const messageHistoryService = require('./message_history_service');
 const auditLogService = require('./audit_log_service');
 const RateLimiter = require('./rate_limiter');
@@ -2014,6 +2017,39 @@ class SocketManager {
     }
 
 
+    async isFeatureEnabledForTenant(tenantId = 'default', featureKey = '') {
+        const cleanTenantId = String(tenantId || 'default').trim() || 'default';
+        const tenant = tenantService.findTenantById(cleanTenantId) || tenantService.DEFAULT_TENANT;
+        const tenantSettings = await tenantSettingsService.getTenantSettings(cleanTenantId);
+        return planLimitsService.isFeatureEnabledForTenant(featureKey, tenant, tenantSettings);
+    }
+
+    async reserveAiQuota(tenantId = 'default', { socket = null } = {}) {
+        const cleanTenantId = String(tenantId || 'default').trim() || 'default';
+        const tenant = tenantService.findTenantById(cleanTenantId) || tenantService.DEFAULT_TENANT;
+        const tenantSettings = await tenantSettingsService.getTenantSettings(cleanTenantId);
+
+        const aiEnabled = planLimitsService.isFeatureEnabledForTenant('aiPro', tenant, tenantSettings);
+        if (!aiEnabled) {
+            if (socket) socket.emit('ai_error', 'La IA esta deshabilitada para esta empresa o plan.');
+            return { ok: false, reason: 'disabled' };
+        }
+
+        const limits = planLimitsService.getTenantPlanLimits(tenant);
+        const used = await aiUsageService.getMonthlyUsage(cleanTenantId);
+        const limit = Number(limits?.maxMonthlyAiRequests || 0);
+
+        if (Number.isFinite(limit) && limit > 0 && used >= limit) {
+            if (socket) {
+                socket.emit('ai_error', 'Se alcanzo el limite mensual de IA (' + limit + ') para el plan ' + (tenant.plan || 'starter') + '.');
+            }
+            return { ok: false, reason: 'quota_exceeded', used, limit };
+        }
+
+        const next = await aiUsageService.incrementMonthlyUsage(cleanTenantId, { incrementBy: 1 });
+        return { ok: true, used: next, limit };
+    }
+
     getTenantRoom(tenantId = 'default') {
         const cleanTenant = String(tenantId || 'default').trim() || 'default';
         return 'tenant:' + cleanTenant;
@@ -3187,6 +3223,11 @@ class SocketManager {
             });
             socket.on('get_quick_replies', async () => {
                 try {
+                    const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
+                    if (!quickRepliesEnabled) {
+                        socket.emit('quick_replies', { items: [], source: 'disabled' });
+                        return;
+                    }
 
                     const caps = this.getWaCapabilities();
                     if (!caps.quickRepliesRead || typeof waClient.client?.getQuickReplies !== 'function') {
@@ -3201,14 +3242,29 @@ class SocketManager {
             });
 
             socket.on('add_quick_reply', async () => {
+                const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
+                if (!quickRepliesEnabled) {
+                    socket.emit('quick_reply_error', 'Respuestas rapidas deshabilitadas para esta empresa o plan.');
+                    return;
+                }
                 socket.emit('quick_reply_error', 'WhatsApp Web no expone crear respuestas rapidas por API en esta version.');
             });
 
             socket.on('update_quick_reply', async () => {
+                const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
+                if (!quickRepliesEnabled) {
+                    socket.emit('quick_reply_error', 'Respuestas rapidas deshabilitadas para esta empresa o plan.');
+                    return;
+                }
                 socket.emit('quick_reply_error', 'WhatsApp Web no expone editar respuestas rapidas por API en esta version.');
             });
 
             socket.on('delete_quick_reply', async () => {
+                const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
+                if (!quickRepliesEnabled) {
+                    socket.emit('quick_reply_error', 'Respuestas rapidas deshabilitadas para esta empresa o plan.');
+                    return;
+                }
                 socket.emit('quick_reply_error', 'WhatsApp Web no expone eliminar respuestas rapidas por API en esta version.');
             });
 
@@ -3431,6 +3487,11 @@ class SocketManager {
             socket.on('send_catalog_product', async (payload = {}) => {
                 if (!guardRateLimit(socket, 'send_catalog_product')) return;
                 if (!this.ensureTransportReady(socket, { action: 'enviar productos de catalogo', errorEvent: 'error' })) return;
+                const catalogEnabled = await this.isFeatureEnabledForTenant(tenantId, 'catalog');
+                if (!catalogEnabled) {
+                    socket.emit('error', 'Catalogo deshabilitado para esta empresa o plan.');
+                    return;
+                }
                 try {
                     const to = String(payload?.to || '').trim();
                     if (!to) {
@@ -3483,6 +3544,12 @@ class SocketManager {
                 // Defer to avoid blocking the event loop (prevents 'click handler took Xms' violations)
                 setImmediate(async () => {
                     try {
+                        const quota = await this.reserveAiQuota(tenantId, { socket });
+                        if (!quota?.ok) {
+                            socket.emit('ai_suggestion_complete');
+                            return;
+                        }
+
                         const aiText = await getChatSuggestion(contextText, customPrompt, (chunk) => {
                             socket.emit('ai_suggestion_chunk', chunk);
                         }, businessContext);
@@ -3506,6 +3573,12 @@ class SocketManager {
                 // Defer to avoid blocking the event loop
                 setImmediate(async () => {
                     try {
+                        const quota = await this.reserveAiQuota(tenantId, { socket });
+                        if (!quota?.ok) {
+                            socket.emit('internal_ai_complete');
+                            return;
+                        }
+
                         const copilotText = await askInternalCopilot(query, (chunk) => {
                             socket.emit('internal_ai_chunk', chunk);
                         }, businessContext);
@@ -3595,6 +3668,26 @@ class SocketManager {
 
                     const tenantSettings = await tenantSettingsService.getTenantSettings(tenantId);
                     const catalogMode = String(tenantSettings?.catalogMode || 'hybrid').trim().toLowerCase();
+                    const tenantPlan = tenantService.findTenantById(tenantId) || tenantService.DEFAULT_TENANT;
+                    const catalogEnabled = planLimitsService.isFeatureEnabledForTenant('catalog', tenantPlan, tenantSettings);
+                    if (!catalogEnabled) {
+                        socket.emit('business_data', {
+                            profile,
+                            labels,
+                            catalog: [],
+                            catalogMeta: {
+                                source: 'disabled',
+                                mode: catalogMode,
+                                nativeAvailable: false,
+                                wooConfigured: isWooConfigured(),
+                                wooAvailable: false,
+                                disabledReason: 'catalog_module_disabled',
+                                categories: []
+                            },
+                            tenantSettings
+                        });
+                        return;
+                    }
 
                     // Catalog source by tenant setting:
                     // hybrid: native -> woo -> local
@@ -3702,6 +3795,21 @@ class SocketManager {
             socket.on('add_product', async (product) => {
                 if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'agregar productos al catalogo' })) return;
                 try {
+                    const catalogEnabled = await this.isFeatureEnabledForTenant(tenantId, 'catalog');
+                    if (!catalogEnabled) {
+                        socket.emit('error', 'Catalogo deshabilitado para esta empresa o plan.');
+                        return;
+                    }
+
+                    const tenant = tenantService.findTenantById(tenantId) || tenantService.DEFAULT_TENANT;
+                    const limits = planLimitsService.getTenantPlanLimits(tenant);
+                    const currentCatalog = await loadCatalog({ tenantId });
+                    const maxCatalogItems = Number(limits?.maxCatalogItems || 0);
+                    if (Number.isFinite(maxCatalogItems) && maxCatalogItems > 0 && currentCatalog.length >= maxCatalogItems) {
+                        socket.emit('error', 'No puedes agregar mas productos: limite del plan (' + maxCatalogItems + ').');
+                        return;
+                    }
+
                     const newProduct = await addProduct(product, { tenantId });
                     const tenantCatalog = await loadCatalog({ tenantId });
                     this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
@@ -3717,6 +3825,12 @@ class SocketManager {
             socket.on('update_product', async ({ id, updates }) => {
                 if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'editar productos del catalogo' })) return;
                 try {
+                    const catalogEnabled = await this.isFeatureEnabledForTenant(tenantId, 'catalog');
+                    if (!catalogEnabled) {
+                        socket.emit('error', 'Catalogo deshabilitado para esta empresa o plan.');
+                        return;
+                    }
+
                     const updated = await updateProduct(id, updates, { tenantId });
                     const tenantCatalog = await loadCatalog({ tenantId });
                     this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
@@ -3732,6 +3846,12 @@ class SocketManager {
             socket.on('delete_product', async (id) => {
                 if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'eliminar productos del catalogo' })) return;
                 try {
+                    const catalogEnabled = await this.isFeatureEnabledForTenant(tenantId, 'catalog');
+                    if (!catalogEnabled) {
+                        socket.emit('error', 'Catalogo deshabilitado para esta empresa o plan.');
+                        return;
+                    }
+
                     await deleteProduct(id, { tenantId });
                     const tenantCatalog = await loadCatalog({ tenantId });
                     this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
@@ -4136,4 +4256,11 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
+
+
+
+
+
+
 

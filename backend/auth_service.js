@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const authSessionService = require('./auth_session_service');
 const tenantService = require('./tenant_service');
+const saasControlService = require('./saas_control_plane_service');
 
 function parseBooleanEnv(value, defaultValue = false) {
     const raw = String(value ?? '').trim().toLowerCase();
@@ -141,10 +142,16 @@ function parseUsersFromEnv() {
     }
 }
 
+function getAuthUsersRecords() {
+    const fromControl = saasControlService.getUsersForAuthSync();
+    if (Array.isArray(fromControl) && fromControl.length > 0) return fromControl;
+    return parseUsersFromEnv();
+}
+
 function findUserRecord({ userId = '', email = '' } = {}) {
     const cleanUserId = String(userId || '').trim();
     const cleanEmail = String(email || '').trim().toLowerCase();
-    const users = parseUsersFromEnv();
+    const users = getAuthUsersRecords();
 
     if (cleanUserId) {
         const byId = users.find((item) => String(item?.id || '').trim() === cleanUserId);
@@ -265,6 +272,7 @@ function resolveScopedUser(user = {}, requestedTenantId = '') {
 function sanitizeUser(user = {}) {
     const scoped = resolveScopedUser(user, user?.tenantId);
     const memberships = sanitizeMemberships(scoped.memberships);
+    const isSuperAdmin = saasControlService.isSuperAdminUser(scoped);
     return {
         id: scoped.id,
         email: scoped.email,
@@ -272,7 +280,9 @@ function sanitizeUser(user = {}) {
         role: normalizeRole(scoped.role),
         name: scoped.name,
         memberships,
-        canSwitchTenant: memberships.length > 1
+        canSwitchTenant: memberships.length > 1,
+        isSuperAdmin,
+        canManageSaas: Boolean(isSuperAdmin || normalizeRole(scoped.role) === 'owner')
     };
 }
 
@@ -295,7 +305,9 @@ function hydrateAuthUser(auth = null) {
             role: safeFallback.role,
             name: safeFallback.name,
             memberships: safeFallback.memberships,
-            canSwitchTenant: safeFallback.canSwitchTenant
+            canSwitchTenant: safeFallback.canSwitchTenant,
+            isSuperAdmin: safeFallback.isSuperAdmin,
+            canManageSaas: safeFallback.canManageSaas
         };
     }
 
@@ -311,7 +323,9 @@ function hydrateAuthUser(auth = null) {
         role: safeScoped.role,
         name: safeScoped.name,
         memberships: safeScoped.memberships,
-        canSwitchTenant: safeScoped.canSwitchTenant
+        canSwitchTenant: safeScoped.canSwitchTenant,
+        isSuperAdmin: safeScoped.isSuperAdmin,
+        canManageSaas: safeScoped.canManageSaas
     };
 }
 
@@ -387,7 +401,8 @@ async function login({ email = '', password = '', tenantId = '', tenantSlug = ''
 
     const cleanEmail = String(email || '').trim().toLowerCase();
     const requestedTenantId = resolveRequestedTenantId({ tenantId, tenantSlug });
-    const users = parseUsersFromEnv();
+    await saasControlService.ensureLoaded();
+    const users = getAuthUsersRecords();
     if (!users.length) {
         throw new Error('No hay usuarios configurados en SAAS_USERS_JSON.');
     }
@@ -429,6 +444,7 @@ async function refreshSession({ refreshToken = '' } = {}) {
         throw new Error('Refresh token requerido.');
     }
 
+    await saasControlService.ensureLoaded();
     const rotated = await authSessionService.rotateRefreshSession(cleanRefreshToken);
     if (!rotated) {
         throw new Error('Refresh token invalido o expirado.');
@@ -468,6 +484,7 @@ async function switchTenantSession({ accessToken = '', refreshToken = '', target
         throw new Error('Falta SAAS_AUTH_SECRET para cambiar de tenant.');
     }
 
+    await saasControlService.ensureLoaded();
     const cleanTargetTenantId = normalizeTenantId(targetTenantId);
     if (!cleanTargetTenantId) {
         throw new Error('targetTenantId es requerido.');
@@ -600,9 +617,11 @@ async function logoutSession({ accessToken = '', refreshToken = '', reason = 'lo
                     role: auth.role,
                     name: auth.name,
                     memberships: sanitizeMemberships(auth.memberships || []),
-                    canSwitchTenant: Boolean(auth.canSwitchTenant)
-                }
-                : null
+                    canSwitchTenant: Boolean(auth.canSwitchTenant),
+                isSuperAdmin: Boolean(auth.isSuperAdmin),
+                canManageSaas: Boolean(auth.canManageSaas)
+            }
+            : null
         };
     }
 
@@ -618,7 +637,9 @@ async function logoutSession({ accessToken = '', refreshToken = '', reason = 'lo
                 role: auth.role,
                 name: auth.name,
                 memberships: sanitizeMemberships(auth.memberships || []),
-                canSwitchTenant: Boolean(auth.canSwitchTenant)
+                canSwitchTenant: Boolean(auth.canSwitchTenant),
+                isSuperAdmin: Boolean(auth.isSuperAdmin),
+                canManageSaas: Boolean(auth.canManageSaas)
             }
             : null
     };
@@ -660,3 +681,5 @@ module.exports = {
     getAllowedTenantsForUser,
     findUserRecord
 };
+
+
