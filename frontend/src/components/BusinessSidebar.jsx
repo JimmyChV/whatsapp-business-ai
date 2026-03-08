@@ -952,7 +952,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 
 // =========================================================
 
-const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activeChatId, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0 }) => {
+const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0 }) => {
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     const companyProfileRef = useRef(null);
@@ -979,12 +979,40 @@ const BusinessSidebar = ({ setInputText, businessData = {}, messages = [], activ
     const [quickSearch, setQuickSearch] = useState('');
     const [orderImportStatus, setOrderImportStatus] = useState(null);
     const lastImportedOrderRef = useRef('');
+    const tenantScopeRef = useRef(String(tenantScopeKey || 'default').trim() || 'default');
 
     const catalog = (businessData.catalog || []).map((item, idx) => normalizeCatalogItem(item, idx));
     const labels = businessData.labels || [];
     const profile = businessData.profile || myProfile || null;
     const quickRepliesEnabled = Boolean(waCapabilities?.quickReplies || waCapabilities?.quickRepliesRead || waCapabilities?.quickRepliesWrite);
     const quickRepliesWriteEnabled = Boolean(waCapabilities?.quickRepliesWrite);
+
+    useEffect(() => {
+        const nextScope = String(tenantScopeKey || 'default').trim() || 'default';
+        if (tenantScopeRef.current === nextScope) return;
+        tenantScopeRef.current = nextScope;
+
+        setActiveTab('ai');
+        setShowCompanyProfile(false);
+        setAiMessages([
+            { role: 'assistant', content: 'Hola, soy tu asistente de ventas de Lavitat con IA OpenAI. Estoy viendo la conversacion y te ayudare a cerrar mejor.\n\nPrueba: "Dame 3 opciones de respuesta" o "Como manejo una objecion de precio".' }
+        ]);
+        setAiInput('');
+        setCart([]);
+        setShowOrderAdjustments(false);
+        setGlobalDiscountEnabled(false);
+        setGlobalDiscountType('percent');
+        setGlobalDiscountValue(0);
+        setDeliveryType('free');
+        setDeliveryAmount(0);
+        setShowCartTotalsBreakdown(true);
+        setCartDraftsByChat({});
+        setQuickForm({ label: '', text: '' });
+        setQuickEditId('');
+        setQuickSearch('');
+        setOrderImportStatus(null);
+        lastImportedOrderRef.current = '';
+    }, [tenantScopeKey]);
 
     useEffect(() => {
         setOrderImportStatus(null);

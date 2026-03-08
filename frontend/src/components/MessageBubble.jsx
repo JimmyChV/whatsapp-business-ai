@@ -627,6 +627,7 @@ const MessageBubble = ({
     canEditMessages = true,
     showSenderName = false,
     senderDisplayName = '',
+    buildApiHeaders,
 }) => {
     const isOut = msg.fromMe;
 
@@ -730,7 +731,9 @@ const MessageBubble = ({
             try {
                 setWebPreviewLoading(true);
                 const encoded = encodeURIComponent(firstNonMapUrl);
-                const response = await fetch(`${API_URL}/api/link-preview?url=${encoded}`);
+                const response = await fetch(`${API_URL}/api/link-preview?url=${encoded}`, {
+                    headers: typeof buildApiHeaders === 'function' ? buildApiHeaders() : undefined
+                });
                 const payload = await response.json();
                 const nextPreview = payload?.ok
                     ? payload
@@ -1516,18 +1519,3 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

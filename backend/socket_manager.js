@@ -4,6 +4,9 @@ const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
 const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
 const { listQuickReplies, addQuickReply, updateQuickReply, deleteQuickReply } = require('./quick_replies_manager');
+const tenantSettingsService = require('./tenant_settings_service');
+const messageHistoryService = require('./message_history_service');
+const auditLogService = require('./audit_log_service');
 const RateLimiter = require('./rate_limiter');
 const { URL } = require('url');
 const { resolveAndValidatePublicHost } = require('./security_utils');
@@ -23,6 +26,7 @@ const SENDER_META_TTL_MS = Math.max(60 * 1000, Number(process.env.SENDER_META_TT
 const senderMetaCache = new Map();
 const GROUP_PARTICIPANT_CONTACT_TTL_MS = Math.max(5 * 60 * 1000, Number(process.env.GROUP_PARTICIPANT_CONTACT_TTL_MS || (30 * 60 * 1000)));
 const groupParticipantContactCache = new Map();
+const SOCKET_RBAC_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAAS_AUTH_ENABLED || '').trim().toLowerCase());
 
 function guardRateLimit(socket, eventName) {
     const key = `${socket.id}:${eventName}`;
@@ -2018,6 +2022,334 @@ class SocketManager {
     emitToTenant(tenantId, eventName, payload) {
         this.io.to(this.getTenantRoom(tenantId)).emit(eventName, payload);
     }
+
+    async persistMessageHistory(tenantId, {
+        msg,
+        senderMeta = null,
+        fileMeta = null,
+        order = null,
+        location = null,
+        quotedMessage = null
+    } = {}) {
+        try {
+            if (!msg) return;
+            const messageId = String(msg?.id?._serialized || '').trim();
+            const chatId = String(msg?.fromMe ? msg?.to : msg?.from || '').trim();
+            if (!messageId || !chatId) return;
+
+            await messageHistoryService.upsertMessage(tenantId, {
+                messageId,
+                chatId,
+                fromMe: Boolean(msg?.fromMe),
+                senderId: senderMeta?.senderId || null,
+                senderPhone: senderMeta?.senderPhone || null,
+                authorId: String(msg?.author || msg?._data?.author || '').trim() || null,
+                body: msg?.body || '',
+                messageType: msg?.type || null,
+                timestampUnix: Number(msg?.timestamp || 0) || Math.floor(Date.now() / 1000),
+                ack: Number.isFinite(Number(msg?.ack)) ? Number(msg?.ack) : null,
+                edited: false,
+                hasMedia: Boolean(msg?.hasMedia),
+                mediaMime: fileMeta?.mimetype || null,
+                mediaFilename: fileMeta?.filename || null,
+                mediaSizeBytes: Number(fileMeta?.fileSizeBytes || 0) || null,
+                quotedMessageId: quotedMessage?.id || null,
+                orderPayload: order && typeof order === 'object' ? order : null,
+                locationPayload: location && typeof location === 'object' ? location : null,
+                metadata: {
+                    notifyName: senderMeta?.notifyName || null,
+                    senderPushname: senderMeta?.senderPushname || null,
+                    isGroupMessage: Boolean(senderMeta?.isGroupMessage)
+                },
+                chat: {
+                    id: chatId,
+                    displayName: senderMeta?.notifyName || null,
+                    phone: senderMeta?.senderPhone || null,
+                    subtitle: senderMeta?.senderPushname || null
+                }
+            });
+        } catch (error) {
+        }
+    }
+
+    async persistMessageEdit(tenantId, {
+        messageId,
+        chatId,
+        body,
+        editedAtUnix
+    } = {}) {
+        try {
+            await messageHistoryService.updateMessageEdit(tenantId, {
+                messageId,
+                chatId,
+                body,
+                editedAtUnix
+            });
+        } catch (error) {
+        }
+    }
+
+    async persistMessageAck(tenantId, {
+        messageId,
+        chatId,
+        ack
+    } = {}) {
+        try {
+            await messageHistoryService.updateMessageAck(tenantId, {
+                messageId,
+                chatId,
+                ack
+            });
+        } catch (error) {
+        }
+    }
+
+    resolveHistoryTenantId() {
+        try {
+            const socketsMap = this.io?.sockets?.sockets;
+            const entries = socketsMap ? Array.from(socketsMap.values()) : [];
+            if (!entries.length) return 'default';
+            const tenants = new Set(entries.map((socket) => String(socket?.data?.tenantId || 'default').trim() || 'default'));
+            if (tenants.size === 1) return Array.from(tenants)[0] || 'default';
+            return 'default';
+        } catch (error) {
+            return 'default';
+        }
+    }
+    normalizeHistoryLabels(labels = []) {
+        if (!Array.isArray(labels)) return [];
+        const seen = new Set();
+        const normalized = [];
+        for (const label of labels) {
+            if (!label) continue;
+            const id = String(label?.id || '').trim();
+            const name = String(label?.name || '').trim();
+            const key = `${id}:${name}`.toLowerCase();
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+            normalized.push({
+                id: id || null,
+                name: name || (id || ''),
+                color: label?.color || null
+            });
+        }
+        return normalized;
+    }
+
+    toHistoryChatSummary(entry = {}) {
+        const chatId = String(entry?.chatId || '').trim();
+        if (!chatId || !isVisibleChatId(chatId)) return null;
+
+        const metadata = entry?.metadata && typeof entry.metadata === 'object' ? entry.metadata : {};
+        const subtitle = String(entry?.subtitle || metadata?.senderPushname || '').trim() || null;
+        const explicitPhone = coerceHumanPhone(entry?.phone || '');
+        const idPhone = isLidIdentifier(chatId) ? null : coerceHumanPhone(chatId.split('@')[0] || '');
+        const subtitlePhone = coerceHumanPhone(extractPhoneFromText(subtitle || '') || '');
+        const phone = explicitPhone || subtitlePhone || idPhone || null;
+
+        const displayName = String(entry?.displayName || metadata?.notifyName || '').trim();
+        const fallbackName = displayName || subtitle || (phone ? `+${phone}` : 'Contacto');
+
+        const labels = this.normalizeHistoryLabels(metadata?.labels || []);
+        const profilePicUrl = String(metadata?.profilePicUrl || '').trim() || null;
+
+        return {
+            id: chatId,
+            name: fallbackName,
+            phone,
+            subtitle,
+            unreadCount: Number(entry?.unreadCount || 0) || 0,
+            timestamp: Number(entry?.lastMessageAt || 0) || 0,
+            lastMessage: String(entry?.lastMessageBody || metadata?.lastMessage || '').trim(),
+            lastMessageFromMe: Boolean(entry?.lastMessageFromMe),
+            ack: Number.isFinite(Number(entry?.lastMessageAck)) ? Number(entry.lastMessageAck) : 0,
+            labels,
+            profilePicUrl,
+            isMyContact: Boolean(metadata?.isMyContact),
+            archived: Boolean(entry?.archived)
+        };
+    }
+
+    historySummaryMatches(summary = {}, { queryLower = '', queryDigits = '', filters = {} } = {}) {
+        if (!summary || typeof summary !== 'object') return false;
+
+        const name = String(summary?.name || '').toLowerCase();
+        const subtitle = String(summary?.subtitle || '').toLowerCase();
+        const lastMessage = String(summary?.lastMessage || '').toLowerCase();
+        const phone = normalizePhoneDigits(summary?.phone || '');
+        const idDigits = normalizePhoneDigits(String(summary?.id || '').split('@')[0] || '');
+
+        if (queryDigits) {
+            const byPhone = phone.includes(queryDigits);
+            const byId = idDigits.includes(queryDigits);
+            if (!byPhone && !byId) return false;
+        } else if (queryLower) {
+            const byText = name.includes(queryLower) || subtitle.includes(queryLower) || lastMessage.includes(queryLower);
+            if (!byText) return false;
+        }
+
+        const unreadOnly = Boolean(filters?.unreadOnly);
+        const unlabeledOnly = Boolean(filters?.unlabeledOnly);
+        const contactMode = ['all', 'my', 'unknown'].includes(String(filters?.contactMode || 'all'))
+            ? String(filters?.contactMode || 'all')
+            : 'all';
+        const archivedMode = ['all', 'archived', 'active'].includes(String(filters?.archivedMode || 'all'))
+            ? String(filters?.archivedMode || 'all')
+            : 'all';
+        const labelTokens = normalizeFilterTokens(filters?.labelTokens);
+
+        if (unreadOnly && Number(summary?.unreadCount || 0) <= 0) return false;
+        if (contactMode === 'my' && !summary?.isMyContact) return false;
+        if (contactMode === 'unknown' && summary?.isMyContact) return false;
+        if (archivedMode === 'archived' && !summary?.archived) return false;
+        if (archivedMode === 'active' && summary?.archived) return false;
+
+        const labels = Array.isArray(summary?.labels) ? summary.labels : [];
+        if (unlabeledOnly && labels.length > 0) return false;
+        if (!unlabeledOnly && labelTokens.length > 0) {
+            const labelTokenSet = toLabelTokenSet(labels);
+            if (!matchesTokenSet(labelTokenSet, labelTokens)) return false;
+        }
+
+        return true;
+    }
+
+    async getHistoryChatsPage(tenantId, {
+        offset = 0,
+        limit = 80,
+        query = '',
+        filters = {},
+        filterKey = ''
+    } = {}) {
+        const safeOffset = Number.isFinite(Number(offset)) ? Math.max(0, Math.floor(Number(offset))) : 0;
+        const safeLimit = Number.isFinite(Number(limit)) ? Math.min(250, Math.max(20, Math.floor(Number(limit)))) : 80;
+        const queryText = String(query || '').trim();
+        const queryLower = queryText.toLowerCase();
+        const queryDigits = normalizePhoneDigits(queryText);
+
+        const allRows = [];
+        let cursor = 0;
+        const batchSize = 500;
+        const maxRows = Math.max(1000, Number(process.env.HISTORY_FALLBACK_MAX_CHATS || 3000));
+
+        while (allRows.length < maxRows) {
+            const batch = await messageHistoryService.listChats(tenantId, { limit: batchSize, offset: cursor });
+            if (!Array.isArray(batch) || batch.length === 0) break;
+            allRows.push(...batch);
+            cursor += batch.length;
+            if (batch.length < batchSize) break;
+        }
+
+        const normalized = allRows
+            .map((entry) => this.toHistoryChatSummary(entry))
+            .filter(Boolean)
+            .filter((summary) => this.historySummaryMatches(summary, {
+                queryLower,
+                queryDigits,
+                filters
+            }))
+            .sort((a, b) => (Number(b?.timestamp || 0) - Number(a?.timestamp || 0)));
+
+        const pageItems = normalized.slice(safeOffset, safeOffset + safeLimit);
+        const nextOffset = safeOffset + pageItems.length;
+        const total = normalized.length;
+        const hasMore = nextOffset < total;
+
+        return {
+            items: pageItems,
+            offset: safeOffset,
+            limit: safeLimit,
+            total,
+            hasMore,
+            nextOffset,
+            query: queryText,
+            filters,
+            filterKey,
+            source: 'history_fallback'
+        };
+    }
+
+    toHistoryMessagePayload(row = {}, chatId = '') {
+        const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+        const senderId = String(row?.senderId || row?.authorId || '').trim() || null;
+        const senderPhone = coerceHumanPhone(row?.senderPhone || (senderId ? senderId.split('@')[0] : '') || '') || null;
+        const timestamp = Number(row?.timestampUnix || 0) || Math.floor(Date.now() / 1000);
+        const type = String(row?.messageType || 'chat').trim() || 'chat';
+        const fromMe = Boolean(row?.fromMe);
+
+        return {
+            id: String(row?.messageId || '').trim(),
+            from: fromMe ? 'me@localhost' : (senderId || chatId),
+            to: fromMe ? chatId : null,
+            body: row?.body === null || row?.body === undefined ? '' : String(row.body),
+            timestamp,
+            fromMe,
+            hasMedia: Boolean(row?.hasMedia),
+            mediaData: null,
+            mimetype: row?.mediaMime || null,
+            filename: row?.mediaFilename || null,
+            fileSizeBytes: Number.isFinite(Number(row?.mediaSizeBytes)) ? Number(row.mediaSizeBytes) : null,
+            type,
+            author: row?.authorId || null,
+            notifyName: String(metadata?.notifyName || '').trim() || null,
+            senderPhone,
+            senderId,
+            senderPushname: String(metadata?.senderPushname || '').trim() || null,
+            isGroupMessage: Boolean(metadata?.isGroupMessage || String(chatId || '').endsWith('@g.us')),
+            ack: Number.isFinite(Number(row?.ack)) ? Number(row.ack) : 0,
+            edited: Boolean(row?.edited),
+            editedAt: Number(row?.editedAtUnix || 0) || null,
+            canEdit: false,
+            order: row?.orderPayload && typeof row.orderPayload === 'object' ? row.orderPayload : null,
+            location: row?.locationPayload && typeof row.locationPayload === 'object' ? row.locationPayload : null,
+            quotedMessage: row?.quotedMessageId ? { id: String(row.quotedMessageId), body: '', fromMe: false } : null
+        };
+    }
+
+    async getHistoryChatHistory(tenantId, { chatId = '', limit = 60 } = {}) {
+        const requestedChatId = String(chatId || '').trim();
+        const safeLimit = Number.isFinite(Number(limit)) ? Math.min(300, Math.max(20, Math.floor(Number(limit)))) : 60;
+
+        let resolvedChatId = requestedChatId;
+        let rows = requestedChatId
+            ? await messageHistoryService.listMessages(tenantId, { chatId: requestedChatId, limit: safeLimit })
+            : [];
+
+        if ((!Array.isArray(rows) || rows.length === 0) && requestedChatId) {
+            const digits = normalizePhoneDigits(requestedChatId.split('@')[0] || '');
+            if (digits) {
+                const candidates = await messageHistoryService.listChats(tenantId, { limit: 500, offset: 0 });
+                const candidate = (Array.isArray(candidates) ? candidates : []).find((entry) => {
+                    const phoneDigits = normalizePhoneDigits(entry?.phone || '');
+                    const idDigits = normalizePhoneDigits(String(entry?.chatId || '').split('@')[0] || '');
+                    return (phoneDigits && (phoneDigits === digits || phoneDigits.endsWith(digits) || digits.endsWith(phoneDigits)))
+                        || (idDigits && (idDigits === digits || idDigits.endsWith(digits) || digits.endsWith(idDigits)));
+                });
+                if (candidate?.chatId) {
+                    resolvedChatId = String(candidate.chatId);
+                    rows = await messageHistoryService.listMessages(tenantId, { chatId: resolvedChatId, limit: safeLimit });
+                }
+            }
+        }
+
+        const messages = (Array.isArray(rows) ? rows : [])
+            .slice()
+            .sort((a, b) => {
+                const aTs = Number(a?.timestampUnix || 0);
+                const bTs = Number(b?.timestampUnix || 0);
+                if (aTs !== bTs) return aTs - bTs;
+                return String(a?.messageId || '').localeCompare(String(b?.messageId || ''));
+            })
+            .map((row) => this.toHistoryMessagePayload(row, resolvedChatId || requestedChatId))
+            .filter((msg) => Boolean(msg?.id));
+
+        return {
+            chatId: resolvedChatId || requestedChatId,
+            requestedChatId,
+            messages,
+            source: 'history_fallback'
+        };
+    }
     ensureTransportReady(socket, {
         action = 'completar la operacion',
         errorEvent = 'error',
@@ -2307,6 +2639,51 @@ class SocketManager {
         this.io.on('connection', (socket) => {
             const tenantId = String(socket?.data?.tenantId || 'default');
             const authContext = socket?.data?.authContext || null;
+            const userRole = String(authContext?.role || '').trim().toLowerCase() || 'seller';
+            const roleWeight = { seller: 1, admin: 2, owner: 3 };
+            const effectiveRoleWeight = roleWeight[userRole] || 0;
+
+            const requireRole = (allowedRoles = [], {
+                errorEvent = 'permission_error',
+                action = 'realizar esta accion'
+            } = {}) => {
+                if (!SOCKET_RBAC_ENABLED) return true;
+                const allowSet = new Set((Array.isArray(allowedRoles) ? allowedRoles : [])
+                    .map((role) => String(role || '').trim().toLowerCase())
+                    .filter(Boolean));
+                if (allowSet.size === 0) return true;
+                if (!authContext) {
+                    socket.emit(errorEvent, 'No autorizado para ' + action + '. Inicia sesion nuevamente.');
+                    return false;
+                }
+                const minimumWeight = Math.min(...Array.from(allowSet)
+                    .map((role) => roleWeight[role] || 999)
+                    .filter((weight) => Number.isFinite(weight)));
+                if (effectiveRoleWeight >= minimumWeight) return true;
+                socket.emit(errorEvent, 'No tienes permisos para ' + action + '.');
+                return false;
+            };
+
+            const auditSocketAction = async (action = '', {
+                resourceType = 'socket',
+                resourceId = null,
+                payload = {}
+            } = {}) => {
+                try {
+                    await auditLogService.writeAuditLog(tenantId, {
+                        userId: authContext?.userId || null,
+                        userEmail: authContext?.email || null,
+                        role: userRole,
+                        action: String(action || '').trim() || 'socket.action',
+                        resourceType,
+                        resourceId,
+                        source: 'socket',
+                        socketId: socket.id,
+                        payload
+                    });
+                } catch (_) { }
+            };
+
             console.log('Web client connected:', socket.id, '| tenant:', tenantId);
             socket.join(this.getTenantRoom(tenantId));
             socket.emit('tenant_context', {
@@ -2331,6 +2708,7 @@ class SocketManager {
             });
 
             socket.on('set_transport_mode', async ({ mode } = {}) => {
+                if (!requireRole(['owner', 'admin'], { errorEvent: 'transport_mode_error', action: 'cambiar el modo de transporte' })) return;
                 try {
                     const nextMode = String(mode || '').trim().toLowerCase();
                     if (!nextMode) {
@@ -2343,6 +2721,11 @@ class SocketManager {
                     this.contactListCache = { items: [], updatedAt: 0 };
                     this.emitWaCapabilities(socket);
                     socket.emit('transport_mode_set', runtime);
+                    await auditSocketAction('wa.transport_mode.changed', {
+                        resourceType: 'wa_runtime',
+                        resourceId: runtime?.activeTransport || nextMode,
+                        payload: { requestedMode: nextMode, runtime }
+                    });
 
                     if (waClient.isReady) {
                         socket.emit('ready', { message: 'WhatsApp transport listo' });
@@ -2383,18 +2766,15 @@ class SocketManager {
                         ? Math.min(250, Math.max(20, Math.floor(rawLimit)))
                         : 80;
 
-                    if (!this.ensureTransportReady(socket, { action: 'cargar chats', errorEvent: 'error' })) {
-                        socket.emit('chats', {
-                            items: [],
+                    if (!this.ensureTransportReady(socket, { action: 'cargar chats', errorEvent: 'transport_info' })) {
+                        const fallbackPage = await this.getHistoryChatsPage(tenantId, {
                             offset,
                             limit,
-                            total: 0,
-                            hasMore: false,
-                            nextOffset: 0,
                             query,
                             filters: activeFilters,
                             filterKey
                         });
+                        socket.emit('chats', fallbackPage);
                         return;
                     }
 
@@ -2546,6 +2926,29 @@ class SocketManager {
                     }
                 } catch (e) {
                     console.error('Error fetching chats:', e);
+                    try {
+                        const fallbackPage = await this.getHistoryChatsPage(tenantId, {
+                            offset: Number(payload?.offset ?? 0),
+                            limit: Number(payload?.limit ?? 80),
+                            query: String(payload?.query || '').trim(),
+                            filters: payload?.filters || {},
+                            filterKey: String(payload?.filterKey || '').trim()
+                        });
+                        socket.emit('chats', fallbackPage);
+                    } catch (historyErr) {
+                        socket.emit('chats', {
+                            items: [],
+                            offset: Number(payload?.offset ?? 0) || 0,
+                            limit: Number(payload?.limit ?? 80) || 80,
+                            total: 0,
+                            hasMore: false,
+                            nextOffset: 0,
+                            query: String(payload?.query || '').trim(),
+                            filters: payload?.filters || {},
+                            filterKey: String(payload?.filterKey || '').trim(),
+                            source: 'history_fallback'
+                        });
+                    }
                 }
             });
 
@@ -2553,8 +2956,12 @@ class SocketManager {
                 try {
                     let historyChatId = String(chatId || '');
 
-                    if (!this.ensureTransportReady(socket, { action: 'abrir historial', errorEvent: 'error' })) {
-                        socket.emit('chat_history', { chatId: historyChatId, requestedChatId: chatId, messages: [] });
+                    if (!this.ensureTransportReady(socket, { action: 'abrir historial', errorEvent: 'transport_info' })) {
+                        const fallbackHistory = await this.getHistoryChatHistory(tenantId, {
+                            chatId: historyChatId,
+                            limit: 60
+                        });
+                        socket.emit('chat_history', fallbackHistory);
                         return;
                     }
 
@@ -2639,6 +3046,20 @@ class SocketManager {
                         });
                 } catch (e) {
                     console.error('Error fetching history:', e);
+                    try {
+                        const fallbackHistory = await this.getHistoryChatHistory(tenantId, {
+                            chatId,
+                            limit: 60
+                        });
+                        socket.emit('chat_history', fallbackHistory);
+                    } catch (historyErr) {
+                        socket.emit('chat_history', {
+                            chatId: String(chatId || ''),
+                            requestedChatId: String(chatId || ''),
+                            messages: [],
+                            source: 'history_fallback'
+                        });
+                    }
                 }
             });
 
@@ -2701,6 +3122,7 @@ class SocketManager {
             });
 
             socket.on('set_chat_labels', async ({ chatId, labelIds }) => {
+                if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'chat_labels_error', action: 'gestionar etiquetas' })) return;
                 try {
                     if (!this.ensureTransportReady(socket, { action: 'gestionar etiquetas', errorEvent: 'chat_labels_error' })) {
                         return;
@@ -2738,6 +3160,11 @@ class SocketManager {
                     });
                     this.emitToTenant(tenantId, 'chat_labels_updated', payload);
                     socket.emit('chat_labels_saved', { chatId, ok: true });
+                    await auditSocketAction('chat.labels.updated', {
+                        resourceType: 'chat',
+                        resourceId: chatId,
+                        payload: { labelIds: ids, labels: payload.labels }
+                    });
                 } catch (e) {
                     console.error('set_chat_labels error:', e.message);
                     socket.emit('chat_labels_error', 'No se pudieron actualizar las etiquetas en WhatsApp.');
@@ -2745,6 +3172,7 @@ class SocketManager {
             });
 
             socket.on('create_label', async ({ name }) => {
+                if (!requireRole(['owner', 'admin'], { errorEvent: 'chat_labels_error', action: 'crear etiquetas' })) return;
                 try {
                     const clean = String(name || '').trim();
                     if (!clean) {
@@ -2824,6 +3252,7 @@ class SocketManager {
             });
             socket.on('edit_message', async ({ chatId, messageId, body }) => {
                 if (!guardRateLimit(socket, 'edit_message')) return;
+                if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'edit_message_error', action: 'editar mensajes' })) return;
                 if (!this.ensureTransportReady(socket, { action: 'editar mensajes', errorEvent: 'edit_message_error' })) return;
                 const caps = this.getWaCapabilities();
                 if (!caps.messageEdit) {
@@ -2872,6 +3301,11 @@ class SocketManager {
                     }
 
                     this.emitMessageEditability(targetMessageId, targetChatId);
+                    await auditSocketAction('message.edited', {
+                        resourceType: 'message',
+                        resourceId: targetMessageId,
+                        payload: { chatId: targetChatId }
+                    });
                 } catch (e) {
                     const detail = String(e?.message || '').toLowerCase();
                     if (detail.includes('revoke') || detail.includes('time') || detail.includes('edit')) {
@@ -2898,6 +3332,7 @@ class SocketManager {
 
             socket.on('forward_message', async ({ messageId, toChatId }) => {
                 if (!guardRateLimit(socket, 'forward_message')) return;
+                if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'forward_message_error', action: 'reenviar mensajes' })) return;
                 if (!this.ensureTransportReady(socket, { action: 'reenviar mensajes', errorEvent: 'forward_message_error' })) return;
                 const caps = this.getWaCapabilities();
                 if (!caps.messageForward) {
@@ -2917,6 +3352,11 @@ class SocketManager {
                         messageId: sourceMessageId,
                         toChatId: targetChatId
                     });
+                    await auditSocketAction('message.forwarded', {
+                        resourceType: 'message',
+                        resourceId: sourceMessageId,
+                        payload: { toChatId: targetChatId }
+                    });
                 } catch (e) {
                     socket.emit('forward_message_error', 'No se pudo reenviar el mensaje en esta version de WhatsApp.');
                 }
@@ -2924,6 +3364,7 @@ class SocketManager {
 
             socket.on('delete_message', async ({ chatId, messageId }) => {
                 if (!guardRateLimit(socket, 'delete_message')) return;
+                if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'delete_message_error', action: 'eliminar mensajes' })) return;
                 if (!this.ensureTransportReady(socket, { action: 'eliminar mensajes', errorEvent: 'delete_message_error' })) return;
                 const caps = this.getWaCapabilities();
                 if (!caps.messageDelete) {
@@ -2977,6 +3418,11 @@ class SocketManager {
                     this.io.emit('message_deleted', {
                         chatId: targetChatId,
                         messageId: targetMessageId
+                    });
+                    await auditSocketAction('message.deleted', {
+                        resourceType: 'message',
+                        resourceId: targetMessageId,
+                        payload: { chatId: targetChatId }
                     });
                 } catch (e) {
                     socket.emit('delete_message_error', 'No se pudo eliminar el mensaje.');
@@ -3147,10 +3593,17 @@ class SocketManager {
                         profile.labelsCount = labels.length;
                     } catch (e) { console.log('Labels:', e.message); }
 
-                    // Catalog priority: WhatsApp native -> WooCommerce -> local file fallback.
+                    const tenantSettings = await tenantSettingsService.getTenantSettings(tenantId);
+                    const catalogMode = String(tenantSettings?.catalogMode || 'hybrid').trim().toLowerCase();
+
+                    // Catalog source by tenant setting:
+                    // hybrid: native -> woo -> local
+                    // woo_only: woo -> local
+                    // local_only: local only
                     let catalog = [];
                     let catalogMeta = {
                         source: 'native',
+                        mode: catalogMode,
                         nativeAvailable: false,
                         wooConfigured: isWooConfigured(),
                         wooAvailable: false,
@@ -3159,35 +3612,40 @@ class SocketManager {
                         wooReason: null
                     };
 
-                    try {
-                        const nativeProducts = await waClient.getCatalog(meId);
-                        if (nativeProducts && nativeProducts.length > 0) {
-                            catalog = nativeProducts.map(p => ({
-                                id: p.id,
-                                title: p.name,
-                                price: p.price ? Number.parseFloat(String(p.price)).toFixed(2) : '0.00',
-                                description: p.description,
-                                imageUrl: p.imageUrls ? p.imageUrls[0] : null,
-                                source: 'native'
-                            }));
-                            catalogMeta = {
-                                source: 'native',
-                                nativeAvailable: true,
-                                wooConfigured: isWooConfigured(),
-                                wooAvailable: false
-                            };
+                    const enableNative = catalogMode === 'hybrid';
+                    const enableWoo = catalogMode === 'hybrid' || catalogMode === 'woo_only';
+
+                    if (enableNative) {
+                        try {
+                            const nativeProducts = await waClient.getCatalog(meId);
+                            if (nativeProducts && nativeProducts.length > 0) {
+                                catalog = nativeProducts.map(p => ({
+                                    id: p.id,
+                                    title: p.name,
+                                    price: p.price ? Number.parseFloat(String(p.price)).toFixed(2) : '0.00',
+                                    description: p.description,
+                                    imageUrl: p.imageUrls ? p.imageUrls[0] : null,
+                                    source: 'native'
+                                }));
+                                catalogMeta = {
+                                    ...catalogMeta,
+                                    source: 'native',
+                                    nativeAvailable: true,
+                                    wooAvailable: false
+                                };
+                            }
+                        } catch (e) {
                         }
-                    } catch (e) {
                     }
 
-                    if (!catalog.length) {
+                    if (!catalog.length && enableWoo) {
                         const wooResult = await getWooCatalog();
                         if (wooResult.products.length > 0) {
                             catalog = wooResult.products;
                             catalogMeta = {
+                                ...catalogMeta,
                                 source: 'woocommerce',
                                 nativeAvailable: false,
-                                wooConfigured: isWooConfigured(),
                                 wooAvailable: true,
                                 wooSource: wooResult.source,
                                 wooStatus: wooResult.status,
@@ -3216,7 +3674,6 @@ class SocketManager {
                         };
                     }
 
-
                     const catalogCategories = Array.from(new Set(
                         (catalog || [])
                             .flatMap((item) => extractCatalogItemCategories(item))
@@ -3228,42 +3685,61 @@ class SocketManager {
                         categories: catalogCategories
                     };
                     logCatalogDebugSnapshot({ catalog, catalogMeta });
-                    socket.emit('business_data', { profile, labels, catalog, catalogMeta });
+                    socket.emit('business_data', { profile, labels, catalog, catalogMeta, tenantSettings });
                 } catch (e) {
                     console.error('Error fetching business data:', e);
                     socket.emit('business_data', {
                         profile: null,
                         labels: [],
                         catalog: await loadCatalog({ tenantId }),
-                        catalogMeta: { source: 'local', nativeAvailable: false, wooConfigured: isWooConfigured(), wooAvailable: false, wooSource: null, wooStatus: 'error', wooReason: 'Error al obtener datos de negocio' }
+                        catalogMeta: { source: 'local', mode: 'hybrid', nativeAvailable: false, wooConfigured: isWooConfigured(), wooAvailable: false, wooSource: null, wooStatus: 'error', wooReason: 'Error al obtener datos de negocio' },
+                        tenantSettings: await tenantSettingsService.getTenantSettings(tenantId)
                     });
                 }
             });
 
             // --- Catalog CRUD ---
             socket.on('add_product', async (product) => {
+                if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'agregar productos al catalogo' })) return;
                 try {
                     const newProduct = await addProduct(product, { tenantId });
                     const tenantCatalog = await loadCatalog({ tenantId });
                     this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
                     socket.emit('product_added', newProduct);
+                    await auditSocketAction('catalog.product.added', {
+                        resourceType: 'catalog_item',
+                        resourceId: newProduct?.id || null,
+                        payload: { title: newProduct?.title || null }
+                    });
                 } catch (e) { console.error('add_product error:', e); }
             });
 
             socket.on('update_product', async ({ id, updates }) => {
+                if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'editar productos del catalogo' })) return;
                 try {
                     const updated = await updateProduct(id, updates, { tenantId });
                     const tenantCatalog = await loadCatalog({ tenantId });
                     this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
                     socket.emit('product_updated', updated);
+                    await auditSocketAction('catalog.product.updated', {
+                        resourceType: 'catalog_item',
+                        resourceId: updated?.id || id || null,
+                        payload: { updates }
+                    });
                 } catch (e) { console.error('update_product error:', e); }
             });
 
             socket.on('delete_product', async (id) => {
+                if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'eliminar productos del catalogo' })) return;
                 try {
                     await deleteProduct(id, { tenantId });
                     const tenantCatalog = await loadCatalog({ tenantId });
                     this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
+                    await auditSocketAction('catalog.product.deleted', {
+                        resourceType: 'catalog_item',
+                        resourceId: String(id || '').trim() || null,
+                        payload: {}
+                    });
                 } catch (e) { console.error('delete_product error:', e); }
             });
 
@@ -3437,6 +3913,7 @@ class SocketManager {
             });
 
             socket.on('logout_whatsapp', async () => {
+                if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'cerrar sesion de WhatsApp' })) return;
                 try {
                     await waClient.client.logout();
                 } catch (e) {
@@ -3449,6 +3926,11 @@ class SocketManager {
                     console.error('reinitialize after logout failed:', e.message);
                 }
                 socket.emit('logout_done', { ok: true });
+                await auditSocketAction('wa.logout.requested', {
+                    resourceType: 'wa_runtime',
+                    resourceId: 'logout',
+                    payload: {}
+                });
             });
 
             socket.on('disconnect', () => {
@@ -3476,6 +3958,16 @@ class SocketManager {
             const senderMeta = await resolveMessageSenderMeta(msg);
             const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
+            const order = extractOrderInfo(msg);
+            const location = extractLocationInfo(msg);
+            await this.persistMessageHistory(this.resolveHistoryTenantId(), {
+                msg,
+                senderMeta,
+                fileMeta,
+                order,
+                location,
+                quotedMessage
+            });
             this.io.emit('message', {
                 id: msg.id._serialized,
                 from: msg.from,
@@ -3497,8 +3989,8 @@ class SocketManager {
                 senderPushname: senderMeta.senderPushname,
                 isGroupMessage: senderMeta.isGroupMessage,
                 canEdit: false,
-                order: extractOrderInfo(msg),
-                location: extractLocationInfo(msg),
+                order,
+                location,
                 quotedMessage
             });
 
@@ -3520,6 +4012,16 @@ class SocketManager {
             const media = await mediaManager.processMessageMedia(msg);
             const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
+            const order = extractOrderInfo(msg);
+            const location = extractLocationInfo(msg);
+            await this.persistMessageHistory(this.resolveHistoryTenantId(), {
+                msg,
+                senderMeta: null,
+                fileMeta,
+                order,
+                location,
+                quotedMessage
+            });
             this.io.emit('message', {
                 id: msg.id._serialized,
                 from: msg.from,
@@ -3541,8 +4043,8 @@ class SocketManager {
                 senderPushname: null,
                 isGroupMessage: String(msg?.to || msg?.from || '').includes('@g.us'),
                 canEdit: false,
-                order: extractOrderInfo(msg),
-                location: extractLocationInfo(msg),
+                order,
+                location,
                 quotedMessage
             });
 
@@ -3562,7 +4064,6 @@ class SocketManager {
         waClient.on('message_edit', async ({ message, newBody, prevBody }) => {
             if (!message || isStatusOrSystemMessage(message)) return;
             const chatId = message.fromMe ? message.to : message.from;
-            if (!isVisibleChatId(chatId)) return;
 
             const messageId = message?.id?._serialized;
             if (!messageId) return;
@@ -3574,6 +4075,14 @@ class SocketManager {
 
             const editedAtMs = Number(message?.latestEditSenderTimestampMs || message?._data?.latestEditSenderTimestampMs || 0);
             const editedAt = editedAtMs > 0 ? Math.floor(editedAtMs / 1000) : Math.floor(Date.now() / 1000);
+            await this.persistMessageEdit(this.resolveHistoryTenantId(), {
+                messageId,
+                chatId,
+                body: String(newBody ?? message.body ?? ''),
+                editedAtUnix: editedAt
+            });
+
+            if (!isVisibleChatId(chatId)) return;
 
             this.io.emit('message_edited', {
                 chatId,
@@ -3598,6 +4107,11 @@ class SocketManager {
             const messageId = message?.id?._serialized;
             const chatId = message?.to || message?.from || '';
             const isFromMe = Boolean(message?.fromMe);
+            await this.persistMessageAck(this.resolveHistoryTenantId(), {
+                messageId,
+                chatId,
+                ack
+            });
 
             let canEdit;
             if (isFromMe && messageId) {

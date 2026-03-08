@@ -9,7 +9,10 @@ const logger = require('./logger');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./security_utils');
 const RateLimiter = require('./rate_limiter');
 const authService = require('./auth_service');
+const auditLogService = require('./audit_log_service');
 const tenantService = require('./tenant_service');
+const tenantSettingsService = require('./tenant_settings_service');
+const messageHistoryService = require('./message_history_service');
 
 const waClient = require('./wa_provider');
 const SocketManager = require('./socket_manager');
@@ -81,13 +84,21 @@ app.use(cors({
     }
 }));
 
-app.use((req, res, next) => {
-    const authContext = authService.getRequestAuthContext(req);
-    const tenant = tenantService.resolveTenantForRequest(req, authContext?.user || null);
-    req.authContext = authContext;
-    req.tenantContext = tenant;
-    res.setHeader('X-Tenant-Id', String(tenant?.id || 'default'));
-    next();
+app.use(async (req, res, next) => {
+    try {
+        const authContext = await authService.getRequestAuthContextAsync(req);
+        const tenant = tenantService.resolveTenantForRequest(req, authContext?.user || null);
+        req.authContext = authContext;
+        req.tenantContext = tenant;
+        res.setHeader('X-Tenant-Id', String(tenant?.id || 'default'));
+        next();
+    } catch (error) {
+        logger.warn('[Auth] request middleware failed: ' + String(error?.message || error));
+        req.authContext = { enabled: authService.isAuthEnabled(), tokenPresent: false, isAuthenticated: false, user: null };
+        req.tenantContext = tenantService.DEFAULT_TENANT;
+        res.setHeader('X-Tenant-Id', String(tenantService.DEFAULT_TENANT?.id || 'default'));
+        next();
+    }
 });
 
 if (httpRateLimitEnabled) {
@@ -130,52 +141,59 @@ let socketAuthBypassLogged = false;
 let socketAuthRejectLogged = false;
 let saasSocketAuthRejectLogged = false;
 io.use((socket, next) => {
-    const expectedToken = String(process.env.SOCKET_AUTH_TOKEN || '').trim();
-    const legacyToken = socket.handshake?.auth?.token || socket.handshake?.headers?.authorization?.replace(/^Bearer\s+/i, '');
+    (async () => {
+        const expectedToken = String(process.env.SOCKET_AUTH_TOKEN || '').trim();
+        const legacyToken = socket.handshake?.auth?.token || socket.handshake?.headers?.authorization?.replace(/^Bearer\s+/i, '');
 
-    if (!expectedToken) {
-        if (socketAuthRequired) {
-            if (!socketAuthRejectLogged) {
-                logger.warn('SOCKET_AUTH_REQUIRED activo y SOCKET_AUTH_TOKEN vacio; conexiones Socket.IO seran rechazadas.');
-                socketAuthRejectLogged = true;
+        if (!expectedToken) {
+            if (socketAuthRequired) {
+                if (!socketAuthRejectLogged) {
+                    logger.warn('SOCKET_AUTH_REQUIRED activo y SOCKET_AUTH_TOKEN vacio; conexiones Socket.IO seran rechazadas.');
+                    socketAuthRejectLogged = true;
+                }
+                return next(new Error('Unauthorized'));
+            }
+
+            if (!socketAuthBypassLogged) {
+                logger.info('SOCKET_AUTH_TOKEN not configured; Socket.IO auth is bypassed.');
+                socketAuthBypassLogged = true;
+            }
+        } else if (!(legacyToken && legacyToken === expectedToken)) {
+            return next(new Error('Unauthorized'));
+        }
+
+        const accessToken = String(
+            socket.handshake?.auth?.accessToken
+            || socket.handshake?.auth?.jwt
+            || socket.handshake?.headers?.['x-access-token']
+            || ''
+        ).trim();
+        const authContext = accessToken
+            ? await authService.verifyAccessTokenAsync(accessToken)
+            : null;
+
+        if (saasSocketAuthRequired && !authContext) {
+            if (!saasSocketAuthRejectLogged) {
+                logger.warn('SAAS_SOCKET_AUTH_REQUIRED activo y no se recibio un token SaaS valido en el socket.');
+                saasSocketAuthRejectLogged = true;
             }
             return next(new Error('Unauthorized'));
         }
 
-        if (!socketAuthBypassLogged) {
-            logger.info('SOCKET_AUTH_TOKEN not configured; Socket.IO auth is bypassed.');
-            socketAuthBypassLogged = true;
+        const tenant = tenantService.resolveTenantForSocket(socket, authContext || null);
+        if (saasSocketAuthRequired && authContext?.tenantId && authContext.tenantId !== tenant.id) {
+            return next(new Error('Unauthorized'));
         }
-    } else if (!(legacyToken && legacyToken === expectedToken)) {
+
+        socket.data = socket.data || {};
+        socket.data.tenantId = String(tenant?.id || 'default');
+        socket.data.tenant = tenant;
+        socket.data.authContext = authContext || null;
+        return next();
+    })().catch((error) => {
+        logger.warn('[Auth] socket middleware failed: ' + String(error?.message || error));
         return next(new Error('Unauthorized'));
-    }
-
-    const accessToken = String(
-        socket.handshake?.auth?.accessToken
-        || socket.handshake?.auth?.jwt
-        || socket.handshake?.headers?.['x-access-token']
-        || ''
-    ).trim();
-    const authContext = authService.verifyAccessToken(accessToken);
-
-    if (saasSocketAuthRequired && !authContext) {
-        if (!saasSocketAuthRejectLogged) {
-            logger.warn('SAAS_SOCKET_AUTH_REQUIRED activo y no se recibio un token SaaS valido en el socket.');
-            saasSocketAuthRejectLogged = true;
-        }
-        return next(new Error('Unauthorized'));
-    }
-
-    const tenant = tenantService.resolveTenantForSocket(socket, authContext || null);
-    if (saasSocketAuthRequired && authContext?.tenantId && authContext.tenantId !== tenant.id) {
-        return next(new Error('Unauthorized'));
-    }
-
-    socket.data = socket.data || {};
-    socket.data.tenantId = String(tenant?.id || 'default');
-    socket.data.tenant = tenant;
-    socket.data.authContext = authContext || null;
-    return next();
+    });
 });
 
 // Initialize Managers
@@ -186,15 +204,17 @@ app.get('/', (req, res) => {
     res.send('WhatsApp Business API V4 - Robust & Modular');
 });
 
-app.get('/api/saas/runtime', (req, res) => {
+app.get('/api/saas/runtime', async (req, res) => {
     const authContext = req.authContext || { enabled: false, isAuthenticated: false, user: null };
     const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+    const tenantSettings = await tenantSettingsService.getTenantSettings(tenant?.id || 'default');
     return res.json({
         ok: true,
         saasEnabled: tenantService.isSaasEnabled(),
         authEnabled: authService.isAuthEnabled(),
         socketAuthRequired: saasSocketAuthRequired,
         tenant,
+        tenantSettings,
         tenants: tenantService.getTenants().map((item) => ({
             id: item.id,
             slug: item.slug,
@@ -210,19 +230,109 @@ app.get('/api/saas/runtime', (req, res) => {
     });
 });
 
-app.post('/api/auth/login', (req, res) => {
-    try {
-        const email = String(req.body?.email || '').trim();
-        const password = String(req.body?.password || '');
-        const tenantId = String(req.body?.tenantId || '').trim();
-        const tenantSlug = String(req.body?.tenantSlug || '').trim();
+app.post('/api/auth/login', async (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const tenantId = String(req.body?.tenantId || '').trim() || null;
+    const tenantSlug = String(req.body?.tenantSlug || '').trim() || null;
 
-        const session = authService.login({ email, password, tenantId, tenantSlug });
+    try {
+        const password = String(req.body?.password || '');
+        const session = await authService.login({ email, password, tenantId, tenantSlug });
+        await auditLogService.writeAuditLog(session?.user?.tenantId || req?.tenantContext?.id || 'default', {
+            userId: session?.user?.id || null,
+            userEmail: session?.user?.email || email,
+            role: session?.user?.role || 'seller',
+            action: 'auth.login.success',
+            resourceType: 'auth',
+            resourceId: session?.user?.id || null,
+            source: 'api',
+            ip: String(req.ip || ''),
+            payload: { tenantId: session?.user?.tenantId || tenantId || null, tenantSlug }
+        });
         return res.json({ ok: true, ...session });
     } catch (error) {
         const message = String(error?.message || 'No se pudo iniciar sesion.');
         const status = message.toLowerCase().includes('inval') ? 401 : 400;
+        await auditLogService.writeAuditLog(tenantId || req?.tenantContext?.id || 'default', {
+            userId: null,
+            userEmail: email,
+            role: 'seller',
+            action: 'auth.login.failed',
+            resourceType: 'auth',
+            resourceId: null,
+            source: 'api',
+            ip: String(req.ip || ''),
+            payload: { tenantId, tenantSlug, reason: message }
+        });
         return res.status(status).json({ ok: false, error: message });
+    }
+});
+
+app.post('/api/auth/refresh', async (req, res) => {
+    try {
+        const refreshToken = String(req.body?.refreshToken || '').trim();
+        if (!refreshToken) {
+            return res.status(400).json({ ok: false, error: 'refreshToken es requerido.' });
+        }
+
+        const session = await authService.refreshSession({ refreshToken });
+        await auditLogService.writeAuditLog(session?.user?.tenantId || req?.tenantContext?.id || 'default', {
+            userId: session?.user?.id || null,
+            userEmail: session?.user?.email || null,
+            role: session?.user?.role || 'seller',
+            action: 'auth.refresh.success',
+            resourceType: 'auth',
+            resourceId: session?.user?.id || null,
+            source: 'api',
+            ip: String(req.ip || ''),
+            payload: {}
+        });
+
+        return res.json({ ok: true, ...session });
+    } catch (error) {
+        const message = String(error?.message || 'No se pudo renovar sesion.');
+        return res.status(401).json({ ok: false, error: message });
+    }
+});
+
+app.post('/api/auth/logout', async (req, res) => {
+    try {
+        const accessTokenFromRequest = authService.getTokenFromRequest(req);
+        const accessToken = String(req.body?.accessToken || accessTokenFromRequest || '').trim();
+        const refreshToken = String(req.body?.refreshToken || '').trim();
+
+        if (!accessToken && !refreshToken) {
+            return res.status(400).json({ ok: false, error: 'Debes enviar access token o refresh token.' });
+        }
+
+        const result = await authService.logoutSession({
+            accessToken,
+            refreshToken,
+            reason: 'api_logout'
+        });
+
+        if (!result.ok) {
+            return res.status(400).json({ ok: false, error: 'No se pudo cerrar la sesion (tokens invalidos o expirados).' });
+        }
+
+        await auditLogService.writeAuditLog(result?.user?.tenantId || req?.tenantContext?.id || 'default', {
+            userId: result?.user?.id || null,
+            userEmail: result?.user?.email || null,
+            role: result?.user?.role || 'seller',
+            action: 'auth.logout.success',
+            resourceType: 'auth',
+            resourceId: result?.user?.id || null,
+            source: 'api',
+            ip: String(req.ip || ''),
+            payload: {
+                revokedAccess: Boolean(result.revokedAccess),
+                revokedRefresh: Boolean(result.revokedRefresh)
+            }
+        });
+
+        return res.json({ ok: true, ...result });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: 'No se pudo cerrar sesion.' });
     }
 });
 
@@ -244,6 +354,133 @@ app.get('/api/tenant/me', (req, res) => {
         ok: true,
         tenant: req.tenantContext || tenantService.DEFAULT_TENANT
     });
+});
+
+function hasTenantSettingsWriteAccess(req) {
+    if (!authService.isAuthEnabled()) return true;
+    const authContext = req.authContext || { isAuthenticated: false, user: null };
+    if (!authContext.isAuthenticated || !authContext.user) return false;
+    const role = String(authContext.user.role || '').trim().toLowerCase();
+    return role === 'owner' || role === 'admin';
+}
+
+app.get('/api/tenant/settings', async (req, res) => {
+    try {
+        const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+        const settings = await tenantSettingsService.getTenantSettings(tenant?.id || 'default');
+        return res.json({
+            ok: true,
+            tenant,
+            settings
+        });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: 'No se pudo cargar la configuracion de la empresa.' });
+    }
+});
+
+app.put('/api/tenant/settings', async (req, res) => {
+    try {
+        if (!hasTenantSettingsWriteAccess(req)) {
+            return res.status(403).json({ ok: false, error: 'No tienes permisos para editar configuracion de empresa.' });
+        }
+
+        const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+        const patch = req.body && typeof req.body === 'object' ? req.body : {};
+        const settings = await tenantSettingsService.updateTenantSettings(tenant?.id || 'default', patch);
+
+        await auditLogService.writeAuditLog(tenant?.id || 'default', {
+            userId: req?.authContext?.user?.userId || null,
+            userEmail: req?.authContext?.user?.email || null,
+            role: req?.authContext?.user?.role || 'seller',
+            action: 'tenant.settings.updated',
+            resourceType: 'tenant_settings',
+            resourceId: tenant?.id || 'default',
+            source: 'api',
+            ip: String(req.ip || ''),
+            payload: { patch }
+        });
+
+        return res.json({
+            ok: true,
+            tenant,
+            settings
+        });
+    } catch (error) {
+        const message = String(error?.message || 'No se pudo actualizar configuracion de empresa.');
+        return res.status(400).json({ ok: false, error: message });
+    }
+});
+
+function hasTenantHistoryReadAccess(req) {
+    if (!authService.isAuthEnabled()) return true;
+    const authContext = req.authContext || { isAuthenticated: false, user: null };
+    return Boolean(authContext.isAuthenticated && authContext.user);
+}
+
+app.get('/api/history/chats', async (req, res) => {
+    try {
+        if (!hasTenantHistoryReadAccess(req)) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+        const limit = Number(req.query.limit || 100);
+        const offset = Number(req.query.offset || 0);
+        const rows = await messageHistoryService.listChats(tenant?.id || 'default', { limit, offset });
+        return res.json({ ok: true, tenant, items: rows });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: 'No se pudo cargar historial de chats.' });
+    }
+});
+
+app.get('/api/history/messages', async (req, res) => {
+    try {
+        if (!hasTenantHistoryReadAccess(req)) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+        const chatId = String(req.query.chatId || '').trim();
+        if (!chatId) {
+            return res.status(400).json({ ok: false, error: 'chatId es requerido.' });
+        }
+
+        const limit = Number(req.query.limit || 200);
+        const beforeTimestamp = req.query.beforeTimestamp ? Number(req.query.beforeTimestamp) : null;
+        const rows = await messageHistoryService.listMessages(tenant?.id || 'default', {
+            chatId,
+            limit,
+            beforeTimestamp
+        });
+
+        return res.json({ ok: true, tenant, chatId, items: rows });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: 'No se pudo cargar historial de mensajes.' });
+    }
+});
+
+function hasAuditReadAccess(req) {
+    if (!authService.isAuthEnabled()) return true;
+    const authContext = req.authContext || { isAuthenticated: false, user: null };
+    if (!authContext.isAuthenticated || !authContext.user) return false;
+    const role = String(authContext.user.role || '').trim().toLowerCase();
+    return role === 'owner' || role === 'admin';
+}
+
+app.get('/api/audit/logs', async (req, res) => {
+    try {
+        if (!hasAuditReadAccess(req)) {
+            return res.status(403).json({ ok: false, error: 'No tienes permisos para ver auditoria.' });
+        }
+
+        const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+        const limit = Number(req.query.limit || 100);
+        const offset = Number(req.query.offset || 0);
+        const items = await auditLogService.listAuditLogs(tenant?.id || 'default', { limit, offset });
+        return res.json({ ok: true, tenant, items });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: 'No se pudo cargar la auditoria.' });
+    }
 });
 
 app.get('/api/wa/runtime', (req, res) => {

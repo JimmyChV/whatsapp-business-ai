@@ -48,7 +48,7 @@ Objetivo: convertirlo en plataforma multiempresa con login por usuario, aislamie
 ## Fase 4 - Multi-tenant funcional (Dias 13-17)
 - UI de login y selector de empresa.
 - Sesion por usuario + tenant en frontend.
-- Catálogo, carrito, IA y respuestas rapidas por tenant.
+- Catalogo, carrito, IA y respuestas rapidas por tenant.
 - Entregables:
   - dos empresas operando en paralelo sin fuga de datos
 
@@ -77,4 +77,13 @@ Objetivo: convertirlo en plataforma multiempresa con login por usuario, aislamie
 - [x] Inicio Fase 1
 - [x] Cerrar Fase 1
 - [x] Inicio Fase 2 (bloque 1: persistencia tenant-aware + schema Postgres v1)
+- [x] Fase 2 bloque 2: modulo de tenant settings (catalog mode + modulos habilitados)
 
+- [x] Fase 2 bloque 3: historial de mensajes por tenant (API + persistencia en eventos)
+- [x] Fase 2 bloque 4: fallback de chats/historial desde persistencia cuando transporte WA no esta listo
+- [x] Inicio Fase 3
+- [x] Fase 3 bloque 1: refresh tokens + revocacion de access token + logout de sesion
+- [x] Fase 3 bloque 2: RBAC en eventos socket sensibles + auditoria de acciones de alto impacto
+- [x] Inicio Fase 4
+- [x] Fase 4 bloque 1: login SaaS en frontend + sesion persistente + socket auth dinamico + headers auth en APIs de preview/mapa
+- [x] Fase 4 bloque 2: aislamiento de estado UI por tenant (etiquetas locales, carrito lateral y reset de workspace al cambiar de empresa)
