@@ -7,11 +7,64 @@ const crypto = require('crypto');
 require('dotenv').config({ quiet: true });
 const logger = require('./logger');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./security_utils');
+const RateLimiter = require('./rate_limiter');
+const authService = require('./auth_service');
+const tenantService = require('./tenant_service');
 
 const waClient = require('./wa_provider');
 const SocketManager = require('./socket_manager');
 
+function parseBooleanEnv(value, defaultValue = false) {
+    const raw = String(value ?? '').trim().toLowerCase();
+    if (!raw) return Boolean(defaultValue);
+    return ['1', 'true', 'yes', 'on'].includes(raw);
+}
+
+const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+const allowedOrigins = parseCsvEnv(process.env.ALLOWED_ORIGINS);
+const allowEmptyOriginsInProd = parseBooleanEnv(process.env.CORS_ALLOW_EMPTY_IN_PROD, false);
+const securityHeadersEnabled = parseBooleanEnv(process.env.SECURITY_HEADERS_ENABLED, true);
+const socketAuthRequired = parseBooleanEnv(process.env.SOCKET_AUTH_REQUIRED, isProduction);
+const httpRateLimitEnabled = parseBooleanEnv(process.env.HTTP_RATE_LIMIT_ENABLED, true);
+const trustProxyEnabled = parseBooleanEnv(process.env.TRUST_PROXY, false);
+const saasSocketAuthRequired = parseBooleanEnv(process.env.SAAS_SOCKET_AUTH_REQUIRED, parseBooleanEnv(process.env.SAAS_AUTH_ENABLED, false));
+const httpRateLimiter = new RateLimiter({
+    windowMs: Number(process.env.HTTP_RATE_LIMIT_WINDOW_MS || 10000),
+    max: Number(process.env.HTTP_RATE_LIMIT_MAX || 120)
+});
+
+function isCorsOriginAllowed(origin) {
+    if (!origin) return true;
+    if (allowedOrigins.includes(origin)) return true;
+    if (allowedOrigins.length === 0) {
+        if (isProduction && !allowEmptyOriginsInProd) return false;
+        return true;
+    }
+    return false;
+}
+
 const app = express();
+app.disable('x-powered-by');
+
+if (trustProxyEnabled) {
+    app.set('trust proxy', 1);
+}
+
+if (securityHeadersEnabled) {
+    app.use((req, res, next) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+        res.setHeader('Referrer-Policy', 'no-referrer');
+        res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+
+        const forwardedProto = String(req.headers['x-forwarded-proto'] || '').toLowerCase();
+        if (isProduction && (req.secure || forwardedProto === 'https')) {
+            res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+        }
+        next();
+    });
+}
+
 app.use(express.json({
     limit: '1mb',
     verify: (req, _res, buf) => {
@@ -19,40 +72,110 @@ app.use(express.json({
     }
 }));
 
-const allowedOrigins = parseCsvEnv(process.env.ALLOWED_ORIGINS);
 app.use(cors({
     origin(origin, callback) {
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+        if (isCorsOriginAllowed(origin)) {
             return callback(null, true);
         }
         return callback(new Error('Not allowed by CORS'));
     }
 }));
 
+app.use((req, res, next) => {
+    const authContext = authService.getRequestAuthContext(req);
+    const tenant = tenantService.resolveTenantForRequest(req, authContext?.user || null);
+    req.authContext = authContext;
+    req.tenantContext = tenant;
+    res.setHeader('X-Tenant-Id', String(tenant?.id || 'default'));
+    next();
+});
+
+if (httpRateLimitEnabled) {
+    app.use('/api', (req, res, next) => {
+        const key = String(req.ip || 'unknown') + ':' + req.method + ':' + req.path;
+        const result = httpRateLimiter.check(key);
+        res.setHeader('X-RateLimit-Limit', String(httpRateLimiter.max));
+        res.setHeader('X-RateLimit-Remaining', String(Math.max(0, Number(result.remaining) || 0)));
+
+        if (result.allowed) return next();
+
+        const retryAfterSec = Math.max(1, Math.ceil((Number(result.retryAfterMs) || 1000) / 1000));
+        res.setHeader('Retry-After', String(retryAfterSec));
+        return res.status(429).json({
+            ok: false,
+            error: 'Demasiadas solicitudes. Intenta nuevamente en unos segundos.'
+        });
+    });
+}
+
+if (isProduction && allowedOrigins.length === 0 && !allowEmptyOriginsInProd) {
+    logger.warn('ALLOWED_ORIGINS vacio en produccion; CORS bloqueara origenes de navegador hasta que lo configures.');
+}
+
 const server = http.createServer(app);
 const io = new Server(server, {
     maxHttpBufferSize: 1e8, // 100MB
     cors: {
-        origin: allowedOrigins.length ? allowedOrigins : '*',
+        origin(origin, callback) {
+            if (isCorsOriginAllowed(origin)) {
+                return callback(null, true);
+            }
+            return callback(new Error('Not allowed by CORS'));
+        },
         methods: ["GET", "POST"]
     }
 });
 
 let socketAuthBypassLogged = false;
+let socketAuthRejectLogged = false;
+let saasSocketAuthRejectLogged = false;
 io.use((socket, next) => {
-    const expectedToken = process.env.SOCKET_AUTH_TOKEN || '';
+    const expectedToken = String(process.env.SOCKET_AUTH_TOKEN || '').trim();
+    const legacyToken = socket.handshake?.auth?.token || socket.handshake?.headers?.authorization?.replace(/^Bearer\s+/i, '');
+
     if (!expectedToken) {
+        if (socketAuthRequired) {
+            if (!socketAuthRejectLogged) {
+                logger.warn('SOCKET_AUTH_REQUIRED activo y SOCKET_AUTH_TOKEN vacio; conexiones Socket.IO seran rechazadas.');
+                socketAuthRejectLogged = true;
+            }
+            return next(new Error('Unauthorized'));
+        }
+
         if (!socketAuthBypassLogged) {
             logger.info('SOCKET_AUTH_TOKEN not configured; Socket.IO auth is bypassed.');
             socketAuthBypassLogged = true;
         }
-        return next();
+    } else if (!(legacyToken && legacyToken === expectedToken)) {
+        return next(new Error('Unauthorized'));
     }
 
-    const token = socket.handshake?.auth?.token || socket.handshake?.headers?.authorization?.replace(/^Bearer\s+/i, '');
-    if (token && token === expectedToken) return next();
-    return next(new Error('Unauthorized'));
+    const accessToken = String(
+        socket.handshake?.auth?.accessToken
+        || socket.handshake?.auth?.jwt
+        || socket.handshake?.headers?.['x-access-token']
+        || ''
+    ).trim();
+    const authContext = authService.verifyAccessToken(accessToken);
+
+    if (saasSocketAuthRequired && !authContext) {
+        if (!saasSocketAuthRejectLogged) {
+            logger.warn('SAAS_SOCKET_AUTH_REQUIRED activo y no se recibio un token SaaS valido en el socket.');
+            saasSocketAuthRejectLogged = true;
+        }
+        return next(new Error('Unauthorized'));
+    }
+
+    const tenant = tenantService.resolveTenantForSocket(socket, authContext || null);
+    if (saasSocketAuthRequired && authContext?.tenantId && authContext.tenantId !== tenant.id) {
+        return next(new Error('Unauthorized'));
+    }
+
+    socket.data = socket.data || {};
+    socket.data.tenantId = String(tenant?.id || 'default');
+    socket.data.tenant = tenant;
+    socket.data.authContext = authContext || null;
+    return next();
 });
 
 // Initialize Managers
@@ -61,6 +184,66 @@ const socketManager = new SocketManager(io);
 // Basic Route
 app.get('/', (req, res) => {
     res.send('WhatsApp Business API V4 - Robust & Modular');
+});
+
+app.get('/api/saas/runtime', (req, res) => {
+    const authContext = req.authContext || { enabled: false, isAuthenticated: false, user: null };
+    const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+    return res.json({
+        ok: true,
+        saasEnabled: tenantService.isSaasEnabled(),
+        authEnabled: authService.isAuthEnabled(),
+        socketAuthRequired: saasSocketAuthRequired,
+        tenant,
+        tenants: tenantService.getTenants().map((item) => ({
+            id: item.id,
+            slug: item.slug,
+            name: item.name,
+            active: item.active,
+            plan: item.plan
+        })),
+        authContext: {
+            enabled: Boolean(authContext.enabled),
+            isAuthenticated: Boolean(authContext.isAuthenticated),
+            user: authContext.user || null
+        }
+    });
+});
+
+app.post('/api/auth/login', (req, res) => {
+    try {
+        const email = String(req.body?.email || '').trim();
+        const password = String(req.body?.password || '');
+        const tenantId = String(req.body?.tenantId || '').trim();
+        const tenantSlug = String(req.body?.tenantSlug || '').trim();
+
+        const session = authService.login({ email, password, tenantId, tenantSlug });
+        return res.json({ ok: true, ...session });
+    } catch (error) {
+        const message = String(error?.message || 'No se pudo iniciar sesion.');
+        const status = message.toLowerCase().includes('inval') ? 401 : 400;
+        return res.status(status).json({ ok: false, error: message });
+    }
+});
+
+app.get('/api/auth/me', (req, res) => {
+    const authContext = req.authContext || { isAuthenticated: false, user: null };
+    if (!authContext.isAuthenticated || !authContext.user) {
+        return res.status(401).json({ ok: false, error: 'No autenticado.' });
+    }
+
+    return res.json({
+        ok: true,
+        user: authContext.user,
+        tenant: req.tenantContext || tenantService.DEFAULT_TENANT
+    });
+});
+
+app.get('/api/tenant/me', (req, res) => {
+    return res.json({
+        ok: true,
+        tenant: req.tenantContext || tenantService.DEFAULT_TENANT
+    });
 });
 
 app.get('/api/wa/runtime', (req, res) => {

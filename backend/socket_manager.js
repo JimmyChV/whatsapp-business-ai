@@ -15,7 +15,8 @@ const eventRateLimiter = new RateLimiter({
 const orderDebugSeen = new Set();
 const ORDER_DEBUG_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.ORDER_DEBUG || '').trim().toLowerCase());
 const ORDER_DEBUG_VERBOSE = ['1', 'true', 'yes', 'on'].includes(String(process.env.ORDER_DEBUG_VERBOSE || '').trim().toLowerCase());
-const CATALOG_DEBUG_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.CATALOG_DEBUG ?? 'true').trim().toLowerCase());
+const CATALOG_DEBUG_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.CATALOG_DEBUG || '').trim().toLowerCase());
+const ORDER_DEBUG_MISSING_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.ORDER_DEBUG_MISSING || process.env.ORDER_DEBUG || '').trim().toLowerCase());
 const CATALOG_DEBUG_MAX_ITEMS = Math.max(1, Number(process.env.CATALOG_DEBUG_MAX_ITEMS || 120));
 let catalogDebugLastSignature = '';
 const SENDER_META_TTL_MS = Math.max(60 * 1000, Number(process.env.SENDER_META_TTL_MS || (10 * 60 * 1000)));
@@ -371,12 +372,14 @@ function logOrderDebug({ msg, data, orderId, products, subtotal, subtotalFrom100
     };
 
     if (!hasLines) {
-        console.warn('[OrderDebug] Pedido detectado SIN lineas de producto:', summary);
+        if (ORDER_DEBUG_MISSING_ENABLED) {
+            console.warn('[OrderDebug] Pedido detectado SIN lineas de producto:', summary);
+        }
     } else if (ORDER_DEBUG_ENABLED) {
         console.log('[OrderDebug] Pedido parseado:', summary);
     }
 
-    if (!hasLines || ORDER_DEBUG_VERBOSE) {
+    if (ORDER_DEBUG_VERBOSE || (!hasLines && ORDER_DEBUG_MISSING_ENABLED)) {
         const preview = safeOrderDebugJson({
             msgOrder: msg?.order,
             msgOrderProducts: msg?.orderProducts,
@@ -2007,6 +2010,14 @@ class SocketManager {
     }
 
 
+    getTenantRoom(tenantId = 'default') {
+        const cleanTenant = String(tenantId || 'default').trim() || 'default';
+        return 'tenant:' + cleanTenant;
+    }
+
+    emitToTenant(tenantId, eventName, payload) {
+        this.io.to(this.getTenantRoom(tenantId)).emit(eventName, payload);
+    }
     ensureTransportReady(socket, {
         action = 'completar la operacion',
         errorEvent = 'error',
@@ -2294,7 +2305,19 @@ class SocketManager {
     setupSocketEvents() {
 
         this.io.on('connection', (socket) => {
-            console.log('Web client connected:', socket.id);
+            const tenantId = String(socket?.data?.tenantId || 'default');
+            const authContext = socket?.data?.authContext || null;
+            console.log('Web client connected:', socket.id, '| tenant:', tenantId);
+            socket.join(this.getTenantRoom(tenantId));
+            socket.emit('tenant_context', {
+                tenantId,
+                user: authContext ? {
+                    userId: authContext.userId,
+                    email: authContext.email,
+                    role: authContext.role,
+                    tenantId: authContext.tenantId
+                } : null
+            });
 
             if (waClient.isReady) {
                 socket.emit('ready', { message: 'WhatsApp is ready' });
@@ -2713,7 +2736,7 @@ class SocketManager {
                         profilePicUrl: cachedMeta.profilePicUrl || null,
                         updatedAt: Date.now()
                     });
-                    this.io.emit('chat_labels_updated', payload);
+                    this.emitToTenant(tenantId, 'chat_labels_updated', payload);
                     socket.emit('chat_labels_saved', { chatId, ok: true });
                 } catch (e) {
                     console.error('set_chat_labels error:', e.message);
@@ -3058,7 +3081,7 @@ class SocketManager {
                         socket.emit('business_data', {
                             profile: null,
                             labels: [],
-                            catalog: loadCatalog(),
+                            catalog: await loadCatalog({ tenantId }),
                             catalogMeta: { source: 'local', nativeAvailable: false, wooConfigured: isWooConfigured(), wooAvailable: false }
                         });
                         return;
@@ -3183,7 +3206,7 @@ class SocketManager {
                     }
 
                     if (!catalog.length) {
-                        catalog = loadCatalog();
+                        catalog = await loadCatalog({ tenantId });
                         catalogMeta = {
                             ...catalogMeta,
                             source: 'local',
@@ -3211,33 +3234,36 @@ class SocketManager {
                     socket.emit('business_data', {
                         profile: null,
                         labels: [],
-                        catalog: loadCatalog(),
+                        catalog: await loadCatalog({ tenantId }),
                         catalogMeta: { source: 'local', nativeAvailable: false, wooConfigured: isWooConfigured(), wooAvailable: false, wooSource: null, wooStatus: 'error', wooReason: 'Error al obtener datos de negocio' }
                     });
                 }
             });
 
             // --- Catalog CRUD ---
-            socket.on('add_product', (product) => {
+            socket.on('add_product', async (product) => {
                 try {
-                    const newProduct = addProduct(product);
-                    this.io.emit('business_data_catalog', loadCatalog());
+                    const newProduct = await addProduct(product, { tenantId });
+                    const tenantCatalog = await loadCatalog({ tenantId });
+                    this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
                     socket.emit('product_added', newProduct);
                 } catch (e) { console.error('add_product error:', e); }
             });
 
-            socket.on('update_product', ({ id, updates }) => {
+            socket.on('update_product', async ({ id, updates }) => {
                 try {
-                    const updated = updateProduct(id, updates);
-                    this.io.emit('business_data_catalog', loadCatalog());
+                    const updated = await updateProduct(id, updates, { tenantId });
+                    const tenantCatalog = await loadCatalog({ tenantId });
+                    this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
                     socket.emit('product_updated', updated);
                 } catch (e) { console.error('update_product error:', e); }
             });
 
-            socket.on('delete_product', (id) => {
+            socket.on('delete_product', async (id) => {
                 try {
-                    deleteProduct(id);
-                    this.io.emit('business_data_catalog', loadCatalog());
+                    await deleteProduct(id, { tenantId });
+                    const tenantCatalog = await loadCatalog({ tenantId });
+                    this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
                 } catch (e) { console.error('delete_product error:', e); }
             });
 
@@ -3596,3 +3622,4 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+

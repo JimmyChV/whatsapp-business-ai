@@ -111,3 +111,15 @@ Nota: aunque no pongas keys, el sistema intenta `wc/store/v1` (endpoint público
 
 ---
 Desarrollado con ❤️ para potenciar las ventas digitales.
+
+## Production hardening baseline
+- See docs/PRODUCTION_SECURITY_BASELINE.md for the secure production checklist.
+- Use `backend/.env.production.example` as your base production env template.
+
+
+## SaaS multiempresa roadmap
+- Plan y fases: docs/SAAS_MULTI_TENANT_ROADMAP.md.
+- Estado actual: Fase 1 cerrada y Fase 2 iniciada (persistencia tenant-aware con driver file/postgres).
+- Migraciones Postgres v1: backend/db/migrations/001_saas_foundation.sql (guia en backend/db/README.md).
+
+
