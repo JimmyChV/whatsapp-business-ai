@@ -42,3 +42,9 @@ Keep debug logs disabled in production unless troubleshooting:
 4. Keep webhook signature validation enabled (`META_ENFORCE_SIGNATURE=true`).
 5. Restrict frontend origins to known domains only.
 6. Monitor 429 rates to tune limits safely.
+
+## 5) SaaS mode (multi-tenant)
+- SAAS_ENABLED=true to enable tenant-aware runtime.
+- SAAS_AUTH_ENABLED=true + SAAS_AUTH_SECRET for access tokens.
+- SAAS_SOCKET_AUTH_REQUIRED=true to require SaaS token in socket handshake.
+- Define SAAS_TENANTS_JSON and SAAS_USERS_JSON before onboarding real companies.

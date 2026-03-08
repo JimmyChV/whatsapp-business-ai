@@ -2297,7 +2297,18 @@ class SocketManager {
     setupSocketEvents() {
 
         this.io.on('connection', (socket) => {
-            console.log('Web client connected:', socket.id);
+            const tenantId = String(socket?.data?.tenantId || 'default');
+            const authContext = socket?.data?.authContext || null;
+            console.log('Web client connected:', socket.id, '| tenant:', tenantId);
+            socket.emit('tenant_context', {
+                tenantId,
+                user: authContext ? {
+                    userId: authContext.userId,
+                    email: authContext.email,
+                    role: authContext.role,
+                    tenantId: authContext.tenantId
+                } : null
+            });
 
             if (waClient.isReady) {
                 socket.emit('ready', { message: 'WhatsApp is ready' });

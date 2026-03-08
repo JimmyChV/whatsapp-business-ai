@@ -114,5 +114,9 @@ Desarrollado con ❤️ para potenciar las ventas digitales.
 
 ## Production hardening baseline
 - See docs/PRODUCTION_SECURITY_BASELINE.md for the secure production checklist.
-- Use ackend/.env.production.example as your base production env template.
+- Use `backend/.env.production.example` as your base production env template.
 
+
+## SaaS multiempresa roadmap
+- Plan y fases: docs/SAAS_MULTI_TENANT_ROADMAP.md.
+- Esta iteracion inicia Fase 1 con contexto tenant + auth base en backend.
