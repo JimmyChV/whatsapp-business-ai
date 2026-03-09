@@ -16,6 +16,7 @@ const saasControlService = require('./saas_control_plane_service');
 const planLimitsService = require('./plan_limits_service');
 const aiUsageService = require('./ai_usage_service');
 const messageHistoryService = require('./message_history_service');
+const waModuleService = require('./wa_module_service');
 const opsTelemetry = require('./ops_telemetry');
 
 const waClient = require('./wa_provider');
@@ -355,6 +356,15 @@ app.get('/api/saas/runtime', async (req, res) => {
         || tenantService.DEFAULT_TENANT;
 
     const tenantSettings = await tenantSettingsService.getTenantSettings(String(effectiveTenant?.id || 'default'));
+    const authUser = authContext?.user && typeof authContext.user === 'object' ? authContext.user : null;
+    const runtimeUserId = String(authUser?.userId || authUser?.id || '').trim();
+    const waModules = await waModuleService.listModules(String(effectiveTenant?.id || 'default'), {
+        includeInactive: false,
+        userId: runtimeUserId
+    });
+    const selectedWaModule = await waModuleService.getSelectedModule(String(effectiveTenant?.id || 'default'), {
+        userId: runtimeUserId
+    });
 
     return res.json({
         ok: true,
@@ -363,6 +373,8 @@ app.get('/api/saas/runtime', async (req, res) => {
         socketAuthRequired: saasSocketAuthRequired,
         tenant: toPublicTenant(effectiveTenant),
         tenantSettings,
+        waModules,
+        selectedWaModule,
         tenants: (allowedTenants || []).map(toPublicTenant).filter(Boolean),
         authContext: {
             enabled: Boolean(authContext.enabled),
@@ -596,6 +608,19 @@ function isTenantAllowedForUser(req = {}, tenantId = '') {
     return allowed.includes(cleanTenantId);
 }
 
+function hasTenantModuleReadAccess(req = {}, tenantId = '') {
+    if (!tenantId) return false;
+    if (!hasSaasControlReadAccess(req)) return false;
+    return isTenantAllowedForUser(req, tenantId);
+}
+
+function hasTenantModuleWriteAccess(req = {}, tenantId = '') {
+    if (!tenantId) return false;
+    if (!hasSaasControlWriteAccess(req)) return false;
+    return isTenantAllowedForUser(req, tenantId);
+}
+
+
 function filterAdminOverviewByScope(req = {}, overview = {}) {
     if (req?.authContext?.user?.isSuperAdmin) return overview;
 
@@ -622,6 +647,31 @@ function sanitizeMembershipPayload(memberships = []) {
             active: item?.active !== false
         }))
         .filter((item) => Boolean(item.tenantId));
+}
+
+function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
+    const source = payload && typeof payload === 'object' ? payload : {};
+    const base = {
+        name: String(source.name || '').trim(),
+        phoneNumber: String(source.phoneNumber || source.phone || source.number || '').trim() || null,
+        transportMode: String(source.transportMode || source.transport || source.mode || '').trim().toLowerCase() || 'webjs',
+        isActive: source.isActive !== false,
+        isDefault: source.isDefault === true,
+        isSelected: source.isSelected === true,
+        assignedUserIds: Array.isArray(source.assignedUserIds)
+            ? source.assignedUserIds.map((entry) => String(entry || '').trim()).filter(Boolean)
+            : [],
+        metadata: source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+            ? source.metadata
+            : {}
+    };
+
+    if (allowModuleId) {
+        const moduleId = String(source.moduleId || source.id || '').trim();
+        if (moduleId) base.moduleId = moduleId;
+    }
+
+    return base;
 }
 
 app.get('/api/admin/saas/overview', async (req, res) => {
@@ -840,6 +890,92 @@ app.put('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
     }
 });
 
+app.get('/api/admin/saas/tenants/:tenantId/wa-modules', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasTenantModuleReadAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const items = await waModuleService.listModules(tenantId, { includeInactive: true });
+        const selected = await waModuleService.getSelectedModule(tenantId);
+        return res.json({ ok: true, tenantId, items, selected });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar modulos WA.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/wa-modules', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasTenantModuleWriteAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const payload = sanitizeWaModulePayload(req.body, { allowModuleId: true });
+        const created = await waModuleService.createModule(tenantId, payload);
+        return res.status(201).json({ ok: true, tenantId, item: created });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el modulo WA.') });
+    }
+});
+
+app.put('/api/admin/saas/tenants/:tenantId/wa-modules/:moduleId', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const moduleId = String(req.params?.moduleId || '').trim();
+    if (!tenantId || !moduleId) return res.status(400).json({ ok: false, error: 'tenantId/moduleId invalido.' });
+    if (!hasTenantModuleWriteAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const patch = sanitizeWaModulePayload(req.body, { allowModuleId: true });
+        const updated = await waModuleService.updateModule(tenantId, moduleId, patch);
+        return res.json({ ok: true, tenantId, item: updated });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el modulo WA.') });
+    }
+});
+
+app.delete('/api/admin/saas/tenants/:tenantId/wa-modules/:moduleId', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const moduleId = String(req.params?.moduleId || '').trim();
+    if (!tenantId || !moduleId) return res.status(400).json({ ok: false, error: 'tenantId/moduleId invalido.' });
+    if (!hasTenantModuleWriteAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        await waModuleService.deleteModule(tenantId, moduleId);
+        return res.json({ ok: true, tenantId, moduleId });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar el modulo WA.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/wa-modules/:moduleId/select', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const moduleId = String(req.params?.moduleId || '').trim();
+    if (!tenantId || !moduleId) return res.status(400).json({ ok: false, error: 'tenantId/moduleId invalido.' });
+    if (!hasTenantModuleWriteAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const selected = await waModuleService.setSelectedModule(tenantId, moduleId);
+        return res.json({ ok: true, tenantId, selected });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo seleccionar el modulo WA.') });
+    }
+});
+
+app.get('/api/tenant/wa-modules', async (req, res) => {
+    try {
+        if (authService.isAuthEnabled() && !req?.authContext?.isAuthenticated) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+        const userId = String(req?.authContext?.user?.userId || req?.authContext?.user?.id || '').trim();
+        const items = await waModuleService.listModules(tenantId, { includeInactive: false, userId });
+        const selected = await waModuleService.getSelectedModule(tenantId, { userId });
+        return res.json({ ok: true, tenantId, items, selected });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar modulos WA.') });
+    }
+});
 app.get('/api/admin/saas/tenants/:tenantId/runtime', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });

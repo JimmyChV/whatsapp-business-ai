@@ -135,6 +135,48 @@ const normalizeBusinessDataPayload = (data = {}) => {
   };
 };
 
+const normalizeWaModuleItem = (item = {}) => {
+  const source = item && typeof item === 'object' ? item : {};
+  const moduleId = String(source.moduleId || source.id || '').trim().toLowerCase();
+  if (!moduleId) return null;
+  const transportMode = String(source.transportMode || source.transport || source.mode || '').trim().toLowerCase();
+  return {
+    moduleId,
+    name: String(source.name || moduleId).trim() || moduleId,
+    phoneNumber: String(source.phoneNumber || source.phone || '').trim() || null,
+    transportMode: transportMode === 'cloud' ? 'cloud' : 'webjs',
+    isActive: source.isActive !== false,
+    isDefault: source.isDefault === true,
+    isSelected: source.isSelected === true,
+    assignedUserIds: Array.isArray(source.assignedUserIds)
+      ? source.assignedUserIds.map((entry) => String(entry || '').trim()).filter(Boolean)
+      : []
+  };
+};
+
+const normalizeWaModules = (items = []) => {
+  const source = Array.isArray(items) ? items : [];
+  const seen = new Set();
+  return source
+    .map(normalizeWaModuleItem)
+    .filter((module) => {
+      if (!module?.moduleId) return false;
+      if (seen.has(module.moduleId)) return false;
+      seen.add(module.moduleId);
+      return true;
+    });
+};
+
+const resolveSelectedWaModule = (items = [], preferred = null) => {
+  const modules = normalizeWaModules(items);
+  if (!modules.length) return null;
+  const preferredId = String(preferred?.moduleId || preferred?.id || '').trim().toLowerCase();
+  if (preferredId) {
+    const byId = modules.find((module) => module.moduleId === preferredId);
+    if (byId) return byId;
+  }
+  return modules.find((module) => module.isSelected) || modules.find((module) => module.isDefault) || modules[0];
+};
 const normalizeChatLabels = (labels = []) => (Array.isArray(labels) ? labels.map((l) => ({ id: l?.id, name: l?.name || '', color: l?.color || null })) : []);
 
 const cleanLooseText = (value = '') => String(value || '')
@@ -597,6 +639,9 @@ function App() {
   const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
   const [labelDefinitions, setLabelDefinitions] = useState([]);
   const [quickReplies, setQuickReplies] = useState([]);
+  const [waModules, setWaModules] = useState([]);
+  const [selectedWaModule, setSelectedWaModule] = useState(null);
+  const [waModuleError, setWaModuleError] = useState('');
 
   const [waCapabilities, setWaCapabilities] = useState({ messageEdit: true, messageEditSync: true, messageForward: true, messageDelete: true, messageReply: true, quickReplies: false, quickRepliesRead: false, quickRepliesWrite: false });
   const [toasts, setToasts] = useState([]);
@@ -615,6 +660,7 @@ function App() {
   const prevMessagesMetaRef = useRef({ count: 0, lastId: '' });
   const suppressSmoothScrollUntilRef = useRef(0);
   const selectedTransportRef = useRef(selectedTransport);
+  const selectedWaModuleRef = useRef(selectedWaModule);
   const saasSessionRef = useRef(saasSession);
   const saasRuntimeRef = useRef(saasRuntime);
   const labelDefsPersistenceStateRef = useRef({ key: '', loaded: false });
@@ -775,7 +821,13 @@ function App() {
 
       const runtimeTenant = runtimePayload?.tenant || null;
       const runtimeUser = runtimePayload?.authContext?.user || nextSession?.user || null;
+      const runtimeModules = normalizeWaModules(runtimePayload?.waModules || []);
+      const runtimeSelectedModule = resolveSelectedWaModule(runtimeModules, runtimePayload?.selectedWaModule || null);
+
       setSaasSession(nextSession);
+      setWaModules(runtimeModules);
+      setSelectedWaModule(runtimeSelectedModule);
+      setWaModuleError('');
       setSaasRuntime({
         loaded: true,
         authEnabled,
@@ -800,6 +852,8 @@ function App() {
     })().catch((error) => {
       if (cancelled) return;
       setSaasRuntime((prev) => ({ ...prev, loaded: true }));
+      setWaModules([]);
+      setSelectedWaModule(null);
       setSaasAuthBusy(false);
       setSaasAuthError(String(error?.message || 'No se pudo inicializar SaaS.'));
     });
@@ -856,10 +910,12 @@ function App() {
     if (SOCKET_AUTH_TOKEN) auth.token = SOCKET_AUTH_TOKEN;
     if (accessToken) auth.accessToken = accessToken;
     if (tenantId) auth.tenantId = tenantId;
+    const selectedModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim();
+    if (selectedModuleId) auth.waModuleId = selectedModuleId;
     socket.auth = Object.keys(auth).length > 0 ? auth : undefined;
 
     if (!socket.connected) socket.connect();
-  }, [saasRuntime?.loaded, saasRuntime?.authEnabled, saasRuntime?.tenant?.id, saasSession?.accessToken, saasSession?.user?.tenantId]);
+  }, [saasRuntime?.loaded, saasRuntime?.authEnabled, saasRuntime?.tenant?.id, saasSession?.accessToken, saasSession?.user?.tenantId, selectedWaModule?.moduleId]);
 
   // --------------------------------------------------------------
   // Auto-scroll
@@ -913,6 +969,10 @@ function App() {
       localStorage.removeItem(TRANSPORT_STORAGE_KEY);
     } catch (_) { }
   }, [selectedTransport]);
+
+  useEffect(() => {
+    selectedWaModuleRef.current = selectedWaModule;
+  }, [selectedWaModule]);
 
   useEffect(() => {
     saasSessionRef.current = saasSession;
@@ -979,6 +1039,7 @@ function App() {
       setIsSwitchingTransport(true);
       socket.emit('set_transport_mode', { mode: mode || 'idle' });
       socket.emit('get_wa_capabilities');
+      socket.emit('get_wa_modules');
     });
     socket.on('connect_error', (error) => {
       setIsConnected(false);
@@ -992,7 +1053,9 @@ function App() {
     socket.on('tenant_context', (ctx) => {
       if (!ctx || typeof ctx !== 'object') return;
       const tenantId = String(ctx?.tenantId || '').trim();
-      const authUser = ctx?.auth?.user && typeof ctx.auth.user === 'object' ? ctx.auth.user : null;
+      const authUser = (ctx?.auth?.user && typeof ctx.auth.user === 'object')
+        ? ctx.auth.user
+        : (ctx?.user && typeof ctx.user === 'object' ? ctx.user : null);
 
       if (tenantId) {
         setSaasRuntime((prev) => ({
@@ -1009,8 +1072,46 @@ function App() {
       }
 
       if (authUser && saasSessionRef.current?.accessToken) {
-        setSaasSession((prev) => prev ? ({ ...prev, user: authUser }) : prev);
+        setSaasSession((prev) => prev ? ({ ...prev, user: { ...(prev?.user || {}), ...authUser } }) : prev);
       }
+    });
+
+    socket.on('wa_module_context', (payload) => {
+      const items = normalizeWaModules(payload?.items || []);
+      const selected = resolveSelectedWaModule(items, payload?.selected || selectedWaModuleRef.current);
+      setWaModules(items);
+      setSelectedWaModule(selected);
+      setWaModuleError('');
+
+      const selectedMode = String(selected?.transportMode || '').trim().toLowerCase();
+      if ((selectedMode === 'webjs' || selectedMode === 'cloud') && selectedMode !== selectedTransportRef.current) {
+        setSelectedTransport(selectedMode);
+      }
+    });
+
+    socket.on('wa_module_selected', (payload) => {
+      const selected = normalizeWaModuleItem(payload?.selected || payload?.item || payload || null);
+      if (!selected?.moduleId) return;
+
+      setWaModules((prev) => {
+        const base = normalizeWaModules(prev || []);
+        const hasExisting = base.some((item) => item.moduleId === selected.moduleId);
+        const merged = hasExisting
+          ? base.map((item) => (item.moduleId === selected.moduleId ? { ...item, ...selected, isSelected: true } : { ...item, isSelected: false }))
+          : [{ ...selected, isSelected: true }, ...base.map((item) => ({ ...item, isSelected: false }))];
+        return normalizeWaModules(merged);
+      });
+      setSelectedWaModule(selected);
+      setWaModuleError('');
+
+      const selectedMode = String(selected?.transportMode || '').trim().toLowerCase();
+      if (selectedMode === 'webjs' || selectedMode === 'cloud') {
+        setSelectedTransport(selectedMode);
+      }
+    });
+
+    socket.on('wa_module_error', (message) => {
+      setWaModuleError(String(message || 'No se pudo actualizar el modulo WhatsApp.'));
     });
 
     socket.on('disconnect', () => {
@@ -1031,6 +1132,7 @@ function App() {
       socket.emit('get_my_profile');
 
       socket.emit('get_wa_capabilities');
+      socket.emit('get_wa_modules');
     });
 
     socket.on('my_profile', (profile) => {
@@ -1592,10 +1694,11 @@ function App() {
       setIsSwitchingTransport(true);
       socket.emit('set_transport_mode', { mode: mode || 'idle' });
       socket.emit('get_wa_capabilities');
+      socket.emit('get_wa_modules');
     }
 
     return () => {
-      ['connect', 'connect_error', 'tenant_context', 'disconnect', 'qr', 'ready', 'my_profile', 'wa_capabilities', 'wa_runtime', 'transport_mode_set', 'transport_mode_error', 'chats', 'chat_updated', 'chat_history', 'chat_media',
+      ['connect', 'connect_error', 'tenant_context', 'wa_module_context', 'wa_module_selected', 'wa_module_error', 'disconnect', 'qr', 'ready', 'my_profile', 'wa_capabilities', 'wa_runtime', 'transport_mode_set', 'transport_mode_error', 'chats', 'chat_updated', 'chat_history', 'chat_media',
         'chat_opened', 'start_new_chat_error', 'chat_labels_updated', 'chat_labels_error', 'chat_labels_saved',
         'contact_info', 'message', 'business_data', 'error', 'business_data_catalog', 'quick_replies', 'quick_reply_error',
         'ai_suggestion_chunk',
@@ -1621,6 +1724,9 @@ function App() {
   const resetWorkspaceState = () => {
     setIsClientReady(false);
     setQrCode('');
+    setSelectedTransport('');
+    setWaModules([]);
+    setSelectedWaModule(null);
     setChats([]);
     setChatsTotal(0);
     setChatsHasMore(true);
@@ -1635,6 +1741,7 @@ function App() {
     setClientContact(null);
     setBusinessData({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
     setQuickReplies([]);
+    setWaModuleError('');
     setPendingOrderCartLoad(null);
     setToasts([]);
     setInputText('');
@@ -1711,6 +1818,8 @@ function App() {
     setSaasAuthError('');
     setTenantSwitchError('');
     setTenantSwitchBusy(false);
+    setWaModules([]);
+    setSelectedWaModule(null);
     if (socket.connected) socket.disconnect();
     setIsConnected(false);
     resetWorkspaceState();
@@ -1762,6 +1871,9 @@ function App() {
         }
       }));
 
+      setWaModules([]);
+      setSelectedWaModule(null);
+      setWaModuleError('');
       if (socket.connected) socket.disconnect();
       setIsConnected(false);
       resetWorkspaceState();
@@ -1876,6 +1988,32 @@ function App() {
     socket.emit('logout_whatsapp');
   };
 
+  const handleSelectWaModule = (moduleId = '') => {
+    const safeModuleId = String(moduleId || '').trim();
+    if (!safeModuleId) return;
+
+    const nextModule = (Array.isArray(waModules) ? waModules : [])
+      .find((item) => String(item?.moduleId || '').trim() === safeModuleId);
+    if (!nextModule) {
+      setWaModuleError('No se encontro el modulo seleccionado.');
+      return;
+    }
+
+    const moduleTransport = String(nextModule?.transportMode || '').trim().toLowerCase();
+    const normalizedTransport = moduleTransport === 'cloud' ? 'cloud' : 'webjs';
+
+    setSelectedWaModule(nextModule);
+    setSelectedTransport(normalizedTransport);
+    setTransportError('');
+    setWaModuleError('');
+
+    if (isConnected) {
+      socket.emit('set_wa_module', { moduleId: nextModule.moduleId });
+      return;
+    }
+
+    handleSelectTransport(normalizedTransport);
+  };
   const handleSelectTransport = (mode) => {
     const safeMode = String(mode || '').trim().toLowerCase();
     if (safeMode !== 'webjs' && safeMode !== 'cloud') return;
@@ -1908,6 +2046,7 @@ function App() {
     }
     setSelectedTransport('');
     setTransportError('');
+    setWaModuleError('');
     setIsSwitchingTransport(false);
     setIsClientReady(false);
     setQrCode('');
@@ -2179,6 +2318,9 @@ REGLA CRITICA:
   const loginTenantOptions = runtimeTenantOptions;
   const canSwitchTenant = saasAuthEnabled && isSaasAuthenticated && availableTenantOptions.length > 1;
   const canManageSaas = !saasAuthEnabled || Boolean(saasSession?.user?.canManageSaas || saasSession?.user?.isSuperAdmin);
+  const availableWaModules = normalizeWaModules(waModules).filter((module) => module.isActive !== false);
+  const hasModuleCatalog = availableWaModules.length > 0;
+  const selectedWaModuleId = String(selectedWaModule?.moduleId || '').trim();
 
   useEffect(() => {
     if (canManageSaas) return;
@@ -2321,32 +2463,85 @@ REGLA CRITICA:
             )}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
-            <button
-              type="button"
-              onClick={() => handleSelectTransport('webjs')}
-              style={{ textAlign: 'left', padding: '16px', borderRadius: '12px', border: '1px solid rgba(0,168,132,0.45)', background: '#0f191f', color: '#e9edef', cursor: 'pointer' }}
-            >
-              <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '6px' }}>WhatsApp Web.js</div>
-              <div style={{ fontSize: '0.82rem', color: '#9eb2bf', lineHeight: 1.5 }}>Ideal para mantener todas las funciones existentes con QR y sincronia del celular.</div>
-            </button>
+          {hasModuleCatalog ? (
+            <>
+              <div style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(0,168,132,0.32)', background: 'rgba(0,168,132,0.08)', color: '#bff6e9', fontSize: '0.8rem' }}>
+                Esta empresa tiene modulos WhatsApp configurados. Selecciona el numero/canal para iniciar.
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+                {availableWaModules.map((module) => {
+                  const moduleId = String(module?.moduleId || '').trim();
+                  const selected = selectedWaModuleId && moduleId === selectedWaModuleId;
+                  const modeLabel = module?.transportMode === 'cloud' ? 'Cloud API' : 'Web.js';
+                  return (
+                    <button
+                      key={moduleId}
+                      type="button"
+                      onClick={() => handleSelectWaModule(moduleId)}
+                      style={{
+                        textAlign: 'left',
+                        padding: '14px',
+                        borderRadius: '12px',
+                        border: selected ? '1px solid rgba(0,168,132,0.75)' : '1px solid rgba(134,150,160,0.3)',
+                        background: selected ? 'rgba(0,168,132,0.16)' : '#0f191f',
+                        color: '#e9edef',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', marginBottom: '4px' }}>
+                        <strong style={{ fontSize: '0.96rem' }}>{module?.name || moduleId}</strong>
+                        <span style={{ fontSize: '0.7rem', borderRadius: '999px', border: '1px solid rgba(124,200,255,0.45)', padding: '2px 8px', color: '#bde8ff' }}>{modeLabel}</span>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#9eb2bf' }}>
+                        {module?.phoneNumber ? ('Numero: ' + module.phoneNumber) : 'Numero no definido'}
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: '#89a4b2', marginTop: '6px' }}>
+                        {selected ? 'Seleccionado' : 'Click para usar este modulo'}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+              <button
+                type="button"
+                onClick={() => handleSelectTransport('webjs')}
+                style={{ textAlign: 'left', padding: '16px', borderRadius: '12px', border: '1px solid rgba(0,168,132,0.45)', background: '#0f191f', color: '#e9edef', cursor: 'pointer' }}
+              >
+                <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '6px' }}>WhatsApp Web.js</div>
+                <div style={{ fontSize: '0.82rem', color: '#9eb2bf', lineHeight: 1.5 }}>Ideal para mantener todas las funciones existentes con QR y sincronia del celular.</div>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => handleSelectTransport('cloud')}
-              style={{ textAlign: 'left', padding: '16px', borderRadius: '12px', border: cloudConfigured ? '1px solid rgba(124,200,255,0.45)' : '1px solid rgba(255,170,0,0.45)', background: '#0f191f', color: '#e9edef', cursor: 'pointer' }}
-            >
-              <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '6px' }}>WhatsApp Cloud API</div>
-              <div style={{ fontSize: '0.82rem', color: '#9eb2bf', lineHeight: 1.5 }}>Escalable y estable para produccion. {cloudConfigured ? 'Configurada en backend.' : 'Faltan variables META_* en backend/.env.'}</div>
-            </button>
-          </div>
-
+              <button
+                type="button"
+                onClick={() => handleSelectTransport('cloud')}
+                style={{ textAlign: 'left', padding: '16px', borderRadius: '12px', border: cloudConfigured ? '1px solid rgba(124,200,255,0.45)' : '1px solid rgba(255,170,0,0.45)', background: '#0f191f', color: '#e9edef', cursor: 'pointer' }}
+              >
+                <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '6px' }}>WhatsApp Cloud API</div>
+                <div style={{ fontSize: '0.82rem', color: '#9eb2bf', lineHeight: 1.5 }}>Escalable y estable para produccion. {cloudConfigured ? 'Configurada en backend.' : 'Faltan variables META_* en backend/.env.'}</div>
+              </button>
+            </div>
+          )}
           <div style={{ marginTop: '12px', fontSize: '0.78rem', color: '#8ca3b3', lineHeight: 1.5 }}>
             Regla actual de backend: <strong style={{ color: '#d3e6f3' }}>{String(waRuntime?.requestedTransport || 'dual')}</strong>.
             {String(waRuntime?.requestedTransport || '').toLowerCase() === 'dual'
               ? ' Dual significa que el usuario elige Web.js o Cloud al iniciar.'
               : ' Si esta en webjs o cloud, ese modo queda forzado para todos.'}
           </div>
+
+          {hasModuleCatalog && selectedWaModule && (
+            <div style={{ marginTop: '10px', fontSize: '0.78rem', color: '#8ca3b3' }}>
+              Modulo seleccionado: <strong style={{ color: '#d3e6f3' }}>{selectedWaModule.name}</strong>{selectedWaModule.phoneNumber ? (' - ' + selectedWaModule.phoneNumber) : ''}
+            </div>
+          )}
+
+          {waModuleError && (
+            <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,153,102,0.45)', background: 'rgba(255,153,102,0.08)', color: '#ffd9c2', fontSize: '0.82rem' }}>
+              {waModuleError}
+            </div>
+          )}
 
           {transportError && (
             <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,113,113,0.4)', background: 'rgba(255,113,113,0.08)', color: '#ffd1d1', fontSize: '0.82rem' }}>
@@ -2420,6 +2615,12 @@ REGLA CRITICA:
                 </p>
               </div>
             </>
+          )}
+
+          {waModuleError && (
+            <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,153,102,0.45)', background: 'rgba(255,153,102,0.08)', color: '#ffd9c2', fontSize: '0.82rem' }}>
+              {waModuleError}
+            </div>
           )}
 
           {transportError && (
@@ -2625,6 +2826,29 @@ REGLA CRITICA:
 }
 
 export default App;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

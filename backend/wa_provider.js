@@ -149,6 +149,19 @@ class WAProvider extends EventEmitter {
         return this.transportSwitchPromise;
     }
 
+    async setWebjsSessionNamespace(namespace = 'default') {
+        if (typeof webjsClient.setSessionNamespace !== 'function') return false;
+        const changed = await webjsClient.setSessionNamespace(namespace);
+        if (changed && this.activeTransport === 'webjs') {
+            this.client = webjsClient.client;
+        }
+        return changed;
+    }
+
+    getWebjsSessionNamespace() {
+        return String(webjsClient?.sessionNamespace || 'default');
+    }
+
     async initialize() {
         if (!this.activeAdapter || this.activeTransport === 'idle') return false;
         if (typeof this.activeAdapter.initialize !== 'function') return false;

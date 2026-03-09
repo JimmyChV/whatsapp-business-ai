@@ -3103,6 +3103,30 @@ body {
   color: #ffd8d8;
 }
 
+.saas-admin-nav {
+  margin: 12px 16px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.saas-admin-nav-btn {
+  border: 1px solid rgba(124, 200, 255, 0.36);
+  background: rgba(124, 200, 255, 0.1);
+  color: #d6edff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.saas-admin-nav-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .saas-admin-kpis {
   margin: 12px 16px 0;
   display: grid;

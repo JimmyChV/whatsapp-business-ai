@@ -196,6 +196,7 @@ async function buildPostgresBackup(tenantIds = [], includeMessages = true) {
 
     const scopedTables = [
         'wa_sessions',
+        'wa_modules',
         'quick_replies',
         'catalog_items',
         'tenant_settings',
@@ -264,3 +265,4 @@ main().catch((error) => {
     console.error('[Backup] ERROR:', String(error?.message || error));
     process.exit(1);
 });
+
