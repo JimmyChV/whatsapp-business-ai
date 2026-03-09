@@ -9,6 +9,7 @@ const tenantService = require('./tenant_service');
 const planLimitsService = require('./plan_limits_service');
 const aiUsageService = require('./ai_usage_service');
 const messageHistoryService = require('./message_history_service');
+const waModuleService = require('./wa_module_service');
 const auditLogService = require('./audit_log_service');
 const RateLimiter = require('./rate_limiter');
 const { URL } = require('url');
@@ -29,6 +30,8 @@ const SENDER_META_TTL_MS = Math.max(60 * 1000, Number(process.env.SENDER_META_TT
 const senderMetaCache = new Map();
 const GROUP_PARTICIPANT_CONTACT_TTL_MS = Math.max(5 * 60 * 1000, Number(process.env.GROUP_PARTICIPANT_CONTACT_TTL_MS || (30 * 60 * 1000)));
 const groupParticipantContactCache = new Map();
+const outgoingMessageAgentMeta = new Map();
+const OUTGOING_AGENT_META_TTL_MS = Math.max(60 * 1000, Number(process.env.OUTGOING_AGENT_META_TTL_MS || (10 * 60 * 1000)));
 const SOCKET_RBAC_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAAS_AUTH_ENABLED || '').trim().toLowerCase());
 
 function guardRateLimit(socket, eventName) {
@@ -41,6 +44,103 @@ function guardRateLimit(socket, eventName) {
     return true;
 }
 
+function cleanupOutgoingAgentMeta() {
+    const now = Date.now();
+    for (const [messageId, entry] of outgoingMessageAgentMeta.entries()) {
+        if (!entry || Number(entry.expiresAt || 0) <= now) {
+            outgoingMessageAgentMeta.delete(messageId);
+        }
+    }
+}
+
+function rememberOutgoingAgentMeta(messageId = '', meta = null) {
+    const safeId = String(messageId || '').trim();
+    if (!safeId || !meta || typeof meta !== 'object') return;
+    cleanupOutgoingAgentMeta();
+    outgoingMessageAgentMeta.set(safeId, {
+        meta,
+        expiresAt: Date.now() + OUTGOING_AGENT_META_TTL_MS
+    });
+}
+
+function getOutgoingAgentMeta(messageId = '') {
+    const safeId = String(messageId || '').trim();
+    if (!safeId) return null;
+    const entry = outgoingMessageAgentMeta.get(safeId);
+    if (!entry) return null;
+    if (Number(entry.expiresAt || 0) <= Date.now()) {
+        outgoingMessageAgentMeta.delete(safeId);
+        return null;
+    }
+    return entry.meta && typeof entry.meta === 'object' ? entry.meta : null;
+}
+
+function buildSocketAgentMeta(authContext = null, moduleContext = null) {
+    if (!authContext || typeof authContext !== 'object') return null;
+    const userId = String(authContext?.userId || authContext?.id || '').trim();
+    const email = String(authContext?.email || '').trim() || null;
+    const role = String(authContext?.role || '').trim().toLowerCase() || null;
+    const name = String(authContext?.name || authContext?.displayName || email || userId || '').trim() || null;
+    if (!userId && !email && !name) return null;
+
+    return {
+        sentByUserId: userId || null,
+        sentByName: name,
+        sentByEmail: email,
+        sentByRole: role,
+        sentViaModuleId: String(moduleContext?.moduleId || '').trim() || null,
+        sentViaModuleName: String(moduleContext?.name || '').trim() || null,
+        sentViaTransport: String(moduleContext?.transportMode || '').trim().toLowerCase() || null
+    };
+}
+
+function sanitizeAgentMeta(agentMeta = null) {
+    if (!agentMeta || typeof agentMeta !== 'object') return null;
+    const out = {};
+    ['sentByUserId', 'sentByName', 'sentByEmail', 'sentByRole', 'sentViaModuleId', 'sentViaModuleName', 'sentViaTransport'].forEach((key) => {
+        const value = String(agentMeta?.[key] || '').trim();
+        if (value) out[key] = value;
+    });
+    return Object.keys(out).length > 0 ? out : null;
+}
+
+async function resolveSocketModuleContext(tenantId = 'default', authContext = null, requestedModuleId = '') {
+    const cleanTenantId = String(tenantId || 'default').trim() || 'default';
+    const userId = String(authContext?.userId || authContext?.id || '').trim();
+    const normalizedRequestedId = String(requestedModuleId || '').trim().toLowerCase();
+
+    const modules = await waModuleService.listModules(cleanTenantId, {
+        includeInactive: false,
+        userId
+    });
+
+    if (!Array.isArray(modules) || modules.length === 0) {
+        return { modules: [], selected: null };
+    }
+
+    let selected = null;
+    if (normalizedRequestedId) {
+        selected = modules.find((module) => String(module?.moduleId || '').trim().toLowerCase() === normalizedRequestedId) || null;
+    }
+    if (!selected) {
+        selected = modules.find((module) => module?.isSelected) || modules.find((module) => module?.isDefault) || modules[0] || null;
+    }
+
+    return {
+        modules,
+        selected: selected || null
+    };
+}
+function mergeAgentMeta(...candidates) {
+    const merged = {};
+    for (const candidate of candidates) {
+        if (!candidate || typeof candidate !== 'object') continue;
+        const normalized = sanitizeAgentMeta(candidate);
+        if (!normalized) continue;
+        Object.assign(merged, normalized);
+    }
+    return Object.keys(merged).length > 0 ? merged : null;
+}
 function parseOrderNumber(value) {
     if (value === null || value === undefined) return null;
     if (typeof value === 'number') return Number.isFinite(value) ? value : null;
@@ -2065,7 +2165,8 @@ class SocketManager {
         fileMeta = null,
         order = null,
         location = null,
-        quotedMessage = null
+        quotedMessage = null,
+        agentMeta = null
     } = {}) {
         try {
             if (!msg) return;
@@ -2073,6 +2174,7 @@ class SocketManager {
             const chatId = String(msg?.fromMe ? msg?.to : msg?.from || '').trim();
             if (!messageId || !chatId) return;
 
+            const persistedAgentMeta = sanitizeAgentMeta(agentMeta);
             await messageHistoryService.upsertMessage(tenantId, {
                 messageId,
                 chatId,
@@ -2095,7 +2197,8 @@ class SocketManager {
                 metadata: {
                     notifyName: senderMeta?.notifyName || null,
                     senderPushname: senderMeta?.senderPushname || null,
-                    isGroupMessage: Boolean(senderMeta?.isGroupMessage)
+                    isGroupMessage: Boolean(senderMeta?.isGroupMessage),
+                    ...(persistedAgentMeta || {})
                 },
                 chat: {
                     id: chatId,
@@ -2332,6 +2435,13 @@ class SocketManager {
             senderId,
             senderPushname: String(metadata?.senderPushname || '').trim() || null,
             isGroupMessage: Boolean(metadata?.isGroupMessage || String(chatId || '').endsWith('@g.us')),
+            sentByUserId: String(metadata?.sentByUserId || '').trim() || null,
+            sentByName: String(metadata?.sentByName || '').trim() || null,
+            sentByEmail: String(metadata?.sentByEmail || '').trim() || null,
+            sentByRole: String(metadata?.sentByRole || '').trim() || null,
+            sentViaModuleId: String(metadata?.sentViaModuleId || '').trim() || null,
+            sentViaModuleName: String(metadata?.sentViaModuleName || '').trim() || null,
+            sentViaTransport: String(metadata?.sentViaTransport || '').trim() || null,
             ack: Number.isFinite(Number(row?.ack)) ? Number(row.ack) : 0,
             edited: Boolean(row?.edited),
             editedAt: Number(row?.editedAtUnix || 0) || null,
@@ -2720,12 +2830,111 @@ class SocketManager {
                 } catch (_) { }
             };
 
+            const normalizeSocketModuleId = (value = '') => String(value || '').trim().toLowerCase();
+            const getRequestedModuleIdFromSocket = () => normalizeSocketModuleId(
+                socket?.handshake?.auth?.waModuleId
+                || socket?.handshake?.auth?.moduleId
+                || socket?.handshake?.query?.waModuleId
+                || socket?.handshake?.query?.moduleId
+                || ''
+            );
+
+            const emitWaModuleContext = async ({ requestedModuleId = '' } = {}) => {
+                const cleanRequested = normalizeSocketModuleId(requestedModuleId || getRequestedModuleIdFromSocket());
+                const moduleContext = await resolveSocketModuleContext(tenantId, authContext, cleanRequested);
+                const selected = moduleContext?.selected || null;
+                const modules = Array.isArray(moduleContext?.modules) ? moduleContext.modules : [];
+
+                socket.data = socket.data || {};
+                socket.data.waModule = selected;
+                socket.data.waModuleId = selected?.moduleId || '';
+                socket.data.waModules = modules;
+
+                const payload = {
+                    tenantId,
+                    items: modules,
+                    selected
+                };
+                socket.emit('wa_module_context', payload);
+                return payload;
+            };
+
+            const buildWebjsSessionNamespace = (selectedModule = null) => {
+                const cleanTenant = String(tenantId || 'default')
+                    .trim()
+                    .toLowerCase()
+                    .replace(/[^a-z0-9_-]+/g, '_')
+                    .replace(/^_+|_+$/g, '')
+                    .slice(0, 24) || 'default';
+                const cleanModule = normalizeSocketModuleId(selectedModule?.moduleId || 'default') || 'default';
+                return String(cleanTenant + '__' + cleanModule)
+                    .replace(/[^a-z0-9_-]+/g, '_')
+                    .replace(/^_+|_+$/g, '')
+                    .slice(0, 60) || 'default';
+            };
+
+            const ensureTransportForSelectedModule = async (selectedModule = null) => {
+                const moduleTransport = String(selectedModule?.transportMode || '').trim().toLowerCase();
+                if (moduleTransport !== 'webjs' && moduleTransport !== 'cloud') return null;
+
+                let namespaceChanged = false;
+                if (moduleTransport === 'webjs' && typeof waClient.setWebjsSessionNamespace === 'function') {
+                    const namespace = buildWebjsSessionNamespace(selectedModule);
+                    namespaceChanged = await waClient.setWebjsSessionNamespace(namespace);
+                }
+
+                let runtime = this.getWaRuntime();
+                const activeTransport = String(runtime?.activeTransport || 'idle').trim().toLowerCase();
+
+                if (activeTransport === moduleTransport) {
+                    if (moduleTransport === 'webjs' && namespaceChanged) {
+                        try {
+                            await waClient.initialize();
+                        } catch (_) { }
+                        runtime = this.getWaRuntime();
+                    }
+
+                    this.invalidateChatListCache();
+                    this.contactListCache = { items: [], updatedAt: 0 };
+                    this.emitWaCapabilities(socket);
+                    socket.emit('transport_mode_set', runtime);
+
+                    if (waClient.isReady) {
+                        socket.emit('ready', { message: 'WhatsApp transport listo' });
+                    } else if (waClient.lastQr) {
+                        socket.emit('qr', waClient.lastQr);
+                    }
+
+                    return runtime;
+                }
+
+                const nextRuntime = await waClient.setTransportMode(moduleTransport);
+                this.invalidateChatListCache();
+                this.contactListCache = { items: [], updatedAt: 0 };
+                this.emitWaCapabilities(socket);
+                socket.emit('transport_mode_set', nextRuntime);
+                await auditSocketAction('wa.transport_mode.autoset_by_module', {
+                    resourceType: 'wa_module',
+                    resourceId: selectedModule?.moduleId || null,
+                    payload: { moduleTransport, runtime: nextRuntime, namespaceChanged }
+                });
+
+                if (waClient.isReady) {
+                    socket.emit('ready', { message: 'WhatsApp transport listo' });
+                } else if (waClient.lastQr) {
+                    socket.emit('qr', waClient.lastQr);
+                }
+
+                return nextRuntime;
+            };
+
             console.log('Web client connected:', socket.id, '| tenant:', tenantId);
             socket.join(this.getTenantRoom(tenantId));
             socket.emit('tenant_context', {
                 tenantId,
                 user: authContext ? {
                     userId: authContext.userId,
+                    name: authContext.name || null,
                     email: authContext.email,
                     role: authContext.role,
                     tenantId: authContext.tenantId
@@ -2738,18 +2947,79 @@ class SocketManager {
                 socket.emit('qr', waClient.lastQr);
             }
             this.emitWaCapabilities(socket);
+            emitWaModuleContext({ requestedModuleId: getRequestedModuleIdFromSocket() })
+                .then((payload) => ensureTransportForSelectedModule(payload?.selected || null))
+                .catch(() => { });
 
             socket.on('get_wa_capabilities', () => {
                 this.emitWaCapabilities(socket);
             });
 
+            socket.on('get_wa_modules', async () => {
+                try {
+                    await emitWaModuleContext({ requestedModuleId: socket?.data?.waModuleId || getRequestedModuleIdFromSocket() });
+                } catch (error) {
+                    socket.emit('wa_module_error', String(error?.message || 'No se pudieron cargar los modulos WhatsApp.'));
+                }
+            });
+
+            socket.on('set_wa_module', async ({ moduleId } = {}) => {
+                if (!guardRateLimit(socket, 'set_wa_module')) return;
+                try {
+                    const requestedModuleId = normalizeSocketModuleId(moduleId);
+                    if (!requestedModuleId) {
+                        socket.emit('wa_module_error', 'Selecciona un modulo valido.');
+                        return;
+                    }
+
+                    const userId = String(authContext?.userId || authContext?.id || '').trim();
+                    const allowedModules = await waModuleService.listModules(tenantId, {
+                        includeInactive: false,
+                        userId
+                    });
+                    const selected = (Array.isArray(allowedModules) ? allowedModules : [])
+                        .find((entry) => normalizeSocketModuleId(entry?.moduleId) === requestedModuleId);
+
+                    if (!selected) {
+                        socket.emit('wa_module_error', 'No tienes acceso a ese modulo WhatsApp.');
+                        return;
+                    }
+
+                    await waModuleService.setSelectedModule(tenantId, selected.moduleId);
+                    const contextPayload = await emitWaModuleContext({ requestedModuleId: selected.moduleId });
+                    socket.emit('wa_module_selected', {
+                        tenantId,
+                        selected: contextPayload?.selected || selected
+                    });
+                    await ensureTransportForSelectedModule(contextPayload?.selected || selected);
+                    await auditSocketAction('wa.module.selected', {
+                        resourceType: 'wa_module',
+                        resourceId: selected.moduleId,
+                        payload: { transportMode: selected.transportMode || null }
+                    });
+                } catch (error) {
+                    socket.emit('wa_module_error', String(error?.message || 'No se pudo seleccionar el modulo WhatsApp.'));
+                }
+            });
             socket.on('set_transport_mode', async ({ mode } = {}) => {
-                if (!requireRole(['owner', 'admin'], { errorEvent: 'transport_mode_error', action: 'cambiar el modo de transporte' })) return;
                 try {
                     const nextMode = String(mode || '').trim().toLowerCase();
                     if (!nextMode) {
                         socket.emit('transport_mode_error', 'Debes seleccionar un modo de transporte.');
                         return;
+                    }
+
+                    const selectedModule = socket?.data?.waModule || null;
+                    const forcedMode = String(selectedModule?.transportMode || '').trim().toLowerCase();
+                    const hasForcedMode = forcedMode === 'webjs' || forcedMode === 'cloud';
+
+                    if (hasForcedMode && nextMode !== forcedMode) {
+                        socket.emit('transport_mode_error', 'Este modulo exige modo ' + forcedMode + '. Cambia de modulo para usar otro transporte.');
+                        return;
+                    }
+
+                    if (!hasForcedMode) {
+                        if (!requireRole(['owner', 'admin'], { errorEvent: 'transport_mode_error', action: 'cambiar el modo de transporte' })) return;
                     }
 
                     const runtime = await waClient.setTransportMode(nextMode);
@@ -2758,9 +3028,14 @@ class SocketManager {
                     this.emitWaCapabilities(socket);
                     socket.emit('transport_mode_set', runtime);
                     await auditSocketAction('wa.transport_mode.changed', {
-                        resourceType: 'wa_runtime',
-                        resourceId: runtime?.activeTransport || nextMode,
-                        payload: { requestedMode: nextMode, runtime }
+                        resourceType: hasForcedMode ? 'wa_module' : 'wa_runtime',
+                        resourceId: hasForcedMode ? (selectedModule?.moduleId || null) : (runtime?.activeTransport || nextMode),
+                        payload: {
+                            requestedMode: nextMode,
+                            effectiveMode: runtime?.activeTransport || nextMode,
+                            selectedModuleId: selectedModule?.moduleId || null,
+                            runtime
+                        }
                     });
 
                     if (waClient.isReady) {
@@ -3028,9 +3303,28 @@ class SocketManager {
                         ? await waClient.getMessagesEditability(outgoingIds)
                         : {};
 
+                    let historyMetaByMessageId = new Map();
+                    try {
+                        const persistedRows = await messageHistoryService.listMessages(tenantId, { chatId: historyChatId, limit: 500 });
+                        historyMetaByMessageId = new Map(
+                            (Array.isArray(persistedRows) ? persistedRows : [])
+                                .map((row) => {
+                                    const key = String(row?.messageId || '').trim();
+                                    if (!key) return null;
+                                    const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+                                    return [key, metadata];
+                                })
+                                .filter(Boolean)
+                        );
+                    } catch (_) { }
+
                     const formatted = await Promise.all(visible.map(async (m) => {
                         const senderMeta = await resolveMessageSenderMeta(m);
                         const fileMeta = extractMessageFileMeta(m);
+                        const messageId = String(m?.id?._serialized || '').trim();
+                        const persistedAgentMeta = historyMetaByMessageId.get(messageId) || null;
+                        const pendingAgentMeta = m?.fromMe ? getOutgoingAgentMeta(messageId) : null;
+                        const agentMeta = mergeAgentMeta(persistedAgentMeta, pendingAgentMeta);
                         return ({
                         id: m.id._serialized,
                         from: m.from,
@@ -3056,7 +3350,8 @@ class SocketManager {
                         canEdit: Boolean(editableMap[String(m?.id?._serialized || '')]),
                         order: extractOrderInfo(m),
                         location: extractLocationInfo(m),
-                        quotedMessage: await extractQuotedMessageInfo(m)
+                        quotedMessage: await extractQuotedMessageInfo(m),
+                        ...(agentMeta || {})
                         });
                     }));
                     socket.emit('chat_history', { chatId: historyChatId, requestedChatId: chatId, messages: formatted });
@@ -3281,6 +3576,10 @@ class SocketManager {
                         return;
                     }
 
+                    const moduleContext = socket?.data?.waModule || null;
+                    const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
+                    let sentMessage = null;
+
                     if (quoted) {
                         let quotedTargetChatId = targetChatId;
                         try {
@@ -3294,13 +3593,18 @@ class SocketManager {
 
                         try {
                             // Prefer native quotedMessageId path so replies stay linked on WhatsApp mobile.
-                            await waClient.sendMessage(quotedTargetChatId, text, { quotedMessageId: quoted });
+                            sentMessage = await waClient.sendMessage(quotedTargetChatId, text, { quotedMessageId: quoted });
                         } catch (sendWithQuoteError) {
                             // Fallback for runtime variants where quotedMessageId is not accepted directly.
-                            await waClient.replyToMessage(quotedTargetChatId, quoted, text);
+                            sentMessage = await waClient.replyToMessage(quotedTargetChatId, quoted, text);
                         }
                     } else {
-                        await waClient.sendMessage(targetChatId, text);
+                        sentMessage = await waClient.sendMessage(targetChatId, text);
+                    }
+
+                    const sentMessageId = String(sentMessage?.id?._serialized || '').trim();
+                    if (sentMessageId && agentMeta) {
+                        rememberOutgoingAgentMeta(sentMessageId, agentMeta);
                     }
                 } catch (e) {
                     socket.emit('error', 'Failed to send message.');
@@ -3380,7 +3684,14 @@ class SocketManager {
                         socket.emit('error', 'El envio de notas de voz esta deshabilitado temporalmente.');
                         return;
                     }
-                    await waClient.sendMedia(to, mediaData, mimetype, filename, body, isPtt, quotedMessageId);
+
+                    const moduleContext = socket?.data?.waModule || null;
+                    const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
+                    const sentMessage = await waClient.sendMedia(to, mediaData, mimetype, filename, body, isPtt, quotedMessageId);
+                    const sentMessageId = String(sentMessage?.id?._serialized || '').trim();
+                    if (sentMessageId && agentMeta) {
+                        rememberOutgoingAgentMeta(sentMessageId, agentMeta);
+                    }
                 } catch (e) {
                     socket.emit('error', 'Failed to send media.');
                 }
@@ -4080,13 +4391,16 @@ class SocketManager {
             const quotedMessage = await extractQuotedMessageInfo(msg);
             const order = extractOrderInfo(msg);
             const location = extractLocationInfo(msg);
+            const messageId = String(msg?.id?._serialized || '').trim();
+            const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId)) : null;
             await this.persistMessageHistory(this.resolveHistoryTenantId(), {
                 msg,
                 senderMeta,
                 fileMeta,
                 order,
                 location,
-                quotedMessage
+                quotedMessage,
+                agentMeta
             });
             this.io.emit('message', {
                 id: msg.id._serialized,
@@ -4111,7 +4425,8 @@ class SocketManager {
                 canEdit: false,
                 order,
                 location,
-                quotedMessage
+                quotedMessage,
+                ...(agentMeta || {})
             });
 
             try {
@@ -4134,13 +4449,16 @@ class SocketManager {
             const quotedMessage = await extractQuotedMessageInfo(msg);
             const order = extractOrderInfo(msg);
             const location = extractLocationInfo(msg);
+            const messageId = String(msg?.id?._serialized || '').trim();
+            const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId)) : null;
             await this.persistMessageHistory(this.resolveHistoryTenantId(), {
                 msg,
                 senderMeta: null,
                 fileMeta,
                 order,
                 location,
-                quotedMessage
+                quotedMessage,
+                agentMeta
             });
             this.io.emit('message', {
                 id: msg.id._serialized,
@@ -4165,7 +4483,8 @@ class SocketManager {
                 canEdit: false,
                 order,
                 location,
-                quotedMessage
+                quotedMessage,
+                ...(agentMeta || {})
             });
 
             this.emitMessageEditability(msg.id._serialized, msg.to || msg.from);
@@ -4256,6 +4575,23 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

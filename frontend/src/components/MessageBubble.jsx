@@ -935,6 +935,11 @@ const MessageBubble = ({
     ).trim().toLowerCase();
     const senderNameColor = getGroupSenderColor(senderIdentityKey);
 
+    const sentByName = String(msg?.sentByName || msg?.sentByEmail || '').trim();
+    const sentByRole = String(msg?.sentByRole || '').trim();
+    const sentViaModuleName = String(msg?.sentViaModuleName || '').trim();
+    const showOutgoingAttribution = Boolean(isOut && (sentByName || sentViaModuleName || sentByRole));
+
     const canEditMessage = Boolean(
         canEditMessages
         && isOut
@@ -1499,6 +1504,23 @@ const MessageBubble = ({
                     </div>
                 )}
 
+                {showOutgoingAttribution && (
+                    <div style={{
+                        marginTop: '4px',
+                        marginBottom: '2px',
+                        fontSize: '0.68rem',
+                        color: 'rgba(214,231,240,0.82)',
+                        alignSelf: 'flex-end',
+                        textAlign: 'right'
+                    }}>
+                        Respondio: <strong style={{ color: '#e8f3f8', fontWeight: 600 }}>{sentByName || 'Usuario'}</strong>
+                        {(sentViaModuleName || sentByRole) && (
+                            <span style={{ color: '#9eb2bf' }}>
+                                {' · '}{sentViaModuleName || sentByRole}
+                            </span>
+                        )}
+                    </div>
+                )}
                 <div className="message-meta" style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -1519,3 +1541,5 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
+
+

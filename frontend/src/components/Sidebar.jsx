@@ -374,7 +374,7 @@ const Sidebar = ({
                             )}
                             {saasAuthEnabled && canManageSaas && (
                                 <button type="button" className="sidebar-menu-item" onClick={() => { onOpenSaasAdmin?.(); setShowMenu(false); }}>
-                                    Panel SaaS
+                                    Panel SaaS (empresas/usuarios)
                                 </button>
                             )}
                             <button type="button" className="sidebar-menu-item" onClick={() => { onStartNewChat?.(); setShowMenu(false); }}>
@@ -616,6 +616,7 @@ const Sidebar = ({
 };
 
 export default Sidebar;
+
 
 
 

@@ -158,6 +158,7 @@ function isTenantScopedTable(table) {
         'tenants',
         'memberships',
         'wa_sessions',
+        'wa_modules',
         'quick_replies',
         'catalog_items',
         'tenant_settings',
@@ -175,6 +176,7 @@ function getConflictColumns(table) {
     case 'users': return ['user_id'];
     case 'memberships': return ['tenant_id', 'user_id'];
     case 'wa_sessions': return ['tenant_id'];
+    case 'wa_modules': return ['tenant_id', 'module_id'];
     case 'quick_replies': return ['tenant_id', 'reply_id'];
     case 'catalog_items': return ['tenant_id', 'item_id'];
     case 'tenant_settings': return ['tenant_id'];
@@ -277,6 +279,7 @@ async function restorePostgresData(backup, tenantIds = [], mode = 'merge', inclu
         'users',
         'memberships',
         'wa_sessions',
+        'wa_modules',
         'quick_replies',
         'catalog_items',
         'tenant_settings',
@@ -344,3 +347,5 @@ main().catch((error) => {
     console.error('[Restore] ERROR:', String(error?.message || error));
     process.exit(1);
 });
+
+

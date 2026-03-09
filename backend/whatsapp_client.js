@@ -31,13 +31,33 @@ const isBrowserLockError = (error) => {
     return BROWSER_LOCK_PATTERNS.some((pattern) => message.includes(String(pattern || '').toLowerCase()));
 };
 
+const normalizeSessionNamespace = (value = 'default') => {
+    const cleaned = String(value || 'default')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 60);
+    return cleaned || 'default';
+};
+
 class WhatsAppClient extends EventEmitter {
     constructor() {
         super();
         this.capabilityWarnings = new Set();
         this.authDataPath = path.resolve(process.cwd(), 'wwebjs_auth');
-        this.clientConfig = {
-            authStrategy: new LocalAuth({ dataPath: this.authDataPath }),
+        this.sessionNamespace = normalizeSessionNamespace(process.env.WA_WEBJS_SESSION_NAMESPACE || 'default');
+        this.clientConfig = this.buildClientConfig(this.sessionNamespace);
+        this.client = null;
+        this.isReady = false;
+        this.initializePromise = null;
+        this.lastQr = null;
+        this.createClient();
+    }
+    buildClientConfig(namespace = this.sessionNamespace) {
+        const cleanNamespace = normalizeSessionNamespace(namespace);
+        return {
+            authStrategy: new LocalAuth({ dataPath: this.authDataPath, clientId: cleanNamespace }),
             authTimeoutMs: 120000,
             puppeteer: {
                 headless: true,
@@ -50,11 +70,17 @@ class WhatsAppClient extends EventEmitter {
                 ]
             }
         };
-        this.client = null;
-        this.isReady = false;
-        this.initializePromise = null;
-        this.lastQr = null;
+    }
+
+    async setSessionNamespace(namespace = 'default') {
+        const cleanNamespace = normalizeSessionNamespace(namespace);
+        if (cleanNamespace === this.sessionNamespace) return false;
+
+        await this.shutdown({ recreate: false, emitDisconnected: false, reason: 'session_namespace_switch' });
+        this.sessionNamespace = cleanNamespace;
+        this.clientConfig = this.buildClientConfig(cleanNamespace);
         this.createClient();
+        return true;
     }
 
     createClient() {
@@ -66,13 +92,25 @@ class WhatsAppClient extends EventEmitter {
     }
 
     cleanupChromiumSingletonLocks() {
-        const sessionDir = path.resolve(this.authDataPath, 'session');
         const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
-        lockFiles.forEach((fileName) => {
-            try {
-                const filePath = path.resolve(sessionDir, fileName);
-                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-            } catch (_) { }
+        let sessionDirs = [];
+
+        try {
+            const entries = fs.readdirSync(this.authDataPath, { withFileTypes: true });
+            sessionDirs = entries
+                .filter((entry) => entry.isDirectory() && String(entry.name || '').startsWith('session'))
+                .map((entry) => path.resolve(this.authDataPath, entry.name));
+        } catch (_) {
+            sessionDirs = [path.resolve(this.authDataPath, 'session')];
+        }
+
+        sessionDirs.forEach((sessionDir) => {
+            lockFiles.forEach((fileName) => {
+                try {
+                    const filePath = path.resolve(sessionDir, fileName);
+                    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                } catch (_) { }
+            });
         });
     }
 
