@@ -5,6 +5,21 @@ function normalizeDigits(value = '') {
     return String(value || '').replace(/\D/g, '');
 }
 
+function defaultCountryCode() {
+    return normalizeDigits(process.env.WA_DEFAULT_COUNTRY_CODE || process.env.DEFAULT_COUNTRY_CODE || '51');
+}
+
+function withDefaultCountryCode(value = '') {
+    const digits = normalizeDigits(value);
+    if (!digits) return '';
+    const cc = defaultCountryCode();
+    const trimmed = digits.replace(/^0+/, '') || digits;
+    if (trimmed.length <= 10 && cc && !trimmed.startsWith(cc)) {
+        return cc + trimmed;
+    }
+    return trimmed;
+}
+
 function toChatId(value = '') {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -16,8 +31,9 @@ function toChatId(value = '') {
 function toWaId(value = '') {
     const raw = String(value || '').trim();
     if (!raw) return '';
-    if (raw.includes('@')) return normalizeDigits(raw.split('@')[0] || '');
-    return normalizeDigits(raw);
+    if (raw.endsWith('@lid')) return '';
+    const base = raw.includes('@') ? normalizeDigits(raw.split('@')[0] || '') : normalizeDigits(raw);
+    return withDefaultCountryCode(base);
 }
 
 function safeTimestamp(value) {
@@ -548,7 +564,7 @@ class WhatsAppCloudClient extends EventEmitter {
     }
 
     async getNumberId(phone) {
-        const digits = normalizeDigits(phone);
+        const digits = withDefaultCountryCode(phone);
         if (!digits || digits.length < 8) return null;
 
         if (!this.isConfigured()) {
@@ -577,14 +593,26 @@ class WhatsAppCloudClient extends EventEmitter {
             }
             return null;
         } catch (error) {
-            return { user: digits, _serialized: `${digits}@c.us` };
+            const code = Number(error?.code || 0);
+            const subcode = Number(error?.errorSubcode || error?.error_subcode || 0);
+            const detail = String(error?.message || '').toLowerCase();
+            const unsupportedContacts = code === 100 && (subcode === 33 || detail.includes('unsupported post request'));
+            if (unsupportedContacts) {
+                return { user: digits, _serialized: `${digits}@c.us` };
+            }
+            return null;
         }
+    }
+
+    async resolveSendWaId(to) {
+        const waId = toWaId(to);
+        if (!waId) throw new Error('Invalid destination');
+        return waId;
     }
 
     async sendMessage(to, body, options = {}) {
         if (!this.isReady) throw new Error('Cloud client not ready');
-        const waId = toWaId(to);
-        if (!waId) throw new Error('Invalid destination');
+        const waId = await this.resolveSendWaId(to);
 
         const payload = {
             messaging_product: 'whatsapp',
@@ -652,8 +680,7 @@ class WhatsAppCloudClient extends EventEmitter {
         if (!this.isReady) throw new Error('Cloud client not ready');
         if (isPtt) throw new Error('PTT is not supported in cloud transport');
 
-        const waId = toWaId(to);
-        if (!waId) throw new Error('Invalid destination');
+        const waId = await this.resolveSendWaId(to);
 
         const mediaId = await this.uploadMedia(mediaData, mimetype, filename || 'adjunto');
         if (!mediaId) throw new Error('Media upload failed');

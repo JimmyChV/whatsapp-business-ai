@@ -3032,6 +3032,18 @@ body {
   padding: 20px;
 }
 
+.saas-admin-overlay--embedded {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+  align-items: stretch;
+  justify-content: stretch;
+  height: 100%;
+}
+
 .saas-admin-panel {
   width: min(1140px, 100%);
   max-height: min(92vh, 980px);
@@ -3042,6 +3054,14 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.saas-admin-panel--embedded {
+  width: 100%;
+  max-height: none;
+  height: 100%;
+  border-radius: 14px;
+  box-shadow: none;
 }
 
 .saas-admin-header {
@@ -3125,6 +3145,12 @@ body {
 .saas-admin-nav-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.saas-admin-nav-btn.active {
+  border-color: rgba(0, 168, 132, 0.62);
+  background: rgba(0, 168, 132, 0.2);
+  color: #d8fff3;
 }
 
 .saas-admin-kpis {
@@ -3355,3 +3381,4 @@ body {
     grid-template-columns: 1fr;
   }
 }
+

@@ -600,6 +600,15 @@ function hasSaasControlWriteAccess(req = {}, { requireSuperAdmin = false } = {})
     return role === 'owner';
 }
 
+function hasTenantAdminWriteAccess(req = {}) {
+    if (!authService.isAuthEnabled()) return true;
+    const authContext = req.authContext || { isAuthenticated: false, user: null };
+    if (!authContext.isAuthenticated || !authContext.user) return false;
+    if (authContext.user?.isSuperAdmin) return true;
+    const role = getAuthRole(req);
+    return role === 'owner' || role === 'admin';
+}
+
 function isTenantAllowedForUser(req = {}, tenantId = '') {
     const cleanTenantId = String(tenantId || '').trim();
     if (!cleanTenantId) return false;
@@ -616,7 +625,7 @@ function hasTenantModuleReadAccess(req = {}, tenantId = '') {
 
 function hasTenantModuleWriteAccess(req = {}, tenantId = '') {
     if (!tenantId) return false;
-    if (!hasSaasControlWriteAccess(req)) return false;
+    if (!hasTenantAdminWriteAccess(req)) return false;
     return isTenantAllowedForUser(req, tenantId);
 }
 
@@ -647,6 +656,11 @@ function sanitizeMembershipPayload(memberships = []) {
             active: item?.active !== false
         }))
         .filter((item) => Boolean(item.tenantId));
+}
+
+function hasOwnerRoleMembership(memberships = []) {
+    const source = Array.isArray(memberships) ? memberships : [];
+    return source.some((item) => String(item?.role || '').trim().toLowerCase() === 'owner');
 }
 
 function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
@@ -775,7 +789,7 @@ app.get('/api/admin/saas/users', async (req, res) => {
 
 app.post('/api/admin/saas/users', async (req, res) => {
     try {
-        if (!hasSaasControlWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para crear usuarios.' });
+        if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para crear usuarios.' });
 
         const payload = req.body && typeof req.body === 'object' ? { ...req.body } : {};
         payload.memberships = sanitizeMembershipPayload(payload.memberships);
@@ -783,6 +797,7 @@ app.post('/api/admin/saas/users', async (req, res) => {
         if (!req?.authContext?.user?.isSuperAdmin) {
             const invalid = (payload.memberships || []).some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
             if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar tenants fuera de tu alcance.' });
+            if (hasOwnerRoleMembership(payload.memberships || [])) return res.status(403).json({ ok: false, error: 'No puedes asignar rol owner.' });
         }
 
         const snapshot = await saasControlService.createUser(payload);
@@ -797,7 +812,7 @@ app.post('/api/admin/saas/users', async (req, res) => {
 
 app.put('/api/admin/saas/users/:userId', async (req, res) => {
     try {
-        if (!hasSaasControlWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para editar usuarios.' });
+        if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para editar usuarios.' });
         const userId = String(req.params?.userId || '').trim();
         if (!userId) return res.status(400).json({ ok: false, error: 'userId invalido.' });
 
@@ -807,6 +822,7 @@ app.put('/api/admin/saas/users/:userId', async (req, res) => {
         if (!req?.authContext?.user?.isSuperAdmin && Array.isArray(payload.memberships)) {
             const invalid = payload.memberships.some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
             if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar tenants fuera de tu alcance.' });
+            if (hasOwnerRoleMembership(payload.memberships)) return res.status(403).json({ ok: false, error: 'No puedes asignar rol owner.' });
         }
 
         const snapshot = await saasControlService.updateUser(userId, payload);
@@ -819,7 +835,7 @@ app.put('/api/admin/saas/users/:userId', async (req, res) => {
 
 app.put('/api/admin/saas/users/:userId/memberships', async (req, res) => {
     try {
-        if (!hasSaasControlWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para editar membresias.' });
+        if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para editar membresias.' });
         const userId = String(req.params?.userId || '').trim();
         if (!userId) return res.status(400).json({ ok: false, error: 'userId invalido.' });
 
@@ -829,6 +845,7 @@ app.put('/api/admin/saas/users/:userId/memberships', async (req, res) => {
         if (!req?.authContext?.user?.isSuperAdmin) {
             const invalid = memberships.some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
             if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar tenants fuera de tu alcance.' });
+            if (hasOwnerRoleMembership(memberships)) return res.status(403).json({ ok: false, error: 'No puedes asignar rol owner.' });
         }
 
         const snapshot = await saasControlService.setUserMemberships(userId, memberships);
@@ -841,7 +858,7 @@ app.put('/api/admin/saas/users/:userId/memberships', async (req, res) => {
 
 app.delete('/api/admin/saas/users/:userId', async (req, res) => {
     try {
-        if (!hasSaasControlWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para eliminar usuarios.' });
+        if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para eliminar usuarios.' });
         const userId = String(req.params?.userId || '').trim();
         if (!userId) return res.status(400).json({ ok: false, error: 'userId invalido.' });
 
@@ -879,7 +896,7 @@ app.get('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
 app.put('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasSaasControlWriteAccess(req) || !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    if (!hasTenantAdminWriteAccess(req) || !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
 
     try {
         const patch = req.body && typeof req.body === 'object' ? req.body : {};
@@ -1495,6 +1512,7 @@ app.get('/api/map-suggest', async (req, res) => {
 const META_VERIFY_TOKEN = String(process.env.META_VERIFY_TOKEN || '').trim();
 const META_APP_SECRET = String(process.env.META_APP_SECRET || '').trim();
 const META_ENFORCE_SIGNATURE = String(process.env.META_ENFORCE_SIGNATURE || 'true').trim().toLowerCase() !== 'false';
+const CLOUD_WEBHOOK_DEBUG = String(process.env.CLOUD_WEBHOOK_DEBUG || 'true').trim().toLowerCase() !== 'false';
 
 function timingSafeEqualHex(a = '', b = '') {
     const left = Buffer.from(String(a || ''), 'utf8');
@@ -1531,7 +1549,7 @@ function validateMetaWebhookSignature(req) {
     return { ok, reason: ok ? 'ok' : 'signature_mismatch' };
 }
 
-app.get('/webhook/whatsapp', (req, res) => {
+function handleMetaWebhookVerification(req, res) {
     const mode = String(req.query['hub.mode'] || '').trim();
     const token = String(req.query['hub.verify_token'] || '').trim();
     const challenge = String(req.query['hub.challenge'] || '').trim();
@@ -1541,9 +1559,36 @@ app.get('/webhook/whatsapp', (req, res) => {
     }
 
     return res.sendStatus(403);
-});
+}
 
-app.post('/webhook/whatsapp', async (req, res) => {
+function summarizeMetaWebhookPayload(payload = {}) {
+    const entries = Array.isArray(payload?.entry) ? payload.entry : [];
+    let changesCount = 0;
+    let messagesCount = 0;
+    let statusesCount = 0;
+
+    entries.forEach((entry) => {
+        const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+        changesCount += changes.length;
+        changes.forEach((change) => {
+            const value = change?.value || {};
+            const messages = Array.isArray(value?.messages) ? value.messages : [];
+            const statuses = Array.isArray(value?.statuses) ? value.statuses : [];
+            messagesCount += messages.length;
+            statusesCount += statuses.length;
+        });
+    });
+
+    return {
+        object: String(payload?.object || '').trim() || null,
+        entriesCount: entries.length,
+        changesCount,
+        messagesCount,
+        statusesCount
+    };
+}
+
+async function handleMetaWebhookEvent(req, res) {
     try {
         const signatureCheck = validateMetaWebhookSignature(req);
         if (!signatureCheck.ok) {
@@ -1551,15 +1596,36 @@ app.post('/webhook/whatsapp', async (req, res) => {
             return res.sendStatus(401);
         }
 
-        if (typeof waClient.handleWebhookPayload === 'function') {
-            await waClient.handleWebhookPayload(req.body || {});
+        const payload = req.body || {};
+        const summary = summarizeMetaWebhookPayload(payload);
+        const handled = typeof waClient.handleWebhookPayload === 'function'
+            ? await waClient.handleWebhookPayload(payload)
+            : false;
+
+        if (CLOUD_WEBHOOK_DEBUG) {
+            logger.info('[WA][Cloud] webhook received object=' + String(summary.object || 'n/a')
+                + ' entries=' + String(summary.entriesCount)
+                + ' changes=' + String(summary.changesCount)
+                + ' messages=' + String(summary.messagesCount)
+                + ' statuses=' + String(summary.statusesCount)
+                + ' handled=' + String(Boolean(handled)));
         }
+
+        if (!handled && (summary.messagesCount > 0 || summary.statusesCount > 0)) {
+            const runtime = typeof waClient.getRuntimeInfo === 'function' ? waClient.getRuntimeInfo() : {};
+            logger.warn('[WA][Cloud] webhook payload not processed by active transport. active=' + String(runtime?.activeTransport || 'unknown') + ', requested=' + String(runtime?.requestedTransport || 'unknown'));
+        }
+
         return res.sendStatus(200);
     } catch (error) {
         logger.error(`[WA][Cloud] webhook processing failed: ${String(error?.message || error)}`);
         return res.sendStatus(500);
     }
-});
+}
+app.get('/webhook', handleMetaWebhookVerification);
+app.get('/webhook/whatsapp', handleMetaWebhookVerification);
+app.post('/webhook', handleMetaWebhookEvent);
+app.post('/webhook/whatsapp', handleMetaWebhookEvent);
 const scheduleWaInitialize = (delayMs = 0) => {
     const safeDelay = Math.max(0, Number(delayMs) || 0);
     setTimeout(() => {
@@ -1625,5 +1691,7 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
+
+
 
 

@@ -5,6 +5,7 @@ const cloudClient = require('./whatsapp_cloud_client');
 const ACTIVE_TRANSPORTS = new Set(['webjs', 'cloud']);
 const TRANSPORTS = new Set(['webjs', 'cloud', 'idle']);
 const DUAL_MODE_ALIASES = new Set(['dual', 'both', 'selection', 'select', 'idle']);
+const CLOUD_WEBHOOK_AUTO_ACTIVATE = String(process.env.WA_CLOUD_WEBHOOK_AUTO_ACTIVATE || 'true').trim().toLowerCase() !== 'false';
 
 function normalizeMode(value = '') {
     const mode = String(value || '').trim().toLowerCase();
@@ -169,6 +170,21 @@ class WAProvider extends EventEmitter {
     }
 
     async handleWebhookPayload(payload = {}) {
+        if (this.activeTransport !== 'cloud') {
+            const canAutoActivateCloud =
+                CLOUD_WEBHOOK_AUTO_ACTIVATE
+                && this.activeTransport === 'idle'
+                && cloudClient.isConfigured();
+
+            if (canAutoActivateCloud) {
+                try {
+                    await this.setTransportMode('cloud');
+                } catch (error) {
+                    console.warn('[WA][Provider] cloud auto-activation on webhook failed:', String(error?.message || error));
+                }
+            }
+        }
+
         if (this.activeTransport !== 'cloud') return false;
         if (typeof cloudClient.handleWebhookPayload !== 'function') return false;
         return await cloudClient.handleWebhookPayload(payload);

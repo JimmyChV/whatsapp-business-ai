@@ -282,7 +282,7 @@ function sanitizeUser(user = {}) {
         memberships,
         canSwitchTenant: memberships.length > 1,
         isSuperAdmin,
-        canManageSaas: Boolean(isSuperAdmin || normalizeRole(scoped.role) === 'owner')
+        canManageSaas: Boolean(isSuperAdmin || normalizeRole(scoped.role) === 'owner' || normalizeRole(scoped.role) === 'admin')
     };
 }
 
@@ -681,5 +681,6 @@ module.exports = {
     getAllowedTenantsForUser,
     findUserRecord
 };
+
 
 
