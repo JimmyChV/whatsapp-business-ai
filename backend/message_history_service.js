@@ -8,6 +8,7 @@ const {
 } = require('./persistence_runtime');
 
 const HISTORY_FILE = 'message_history.json';
+let postgresMessageColumnsReadyPromise = null;
 
 function parseBoolean(value, defaultValue = true) {
     const raw = String(value ?? '').trim().toLowerCase();
@@ -70,6 +71,8 @@ function normalizeMessageRecord(input = {}) {
         fromMe: toSafeBoolean(input.fromMe, false),
         senderId: toSafeString(input.senderId || input.from),
         senderPhone: toSafeString(input.senderPhone),
+        waModuleId: toSafeString(input.waModuleId || input.moduleId || input.sentViaModuleId),
+        waPhoneNumber: toSafeString(input.waPhoneNumber || input.modulePhone || input.sentViaPhone || input.chatPhone),
         authorId: toSafeString(input.authorId || input.author),
         body: input.body === null || input.body === undefined ? null : String(input.body),
         messageType: toSafeString(input.messageType || input.type),
@@ -93,6 +96,38 @@ function missingRelation(error) {
     return String(error?.code || '').trim() === '42P01';
 }
 
+function missingColumn(error, column = '') {
+    const code = String(error?.code || '').trim();
+    if (code === '42703') return true;
+    const message = String(error?.message || '').toLowerCase();
+    if (!message.includes('column') || !message.includes('does not exist')) return false;
+    if (!column) return true;
+    return message.includes(String(column || '').toLowerCase());
+}
+
+async function ensurePostgresMessageColumns() {
+    if (postgresMessageColumnsReadyPromise) return postgresMessageColumnsReadyPromise;
+
+    postgresMessageColumnsReadyPromise = (async () => {
+        await queryPostgres('ALTER TABLE IF EXISTS tenant_messages ADD COLUMN IF NOT EXISTS wa_module_id TEXT');
+        await queryPostgres('ALTER TABLE IF EXISTS tenant_messages ADD COLUMN IF NOT EXISTS wa_phone_number TEXT');
+        await queryPostgres(
+            `CREATE INDEX IF NOT EXISTS idx_tenant_messages_module_ts
+             ON tenant_messages(tenant_id, wa_module_id, timestamp_unix DESC)`
+        );
+        await queryPostgres(
+            `CREATE INDEX IF NOT EXISTS idx_tenant_messages_phone_ts
+             ON tenant_messages(tenant_id, wa_phone_number, timestamp_unix DESC)`
+        );
+    })();
+
+    try {
+        await postgresMessageColumnsReadyPromise;
+    } catch (error) {
+        postgresMessageColumnsReadyPromise = null;
+        throw error;
+    }
+}
 async function loadStore(tenantId) {
     const parsed = await readTenantJsonFile(HISTORY_FILE, {
         tenantId,
@@ -157,6 +192,8 @@ function upsertMessageInMemory(store, record) {
         fromMe: record.fromMe,
         senderId: record.senderId,
         senderPhone: record.senderPhone,
+        waModuleId: record.waModuleId,
+        waPhoneNumber: record.waPhoneNumber,
         authorId: record.authorId,
         body: record.body,
         messageType: record.messageType,
@@ -244,67 +281,82 @@ async function upsertChatPostgres(tenantId, chatPatch = {}, fallbackMessage = nu
     );
 }
 
-async function upsertMessagePostgres(tenantId, record) {
-    await queryPostgres(
-        `INSERT INTO tenant_messages (
-            tenant_id, message_id, chat_id, from_me, sender_id, sender_phone, author_id,
-            body, message_type, timestamp_unix, ack, edited, edited_at_unix, has_media,
-            media_mime, media_filename, media_size_bytes, quoted_message_id,
-            order_payload, location_payload, metadata, created_at, updated_at
-        ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7,
-            $8, $9, $10, $11, $12, $13, $14,
-            $15, $16, $17, $18,
-            $19::jsonb, $20::jsonb, $21::jsonb, NOW(), NOW()
-        )
-        ON CONFLICT (tenant_id, message_id)
-        DO UPDATE SET
-            chat_id = EXCLUDED.chat_id,
-            from_me = EXCLUDED.from_me,
-            sender_id = COALESCE(EXCLUDED.sender_id, tenant_messages.sender_id),
-            sender_phone = COALESCE(EXCLUDED.sender_phone, tenant_messages.sender_phone),
-            author_id = COALESCE(EXCLUDED.author_id, tenant_messages.author_id),
-            body = COALESCE(EXCLUDED.body, tenant_messages.body),
-            message_type = COALESCE(EXCLUDED.message_type, tenant_messages.message_type),
-            timestamp_unix = COALESCE(EXCLUDED.timestamp_unix, tenant_messages.timestamp_unix),
-            ack = COALESCE(EXCLUDED.ack, tenant_messages.ack),
-            edited = COALESCE(EXCLUDED.edited, tenant_messages.edited),
-            edited_at_unix = COALESCE(EXCLUDED.edited_at_unix, tenant_messages.edited_at_unix),
-            has_media = COALESCE(EXCLUDED.has_media, tenant_messages.has_media),
-            media_mime = COALESCE(EXCLUDED.media_mime, tenant_messages.media_mime),
-            media_filename = COALESCE(EXCLUDED.media_filename, tenant_messages.media_filename),
-            media_size_bytes = COALESCE(EXCLUDED.media_size_bytes, tenant_messages.media_size_bytes),
-            quoted_message_id = COALESCE(EXCLUDED.quoted_message_id, tenant_messages.quoted_message_id),
-            order_payload = COALESCE(EXCLUDED.order_payload, tenant_messages.order_payload),
-            location_payload = COALESCE(EXCLUDED.location_payload, tenant_messages.location_payload),
-            metadata = COALESCE(tenant_messages.metadata, '{}'::jsonb) || COALESCE(EXCLUDED.metadata, '{}'::jsonb),
-            updated_at = NOW()`,
-        [
-            tenantId,
-            record.messageId,
-            record.chatId,
-            record.fromMe,
-            record.senderId,
-            record.senderPhone,
-            record.authorId,
-            record.body,
-            record.messageType,
-            record.timestampUnix,
-            record.ack,
-            record.edited,
-            record.editedAtUnix,
-            record.hasMedia,
-            record.mediaMime,
-            record.mediaFilename,
-            record.mediaSizeBytes,
-            record.quotedMessageId,
-            JSON.stringify(record.orderPayload || null),
-            JSON.stringify(record.locationPayload || null),
-            JSON.stringify(record.metadata || {})
-        ]
-    );
+async function upsertMessagePostgres(tenantId, record, { schemaEnsured = false } = {}) {
+    try {
+        await ensurePostgresMessageColumns();
+        await queryPostgres(
+            `INSERT INTO tenant_messages (
+                tenant_id, message_id, chat_id, from_me, sender_id, sender_phone, author_id,
+                wa_module_id, wa_phone_number,
+                body, message_type, timestamp_unix, ack, edited, edited_at_unix, has_media,
+                media_mime, media_filename, media_size_bytes, quoted_message_id,
+                order_payload, location_payload, metadata, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7,
+                $8, $9,
+                $10, $11, $12, $13, $14, $15, $16,
+                $17, $18, $19, $20,
+                $21::jsonb, $22::jsonb, $23::jsonb, NOW(), NOW()
+            )
+            ON CONFLICT (tenant_id, message_id)
+            DO UPDATE SET
+                chat_id = EXCLUDED.chat_id,
+                from_me = EXCLUDED.from_me,
+                sender_id = COALESCE(EXCLUDED.sender_id, tenant_messages.sender_id),
+                sender_phone = COALESCE(EXCLUDED.sender_phone, tenant_messages.sender_phone),
+                author_id = COALESCE(EXCLUDED.author_id, tenant_messages.author_id),
+                wa_module_id = COALESCE(EXCLUDED.wa_module_id, tenant_messages.wa_module_id),
+                wa_phone_number = COALESCE(EXCLUDED.wa_phone_number, tenant_messages.wa_phone_number),
+                body = COALESCE(EXCLUDED.body, tenant_messages.body),
+                message_type = COALESCE(EXCLUDED.message_type, tenant_messages.message_type),
+                timestamp_unix = COALESCE(EXCLUDED.timestamp_unix, tenant_messages.timestamp_unix),
+                ack = COALESCE(EXCLUDED.ack, tenant_messages.ack),
+                edited = COALESCE(EXCLUDED.edited, tenant_messages.edited),
+                edited_at_unix = COALESCE(EXCLUDED.edited_at_unix, tenant_messages.edited_at_unix),
+                has_media = COALESCE(EXCLUDED.has_media, tenant_messages.has_media),
+                media_mime = COALESCE(EXCLUDED.media_mime, tenant_messages.media_mime),
+                media_filename = COALESCE(EXCLUDED.media_filename, tenant_messages.media_filename),
+                media_size_bytes = COALESCE(EXCLUDED.media_size_bytes, tenant_messages.media_size_bytes),
+                quoted_message_id = COALESCE(EXCLUDED.quoted_message_id, tenant_messages.quoted_message_id),
+                order_payload = COALESCE(EXCLUDED.order_payload, tenant_messages.order_payload),
+                location_payload = COALESCE(EXCLUDED.location_payload, tenant_messages.location_payload),
+                metadata = COALESCE(tenant_messages.metadata, '{}'::jsonb) || COALESCE(EXCLUDED.metadata, '{}'::jsonb),
+                updated_at = NOW()`,
+            [
+                tenantId,
+                record.messageId,
+                record.chatId,
+                record.fromMe,
+                record.senderId,
+                record.senderPhone,
+                record.authorId,
+                record.waModuleId,
+                record.waPhoneNumber,
+                record.body,
+                record.messageType,
+                record.timestampUnix,
+                record.ack,
+                record.edited,
+                record.editedAtUnix,
+                record.hasMedia,
+                record.mediaMime,
+                record.mediaFilename,
+                record.mediaSizeBytes,
+                record.quotedMessageId,
+                JSON.stringify(record.orderPayload || null),
+                JSON.stringify(record.locationPayload || null),
+                JSON.stringify(record.metadata || {})
+            ]
+        );
+    } catch (error) {
+        if (!schemaEnsured && missingColumn(error, 'wa_module_id')) {
+            await ensurePostgresMessageColumns();
+            await upsertMessagePostgres(tenantId, record, { schemaEnsured: true });
+            return;
+        }
+        throw error;
+    }
 }
-
 async function upsertMessage(tenantId = DEFAULT_TENANT_ID, input = {}) {
     if (!isHistoryEnabled()) return { ok: false, skipped: 'disabled' };
 
@@ -334,6 +386,7 @@ async function updateMessageAck(tenantId = DEFAULT_TENANT_ID, { messageId, chatI
 
     if (getStorageDriver() === 'postgres') {
         try {
+            await ensurePostgresMessageColumns();
             await queryPostgres(
                 `UPDATE tenant_messages
                     SET ack = COALESCE($3, ack), updated_at = NOW()
@@ -379,6 +432,7 @@ async function updateMessageEdit(tenantId = DEFAULT_TENANT_ID, { messageId, chat
 
     if (getStorageDriver() === 'postgres') {
         try {
+            await ensurePostgresMessageColumns();
             await queryPostgres(
                 `UPDATE tenant_messages
                     SET body = COALESCE($3, body), edited = TRUE, edited_at_unix = COALESCE($4, edited_at_unix), updated_at = NOW()
@@ -422,6 +476,7 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
 
     if (getStorageDriver() === 'postgres') {
         try {
+            await ensurePostgresMessageColumns();
             const { rows } = await queryPostgres(
                 `SELECT c.chat_id, c.display_name, c.phone, c.subtitle, c.unread_count, c.archived, c.pinned,
                         c.last_message_id, c.last_message_at, c.metadata,
@@ -451,7 +506,7 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
                 metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
             }));
         } catch (error) {
-            if (missingRelation(error)) return [];
+            if (missingRelation(error) || missingColumn(error, 'wa_module_id')) return [];
             throw error;
         }
     }
@@ -495,6 +550,7 @@ async function listMessages(tenantId = DEFAULT_TENANT_ID, {
 
     if (getStorageDriver() === 'postgres') {
         try {
+            await ensurePostgresMessageColumns();
             const params = [cleanTenant, safeChatId, safeLimit];
             let filter = '';
             if (Number.isFinite(safeBefore)) {
@@ -503,7 +559,7 @@ async function listMessages(tenantId = DEFAULT_TENANT_ID, {
             }
 
             const sql = Number.isFinite(safeBefore)
-                ? `SELECT message_id, chat_id, from_me, sender_id, sender_phone, author_id, body,
+                ? `SELECT message_id, chat_id, from_me, sender_id, sender_phone, author_id, wa_module_id, wa_phone_number, body,
                           message_type, timestamp_unix, ack, edited, edited_at_unix, has_media,
                           media_mime, media_filename, media_size_bytes, quoted_message_id,
                           order_payload, location_payload, metadata
@@ -513,7 +569,7 @@ async function listMessages(tenantId = DEFAULT_TENANT_ID, {
                       ${filter}
                     ORDER BY timestamp_unix DESC NULLS LAST, created_at DESC
                     LIMIT $4`
-                : `SELECT message_id, chat_id, from_me, sender_id, sender_phone, author_id, body,
+                : `SELECT message_id, chat_id, from_me, sender_id, sender_phone, author_id, wa_module_id, wa_phone_number, body,
                           message_type, timestamp_unix, ack, edited, edited_at_unix, has_media,
                           media_mime, media_filename, media_size_bytes, quoted_message_id,
                           order_payload, location_payload, metadata
@@ -530,6 +586,8 @@ async function listMessages(tenantId = DEFAULT_TENANT_ID, {
                 fromMe: Boolean(row.from_me),
                 senderId: row.sender_id,
                 senderPhone: row.sender_phone,
+                waModuleId: row.wa_module_id || null,
+                waPhoneNumber: row.wa_phone_number || null,
                 authorId: row.author_id,
                 body: row.body,
                 messageType: row.message_type,
@@ -547,7 +605,7 @@ async function listMessages(tenantId = DEFAULT_TENANT_ID, {
                 metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
             }));
         } catch (error) {
-            if (missingRelation(error)) return [];
+            if (missingRelation(error) || missingColumn(error, 'wa_module_id')) return [];
             throw error;
         }
     }
@@ -579,3 +637,4 @@ module.exports = {
     listChats,
     listMessages
 };
+

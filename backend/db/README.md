@@ -21,6 +21,8 @@ psql "$env:DATABASE_URL" -f db/migrations/001_saas_foundation.sql
 psql "$env:DATABASE_URL" -f db/migrations/002_tenant_settings.sql
 psql "$env:DATABASE_URL" -f db/migrations/003_message_history.sql
 psql "$env:DATABASE_URL" -f db/migrations/004_auth_sessions.sql
+psql "$env:DATABASE_URL" -f db/migrations/005_wa_modules.sql
+psql "$env:DATABASE_URL" -f db/migrations/006_message_history_module_context.sql
 ```
 
 Or with split vars already exported:
@@ -30,6 +32,8 @@ psql -f db/migrations/001_saas_foundation.sql
 psql -f db/migrations/002_tenant_settings.sql
 psql -f db/migrations/003_message_history.sql
 psql -f db/migrations/004_auth_sessions.sql
+psql -f db/migrations/005_wa_modules.sql
+psql -f db/migrations/006_message_history_module_context.sql
 ```
 
 ## 3) Verify
@@ -71,3 +75,5 @@ Current key settings:
 - Current runtime keeps `file` as default driver for backward compatibility.
 - `postgres` driver is wired for `catalog_manager`, `quick_replies_manager` and `tenant_settings_service`.
 - If `pg` dependency is missing, backend will show a clear error when `SAAS_STORAGE_DRIVER=postgres`.
+
+

@@ -10,6 +10,7 @@ const {
 const MODULES_FILE = 'wa_modules.json';
 const ALLOWED_TRANSPORTS = new Set(['webjs', 'cloud']);
 const MAX_MODULES_PER_TENANT = Math.max(1, Number(process.env.WA_MODULES_MAX_PER_TENANT || 50));
+let postgresSchemaReadyPromise = null;
 
 function toText(value = '') {
     const text = String(value ?? '').trim();
@@ -160,7 +161,49 @@ function normalizeStoreState(input = {}) {
 }
 
 function missingRelation(error) {
-    return String(error?.code || '').trim() === '42P01';
+    const code = String(error?.code || '').trim();
+    if (code === '42P01') return true;
+    const message = String(error?.message || '').toLowerCase();
+    return message.includes('relation') && message.includes('wa_modules') && message.includes('does not exist');
+}
+
+async function ensurePostgresSchema() {
+    if (postgresSchemaReadyPromise) return postgresSchemaReadyPromise;
+
+    postgresSchemaReadyPromise = (async () => {
+        await queryPostgres(
+            `CREATE TABLE IF NOT EXISTS wa_modules (
+                tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+                module_id TEXT NOT NULL,
+                module_name TEXT NOT NULL,
+                phone_number TEXT,
+                transport_mode TEXT NOT NULL DEFAULT 'webjs',
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                is_default BOOLEAN NOT NULL DEFAULT FALSE,
+                is_selected BOOLEAN NOT NULL DEFAULT FALSE,
+                assigned_user_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+                metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (tenant_id, module_id)
+            )`
+        );
+        await queryPostgres(
+            `CREATE INDEX IF NOT EXISTS idx_wa_modules_tenant_default
+             ON wa_modules(tenant_id, is_default DESC, created_at ASC)`
+        );
+        await queryPostgres(
+            `CREATE INDEX IF NOT EXISTS idx_wa_modules_tenant_selected
+             ON wa_modules(tenant_id, is_selected DESC, updated_at DESC)`
+        );
+    })();
+
+    try {
+        await postgresSchemaReadyPromise;
+    } catch (error) {
+        postgresSchemaReadyPromise = null;
+        throw error;
+    }
 }
 
 async function loadFileStore(tenantId) {
@@ -178,7 +221,7 @@ async function saveFileStore(tenantId, store = {}) {
 }
 
 async function loadPostgresStore(tenantId) {
-    try {
+    const fetchRows = async () => {
         const { rows } = await queryPostgres(
             `SELECT
                 module_id,
@@ -197,8 +240,11 @@ async function loadPostgresStore(tenantId) {
              ORDER BY created_at ASC, module_id ASC`,
             [tenantId]
         );
+        return Array.isArray(rows) ? rows : [];
+    };
 
-        const modules = (Array.isArray(rows) ? rows : []).map((row) => normalizeModule({
+    const mapRowsToStore = (rows = []) => {
+        const modules = rows.map((row) => normalizeModule({
             moduleId: row.module_id,
             name: row.module_name,
             phoneNumber: row.phone_number,
@@ -216,18 +262,25 @@ async function loadPostgresStore(tenantId) {
         }));
 
         return normalizeStoreState({ modules });
+    };
+
+    try {
+        const rows = await fetchRows();
+        return mapRowsToStore(rows);
     } catch (error) {
         if (missingRelation(error)) {
-            return normalizeStoreState({ modules: [], selectedModuleId: null });
+            await ensurePostgresSchema();
+            const rows = await fetchRows();
+            return mapRowsToStore(rows);
         }
         throw error;
     }
 }
 
-async function savePostgresStore(tenantId, store = {}) {
+async function savePostgresStore(tenantId, store = {}, { schemaEnsured = false } = {}) {
     const normalized = normalizeStoreState(store);
-    await queryPostgres('BEGIN');
     try {
+        await queryPostgres('BEGIN');
         await queryPostgres('DELETE FROM wa_modules WHERE tenant_id = $1', [tenantId]);
         for (const module of normalized.modules) {
             await queryPostgres(
@@ -265,20 +318,36 @@ async function savePostgresStore(tenantId, store = {}) {
         await queryPostgres('COMMIT');
         return normalized;
     } catch (error) {
-        await queryPostgres('ROLLBACK');
+        try {
+            await queryPostgres('ROLLBACK');
+        } catch (_) {
+            // no-op
+        }
+
+        if (missingRelation(error) && !schemaEnsured) {
+            await ensurePostgresSchema();
+            return savePostgresStore(tenantId, store, { schemaEnsured: true });
+        }
+
         throw error;
     }
 }
 
 async function loadStore(tenantId = DEFAULT_TENANT_ID) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
-    if (getStorageDriver() === 'postgres') return loadPostgresStore(cleanTenantId);
+    if (getStorageDriver() === 'postgres') {
+        await ensurePostgresSchema();
+        return loadPostgresStore(cleanTenantId);
+    }
     return loadFileStore(cleanTenantId);
 }
 
 async function saveStore(tenantId = DEFAULT_TENANT_ID, store = {}) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
-    if (getStorageDriver() === 'postgres') return savePostgresStore(cleanTenantId, store);
+    if (getStorageDriver() === 'postgres') {
+        await ensurePostgresSchema();
+        return savePostgresStore(cleanTenantId, store);
+    }
     return saveFileStore(cleanTenantId, store);
 }
 
@@ -455,3 +524,4 @@ module.exports = {
     setSelectedModule,
     getSelectedModule
 };
+

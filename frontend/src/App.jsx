@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -600,6 +600,28 @@ function App() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginTenantId, setLoginTenantId] = useState('');
+  const waLaunchParams = useMemo(() => {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const launch = String(params.get('wa_launch') || '').trim().toLowerCase() === 'operation';
+      const moduleId = String(params.get('wa_module') || '').trim().toLowerCase();
+      const tenantId = String(params.get('wa_tenant') || '').trim();
+      return {
+        forceOperationLaunch: launch,
+        requestedWaModuleId: moduleId || '',
+        requestedWaTenantId: tenantId || ''
+      };
+    } catch (_) {
+      return {
+        forceOperationLaunch: false,
+        requestedWaModuleId: '',
+        requestedWaTenantId: ''
+      };
+    }
+  }, []);
+  const forceOperationLaunch = waLaunchParams.forceOperationLaunch;
+  const requestedWaModuleFromUrl = waLaunchParams.requestedWaModuleId;
+  const requestedWaTenantFromUrl = waLaunchParams.requestedWaTenantId;
   const tenantScopeId = String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || 'default').trim() || 'default';
   const labelDefsStorageKey = buildScopedStorageKey(LABEL_DEFS_STORAGE_PREFIX, tenantScopeId);
 
@@ -663,6 +685,12 @@ function App() {
   const selectedWaModuleRef = useRef(selectedWaModule);
   const saasSessionRef = useRef(saasSession);
   const saasRuntimeRef = useRef(saasRuntime);
+  const forceOperationLaunchRef = useRef(forceOperationLaunch);
+  const canManageSaasRef = useRef(false);
+  const requestedWaModuleFromUrlRef = useRef(requestedWaModuleFromUrl);
+  const requestedWaTenantFromUrlRef = useRef(requestedWaTenantFromUrl);
+  const launchTenantAppliedRef = useRef('');
+  const saasAdminAutoOpenRef = useRef('');
   const labelDefsPersistenceStateRef = useRef({ key: '', loaded: false });
   const tenantScopeRef = useRef(tenantScopeId);
 
@@ -984,6 +1012,10 @@ function App() {
   }, [saasRuntime]);
 
   useEffect(() => {
+    forceOperationLaunchRef.current = forceOperationLaunch;
+  }, [forceOperationLaunch]);
+
+  useEffect(() => {
     if (selectedTransport !== 'cloud') return;
     if (waRuntime?.activeTransport !== 'cloud') return;
     if (waRuntime?.cloudConfigured) return;
@@ -1083,8 +1115,19 @@ function App() {
       setSelectedWaModule(selected);
       setWaModuleError('');
 
+      const requestedModuleId = String(requestedWaModuleFromUrlRef.current || '').trim().toLowerCase();
+      if (requestedModuleId) {
+        const requestedMatch = items.find((item) => String(item?.moduleId || '').trim().toLowerCase() === requestedModuleId);
+        if (requestedMatch && String(selected?.moduleId || '').trim().toLowerCase() !== requestedModuleId) {
+          socket.emit('set_wa_module', { moduleId: requestedMatch.moduleId });
+          return;
+        }
+        requestedWaModuleFromUrlRef.current = '';
+      }
+
       const selectedMode = String(selected?.transportMode || '').trim().toLowerCase();
-      if ((selectedMode === 'webjs' || selectedMode === 'cloud') && selectedMode !== selectedTransportRef.current) {
+      const shouldAutoSelectTransport = forceOperationLaunchRef.current || !canManageSaasRef.current;
+      if (shouldAutoSelectTransport && (selectedMode === 'webjs' || selectedMode === 'cloud') && selectedMode !== selectedTransportRef.current) {
         setSelectedTransport(selectedMode);
       }
     });
@@ -1104,8 +1147,14 @@ function App() {
       setSelectedWaModule(selected);
       setWaModuleError('');
 
+      const selectedId = String(selected?.moduleId || '').trim().toLowerCase();
+      if (selectedId && selectedId === String(requestedWaModuleFromUrlRef.current || '').trim().toLowerCase()) {
+        requestedWaModuleFromUrlRef.current = '';
+      }
+
       const selectedMode = String(selected?.transportMode || '').trim().toLowerCase();
-      if (selectedMode === 'webjs' || selectedMode === 'cloud') {
+      const shouldAutoSelectTransport = forceOperationLaunchRef.current || !canManageSaasRef.current;
+      if (shouldAutoSelectTransport && (selectedMode === 'webjs' || selectedMode === 'cloud')) {
         setSelectedTransport(selectedMode);
       }
     });
@@ -1966,9 +2015,14 @@ function App() {
 
     const quotedMessageId = String(replyingMessage?.id || '').trim() || null;
 
+    const activeChatForSend = chatsRef.current.find((c) => String(c?.id || '') === String(activeChatId || ''));
+    const activeChatPhone = normalizeDigits(activeChatForSend?.phone || '');
+    const toPhone = activeChatPhone || null;
+
     if (attachment) {
       socket.emit('send_media_message', {
         to: activeChatId,
+        toPhone,
         body: inputText,
         mediaData: attachment.data,
         mimetype: attachment.mimetype,
@@ -1977,7 +2031,7 @@ function App() {
       });
       removeAttachment();
     } else {
-      socket.emit('send_message', { to: activeChatId, body: inputText, quotedMessageId });
+      socket.emit('send_message', { to: activeChatId, toPhone, body: inputText, quotedMessageId });
     }
     setInputText('');
     setReplyingMessage(null);
@@ -2013,6 +2067,30 @@ function App() {
     }
 
     handleSelectTransport(normalizedTransport);
+  };
+  const handleOpenWhatsAppOperation = (moduleId = '', options = {}) => {
+    const preferredModuleId = String(moduleId || '').trim();
+    const fallbackModuleId = String(
+      preferredModuleId
+      || selectedWaModuleRef.current?.moduleId
+      || (Array.isArray(waModules) ? waModules[0]?.moduleId : '')
+      || ''
+    ).trim();
+    const targetTenantId = String(options?.tenantId || tenantScopeId || '').trim();
+
+    try {
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set('wa_launch', 'operation');
+      if (fallbackModuleId) nextUrl.searchParams.set('wa_module', fallbackModuleId);
+      else nextUrl.searchParams.delete('wa_module');
+      if (targetTenantId) nextUrl.searchParams.set('wa_tenant', targetTenantId);
+      else nextUrl.searchParams.delete('wa_tenant');
+
+      const popup = window.open(nextUrl.toString(), '_blank', 'noopener,noreferrer');
+      if (popup) popup.focus?.();
+    } catch (_) {
+      // no-op
+    }
   };
   const handleSelectTransport = (mode) => {
     const safeMode = String(mode || '').trim().toLowerCase();
@@ -2317,15 +2395,86 @@ REGLA CRITICA:
   const availableTenantOptions = Array.from(tenantOptionsById.values());
   const loginTenantOptions = runtimeTenantOptions;
   const canSwitchTenant = saasAuthEnabled && isSaasAuthenticated && availableTenantOptions.length > 1;
-  const canManageSaas = !saasAuthEnabled || Boolean(saasSession?.user?.canManageSaas || saasSession?.user?.isSuperAdmin);
+  const saasUserRole = String(saasSession?.user?.role || '').trim().toLowerCase();
+  const canManageSaas = !saasAuthEnabled || Boolean(saasSession?.user?.canManageSaas || saasSession?.user?.isSuperAdmin || saasUserRole === 'owner' || saasUserRole === 'admin' || saasUserRole === 'superadmin');
   const availableWaModules = normalizeWaModules(waModules).filter((module) => module.isActive !== false);
   const hasModuleCatalog = availableWaModules.length > 0;
   const selectedWaModuleId = String(selectedWaModule?.moduleId || '').trim();
 
   useEffect(() => {
+    canManageSaasRef.current = canManageSaas;
+  }, [canManageSaas]);
+
+  useEffect(() => {
     if (canManageSaas) return;
     if (showSaasAdminPanel) setShowSaasAdminPanel(false);
   }, [canManageSaas, showSaasAdminPanel]);
+
+  useEffect(() => {
+    if (!saasRuntime?.loaded) return;
+    if (!saasAuthEnabled || !isSaasAuthenticated) return;
+    if (!canManageSaas) return;
+    if (selectedTransport) return;
+
+    const tenantKey = String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || 'default').trim() || 'default';
+    const userKey = String(saasSession?.user?.id || saasSession?.user?.email || '').trim() || 'manager';
+    const sessionKey = `${tenantKey}:${userKey}`;
+    if (saasAdminAutoOpenRef.current === sessionKey) return;
+
+    saasAdminAutoOpenRef.current = sessionKey;
+    setShowSaasAdminPanel(true);
+  }, [
+    saasRuntime?.loaded,
+    saasRuntime?.tenant?.id,
+    saasAuthEnabled,
+    isSaasAuthenticated,
+    canManageSaas,
+    selectedTransport,
+    saasSession?.user?.tenantId,
+    saasSession?.user?.id,
+    saasSession?.user?.email
+  ]);
+
+  useEffect(() => {
+    if (isSaasAuthenticated) return;
+    saasAdminAutoOpenRef.current = '';
+  }, [isSaasAuthenticated]);
+
+  useEffect(() => {
+    if (!forceOperationLaunch) return;
+    if (!isSaasAuthenticated) return;
+
+    const requestedTenantId = String(requestedWaTenantFromUrlRef.current || '').trim();
+    if (!requestedTenantId) return;
+    if (requestedTenantId === tenantScopeId) {
+      requestedWaTenantFromUrlRef.current = '';
+      return;
+    }
+
+    const isAllowedTenant = availableTenantOptions.some((entry) => String(entry?.id || '').trim() === requestedTenantId);
+    if (!isAllowedTenant) {
+      requestedWaTenantFromUrlRef.current = '';
+      return;
+    }
+
+    const marker = `${requestedTenantId}:${String(saasSession?.user?.id || saasSession?.user?.email || '')}`;
+    if (launchTenantAppliedRef.current === marker) return;
+    launchTenantAppliedRef.current = marker;
+
+    Promise.resolve(handleSwitchTenant(requestedTenantId))
+      .catch(() => { })
+      .finally(() => {
+        requestedWaTenantFromUrlRef.current = '';
+      });
+  }, [
+    forceOperationLaunch,
+    isSaasAuthenticated,
+    tenantScopeId,
+    availableTenantOptions,
+    handleSwitchTenant,
+    saasSession?.user?.id,
+    saasSession?.user?.email
+  ]);
 
   if (!saasRuntime?.loaded) {
     return (
@@ -2561,6 +2710,18 @@ REGLA CRITICA:
             </div>
           )}
         </div>
+        {canManageSaas && (
+          <SaasAdminPanel
+            isOpen={showSaasAdminPanel}
+            onClose={() => setShowSaasAdminPanel(false)}
+            onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
+            buildApiHeaders={buildApiHeaders}
+            activeTenantId={tenantScopeId}
+            canManageSaas={canManageSaas}
+            userRole={saasUserRole}
+            isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+          />
+        )}
       </div>
     );
   }
@@ -2800,6 +2961,7 @@ REGLA CRITICA:
             businessData={businessData}
             messages={messages}
             activeChatId={activeChatId}
+            activeChatPhone={activeChatDetails?.phone || clientContact?.phone || ''}
             socket={socket}
             myProfile={myProfile || businessData?.profile}
             onLogout={handleLogoutWhatsapp}
@@ -2817,31 +2979,18 @@ REGLA CRITICA:
       <SaasAdminPanel
         isOpen={showSaasAdminPanel}
         onClose={() => setShowSaasAdminPanel(false)}
+        onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
         buildApiHeaders={buildApiHeaders}
         activeTenantId={tenantScopeId}
         canManageSaas={canManageSaas}
-      />
+            userRole={saasUserRole}
+            isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+          />
     </div>
   );
 }
 
 export default App;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

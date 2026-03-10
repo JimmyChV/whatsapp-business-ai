@@ -24,6 +24,7 @@ const ORDER_DEBUG_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.e
 const ORDER_DEBUG_VERBOSE = ['1', 'true', 'yes', 'on'].includes(String(process.env.ORDER_DEBUG_VERBOSE || '').trim().toLowerCase());
 const CATALOG_DEBUG_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.CATALOG_DEBUG || '').trim().toLowerCase());
 const ORDER_DEBUG_MISSING_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.ORDER_DEBUG_MISSING || process.env.ORDER_DEBUG || '').trim().toLowerCase());
+const HISTORY_DEBUG_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.HISTORY_DEBUG || '').trim().toLowerCase());
 const CATALOG_DEBUG_MAX_ITEMS = Math.max(1, Number(process.env.CATALOG_DEBUG_MAX_ITEMS || 120));
 let catalogDebugLastSignature = '';
 const SENDER_META_TTL_MS = Math.max(60 * 1000, Number(process.env.SENDER_META_TTL_MS || (10 * 60 * 1000)));
@@ -33,6 +34,8 @@ const groupParticipantContactCache = new Map();
 const outgoingMessageAgentMeta = new Map();
 const OUTGOING_AGENT_META_TTL_MS = Math.max(60 * 1000, Number(process.env.OUTGOING_AGENT_META_TTL_MS || (10 * 60 * 1000)));
 const SOCKET_RBAC_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAAS_AUTH_ENABLED || '').trim().toLowerCase());
+const WA_REQUIRE_SELECTED_MODULE = ['1', 'true', 'yes', 'on'].includes(String(process.env.WA_REQUIRE_SELECTED_MODULE || '').trim().toLowerCase());
+const WA_ENFORCE_WEBJS_PHONE_MATCH = ['1', 'true', 'yes', 'on'].includes(String(process.env.WA_ENFORCE_WEBJS_PHONE_MATCH || '').trim().toLowerCase());
 
 function guardRateLimit(socket, eventName) {
     const key = `${socket.id}:${eventName}`;
@@ -130,6 +133,25 @@ async function resolveSocketModuleContext(tenantId = 'default', authContext = nu
         modules,
         selected: selected || null
     };
+}
+
+function buildWebjsSessionNamespaceFromIds(tenantId = 'default', moduleId = 'default') {
+    const cleanTenant = String(tenantId || 'default')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 24) || 'default';
+    const cleanModule = String(moduleId || 'default')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 30) || 'default';
+    return String(cleanTenant + '__' + cleanModule)
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 60) || 'default';
 }
 function mergeAgentMeta(...candidates) {
     const merged = {};
@@ -1762,6 +1784,13 @@ function normalizePhoneDigits(raw = '') {
     return String(raw || '').replace(/\D/g, '');
 }
 
+function looksLikeSamePhoneDigits(a = '', b = '') {
+    const left = normalizePhoneDigits(a);
+    const right = normalizePhoneDigits(b);
+    if (!left || !right) return false;
+    return left === right || left.endsWith(right) || right.endsWith(left);
+}
+
 function formatPhoneForDisplay(raw = '') {
     const digits = normalizePhoneDigits(raw);
     if (digits.length < 8 || digits.length > 15) return null;
@@ -1779,6 +1808,17 @@ function coerceHumanPhone(raw = '') {
     const digits = formatPhoneForDisplay(raw);
     if (!digits) return null;
     return isLikelyHumanPhoneDigits(digits) ? digits : null;
+}
+
+function resolveCloudDestinationChatId(chatId = '', explicitPhone = '') {
+    const byExplicit = coerceHumanPhone(explicitPhone || '');
+    if (byExplicit) return `${byExplicit}@c.us`;
+
+    const fromChatId = String(chatId || '').trim();
+    const fromChatDigits = coerceHumanPhone(fromChatId.split('@')[0] || '');
+    if (fromChatDigits) return `${fromChatDigits}@c.us`;
+
+    return null;
 }
 
 function isLidIdentifier(value = '') {
@@ -2069,6 +2109,13 @@ class SocketManager {
         this.chatListTtlMs = Number(process.env.CHAT_LIST_TTL_MS || 15000);
         this.contactListCache = { items: [], updatedAt: 0 };
         this.contactListTtlMs = Number(process.env.CONTACT_LIST_TTL_MS || 60 * 1000);
+        this.activeRuntimeContext = {
+            tenantId: 'default',
+            moduleId: 'default',
+            transportMode: 'idle',
+            webjsNamespace: typeof waClient.getWebjsSessionNamespace === 'function' ? waClient.getWebjsSessionNamespace() : null,
+            updatedAt: Date.now()
+        };
         this.setupSocketEvents();
         this.setupWAClientEvents();
     }
@@ -2159,6 +2206,109 @@ class SocketManager {
         this.io.to(this.getTenantRoom(tenantId)).emit(eventName, payload);
     }
 
+    getTenantModuleRoom(tenantId = 'default', moduleId = 'default') {
+        const cleanTenant = String(tenantId || 'default').trim() || 'default';
+        const cleanModule = String(moduleId || 'default').trim().toLowerCase() || 'default';
+        return 'tenant:' + cleanTenant + ':module:' + cleanModule;
+    }
+
+    emitToTenantModule(tenantId, moduleId, eventName, payload) {
+        this.io.to(this.getTenantModuleRoom(tenantId, moduleId)).emit(eventName, payload);
+    }
+
+    setActiveRuntimeContext({
+        tenantId = 'default',
+        moduleId = 'default',
+        moduleName = null,
+        modulePhone = null,
+        transportMode = 'idle',
+        webjsNamespace = null
+    } = {}) {
+        this.activeRuntimeContext = {
+            tenantId: String(tenantId || 'default').trim() || 'default',
+            moduleId: String(moduleId || 'default').trim().toLowerCase() || 'default',
+            moduleName: String(moduleName || '').trim() || null,
+            modulePhone: coerceHumanPhone(modulePhone || '') || null,
+            transportMode: String(transportMode || 'idle').trim().toLowerCase() || 'idle',
+            webjsNamespace: String(webjsNamespace || '').trim() || null,
+            updatedAt: Date.now()
+        };
+    }
+
+    resolveRuntimeEventTarget() {
+        const context = this.activeRuntimeContext && typeof this.activeRuntimeContext === 'object'
+            ? this.activeRuntimeContext
+            : null;
+
+        if (context?.tenantId && context?.moduleId) {
+            return { tenantId: context.tenantId, moduleId: context.moduleId };
+        }
+
+        const socketsMap = this.io?.sockets?.sockets;
+        const sockets = socketsMap ? Array.from(socketsMap.values()) : [];
+        const seen = new Set();
+        let candidate = null;
+        sockets.forEach((socket) => {
+            const tenant = String(socket?.data?.tenantId || '').trim();
+            const module = String(socket?.data?.waModuleId || '').trim().toLowerCase();
+            if (!tenant || !module) return;
+            const key = tenant + '::' + module;
+            seen.add(key);
+            if (!candidate) {
+                candidate = { tenantId: tenant, moduleId: module };
+            }
+        });
+
+        if (seen.size === 1 && candidate) return candidate;
+        return candidate;
+    }
+
+    emitToRuntimeContext(eventName, payload, { includeTenantFallback = false } = {}) {
+        const target = this.resolveRuntimeEventTarget();
+        if (target?.tenantId && target?.moduleId) {
+            this.emitToTenantModule(target.tenantId, target.moduleId, eventName, payload);
+            if (includeTenantFallback) {
+                this.emitToTenant(target.tenantId, eventName, payload);
+            }
+            return;
+        }
+        this.io.emit(eventName, payload);
+    }
+
+    async enforceRuntimeWebjsPhonePolicy() {
+        if (!WA_ENFORCE_WEBJS_PHONE_MATCH) return true;
+
+        const runtime = this.getWaRuntime();
+        const activeTransport = String(runtime?.activeTransport || '').trim().toLowerCase();
+        if (activeTransport !== 'webjs') return true;
+
+        const target = this.resolveRuntimeEventTarget();
+        if (!target?.tenantId || !target?.moduleId) return true;
+
+        const moduleConfig = await waModuleService.getModule(target.tenantId, target.moduleId).catch(() => null);
+        const registeredPhone = normalizePhoneDigits(moduleConfig?.phoneNumber || '');
+        if (!registeredPhone) return true;
+
+        const connectedPhone = normalizePhoneDigits(waClient?.client?.info?.wid?.user || '');
+        if (!connectedPhone) return true;
+
+        if (looksLikeSamePhoneDigits(registeredPhone, connectedPhone)) return true;
+
+        const warning = 'Numero no permitido para este modulo. Registrado: +' + registeredPhone + '. Escaneado: +' + connectedPhone + '.';
+        this.emitToTenantModule(target.tenantId, target.moduleId, 'auth_failure', warning);
+
+        try {
+            await waClient.client.logout();
+        } catch (_) { }
+
+        try {
+            waClient.isReady = false;
+            await waClient.initialize();
+        } catch (_) { }
+
+        return false;
+    }
+
     async persistMessageHistory(tenantId, {
         msg,
         senderMeta = null,
@@ -2166,7 +2316,8 @@ class SocketManager {
         order = null,
         location = null,
         quotedMessage = null,
-        agentMeta = null
+        agentMeta = null,
+        moduleContext = null
     } = {}) {
         try {
             if (!msg) return;
@@ -2175,12 +2326,24 @@ class SocketManager {
             if (!messageId || !chatId) return;
 
             const persistedAgentMeta = sanitizeAgentMeta(agentMeta);
+            const historyModuleId = String(
+                moduleContext?.moduleId
+                || persistedAgentMeta?.sentViaModuleId
+                || ''
+            ).trim().toLowerCase() || null;
+            const historyModulePhone = coerceHumanPhone(
+                moduleContext?.phoneNumber
+                || moduleContext?.phone
+                || ''
+            ) || null;
             await messageHistoryService.upsertMessage(tenantId, {
                 messageId,
                 chatId,
                 fromMe: Boolean(msg?.fromMe),
                 senderId: senderMeta?.senderId || null,
                 senderPhone: senderMeta?.senderPhone || null,
+                waModuleId: historyModuleId,
+                waPhoneNumber: historyModulePhone,
                 authorId: String(msg?.author || msg?._data?.author || '').trim() || null,
                 body: msg?.body || '',
                 messageType: msg?.type || null,
@@ -2207,10 +2370,13 @@ class SocketManager {
                     subtitle: senderMeta?.senderPushname || null
                 }
             });
+            if (HISTORY_DEBUG_ENABLED) {
+                console.info('[History] persist message ok tenant=' + String(tenantId || 'default') + ' chat=' + String(chatId || '') + ' msg=' + String(messageId || '') + ' module=' + String(historyModuleId || 'n/a'));
+            }
         } catch (error) {
+            console.warn('[History] persistMessageHistory failed:', String(error?.message || error));
         }
     }
-
     async persistMessageEdit(tenantId, {
         messageId,
         chatId,
@@ -2225,6 +2391,7 @@ class SocketManager {
                 editedAtUnix
             });
         } catch (error) {
+            console.warn('[History] persistMessageEdit failed:', String(error?.message || error));
         }
     }
 
@@ -2240,21 +2407,43 @@ class SocketManager {
                 ack
             });
         } catch (error) {
+            console.warn('[History] persistMessageAck failed:', String(error?.message || error));
         }
     }
 
     resolveHistoryTenantId() {
         try {
+            const runtimeTarget = this.resolveRuntimeEventTarget();
+            if (runtimeTarget?.tenantId) return runtimeTarget.tenantId;
             const socketsMap = this.io?.sockets?.sockets;
             const entries = socketsMap ? Array.from(socketsMap.values()) : [];
             if (!entries.length) return 'default';
             const tenants = new Set(entries.map((socket) => String(socket?.data?.tenantId || 'default').trim() || 'default'));
             if (tenants.size === 1) return Array.from(tenants)[0] || 'default';
-            return 'default';
+            return String(this.activeRuntimeContext?.tenantId || 'default').trim() || 'default';
         } catch (error) {
             return 'default';
         }
     }
+
+    resolveHistoryModuleContext() {
+        const runtimeContext = this.activeRuntimeContext && typeof this.activeRuntimeContext === 'object'
+            ? this.activeRuntimeContext
+            : {};
+        const runtimeTarget = this.resolveRuntimeEventTarget();
+        const moduleId = String(runtimeTarget?.moduleId || runtimeContext?.moduleId || '').trim().toLowerCase() || null;
+        const phoneNumber = coerceHumanPhone(runtimeContext?.modulePhone || '') || null;
+        const moduleName = String(runtimeContext?.moduleName || '').trim() || null;
+        const transportMode = String(runtimeContext?.transportMode || this.getWaRuntime()?.activeTransport || '').trim().toLowerCase() || null;
+
+        return {
+            moduleId,
+            phoneNumber,
+            name: moduleName,
+            transportMode
+        };
+    }
+
     normalizeHistoryLabels(labels = []) {
         if (!Array.isArray(labels)) return [];
         const seen = new Set();
@@ -2439,7 +2628,8 @@ class SocketManager {
             sentByName: String(metadata?.sentByName || '').trim() || null,
             sentByEmail: String(metadata?.sentByEmail || '').trim() || null,
             sentByRole: String(metadata?.sentByRole || '').trim() || null,
-            sentViaModuleId: String(metadata?.sentViaModuleId || '').trim() || null,
+            sentViaModuleId: String(row?.waModuleId || metadata?.sentViaModuleId || '').trim() || null,
+            sentViaPhoneNumber: String(row?.waPhoneNumber || '').trim() || null,
             sentViaModuleName: String(metadata?.sentViaModuleName || '').trim() || null,
             sentViaTransport: String(metadata?.sentViaTransport || '').trim() || null,
             ack: Number.isFinite(Number(row?.ack)) ? Number(row.ack) : 0,
@@ -2530,7 +2720,7 @@ class SocketManager {
         if (!id) return;
         try {
             const canEdit = await waClient.canEditMessageById(id);
-            this.io.emit('message_editability', {
+            this.emitToRuntimeContext('message_editability', {
                 id,
                 chatId: String(chatId || ''),
                 canEdit
@@ -2850,6 +3040,17 @@ class SocketManager {
                 socket.data.waModuleId = selected?.moduleId || '';
                 socket.data.waModules = modules;
 
+                const previousModuleRoom = String(socket?.data?.waModuleRoom || '').trim();
+                const nextModuleId = selected?.moduleId || 'default';
+                const nextModuleRoom = this.getTenantModuleRoom(tenantId, nextModuleId);
+                if (previousModuleRoom && previousModuleRoom !== nextModuleRoom) {
+                    socket.leave(previousModuleRoom);
+                }
+                if (nextModuleRoom && previousModuleRoom !== nextModuleRoom) {
+                    socket.join(nextModuleRoom);
+                }
+                socket.data.waModuleRoom = nextModuleRoom;
+
                 const payload = {
                     tenantId,
                     items: modules,
@@ -2859,27 +3060,13 @@ class SocketManager {
                 return payload;
             };
 
-            const buildWebjsSessionNamespace = (selectedModule = null) => {
-                const cleanTenant = String(tenantId || 'default')
-                    .trim()
-                    .toLowerCase()
-                    .replace(/[^a-z0-9_-]+/g, '_')
-                    .replace(/^_+|_+$/g, '')
-                    .slice(0, 24) || 'default';
-                const cleanModule = normalizeSocketModuleId(selectedModule?.moduleId || 'default') || 'default';
-                return String(cleanTenant + '__' + cleanModule)
-                    .replace(/[^a-z0-9_-]+/g, '_')
-                    .replace(/^_+|_+$/g, '')
-                    .slice(0, 60) || 'default';
-            };
-
             const ensureTransportForSelectedModule = async (selectedModule = null) => {
                 const moduleTransport = String(selectedModule?.transportMode || '').trim().toLowerCase();
                 if (moduleTransport !== 'webjs' && moduleTransport !== 'cloud') return null;
 
                 let namespaceChanged = false;
                 if (moduleTransport === 'webjs' && typeof waClient.setWebjsSessionNamespace === 'function') {
-                    const namespace = buildWebjsSessionNamespace(selectedModule);
+                    const namespace = buildWebjsSessionNamespaceFromIds(tenantId, selectedModule?.moduleId || 'default');
                     namespaceChanged = await waClient.setWebjsSessionNamespace(namespace);
                 }
 
@@ -2905,6 +3092,17 @@ class SocketManager {
                         socket.emit('qr', waClient.lastQr);
                     }
 
+                    this.setActiveRuntimeContext({
+                        tenantId,
+                        moduleId: selectedModule?.moduleId || 'default',
+                        moduleName: selectedModule?.name || null,
+                        modulePhone: selectedModule?.phoneNumber || null,
+                        transportMode: moduleTransport,
+                        webjsNamespace: moduleTransport === 'webjs' && typeof waClient.getWebjsSessionNamespace === 'function'
+                            ? waClient.getWebjsSessionNamespace()
+                            : null
+                    });
+
                     return runtime;
                 }
 
@@ -2925,6 +3123,17 @@ class SocketManager {
                     socket.emit('qr', waClient.lastQr);
                 }
 
+                this.setActiveRuntimeContext({
+                    tenantId,
+                    moduleId: selectedModule?.moduleId || 'default',
+                    moduleName: selectedModule?.name || null,
+                    modulePhone: selectedModule?.phoneNumber || null,
+                    transportMode: moduleTransport,
+                    webjsNamespace: moduleTransport === 'webjs' && typeof waClient.getWebjsSessionNamespace === 'function'
+                        ? waClient.getWebjsSessionNamespace()
+                        : null
+                });
+
                 return nextRuntime;
             };
 
@@ -2941,14 +3150,24 @@ class SocketManager {
                 } : null
             });
 
-            if (waClient.isReady) {
-                socket.emit('ready', { message: 'WhatsApp is ready' });
-            } else if (waClient.lastQr) {
-                socket.emit('qr', waClient.lastQr);
+            if (!WA_REQUIRE_SELECTED_MODULE) {
+                if (waClient.isReady) {
+                    socket.emit('ready', { message: 'WhatsApp is ready' });
+                } else if (waClient.lastQr) {
+                    socket.emit('qr', waClient.lastQr);
+                }
             }
             this.emitWaCapabilities(socket);
             emitWaModuleContext({ requestedModuleId: getRequestedModuleIdFromSocket() })
-                .then((payload) => ensureTransportForSelectedModule(payload?.selected || null))
+                .then(async (payload) => {
+                    const selectedModule = payload?.selected || null;
+                    if (WA_REQUIRE_SELECTED_MODULE && !selectedModule?.moduleId) {
+                        socket.emit('wa_module_error', 'No hay un numero WhatsApp habilitado para tu usuario/empresa.');
+                        socket.emit('transport_mode_set', this.getWaRuntime());
+                        return null;
+                    }
+                    return await ensureTransportForSelectedModule(selectedModule);
+                })
                 .catch(() => { });
 
             socket.on('get_wa_capabilities', () => {
@@ -3010,6 +3229,10 @@ class SocketManager {
                     }
 
                     const selectedModule = socket?.data?.waModule || null;
+                    if (WA_REQUIRE_SELECTED_MODULE && !selectedModule?.moduleId) {
+                        socket.emit('transport_mode_error', 'Primero selecciona un numero/modulo WhatsApp permitido.');
+                        return;
+                    }
                     const forcedMode = String(selectedModule?.transportMode || '').trim().toLowerCase();
                     const hasForcedMode = forcedMode === 'webjs' || forcedMode === 'cloud';
 
@@ -3027,6 +3250,17 @@ class SocketManager {
                     this.contactListCache = { items: [], updatedAt: 0 };
                     this.emitWaCapabilities(socket);
                     socket.emit('transport_mode_set', runtime);
+
+                    this.setActiveRuntimeContext({
+                        tenantId,
+                        moduleId: selectedModule?.moduleId || socket?.data?.waModuleId || 'default',
+                        moduleName: selectedModule?.name || null,
+                        modulePhone: selectedModule?.phoneNumber || null,
+                        transportMode: runtime?.activeTransport || nextMode,
+                        webjsNamespace: String(runtime?.activeTransport || nextMode).toLowerCase() === 'webjs' && typeof waClient.getWebjsSessionNamespace === 'function'
+                            ? waClient.getWebjsSessionNamespace()
+                            : null
+                    });
                     await auditSocketAction('wa.transport_mode.changed', {
                         resourceType: hasForcedMode ? 'wa_module' : 'wa_runtime',
                         resourceId: hasForcedMode ? (selectedModule?.moduleId || null) : (runtime?.activeTransport || nextMode),
@@ -3199,8 +3433,66 @@ class SocketManager {
                     }
                     items = Array.from(dedupMap.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-                    const nextOffset = offset + scannedCount;
-                    const total = filtered.length;
+                    if (items.length === 0) {
+                        const fallbackPageIfEmpty = await this.getHistoryChatsPage(tenantId, {
+                            offset,
+                            limit,
+                            query,
+                            filters: activeFilters,
+                            filterKey
+                        });
+                        if (Array.isArray(fallbackPageIfEmpty?.items) && fallbackPageIfEmpty.items.length > 0) {
+                            socket.emit('chats', fallbackPageIfEmpty);
+                            return;
+                        }
+                    }
+
+                    let historyTotalHint = 0;
+                    const activeRuntime = this.getWaRuntime();
+                    const activeTransportMode = String(activeRuntime?.activeTransport || 'idle').trim().toLowerCase();
+                    if (activeTransportMode === 'cloud') {
+                        try {
+                            const cloudHistoryPage = await this.getHistoryChatsPage(tenantId, {
+                                offset,
+                                limit,
+                                query,
+                                filters: activeFilters,
+                                filterKey
+                            });
+
+                            historyTotalHint = Math.max(0, Number(cloudHistoryPage?.total || 0));
+                            if (Array.isArray(cloudHistoryPage?.items) && cloudHistoryPage.items.length > 0) {
+                                const mergedMap = new Map();
+                                for (const item of cloudHistoryPage.items) {
+                                    if (!item) continue;
+                                    const key = buildChatIdentityKeyFromSummary(item);
+                                    if (!mergedMap.has(key)) mergedMap.set(key, item);
+                                }
+                                for (const item of items) {
+                                    if (!item) continue;
+                                    const key = buildChatIdentityKeyFromSummary(item);
+                                    if (!mergedMap.has(key)) {
+                                        mergedMap.set(key, item);
+                                    } else {
+                                        mergedMap.set(key, pickPreferredSummary(mergedMap.get(key), item));
+                                    }
+                                }
+
+                                const mergedItems = Array.from(mergedMap.values())
+                                    .sort((a, b) => (Number(b?.timestamp || 0) - Number(a?.timestamp || 0)))
+                                    .slice(0, limit);
+
+                                if (mergedItems.length > 0) {
+                                    items = mergedItems;
+                                }
+                            }
+                        } catch (historyMergeError) {
+                            console.warn('[History] cloud chat merge failed:', String(historyMergeError?.message || historyMergeError));
+                        }
+                    }
+
+                    const nextOffset = offset + items.length;
+                    const total = Math.max(filtered.length, historyTotalHint, offset + items.length);
                     const hasMore = nextOffset < total;
                     socket.emit('chats', {
                         items,
@@ -3354,6 +3646,16 @@ class SocketManager {
                         ...(agentMeta || {})
                         });
                     }));
+                    if (formatted.length === 0) {
+                        const historyFallbackIfEmpty = await this.getHistoryChatHistory(tenantId, {
+                            chatId: historyChatId,
+                            limit: 60
+                        });
+                        if (Array.isArray(historyFallbackIfEmpty?.messages) && historyFallbackIfEmpty.messages.length > 0) {
+                            socket.emit('chat_history', historyFallbackIfEmpty);
+                            return;
+                        }
+                    }
                     socket.emit('chat_history', { chatId: historyChatId, requestedChatId: chatId, messages: formatted });
 
                     // Avoid blocking chat open while media is downloaded/cached.
@@ -3405,9 +3707,34 @@ class SocketManager {
                         return;
                     }
 
-                    const registeredUser = await resolveRegisteredNumber(waClient.client, clean);
+                    const runtime = this.getWaRuntime();
+                    const activeTransport = String(runtime?.activeTransport || '').trim().toLowerCase();
+
+                    let registeredUser = null;
+                    if (activeTransport === 'cloud') {
+                        try {
+                            if (waClient?.client && typeof waClient.client.getNumberId === 'function') {
+                                const numberId = await waClient.client.getNumberId(clean);
+                                const byUser = coerceHumanPhone(numberId?.user || '');
+                                const bySerialized = coerceHumanPhone(String(numberId?._serialized || '').split('@')[0] || '');
+                                registeredUser = byUser || bySerialized || null;
+                            }
+                        } catch (_) { }
+
+                        if (!registeredUser) {
+                            const candidates = buildPhoneCandidates(clean);
+                            registeredUser = coerceHumanPhone(candidates[0] || clean);
+                        }
+                    } else {
+                        registeredUser = await resolveRegisteredNumber(waClient.client, clean);
+                        if (!registeredUser) {
+                            socket.emit('start_new_chat_error', 'El numero no esta registrado en WhatsApp.');
+                            return;
+                        }
+                    }
+
                     if (!registeredUser) {
-                        socket.emit('start_new_chat_error', 'El numero no esta registrado en WhatsApp.');
+                        socket.emit('start_new_chat_error', 'Numero invalido para abrir chat.');
                         return;
                     }
 
@@ -3564,13 +3891,112 @@ class SocketManager {
             });
 
             // --- Messaging ---
-            socket.on('send_message', async ({ to, body, quotedMessageId }) => {
+            const emitRealtimeOutgoingMessage = async ({
+                sentMessage = null,
+                fallbackChatId = '',
+                fallbackBody = '',
+                quotedMessageId = '',
+                moduleContext = null,
+                agentMeta = null,
+                mediaPayload = null
+            } = {}) => {
+                const safeSentMessage = sentMessage && typeof sentMessage === 'object' ? sentMessage : {};
+                const messageId = String(safeSentMessage?.id?._serialized || '').trim();
+                const targetChatId = String(safeSentMessage?.to || fallbackChatId || '').trim();
+                if (!messageId || !targetChatId || !isVisibleChatId(targetChatId)) return;
+
+                const timestamp = Number(safeSentMessage?.timestamp || 0) || Math.floor(Date.now() / 1000);
+                const ack = Number.isFinite(Number(safeSentMessage?.ack)) ? Number(safeSentMessage.ack) : 0;
+                const quotedId = String(quotedMessageId || '').trim();
+                const mediaData = mediaPayload && typeof mediaPayload === 'object' ? String(mediaPayload?.data || '').trim() : '';
+                const mediaMimetype = mediaPayload && typeof mediaPayload === 'object' ? String(mediaPayload?.mimetype || '').trim() : '';
+                const mediaFilename = mediaPayload && typeof mediaPayload === 'object' ? String(mediaPayload?.filename || '').trim() : '';
+                const mediaSizeBytesRaw = mediaPayload && typeof mediaPayload === 'object' ? Number(mediaPayload?.fileSizeBytes) : null;
+                const mediaSizeBytes = Number.isFinite(mediaSizeBytesRaw) ? mediaSizeBytesRaw : null;
+
+                const payload = {
+                    id: messageId,
+                    from: String(safeSentMessage?.from || '').trim() || null,
+                    to: targetChatId,
+                    body: String(safeSentMessage?.body ?? fallbackBody ?? ''),
+                    timestamp,
+                    fromMe: true,
+                    hasMedia: Boolean(mediaData || safeSentMessage?.hasMedia),
+                    mediaData: mediaData || null,
+                    mimetype: mediaMimetype || null,
+                    filename: mediaFilename || null,
+                    fileSizeBytes: mediaSizeBytes,
+                    ack,
+                    type: String(safeSentMessage?.type || (mediaData ? 'media' : 'chat')),
+                    author: String(safeSentMessage?.author || safeSentMessage?._data?.author || '').trim() || null,
+                    notifyName: null,
+                    senderPhone: null,
+                    senderId: null,
+                    senderPushname: null,
+                    isGroupMessage: String(targetChatId || '').endsWith('@g.us'),
+                    canEdit: false,
+                    order: null,
+                    location: null,
+                    quotedMessage: quotedId ? { id: quotedId, body: '', fromMe: false, hasMedia: false, type: 'chat' } : null,
+                    ...(agentMeta || {})
+                };
+
+                const persistedMessage = {
+                    ...safeSentMessage,
+                    id: safeSentMessage?.id || { _serialized: messageId },
+                    fromMe: true,
+                    to: targetChatId,
+                    body: payload.body,
+                    timestamp,
+                    hasMedia: payload.hasMedia,
+                    type: payload.type,
+                    ack
+                };
+
+                await this.persistMessageHistory(tenantId, {
+                    msg: persistedMessage,
+                    senderMeta: null,
+                    fileMeta: {
+                        mimetype: payload.mimetype,
+                        filename: payload.filename,
+                        fileSizeBytes: payload.fileSizeBytes
+                    },
+                    order: null,
+                    location: null,
+                    quotedMessage: payload.quotedMessage,
+                    agentMeta,
+                    moduleContext
+                });
+
+                const moduleId = String(moduleContext?.moduleId || socket?.data?.waModuleId || 'default').trim().toLowerCase() || 'default';
+                this.emitToTenantModule(tenantId, moduleId, 'message', payload);
+
+                try {
+                    this.invalidateChatListCache();
+                    const chat = await waClient.client.getChatById(targetChatId);
+                    const summary = await this.toChatSummary(chat, { includeHeavyMeta: false });
+                    if (summary) this.emitToTenantModule(tenantId, moduleId, 'chat_updated', summary);
+                } catch (_) { }
+            };
+
+            socket.on('send_message', async ({ to, toPhone, body, quotedMessageId }) => {
                 if (!guardRateLimit(socket, 'send_message')) return;
                 if (!this.ensureTransportReady(socket, { action: 'enviar mensajes', errorEvent: 'error' })) return;
                 try {
-                    const targetChatId = String(to || '').trim();
+                    let targetChatId = String(to || '').trim();
+                    const targetPhone = coerceHumanPhone(toPhone || '');
                     const text = String(body || '');
                     const quoted = String(quotedMessageId || '').trim();
+                    const runtime = this.getWaRuntime();
+                    const activeTransport = String(runtime?.activeTransport || '').trim().toLowerCase();
+                    if (activeTransport === 'cloud') {
+                        const resolvedCloudChatId = resolveCloudDestinationChatId(targetChatId, targetPhone);
+                        if (!resolvedCloudChatId) {
+                            socket.emit('error', 'No se pudo resolver un numero WhatsApp valido para este chat en Cloud API. Abre chat por numero real.');
+                            return;
+                        }
+                        targetChatId = resolvedCloudChatId;
+                    }
                     if (!targetChatId || !text.trim()) {
                         socket.emit('error', 'Datos invalidos para enviar mensaje.');
                         return;
@@ -3587,6 +4013,9 @@ class SocketManager {
                             const fromQuoted = String(quotedMsg?.fromMe ? quotedMsg?.to : quotedMsg?.from || '').trim();
                             if (fromQuoted && isVisibleChatId(fromQuoted)) {
                                 quotedTargetChatId = fromQuoted;
+                            }
+                            if (activeTransport === 'cloud' && isLidIdentifier(quotedTargetChatId)) {
+                                quotedTargetChatId = targetChatId;
                             }
                         } catch (resolveQuotedError) {
                         }
@@ -3606,8 +4035,20 @@ class SocketManager {
                     if (sentMessageId && agentMeta) {
                         rememberOutgoingAgentMeta(sentMessageId, agentMeta);
                     }
+
+                    await emitRealtimeOutgoingMessage({
+                        sentMessage,
+                        fallbackChatId: targetChatId,
+                        fallbackBody: text,
+                        quotedMessageId: quoted,
+                        moduleContext,
+                        agentMeta,
+                        mediaPayload: null
+                    });
                 } catch (e) {
-                    socket.emit('error', 'Failed to send message.');
+                    const detail = String(e?.message || e || 'Failed to send message.');
+                    console.warn('[WA][SendMessage] ' + detail);
+                    socket.emit('error', detail);
                 }
             });
             socket.on('edit_message', async ({ chatId, messageId, body }) => {
@@ -3679,21 +4120,57 @@ class SocketManager {
                 if (!guardRateLimit(socket, 'send_media_message')) return;
                 if (!this.ensureTransportReady(socket, { action: 'enviar adjuntos', errorEvent: 'error' })) return;
                 try {
-                    const { to, body, mediaData, mimetype, filename, isPtt, quotedMessageId } = data;
+                    const { to, toPhone, body, mediaData, mimetype, filename, isPtt, quotedMessageId } = data || {};
                     if (isPtt) {
                         socket.emit('error', 'El envio de notas de voz esta deshabilitado temporalmente.');
                         return;
                     }
 
+                    let targetChatId = String(to || '').trim();
+                    const targetPhone = coerceHumanPhone(toPhone || '');
+                    const caption = String(body || '');
+                    const quoted = String(quotedMessageId || '').trim();
+                    const runtime = this.getWaRuntime();
+                    const activeTransport = String(runtime?.activeTransport || '').trim().toLowerCase();
+                    if (activeTransport === 'cloud') {
+                        const resolvedCloudChatId = resolveCloudDestinationChatId(targetChatId, targetPhone);
+                        if (!resolvedCloudChatId) {
+                            socket.emit('error', 'No se pudo resolver un numero WhatsApp valido para este chat en Cloud API. Abre chat por numero real.');
+                            return;
+                        }
+                        targetChatId = resolvedCloudChatId;
+                    }
+                    if (!targetChatId || !String(mediaData || '').trim()) {
+                        socket.emit('error', 'Datos invalidos para enviar adjunto.');
+                        return;
+                    }
+
                     const moduleContext = socket?.data?.waModule || null;
                     const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
-                    const sentMessage = await waClient.sendMedia(to, mediaData, mimetype, filename, body, isPtt, quotedMessageId);
+                    const sentMessage = await waClient.sendMedia(targetChatId, mediaData, mimetype, filename, caption, isPtt, quoted || null);
                     const sentMessageId = String(sentMessage?.id?._serialized || '').trim();
                     if (sentMessageId && agentMeta) {
                         rememberOutgoingAgentMeta(sentMessageId, agentMeta);
                     }
+
+                    await emitRealtimeOutgoingMessage({
+                        sentMessage,
+                        fallbackChatId: targetChatId,
+                        fallbackBody: caption,
+                        quotedMessageId: quoted,
+                        moduleContext,
+                        agentMeta,
+                        mediaPayload: {
+                            data: String(mediaData || ''),
+                            mimetype: String(mimetype || '').trim() || null,
+                            filename: String(filename || '').trim() || null,
+                            fileSizeBytes: null
+                        }
+                    });
                 } catch (e) {
-                    socket.emit('error', 'Failed to send media.');
+                    const detail = String(e?.message || e || 'Failed to send media.');
+                    console.warn('[WA][SendMedia] ' + detail);
+                    socket.emit('error', detail);
                 }
             });
 
@@ -3804,7 +4281,18 @@ class SocketManager {
                     return;
                 }
                 try {
-                    const to = String(payload?.to || '').trim();
+                    let to = String(payload?.to || '').trim();
+                    const toPhone = coerceHumanPhone(payload?.toPhone || '');
+                    const runtime = this.getWaRuntime();
+                    const activeTransport = String(runtime?.activeTransport || '').trim().toLowerCase();
+                    if (activeTransport === 'cloud') {
+                        const resolvedCloudChatId = resolveCloudDestinationChatId(to, toPhone);
+                        if (!resolvedCloudChatId) {
+                            socket.emit('error', 'No se pudo resolver un numero WhatsApp valido para este chat en Cloud API. Abre chat por numero real.');
+                            return;
+                        }
+                        to = resolvedCloudChatId;
+                    }
                     if (!to) {
                         socket.emit('error', 'Selecciona un chat antes de enviar producto.');
                         return;
@@ -3838,7 +4326,9 @@ class SocketManager {
                         withImage: sentWithImage
                     });
                 } catch (e) {
-                    socket.emit('error', 'No se pudo enviar el producto del catalogo.');
+                    const detail = String(e?.message || e || 'No se pudo enviar el producto del catalogo.');
+                    console.warn('[WA][SendCatalogProduct] ' + detail);
+                    socket.emit('error', detail);
                 }
             });
 
@@ -4371,16 +4861,18 @@ class SocketManager {
     }
 
     setupWAClientEvents() {
-        waClient.on('qr', (qr) => this.io.emit('qr', qr));
-        waClient.on('ready', () => {
-            this.io.emit('ready', { message: 'WhatsApp Ready' });
-            this.io.emit('wa_capabilities', this.getWaCapabilities());
+        waClient.on('qr', (qr) => this.emitToRuntimeContext('qr', qr));
+        waClient.on('ready', async () => {
+            const policyOk = await this.enforceRuntimeWebjsPhonePolicy();
+            if (!policyOk) return;
 
-            this.io.emit('wa_runtime', this.getWaRuntime());
+            this.emitToRuntimeContext('ready', { message: 'WhatsApp Ready' });
+            this.emitToRuntimeContext('wa_capabilities', this.getWaCapabilities());
+            this.emitToRuntimeContext('wa_runtime', this.getWaRuntime());
         });
-        waClient.on('authenticated', () => this.io.emit('authenticated'));
-        waClient.on('auth_failure', (msg) => this.io.emit('auth_failure', msg));
-        waClient.on('disconnected', (reason) => this.io.emit('disconnected', reason));
+        waClient.on('authenticated', () => this.emitToRuntimeContext('authenticated'));
+        waClient.on('auth_failure', (msg) => this.emitToRuntimeContext('auth_failure', msg));
+        waClient.on('disconnected', (reason) => this.emitToRuntimeContext('disconnected', reason));
 
         waClient.on('message', async (msg) => {
             if (isStatusOrSystemMessage(msg)) return;
@@ -4393,6 +4885,7 @@ class SocketManager {
             const location = extractLocationInfo(msg);
             const messageId = String(msg?.id?._serialized || '').trim();
             const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId)) : null;
+            const runtimeModuleContext = this.resolveHistoryModuleContext();
             await this.persistMessageHistory(this.resolveHistoryTenantId(), {
                 msg,
                 senderMeta,
@@ -4400,9 +4893,10 @@ class SocketManager {
                 order,
                 location,
                 quotedMessage,
-                agentMeta
+                agentMeta,
+                moduleContext: runtimeModuleContext
             });
-            this.io.emit('message', {
+            this.emitToRuntimeContext('message', {
                 id: msg.id._serialized,
                 from: msg.from,
                 to: msg.to,
@@ -4435,7 +4929,7 @@ class SocketManager {
                     this.invalidateChatListCache();
                     const chat = await waClient.client.getChatById(relatedChatId);
                     const summary = await this.toChatSummary(chat, { includeHeavyMeta: false });
-                    if (summary) this.io.emit('chat_updated', summary);
+                    if (summary) this.emitToRuntimeContext('chat_updated', summary);
                 }
             } catch (e) {
                 // silent: message delivery should not fail by chat refresh issues
@@ -4451,6 +4945,7 @@ class SocketManager {
             const location = extractLocationInfo(msg);
             const messageId = String(msg?.id?._serialized || '').trim();
             const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId)) : null;
+            const runtimeModuleContext = this.resolveHistoryModuleContext();
             await this.persistMessageHistory(this.resolveHistoryTenantId(), {
                 msg,
                 senderMeta: null,
@@ -4458,9 +4953,10 @@ class SocketManager {
                 order,
                 location,
                 quotedMessage,
-                agentMeta
+                agentMeta,
+                moduleContext: runtimeModuleContext
             });
-            this.io.emit('message', {
+            this.emitToRuntimeContext('message', {
                 id: msg.id._serialized,
                 from: msg.from,
                 to: msg.to,
@@ -4496,7 +4992,7 @@ class SocketManager {
                     this.invalidateChatListCache();
                     const chat = await waClient.client.getChatById(relatedChatId);
                     const summary = await this.toChatSummary(chat, { includeHeavyMeta: false });
-                    if (summary) this.io.emit('chat_updated', summary);
+                    if (summary) this.emitToRuntimeContext('chat_updated', summary);
                 }
             } catch (e) { }
         });
@@ -4523,7 +5019,7 @@ class SocketManager {
 
             if (!isVisibleChatId(chatId)) return;
 
-            this.io.emit('message_edited', {
+            this.emitToRuntimeContext('message_edited', {
                 chatId,
                 messageId,
                 body: String(newBody ?? message.body ?? ''),
@@ -4538,7 +5034,7 @@ class SocketManager {
                 this.invalidateChatListCache();
                 const refreshedChat = await waClient.client.getChatById(chatId);
                 const summary = await this.toChatSummary(refreshedChat, { includeHeavyMeta: false });
-                if (summary) this.io.emit('chat_updated', summary);
+                if (summary) this.emitToRuntimeContext('chat_updated', summary);
             } catch (e) { }
         });
 
@@ -4559,7 +5055,7 @@ class SocketManager {
                 } catch (e) { }
             }
 
-            this.io.emit('message_ack', {
+            this.emitToRuntimeContext('message_ack', {
                 id: messageId,
                 chatId,
                 ack: ack,
@@ -4575,6 +5071,24 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
