@@ -1529,7 +1529,38 @@ function App() {
       });
 
       setMessages((prev) => {
-        if (prev.find((m) => m.id === msg.id)) return prev;
+        const normalizedIncoming = {
+          ...msg,
+          body: repairMojibake(msg?.body || ''),
+          location: normalizeMessageLocation(msg?.location),
+          filename: normalizeMessageFilename(msg?.filename),
+          fileSizeBytes: Number.isFinite(Number(msg?.fileSizeBytes)) ? Number(msg.fileSizeBytes) : null,
+          canEdit: Boolean(msg?.canEdit),
+          quotedMessage: normalizeQuotedMessage(msg?.quotedMessage)
+        };
+
+        const incomingId = String(normalizedIncoming?.id || '').trim();
+        if (incomingId) {
+          const existingIndex = prev.findIndex((m) => String(m?.id || '').trim() === incomingId);
+          if (existingIndex >= 0) {
+            const existing = prev[existingIndex] || {};
+            const merged = {
+              ...existing,
+              ...normalizedIncoming,
+              sentByUserId: String(normalizedIncoming?.sentByUserId || existing?.sentByUserId || '').trim() || null,
+              sentByName: String(normalizedIncoming?.sentByName || normalizedIncoming?.sentByEmail || existing?.sentByName || existing?.sentByEmail || '').trim() || null,
+              sentByEmail: String(normalizedIncoming?.sentByEmail || existing?.sentByEmail || '').trim() || null,
+              sentByRole: String(normalizedIncoming?.sentByRole || existing?.sentByRole || '').trim() || null,
+              sentViaModuleId: String(normalizedIncoming?.sentViaModuleId || existing?.sentViaModuleId || '').trim() || null,
+              sentViaModuleName: String(normalizedIncoming?.sentViaModuleName || existing?.sentViaModuleName || '').trim() || null,
+              sentViaTransport: String(normalizedIncoming?.sentViaTransport || existing?.sentViaTransport || '').trim() || null,
+              quotedMessage: normalizeQuotedMessage(normalizedIncoming?.quotedMessage || existing?.quotedMessage)
+            };
+            const next = [...prev];
+            next[existingIndex] = merged;
+            return next;
+          }
+        }
 
         const activeId = String(activeChatIdRef.current || '');
         const incomingChatId = String((msg.fromMe ? msg.to : msg.from) || '');
@@ -1552,15 +1583,7 @@ function App() {
 
         const shouldAdd = sameById || sameByIdDigits || sameByPhone;
         if (!shouldAdd) return prev;
-        return [...prev, {
-          ...msg,
-          body: repairMojibake(msg?.body || ''),
-          location: normalizeMessageLocation(msg?.location),
-          filename: normalizeMessageFilename(msg?.filename),
-          fileSizeBytes: Number.isFinite(Number(msg?.fileSizeBytes)) ? Number(msg.fileSizeBytes) : null,
-          canEdit: Boolean(msg?.canEdit),
-          quotedMessage: normalizeQuotedMessage(msg?.quotedMessage)
-        }];
+        return [...prev, normalizedIncoming];
       });
     });
 
@@ -2506,14 +2529,14 @@ REGLA CRITICA:
           </div>
 
           <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', color: '#9eb2bf', fontSize: '0.78rem' }}>
-            Correo
+            Correo o usuario
             <input
-              type='email'
+              type='text'
               value={loginEmail}
               onChange={(e) => setLoginEmail(e.target.value)}
               autoComplete='username'
               style={{ borderRadius: '10px', border: '1px solid rgba(134,150,160,0.25)', background: '#101a21', color: '#e9edef', padding: '10px 12px', outline: 'none' }}
-              placeholder='usuario@empresa.com'
+              placeholder='usuario@empresa.com o user_id'
             />
           </label>
 
@@ -3002,21 +3025,4 @@ REGLA CRITICA:
 }
 
 export default App;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

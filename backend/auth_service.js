@@ -44,6 +44,14 @@ function sha256Hex(value = '') {
     return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
 }
 
+function normalizePasswordInput(value = '') {
+    return String(value || '')
+        .normalize('NFKC')
+        .replace(/[\u200B-\u200D\uFEFF]/g, '')
+        .replace(/\u00A0/g, ' ')
+        .trim();
+}
+
 function randomTokenId(prefix = 'tok') {
     return `${prefix}_${crypto.randomBytes(12).toString('hex')}`;
 }
@@ -142,12 +150,98 @@ function parseUsersFromEnv() {
     }
 }
 
-function getAuthUsersRecords() {
-    const fromControl = saasControlService.getUsersForAuthSync();
-    if (Array.isArray(fromControl) && fromControl.length > 0) return fromControl;
-    return parseUsersFromEnv();
+function normalizeAuthUserRecord(entry = {}) {
+    if (!entry || typeof entry !== 'object') return null;
+    if (entry.active === false) return null;
+
+    const id = String(entry.id || entry.userId || entry.user_id || '').trim();
+    const email = String(entry.email || entry.mail || '').trim().toLowerCase();
+    const password = String(entry.password || '').trim();
+    const passwordHash = String(entry.passwordHash || entry.password_hash || '').trim().toLowerCase();
+
+    const rawMemberships = Array.isArray(entry.memberships)
+        ? entry.memberships.filter((membership) => {
+            if (!membership || typeof membership !== 'object') return true;
+            return membership.active !== false;
+        })
+        : [];
+
+    const memberships = sanitizeMemberships(rawMemberships);
+    const tenantId = normalizeTenantId(entry.tenantId || entry.tenant || memberships?.[0]?.tenantId || 'default');
+    const role = normalizeRole(entry.role || memberships?.[0]?.role || 'seller');
+    const resolvedMemberships = memberships.length > 0 ? memberships : [{ tenantId, role }];
+
+    if (!id || !email || !tenantId) return null;
+    if (!password && !passwordHash) return null;
+
+    return {
+        id,
+        email,
+        tenantId,
+        role,
+        memberships: resolvedMemberships,
+        name: String(entry.name || entry.displayName || email || id).trim(),
+        password,
+        passwordHash
+    };
 }
 
+function getAuthUsersFromControlSnapshot() {
+    try {
+        const snapshot = saasControlService.getSnapshotSync();
+        const users = Array.isArray(snapshot?.users) ? snapshot.users : [];
+        return users;
+    } catch (_) {
+        return [];
+    }
+}
+
+function dedupeAuthUsers(records = []) {
+    const byId = new Map();
+    const idByEmail = new Map();
+
+    (Array.isArray(records) ? records : []).forEach((record) => {
+        const safe = normalizeAuthUserRecord(record);
+        if (!safe) return;
+
+        const idKey = String(safe.id || '').trim().toLowerCase();
+        const emailKey = String(safe.email || '').trim().toLowerCase();
+        if (!idKey || !emailKey) return;
+
+        const existingIdForEmail = idByEmail.get(emailKey);
+        if (existingIdForEmail && existingIdForEmail !== idKey) {
+            byId.delete(existingIdForEmail);
+        }
+
+        const previous = byId.get(idKey);
+        if (previous) {
+            const previousEmail = String(previous.email || '').trim().toLowerCase();
+            if (previousEmail && previousEmail !== emailKey) {
+                idByEmail.delete(previousEmail);
+            }
+        }
+
+        byId.set(idKey, safe);
+        idByEmail.set(emailKey, idKey);
+    });
+
+    return Array.from(byId.values());
+}
+
+function getAuthUsersRecords() {
+    const fromControl = Array.isArray(saasControlService.getUsersForAuthSync())
+        ? saasControlService.getUsersForAuthSync()
+        : [];
+
+    const fromSnapshot = getAuthUsersFromControlSnapshot();
+    const fromEnv = parseUsersFromEnv();
+
+    return dedupeAuthUsers([
+        ...fromSnapshot,
+        ...fromControl,
+        ...fromEnv
+    ]);
+}
 function findUserRecord({ userId = '', email = '' } = {}) {
     const cleanUserId = String(userId || '').trim();
     const cleanEmail = String(email || '').trim().toLowerCase();
@@ -223,16 +317,35 @@ function verifyUserPassword(user = {}, password = '') {
     const plain = String(password || '');
     if (!plain) return false;
 
-    if (user.password) {
-        return safeEqual(user.password, plain);
+    const normalized = normalizePasswordInput(plain);
+    const candidates = Array.from(new Set([
+        plain,
+        plain.trim(),
+        normalized
+    ].filter((entry) => String(entry || '').length > 0)));
+
+    const storedPassword = String(user?.password || '').trim();
+    if (storedPassword) {
+        return candidates.some((candidate) => safeEqual(storedPassword, candidate));
     }
 
-    if (user.passwordHash) {
-        const computed = sha256Hex(plain);
-        return safeEqual(user.passwordHash, computed);
+    const storedPasswordHash = String(user?.passwordHash || user?.password_hash || '').trim().toLowerCase();
+    if (storedPasswordHash) {
+        return candidates.some((candidate) => {
+            const computed = sha256Hex(candidate);
+            return safeEqual(storedPasswordHash, computed);
+        });
     }
 
     return false;
+}
+
+function resolveUserMatchesLoginIdentifier(user = {}, identifier = '') {
+    const cleanIdentifier = String(identifier || '').trim().toLowerCase();
+    if (!cleanIdentifier) return false;
+    const email = String(user?.email || user?.mail || '').trim().toLowerCase();
+    const userId = String(user?.id || user?.userId || user?.user_id || '').trim().toLowerCase();
+    return email === cleanIdentifier || userId === cleanIdentifier;
 }
 
 function resolveRequestedTenantId({ tenantId = '', tenantSlug = '' } = {}) {
@@ -399,7 +512,7 @@ async function login({ email = '', password = '', tenantId = '', tenantSlug = ''
         throw new Error('Falta SAAS_AUTH_SECRET para generar tokens de acceso.');
     }
 
-    const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanIdentifier = String(email || '').trim();
     const requestedTenantId = resolveRequestedTenantId({ tenantId, tenantSlug });
     await saasControlService.ensureLoaded();
     const users = getAuthUsersRecords();
@@ -407,7 +520,7 @@ async function login({ email = '', password = '', tenantId = '', tenantSlug = ''
         throw new Error('No hay usuarios configurados para autenticacion SaaS (DB/control plane).');
     }
 
-    const candidates = users.filter((user) => user.email === cleanEmail && verifyUserPassword(user, password));
+    const candidates = users.filter((user) => resolveUserMatchesLoginIdentifier(user, cleanIdentifier) && verifyUserPassword(user, password));
     if (!candidates.length) {
         throw new Error('Credenciales invalidas.');
     }

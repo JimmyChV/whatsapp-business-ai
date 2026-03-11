@@ -1,4 +1,4 @@
-﻿const test = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -154,6 +154,53 @@ test('auth_service rejects invalid password', async () => {
 });
 
 
+
+test('auth_service accepts surrounding spaces for hashed passwords created from trimmed input', async () => {
+    const prev = snapshotEnv();
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auth-test-'));
+
+    try {
+        const passwordHash = crypto.createHash('sha256').update('123456', 'utf8').digest('hex');
+        process.env.SAAS_AUTH_ENABLED = 'true';
+        process.env.SAAS_AUTH_SECRET = 'unit-test-secret';
+        process.env.SAAS_STORAGE_DRIVER = 'file';
+        process.env.SAAS_TENANT_DATA_DIR = tempDir;
+        process.env.SAAS_USERS_JSON = JSON.stringify([
+            { id: 'u_trim', email: 'trim@acme.com', tenantId: 'tenant_acme', role: 'seller', passwordHash }
+        ]);
+
+        const authService = loadAuthServiceFresh();
+        const session = await authService.login({ email: 'trim@acme.com', password: ' 123456 ', tenantId: 'tenant_acme' });
+        assert.equal(session.user.email, 'trim@acme.com');
+    } finally {
+        restoreEnv(prev);
+        fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+});
+
+test('auth_service login accepts user id as identifier', async () => {
+    const prev = snapshotEnv();
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auth-test-'));
+
+    try {
+        const passwordHash = crypto.createHash('sha256').update('123456', 'utf8').digest('hex');
+        process.env.SAAS_AUTH_ENABLED = 'true';
+        process.env.SAAS_AUTH_SECRET = 'unit-test-secret';
+        process.env.SAAS_STORAGE_DRIVER = 'file';
+        process.env.SAAS_TENANT_DATA_DIR = tempDir;
+        process.env.SAAS_USERS_JSON = JSON.stringify([
+            { id: 'seller_lavitat', email: 'seller@acme.com', tenantId: 'tenant_acme', role: 'seller', passwordHash }
+        ]);
+
+        const authService = loadAuthServiceFresh();
+        const session = await authService.login({ email: 'seller_lavitat', password: '123456', tenantId: 'tenant_acme' });
+        assert.equal(session.user.id, 'seller_lavitat');
+        assert.equal(session.user.email, 'seller@acme.com');
+    } finally {
+        restoreEnv(prev);
+        fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+});
 test('auth_service supports multi-tenant memberships and tenant switching', async () => {
     const prev = snapshotEnv();
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auth-test-'));
@@ -252,6 +299,86 @@ test('auth_service rejects tenant switch without membership', async () => {
             /sin acceso/i
         );
     } finally {
+        restoreEnv(prev);
+        fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+});
+
+
+test('auth_service login uses snapshot users when control-plane auth list is incomplete', async () => {
+    const prev = snapshotEnv();
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auth-test-'));
+
+    const saasControl = require('../saas_control_plane_service');
+    const originalGetUsersForAuthSync = saasControl.getUsersForAuthSync;
+    const originalGetSnapshotSync = saasControl.getSnapshotSync;
+    const originalEnsureLoaded = saasControl.ensureLoaded;
+
+    try {
+        process.env.SAAS_AUTH_ENABLED = 'true';
+        process.env.SAAS_AUTH_SECRET = 'unit-test-secret';
+        process.env.SAAS_STORAGE_DRIVER = 'file';
+        process.env.SAAS_TENANT_DATA_DIR = tempDir;
+        process.env.SAAS_USERS_JSON = '[]';
+
+        const ownerHash = crypto.createHash('sha256').update('123456', 'utf8').digest('hex');
+        const sellerHash = crypto.createHash('sha256').update('123456789qwerty', 'utf8').digest('hex');
+
+        saasControl.getUsersForAuthSync = () => ([
+            {
+                id: 'owner_lavitat',
+                email: 'owner@lavitat.com',
+                tenantId: 'tenant_lavitat',
+                role: 'owner',
+                name: 'Owner Lavitat',
+                passwordHash: ownerHash,
+                memberships: [{ tenantId: 'tenant_lavitat', role: 'owner' }]
+            }
+        ]);
+
+        saasControl.getSnapshotSync = () => ({
+            loaded: true,
+            tenants: [{ id: 'tenant_lavitat', slug: 'lavitat', name: 'Lavitat', active: true, plan: 'enterprise' }],
+            users: [
+                {
+                    id: 'owner_lavitat',
+                    email: 'owner@lavitat.com',
+                    active: true,
+                    passwordHash: ownerHash,
+                    memberships: [{ tenantId: 'tenant_lavitat', role: 'owner', active: true }]
+                },
+                {
+                    id: 'USER0001',
+                    email: 'a@b.com',
+                    active: true,
+                    passwordHash: sellerHash,
+                    memberships: [{ tenantId: 'tenant_lavitat', role: 'seller', active: true }]
+                }
+            ]
+        });
+
+        saasControl.ensureLoaded = async () => saasControl.getSnapshotSync();
+
+        const authService = loadAuthServiceFresh();
+
+        const sellerById = await authService.login({
+            email: 'USER0001',
+            password: '123456789qwerty',
+            tenantId: 'tenant_lavitat'
+        });
+        assert.equal(sellerById.user.id, 'USER0001');
+        assert.equal(sellerById.user.email, 'a@b.com');
+
+        const sellerByEmail = await authService.login({
+            email: 'a@b.com',
+            password: '123456789qwerty',
+            tenantId: 'tenant_lavitat'
+        });
+        assert.equal(sellerByEmail.user.id, 'USER0001');
+    } finally {
+        saasControl.getUsersForAuthSync = originalGetUsersForAuthSync;
+        saasControl.getSnapshotSync = originalGetSnapshotSync;
+        saasControl.ensureLoaded = originalEnsureLoaded;
         restoreEnv(prev);
         fs.rmSync(tempDir, { recursive: true, force: true });
     }

@@ -78,6 +78,29 @@ function getOutgoingAgentMeta(messageId = '') {
     return entry.meta && typeof entry.meta === 'object' ? entry.meta : null;
 }
 
+function getSerializedMessageId(message = null) {
+    if (!message) return '';
+    if (typeof message === 'string') return String(message).trim();
+
+    const candidates = [
+        message?.id?._serialized,
+        message?.id?.id,
+        message?.id,
+        message?._data?.id,
+        message?.key?.id,
+        message?.messageId,
+        message?.message_id,
+        message?.messages?.[0]?.id
+    ];
+
+    for (const candidate of candidates) {
+        const safe = String(candidate || '').trim();
+        if (safe) return safe;
+    }
+
+    return '';
+}
+
 function buildSocketAgentMeta(authContext = null, moduleContext = null) {
     if (!authContext || typeof authContext !== 'object') return null;
     const userId = String(authContext?.userId || authContext?.id || '').trim();
@@ -2321,7 +2344,7 @@ class SocketManager {
     } = {}) {
         try {
             if (!msg) return;
-            const messageId = String(msg?.id?._serialized || '').trim();
+            const messageId = getSerializedMessageId(msg);
             const chatId = String(msg?.fromMe ? msg?.to : msg?.from || '').trim();
             if (!messageId || !chatId) return;
 
@@ -3901,7 +3924,7 @@ class SocketManager {
                 mediaPayload = null
             } = {}) => {
                 const safeSentMessage = sentMessage && typeof sentMessage === 'object' ? sentMessage : {};
-                const messageId = String(safeSentMessage?.id?._serialized || '').trim();
+                const messageId = getSerializedMessageId(safeSentMessage);
                 const targetChatId = String(safeSentMessage?.to || fallbackChatId || '').trim();
                 if (!messageId || !targetChatId || !isVisibleChatId(targetChatId)) return;
 
@@ -4031,7 +4054,7 @@ class SocketManager {
                         sentMessage = await waClient.sendMessage(targetChatId, text);
                     }
 
-                    const sentMessageId = String(sentMessage?.id?._serialized || '').trim();
+                    const sentMessageId = getSerializedMessageId(sentMessage);
                     if (sentMessageId && agentMeta) {
                         rememberOutgoingAgentMeta(sentMessageId, agentMeta);
                     }
@@ -4148,7 +4171,7 @@ class SocketManager {
                     const moduleContext = socket?.data?.waModule || null;
                     const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
                     const sentMessage = await waClient.sendMedia(targetChatId, mediaData, mimetype, filename, caption, isPtt, quoted || null);
-                    const sentMessageId = String(sentMessage?.id?._serialized || '').trim();
+                    const sentMessageId = getSerializedMessageId(sentMessage);
                     if (sentMessageId && agentMeta) {
                         rememberOutgoingAgentMeta(sentMessageId, agentMeta);
                     }
@@ -4883,7 +4906,7 @@ class SocketManager {
             const quotedMessage = await extractQuotedMessageInfo(msg);
             const order = extractOrderInfo(msg);
             const location = extractLocationInfo(msg);
-            const messageId = String(msg?.id?._serialized || '').trim();
+            const messageId = getSerializedMessageId(msg);
             const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId)) : null;
             const runtimeModuleContext = this.resolveHistoryModuleContext();
             await this.persistMessageHistory(this.resolveHistoryTenantId(), {
@@ -4897,7 +4920,7 @@ class SocketManager {
                 moduleContext: runtimeModuleContext
             });
             this.emitToRuntimeContext('message', {
-                id: msg.id._serialized,
+                id: messageId,
                 from: msg.from,
                 to: msg.to,
                 body: msg.body,
@@ -4943,7 +4966,7 @@ class SocketManager {
             const quotedMessage = await extractQuotedMessageInfo(msg);
             const order = extractOrderInfo(msg);
             const location = extractLocationInfo(msg);
-            const messageId = String(msg?.id?._serialized || '').trim();
+            const messageId = getSerializedMessageId(msg);
             const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId)) : null;
             const runtimeModuleContext = this.resolveHistoryModuleContext();
             await this.persistMessageHistory(this.resolveHistoryTenantId(), {
@@ -4957,7 +4980,7 @@ class SocketManager {
                 moduleContext: runtimeModuleContext
             });
             this.emitToRuntimeContext('message', {
-                id: msg.id._serialized,
+                id: messageId,
                 from: msg.from,
                 to: msg.to,
                 body: msg.body,
@@ -4983,8 +5006,10 @@ class SocketManager {
                 ...(agentMeta || {})
             });
 
-            this.emitMessageEditability(msg.id._serialized, msg.to || msg.from);
-            this.scheduleEditabilityRefresh(msg.id._serialized, msg.to || msg.from);
+            if (messageId) {
+                this.emitMessageEditability(messageId, msg.to || msg.from);
+                this.scheduleEditabilityRefresh(messageId, msg.to || msg.from);
+            }
 
             try {
                 const relatedChatId = msg.to || msg.from;
@@ -5000,7 +5025,7 @@ class SocketManager {
             if (!message || isStatusOrSystemMessage(message)) return;
             const chatId = message.fromMe ? message.to : message.from;
 
-            const messageId = message?.id?._serialized;
+            const messageId = getSerializedMessageId(message);
             if (!messageId) return;
 
             let canEdit = false;
@@ -5039,7 +5064,7 @@ class SocketManager {
         });
 
         waClient.on('message_ack', async ({ message, ack }) => {
-            const messageId = message?.id?._serialized;
+            const messageId = getSerializedMessageId(message);
             const chatId = message?.to || message?.from || '';
             const isFromMe = Boolean(message?.fromMe);
             await this.persistMessageAck(this.resolveHistoryTenantId(), {
@@ -5071,46 +5096,4 @@ class SocketManager {
 
 
 module.exports = SocketManager;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
