@@ -2,7 +2,6 @@ const crypto = require('crypto');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
-    normalizeTenantId,
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
@@ -21,6 +20,12 @@ let ensurePromise = null;
 
 function nowIso() {
     return new Date().toISOString();
+}
+
+function normalizeTenantId(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    return raw.replace(/[^a-zA-Z0-9_-]/g, '');
 }
 
 function parseBoolean(value, fallback = true) {
@@ -736,14 +741,19 @@ async function deleteUser(userId = '') {
 }
 
 function toAuthUserRecord(user = {}) {
-    const memberships = normalizeMemberships(user.memberships || [], user?.memberships?.[0]?.role || 'seller');
+    const id = String(user?.id || user?.userId || user?.user_id || '').trim();
+    const email = String(user?.email || user?.mail || '').trim().toLowerCase();
+    const passwordHash = String(user?.passwordHash || user?.password_hash || '').trim().toLowerCase();
+    const password = String(user?.password || '').trim();
+    const memberships = normalizeMemberships(user.memberships || [], user?.memberships?.[0]?.role || user?.role || 'seller');
     const activeMemberships = memberships.filter((membership) => membership.active !== false);
     const selectedMembership = activeMemberships[0] || memberships[0] || { tenantId: DEFAULT_TENANT_ID, role: 'seller', active: true };
 
     return {
-        id: user.id,
-        email: user.email,
-        passwordHash: user.passwordHash,
+        id,
+        email,
+        passwordHash,
+        password,
         tenantId: selectedMembership.tenantId,
         role: selectedMembership.role,
         name: user.name,
@@ -752,7 +762,9 @@ function toAuthUserRecord(user = {}) {
 }
 
 function getUsersForAuthSync() {
-    return listUsersSync({ includeInactive: false }).map(toAuthUserRecord).filter((user) => user.email && user.passwordHash);
+    return listUsersSync({ includeInactive: false })
+        .map(toAuthUserRecord)
+        .filter((user) => user && user.id && user.email && (user.passwordHash || user.password));
 }
 
 function findUserRecordSync({ userId = '', email = '' } = {}) {
