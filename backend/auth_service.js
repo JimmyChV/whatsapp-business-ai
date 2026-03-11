@@ -404,7 +404,7 @@ async function login({ email = '', password = '', tenantId = '', tenantSlug = ''
     await saasControlService.ensureLoaded();
     const users = getAuthUsersRecords();
     if (!users.length) {
-        throw new Error('No hay usuarios configurados en SAAS_USERS_JSON.');
+        throw new Error('No hay usuarios configurados para autenticacion SaaS (DB/control plane).');
     }
 
     const candidates = users.filter((user) => user.email === cleanEmail && verifyUserPassword(user, password));

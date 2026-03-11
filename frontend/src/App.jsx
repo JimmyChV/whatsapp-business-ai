@@ -868,7 +868,7 @@ function App() {
         }
       });
 
-      const suggestedTenant = String(runtimeTenant?.id || runtimeUser?.tenantId || '').trim();
+      const suggestedTenant = String(runtimeUser?.tenantId || '').trim();
       if (suggestedTenant) setLoginTenantId((prev) => prev || suggestedTenant);
       const suggestedEmail = String(runtimeUser?.email || '').trim();
       if (suggestedEmail) setLoginEmail((prev) => prev || suggestedEmail);
@@ -1820,12 +1820,23 @@ function App() {
     setTenantSwitchError('');
 
     try {
-      const response = await fetch(`${API_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: buildApiHeaders({ includeJson: true, tenantIdOverride: tenantId }),
-        body: JSON.stringify({ email, password, tenantId: tenantId || undefined })
-      });
-      const payload = await response.json().catch(() => ({}));
+      const runLogin = async (tenantIdForRequest = '') => {
+        const response = await fetch(API_URL + '/api/auth/login', {
+          method: 'POST',
+          headers: buildApiHeaders({ includeJson: true, tenantIdOverride: tenantIdForRequest }),
+          body: JSON.stringify({ email, password, tenantId: tenantIdForRequest || undefined })
+        });
+        const payload = await response.json().catch(() => ({}));
+        return { response, payload };
+      };
+
+      let { response, payload } = await runLogin(tenantId);
+      const firstError = String(payload?.error || '');
+      const tenantMismatch = /usuario sin acceso al tenant seleccionado/i.test(firstError);
+      if ((!response.ok || !payload?.ok) && tenantId && tenantMismatch) {
+        ({ response, payload } = await runLogin(''));
+      }
+
       if (!response.ok || !payload?.ok) {
         throw new Error(String(payload?.error || 'No se pudo iniciar sesion.'));
       }
