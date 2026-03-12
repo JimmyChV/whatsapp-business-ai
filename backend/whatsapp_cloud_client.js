@@ -155,6 +155,23 @@ function compactObject(input = {}) {
     return out;
 }
 
+function normalizeRuntimeCloudConfig(input = {}) {
+    const source = input && typeof input === 'object' ? input : {};
+    const normalized = {
+        appId: String(source.appId || source.app_id || '').trim() || null,
+        appSecret: String(source.appSecret || source.app_secret || '').trim() || null,
+        systemUserToken: String(source.systemUserToken || source.system_user_token || '').trim() || null,
+        wabaId: String(source.wabaId || source.waba_id || '').trim() || null,
+        phoneNumberId: String(source.phoneNumberId || source.phone_number_id || '').trim() || null,
+        verifyToken: String(source.verifyToken || source.verify_token || '').trim() || null,
+        graphVersion: String(source.graphVersion || source.graph_version || '').trim() || null,
+        displayPhoneNumber: String(source.displayPhoneNumber || source.display_phone_number || '').trim() || null,
+        businessName: String(source.businessName || source.business_name || '').trim() || null
+    };
+
+    return compactObject(normalized);
+}
+
 class WhatsAppCloudClient extends EventEmitter {
     constructor() {
         super();
@@ -166,13 +183,14 @@ class WhatsAppCloudClient extends EventEmitter {
         this.messagesByChat = new Map();
         this.messageById = new Map();
         this.outboundMessageToChat = new Map();
+        this.runtimeConfig = {};
 
         this.client = this.createClientFacade();
         this.refreshClientInfo();
     }
 
     get graphVersion() {
-        return String(process.env.META_GRAPH_VERSION || 'v22.0').trim();
+        return String(this.runtimeConfig?.graphVersion || process.env.META_GRAPH_VERSION || 'v22.0').trim();
     }
 
     get graphBaseUrl() {
@@ -180,20 +198,21 @@ class WhatsAppCloudClient extends EventEmitter {
     }
 
     get accessToken() {
-        return String(process.env.META_SYSTEM_USER_TOKEN || '').trim();
+        return String(this.runtimeConfig?.systemUserToken || process.env.META_SYSTEM_USER_TOKEN || '').trim();
     }
 
     get phoneNumberId() {
-        return String(process.env.META_WABA_PHONE_NUMBER_ID || '').trim();
+        return String(this.runtimeConfig?.phoneNumberId || process.env.META_WABA_PHONE_NUMBER_ID || '').trim();
     }
 
     get appId() {
-        return String(process.env.META_APP_ID || '').trim();
+        return String(this.runtimeConfig?.appId || process.env.META_APP_ID || '').trim();
     }
 
     get selfDigits() {
         const digits = normalizeDigits(
-            process.env.META_DISPLAY_PHONE_NUMBER
+            this.runtimeConfig?.displayPhoneNumber
+            || process.env.META_DISPLAY_PHONE_NUMBER
             || process.env.META_SELF_PHONE
             || process.env.META_WABA_PHONE_NUMBER
             || this.phoneNumberId
@@ -217,7 +236,7 @@ class WhatsAppCloudClient extends EventEmitter {
                 user: this.selfDigits,
                 server: 'c.us'
             },
-            pushname: String(process.env.META_BUSINESS_NAME || process.env.META_DISPLAY_NAME || 'Cloud API'),
+            pushname: String(this.runtimeConfig?.businessName || process.env.META_BUSINESS_NAME || process.env.META_DISPLAY_NAME || 'Cloud API'),
             platform: 'cloud'
         };
     }
@@ -240,6 +259,32 @@ class WhatsAppCloudClient extends EventEmitter {
             }
         };
         return facade;
+    }
+
+    setRuntimeConfig(config = {}) {
+        this.runtimeConfig = normalizeRuntimeCloudConfig(config);
+        this.refreshClientInfo();
+        return this.getRuntimeConfigPublic();
+    }
+
+    clearRuntimeConfig() {
+        this.runtimeConfig = {};
+        this.refreshClientInfo();
+        return this.getRuntimeConfigPublic();
+    }
+
+    getRuntimeConfigPublic() {
+        return {
+            appId: String(this.runtimeConfig?.appId || '').trim() || null,
+            wabaId: String(this.runtimeConfig?.wabaId || '').trim() || null,
+            phoneNumberId: String(this.runtimeConfig?.phoneNumberId || '').trim() || null,
+            verifyToken: String(this.runtimeConfig?.verifyToken || '').trim() || null,
+            graphVersion: String(this.runtimeConfig?.graphVersion || '').trim() || null,
+            displayPhoneNumber: String(this.runtimeConfig?.displayPhoneNumber || '').trim() || null,
+            businessName: String(this.runtimeConfig?.businessName || '').trim() || null,
+            hasSystemUserToken: Boolean(this.runtimeConfig?.systemUserToken),
+            hasAppSecret: Boolean(this.runtimeConfig?.appSecret)
+        };
     }
 
     getCapabilities() {
