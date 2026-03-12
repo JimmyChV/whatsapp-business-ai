@@ -227,7 +227,6 @@ export default function SaasAdminPanel({
     const [userForm, setUserForm] = useState(EMPTY_USER_FORM);
     const [settingsTenantId, setSettingsTenantId] = useState('');
     const [tenantSettings, setTenantSettings] = useState(EMPTY_SETTINGS);
-    const [editingMembershipUserId, setEditingMembershipUserId] = useState('');
     const [membershipDraft, setMembershipDraft] = useState([]);
     const [waModules, setWaModules] = useState([]);
     const [waModuleForm, setWaModuleForm] = useState(EMPTY_WA_MODULE_FORM);
@@ -235,6 +234,8 @@ export default function SaasAdminPanel({
     const [selectedTenantId, setSelectedTenantId] = useState('');
     const [selectedUserId, setSelectedUserId] = useState('');
     const [selectedWaModuleId, setSelectedWaModuleId] = useState('');
+    const [tenantPanelMode, setTenantPanelMode] = useState('view');
+    const [userPanelMode, setUserPanelMode] = useState('view');
 
     const [busy, setBusy] = useState(false);
     const [loadingSettings, setLoadingSettings] = useState(false);
@@ -289,6 +290,24 @@ export default function SaasAdminPanel({
         () => (waModules || []).find((item) => String(item?.moduleId || '') === String(selectedWaModuleId || '')) || null,
         [waModules, selectedWaModuleId]
     );
+
+    const usersByTenant = useMemo(() => {
+        const map = new Map();
+        (overview.users || []).forEach((user) => {
+            sanitizeMemberships(user?.memberships || []).forEach((membership) => {
+                const tenantId = String(membership?.tenantId || '').trim();
+                if (!tenantId) return;
+                const bucket = map.get(tenantId) || [];
+                bucket.push({
+                    ...user,
+                    membershipRole: membership.role,
+                    membershipActive: membership.active !== false
+                });
+                map.set(tenantId, bucket);
+            });
+        });
+        return map;
+    }, [overview.users]);
 
     const adminNavItems = useMemo(() => {
         return ADMIN_NAV_ITEMS.filter((item) => {
@@ -450,17 +469,6 @@ export default function SaasAdminPanel({
         const cleanTenantId = String(settingsTenantId || activeTenantId || '').trim();
         onOpenWhatsAppOperation(cleanModuleId, { tenantId: cleanTenantId || undefined });
     };
-    const openMembershipEditor = (user) => {
-        const cleanUserId = String(user?.id || '').trim();
-        if (!cleanUserId) return;
-        if (editingMembershipUserId === cleanUserId) {
-            setEditingMembershipUserId('');
-            setMembershipDraft([]);
-            return;
-        }
-        setEditingMembershipUserId(cleanUserId);
-        setMembershipDraft(sanitizeMemberships(user?.memberships || []));
-    };
 
     const updateMembershipDraft = (index, patch = {}) => {
         setMembershipDraft((prev) => prev.map((entry, entryIndex) => {
@@ -529,20 +537,22 @@ export default function SaasAdminPanel({
     }, [activeSection]);
 
     useEffect(() => {
+        if (tenantPanelMode === 'create') return;
         if (!selectedTenant) {
             setTenantForm(EMPTY_TENANT_FORM);
             return;
         }
         setTenantForm(buildTenantFormFromItem(selectedTenant));
-    }, [selectedTenant]);
+    }, [selectedTenant, tenantPanelMode]);
 
     useEffect(() => {
+        if (userPanelMode === 'create') return;
         if (!selectedUser) {
             setUserForm(EMPTY_USER_FORM);
             return;
         }
         setUserForm(buildUserFormFromItem(selectedUser));
-    }, [selectedUser]);
+    }, [selectedUser, userPanelMode]);
 
     useEffect(() => {
         if (!selectedWaModule) {
@@ -551,6 +561,86 @@ export default function SaasAdminPanel({
         }
         openWaModuleEditor(selectedWaModule);
     }, [selectedWaModule]);
+
+    const openTenantCreate = () => {
+        setTenantPanelMode('create');
+        setSelectedTenantId('');
+        setTenantForm(EMPTY_TENANT_FORM);
+    };
+
+    const openTenantView = (tenantId) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        if (!cleanTenantId) return;
+        setSelectedTenantId(cleanTenantId);
+        setSettingsTenantId(cleanTenantId);
+        setTenantPanelMode('view');
+    };
+
+    const openTenantEdit = () => {
+        if (!selectedTenant) return;
+        setTenantForm(buildTenantFormFromItem(selectedTenant));
+        setTenantPanelMode('edit');
+    };
+
+    const cancelTenantEdit = () => {
+        if (selectedTenant) {
+            setTenantForm(buildTenantFormFromItem(selectedTenant));
+            setTenantPanelMode('view');
+            return;
+        }
+        setTenantForm(EMPTY_TENANT_FORM);
+        setTenantPanelMode('view');
+    };
+
+    const openUserCreate = () => {
+        const fallbackTenantId = String(settingsTenantId || selectedTenantId || tenantOptions[0]?.id || '').trim();
+        setUserPanelMode('create');
+        setSelectedUserId('');
+        setMembershipDraft([]);
+        setUserForm({
+            ...EMPTY_USER_FORM,
+            tenantId: fallbackTenantId
+        });
+    };
+
+    const openUserView = (userId) => {
+        const cleanUserId = String(userId || '').trim();
+        if (!cleanUserId) return;
+        setSelectedUserId(cleanUserId);
+        setMembershipDraft([]);
+        setUserPanelMode('view');
+    };
+
+    const openUserEdit = () => {
+        if (!selectedUser) return;
+        setUserForm(buildUserFormFromItem(selectedUser));
+        setMembershipDraft(sanitizeMemberships(selectedUser.memberships || []));
+        setUserPanelMode('edit');
+    };
+
+    const cancelUserEdit = () => {
+        if (selectedUser) {
+            setUserForm(buildUserFormFromItem(selectedUser));
+            setMembershipDraft([]);
+            setUserPanelMode('view');
+            return;
+        }
+        setUserForm(EMPTY_USER_FORM);
+        setMembershipDraft([]);
+        setUserPanelMode('view');
+    };
+
+    const openTenantFromUserMembership = (tenantId) => {
+        openTenantView(tenantId);
+        setCurrentSection('saas_empresas');
+        scrollToSection('saas_empresas');
+    };
+
+    const openUserFromTenant = (userId) => {
+        openUserView(userId);
+        setCurrentSection('saas_usuarios');
+        scrollToSection('saas_usuarios');
+    };
 
     if (!isOpen) return null;
 
@@ -635,422 +725,581 @@ export default function SaasAdminPanel({
                 {selectedSectionId !== 'saas_resumen' && (
                 <div className="saas-admin-grid">
                     {selectedSectionId === 'saas_empresas' && (
-                    <section id="saas_empresas" className="saas-admin-card">
-                        <h3>Empresas ({overview.tenants.length})</h3>
-                        <small style={{ color: '#8ea7b8' }}>Selecciona una fila para editar detalle en este panel derecho. Los codigos se generan automaticamente si dejas el ID vacio.</small>
-                        {canManageTenants ? (
-                            <>
-                                <div className="saas-admin-form-row">
-                                    <input
-                                        value={tenantForm.id}
-                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, id: event.target.value }))}
-                                        placeholder="tenant_id"
-                                    />
-                                    <input
-                                        value={tenantForm.slug}
-                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, slug: event.target.value }))}
-                                        placeholder="slug"
-                                    />
+                    <section id="saas_empresas" className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <div>
+                                        <h3>Empresas ({tenantOptions.length})</h3>
+                                        <small>Listado operativo. Selecciona una empresa para ver detalle.</small>
+                                    </div>
+                                    {canManageTenants && (
+                                        <button type="button" disabled={busy} onClick={openTenantCreate}>Agregar empresa</button>
+                                    )}
                                 </div>
-                                <div className="saas-admin-form-row">
-                                    <input
-                                        value={tenantForm.name}
-                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, name: event.target.value }))}
-                                        placeholder="Nombre"
-                                    />
-                                    <select value={tenantForm.plan} onChange={(event) => setTenantForm((prev) => ({ ...prev, plan: event.target.value }))}>
-                                        {PLAN_OPTIONS.map((plan) => (
-                                            <option key={plan} value={plan}>{plan}</option>
-                                        ))}
-                                    </select>
+                                <div className="saas-admin-list saas-admin-list--compact">
+                                    {tenantOptions.length === 0 && (
+                                        <div className="saas-admin-empty-state">
+                                            <p>No hay empresas registradas.</p>
+                                            {canManageTenants && (
+                                                <button type="button" disabled={busy} onClick={openTenantCreate}>Crear primera empresa</button>
+                                            )}
+                                        </div>
+                                    )}
+                                    {tenantOptions.map((tenant) => {
+                                        const activeUsers = (overview.metrics || []).find((metric) => metric.tenantId === tenant.id)?.activeUsers || 0;
+                                        const usage = aiUsageByTenant.get(tenant.id) || 0;
+                                        return (
+                                            <button
+                                                key={tenant.id}
+                                                type="button"
+                                                className={`saas-admin-list-item saas-admin-list-item--button ${selectedTenantId === tenant.id && tenantPanelMode !== 'create' ? 'active' : ''}`.trim()}
+                                                onClick={() => openTenantView(tenant.id)}
+                                            >
+                                                <strong>{tenant.name || tenant.id}</strong>
+                                                <small>{tenant.id} | {tenant.plan} | {tenant.active === false ? 'inactiva' : 'activa'}</small>
+                                                <small>Usuarios activos: {activeUsers} | IA mes: {usage}</small>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
-                                <div className="saas-admin-form-row">
-                                    <input
-                                        value={tenantForm.logoUrl}
-                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, logoUrl: event.target.value }))}
-                                        placeholder="Logo URL"
-                                    />
-                                    <input
-                                        value={tenantForm.coverImageUrl}
-                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, coverImageUrl: event.target.value }))}
-                                        placeholder="Cover URL"
-                                    />
-                                </div>
-                                                                {(tenantForm.logoUrl || tenantForm.coverImageUrl) && (
-                                    <div className="saas-admin-preview-strip">
-                                        {tenantForm.logoUrl && <img src={tenantForm.logoUrl} alt="Logo empresa" className="saas-admin-preview-thumb" />}
-                                        {tenantForm.coverImageUrl && <img src={tenantForm.coverImageUrl} alt="Portada empresa" className="saas-admin-preview-thumb saas-admin-preview-thumb--wide" />}
+                            </aside>
+
+                            <div className="saas-admin-detail-pane">
+                                {!selectedTenant && tenantPanelMode !== 'create' && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Selecciona una empresa</h4>
+                                        <p>El detalle se mostrara aqui en solo lectura. Editar se habilita solo por accion explicita.</p>
                                     </div>
                                 )}
-                                <div className="saas-admin-form-row">
-                                    <label className="saas-admin-module-toggle">
-                                        <input
-                                            type="checkbox"
-                                            checked={tenantForm.active !== false}
-                                            onChange={(event) => setTenantForm((prev) => ({ ...prev, active: event.target.checked }))}
-                                        />
-                                        <span>Empresa activa</span>
-                                    </label>
-                                </div>
-                                <div className="saas-admin-form-row">
-                                    <textarea
-                                        value={tenantForm.metadataText}
-                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, metadataText: event.target.value }))}
-                                        placeholder="Metadata JSON"
-                                        rows={4}
-                                        style={{ width: '100%' }}
-                                    />
-                                </div>
-                                <div className="saas-admin-form-row saas-admin-form-row--actions">
-                                    <button
-                                        type="button"
-                                        disabled={busy || !tenantForm.name}
-                                        onClick={() => runAction(selectedTenant ? 'Empresa actualizada' : 'Empresa creada', async () => {
-                                            const payload = {
-                                                id: tenantForm.id || undefined,
-                                                slug: tenantForm.slug || undefined,
-                                                name: tenantForm.name,
-                                                plan: tenantForm.plan,
-                                                active: tenantForm.active !== false,
-                                                logoUrl: tenantForm.logoUrl || null,
-                                                coverImageUrl: tenantForm.coverImageUrl || null,
-                                                metadata: safeJsonParse(tenantForm.metadataText || '{}', {})
-                                            };
 
-                                            if (selectedTenant?.id) {
-                                                await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(selectedTenant.id)}`, {
-                                                    method: 'PUT',
-                                                    body: payload
-                                                });
-                                                return;
-                                            }
-
-                                            const createdPayload = await requestJson('/api/admin/saas/tenants', {
-                                                method: 'POST',
-                                                body: payload
-                                            });
-                                            const createdId = String(createdPayload?.tenant?.id || '').trim();
-                                            if (createdId) {
-                                                setSelectedTenantId(createdId);
-                                                setSettingsTenantId(createdId);
-                                            }
-                                        })}
-                                    >
-                                        {selectedTenant?.id ? 'Guardar empresa' : 'Crear empresa'}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        disabled={busy}
-                                        onClick={() => {
-                                            setSelectedTenantId('');
-                                            setTenantForm(EMPTY_TENANT_FORM);
-                                        }}
-                                    >
-                                        Nueva empresa
-                                    </button>
-                                </div>
-                            </>
-                        ) : (
-                            <div className="saas-admin-alert" style={{ marginBottom: '10px' }}>
-                                Solo superadmin puede crear o eliminar empresas. Vista en modo lectura.
-                            </div>
-                        )}
-
-                        <div className="saas-admin-list">
-                            {tenantOptions.map((tenant) => {
-                                const usage = aiUsageByTenant.get(tenant.id) || 0;
-                                const activeUsers = (overview.metrics || []).find((metric) => metric.tenantId === tenant.id)?.activeUsers || 0;
-                                return (
-                                    <div key={tenant.id} className={`saas-admin-list-item ${selectedTenantId === tenant.id ? 'active' : ''}`.trim()} onClick={() => { setSelectedTenantId(tenant.id); setSettingsTenantId(tenant.id); }}>
-                                        <div>
-                                            {tenant.logoUrl && <img src={tenant.logoUrl} alt={tenant.name || tenant.id} className="saas-admin-inline-avatar" />}
-                                            <strong>{tenant.name || tenant.id}</strong>
-                                            <small>{tenant.id} | plan {tenant.plan}</small>
-                                            <small>Usuarios: {activeUsers} / {tenant?.limits?.maxUsers || '-'}</small>
-                                            <small>IA mes: {usage} / {tenant?.limits?.maxMonthlyAiRequests || '-'}</small>
-                                            <small>Actualizado: {formatDateTimeLabel(tenant.updatedAt)}</small>
-                                        </div>
-                                        <div className="saas-admin-list-actions" onClick={(event) => event.stopPropagation()}>
-                                            {canManageTenants ? (
-                                                <>
+                                {(selectedTenant || tenantPanelMode === 'create') && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>
+                                                    {tenantPanelMode === 'create'
+                                                        ? 'Nueva empresa'
+                                                        : tenantPanelMode === 'edit'
+                                                            ? `Editando: ${selectedTenant?.name || selectedTenant?.id || '-'}`
+                                                            : selectedTenant?.name || selectedTenant?.id || 'Detalle empresa'}
+                                                </h3>
+                                                <small>
+                                                    {tenantPanelMode === 'view'
+                                                        ? 'Campos bloqueados. Usa Editar para modificar.'
+                                                        : 'ID fijo despues de crear. Ajusta solo campos permitidos.'}
+                                                </small>
+                                            </div>
+                                            {tenantPanelMode === 'view' && selectedTenant && canManageTenants && (
+                                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                    <button type="button" disabled={busy} onClick={openTenantEdit}>Editar</button>
                                                     <button
                                                         type="button"
                                                         disabled={busy}
-                                                        onClick={() => runAction('Plan actualizado', async () => {
-                                                            const nextPlan = tenant.plan === 'starter' ? 'pro' : tenant.plan === 'pro' ? 'enterprise' : 'starter';
-                                                            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(tenant.id)}`, {
+                                                        onClick={() => runAction('Estado de empresa actualizado', async () => {
+                                                            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(selectedTenant.id)}`, {
                                                                 method: 'PUT',
                                                                 body: {
-                                                                    plan: nextPlan,
-                                                                    active: tenant.active !== false,
-                                                                    logoUrl: tenant.logoUrl || null,
-                                                                    coverImageUrl: tenant.coverImageUrl || null,
-                                                                    metadata: tenant.metadata || {}
+                                                                    slug: selectedTenant.slug || undefined,
+                                                                    name: selectedTenant.name,
+                                                                    plan: selectedTenant.plan,
+                                                                    active: selectedTenant.active === false,
+                                                                    logoUrl: selectedTenant.logoUrl || null,
+                                                                    coverImageUrl: selectedTenant.coverImageUrl || null,
+                                                                    metadata: selectedTenant.metadata || {}
                                                                 }
                                                             });
                                                         })}
                                                     >
-                                                        Cambiar plan
+                                                        {selectedTenant.active === false ? 'Activar' : 'Desactivar'}
                                                     </button>
-                                                    {tenant.id !== 'default' && (
-                                                        <button
-                                                            type="button"
-                                                            disabled={busy}
-                                                            onClick={() => runAction('Empresa eliminada', async () => {
-                                                                await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(tenant.id)}`, {
-                                                                    method: 'DELETE'
-                                                                });
-                                                                if (settingsTenantId === tenant.id) setSettingsTenantId('');
-                                                                if (selectedTenantId === tenant.id) setSelectedTenantId('');
-                                                            })}
-                                                        >
-                                                            Eliminar
-                                                        </button>
-                                                    )}
-                                                </>
-                                            ) : (
-                                                <small style={{ color: '#8ea3ad' }}>Solo lectura</small>
+                                                </div>
                                             )}
                                         </div>
-                                    </div>
-                                );
-                            })}
+
+                                        {tenantPanelMode === 'view' && selectedTenant && (
+                                            <>
+                                                <div className="saas-admin-detail-grid">
+                                                    <div className="saas-admin-detail-field"><span>ID</span><strong>{selectedTenant.id}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Slug</span><strong>{selectedTenant.slug || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Plan</span><strong>{selectedTenant.plan || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedTenant.active === false ? 'Inactiva' : 'Activa'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(selectedTenant.updatedAt)}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Logo</span><strong>{selectedTenant.logoUrl ? 'Configurado' : 'Sin logo'}</strong></div>
+                                                </div>
+                                                {(selectedTenant.logoUrl || selectedTenant.coverImageUrl) && (
+                                                    <div className="saas-admin-preview-strip">
+                                                        {selectedTenant.logoUrl && <img src={selectedTenant.logoUrl} alt="Logo empresa" className="saas-admin-preview-thumb" />}
+                                                        {selectedTenant.coverImageUrl && <img src={selectedTenant.coverImageUrl} alt="Portada empresa" className="saas-admin-preview-thumb saas-admin-preview-thumb--wide" />}
+                                                    </div>
+                                                )}
+                                                <div className="saas-admin-related-block">
+                                                    <h4>Usuarios de esta empresa</h4>
+                                                    <div className="saas-admin-related-list">
+                                                        {((usersByTenant.get(selectedTenant.id) || []).length === 0) && (
+                                                            <div className="saas-admin-empty-inline">Sin usuarios vinculados.</div>
+                                                        )}
+                                                        {(usersByTenant.get(selectedTenant.id) || []).map((user) => (
+                                                            <button key={`${selectedTenant.id}_${user.id}`} type="button" className="saas-admin-related-row" onClick={() => openUserFromTenant(user.id)}>
+                                                                <span>{user.name || user.email || user.id}</span>
+                                                                <small>{user.id} | {user.membershipRole || 'seller'}{user.membershipActive ? '' : ' (inactivo)'}</small>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div className="saas-admin-detail-metadata">
+                                                    <h4>Metadata</h4>
+                                                    <pre>{prettyJson(selectedTenant.metadata || {})}</pre>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        {tenantPanelMode !== 'view' && canManageTenants && (
+                                            <>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={tenantForm.id}
+                                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, id: event.target.value }))}
+                                                        placeholder="tenant_id"
+                                                        disabled={tenantPanelMode !== 'create' || busy}
+                                                    />
+                                                    <input
+                                                        value={tenantForm.slug}
+                                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, slug: event.target.value }))}
+                                                        placeholder="slug"
+                                                        disabled={busy}
+                                                    />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={tenantForm.name}
+                                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, name: event.target.value }))}
+                                                        placeholder="Nombre"
+                                                        disabled={busy}
+                                                    />
+                                                    <select value={tenantForm.plan} onChange={(event) => setTenantForm((prev) => ({ ...prev, plan: event.target.value }))} disabled={busy}>
+                                                        {PLAN_OPTIONS.map((plan) => (
+                                                            <option key={plan} value={plan}>{plan}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={tenantForm.logoUrl}
+                                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, logoUrl: event.target.value }))}
+                                                        placeholder="Logo URL"
+                                                        disabled={busy}
+                                                    />
+                                                    <input
+                                                        value={tenantForm.coverImageUrl}
+                                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, coverImageUrl: event.target.value }))}
+                                                        placeholder="Cover URL"
+                                                        disabled={busy}
+                                                    />
+                                                </div>
+                                                {(tenantForm.logoUrl || tenantForm.coverImageUrl) && (
+                                                    <div className="saas-admin-preview-strip">
+                                                        {tenantForm.logoUrl && <img src={tenantForm.logoUrl} alt="Logo empresa" className="saas-admin-preview-thumb" />}
+                                                        {tenantForm.coverImageUrl && <img src={tenantForm.coverImageUrl} alt="Portada empresa" className="saas-admin-preview-thumb saas-admin-preview-thumb--wide" />}
+                                                    </div>
+                                                )}
+                                                <div className="saas-admin-form-row">
+                                                    <label className="saas-admin-module-toggle">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={tenantForm.active !== false}
+                                                            onChange={(event) => setTenantForm((prev) => ({ ...prev, active: event.target.checked }))}
+                                                            disabled={busy}
+                                                        />
+                                                        <span>Empresa activa</span>
+                                                    </label>
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <textarea
+                                                        value={tenantForm.metadataText}
+                                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, metadataText: event.target.value }))}
+                                                        placeholder="Metadata JSON"
+                                                        rows={5}
+                                                        style={{ width: '100%' }}
+                                                        disabled={busy}
+                                                    />
+                                                </div>
+                                                <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                                    <button
+                                                        type="button"
+                                                        disabled={busy || !tenantForm.name.trim()}
+                                                        onClick={() => runAction(tenantPanelMode === 'create' ? 'Empresa creada' : 'Empresa actualizada', async () => {
+                                                            const payload = {
+                                                                id: tenantPanelMode === 'create' ? (tenantForm.id || undefined) : undefined,
+                                                                slug: tenantForm.slug || undefined,
+                                                                name: tenantForm.name,
+                                                                plan: tenantForm.plan,
+                                                                active: tenantForm.active !== false,
+                                                                logoUrl: tenantForm.logoUrl || null,
+                                                                coverImageUrl: tenantForm.coverImageUrl || null,
+                                                                metadata: safeJsonParse(tenantForm.metadataText || '{}', {})
+                                                            };
+
+                                                            if (tenantPanelMode === 'create' || !selectedTenant?.id) {
+                                                                const createdPayload = await requestJson('/api/admin/saas/tenants', {
+                                                                    method: 'POST',
+                                                                    body: payload
+                                                                });
+                                                                const createdId = String(createdPayload?.tenant?.id || '').trim();
+                                                                if (createdId) {
+                                                                    setSelectedTenantId(createdId);
+                                                                    setSettingsTenantId(createdId);
+                                                                }
+                                                                setTenantPanelMode('view');
+                                                                return;
+                                                            }
+
+                                                            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(selectedTenant.id)}`, {
+                                                                method: 'PUT',
+                                                                body: payload
+                                                            });
+                                                            setTenantPanelMode('view');
+                                                        })}
+                                                    >
+                                                        {tenantPanelMode === 'create' ? 'Guardar empresa' : 'Actualizar empresa'}
+                                                    </button>
+                                                    <button type="button" disabled={busy} onClick={cancelTenantEdit}>Cancelar</button>
+                                                </div>
+                                            </>
+                                        )}
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </section>
                     )}
-
                     {selectedSectionId === 'saas_usuarios' && (
-                    <section id="saas_usuarios" className="saas-admin-card">
-                        <h3>Usuarios ({overview.users.length})</h3>
-                        <small style={{ color: '#8ea7b8' }}>Selecciona un usuario para editar perfil, avatar y membresias sin perder el menu izquierdo.</small>
-                        <div className="saas-admin-form-row">
-                            <input
-                                value={userForm.id}
-                                onChange={(event) => setUserForm((prev) => ({ ...prev, id: event.target.value }))}
-                                placeholder="user_id"
-                            />
-                            <input
-                                value={userForm.email}
-                                onChange={(event) => setUserForm((prev) => ({ ...prev, email: event.target.value }))}
-                                placeholder="email"
-                            />
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <input
-                                value={userForm.name}
-                                onChange={(event) => setUserForm((prev) => ({ ...prev, name: event.target.value }))}
-                                placeholder="Nombre"
-                            />
-                            <input
-                                value={userForm.password}
-                                onChange={(event) => setUserForm((prev) => ({ ...prev, password: event.target.value }))}
-                                type="password"
-                                placeholder="password"
-                            />
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <select value={userForm.tenantId} onChange={(event) => setUserForm((prev) => ({ ...prev, tenantId: event.target.value }))}>
-                                <option value="">Tenant inicial</option>
-                                {tenantOptions.map((tenant) => (
-                                    <option key={tenant.id} value={tenant.id}>{tenant.name || tenant.id}</option>
-                                ))}
-                            </select>
-                            <select value={userForm.role} onChange={(event) => setUserForm((prev) => ({ ...prev, role: event.target.value }))}>
-                                {roleOptions.map((role) => (
-                                    <option key={role} value={role}>{role}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <input
-                                value={userForm.avatarUrl}
-                                onChange={(event) => setUserForm((prev) => ({ ...prev, avatarUrl: event.target.value }))}
-                                placeholder="Avatar URL"
-                            />
-                            <label className="saas-admin-module-toggle">
-                                <input
-                                    type="checkbox"
-                                    checked={userForm.active !== false}
-                                    onChange={(event) => setUserForm((prev) => ({ ...prev, active: event.target.checked }))}
-                                />
-                                <span>Usuario activo</span>
-                            </label>
-                        </div>
-                        {userForm.avatarUrl && (
-                            <div className="saas-admin-preview-strip">
-                                <img src={userForm.avatarUrl} alt="Avatar usuario" className="saas-admin-preview-thumb" />
-                            </div>
-                        )}
-                        <div className="saas-admin-form-row">
-                            <textarea
-                                value={userForm.metadataText}
-                                onChange={(event) => setUserForm((prev) => ({ ...prev, metadataText: event.target.value }))}
-                                placeholder="Metadata JSON"
-                                rows={4}
-                                style={{ width: '100%' }}
-                            />
-                        </div>
-                                <div className="saas-admin-form-row saas-admin-form-row--actions">
-                            <button
-                                type="button"
-                                disabled={busy || !userForm.email || !userForm.tenantId || (!selectedUser?.id && !userForm.password)}
-                                onClick={() => runAction(selectedUser?.id ? 'Usuario actualizado' : 'Usuario creado', async () => {
-                                    const payload = {
-                                        id: userForm.id || undefined,
-                                        email: userForm.email,
-                                        name: userForm.name,
-                                        active: userForm.active !== false,
-                                        avatarUrl: userForm.avatarUrl || null,
-                                        metadata: safeJsonParse(userForm.metadataText || '{}', {}),
-                                        memberships: [{ tenantId: userForm.tenantId, role: userForm.role, active: true }]
-                                    };
-                                    if (userForm.password) {
-                                        payload.password = userForm.password;
-                                    }
+                    <section id="saas_usuarios" className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <div>
+                                        <h3>Usuarios ({overview.users.length})</h3>
+                                        <small>Listado minimo. El detalle se administra en el panel derecho.</small>
+                                    </div>
+                                    {canManageUsers && (
+                                        <button type="button" disabled={busy} onClick={openUserCreate}>Agregar usuario</button>
+                                    )}
+                                </div>
+                                <div className="saas-admin-list saas-admin-list--compact">
+                                    {(overview.users || []).length === 0 && (
+                                        <div className="saas-admin-empty-state">
+                                            <p>No hay usuarios registrados.</p>
+                                            {canManageUsers && (
+                                                <button type="button" disabled={busy} onClick={openUserCreate}>Crear primer usuario</button>
+                                            )}
+                                        </div>
+                                    )}
+                                    {(overview.users || []).map((user) => {
+                                        const userMemberships = sanitizeMemberships(user?.memberships || []);
+                                        return (
+                                            <button
+                                                key={user.id}
+                                                type="button"
+                                                className={`saas-admin-list-item saas-admin-list-item--button ${selectedUserId === user.id && userPanelMode !== 'create' ? 'active' : ''}`.trim()}
+                                                onClick={() => openUserView(user.id)}
+                                            >
+                                                <strong>{user.name || user.email || user.id}</strong>
+                                                <small>{user.email || '-'} | {user.active === false ? 'inactivo' : 'activo'}</small>
+                                                <small>Membresias: {userMemberships.length}</small>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </aside>
 
-                                    if (selectedUser?.id) {
-                                        await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, {
-                                            method: 'PUT',
-                                            body: payload
-                                        });
-                                        return;
-                                    }
+                            <div className="saas-admin-detail-pane">
+                                {!selectedUser && userPanelMode !== 'create' && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Selecciona un usuario</h4>
+                                        <p>El detalle se mostrara bloqueado aqui. Editar se activa solo por boton.</p>
+                                    </div>
+                                )}
 
-                                    const createdPayload = await requestJson('/api/admin/saas/users', {
-                                        method: 'POST',
-                                        body: payload
-                                    });
-                                    const createdId = String(createdPayload?.user?.id || '').trim();
-                                    if (createdId) setSelectedUserId(createdId);
-                                })}
-                            >
-                                {selectedUser?.id ? 'Guardar usuario' : 'Crear usuario'}
-                            </button>
-                            <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => {
-                                    setSelectedUserId('');
-                                    setUserForm(EMPTY_USER_FORM);
-                                    setEditingMembershipUserId('');
-                                    setMembershipDraft([]);
-                                }}
-                            >
-                                Nuevo usuario
-                            </button>
-                        </div>
-
-                        <div className="saas-admin-list">
-                            {(overview.users || []).map((user) => {
-                                const userMemberships = sanitizeMemberships(user?.memberships || []);
-                                const isEditing = editingMembershipUserId === user.id;
-                                return (
-                                    <div key={user.id} className={`saas-admin-list-item saas-admin-list-item--stacked ${selectedUserId === user.id ? 'active' : ''}`.trim()} onClick={() => setSelectedUserId(user.id)}>
-                                        <div>
-                                            {user.avatarUrl && <img src={user.avatarUrl} alt={user.name || user.email} className="saas-admin-inline-avatar" />}
-                                            <strong>{user.name || user.email}</strong>
-                                            <small>{user.email}</small>
-                                            <small>Actualizado: {formatDateTimeLabel(user.updatedAt)}</small>
-                                            <small>
-                                                {userMemberships.map((membership) => `${membership.tenantId}:${membership.role}${membership.active ? '' : '(off)'}`).join(' | ') || 'sin membresias'}
-                                            </small>
+                                {(selectedUser || userPanelMode === 'create') && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>
+                                                    {userPanelMode === 'create'
+                                                        ? 'Nuevo usuario'
+                                                        : userPanelMode === 'edit'
+                                                            ? `Editando: ${selectedUser?.name || selectedUser?.email || selectedUser?.id || '-'}`
+                                                            : selectedUser?.name || selectedUser?.email || selectedUser?.id || 'Detalle usuario'}
+                                                </h3>
+                                                <small>
+                                                    {userPanelMode === 'view'
+                                                        ? 'Campos bloqueados. Usa Editar para modificar.'
+                                                        : 'ID y correo bloqueados durante edicion para mantener consistencia.'}
+                                                </small>
+                                            </div>
+                                            {userPanelMode === 'view' && selectedUser && canManageUsers && (
+                                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                    <button type="button" disabled={busy} onClick={openUserEdit}>Editar</button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={busy}
+                                                        onClick={() => runAction('Estado de usuario actualizado', async () => {
+                                                            await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, {
+                                                                method: 'PUT',
+                                                                body: {
+                                                                    active: selectedUser.active === false,
+                                                                    avatarUrl: selectedUser.avatarUrl || null,
+                                                                    metadata: selectedUser.metadata || {}
+                                                                }
+                                                            });
+                                                        })}
+                                                    >
+                                                        {selectedUser.active === false ? 'Activar' : 'Desactivar'}
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
 
-                                        <div className="saas-admin-list-actions saas-admin-list-actions--row" onClick={(event) => event.stopPropagation()}>
-                                            <button type="button" disabled={busy} onClick={() => openMembershipEditor(user)}>
-                                                {isEditing ? 'Cerrar membresias' : 'Membresias'}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                disabled={busy}
-                                                onClick={() => runAction('Usuario actualizado', async () => {
-                                                    await requestJson(`/api/admin/saas/users/${encodeURIComponent(user.id)}`, {
-                                                        method: 'PUT',
-                                                        body: {
-                                                            active: user.active === false,
-                                                            avatarUrl: user.avatarUrl || null,
-                                                            metadata: user.metadata || {}
-                                                        }
-                                                    });
-                                                })}
-                                            >
-                                                {user.active === false ? 'Activar' : 'Desactivar'}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                disabled={busy}
-                                                onClick={() => runAction('Usuario eliminado', async () => {
-                                                    await requestJson(`/api/admin/saas/users/${encodeURIComponent(user.id)}`, {
-                                                        method: 'DELETE'
-                                                    });
-                                                })}
-                                            >
-                                                Eliminar
-                                            </button>
-                                        </div>
+                                        {userPanelMode === 'view' && selectedUser && (
+                                            <>
+                                                <div className="saas-admin-detail-grid">
+                                                    <div className="saas-admin-detail-field"><span>ID</span><strong>{selectedUser.id}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Correo</span><strong>{selectedUser.email || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedUser.active === false ? 'Inactivo' : 'Activo'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(selectedUser.updatedAt)}</strong></div>
+                                                </div>
 
-                                        {isEditing && (
-                                            <div className="saas-admin-membership-editor">
-                                                {(membershipDraft || []).map((membership, index) => (
-                                                    <div key={`${user.id}_membership_${index}`} className="saas-admin-membership-row">
-                                                        <select
-                                                            value={membership.tenantId}
-                                                            onChange={(event) => updateMembershipDraft(index, { tenantId: event.target.value })}
+                                                {selectedUser.avatarUrl && (
+                                                    <div className="saas-admin-preview-strip">
+                                                        <img src={selectedUser.avatarUrl} alt="Avatar usuario" className="saas-admin-preview-thumb" />
+                                                    </div>
+                                                )}
+
+                                                <div className="saas-admin-related-block">
+                                                    <h4>Empresas vinculadas</h4>
+                                                    <div className="saas-admin-related-list">
+                                                        {sanitizeMemberships(selectedUser.memberships || []).length === 0 && (
+                                                            <div className="saas-admin-empty-inline">Sin membresias activas.</div>
+                                                        )}
+                                                        {sanitizeMemberships(selectedUser.memberships || []).map((membership, index) => {
+                                                            const tenantLabel = tenantOptions.find((tenant) => tenant.id === membership.tenantId)?.name || membership.tenantId;
+                                                            return (
+                                                                <button
+                                                                    key={`${selectedUser.id}_membership_view_${index}`}
+                                                                    type="button"
+                                                                    className="saas-admin-related-row"
+                                                                    onClick={() => openTenantFromUserMembership(membership.tenantId)}
+                                                                >
+                                                                    <span>{tenantLabel}</span>
+                                                                    <small>{membership.tenantId} | {membership.role}{membership.active ? '' : ' (inactivo)'}</small>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+
+                                                <div className="saas-admin-detail-metadata">
+                                                    <h4>Metadata</h4>
+                                                    <pre>{prettyJson(selectedUser.metadata || {})}</pre>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        {userPanelMode !== 'view' && canManageUsers && (
+                                            <>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={userForm.id}
+                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, id: event.target.value }))}
+                                                        placeholder="user_id"
+                                                        disabled={userPanelMode !== 'create' || busy}
+                                                    />
+                                                    <input
+                                                        value={userForm.email}
+                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, email: event.target.value }))}
+                                                        placeholder="email"
+                                                        disabled={userPanelMode !== 'create' || busy}
+                                                    />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={userForm.name}
+                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, name: event.target.value }))}
+                                                        placeholder="Nombre"
+                                                        disabled={busy}
+                                                    />
+                                                    <input
+                                                        value={userForm.password}
+                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, password: event.target.value }))}
+                                                        type="password"
+                                                        placeholder={userPanelMode === 'create' ? 'password inicial' : 'nueva password (opcional)'}
+                                                        disabled={busy}
+                                                    />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={userForm.avatarUrl}
+                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, avatarUrl: event.target.value }))}
+                                                        placeholder="Avatar URL"
+                                                        disabled={busy}
+                                                    />
+                                                    <label className="saas-admin-module-toggle">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={userForm.active !== false}
+                                                            onChange={(event) => setUserForm((prev) => ({ ...prev, active: event.target.checked }))}
                                                             disabled={busy}
-                                                        >
-                                                            <option value="">Tenant</option>
+                                                        />
+                                                        <span>Usuario activo</span>
+                                                    </label>
+                                                </div>
+
+                                                {userForm.avatarUrl && (
+                                                    <div className="saas-admin-preview-strip">
+                                                        <img src={userForm.avatarUrl} alt="Avatar usuario" className="saas-admin-preview-thumb" />
+                                                    </div>
+                                                )}
+
+                                                <div className="saas-admin-form-row">
+                                                    <textarea
+                                                        value={userForm.metadataText}
+                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, metadataText: event.target.value }))}
+                                                        placeholder="Metadata JSON"
+                                                        rows={5}
+                                                        style={{ width: '100%' }}
+                                                        disabled={busy}
+                                                    />
+                                                </div>
+
+                                                {userPanelMode === 'create' && (
+                                                    <div className="saas-admin-form-row">
+                                                        <select value={userForm.tenantId} onChange={(event) => setUserForm((prev) => ({ ...prev, tenantId: event.target.value }))} disabled={busy}>
+                                                            <option value="">Tenant inicial</option>
                                                             {tenantOptions.map((tenant) => (
                                                                 <option key={tenant.id} value={tenant.id}>{tenant.name || tenant.id}</option>
                                                             ))}
                                                         </select>
-                                                        <select
-                                                            value={membership.role}
-                                                            onChange={(event) => updateMembershipDraft(index, { role: event.target.value })}
-                                                            disabled={busy}
-                                                        >
+                                                        <select value={userForm.role} onChange={(event) => setUserForm((prev) => ({ ...prev, role: event.target.value }))} disabled={busy}>
                                                             {roleOptions.map((role) => (
                                                                 <option key={role} value={role}>{role}</option>
                                                             ))}
                                                         </select>
-                                                        <label className="saas-admin-membership-active">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={membership.active !== false}
-                                                                onChange={(event) => updateMembershipDraft(index, { active: event.target.checked })}
-                                                                disabled={busy}
-                                                            />
-                                                            Activo
-                                                        </label>
-                                                        <button type="button" disabled={busy} onClick={() => removeMembershipDraft(index)}>Quitar</button>
                                                     </div>
-                                                ))}
+                                                )}
 
-                                                <div className="saas-admin-membership-actions">
-                                                    <button type="button" disabled={busy} onClick={addMembershipDraft}>Agregar fila</button>
+                                                {userPanelMode === 'edit' && (
+                                                    <div className="saas-admin-membership-editor">
+                                                        <h4>Membresias</h4>
+                                                        {(membershipDraft || []).map((membership, index) => (
+                                                            <div key={`${selectedUser?.id || 'user'}_membership_${index}`} className="saas-admin-membership-row">
+                                                                <select
+                                                                    value={membership.tenantId}
+                                                                    onChange={(event) => updateMembershipDraft(index, { tenantId: event.target.value })}
+                                                                    disabled={busy}
+                                                                >
+                                                                    <option value="">Tenant</option>
+                                                                    {tenantOptions.map((tenant) => (
+                                                                        <option key={tenant.id} value={tenant.id}>{tenant.name || tenant.id}</option>
+                                                                    ))}
+                                                                </select>
+                                                                <select
+                                                                    value={membership.role}
+                                                                    onChange={(event) => updateMembershipDraft(index, { role: event.target.value })}
+                                                                    disabled={busy}
+                                                                >
+                                                                    {roleOptions.map((role) => (
+                                                                        <option key={role} value={role}>{role}</option>
+                                                                    ))}
+                                                                </select>
+                                                                <label className="saas-admin-membership-active">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={membership.active !== false}
+                                                                        onChange={(event) => updateMembershipDraft(index, { active: event.target.checked })}
+                                                                        disabled={busy}
+                                                                    />
+                                                                    Activo
+                                                                </label>
+                                                                <button type="button" disabled={busy} onClick={() => removeMembershipDraft(index)}>Quitar</button>
+                                                            </div>
+                                                        ))}
+                                                        <div className="saas-admin-membership-actions">
+                                                            <button type="button" disabled={busy} onClick={addMembershipDraft}>Agregar fila</button>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <div className="saas-admin-form-row saas-admin-form-row--actions">
                                                     <button
                                                         type="button"
-                                                        disabled={busy || sanitizeMemberships(membershipDraft).length === 0}
-                                                        onClick={() => runAction('Membresias actualizadas', async () => {
-                                                            await requestJson(`/api/admin/saas/users/${encodeURIComponent(user.id)}/memberships`, {
+                                                        disabled={
+                                                            busy
+                                                            || !userForm.email.trim()
+                                                            || (userPanelMode === 'create' && !userForm.password)
+                                                            || (
+                                                                userPanelMode === 'create'
+                                                                    ? sanitizeMemberships([{ tenantId: userForm.tenantId, role: userForm.role, active: true }]).length === 0
+                                                                    : sanitizeMemberships(membershipDraft).length === 0
+                                                            )
+                                                        }
+                                                        onClick={() => runAction(userPanelMode === 'create' ? 'Usuario creado' : 'Usuario actualizado', async () => {
+                                                            const membershipsPayload = userPanelMode === 'create'
+                                                                ? sanitizeMemberships([{ tenantId: userForm.tenantId, role: userForm.role, active: true }])
+                                                                : sanitizeMemberships(membershipDraft);
+
+                                                            if (membershipsPayload.length === 0) {
+                                                                throw new Error('Debes asignar al menos una empresa/membresia.');
+                                                            }
+
+                                                            const payload = {
+                                                                id: userPanelMode === 'create' ? (userForm.id || undefined) : undefined,
+                                                                email: userForm.email,
+                                                                name: userForm.name,
+                                                                active: userForm.active !== false,
+                                                                avatarUrl: userForm.avatarUrl || null,
+                                                                metadata: safeJsonParse(userForm.metadataText || '{}', {}),
+                                                                memberships: membershipsPayload
+                                                            };
+
+                                                            if (userForm.password) {
+                                                                payload.password = userForm.password;
+                                                            }
+
+                                                            if (userPanelMode === 'create' || !selectedUser?.id) {
+                                                                const createdPayload = await requestJson('/api/admin/saas/users', {
+                                                                    method: 'POST',
+                                                                    body: payload
+                                                                });
+                                                                const createdId = String(createdPayload?.user?.id || '').trim();
+                                                                if (createdId) {
+                                                                    setSelectedUserId(createdId);
+                                                                }
+                                                                setUserPanelMode('view');
+                                                                setMembershipDraft([]);
+                                                                return;
+                                                            }
+
+                                                            await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, {
                                                                 method: 'PUT',
-                                                                body: { memberships: sanitizeMemberships(membershipDraft) }
+                                                                body: payload
                                                             });
-                                                            setEditingMembershipUserId('');
+                                                            setUserPanelMode('view');
                                                             setMembershipDraft([]);
                                                         })}
                                                     >
-                                                        Guardar membresias
+                                                        {userPanelMode === 'create' ? 'Guardar usuario' : 'Actualizar usuario'}
                                                     </button>
+                                                    <button type="button" disabled={busy} onClick={cancelUserEdit}>Cancelar</button>
                                                 </div>
-                                            </div>
+                                            </>
                                         )}
-                                    </div>
-                                );
-                            })}
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </section>
                     )}
-
                     {selectedSectionId === 'saas_config' && (
                     <section id="saas_config" className="saas-admin-card saas-admin-card--full">
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
@@ -1353,19 +1602,6 @@ export default function SaasAdminPanel({
                                                 })}
                                             >
                                                 {moduleItem.isActive ? 'Desactivar' : 'Activar'}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                disabled={busy || !settingsTenantId}
-                                                onClick={() => runAction('Modulo WA eliminado', async () => {
-                                                    await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(settingsTenantId) + '/wa-modules/' + encodeURIComponent(moduleItem.moduleId), {
-                                                        method: 'DELETE'
-                                                    });
-                                                    if (editingWaModuleId === moduleItem.moduleId) resetWaModuleForm();
-                                                    if (selectedWaModuleId === moduleItem.moduleId) setSelectedWaModuleId('');
-                                                })}
-                                            >
-                                                Eliminar
                                             </button>
                                         </div>
                                     </div>
