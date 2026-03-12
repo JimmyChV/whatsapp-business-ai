@@ -190,7 +190,7 @@ class WhatsAppCloudClient extends EventEmitter {
     }
 
     get graphVersion() {
-        return String(this.runtimeConfig?.graphVersion || process.env.META_GRAPH_VERSION || 'v22.0').trim();
+        return String(this.runtimeConfig?.graphVersion || 'v22.0').trim();
     }
 
     get graphBaseUrl() {
@@ -198,23 +198,24 @@ class WhatsAppCloudClient extends EventEmitter {
     }
 
     get accessToken() {
-        return String(this.runtimeConfig?.systemUserToken || process.env.META_SYSTEM_USER_TOKEN || '').trim();
+        return String(this.runtimeConfig?.systemUserToken || '').trim();
     }
 
     get phoneNumberId() {
-        return String(this.runtimeConfig?.phoneNumberId || process.env.META_WABA_PHONE_NUMBER_ID || '').trim();
+        return String(this.runtimeConfig?.phoneNumberId || '').trim();
     }
 
     get appId() {
-        return String(this.runtimeConfig?.appId || process.env.META_APP_ID || '').trim();
+        return String(this.runtimeConfig?.appId || '').trim();
+    }
+
+    get appSecret() {
+        return String(this.runtimeConfig?.appSecret || '').trim();
     }
 
     get selfDigits() {
         const digits = normalizeDigits(
             this.runtimeConfig?.displayPhoneNumber
-            || process.env.META_DISPLAY_PHONE_NUMBER
-            || process.env.META_SELF_PHONE
-            || process.env.META_WABA_PHONE_NUMBER
             || this.phoneNumberId
             || ''
         );
@@ -236,7 +237,7 @@ class WhatsAppCloudClient extends EventEmitter {
                 user: this.selfDigits,
                 server: 'c.us'
             },
-            pushname: String(this.runtimeConfig?.businessName || process.env.META_BUSINESS_NAME || process.env.META_DISPLAY_NAME || 'Cloud API'),
+            pushname: String(this.runtimeConfig?.businessName || 'Cloud API'),
             platform: 'cloud'
         };
     }
@@ -317,35 +318,54 @@ class WhatsAppCloudClient extends EventEmitter {
     }
 
     async graphJson(path, options = {}) {
-        const url = `${this.graphBaseUrl}${path}`;
-        const response = await fetch(url, {
-            ...options,
-            headers: {
-                Authorization: `Bearer ${this.accessToken}`,
-                ...(options.headers || {})
-            }
-        });
+        const execute = async (includeProof = false) => {
+            const url = this.buildGraphUrl(path, { includeAppSecretProof: includeProof });
+            const response = await fetch(url, {
+                ...options,
+                headers: {
+                    Authorization: `Bearer ${this.accessToken}`,
+                    ...(options.headers || {})
+                }
+            });
 
-        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-        const payload = contentType.includes('application/json')
-            ? await response.json().catch(() => ({}))
-            : await response.text().catch(() => '');
+            const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+            const payload = contentType.includes('application/json')
+                ? await response.json().catch(() => ({}))
+                : await response.text().catch(() => '');
 
-        if (!response.ok) {
             const detail = typeof payload === 'string'
                 ? payload
                 : (payload?.error?.message || JSON.stringify(payload || {}));
-            const error = new Error(`Cloud API error ${response.status}: ${detail}`);
-            error.status = response.status;
-            error.payload = payload;
-            throw error;
+
+            return { response, payload, detail };
+        };
+
+        const first = await execute(false);
+        if (first.response.ok) {
+            return first.payload;
         }
 
-        return payload;
+        const needsProof = /appsecret_proof|requires appsecret|an appsecret proof/i.test(String(first.detail || ''));
+        if (needsProof && this.appSecret) {
+            console.warn('[WA][Cloud] Graph requires appsecret_proof; retrying with proof.');
+            const retry = await execute(true);
+            if (retry.response.ok) {
+                return retry.payload;
+            }
+            const retryError = new Error(`Cloud API error ${retry.response.status}: ${retry.detail}. Verifica que META_APP_SECRET corresponda al token de sistema del modulo.`);
+            retryError.status = retry.response.status;
+            retryError.payload = retry.payload;
+            throw retryError;
+        }
+
+        const error = new Error(`Cloud API error ${first.response.status}: ${first.detail}`);
+        error.status = first.response.status;
+        error.payload = first.payload;
+        throw error;
     }
 
     async graphRaw(path, options = {}) {
-        const url = `${this.graphBaseUrl}${path}`;
+        const url = this.buildGraphUrl(path);
         const response = await fetch(url, {
             ...options,
             headers: {
@@ -360,6 +380,33 @@ class WhatsAppCloudClient extends EventEmitter {
             throw error;
         }
         return response;
+    }
+
+    buildGraphUrl(path = '', { includeAppSecretProof = false } = {}) {
+        const baseUrl = `${this.graphBaseUrl}${path}`;
+        const token = this.accessToken;
+        const secret = this.appSecret;
+        if (!includeAppSecretProof || !token || !secret) return baseUrl;
+
+        let proof = '';
+        try {
+            proof = crypto.createHmac('sha256', secret).update(token).digest('hex');
+        } catch (_) {
+            return baseUrl;
+        }
+
+        if (!proof) return baseUrl;
+
+        try {
+            const url = new URL(baseUrl);
+            if (!url.searchParams.has('appsecret_proof')) {
+                url.searchParams.set('appsecret_proof', proof);
+            }
+            return url.toString();
+        } catch (_) {
+            const glue = baseUrl.includes('?') ? '&' : '?';
+            return `${baseUrl}${glue}appsecret_proof=${encodeURIComponent(proof)}`;
+        }
     }
 
     ensureContact(chatId, { name = '', pushname = '', profilePicUrl = null } = {}) {

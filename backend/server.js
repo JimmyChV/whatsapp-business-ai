@@ -4,19 +4,24 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const { URL } = require('url');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config({ quiet: true });
 const logger = require('./logger');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./security_utils');
 const RateLimiter = require('./rate_limiter');
 const authService = require('./auth_service');
+const authRecoveryService = require('./auth_recovery_service');
 const auditLogService = require('./audit_log_service');
 const tenantService = require('./tenant_service');
 const tenantSettingsService = require('./tenant_settings_service');
 const saasControlService = require('./saas_control_plane_service');
 const planLimitsService = require('./plan_limits_service');
+const planLimitsStoreService = require('./plan_limits_store_service');
 const aiUsageService = require('./ai_usage_service');
 const messageHistoryService = require('./message_history_service');
 const waModuleService = require('./wa_module_service');
+const tenantIntegrationsService = require('./tenant_integrations_service');
 const opsTelemetry = require('./ops_telemetry');
 
 const waClient = require('./wa_provider');
@@ -55,6 +60,134 @@ function isCorsOriginAllowed(origin) {
 
 const app = express();
 app.disable('x-powered-by');
+
+const UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.join(__dirname, 'uploads')).trim() || path.join(__dirname, 'uploads'));
+const ADMIN_ASSET_UPLOAD_MAX_BYTES = Math.max(200 * 1024, Number(process.env.ADMIN_ASSET_UPLOAD_MAX_BYTES || 2 * 1024 * 1024));
+const ADMIN_ASSET_ALLOWED_MIME_TYPES = new Set((() => {
+    const configured = parseCsvEnv(process.env.ADMIN_ASSET_ALLOWED_MIME_TYPES);
+    const base = configured.length > 0 ? configured : ['image/jpeg', 'image/png', 'image/webp'];
+    return base
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter(Boolean);
+})());
+if (!fs.existsSync(UPLOADS_ROOT)) {
+    fs.mkdirSync(UPLOADS_ROOT, { recursive: true });
+}
+
+app.use('/uploads', express.static(UPLOADS_ROOT, {
+    fallthrough: true,
+    maxAge: isProduction ? '30d' : 0
+}));
+
+function sanitizeStorageSegment(value = '', fallback = 'default') {
+    const source = String(value || fallback || '').trim();
+    if (!source) return fallback;
+    const clean = source.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+    return clean || fallback;
+}
+
+function getRequestOrigin(req = {}) {
+    const protoRaw = String(req.headers?.['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+    const hostRaw = String(req.headers?.['x-forwarded-host'] || req.headers?.host || '').split(',')[0].trim();
+    const proto = protoRaw || 'http';
+    if (!hostRaw) return '';
+    return proto + '://' + hostRaw;
+}
+
+function normalizeImageExtension(fileName = '', mimeType = '') {
+    const fromName = String(fileName || '').trim().split('.').pop();
+    const cleanNameExt = String(fromName || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (cleanNameExt && ['png', 'jpg', 'jpeg', 'webp'].includes(cleanNameExt)) {
+        return cleanNameExt === 'jpg' ? 'jpeg' : cleanNameExt;
+    }
+
+    const mime = String(mimeType || '').trim().toLowerCase().split(';')[0];
+    const map = {
+        'image/png': 'png',
+        'image/jpeg': 'jpeg',
+        'image/jpg': 'jpeg',
+        'image/webp': 'webp',
+        
+    };
+    return map[mime] || 'png';
+}
+
+function parseImageUploadPayload(body = {}) {
+    const source = body && typeof body === 'object' ? body : {};
+    const dataUrl = String(source.dataUrl || source.data || '').trim();
+    const base64Raw = String(source.base64 || '').trim();
+
+    if (!dataUrl && !base64Raw) {
+        throw new Error('No se recibio imagen para subir.');
+    }
+
+    let mimeType = String(source.mimeType || source.contentType || '').trim().toLowerCase();
+    let base64Data = base64Raw;
+
+    if (dataUrl) {
+        const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/i);
+        if (!match) {
+            throw new Error('Formato dataUrl invalido.');
+        }
+        mimeType = String(match[1] || mimeType || '').trim().toLowerCase();
+        base64Data = String(match[2] || '').trim();
+    }
+
+    if (!mimeType.startsWith('image/')) {
+        throw new Error('Solo se permiten imagenes.');
+    }
+
+    if (!ADMIN_ASSET_ALLOWED_MIME_TYPES.has(mimeType)) {
+        throw new Error('Formato de imagen no permitido. Usa JPG, PNG o WEBP.');
+    }
+
+    let buffer;
+    try {
+        buffer = Buffer.from(base64Data, 'base64');
+    } catch (_) {
+        throw new Error('La imagen no es base64 valido.');
+    }
+
+    if (!buffer || !buffer.length) {
+        throw new Error('La imagen esta vacia.');
+    }
+
+    if (buffer.length > ADMIN_ASSET_UPLOAD_MAX_BYTES) {
+        throw new Error('La imagen supera el tamano permitido.');
+    }
+
+    return {
+        mimeType,
+        buffer,
+        fileName: String(source.fileName || source.filename || '').trim() || 'imagen'
+    };
+}
+
+async function saveImageAssetFile({ tenantId = 'default', scope = 'general', mimeType = 'image/png', fileName = 'imagen', buffer = Buffer.alloc(0) } = {}) {
+    const cleanTenant = sanitizeStorageSegment(tenantId, 'default');
+    const cleanScope = sanitizeStorageSegment(scope, 'general');
+    const ext = normalizeImageExtension(fileName, mimeType);
+    const now = new Date();
+    const yyyy = String(now.getUTCFullYear());
+    const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(now.getUTCDate()).padStart(2, '0');
+    const baseName = sanitizeStorageSegment(path.parse(fileName).name || 'imagen', 'imagen').slice(0, 32);
+    const suffix = crypto.randomBytes(5).toString('hex');
+    const outName = baseName + '_' + suffix + '.' + ext;
+
+    const relativeParts = ['saas-assets', cleanTenant, cleanScope, yyyy, mm, dd, outName];
+    const relativePath = relativeParts.join('/');
+    const absolutePath = path.join(UPLOADS_ROOT, ...relativeParts);
+
+    await fs.promises.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.promises.writeFile(absolutePath, buffer);
+
+    return {
+        relativePath,
+        relativeUrl: '/uploads/' + relativePath,
+        absolutePath
+    };
+}
 
 function resolveRequestId(req = {}) {
     const fromHeader = String(req.headers?.['x-request-id'] || req.headers?.['x-correlation-id'] || '').trim();
@@ -129,7 +262,7 @@ if (securityHeadersEnabled) {
 }
 
 app.use(express.json({
-    limit: '1mb',
+    limit: '12mb',
     verify: (req, _res, buf) => {
         req.rawBody = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || '');
     }
@@ -353,38 +486,55 @@ app.get('/api/ops/metrics', (req, res) => {
 
 app.get('/api/saas/runtime', async (req, res) => {
     const authContext = req.authContext || { enabled: false, isAuthenticated: false, user: null };
+    const authEnabled = authService.isAuthEnabled();
+    const isAuthenticated = Boolean(authContext?.isAuthenticated && authContext?.user);
+
     const allTenants = tenantService.getTenants();
-    const allowedTenants = authContext?.isAuthenticated
+    const allowedTenants = isAuthenticated
         ? authService.getAllowedTenantsForUser(authContext?.user || {}, allTenants)
         : allTenants;
 
-    const requestedTenantId = String(req?.tenantContext?.id || '').trim();
-    const effectiveTenant = allowedTenants.find((tenant) => String(tenant?.id || '').trim() === requestedTenantId)
-        || allowedTenants[0]
-        || req.tenantContext
-        || tenantService.DEFAULT_TENANT;
+    // Avoid exposing tenant/company data before login when SaaS auth is enabled.
+    const exposeTenantData = !authEnabled || isAuthenticated;
+    const runtimeTenants = exposeTenantData ? allowedTenants : [];
 
-    const tenantSettings = await tenantSettingsService.getTenantSettings(String(effectiveTenant?.id || 'default'));
+    const requestedTenantId = String(req?.tenantContext?.id || '').trim();
+    const fallbackTenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+    const effectiveTenant = exposeTenantData
+        ? (runtimeTenants.find((tenant) => String(tenant?.id || '').trim() === requestedTenantId)
+            || runtimeTenants[0]
+            || fallbackTenant)
+        : fallbackTenant;
+
+    const tenantId = String(effectiveTenant?.id || 'default');
     const authUser = authContext?.user && typeof authContext.user === 'object' ? authContext.user : null;
     const runtimeUserId = String(authUser?.userId || authUser?.id || '').trim();
-    const waModules = await waModuleService.listModules(String(effectiveTenant?.id || 'default'), {
-        includeInactive: false,
-        userId: runtimeUserId
-    });
-    const selectedWaModule = await waModuleService.getSelectedModule(String(effectiveTenant?.id || 'default'), {
-        userId: runtimeUserId
-    });
+
+    let tenantSettings = null;
+    let waModules = [];
+    let selectedWaModule = null;
+
+    if (exposeTenantData) {
+        tenantSettings = await tenantSettingsService.getTenantSettings(tenantId);
+        waModules = await waModuleService.listModules(tenantId, {
+            includeInactive: false,
+            userId: runtimeUserId
+        });
+        selectedWaModule = await waModuleService.getSelectedModule(tenantId, {
+            userId: runtimeUserId
+        });
+    }
 
     return res.json({
         ok: true,
         saasEnabled: tenantService.isSaasEnabled(),
-        authEnabled: authService.isAuthEnabled(),
+        authEnabled,
         socketAuthRequired: saasSocketAuthRequired,
-        tenant: toPublicTenant(effectiveTenant),
-        tenantSettings,
-        waModules,
-        selectedWaModule,
-        tenants: (allowedTenants || []).map(toPublicTenant).filter(Boolean),
+        tenant: exposeTenantData ? toPublicTenant(effectiveTenant) : null,
+        tenantSettings: exposeTenantData ? tenantSettings : null,
+        waModules: exposeTenantData ? waModules : [],
+        selectedWaModule: exposeTenantData ? selectedWaModule : null,
+        tenants: exposeTenantData ? (runtimeTenants || []).map(toPublicTenant).filter(Boolean) : [],
         authContext: {
             enabled: Boolean(authContext.enabled),
             isAuthenticated: Boolean(authContext.isAuthenticated),
@@ -431,6 +581,129 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+app.post('/api/auth/recovery/request', async (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!email) {
+        return res.status(400).json({ ok: false, error: 'Correo requerido.' });
+    }
+
+    try {
+        const result = await authRecoveryService.requestPasswordRecovery({
+            email,
+            requestIp: String(req.ip || ''),
+            requestId: String(req.requestId || '')
+        });
+
+        await auditLogService.writeAuditLog(req?.tenantContext?.id || 'default', {
+            userId: null,
+            userEmail: email,
+            role: 'seller',
+            action: 'auth.recovery.request',
+            resourceType: 'auth',
+            resourceId: null,
+            source: 'api',
+            ip: String(req.ip || ''),
+            payload: {
+                accepted: Boolean(result?.accepted)
+            }
+        });
+
+        const responsePayload = {
+            ok: true,
+            message: 'Si el correo existe, enviaremos un codigo de recuperacion.'
+        };
+        if (result?.maskedEmail) responsePayload.maskedEmail = result.maskedEmail;
+        if (result?.expiresInSec) responsePayload.expiresInSec = result.expiresInSec;
+        if (!isProduction && result?.debugCode) responsePayload.debugCode = result.debugCode;
+
+        return res.json(responsePayload);
+    } catch (error) {
+        const message = String(error?.message || 'No se pudo iniciar recuperacion.');
+        if (/correo requerido|correo invalido/i.test(message)) {
+            return res.status(400).json({ ok: false, error: message });
+        }
+        return res.json({
+            ok: true,
+            message: 'Si el correo existe, enviaremos un codigo de recuperacion.'
+        });
+    }
+});
+
+app.post('/api/auth/recovery/verify', async (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const code = String(req.body?.code || '').trim();
+
+    if (!email || !code) {
+        return res.status(400).json({ ok: false, error: 'Correo y codigo son requeridos.' });
+    }
+
+    try {
+        const result = await authRecoveryService.verifyPasswordRecoveryCode({ email, code });
+
+        await auditLogService.writeAuditLog(req?.tenantContext?.id || 'default', {
+            userId: null,
+            userEmail: email,
+            role: 'seller',
+            action: 'auth.recovery.verify',
+            resourceType: 'auth',
+            resourceId: null,
+            source: 'api',
+            ip: String(req.ip || ''),
+            payload: { ok: true }
+        });
+
+        return res.json({
+            ok: true,
+            resetToken: result.resetToken,
+            expiresInSec: result.expiresInSec
+        });
+    } catch (error) {
+        const message = String(error?.message || 'Codigo invalido o expirado.');
+        const status = /codigo invalido|expirado/i.test(message) ? 400 : 500;
+        return res.status(status).json({ ok: false, error: message });
+    }
+});
+
+app.post('/api/auth/recovery/reset', async (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const resetToken = String(req.body?.resetToken || '').trim();
+    const newPassword = String(req.body?.newPassword || '');
+
+    if (!email || !resetToken || !newPassword) {
+        return res.status(400).json({ ok: false, error: 'Correo, token y nueva contrasena son requeridos.' });
+    }
+
+    try {
+        const result = await authRecoveryService.resetPasswordWithRecoveryToken({
+            email,
+            resetToken,
+            newPassword
+        });
+
+        await auditLogService.writeAuditLog(req?.tenantContext?.id || 'default', {
+            userId: result?.userId || null,
+            userEmail: email,
+            role: 'seller',
+            action: 'auth.recovery.reset',
+            resourceType: 'auth',
+            resourceId: result?.userId || null,
+            source: 'api',
+            ip: String(req.ip || ''),
+            payload: {
+                revokedSessions: Number(result?.revokedSessions?.updated || 0) || 0
+            }
+        });
+
+        return res.json({
+            ok: true,
+            message: 'Contrasena actualizada correctamente.'
+        });
+    } catch (error) {
+        const message = String(error?.message || 'No se pudo actualizar la contrasena.');
+        const status = /invalido|expirado|contrasena/i.test(message) ? 400 : 500;
+        return res.status(status).json({ ok: false, error: message });
+    }
+});
 app.post('/api/auth/refresh', async (req, res) => {
     try {
         const refreshToken = String(req.body?.refreshToken || '').trim();
@@ -767,6 +1040,52 @@ function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
     return base;
 }
 
+app.post('/api/admin/saas/assets/upload', async (req, res) => {
+    try {
+        if (!hasTenantAdminWriteAccess(req)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado para subir archivos.' });
+        }
+
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+        const requestedTenantId = String(body.tenantId || req?.tenantContext?.id || 'default').trim() || 'default';
+        const tenantId = sanitizeStorageSegment(requestedTenantId, 'default');
+
+        if (!req?.authContext?.user?.isSuperAdmin && !isTenantAllowedForUser(req, requestedTenantId)) {
+            return res.status(403).json({ ok: false, error: 'No tienes acceso a ese tenant para subir archivos.' });
+        }
+
+        const scope = sanitizeStorageSegment(body.scope || 'general', 'general');
+        const parsed = parseImageUploadPayload(body);
+        const stored = await saveImageAssetFile({
+            tenantId,
+            scope,
+            mimeType: parsed.mimeType,
+            fileName: parsed.fileName,
+            buffer: parsed.buffer
+        });
+
+        const origin = getRequestOrigin(req);
+        const publicUrl = origin ? origin + stored.relativeUrl : stored.relativeUrl;
+
+        return res.status(201).json({
+            ok: true,
+            tenantId,
+            scope,
+            file: {
+                url: publicUrl,
+                relativeUrl: stored.relativeUrl,
+                relativePath: stored.relativePath,
+                mimeType: parsed.mimeType,
+                sizeBytes: Number(parsed.buffer?.length || 0) || 0,
+                fileName: path.basename(stored.absolutePath)
+            }
+        });
+    } catch (error) {
+        const message = String(error?.message || 'No se pudo subir el archivo.');
+        const status = /tamano|base64|imagen|formato/i.test(message) ? 400 : 500;
+        return res.status(status).json({ ok: false, error: message });
+    }
+});
 app.get('/api/admin/saas/overview', async (req, res) => {
     try {
         if (!hasSaasControlReadAccess(req)) {
@@ -954,13 +1273,51 @@ app.delete('/api/admin/saas/users/:userId', async (req, res) => {
 
 app.get('/api/admin/saas/plans', (req, res) => {
     if (!hasSaasControlReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    const matrix = planLimitsService.getPlanMatrix();
     return res.json({
         ok: true,
-        plans: Object.keys(planLimitsService.DEFAULT_LIMITS).map((plan) => ({
+        plans: Object.keys(matrix).map((plan) => ({
             id: plan,
-            limits: planLimitsService.getPlanLimits(plan)
-        }))
+            limits: matrix[plan]
+        })),
+        overrides: planLimitsService.getPlanOverrides()
     });
+});
+
+app.put('/api/admin/saas/plans/:planId', async (req, res) => {
+    if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para editar planes.' });
+    try {
+        const planId = String(req.params?.planId || '').trim().toLowerCase();
+        if (!planId) return res.status(400).json({ ok: false, error: 'planId invalido.' });
+
+        const patch = req.body && typeof req.body === 'object' ? req.body : {};
+        const current = planLimitsService.getPlanOverrides();
+        const mergedPlanPatch = {
+            ...(current?.[planId] && typeof current[planId] === 'object' ? current[planId] : {}),
+            ...patch
+        };
+        const normalized = planLimitsService.normalizePlanLimits(
+            mergedPlanPatch,
+            planLimitsService.getPlanLimits(planId)
+        );
+
+        const nextOverrides = {
+            ...current,
+            [planId]: normalized
+        };
+        planLimitsService.setPlanOverrides(nextOverrides);
+        await planLimitsStoreService.saveOverrides(nextOverrides);
+
+        return res.json({
+            ok: true,
+            plan: {
+                id: planId,
+                limits: planLimitsService.getPlanLimits(planId)
+            }
+        });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el plan.') });
+    }
 });
 
 app.get('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
@@ -990,6 +1347,33 @@ app.put('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
     }
 });
 
+app.get('/api/admin/saas/tenants/:tenantId/integrations', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasSaasControlReadAccess(req) || !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const integrations = await tenantIntegrationsService.getTenantIntegrations(tenantId);
+        return res.json({ ok: true, tenantId, integrations });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar integraciones del tenant.') });
+    }
+});
+
+app.put('/api/admin/saas/tenants/:tenantId/integrations', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasTenantAdminWriteAccess(req) || !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const patch = req.body && typeof req.body === 'object' ? req.body : {};
+        const integrations = await tenantIntegrationsService.updateTenantIntegrations(tenantId, patch);
+        return res.json({ ok: true, tenantId, integrations });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar integraciones del tenant.') });
+    }
+});
+
 app.get('/api/admin/saas/tenants/:tenantId/wa-modules', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
@@ -1012,6 +1396,7 @@ app.post('/api/admin/saas/tenants/:tenantId/wa-modules', async (req, res) => {
     try {
         const payload = sanitizeWaModulePayload(req.body, { allowModuleId: true });
         const created = await waModuleService.createModule(tenantId, payload);
+        invalidateWebhookCloudRegistryCache();
         return res.status(201).json({ ok: true, tenantId, item: created });
     } catch (error) {
         return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el modulo WA.') });
@@ -1027,6 +1412,7 @@ app.put('/api/admin/saas/tenants/:tenantId/wa-modules/:moduleId', async (req, re
     try {
         const patch = sanitizeWaModulePayload(req.body, { allowModuleId: true });
         const updated = await waModuleService.updateModule(tenantId, moduleId, patch);
+        invalidateWebhookCloudRegistryCache();
         return res.json({ ok: true, tenantId, item: updated });
     } catch (error) {
         return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el modulo WA.') });
@@ -1041,6 +1427,7 @@ app.delete('/api/admin/saas/tenants/:tenantId/wa-modules/:moduleId', async (req,
 
     try {
         await waModuleService.deleteModule(tenantId, moduleId);
+        invalidateWebhookCloudRegistryCache();
         return res.json({ ok: true, tenantId, moduleId });
     } catch (error) {
         return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar el modulo WA.') });
@@ -1592,10 +1979,16 @@ app.get('/api/map-suggest', async (req, res) => {
     }
 });
 
-const META_VERIFY_TOKEN = String(process.env.META_VERIFY_TOKEN || '').trim();
-const META_APP_SECRET = String(process.env.META_APP_SECRET || '').trim();
-const META_ENFORCE_SIGNATURE = String(process.env.META_ENFORCE_SIGNATURE || 'true').trim().toLowerCase() !== 'false';
 const CLOUD_WEBHOOK_DEBUG = String(process.env.CLOUD_WEBHOOK_DEBUG || 'true').trim().toLowerCase() !== 'false';
+const WEBHOOK_CONFIG_CACHE_TTL_MS = Math.max(3000, Number(process.env.WEBHOOK_CONFIG_CACHE_TTL_MS || 15000));
+let webhookCloudRegistryCache = {
+    expiresAt: 0,
+    items: []
+};
+
+function invalidateWebhookCloudRegistryCache() {
+    webhookCloudRegistryCache = { expiresAt: 0, items: [] };
+}
 
 function timingSafeEqualHex(a = '', b = '') {
     const left = Buffer.from(String(a || ''), 'utf8');
@@ -1608,13 +2001,109 @@ function timingSafeEqualHex(a = '', b = '') {
     }
 }
 
-function validateMetaWebhookSignature(req) {
-    if (!META_ENFORCE_SIGNATURE) {
-        return { ok: true, skipped: true };
+function extractWebhookPhoneNumberId(payload = {}) {
+    const entries = Array.isArray(payload?.entry) ? payload.entry : [];
+    for (const entry of entries) {
+        const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+        for (const change of changes) {
+            const value = change?.value || {};
+            const phoneId = String(
+                value?.metadata?.phone_number_id
+                || value?.phone_number_id
+                || ''
+            ).trim();
+            if (phoneId) return phoneId;
+        }
+    }
+    return '';
+}
+
+async function getWebhookCloudRegistry({ force = false } = {}) {
+    const now = Date.now();
+    if (!force && webhookCloudRegistryCache.expiresAt > now && Array.isArray(webhookCloudRegistryCache.items)) {
+        return webhookCloudRegistryCache.items;
     }
 
-    if (!META_APP_SECRET) {
-        return { ok: true, skipped: true };
+    await saasControlService.ensureLoaded();
+    const tenants = saasControlService.listTenantsSync({ includeInactive: true });
+    const items = [];
+
+    for (const tenant of tenants) {
+        const tenantId = String(tenant?.id || '').trim();
+        if (!tenantId) continue;
+        let modules = [];
+        try {
+            modules = await waModuleService.listModulesRuntime(tenantId, { includeInactive: false });
+        } catch (_) {
+            modules = [];
+        }
+        for (const module of modules) {
+            const transportMode = String(module?.transportMode || '').trim().toLowerCase();
+            if (transportMode !== 'cloud') continue;
+
+            const runtimeCloud = waModuleService.resolveModuleCloudConfig(module);
+            const moduleId = String(module?.moduleId || '').trim();
+            const verifyToken = String(runtimeCloud?.verifyToken || '').trim();
+            const phoneNumberId = String(runtimeCloud?.phoneNumberId || '').trim();
+            const appSecret = String(runtimeCloud?.appSecret || '').trim();
+            const appId = String(runtimeCloud?.appId || '').trim();
+            const systemUserToken = String(runtimeCloud?.systemUserToken || '').trim();
+            if (!moduleId) continue;
+
+            items.push({
+                tenantId,
+                moduleId,
+                isSelected: module?.isSelected === true,
+                verifyToken,
+                phoneNumberId,
+                appSecret,
+                appId,
+                systemUserToken,
+                cloudConfig: runtimeCloud
+            });
+        }
+    }
+
+    webhookCloudRegistryCache = {
+        expiresAt: now + WEBHOOK_CONFIG_CACHE_TTL_MS,
+        items
+    };
+    return items;
+}
+
+function validateMetaWebhookSignature(req, registryItems = []) {
+    const registry = Array.isArray(registryItems) ? registryItems : [];
+    const payload = req?.body && typeof req.body === 'object' ? req.body : {};
+    const phoneNumberId = extractWebhookPhoneNumberId(payload);
+
+    let scoped = registry;
+    if (phoneNumberId) {
+        const byPhone = registry.filter((item) => String(item?.phoneNumberId || '').trim() === phoneNumberId);
+        if (byPhone.length > 0) {
+            scoped = byPhone;
+        }
+    }
+
+    if (!phoneNumberId && scoped.length > 1) {
+        const selectedOnly = scoped.filter((item) => item?.isSelected);
+        if (selectedOnly.length > 0) {
+            scoped = selectedOnly;
+        }
+    }
+
+    const requiresSignature = scoped.filter((item) => (item?.cloudConfig?.enforceSignature !== false));
+    if (requiresSignature.length === 0) {
+        return { ok: true, skipped: true, reason: 'signature_not_required' };
+    }
+
+    const secrets = Array.from(new Set(
+        requiresSignature
+            .map((item) => String(item?.appSecret || '').trim())
+            .filter(Boolean)
+    ));
+
+    if (secrets.length === 0) {
+        return { ok: true, skipped: true, reason: 'no_app_secret_configured' };
     }
 
     const incoming = String(req.get('x-hub-signature-256') || '').trim();
@@ -1623,22 +2112,31 @@ function validateMetaWebhookSignature(req) {
     }
 
     const rawBody = Buffer.isBuffer(req.rawBody) ? req.rawBody : Buffer.from('');
-    const expectedHash = crypto
-        .createHmac('sha256', META_APP_SECRET)
-        .update(rawBody)
-        .digest('hex');
-    const expected = 'sha256=' + expectedHash;
-    const ok = timingSafeEqualHex(expected, incoming);
-    return { ok, reason: ok ? 'ok' : 'signature_mismatch' };
+    for (const secret of secrets) {
+        const expectedHash = crypto
+            .createHmac('sha256', secret)
+            .update(rawBody)
+            .digest('hex');
+        const expected = 'sha256=' + expectedHash;
+        if (timingSafeEqualHex(expected, incoming)) {
+            return { ok: true, reason: 'ok' };
+        }
+    }
+
+    return { ok: false, reason: 'signature_mismatch' };
 }
 
-function handleMetaWebhookVerification(req, res) {
+async function handleMetaWebhookVerification(req, res) {
     const mode = String(req.query['hub.mode'] || '').trim();
     const token = String(req.query['hub.verify_token'] || '').trim();
     const challenge = String(req.query['hub.challenge'] || '').trim();
 
-    if (mode === 'subscribe' && META_VERIFY_TOKEN && token === META_VERIFY_TOKEN) {
-        return res.status(200).send(challenge);
+    if (mode === 'subscribe' && token) {
+        const registry = await getWebhookCloudRegistry();
+        const match = registry.find((item) => String(item?.verifyToken || '').trim() === token);
+        if (match) {
+            return res.status(200).send(challenge);
+        }
     }
 
     return res.sendStatus(403);
@@ -1671,15 +2169,40 @@ function summarizeMetaWebhookPayload(payload = {}) {
     };
 }
 
+function applyWebhookRuntimeConfigFromPayload(payload = {}, registryItems = []) {
+    const phoneNumberId = extractWebhookPhoneNumberId(payload);
+    const registry = Array.isArray(registryItems) ? registryItems : [];
+    let match = null;
+
+    if (phoneNumberId) {
+        match = registry.find((item) => String(item?.phoneNumberId || '').trim() === phoneNumberId) || null;
+    }
+
+    if (!match && registry.length === 1) {
+        match = registry[0];
+    }
+
+    if (match && typeof waClient.setCloudRuntimeConfig === 'function') {
+        waClient.setCloudRuntimeConfig(match.cloudConfig || {});
+    }
+
+    return {
+        phoneNumberId,
+        matched: match
+    };
+}
+
 async function handleMetaWebhookEvent(req, res) {
     try {
-        const signatureCheck = validateMetaWebhookSignature(req);
+        const payload = req.body || {};
+        const registry = await getWebhookCloudRegistry();
+        const signatureCheck = validateMetaWebhookSignature(req, registry);
         if (!signatureCheck.ok) {
             logger.warn('[WA][Cloud] webhook signature rejected (' + String(signatureCheck.reason || 'invalid') + ').');
             return res.sendStatus(401);
         }
 
-        const payload = req.body || {};
+        const runtimeApplied = applyWebhookRuntimeConfigFromPayload(payload, registry);
         const summary = summarizeMetaWebhookPayload(payload);
         const handled = typeof waClient.handleWebhookPayload === 'function'
             ? await waClient.handleWebhookPayload(payload)
@@ -1691,7 +2214,10 @@ async function handleMetaWebhookEvent(req, res) {
                 + ' changes=' + String(summary.changesCount)
                 + ' messages=' + String(summary.messagesCount)
                 + ' statuses=' + String(summary.statusesCount)
-                + ' handled=' + String(Boolean(handled)));
+                + ' handled=' + String(Boolean(handled))
+                + ' tenant=' + String(runtimeApplied?.matched?.tenantId || 'n/a')
+                + ' module=' + String(runtimeApplied?.matched?.moduleId || 'n/a')
+                + ' phone=' + String(runtimeApplied?.phoneNumberId || 'n/a'));
         }
 
         if (!handled && (summary.messagesCount > 0 || summary.statusesCount > 0)) {
@@ -1766,6 +2292,10 @@ saasControlService.ensureLoaded().catch((error) => {
     logger.warn('[SaaS] no se pudo precargar control plane: ' + String(error?.message || error));
 });
 
+planLimitsStoreService.initializePlanLimits().catch((error) => {
+    logger.warn('[SaaS] no se pudo precargar limites de plan: ' + String(error?.message || error));
+});
+
 server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
     const runtime = typeof waClient.getRuntimeInfo === 'function'
@@ -1774,7 +2304,3 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
-
-
-
-

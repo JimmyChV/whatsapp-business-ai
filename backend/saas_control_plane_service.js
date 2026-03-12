@@ -1,4 +1,4 @@
-﻿const crypto = require('crypto');
+const crypto = require('crypto');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -80,6 +80,56 @@ function buildUniqueIdFromSet(existingIds = new Set(), {
 
     const randomSuffix = Math.random().toString(36).slice(2, 8);
     return `${candidate}_${randomSuffix}`;
+}
+
+function sanitizeStructuredCode(value = '') {
+    const raw = String(value || '').trim().toUpperCase();
+    if (!raw) return '';
+    return raw.replace(/[^A-Z0-9]/g, '');
+}
+
+function normalizeStructuredIdCandidate(value = '', {
+    prefix = 'TEN',
+    size = 6
+} = {}) {
+    const cleanPrefix = sanitizeStructuredCode(prefix || 'ID') || 'ID';
+    const safeSize = Math.max(4, Math.floor(Number(size) || 6));
+    const cleanValue = String(value || '').trim().toUpperCase();
+    const matcher = new RegExp(`^${cleanPrefix}-[A-Z0-9]{${safeSize}}$`);
+    if (!matcher.test(cleanValue)) return '';
+    return cleanValue;
+}
+
+function randomStructuredSuffix(size = 6) {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const safeSize = Math.max(4, Math.floor(Number(size) || 6));
+    const bytes = crypto.randomBytes(safeSize * 2);
+    let out = '';
+    for (let i = 0; i < bytes.length && out.length < safeSize; i += 1) {
+        out += alphabet[bytes[i] % alphabet.length];
+    }
+    return out.slice(0, safeSize);
+}
+
+function createStructuredId(existingIds = new Set(), {
+    prefix = 'TEN',
+    size = 6
+} = {}) {
+    const cleanPrefix = sanitizeStructuredCode(prefix || 'ID') || 'ID';
+    const safeSize = Math.max(4, Math.floor(Number(size) || 6));
+    const used = new Set(
+        Array.from(existingIds || [])
+            .map((entry) => String(entry || '').trim().toUpperCase())
+            .filter(Boolean)
+    );
+
+    for (let i = 0; i < 1000; i += 1) {
+        const candidate = `${cleanPrefix}-${randomStructuredSuffix(safeSize)}`;
+        if (!used.has(candidate)) return candidate;
+    }
+
+    const fallbackSuffix = Date.now().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(-safeSize).padStart(safeSize, '0');
+    return `${cleanPrefix}-${fallbackSuffix}`;
 }
 
 function parseBoolean(value, fallback = true) {
@@ -510,15 +560,16 @@ async function ensureLoaded() {
         const envSnapshot = buildEnvSnapshot();
         const storageSnapshot = await loadFromStorage();
 
-        let merged = mergeSnapshots(storageSnapshot, envSnapshot);
-
         const storageLooksEmpty = (storageSnapshot.tenants || []).length <= 1 && (storageSnapshot.users || []).length === 0;
         const envHasData = (envSnapshot.tenants || []).length > 1 || (envSnapshot.users || []).length > 0;
 
+        let merged = storageSnapshot;
         if (storageLooksEmpty && envHasData) {
+            merged = mergeSnapshots(storageSnapshot, envSnapshot);
             await persistSnapshot(merged);
         }
 
+        merged = normalizeSnapshot(merged);
         merged.loaded = true;
         cachedSnapshot = merged;
         return cachedSnapshot;
@@ -532,13 +583,8 @@ async function ensureLoaded() {
 }
 
 function getSnapshotSync() {
-    if (!cachedSnapshot.loaded) {
-        cachedSnapshot = mergeSnapshots(cachedSnapshot, buildEnvSnapshot());
-        cachedSnapshot.loaded = false;
-    }
-    return cachedSnapshot;
+    return normalizeSnapshot(cachedSnapshot);
 }
-
 function listTenantsSync({ includeInactive = true } = {}) {
     const snapshot = getSnapshotSync();
     const items = Array.isArray(snapshot.tenants) ? snapshot.tenants : [];
@@ -684,23 +730,33 @@ function deriveUniqueSlug(value = '', usedSlugs = new Set(), fallback = 'tenant'
     return `${base}-${randomSuffix}`;
 }
 function deriveTenantAutoId(payload = {}, currentTenants = []) {
-    const requestedId = normalizeTenantId(payload?.id || payload?.tenantId || '');
+    const requestedId = normalizeStructuredIdCandidate(payload?.id || payload?.tenantId || '', {
+        prefix: 'TEN',
+        size: 6
+    });
     if (requestedId) return requestedId;
 
-    const existingIds = new Set((Array.isArray(currentTenants) ? currentTenants : []).map((tenant) => String(tenant?.id || '').trim()).filter(Boolean));
-    const base = sanitizeCodeToken(payload?.slug || payload?.name || '', 'tenant');
-    return buildUniqueIdFromSet(existingIds, { prefix: 'tenant', base, fallback: 'tenant' });
+    const existingIds = new Set(
+        (Array.isArray(currentTenants) ? currentTenants : [])
+            .map((tenant) => String(tenant?.id || '').trim().toUpperCase())
+            .filter(Boolean)
+    );
+    return createStructuredId(existingIds, { prefix: 'TEN', size: 6 });
 }
 
 function deriveUserAutoId(payload = {}, currentUsers = []) {
-    const requestedId = sanitizeCodeToken(payload?.id || payload?.userId || '', '');
+    const requestedId = normalizeStructuredIdCandidate(payload?.id || payload?.userId || '', {
+        prefix: 'USER',
+        size: 6
+    });
     if (requestedId) return requestedId;
 
-    const email = String(payload?.email || '').trim().toLowerCase();
-    const localPart = email.split('@')[0] || '';
-    const existingIds = new Set((Array.isArray(currentUsers) ? currentUsers : []).map((user) => String(user?.id || '').trim().toLowerCase()).filter(Boolean));
-    const base = sanitizeCodeToken(localPart || payload?.name || 'user', 'user');
-    return buildUniqueIdFromSet(existingIds, { prefix: 'usr', base, fallback: 'user' });
+    const existingIds = new Set(
+        (Array.isArray(currentUsers) ? currentUsers : [])
+            .map((user) => String(user?.id || '').trim().toUpperCase())
+            .filter(Boolean)
+    );
+    return createStructuredId(existingIds, { prefix: 'USER', size: 6 });
 }
 
 async function createTenant(payload = {}) {
@@ -1016,3 +1072,5 @@ module.exports = {
     CONTROL_FILE_NAME,
     CONTROL_TENANT_ID
 };
+
+

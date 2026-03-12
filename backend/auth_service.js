@@ -8,6 +8,10 @@ function parseBooleanEnv(value, defaultValue = false) {
     if (!raw) return Boolean(defaultValue);
     return ['1', 'true', 'yes', 'on'].includes(raw);
 }
+function isEnvAuthFallbackEnabled() {
+    return parseBooleanEnv(process.env.SAAS_AUTH_ALLOW_ENV_FALLBACK, false);
+}
+
 
 function toBase64Url(input) {
     const buffer = Buffer.isBuffer(input) ? input : Buffer.from(String(input || ''), 'utf8');
@@ -234,12 +238,12 @@ function getAuthUsersRecords() {
         : [];
 
     const fromSnapshot = getAuthUsersFromControlSnapshot();
-    const fromEnv = parseUsersFromEnv();
+    const fromEnv = isEnvAuthFallbackEnabled() ? parseUsersFromEnv() : [];
 
     return dedupeAuthUsers([
         ...fromSnapshot,
         ...fromControl,
-        ...fromEnv
+        ...(fromControl.length || fromSnapshot.length ? [] : fromEnv)
     ]);
 }
 function findUserRecord({ userId = '', email = '' } = {}) {
@@ -794,6 +798,7 @@ module.exports = {
     getAllowedTenantsForUser,
     findUserRecord
 };
+
 
 
 

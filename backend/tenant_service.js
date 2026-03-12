@@ -50,7 +50,19 @@ function parseTenantsFromEnv() {
 
 function fromControlPlaneSync() {
     try {
-        const items = saasControlService.listTenantsSync({ includeInactive: true });
+        const snapshot = typeof saasControlService.getSnapshotSync === 'function'
+            ? saasControlService.getSnapshotSync()
+            : null;
+
+        // If control-plane has not been loaded yet, avoid forcing "default" from stale cache.
+        if (!snapshot || snapshot.loaded !== true) {
+            return [];
+        }
+
+        const items = Array.isArray(snapshot.tenants)
+            ? snapshot.tenants
+            : saasControlService.listTenantsSync({ includeInactive: true });
+
         return (Array.isArray(items) ? items : [])
             .map((tenant, idx) => normalizeTenant(tenant, idx))
             .filter(Boolean);
@@ -64,13 +76,19 @@ function getTenants() {
     if (!saasEnabled) return [DEFAULT_TENANT];
 
     const fromControl = fromControlPlaneSync();
-    const envTenants = parseTenantsFromEnv();
-
     const dedup = new Map();
-    [...envTenants, ...fromControl].forEach((tenant) => {
+    fromControl.forEach((tenant) => {
         if (!tenant?.id) return;
         dedup.set(tenant.id, tenant);
     });
+
+    if (!dedup.size) {
+        const envTenants = parseTenantsFromEnv();
+        envTenants.forEach((tenant) => {
+            if (!tenant?.id) return;
+            dedup.set(tenant.id, tenant);
+        });
+    }
 
     if (!dedup.size) {
         dedup.set(DEFAULT_TENANT.id, DEFAULT_TENANT);

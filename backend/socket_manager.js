@@ -1,10 +1,11 @@
-const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
+﻿const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
 const waClient = require('./wa_provider');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
 const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
 const { listQuickReplies, addQuickReply, updateQuickReply, deleteQuickReply } = require('./quick_replies_manager');
 const tenantSettingsService = require('./tenant_settings_service');
+const tenantIntegrationsService = require('./tenant_integrations_service');
 const tenantService = require('./tenant_service');
 const planLimitsService = require('./plan_limits_service');
 const aiUsageService = require('./ai_usage_service');
@@ -978,9 +979,15 @@ function extractMessageFileMeta(msg = {}, downloadedMedia = null) {
         }
     }
 
+    const mediaUrl = String(downloadedMedia?.publicUrl || downloadedMedia?.storedPublicUrl || '').trim() || null;
+    const mediaPath = String(downloadedMedia?.relativePath || downloadedMedia?.storedRelativePath || '').trim() || null;
+
     return {
         filename,
-        fileSizeBytes
+        mimetype: mimetype || null,
+        fileSizeBytes,
+        mediaUrl,
+        mediaPath
     };
 }
 
@@ -2384,6 +2391,10 @@ class SocketManager {
                     notifyName: senderMeta?.notifyName || null,
                     senderPushname: senderMeta?.senderPushname || null,
                     isGroupMessage: Boolean(senderMeta?.isGroupMessage),
+                    media: {
+                        url: fileMeta?.mediaUrl || null,
+                        path: fileMeta?.mediaPath || null
+                    },
                     ...(persistedAgentMeta || {})
                 },
                 chat: {
@@ -2640,6 +2651,8 @@ class SocketManager {
             mimetype: row?.mediaMime || null,
             filename: row?.mediaFilename || null,
             fileSizeBytes: Number.isFinite(Number(row?.mediaSizeBytes)) ? Number(row.mediaSizeBytes) : null,
+            mediaUrl: String(metadata?.media?.url || '').trim() || null,
+            mediaPath: String(metadata?.media?.path || '').trim() || null,
             type,
             author: row?.authorId || null,
             notifyName: String(metadata?.notifyName || '').trim() || null,
@@ -3083,13 +3096,24 @@ class SocketManager {
                 return payload;
             };
 
-            const applyCloudConfigForModule = (selectedModule = null) => {
+            const applyCloudConfigForModule = async (selectedModule = null) => {
                 if (!selectedModule || typeof selectedModule !== 'object') return null;
                 if (String(selectedModule?.transportMode || '').trim().toLowerCase() !== 'cloud') return null;
                 if (typeof waModuleService.resolveModuleCloudConfig !== 'function') return null;
                 if (typeof waClient.setCloudRuntimeConfig !== 'function') return null;
 
-                const runtimeCloudConfig = waModuleService.resolveModuleCloudConfig(selectedModule);
+                let moduleForRuntime = selectedModule;
+                try {
+                    const moduleId = String(selectedModule?.moduleId || '').trim();
+                    if (moduleId && typeof waModuleService.getModuleRuntime === 'function') {
+                        const runtimeModule = await waModuleService.getModuleRuntime(tenantId, moduleId);
+                        if (runtimeModule) moduleForRuntime = runtimeModule;
+                    }
+                } catch (_) {
+                    // fallback: usar modulo actual de contexto
+                }
+
+                const runtimeCloudConfig = waModuleService.resolveModuleCloudConfig(moduleForRuntime);
                 waClient.setCloudRuntimeConfig(runtimeCloudConfig || {});
                 return runtimeCloudConfig || null;
             };
@@ -3099,7 +3123,7 @@ class SocketManager {
                 if (moduleTransport !== 'webjs' && moduleTransport !== 'cloud') return null;
 
                 if (moduleTransport === 'cloud') {
-                    applyCloudConfigForModule(selectedModule);
+                    await applyCloudConfigForModule(selectedModule);
                 } else if (typeof waClient.clearCloudRuntimeConfig === 'function') {
                     waClient.clearCloudRuntimeConfig();
                 }
@@ -3286,8 +3310,7 @@ class SocketManager {
                     }
 
                     if (nextMode === 'cloud' && selectedModule?.moduleId && typeof waModuleService.resolveModuleCloudConfig === 'function' && typeof waClient.setCloudRuntimeConfig === 'function') {
-                        const runtimeCloudConfig = waModuleService.resolveModuleCloudConfig(selectedModule);
-                        waClient.setCloudRuntimeConfig(runtimeCloudConfig || {});
+                        await applyCloudConfigForModule(selectedModule);
                     }
                     const runtime = await waClient.setTransportMode(nextMode);
                     this.invalidateChatListCache();
@@ -3673,6 +3696,8 @@ class SocketManager {
                         mimetype: null,
                         filename: fileMeta.filename,
                         fileSizeBytes: fileMeta.fileSizeBytes,
+                        mediaUrl: fileMeta.mediaUrl || null,
+                        mediaPath: fileMeta.mediaPath || null,
                         type: m.type,
                         author: m?.author || m?._data?.author || null,
                         notifyName: senderMeta.notifyName,
@@ -4397,7 +4422,7 @@ class SocketManager {
 
                         const aiText = await getChatSuggestion(contextText, customPrompt, (chunk) => {
                             socket.emit('ai_suggestion_chunk', chunk);
-                        }, businessContext);
+                        }, businessContext, { tenantId });
                         if (typeof aiText === 'string' && aiText.startsWith('Error IA:')) {
                             socket.emit('ai_error', aiText);
                         }
@@ -4426,7 +4451,7 @@ class SocketManager {
 
                         const copilotText = await askInternalCopilot(query, (chunk) => {
                             socket.emit('internal_ai_chunk', chunk);
-                        }, businessContext);
+                        }, businessContext, { tenantId });
                         if (typeof copilotText === 'string' && copilotText.startsWith('Error IA:')) {
                             socket.emit('internal_ai_error', copilotText);
                         }
@@ -4446,7 +4471,7 @@ class SocketManager {
                             profile: null,
                             labels: [],
                             catalog: await loadCatalog({ tenantId }),
-                            catalogMeta: { source: 'local', nativeAvailable: false, wooConfigured: isWooConfigured(), wooAvailable: false }
+                            catalogMeta: { source: 'local', nativeAvailable: false, wooConfigured: false, wooAvailable: false }
                         });
                         return;
                     }
@@ -4512,7 +4537,19 @@ class SocketManager {
                     } catch (e) { console.log('Labels:', e.message); }
 
                     const tenantSettings = await tenantSettingsService.getTenantSettings(tenantId);
-                    const catalogMode = String(tenantSettings?.catalogMode || 'hybrid').trim().toLowerCase();
+                    const tenantIntegrations = await tenantIntegrationsService.getTenantIntegrations(tenantId, { runtime: true });
+                    const selectedModuleContext = socket?.data?.waModule || null;
+                    const moduleCatalogMode = String(selectedModuleContext?.metadata?.moduleSettings?.catalogMode || '').trim().toLowerCase();
+                    const configuredCatalogMode = String(tenantIntegrations?.catalog?.mode || tenantSettings?.catalogMode || 'hybrid').trim().toLowerCase();
+                    const catalogMode = moduleCatalogMode && moduleCatalogMode !== 'inherit'
+                        ? moduleCatalogMode
+                        : configuredCatalogMode;
+
+                    const wooConfig = {
+                        ...(tenantIntegrations?.catalog?.providers?.woocommerce || {}),
+                        enabled: tenantIntegrations?.catalog?.providers?.woocommerce?.enabled !== false
+                    };
+                    const wooConfigured = isWooConfigured(wooConfig);
                     const tenantPlan = tenantService.findTenantById(tenantId) || tenantService.DEFAULT_TENANT;
                     const catalogEnabled = planLimitsService.isFeatureEnabledForTenant('catalog', tenantPlan, tenantSettings);
                     if (!catalogEnabled) {
@@ -4524,60 +4561,59 @@ class SocketManager {
                                 source: 'disabled',
                                 mode: catalogMode,
                                 nativeAvailable: false,
-                                wooConfigured: isWooConfigured(),
+                                wooConfigured,
                                 wooAvailable: false,
                                 disabledReason: 'catalog_module_disabled',
                                 categories: []
                             },
-                            tenantSettings
+                            tenantSettings,
+                            integrations: tenantIntegrations
                         });
                         return;
                     }
 
-                    // Catalog source by tenant setting:
-                    // hybrid: native -> woo -> local
-                    // woo_only: woo -> local
-                    // local_only: local only
                     let catalog = [];
                     let catalogMeta = {
                         source: 'native',
                         mode: catalogMode,
                         nativeAvailable: false,
-                        wooConfigured: isWooConfigured(),
+                        wooConfigured,
                         wooAvailable: false,
                         wooSource: null,
                         wooStatus: null,
                         wooReason: null
                     };
 
-                    const enableNative = catalogMode === 'hybrid';
+                    const enableNative = catalogMode === 'hybrid' || catalogMode === 'meta_only';
                     const enableWoo = catalogMode === 'hybrid' || catalogMode === 'woo_only';
+                    const enableLocal = catalogMode === 'hybrid' || catalogMode === 'local_only';
 
                     if (enableNative) {
                         try {
                             const nativeProducts = await waClient.getCatalog(meId);
                             if (nativeProducts && nativeProducts.length > 0) {
-                                catalog = nativeProducts.map(p => ({
+                                catalog = nativeProducts.map((p) => ({
                                     id: p.id,
                                     title: p.name,
                                     price: p.price ? Number.parseFloat(String(p.price)).toFixed(2) : '0.00',
                                     description: p.description,
                                     imageUrl: p.imageUrls ? p.imageUrls[0] : null,
-                                    source: 'native'
+                                    source: 'meta'
                                 }));
                                 catalogMeta = {
                                     ...catalogMeta,
-                                    source: 'native',
+                                    source: 'meta',
                                     nativeAvailable: true,
                                     wooAvailable: false
                                 };
                             }
-                        } catch (e) {
+                        } catch (_) {
+                            // noop
                         }
                     }
 
                     if (!catalog.length && enableWoo) {
-                        const wooResult = await getWooCatalog();
+                        const wooResult = await getWooCatalog({ config: wooConfig });
                         if (wooResult.products.length > 0) {
                             catalog = wooResult.products;
                             catalogMeta = {
@@ -4592,7 +4628,7 @@ class SocketManager {
                         } else {
                             catalogMeta = {
                                 ...catalogMeta,
-                                wooConfigured: isWooConfigured(),
+                                wooConfigured,
                                 wooAvailable: false,
                                 wooSource: wooResult.source,
                                 wooStatus: wooResult.status,
@@ -4601,13 +4637,13 @@ class SocketManager {
                         }
                     }
 
-                    if (!catalog.length) {
+                    if (!catalog.length && enableLocal) {
                         catalog = await loadCatalog({ tenantId });
                         catalogMeta = {
                             ...catalogMeta,
                             source: 'local',
                             nativeAvailable: false,
-                            wooConfigured: isWooConfigured(),
+                            wooConfigured,
                             wooAvailable: false
                         };
                     }
@@ -4623,15 +4659,16 @@ class SocketManager {
                         categories: catalogCategories
                     };
                     logCatalogDebugSnapshot({ catalog, catalogMeta });
-                    socket.emit('business_data', { profile, labels, catalog, catalogMeta, tenantSettings });
+                    socket.emit('business_data', { profile, labels, catalog, catalogMeta, tenantSettings, integrations: tenantIntegrations });
                 } catch (e) {
                     console.error('Error fetching business data:', e);
                     socket.emit('business_data', {
                         profile: null,
                         labels: [],
                         catalog: await loadCatalog({ tenantId }),
-                        catalogMeta: { source: 'local', mode: 'hybrid', nativeAvailable: false, wooConfigured: isWooConfigured(), wooAvailable: false, wooSource: null, wooStatus: 'error', wooReason: 'Error al obtener datos de negocio' },
-                        tenantSettings: await tenantSettingsService.getTenantSettings(tenantId)
+                        catalogMeta: { source: 'local', mode: 'hybrid', nativeAvailable: false, wooConfigured: false, wooAvailable: false, wooSource: null, wooStatus: 'error', wooReason: 'Error al obtener datos de negocio' },
+                        tenantSettings: await tenantSettingsService.getTenantSettings(tenantId),
+                        integrations: await tenantIntegrationsService.getTenantIntegrations(tenantId)
                     });
                 }
             });
@@ -4921,7 +4958,14 @@ class SocketManager {
         waClient.on('message', async (msg) => {
             if (isStatusOrSystemMessage(msg)) return;
 
-            const media = await mediaManager.processMessageMedia(msg);
+            const historyTenantId = this.resolveHistoryTenantId();
+            const runtimeModuleContext = this.resolveHistoryModuleContext();
+            const media = await mediaManager.processMessageMedia(msg, {
+                tenantId: historyTenantId,
+                moduleId: runtimeModuleContext?.moduleId || '',
+                contactId: msg?.fromMe ? msg?.to : msg?.from,
+                timestampUnix: Number(msg?.timestamp || 0) || null
+            });
             const senderMeta = await resolveMessageSenderMeta(msg);
             const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
@@ -4929,8 +4973,7 @@ class SocketManager {
             const location = extractLocationInfo(msg);
             const messageId = getSerializedMessageId(msg);
             const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId)) : null;
-            const runtimeModuleContext = this.resolveHistoryModuleContext();
-            await this.persistMessageHistory(this.resolveHistoryTenantId(), {
+            await this.persistMessageHistory(historyTenantId, {
                 msg,
                 senderMeta,
                 fileMeta,
@@ -4952,6 +4995,8 @@ class SocketManager {
                 mimetype: media ? media.mimetype : null,
                 filename: fileMeta.filename,
                 fileSizeBytes: fileMeta.fileSizeBytes,
+                        mediaUrl: fileMeta.mediaUrl || null,
+                        mediaPath: fileMeta.mediaPath || null,
                 ack: msg.ack,
                 type: msg.type,
                 author: msg?.author || msg?._data?.author || null,
@@ -4982,15 +5027,21 @@ class SocketManager {
         waClient.on('message_sent', async (msg) => {
             if (isStatusOrSystemMessage(msg)) return;
             // Emite de vuelta para confirmar en UI si se envio desde otro lugar
-            const media = await mediaManager.processMessageMedia(msg);
+            const historyTenantId = this.resolveHistoryTenantId();
+            const runtimeModuleContext = this.resolveHistoryModuleContext();
+            const media = await mediaManager.processMessageMedia(msg, {
+                tenantId: historyTenantId,
+                moduleId: runtimeModuleContext?.moduleId || '',
+                contactId: msg?.fromMe ? msg?.to : msg?.from,
+                timestampUnix: Number(msg?.timestamp || 0) || null
+            });
             const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
             const order = extractOrderInfo(msg);
             const location = extractLocationInfo(msg);
             const messageId = getSerializedMessageId(msg);
             const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId)) : null;
-            const runtimeModuleContext = this.resolveHistoryModuleContext();
-            await this.persistMessageHistory(this.resolveHistoryTenantId(), {
+            await this.persistMessageHistory(historyTenantId, {
                 msg,
                 senderMeta: null,
                 fileMeta,
@@ -5012,6 +5063,8 @@ class SocketManager {
                 mimetype: media ? media.mimetype : null,
                 filename: fileMeta.filename,
                 fileSizeBytes: fileMeta.fileSizeBytes,
+                        mediaUrl: fileMeta.mediaUrl || null,
+                        mediaPath: fileMeta.mediaPath || null,
                 ack: msg.ack,
                 type: msg.type,
                 author: msg?.author || msg?._data?.author || null,
@@ -5117,4 +5170,9 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
+
+
+
+
 

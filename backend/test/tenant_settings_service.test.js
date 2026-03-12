@@ -31,8 +31,8 @@ test('tenant_settings_service keeps tenant isolation and defaults', async () => 
         const service = loadTenantSettingsServiceFresh();
 
         const fromEnv = await service.getTenantSettings('tenant_env');
-        assert.equal(fromEnv.catalogMode, 'woo_only');
-        assert.equal(fromEnv.enabledModules.aiPro, false);
+        assert.equal(fromEnv.catalogMode, 'hybrid');
+        assert.equal(fromEnv.enabledModules.aiPro, true);
 
         const tenantAUpdated = await service.updateTenantSettings('tenant_a', {
             catalogMode: 'local_only',
@@ -66,4 +66,3 @@ test('tenant_settings_service keeps tenant isolation and defaults', async () => 
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
-

@@ -6,6 +6,8 @@ const DEFAULT_LIMITS = {
         maxCatalogItems: 120,
         maxMonthlyAiRequests: 500,
         maxActiveSessions: 1,
+        maxWaModules: 2,
+        maxCatalogs: 1,
         features: {
             aiPro: true,
             catalog: true,
@@ -20,6 +22,8 @@ const DEFAULT_LIMITS = {
         maxCatalogItems: 1000,
         maxMonthlyAiRequests: 5000,
         maxActiveSessions: 3,
+        maxWaModules: 8,
+        maxCatalogs: 5,
         features: {
             aiPro: true,
             catalog: true,
@@ -34,6 +38,8 @@ const DEFAULT_LIMITS = {
         maxCatalogItems: 10000,
         maxMonthlyAiRequests: 50000,
         maxActiveSessions: 10,
+        maxWaModules: 30,
+        maxCatalogs: 20,
         features: {
             aiPro: true,
             catalog: true,
@@ -67,8 +73,21 @@ function normalizePlanLimits(raw = {}, fallback = {}) {
         maxCatalogItems: normalizePositiveInteger(source.maxCatalogItems, normalizePositiveInteger(fallback.maxCatalogItems, 120)),
         maxMonthlyAiRequests: normalizePositiveInteger(source.maxMonthlyAiRequests, normalizePositiveInteger(fallback.maxMonthlyAiRequests, 500)),
         maxActiveSessions: normalizePositiveInteger(source.maxActiveSessions, normalizePositiveInteger(fallback.maxActiveSessions, 1)),
+        maxWaModules: normalizePositiveInteger(source.maxWaModules, normalizePositiveInteger(fallback.maxWaModules, 1)),
+        maxCatalogs: normalizePositiveInteger(source.maxCatalogs, normalizePositiveInteger(fallback.maxCatalogs, 1)),
         features: normalizeFeatures(source.features, fallback.features || {})
     };
+}
+
+function normalizePlanOverrides(overrides = {}) {
+    const source = overrides && typeof overrides === 'object' ? overrides : {};
+    const out = {};
+    Object.keys(source).forEach((planName) => {
+        const key = String(planName || '').trim().toLowerCase();
+        if (!key) return;
+        out[key] = normalizePlanLimits(source?.[planName], DEFAULT_LIMITS[key] || DEFAULT_LIMITS[DEFAULT_PLAN]);
+    });
+    return out;
 }
 
 function parseOverridesFromEnv() {
@@ -78,14 +97,25 @@ function parseOverridesFromEnv() {
     try {
         const parsed = JSON.parse(raw);
         if (!parsed || typeof parsed !== 'object') return {};
-        return parsed;
+        return normalizePlanOverrides(parsed);
     } catch (_) {
         return {};
     }
 }
 
+let runtimeOverrides = {};
+
+function setPlanOverrides(overrides = {}) {
+    runtimeOverrides = normalizePlanOverrides(overrides);
+    return runtimeOverrides;
+}
+
+function getPlanOverrides() {
+    return { ...runtimeOverrides };
+}
+
 function getMergedMatrix() {
-    const overrides = parseOverridesFromEnv();
+    const overrides = getPlanOverrides();
     const matrix = {};
     const keys = new Set([...Object.keys(DEFAULT_LIMITS), ...Object.keys(overrides || {})]);
 
@@ -99,6 +129,10 @@ function getMergedMatrix() {
         matrix[DEFAULT_PLAN] = normalizePlanLimits({}, DEFAULT_LIMITS[DEFAULT_PLAN]);
     }
     return matrix;
+}
+
+function getPlanMatrix() {
+    return getMergedMatrix();
 }
 
 function getPlanLimits(plan = DEFAULT_PLAN) {
@@ -151,8 +185,14 @@ function assertUsageWithinLimit({
 module.exports = {
     DEFAULT_PLAN,
     DEFAULT_LIMITS,
+    normalizePlanLimits,
+    normalizePlanOverrides,
+    getPlanOverrides,
+    setPlanOverrides,
+    getPlanMatrix,
     getPlanLimits,
     getTenantPlanLimits,
     isFeatureEnabledForTenant,
     assertUsageWithinLimit
 };
+

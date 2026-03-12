@@ -8,11 +8,11 @@ const {
 } = require('./persistence_runtime');
 
 const SETTINGS_FILE_NAME = 'tenant_settings.json';
-const ALLOWED_CATALOG_MODES = new Set(['hybrid', 'woo_only', 'local_only']);
+const ALLOWED_CATALOG_MODES = new Set(['hybrid', 'meta_only', 'woo_only', 'local_only']);
 const ALLOWED_TRANSPORT_LOCKS = new Set(['auto', 'webjs', 'cloud']);
 
 const DEFAULT_SETTINGS = Object.freeze({
-    catalogMode: String(process.env.SAAS_DEFAULT_CATALOG_MODE || 'hybrid').trim().toLowerCase() || 'hybrid',
+    catalogMode: 'hybrid',
     enabledModules: {
         aiPro: true,
         catalog: true,
@@ -98,33 +98,6 @@ function resolveTenantId(tenantId = '') {
     return normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
 }
 
-function parseTenantSettingsFromEnv() {
-    const raw = String(process.env.SAAS_TENANT_SETTINGS_JSON || '').trim();
-    if (!raw) return new Map();
-
-    try {
-        const parsed = JSON.parse(raw);
-        const rows = Array.isArray(parsed) ? parsed : [];
-        const out = new Map();
-        rows.forEach((row) => {
-            if (!isPlainObject(row)) return;
-            const tenantId = resolveTenantId(row.tenantId || row.id || row.tenant);
-            if (!tenantId) return;
-            out.set(tenantId, normalizeTenantSettings(row.settings || row));
-        });
-        return out;
-    } catch (error) {
-        return new Map();
-    }
-}
-
-const ENV_SETTINGS_MAP = parseTenantSettingsFromEnv();
-
-function getEnvTenantSettings(tenantId = DEFAULT_TENANT_ID) {
-    const cleanTenant = resolveTenantId(tenantId);
-    return ENV_SETTINGS_MAP.get(cleanTenant) || null;
-}
-
 function missingRelation(error) {
     return String(error?.code || '').trim() === '42P01';
 }
@@ -194,7 +167,6 @@ async function saveSettingsToFile(tenantId, settings = {}) {
 
 async function getTenantSettings(tenantId = DEFAULT_TENANT_ID) {
     const cleanTenant = resolveTenantId(tenantId);
-    const fromEnv = getEnvTenantSettings(cleanTenant);
 
     let persisted = null;
     if (getStorageDriver() === 'postgres') {
@@ -203,11 +175,7 @@ async function getTenantSettings(tenantId = DEFAULT_TENANT_ID) {
         persisted = await getSettingsFromFile(cleanTenant);
     }
 
-    const persistedHasRealOverride = Boolean(persisted?.updatedAt);
-    const mergedSource = persistedHasRealOverride
-        ? deepMerge(DEFAULT_SETTINGS, deepMerge(fromEnv || {}, persisted || {}))
-        : deepMerge(DEFAULT_SETTINGS, deepMerge(persisted || {}, fromEnv || {}));
-    const merged = normalizeTenantSettings(mergedSource);
+    const merged = normalizeTenantSettings(deepMerge(DEFAULT_SETTINGS, persisted || {}));
     return {
         ...merged,
         updatedAt: persisted?.updatedAt || null
@@ -235,4 +203,9 @@ module.exports = {
     normalizeTenantSettings,
     normalizeCatalogMode
 };
+
+
+
+
+
 

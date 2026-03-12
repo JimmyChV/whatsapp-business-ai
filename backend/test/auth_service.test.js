@@ -5,11 +5,20 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-function loadAuthServiceFresh() {
+function loadAuthServiceFresh({ preserveControlPlaneCache = false } = {}) {
     const authPath = require.resolve('../auth_service');
     const sessionPath = require.resolve('../auth_session_service');
+    const controlPath = require.resolve('../saas_control_plane_service');
+    const tenantServicePath = require.resolve('../tenant_service');
+
     delete require.cache[authPath];
     delete require.cache[sessionPath];
+    delete require.cache[tenantServicePath];
+
+    if (!preserveControlPlaneCache) {
+        delete require.cache[controlPath];
+    }
+
     return require('../auth_service');
 }
 
@@ -359,7 +368,7 @@ test('auth_service login uses snapshot users when control-plane auth list is inc
 
         saasControl.ensureLoaded = async () => saasControl.getSnapshotSync();
 
-        const authService = loadAuthServiceFresh();
+        const authService = loadAuthServiceFresh({ preserveControlPlaneCache: true });
 
         const sellerById = await authService.login({
             email: 'USER0001',

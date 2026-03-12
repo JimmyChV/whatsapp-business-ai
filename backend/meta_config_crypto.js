@@ -1,4 +1,4 @@
-﻿const crypto = require('crypto');
+const crypto = require('crypto');
 
 const ENCRYPTION_PREFIX = 'encv1:';
 let cachedKey = null;
@@ -75,6 +75,21 @@ function decryptSecret(value = '') {
     }
 }
 
+function decryptSecretFully(value = '', maxLayers = 8) {
+    let current = String(value || '').trim();
+    if (!current) return '';
+
+    for (let depth = 0; depth < maxLayers; depth += 1) {
+        if (!isEncryptedValue(current)) return current;
+        const next = decryptSecret(current);
+        if (!next) return '';
+        if (next === current) break;
+        current = String(next).trim();
+    }
+
+    return isEncryptedValue(current) ? '' : current;
+}
+
 function maskSecret(value = '') {
     const clean = String(value || '').trim();
     if (!clean) return null;
@@ -87,12 +102,34 @@ function normalizePlain(value = '') {
     return text || null;
 }
 
+function normalizeBoolean(value, fallback = true) {
+    if (typeof value === 'boolean') return value;
+    if (value === 1 || value === '1') return true;
+    if (value === 0 || value === '0') return false;
+    if (typeof value === 'string') {
+        const text = value.trim().toLowerCase();
+        if (['true', 'yes', 'on'].includes(text)) return true;
+        if (['false', 'no', 'off'].includes(text)) return false;
+    }
+    return fallback !== false;
+}
+
+function normalizeSecretForStorage(incomingValue, currentValue) {
+    const incoming = String(incomingValue || '').trim();
+    if (incoming) {
+        if (isEncryptedValue(incoming)) return incoming;
+        return encryptSecret(incoming);
+    }
+    const current = String(currentValue || '').trim();
+    return current || null;
+}
+
 function normalizeCloudConfigPublic(cloud = {}) {
     const source = cloud && typeof cloud === 'object' ? cloud : {};
     const appSecretRaw = String(source.appSecret || source.app_secret || '').trim();
     const tokenRaw = String(source.systemUserToken || source.system_user_token || '').trim();
-    const appSecretPlain = decryptSecret(appSecretRaw);
-    const tokenPlain = decryptSecret(tokenRaw);
+    const appSecretPlain = decryptSecretFully(appSecretRaw);
+    const tokenPlain = decryptSecretFully(tokenRaw);
 
     return {
         appId: normalizePlain(source.appId || source.app_id),
@@ -102,6 +139,7 @@ function normalizeCloudConfigPublic(cloud = {}) {
         graphVersion: normalizePlain(source.graphVersion || source.graph_version),
         displayPhoneNumber: normalizePlain(source.displayPhoneNumber || source.display_phone_number),
         businessName: normalizePlain(source.businessName || source.business_name),
+        enforceSignature: normalizeBoolean(source.enforceSignature, true),
         hasSystemUserToken: Boolean(tokenRaw),
         hasAppSecret: Boolean(appSecretRaw),
         systemUserTokenMasked: tokenPlain ? maskSecret(tokenPlain) : null,
@@ -113,14 +151,15 @@ function normalizeCloudConfigRuntime(cloud = {}) {
     const source = cloud && typeof cloud === 'object' ? cloud : {};
     return {
         appId: normalizePlain(source.appId || source.app_id),
-        appSecret: normalizePlain(decryptSecret(source.appSecret || source.app_secret)),
-        systemUserToken: normalizePlain(decryptSecret(source.systemUserToken || source.system_user_token)),
+        appSecret: normalizePlain(decryptSecretFully(source.appSecret || source.app_secret)),
+        systemUserToken: normalizePlain(decryptSecretFully(source.systemUserToken || source.system_user_token)),
         wabaId: normalizePlain(source.wabaId || source.waba_id),
         phoneNumberId: normalizePlain(source.phoneNumberId || source.phone_number_id),
         verifyToken: normalizePlain(source.verifyToken || source.verify_token),
         graphVersion: normalizePlain(source.graphVersion || source.graph_version),
         displayPhoneNumber: normalizePlain(source.displayPhoneNumber || source.display_phone_number),
-        businessName: normalizePlain(source.businessName || source.business_name)
+        businessName: normalizePlain(source.businessName || source.business_name),
+        enforceSignature: normalizeBoolean(source.enforceSignature, true)
     };
 }
 
@@ -145,22 +184,21 @@ function prepareModuleMetadataForSave(nextMetadata = {}, existingMetadata = {}) 
 
     const nextCloud = {
         appId: normalizePlain(cloudSource.appId || cloudSource.app_id),
-        appSecret: (() => {
-            const raw = String(incomingCloud.appSecret || incomingCloud.app_secret || '').trim();
-            if (raw) return encryptSecret(raw);
-            return String(currentCloud.appSecret || currentCloud.app_secret || '').trim() || null;
-        })(),
-        systemUserToken: (() => {
-            const raw = String(incomingCloud.systemUserToken || incomingCloud.system_user_token || '').trim();
-            if (raw) return encryptSecret(raw);
-            return String(currentCloud.systemUserToken || currentCloud.system_user_token || '').trim() || null;
-        })(),
+        appSecret: normalizeSecretForStorage(
+            incomingCloud.appSecret || incomingCloud.app_secret,
+            currentCloud.appSecret || currentCloud.app_secret
+        ),
+        systemUserToken: normalizeSecretForStorage(
+            incomingCloud.systemUserToken || incomingCloud.system_user_token,
+            currentCloud.systemUserToken || currentCloud.system_user_token
+        ),
         wabaId: normalizePlain(cloudSource.wabaId || cloudSource.waba_id),
         phoneNumberId: normalizePlain(cloudSource.phoneNumberId || cloudSource.phone_number_id),
         verifyToken: normalizePlain(cloudSource.verifyToken || cloudSource.verify_token),
         graphVersion: normalizePlain(cloudSource.graphVersion || cloudSource.graph_version),
         displayPhoneNumber: normalizePlain(cloudSource.displayPhoneNumber || cloudSource.display_phone_number),
-        businessName: normalizePlain(cloudSource.businessName || cloudSource.business_name)
+        businessName: normalizePlain(cloudSource.businessName || cloudSource.business_name),
+        enforceSignature: normalizeBoolean(cloudSource.enforceSignature, true)
     };
 
     merged.cloudConfig = nextCloud;
@@ -192,6 +230,7 @@ module.exports = {
     isEncryptedValue,
     encryptSecret,
     decryptSecret,
+    decryptSecretFully,
     maskSecret,
     prepareModuleMetadataForSave,
     sanitizeModuleMetadataForPublic,

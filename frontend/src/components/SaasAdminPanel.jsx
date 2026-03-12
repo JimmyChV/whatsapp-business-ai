@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -34,6 +34,42 @@ const EMPTY_SETTINGS = {
         quickReplies: true
     }
 };
+const EMPTY_INTEGRATIONS_FORM = {
+    catalogMode: 'hybrid',
+    metaEnabled: true,
+    wooEnabled: true,
+    wooBaseUrl: '',
+    wooPerPage: 100,
+    wooMaxPages: 10,
+    wooIncludeOutOfStock: true,
+    wooConsumerKey: '',
+    wooConsumerSecret: '',
+    wooConsumerKeyMasked: '',
+    wooConsumerSecretMasked: '',
+    localEnabled: true,
+    aiProvider: 'openai',
+    aiModel: 'gpt-4o-mini',
+    openaiApiKey: '',
+    openaiApiKeyMasked: ''
+};
+
+const PLAN_LIMIT_KEYS = [
+    { key: 'maxUsers', label: 'Max usuarios', min: 1, max: 100000 },
+    { key: 'maxWaModules', label: 'Max modulos WA', min: 1, max: 100000 },
+    { key: 'maxCatalogs', label: 'Max catalogos', min: 1, max: 100000 },
+    { key: 'maxCatalogItems', label: 'Max productos catalogo', min: 1, max: 1000000 },
+    { key: 'maxMonthlyAiRequests', label: 'Max IA mensual', min: 1, max: 100000000 },
+    { key: 'maxActiveSessions', label: 'Max sesiones activas', min: 1, max: 100000 }
+];
+
+const PLAN_FEATURE_KEYS = [
+    { key: 'aiPro', label: 'IA Pro' },
+    { key: 'catalog', label: 'Catalogo' },
+    { key: 'cart', label: 'Carrito' },
+    { key: 'quickReplies', label: 'Respuestas rapidas' },
+    { key: 'audit', label: 'Auditoria' },
+    { key: 'opsPanel', label: 'Panel Ops' }
+];
 
 const EMPTY_WA_MODULE_FORM = {
     moduleId: '',
@@ -41,7 +77,12 @@ const EMPTY_WA_MODULE_FORM = {
     phoneNumber: '',
     transportMode: 'webjs',
     imageUrl: '',
-    assignedUserIds: '',
+    assignedUserIds: [],
+    moduleCatalogMode: 'inherit',
+    moduleAiEnabled: true,
+    moduleCatalogEnabled: true,
+    moduleCartEnabled: true,
+    moduleQuickRepliesEnabled: true,
     cloudAppId: '',
     cloudWabaId: '',
     cloudPhoneNumberId: '',
@@ -52,12 +93,13 @@ const EMPTY_WA_MODULE_FORM = {
     cloudAppSecret: '',
     cloudSystemUserToken: '',
     cloudAppSecretMasked: '',
-    cloudSystemUserTokenMasked: ''
+    cloudSystemUserTokenMasked: '',
+    cloudEnforceSignature: true
 };
 
 const ROLE_OPTIONS = ['owner', 'admin', 'seller'];
 const PLAN_OPTIONS = ['starter', 'pro', 'enterprise'];
-const CATALOG_MODE_OPTIONS = ['hybrid', 'woo_only', 'local_only'];
+const CATALOG_MODE_OPTIONS = ['hybrid', 'meta_only', 'woo_only', 'local_only'];
 const MODULE_KEYS = [
     { key: 'aiPro', label: 'IA Pro' },
     { key: 'catalog', label: 'Catalogo' },
@@ -68,8 +110,14 @@ const ADMIN_NAV_ITEMS = [
     { id: 'saas_resumen', label: 'Resumen' },
     { id: 'saas_empresas', label: 'Empresas' },
     { id: 'saas_usuarios', label: 'Usuarios' },
+    { id: 'saas_modulos', label: 'Modulos' },
+    { id: 'saas_catalogos', label: 'Catalogos' },
+    { id: 'saas_planes', label: 'Planes' },
     { id: 'saas_config', label: 'Configuracion' }
 ];
+const ADMIN_IMAGE_MAX_BYTES = Math.max(200 * 1024, Number(import.meta.env.VITE_ADMIN_ASSET_MAX_BYTES || 2 * 1024 * 1024));
+const ADMIN_IMAGE_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL = '.jpg, .jpeg, .png, .webp';
 
 function normalizeOverview(payload = {}) {
     return {
@@ -93,12 +141,6 @@ function sanitizeMemberships(memberships = []) {
 }
 
 
-function parseAssignedUserIds(value = '') {
-    return String(value || '')
-        .split(',')
-        .map((entry) => String(entry || '').trim())
-        .filter(Boolean);
-}
 
 function safeJsonParse(raw = '{}', fallback = {}) {
     try {
@@ -120,7 +162,7 @@ function prettyJson(value = {}) {
 
 function normalizeWaModule(item = {}) {
     const source = item && typeof item === 'object' ? item : {};
-    const moduleId = String(source.moduleId || source.id || '').trim().toLowerCase();
+    const moduleId = String(source.moduleId || source.id || '').trim();
     if (!moduleId) return null;
 
     const metadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
@@ -128,6 +170,9 @@ function normalizeWaModule(item = {}) {
         : {};
     const cloudConfig = metadata.cloudConfig && typeof metadata.cloudConfig === 'object' && !Array.isArray(metadata.cloudConfig)
         ? metadata.cloudConfig
+        : {};
+    const moduleSettings = metadata.moduleSettings && typeof metadata.moduleSettings === 'object' && !Array.isArray(metadata.moduleSettings)
+        ? metadata.moduleSettings
         : {};
 
     return {
@@ -142,6 +187,15 @@ function normalizeWaModule(item = {}) {
         assignedUserIds: Array.isArray(source.assignedUserIds)
             ? source.assignedUserIds.map((entry) => String(entry || '').trim()).filter(Boolean)
             : [],
+        moduleCatalogMode: CATALOG_MODE_OPTIONS.includes(String(moduleSettings.catalogMode || '').trim())
+            ? String(moduleSettings.catalogMode || '').trim()
+            : 'inherit',
+        moduleFeatureFlags: {
+            aiPro: moduleSettings?.enabledModules?.aiPro !== false,
+            catalog: moduleSettings?.enabledModules?.catalog !== false,
+            cart: moduleSettings?.enabledModules?.cart !== false,
+            quickReplies: moduleSettings?.enabledModules?.quickReplies !== false
+        },
         metadata,
         cloudConfig: {
             appId: String(cloudConfig.appId || '').trim(),
@@ -152,11 +206,104 @@ function normalizeWaModule(item = {}) {
             displayPhoneNumber: String(cloudConfig.displayPhoneNumber || '').trim(),
             businessName: String(cloudConfig.businessName || '').trim(),
             appSecretMasked: String(cloudConfig.appSecretMasked || '').trim(),
-            systemUserTokenMasked: String(cloudConfig.systemUserTokenMasked || '').trim()
+            systemUserTokenMasked: String(cloudConfig.systemUserTokenMasked || '').trim(),
+            enforceSignature: cloudConfig.enforceSignature !== false
         }
     };
 }
 
+function normalizeIntegrationsPayload(integrations = {}) {
+    const source = integrations && typeof integrations === 'object' ? integrations : {};
+    const catalog = source.catalog && typeof source.catalog === 'object' ? source.catalog : {};
+    const providers = catalog.providers && typeof catalog.providers === 'object' ? catalog.providers : {};
+    const woo = providers.woocommerce && typeof providers.woocommerce === 'object' ? providers.woocommerce : {};
+    const ai = source.ai && typeof source.ai === 'object' ? source.ai : {};
+
+    return {
+        catalogMode: CATALOG_MODE_OPTIONS.includes(String(catalog.mode || '').trim())
+            ? String(catalog.mode || '').trim()
+            : 'hybrid',
+        metaEnabled: providers?.meta?.enabled !== false,
+        wooEnabled: woo.enabled !== false,
+        wooBaseUrl: String(woo.baseUrl || '').trim(),
+        wooPerPage: Number(woo.perPage || 100) || 100,
+        wooMaxPages: Number(woo.maxPages || 10) || 10,
+        wooIncludeOutOfStock: woo.includeOutOfStock !== false,
+        wooConsumerKey: '',
+        wooConsumerSecret: '',
+        wooConsumerKeyMasked: String(woo.consumerKeyMasked || '').trim(),
+        wooConsumerSecretMasked: String(woo.consumerSecretMasked || '').trim(),
+        localEnabled: providers?.local?.enabled !== false,
+        aiProvider: String(ai.provider || 'openai').trim() || 'openai',
+        aiModel: String(ai.model || 'gpt-4o-mini').trim() || 'gpt-4o-mini',
+        openaiApiKey: '',
+        openaiApiKeyMasked: String(ai.openAiApiKeyMasked || '').trim()
+    };
+}
+
+function buildIntegrationsUpdatePayload(form = {}) {
+    const source = form && typeof form === 'object' ? form : {};
+    const payload = {
+        catalog: {
+            mode: CATALOG_MODE_OPTIONS.includes(String(source.catalogMode || '').trim())
+                ? String(source.catalogMode || '').trim()
+                : 'hybrid',
+            providers: {
+                meta: {
+                    enabled: source.metaEnabled !== false
+                },
+                woocommerce: {
+                    enabled: source.wooEnabled !== false,
+                    baseUrl: String(source.wooBaseUrl || '').trim() || null,
+                    perPage: Math.max(10, Math.min(500, Number(source.wooPerPage || 100) || 100)),
+                    maxPages: Math.max(1, Math.min(200, Number(source.wooMaxPages || 10) || 10)),
+                    includeOutOfStock: source.wooIncludeOutOfStock !== false
+                },
+                local: {
+                    enabled: source.localEnabled !== false
+                }
+            }
+        },
+        ai: {
+            provider: String(source.aiProvider || 'openai').trim() || 'openai',
+            model: String(source.aiModel || 'gpt-4o-mini').trim() || 'gpt-4o-mini'
+        }
+    };
+
+    const wooConsumerKey = String(source.wooConsumerKey || '').trim();
+    const wooConsumerSecret = String(source.wooConsumerSecret || '').trim();
+    const openaiApiKey = String(source.openaiApiKey || '').trim();
+
+    if (wooConsumerKey) payload.catalog.providers.woocommerce.consumerKey = wooConsumerKey;
+    if (wooConsumerSecret) payload.catalog.providers.woocommerce.consumerSecret = wooConsumerSecret;
+    if (openaiApiKey) payload.ai.openaiApiKey = openaiApiKey;
+
+    return payload;
+}
+
+function normalizePlanForm(planId = 'starter', limits = {}) {
+    const source = limits && typeof limits === 'object' ? limits : {};
+    const features = source.features && typeof source.features === 'object' ? source.features : {};
+
+    const base = {
+        id: String(planId || 'starter').trim().toLowerCase() || 'starter',
+        features: {}
+    };
+
+    PLAN_LIMIT_KEYS.forEach((entry) => {
+        const value = Number(source?.[entry.key]);
+        const fallback = entry.key === 'maxMonthlyAiRequests' ? 500 : 1;
+        base[entry.key] = Number.isFinite(value) && value > 0
+            ? Math.floor(value)
+            : fallback;
+    });
+
+    PLAN_FEATURE_KEYS.forEach((entry) => {
+        base.features[entry.key] = features?.[entry.key] !== false;
+    });
+
+    return base;
+}
 function buildTenantFormFromItem(item = null) {
     if (!item || typeof item !== 'object') return EMPTY_TENANT_FORM;
     return {
@@ -207,9 +354,98 @@ function formatDateTimeLabel(value = '') {
         minute: '2-digit'
     });
 }
+function toTenantDisplayName(tenant = {}) {
+    return String(tenant?.name || tenant?.slug || 'Empresa sin nombre').trim() || 'Empresa sin nombre';
+}
+
+function toUserDisplayName(user = {}) {
+    const name = String(user?.name || '').trim();
+    const email = String(user?.email || '').trim();
+    return name || email || 'Usuario sin nombre';
+}
+function buildInitials(label = '') {
+    const source = String(label || '').trim();
+    if (!source) return 'NA';
+    const chunks = source.split(/\s+/).filter(Boolean).slice(0, 2);
+    const initials = chunks.map((chunk) => String(chunk[0] || '').toUpperCase()).join('');
+    return initials || 'NA';
+}
+
+function formatBytes(bytes = 0) {
+    const safeValue = Number(bytes || 0);
+    if (!Number.isFinite(safeValue) || safeValue <= 0) return '0 B';
+    if (safeValue >= 1024 * 1024) return `${(safeValue / (1024 * 1024)).toFixed(1)} MB`;
+    if (safeValue >= 1024) return `${Math.round(safeValue / 1024)} KB`;
+    return `${Math.round(safeValue)} B`;
+}
+
+function validateImageFile(file = null) {
+    if (!file) return 'Selecciona una imagen valida.';
+    const mimeType = String(file.type || '').trim().toLowerCase();
+    if (!ADMIN_IMAGE_ALLOWED_MIME_TYPES.includes(mimeType)) {
+        return `Formato no permitido. Usa ${ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL}.`;
+    }
+    if (Number(file.size || 0) > ADMIN_IMAGE_MAX_BYTES) {
+        return `Imagen demasiado pesada. Maximo ${formatBytes(ADMIN_IMAGE_MAX_BYTES)}.`;
+    }
+    return '';
+}
+
+function ImageDropInput({
+    label = 'Subir imagen',
+    disabled = false,
+    onFile,
+    helpText = `Arrastra una imagen o haz clic para seleccionar (${ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL}, max ${formatBytes(ADMIN_IMAGE_MAX_BYTES)}).`
+}) {
+    const [dragging, setDragging] = useState(false);
+    const [localError, setLocalError] = useState('');
+
+    const handleFiles = (fileList) => {
+        const file = fileList && fileList[0] ? fileList[0] : null;
+        const validationError = validateImageFile(file);
+        if (validationError) {
+            setLocalError(validationError);
+            return;
+        }
+        setLocalError('');
+        if (typeof onFile !== 'function') return;
+        onFile(file);
+    };
+
+    return (
+        <label
+            className={`saas-admin-dropzone ${dragging ? 'is-dragging' : ''} ${disabled ? 'is-disabled' : ''}`.trim()}
+            onDragOver={(event) => {
+                if (disabled) return;
+                event.preventDefault();
+                setDragging(true);
+            }}
+            onDragLeave={(event) => {
+                event.preventDefault();
+                setDragging(false);
+            }}
+            onDrop={(event) => {
+                if (disabled) return;
+                event.preventDefault();
+                setDragging(false);
+                handleFiles(event.dataTransfer?.files || null);
+            }}
+        >
+            <input
+                type="file"
+                accept={ADMIN_IMAGE_ALLOWED_MIME_TYPES.join(',')}
+                disabled={disabled}
+                onChange={(event) => handleFiles(event.target.files || null)}
+            />
+            <strong>{label}</strong>
+            <small className={localError ? 'saas-admin-dropzone-error' : ''}>{localError || helpText}</small>
+        </label>
+    );
+}
 export default function SaasAdminPanel({
     isOpen = false,
     onClose,
+    onLogout,
     onOpenWhatsAppOperation,
     buildApiHeaders,
     activeTenantId = '',
@@ -221,13 +457,13 @@ export default function SaasAdminPanel({
     activeSection = '',
     showNavigation = true,
     showHeader = true,
+    closeLabel = 'Cerrar sesion',
 }) {
     const [overview, setOverview] = useState({ tenants: [], users: [], metrics: [], aiUsage: [] });
     const [tenantForm, setTenantForm] = useState(EMPTY_TENANT_FORM);
     const [userForm, setUserForm] = useState(EMPTY_USER_FORM);
     const [settingsTenantId, setSettingsTenantId] = useState('');
     const [tenantSettings, setTenantSettings] = useState(EMPTY_SETTINGS);
-    const [editingMembershipUserId, setEditingMembershipUserId] = useState('');
     const [membershipDraft, setMembershipDraft] = useState([]);
     const [waModules, setWaModules] = useState([]);
     const [waModuleForm, setWaModuleForm] = useState(EMPTY_WA_MODULE_FORM);
@@ -235,9 +471,23 @@ export default function SaasAdminPanel({
     const [selectedTenantId, setSelectedTenantId] = useState('');
     const [selectedUserId, setSelectedUserId] = useState('');
     const [selectedWaModuleId, setSelectedWaModuleId] = useState('');
+    const [selectedConfigKey, setSelectedConfigKey] = useState('');
+    const [moduleUserPickerId, setModuleUserPickerId] = useState('');
+    const [tenantPanelMode, setTenantPanelMode] = useState('view');
+    const [userPanelMode, setUserPanelMode] = useState('view');
+    const [tenantSettingsPanelMode, setTenantSettingsPanelMode] = useState('view');
+    const [waModulePanelMode, setWaModulePanelMode] = useState('view');
+    const [tenantIntegrations, setTenantIntegrations] = useState(EMPTY_INTEGRATIONS_FORM);
+    const [catalogPanelMode, setCatalogPanelMode] = useState('view');
+    const [planMatrix, setPlanMatrix] = useState({});
+    const [selectedPlanId, setSelectedPlanId] = useState('');
+    const [planForm, setPlanForm] = useState(() => normalizePlanForm('starter', {}));
+    const [planPanelMode, setPlanPanelMode] = useState('view');
 
     const [busy, setBusy] = useState(false);
     const [loadingSettings, setLoadingSettings] = useState(false);
+    const [loadingIntegrations, setLoadingIntegrations] = useState(false);
+    const [loadingPlans, setLoadingPlans] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
     const [currentSection, setCurrentSection] = useState(String(activeSection || initialSection || 'saas_resumen'));
@@ -261,7 +511,32 @@ export default function SaasAdminPanel({
         }
         return payload;
     };
+    const readFileAsDataUrl = (file) => {
+        return new Promise((resolve, reject) => {
+            if (!file) {
+                reject(new Error('No se encontro el archivo para subir.'));
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error('No se pudo leer el archivo seleccionado.'));
+            reader.readAsDataURL(file);
+        });
+    };
 
+    const uploadImageAsset = async ({ file, tenantId, scope }) => {
+        const dataUrl = await readFileAsDataUrl(file);
+        const payload = await requestJson('/api/admin/saas/assets/upload', {
+            method: 'POST',
+            body: {
+                tenantId,
+                scope,
+                fileName: String(file?.name || 'imagen').trim() || 'imagen',
+                dataUrl
+            }
+        });
+        return String(payload?.file?.url || payload?.file?.relativeUrl || '').trim();
+    };
     const aiUsageByTenant = useMemo(() => {
         const map = new Map();
         (overview.aiUsage || []).forEach((entry) => {
@@ -280,6 +555,13 @@ export default function SaasAdminPanel({
         [tenantOptions, selectedTenantId]
     );
 
+    const activeTenantLabel = useMemo(() => {
+        const cleanActiveTenantId = String(activeTenantId || '').trim();
+        if (!cleanActiveTenantId) return '-';
+        const match = tenantOptions.find((tenant) => String(tenant?.id || '').trim() === cleanActiveTenantId);
+        return match ? toTenantDisplayName(match) : 'Empresa activa';
+    }, [activeTenantId, tenantOptions]);
+
     const selectedUser = useMemo(
         () => (overview.users || []).find((user) => String(user?.id || '') === String(selectedUserId || '')) || null,
         [overview.users, selectedUserId]
@@ -289,11 +571,74 @@ export default function SaasAdminPanel({
         () => (waModules || []).find((item) => String(item?.moduleId || '') === String(selectedWaModuleId || '')) || null,
         [waModules, selectedWaModuleId]
     );
+    const planIds = useMemo(() => {
+        const keys = Object.keys(planMatrix || {}).map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean);
+        const merged = Array.from(new Set([...PLAN_OPTIONS, ...keys]));
+        return merged;
+    }, [planMatrix]);
 
+    const selectedPlan = useMemo(() => {
+        const cleanPlanId = String(selectedPlanId || '').trim().toLowerCase();
+        if (!cleanPlanId) return null;
+        return {
+            id: cleanPlanId,
+            limits: planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object'
+                ? planMatrix[cleanPlanId]
+                : null
+        };
+    }, [planMatrix, selectedPlanId]);
+
+    const usersByTenant = useMemo(() => {
+        const map = new Map();
+        (overview.users || []).forEach((user) => {
+            sanitizeMemberships(user?.memberships || []).forEach((membership) => {
+                const tenantId = String(membership?.tenantId || '').trim();
+                if (!tenantId) return;
+                const bucket = map.get(tenantId) || [];
+                bucket.push({
+                    ...user,
+                    membershipRole: membership.role,
+                    membershipActive: membership.active !== false
+                });
+                map.set(tenantId, bucket);
+            });
+        });
+        return map;
+    }, [overview.users]);
+    const usersForSettingsTenant = useMemo(() => {
+        const cleanTenantId = String(settingsTenantId || '').trim();
+        if (!cleanTenantId) return [];
+        return [...(usersByTenant.get(cleanTenantId) || [])]
+            .sort((left, right) => toUserDisplayName(left).localeCompare(toUserDisplayName(right), 'es', { sensitivity: 'base' }));
+    }, [settingsTenantId, usersByTenant]);
+
+    const selectedConfigModule = useMemo(() => {
+        if (!String(selectedConfigKey || '').startsWith('wa_module:')) return null;
+        const moduleId = String(selectedConfigKey || '').slice('wa_module:'.length).trim();
+        if (!moduleId) return null;
+        return waModules.find((item) => String(item?.moduleId || '').trim() === moduleId) || null;
+    }, [selectedConfigKey, waModules]);
+
+    const assignedModuleUsers = useMemo(() => {
+        const assignedIds = new Set((Array.isArray(waModuleForm.assignedUserIds) ? waModuleForm.assignedUserIds : [])
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean));
+        return usersForSettingsTenant.filter((user) => assignedIds.has(String(user?.id || '').trim()));
+    }, [usersForSettingsTenant, waModuleForm.assignedUserIds]);
+
+    const availableUsersForModulePicker = useMemo(() => {
+        const assignedIds = new Set((Array.isArray(waModuleForm.assignedUserIds) ? waModuleForm.assignedUserIds : [])
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean));
+        return usersForSettingsTenant.filter((user) => !assignedIds.has(String(user?.id || '').trim()));
+    }, [usersForSettingsTenant, waModuleForm.assignedUserIds]);
     const adminNavItems = useMemo(() => {
         return ADMIN_NAV_ITEMS.filter((item) => {
             if (item.id === 'saas_empresas') return canManageTenants;
             if (item.id === 'saas_usuarios') return canManageUsers;
+            if (item.id === 'saas_modulos') return canManageTenantSettings;
+            if (item.id === 'saas_catalogos') return canManageTenantSettings;
+            if (item.id === 'saas_planes') return Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
             if (item.id === 'saas_config') return canManageTenantSettings;
             return true;
         });
@@ -304,7 +649,35 @@ export default function SaasAdminPanel({
         if (adminNavItems.some((item) => item.id === preferred)) return preferred;
         return adminNavItems[0]?.id || 'saas_resumen';
     })();
+    const isModulesSection = selectedSectionId === 'saas_modulos';
+    const isCatalogSection = selectedSectionId === 'saas_catalogos';
+    const isPlansSection = selectedSectionId === 'saas_planes';
+    const isGeneralConfigSection = selectedSectionId === 'saas_config';
 
+    const handleSectionChange = (sectionId) => {
+        const next = String(sectionId || '').trim();
+        if (!next) return;
+
+        if (next === 'saas_empresas') {
+            setSelectedTenantId('');
+            setTenantPanelMode('view');
+        }
+
+        if (next === 'saas_usuarios') {
+            setSelectedUserId('');
+            setUserPanelMode('view');
+            setMembershipDraft([]);
+        }
+
+        if (next === 'saas_config') {
+            clearConfigSelection();
+        }
+        if (next === 'saas_modulos') {
+            clearConfigSelection();
+        }
+
+        setCurrentSection(next);
+    };
     const scrollToSection = (sectionId, behavior = 'smooth') => {
         const cleanSection = String(sectionId || '').trim();
         if (!cleanSection) return;
@@ -320,26 +693,26 @@ export default function SaasAdminPanel({
         setOverview(next);
 
         const availableTenantIds = new Set((next.tenants || []).map((item) => String(item?.id || '').trim()).filter(Boolean));
-        const fallbackTenantId = String(activeTenantId || next.tenants?.[0]?.id || '').trim();
-
         setSelectedTenantId((prev) => {
             const cleanPrev = String(prev || '').trim();
             if (cleanPrev && availableTenantIds.has(cleanPrev)) return cleanPrev;
-            return fallbackTenantId;
+            return '';
         });
 
         setSettingsTenantId((prev) => {
             const cleanPrev = String(prev || '').trim();
             if (cleanPrev && availableTenantIds.has(cleanPrev)) return cleanPrev;
-            return fallbackTenantId;
+
+            const activeTenant = String(activeTenantId || '').trim();
+            if (activeTenant && availableTenantIds.has(activeTenant)) return activeTenant;
+            return '';
         });
 
         const availableUserIds = new Set((next.users || []).map((item) => String(item?.id || '').trim()).filter(Boolean));
-        const fallbackUserId = String(next.users?.[0]?.id || '').trim();
         setSelectedUserId((prev) => {
             const cleanPrev = String(prev || '').trim();
             if (cleanPrev && availableUserIds.has(cleanPrev)) return cleanPrev;
-            return fallbackUserId;
+            return '';
         });
     };
 
@@ -369,6 +742,74 @@ export default function SaasAdminPanel({
         }
     };
 
+    const loadTenantIntegrations = async (tenantId) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        if (!cleanTenantId) {
+            setTenantIntegrations(EMPTY_INTEGRATIONS_FORM);
+            return;
+        }
+        setLoadingIntegrations(true);
+        try {
+            const payload = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/integrations`);
+            setTenantIntegrations(normalizeIntegrationsPayload(payload?.integrations || {}));
+        } finally {
+            setLoadingIntegrations(false);
+        }
+    };
+
+    const loadPlanMatrix = async () => {
+        setLoadingPlans(true);
+        try {
+            const payload = await requestJson('/api/admin/saas/plans');
+            const rows = Array.isArray(payload?.plans) ? payload.plans : [];
+            const nextMatrix = {};
+            rows.forEach((row) => {
+                const planId = String(row?.id || '').trim().toLowerCase();
+                if (!planId) return;
+                nextMatrix[planId] = row?.limits && typeof row.limits === 'object' ? row.limits : {};
+            });
+            setPlanMatrix(nextMatrix);
+            setSelectedPlanId((prev) => {
+                const cleanPrev = String(prev || '').trim().toLowerCase();
+                if (cleanPrev && nextMatrix?.[cleanPrev]) return cleanPrev;
+                return planIds.find((planId) => nextMatrix?.[planId]) || PLAN_OPTIONS[0] || '';
+            });
+        } finally {
+            setLoadingPlans(false);
+        }
+    };
+
+    const openCatalogView = () => {
+        setCatalogPanelMode('view');
+    };
+
+    const openCatalogEdit = () => {
+        setCatalogPanelMode('edit');
+    };
+
+    const openPlanView = (planId) => {
+        const cleanPlanId = String(planId || '').trim().toLowerCase();
+        if (!cleanPlanId) return;
+        const limits = planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object' ? planMatrix[cleanPlanId] : {};
+        setSelectedPlanId(cleanPlanId);
+        setPlanForm(normalizePlanForm(cleanPlanId, limits));
+        setPlanPanelMode('view');
+    };
+
+    const openPlanEdit = () => {
+        const cleanPlanId = String(selectedPlanId || '').trim().toLowerCase();
+        if (!cleanPlanId) return;
+        const limits = planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object' ? planMatrix[cleanPlanId] : {};
+        setPlanForm(normalizePlanForm(cleanPlanId, limits));
+        setPlanPanelMode('edit');
+    };
+
+    const cancelPlanEdit = () => {
+        const cleanPlanId = String(selectedPlanId || '').trim().toLowerCase();
+        const limits = planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object' ? planMatrix[cleanPlanId] : {};
+        setPlanForm(normalizePlanForm(cleanPlanId, limits));
+        setPlanPanelMode('view');
+    };
     const loadWaModules = async (tenantId) => {
         const cleanTenantId = String(tenantId || '').trim();
         if (!cleanTenantId) {
@@ -381,20 +822,22 @@ export default function SaasAdminPanel({
             .map(normalizeWaModule)
             .filter(Boolean)
             .sort((a, b) => String(a.name || a.moduleId).localeCompare(String(b.name || b.moduleId), 'es', { sensitivity: 'base' }));
-        const selectedFromApi = String(payload?.selected?.moduleId || '').trim().toLowerCase();
-        const fallbackSelected = selectedFromApi || String(items[0]?.moduleId || '').trim().toLowerCase();
         setWaModules(items);
         setSelectedWaModuleId((prev) => {
-            const cleanPrev = String(prev || '').trim().toLowerCase();
-            const prevExists = items.some((item) => String(item?.moduleId || '').trim().toLowerCase() === cleanPrev);
+            const cleanPrev = String(prev || '').trim();
+            const prevExists = items.some((item) => String(item?.moduleId || '').trim() === cleanPrev);
             if (prevExists) return cleanPrev;
-            return fallbackSelected;
+            return '';
         });
     };
 
     const resetWaModuleForm = () => {
         setWaModuleForm(EMPTY_WA_MODULE_FORM);
+        setTenantIntegrations(EMPTY_INTEGRATIONS_FORM);
+        setSelectedPlanId('');
+        setPlanForm(normalizePlanForm('starter', {}));
         setEditingWaModuleId('');
+        setModuleUserPickerId('');
     };
 
     const openWaModuleEditor = (moduleItem = null) => {
@@ -411,7 +854,12 @@ export default function SaasAdminPanel({
             phoneNumber: item.phoneNumber || '',
             transportMode: item.transportMode || 'webjs',
             imageUrl: item.imageUrl || '',
-            assignedUserIds: (item.assignedUserIds || []).join(', '),
+            assignedUserIds: [...(item.assignedUserIds || [])],
+            moduleCatalogMode: item.moduleCatalogMode || 'inherit',
+            moduleAiEnabled: item?.moduleFeatureFlags?.aiPro !== false,
+            moduleCatalogEnabled: item?.moduleFeatureFlags?.catalog !== false,
+            moduleCartEnabled: item?.moduleFeatureFlags?.cart !== false,
+            moduleQuickRepliesEnabled: item?.moduleFeatureFlags?.quickReplies !== false,
             cloudAppId: item?.cloudConfig?.appId || '',
             cloudWabaId: item?.cloudConfig?.wabaId || '',
             cloudPhoneNumberId: item?.cloudConfig?.phoneNumberId || '',
@@ -422,8 +870,10 @@ export default function SaasAdminPanel({
             cloudAppSecret: '',
             cloudSystemUserToken: '',
             cloudAppSecretMasked: item?.cloudConfig?.appSecretMasked || '',
-            cloudSystemUserTokenMasked: item?.cloudConfig?.systemUserTokenMasked || ''
+            cloudSystemUserTokenMasked: item?.cloudConfig?.systemUserTokenMasked || '',
+            cloudEnforceSignature: item?.cloudConfig?.enforceSignature !== false
         });
+        setModuleUserPickerId('');
     };
     const runAction = async (label, action) => {
         setError('');
@@ -450,18 +900,27 @@ export default function SaasAdminPanel({
         const cleanTenantId = String(settingsTenantId || activeTenantId || '').trim();
         onOpenWhatsAppOperation(cleanModuleId, { tenantId: cleanTenantId || undefined });
     };
-    const openMembershipEditor = (user) => {
-        const cleanUserId = String(user?.id || '').trim();
-        if (!cleanUserId) return;
-        if (editingMembershipUserId === cleanUserId) {
-            setEditingMembershipUserId('');
-            setMembershipDraft([]);
-            return;
+    const handleFormImageUpload = async ({ file, scope, tenantId, onUploaded }) => {
+        if (!file) return;
+        const cleanTenantId = String(tenantId || settingsTenantId || selectedTenantId || activeTenantId || 'default').trim() || 'default';
+        setError('');
+        setNotice('');
+        setBusy(true);
+        try {
+            const publicUrl = await uploadImageAsset({ file, tenantId: cleanTenantId, scope });
+            if (!publicUrl) {
+                throw new Error('No se pudo obtener URL publica del archivo subido.');
+            }
+            if (typeof onUploaded === 'function') {
+                onUploaded(publicUrl);
+            }
+            setNotice('Imagen subida correctamente.');
+        } catch (err) {
+            setError(String(err?.message || err || 'No se pudo subir la imagen.'));
+        } finally {
+            setBusy(false);
         }
-        setEditingMembershipUserId(cleanUserId);
-        setMembershipDraft(sanitizeMemberships(user?.memberships || []));
     };
-
     const updateMembershipDraft = (index, patch = {}) => {
         setMembershipDraft((prev) => prev.map((entry, entryIndex) => {
             if (entryIndex !== index) return entry;
@@ -490,30 +949,124 @@ export default function SaasAdminPanel({
     useEffect(() => {
         if (!isOpen || !canManageSaas) return;
         runAction('Carga inicial', async () => {
-            await refreshOverview();
+            await Promise.all([refreshOverview(), loadPlanMatrix()]);
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, canManageSaas]);
 
+    const clearPanelSelection = useCallback(() => {
+        setSelectedTenantId('');
+        setSelectedUserId('');
+        setSelectedWaModuleId('');
+        setSelectedConfigKey('');
+        setTenantPanelMode('view');
+        setUserPanelMode('view');
+        setTenantSettingsPanelMode('view');
+        setWaModulePanelMode('view');
+        setCatalogPanelMode('view');
+        setPlanPanelMode('view');
+        setMembershipDraft([]);
+        setTenantForm(EMPTY_TENANT_FORM);
+        setUserForm(EMPTY_USER_FORM);
+        setWaModuleForm(EMPTY_WA_MODULE_FORM);
+        setTenantIntegrations(EMPTY_INTEGRATIONS_FORM);
+        setSelectedPlanId('');
+        setPlanForm(normalizePlanForm('starter', {}));
+        setEditingWaModuleId('');
+        setModuleUserPickerId('');
+    }, []);
+
     useEffect(() => {
-        if (!isOpen || embedded) return;
+        if (!isOpen) return;
+        clearPanelSelection();
+    }, [isOpen, clearPanelSelection]);
+
+    useEffect(() => {
+        if (!isOpen) return;
         const onKeyDown = (event) => {
-            if (event.key === 'Escape') onClose?.();
+            if (event.key !== 'Escape' || event.repeat) return;
+
+            const hasSelection = Boolean(
+                selectedTenantId
+                || selectedUserId
+                || selectedWaModuleId
+                || selectedConfigKey
+                || tenantPanelMode !== 'view'
+                || userPanelMode !== 'view'
+                || tenantSettingsPanelMode !== 'view'
+                || waModulePanelMode !== 'view'
+                || catalogPanelMode !== 'view'
+                || planPanelMode !== 'view'
+                || selectedPlanId
+            );
+
+            if (hasSelection) {
+                event.preventDefault();
+                clearPanelSelection();
+                return;
+            }
+
+            if (!embedded) {
+                onClose?.();
+            }
         };
+
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [embedded, isOpen, onClose]);
+    }, [
+        clearPanelSelection,
+        embedded,
+        isOpen,
+        onClose,
+        selectedConfigKey,
+        selectedTenantId,
+        selectedUserId,
+        selectedWaModuleId,
+        tenantPanelMode,
+        tenantSettingsPanelMode,
+        userPanelMode,
+        waModulePanelMode,
+        catalogPanelMode,
+        planPanelMode,
+        selectedPlanId
+    ]);
 
     useEffect(() => {
         if (!isOpen || !canManageSaas || !settingsTenantId) return;
         Promise.all([
             loadTenantSettings(settingsTenantId),
-            loadWaModules(settingsTenantId)
+            loadWaModules(settingsTenantId),
+            loadTenantIntegrations(settingsTenantId)
         ]).catch((err) => {
             setError(String(err?.message || err || 'No se pudo cargar configuracion del tenant.'));
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, canManageSaas, settingsTenantId]);
+
+    useEffect(() => {
+        setSelectedConfigKey('');
+        setSelectedWaModuleId('');
+        setTenantSettingsPanelMode('view');
+        setWaModulePanelMode('view');
+        setCatalogPanelMode('view');
+        setModuleUserPickerId('');
+    }, [settingsTenantId]);
+
+    useEffect(() => {
+        const cleanPlanId = String(selectedPlanId || '').trim().toLowerCase();
+        if (!cleanPlanId) return;
+        const limits = planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object' ? planMatrix[cleanPlanId] : {};
+        setPlanForm(normalizePlanForm(cleanPlanId, limits));
+    }, [selectedPlanId, planMatrix]);
+    useEffect(() => {
+        if (!String(selectedConfigKey || '').startsWith('wa_module:')) return;
+        if (selectedConfigModule) return;
+        setSelectedConfigKey('');
+        setSelectedWaModuleId('');
+        setWaModulePanelMode('view');
+        resetWaModuleForm();
+    }, [selectedConfigKey, selectedConfigModule]);
+
 
     useEffect(() => {
         if (!isOpen || !canManageSaas) return;
@@ -529,20 +1082,22 @@ export default function SaasAdminPanel({
     }, [activeSection]);
 
     useEffect(() => {
+        if (tenantPanelMode === 'create') return;
         if (!selectedTenant) {
             setTenantForm(EMPTY_TENANT_FORM);
             return;
         }
         setTenantForm(buildTenantFormFromItem(selectedTenant));
-    }, [selectedTenant]);
+    }, [selectedTenant, tenantPanelMode]);
 
     useEffect(() => {
+        if (userPanelMode === 'create') return;
         if (!selectedUser) {
             setUserForm(EMPTY_USER_FORM);
             return;
         }
         setUserForm(buildUserFormFromItem(selectedUser));
-    }, [selectedUser]);
+    }, [selectedUser, userPanelMode]);
 
     useEffect(() => {
         if (!selectedWaModule) {
@@ -551,6 +1106,155 @@ export default function SaasAdminPanel({
         }
         openWaModuleEditor(selectedWaModule);
     }, [selectedWaModule]);
+
+    const openTenantCreate = () => {
+        setTenantPanelMode('create');
+        setSelectedTenantId('');
+        setTenantForm(EMPTY_TENANT_FORM);
+    };
+
+    const openTenantView = (tenantId) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        if (!cleanTenantId) return;
+        setSelectedTenantId(cleanTenantId);
+        setSettingsTenantId(cleanTenantId);
+        setTenantPanelMode('view');
+    };
+
+    const openTenantEdit = () => {
+        if (!selectedTenant) return;
+        setTenantForm(buildTenantFormFromItem(selectedTenant));
+        setTenantPanelMode('edit');
+    };
+
+    const cancelTenantEdit = () => {
+        if (selectedTenant) {
+            setTenantForm(buildTenantFormFromItem(selectedTenant));
+            setTenantPanelMode('view');
+            return;
+        }
+        setTenantForm(EMPTY_TENANT_FORM);
+        setTenantPanelMode('view');
+    };
+
+    const openUserCreate = () => {
+        const fallbackTenantId = String(settingsTenantId || selectedTenantId || tenantOptions[0]?.id || '').trim();
+        setUserPanelMode('create');
+        setSelectedUserId('');
+        setMembershipDraft([]);
+        setUserForm({
+            ...EMPTY_USER_FORM,
+            tenantId: fallbackTenantId
+        });
+    };
+
+    const openUserView = (userId) => {
+        const cleanUserId = String(userId || '').trim();
+        if (!cleanUserId) return;
+        setSelectedUserId(cleanUserId);
+        setMembershipDraft([]);
+        setUserPanelMode('view');
+    };
+
+    const openUserEdit = () => {
+        if (!selectedUser) return;
+        setUserForm(buildUserFormFromItem(selectedUser));
+        setMembershipDraft(sanitizeMemberships(selectedUser.memberships || []));
+        setUserPanelMode('edit');
+    };
+
+    const cancelUserEdit = () => {
+        if (selectedUser) {
+            setUserForm(buildUserFormFromItem(selectedUser));
+            setMembershipDraft([]);
+            setUserPanelMode('view');
+            return;
+        }
+        setUserForm(EMPTY_USER_FORM);
+        setMembershipDraft([]);
+        setUserPanelMode('view');
+    };
+
+    const openTenantFromUserMembership = (tenantId) => {
+        openTenantView(tenantId);
+        setCurrentSection('saas_empresas');
+        scrollToSection('saas_empresas');
+    };
+
+    const openUserFromTenant = (userId) => {
+        openUserView(userId);
+        setCurrentSection('saas_usuarios');
+        scrollToSection('saas_usuarios');
+    };
+    const openConfigSettingsView = () => {
+        setSelectedConfigKey('tenant_settings');
+        setTenantSettingsPanelMode('view');
+        setWaModulePanelMode('view');
+        setSelectedWaModuleId('');
+    };
+
+    const openConfigSettingsEdit = () => {
+        if (!settingsTenantId) return;
+        setSelectedConfigKey('tenant_settings');
+        setTenantSettingsPanelMode('edit');
+        setWaModulePanelMode('view');
+        setSelectedWaModuleId('');
+    };
+
+    const openConfigModuleView = (moduleId) => {
+        const cleanModuleId = String(moduleId || '').trim();
+        if (!cleanModuleId) return;
+        const moduleItem = waModules.find((item) => String(item?.moduleId || '').trim() === cleanModuleId);
+        if (!moduleItem) return;
+        setSelectedConfigKey(`wa_module:${cleanModuleId}`);
+        setTenantSettingsPanelMode('view');
+        setWaModulePanelMode('view');
+        openWaModuleEditor(moduleItem);
+    };
+
+    const openConfigModuleCreate = () => {
+        setSelectedConfigKey('');
+        setSelectedWaModuleId('');
+        setTenantSettingsPanelMode('view');
+        setWaModulePanelMode('create');
+        setModuleUserPickerId('');
+        resetWaModuleForm();
+    };
+
+    const openConfigModuleEdit = () => {
+        if (!selectedConfigModule) return;
+        setSelectedConfigKey(`wa_module:${selectedConfigModule.moduleId}`);
+        openWaModuleEditor(selectedConfigModule);
+        setWaModulePanelMode('edit');
+    };
+
+    const clearConfigSelection = () => {
+        setSelectedConfigKey('');
+        setSelectedWaModuleId('');
+        setTenantSettingsPanelMode('view');
+        setWaModulePanelMode('view');
+        setCatalogPanelMode('view');
+        setModuleUserPickerId('');
+        resetWaModuleForm();
+    };
+
+    const toggleAssignedUserForModule = (userId) => {
+        const cleanUserId = String(userId || '').trim();
+        if (!cleanUserId) return;
+        setWaModuleForm((prev) => {
+            const set = new Set(Array.isArray(prev.assignedUserIds) ? prev.assignedUserIds : []);
+            if (set.has(cleanUserId)) {
+                set.delete(cleanUserId);
+            } else {
+                set.add(cleanUserId);
+            }
+            return {
+                ...prev,
+                assignedUserIds: Array.from(set)
+            };
+        });
+        setModuleUserPickerId('');
+    };
 
     if (!isOpen) return null;
 
@@ -561,7 +1265,7 @@ export default function SaasAdminPanel({
                     {showHeader && (
                         <div className="saas-admin-header">
                             <h2>Panel SaaS</h2>
-                            {!embedded && <button type="button" onClick={() => onClose?.()}>Cerrar</button>}
+                            {!embedded && <button type="button" onClick={() => { if (typeof onLogout === 'function') { onLogout(); return; } onClose?.(); }}>{closeLabel}</button>}
                         </div>
                     )}
                     <p>No tienes permisos para administrar empresas y usuarios.</p>
@@ -577,9 +1281,9 @@ export default function SaasAdminPanel({
                     <div className="saas-admin-header">
                         <div>
                             <h2>Control SaaS</h2>
-                            <span>Tenant activo: {String(activeTenantId || '-')}</span>
+                            <span>Empresa activa: {activeTenantLabel}</span>
                         </div>
-                        {!embedded && <button type="button" onClick={() => onClose?.()}>Cerrar</button>}
+                        {!embedded && <button type="button" onClick={() => { if (typeof onLogout === 'function') { onLogout(); return; } onClose?.(); }}>{closeLabel}</button>}
                     </div>
                 )}
 
@@ -597,7 +1301,7 @@ export default function SaasAdminPanel({
                                 type="button"
                                 className={`saas-admin-nav-btn ${selectedSectionId === item.id ? "active" : ""}`.trim()}
                                 disabled={busy}
-                                onClick={() => setCurrentSection(item.id)}
+                                onClick={() => handleSectionChange(item.id)}
                             >
                                 {item.label}
                             </button>
@@ -616,790 +1320,1718 @@ export default function SaasAdminPanel({
                             <strong>{overview.users.length}</strong>
                         </div>
                         <div className="saas-admin-kpi">
-                            <small>Tenant actual</small>
-                            <strong>{String(activeTenantId || '-')}</strong>
+                            <small>Empresa activa</small>
+                            <strong>{activeTenantLabel}</strong>
                         </div>
                     </div>
                 )}
 
                 {selectedSectionId === 'saas_resumen' && (
                     <section id="saas_resumen" className="saas-admin-card saas-admin-card--full saas-admin-flow-card">
-                        <h3>Flujo operativo recomendado</h3>
-                        <p>1) Superadmin crea empresa(s) y define plan/modulos.</p>
-                        <p>2) Superadmin crea usuarios y asigna membresias (empresa + rol).</p>
-                        <p>3) Usuario de empresa inicia sesion, elige su empresa y luego el modo WhatsApp (Dual/Webjs/Cloud segun backend).</p>
-                        <p>4) La operacion diaria (chats, catalogo, IA) corre aislada por tenant activo.</p>
+                        <h3>Resumen operativo</h3>
+                        <div className="saas-admin-detail-grid">
+                            <div className="saas-admin-detail-field">
+                                <span>Empresas activas</span>
+                                <strong>{(overview.tenants || []).filter((tenant) => tenant.active !== false).length}</strong>
+                            </div>
+                            <div className="saas-admin-detail-field">
+                                <span>Empresas inactivas</span>
+                                <strong>{(overview.tenants || []).filter((tenant) => tenant.active === false).length}</strong>
+                            </div>
+                            <div className="saas-admin-detail-field">
+                                <span>Usuarios activos</span>
+                                <strong>{(overview.users || []).filter((user) => user.active !== false).length}</strong>
+                            </div>
+                            <div className="saas-admin-detail-field">
+                                <span>Usuarios inactivos</span>
+                                <strong>{(overview.users || []).filter((user) => user.active === false).length}</strong>
+                            </div>
+                            <div className="saas-admin-detail-field">
+                                <span>Modulos WhatsApp</span>
+                                <strong>{waModules.length}</strong>
+                            </div>
+                            <div className="saas-admin-detail-field">
+                                <span>Modulo seleccionado</span>
+                                <strong>{selectedWaModule?.name || 'Sin seleccion'}</strong>
+                            </div>
+                        </div>
+
+                        <div className="saas-admin-related-block">
+                            <h4>Acciones rapidas</h4>
+                            <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                <button type="button" disabled={busy} onClick={() => setCurrentSection('saas_empresas')}>Gestionar empresas</button>
+                                <button type="button" disabled={busy} onClick={() => setCurrentSection('saas_usuarios')}>Gestionar usuarios</button>
+                                <button type="button" disabled={busy} onClick={() => setCurrentSection('saas_modulos')}>Gestionar modulos</button>
+                                <button type="button" disabled={busy} onClick={() => setCurrentSection('saas_config')}>Configuracion general</button>
+                            </div>
+                        </div>
                     </section>
                 )}
 
+                {selectedSectionId !== 'saas_resumen' && (
                 <div className="saas-admin-grid">
                     {selectedSectionId === 'saas_empresas' && (
-                    <section id="saas_empresas" className="saas-admin-card">
-                        <h3>Empresas ({overview.tenants.length})</h3>
-                        <small style={{ color: '#8ea7b8' }}>Selecciona una fila para editar detalle en este panel derecho. Los codigos se generan automaticamente si dejas el ID vacio.</small>
-                        {canManageTenants ? (
-                            <>
-                                <div className="saas-admin-form-row">
-                                    <input
-                                        value={tenantForm.id}
-                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, id: event.target.value }))}
-                                        placeholder="tenant_id"
-                                    />
-                                    <input
-                                        value={tenantForm.slug}
-                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, slug: event.target.value }))}
-                                        placeholder="slug"
-                                    />
+                    <section id="saas_empresas" className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <div>
+                                        <h3>Empresas ({tenantOptions.length})</h3>
+                                        <small>Listado operativo. Selecciona una empresa para ver detalle.</small>
+                                    </div>
+                                    {canManageTenants && (
+                                        <button type="button" disabled={busy} onClick={openTenantCreate}>Agregar empresa</button>
+                                    )}
                                 </div>
-                                <div className="saas-admin-form-row">
-                                    <input
-                                        value={tenantForm.name}
-                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, name: event.target.value }))}
-                                        placeholder="Nombre"
-                                    />
-                                    <select value={tenantForm.plan} onChange={(event) => setTenantForm((prev) => ({ ...prev, plan: event.target.value }))}>
-                                        {PLAN_OPTIONS.map((plan) => (
-                                            <option key={plan} value={plan}>{plan}</option>
-                                        ))}
-                                    </select>
+                                <div className="saas-admin-list saas-admin-list--compact">
+                                    {tenantOptions.length === 0 && (
+                                        <div className="saas-admin-empty-state">
+                                            <p>No hay empresas registradas.</p>
+                                            {canManageTenants && (
+                                                <button type="button" disabled={busy} onClick={openTenantCreate}>Crear primera empresa</button>
+                                            )}
+                                        </div>
+                                    )}
+                                    {tenantOptions.map((tenant) => {
+                                        const activeUsers = (overview.metrics || []).find((metric) => metric.tenantId === tenant.id)?.activeUsers || 0;
+                                        const usage = aiUsageByTenant.get(tenant.id) || 0;
+                                        return (
+                                            <button
+                                                key={tenant.id}
+                                                type="button"
+                                                className={`saas-admin-list-item saas-admin-list-item--button ${selectedTenantId === tenant.id && tenantPanelMode !== 'create' ? 'active' : ''}`.trim()}
+                                                onClick={() => openTenantView(tenant.id)}
+                                            >
+                                                <strong>{toTenantDisplayName(tenant)}</strong>
+                                                <small>{tenant.plan} | {tenant.active === false ? 'inactiva' : 'activa'}</small>
+                                                <small>Usuarios activos: {activeUsers} | IA mes: {usage}</small>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
-                                <div className="saas-admin-form-row">
-                                    <input
-                                        value={tenantForm.logoUrl}
-                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, logoUrl: event.target.value }))}
-                                        placeholder="Logo URL"
-                                    />
-                                    <input
-                                        value={tenantForm.coverImageUrl}
-                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, coverImageUrl: event.target.value }))}
-                                        placeholder="Cover URL"
-                                    />
-                                </div>
-                                                                {(tenantForm.logoUrl || tenantForm.coverImageUrl) && (
-                                    <div className="saas-admin-preview-strip">
-                                        {tenantForm.logoUrl && <img src={tenantForm.logoUrl} alt="Logo empresa" className="saas-admin-preview-thumb" />}
-                                        {tenantForm.coverImageUrl && <img src={tenantForm.coverImageUrl} alt="Portada empresa" className="saas-admin-preview-thumb saas-admin-preview-thumb--wide" />}
+                            </aside>
+
+                            <div className="saas-admin-detail-pane">
+                                {!selectedTenant && tenantPanelMode !== 'create' && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Selecciona una empresa</h4>
+                                        <p>El detalle se mostrara aqui en solo lectura. Editar se habilita solo por accion explicita.</p>
                                     </div>
                                 )}
-                                <div className="saas-admin-form-row">
-                                    <label className="saas-admin-module-toggle">
-                                        <input
-                                            type="checkbox"
-                                            checked={tenantForm.active !== false}
-                                            onChange={(event) => setTenantForm((prev) => ({ ...prev, active: event.target.checked }))}
-                                        />
-                                        <span>Empresa activa</span>
-                                    </label>
-                                </div>
-                                <div className="saas-admin-form-row">
-                                    <textarea
-                                        value={tenantForm.metadataText}
-                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, metadataText: event.target.value }))}
-                                        placeholder="Metadata JSON"
-                                        rows={4}
-                                        style={{ width: '100%' }}
-                                    />
-                                </div>
-                                <div className="saas-admin-form-row saas-admin-form-row--actions">
-                                    <button
-                                        type="button"
-                                        disabled={busy || !tenantForm.name}
-                                        onClick={() => runAction(selectedTenant ? 'Empresa actualizada' : 'Empresa creada', async () => {
-                                            const payload = {
-                                                id: tenantForm.id || undefined,
-                                                slug: tenantForm.slug || undefined,
-                                                name: tenantForm.name,
-                                                plan: tenantForm.plan,
-                                                active: tenantForm.active !== false,
-                                                logoUrl: tenantForm.logoUrl || null,
-                                                coverImageUrl: tenantForm.coverImageUrl || null,
-                                                metadata: safeJsonParse(tenantForm.metadataText || '{}', {})
-                                            };
 
-                                            if (selectedTenant?.id) {
-                                                await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(selectedTenant.id)}`, {
-                                                    method: 'PUT',
-                                                    body: payload
-                                                });
-                                                return;
-                                            }
-
-                                            const createdPayload = await requestJson('/api/admin/saas/tenants', {
-                                                method: 'POST',
-                                                body: payload
-                                            });
-                                            const createdId = String(createdPayload?.tenant?.id || '').trim();
-                                            if (createdId) {
-                                                setSelectedTenantId(createdId);
-                                                setSettingsTenantId(createdId);
-                                            }
-                                        })}
-                                    >
-                                        {selectedTenant?.id ? 'Guardar empresa' : 'Crear empresa'}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        disabled={busy}
-                                        onClick={() => {
-                                            setSelectedTenantId('');
-                                            setTenantForm(EMPTY_TENANT_FORM);
-                                        }}
-                                    >
-                                        Nueva empresa
-                                    </button>
-                                </div>
-                            </>
-                        ) : (
-                            <div className="saas-admin-alert" style={{ marginBottom: '10px' }}>
-                                Solo superadmin puede crear o eliminar empresas. Vista en modo lectura.
-                            </div>
-                        )}
-
-                        <div className="saas-admin-list">
-                            {tenantOptions.map((tenant) => {
-                                const usage = aiUsageByTenant.get(tenant.id) || 0;
-                                const activeUsers = (overview.metrics || []).find((metric) => metric.tenantId === tenant.id)?.activeUsers || 0;
-                                return (
-                                    <div key={tenant.id} className={`saas-admin-list-item ${selectedTenantId === tenant.id ? 'active' : ''}`.trim()} onClick={() => { setSelectedTenantId(tenant.id); setSettingsTenantId(tenant.id); }}>
-                                        <div>
-                                            {tenant.logoUrl && <img src={tenant.logoUrl} alt={tenant.name || tenant.id} className="saas-admin-inline-avatar" />}
-                                            <strong>{tenant.name || tenant.id}</strong>
-                                            <small>{tenant.id} | plan {tenant.plan}</small>
-                                            <small>Usuarios: {activeUsers} / {tenant?.limits?.maxUsers || '-'}</small>
-                                            <small>IA mes: {usage} / {tenant?.limits?.maxMonthlyAiRequests || '-'}</small>
-                                            <small>Actualizado: {formatDateTimeLabel(tenant.updatedAt)}</small>
-                                        </div>
-                                        <div className="saas-admin-list-actions" onClick={(event) => event.stopPropagation()}>
-                                            {canManageTenants ? (
-                                                <>
+                                {(selectedTenant || tenantPanelMode === 'create') && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>
+                                                    {tenantPanelMode === 'create'
+                                                        ? 'Nueva empresa'
+                                                        : tenantPanelMode === 'edit'
+                                                            ? `Editando: ${toTenantDisplayName(selectedTenant || {})}`
+                                                            : toTenantDisplayName(selectedTenant || {})}
+                                                </h3>
+                                                <small>
+                                                    {tenantPanelMode === 'view'
+                                                        ? 'Campos bloqueados. Usa Editar para modificar.'
+                                                        : 'ID fijo despues de crear. Ajusta solo campos permitidos.'}
+                                                </small>
+                                            </div>
+                                            {tenantPanelMode === 'view' && selectedTenant && canManageTenants && (
+                                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                    <button type="button" disabled={busy} onClick={openTenantEdit}>Editar</button>
                                                     <button
                                                         type="button"
                                                         disabled={busy}
-                                                        onClick={() => runAction('Plan actualizado', async () => {
-                                                            const nextPlan = tenant.plan === 'starter' ? 'pro' : tenant.plan === 'pro' ? 'enterprise' : 'starter';
-                                                            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(tenant.id)}`, {
+                                                        onClick={() => runAction('Estado de empresa actualizado', async () => {
+                                                            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(selectedTenant.id)}`, {
                                                                 method: 'PUT',
                                                                 body: {
-                                                                    plan: nextPlan,
-                                                                    active: tenant.active !== false,
-                                                                    logoUrl: tenant.logoUrl || null,
-                                                                    coverImageUrl: tenant.coverImageUrl || null,
-                                                                    metadata: tenant.metadata || {}
+                                                                    slug: selectedTenant.slug || undefined,
+                                                                    name: selectedTenant.name,
+                                                                    plan: selectedTenant.plan,
+                                                                    active: selectedTenant.active === false,
+                                                                    logoUrl: selectedTenant.logoUrl || null,
+                                                                    coverImageUrl: selectedTenant.coverImageUrl || null,
+                                                                    metadata: selectedTenant.metadata || {}
                                                                 }
                                                             });
                                                         })}
                                                     >
-                                                        Cambiar plan
+                                                        {selectedTenant.active === false ? 'Activar' : 'Desactivar'}
                                                     </button>
-                                                    {tenant.id !== 'default' && (
-                                                        <button
-                                                            type="button"
-                                                            disabled={busy}
-                                                            onClick={() => runAction('Empresa eliminada', async () => {
-                                                                await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(tenant.id)}`, {
-                                                                    method: 'DELETE'
-                                                                });
-                                                                if (settingsTenantId === tenant.id) setSettingsTenantId('');
-                                                                if (selectedTenantId === tenant.id) setSelectedTenantId('');
-                                                            })}
-                                                        >
-                                                            Eliminar
-                                                        </button>
-                                                    )}
-                                                </>
-                                            ) : (
-                                                <small style={{ color: '#8ea3ad' }}>Solo lectura</small>
+                                                </div>
                                             )}
                                         </div>
-                                    </div>
-                                );
-                            })}
+
+                                        {tenantPanelMode === 'view' && selectedTenant && (
+                                            <>
+                                                <div className="saas-admin-hero">
+                                                    <div className="saas-admin-hero-media">
+                                                        {(selectedTenant.coverImageUrl || selectedTenant.logoUrl)
+                                                            ? <img src={selectedTenant.coverImageUrl || selectedTenant.logoUrl} alt={toTenantDisplayName(selectedTenant)} className="saas-admin-hero-image" />
+                                                            : <div className="saas-admin-hero-placeholder">{buildInitials(toTenantDisplayName(selectedTenant || {}))}</div>}
+                                                    </div>
+                                                    <div className="saas-admin-hero-content">
+                                                        <h4>{toTenantDisplayName(selectedTenant)}</h4>
+                                                        <p>{selectedTenant.slug ? `slug: ${selectedTenant.slug}` : 'Sin slug configurado'}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="saas-admin-detail-grid">
+                                                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedTenant?.id || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Slug</span><strong>{selectedTenant.slug || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Plan</span><strong>{selectedTenant.plan || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedTenant.active === false ? 'Inactiva' : 'Activa'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(selectedTenant.updatedAt)}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Logo</span><strong>{selectedTenant.logoUrl ? 'Configurado' : 'Sin logo'}</strong></div>
+                                                </div>
+                                                {(selectedTenant.logoUrl || selectedTenant.coverImageUrl) && (
+                                                    <div className="saas-admin-preview-strip">
+                                                        {selectedTenant.logoUrl && <img src={selectedTenant.logoUrl} alt="Logo empresa" className="saas-admin-preview-thumb" />}
+                                                        {selectedTenant.coverImageUrl && <img src={selectedTenant.coverImageUrl} alt="Portada empresa" className="saas-admin-preview-thumb saas-admin-preview-thumb--wide" />}
+                                                    </div>
+                                                )}
+                                                <div className="saas-admin-related-block">
+                                                    <h4>Usuarios de esta empresa</h4>
+                                                    <div className="saas-admin-related-list">
+                                                        {((usersByTenant.get(selectedTenant.id) || []).length === 0) && (
+                                                            <div className="saas-admin-empty-inline">Sin usuarios vinculados.</div>
+                                                        )}
+                                                        {(usersByTenant.get(selectedTenant.id) || []).map((user) => (
+                                                            <button key={`${selectedTenant.id}_${user.id}`} type="button" className="saas-admin-related-row" onClick={() => openUserFromTenant(user.id)}>
+                                                                <span>{toUserDisplayName(user)}</span>
+                                                                <small>{user.membershipRole || 'seller'}{user.membershipActive ? '' : ' (inactivo)'}</small>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div className="saas-admin-detail-metadata">
+                                                    <h4>Metadata</h4>
+                                                    <pre>{prettyJson(selectedTenant.metadata || {})}</pre>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        {tenantPanelMode !== 'view' && canManageTenants && (
+                                            <>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={tenantForm.slug}
+                                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, slug: event.target.value }))}
+                                                        placeholder="slug"
+                                                        disabled={busy}
+                                                    />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={tenantForm.name}
+                                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, name: event.target.value }))}
+                                                        placeholder="Nombre"
+                                                        disabled={busy}
+                                                    />
+                                                    <select value={tenantForm.plan} onChange={(event) => setTenantForm((prev) => ({ ...prev, plan: event.target.value }))} disabled={busy}>
+                                                        {PLAN_OPTIONS.map((plan) => (
+                                                            <option key={plan} value={plan}>{plan}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <ImageDropInput
+                                                        label="Reemplazar logo"
+                                                        disabled={busy}
+                                                        onFile={(file) => handleFormImageUpload({
+                                                            file,
+                                                            scope: 'tenant_logo',
+                                                            tenantId: selectedTenant?.id || settingsTenantId || activeTenantId || 'default',
+                                                            onUploaded: (url) => setTenantForm((prev) => ({ ...prev, logoUrl: url }))
+                                                        })}
+                                                    />
+                                                    <ImageDropInput
+                                                        label="Reemplazar portada"
+                                                        disabled={busy}
+                                                        onFile={(file) => handleFormImageUpload({
+                                                            file,
+                                                            scope: 'tenant_cover',
+                                                            tenantId: selectedTenant?.id || settingsTenantId || activeTenantId || 'default',
+                                                            onUploaded: (url) => setTenantForm((prev) => ({ ...prev, coverImageUrl: url }))
+                                                        })}
+                                                    />
+                                                </div>
+                                                {(tenantForm.logoUrl || tenantForm.coverImageUrl) && (
+                                                    <div className="saas-admin-preview-strip">
+                                                        {tenantForm.logoUrl && <img src={tenantForm.logoUrl} alt="Logo empresa" className="saas-admin-preview-thumb" />}
+                                                        {tenantForm.coverImageUrl && <img src={tenantForm.coverImageUrl} alt="Portada empresa" className="saas-admin-preview-thumb saas-admin-preview-thumb--wide" />}
+                                                    </div>
+                                                )}
+                                                <div className="saas-admin-form-row">
+                                                    <label className="saas-admin-module-toggle">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={tenantForm.active !== false}
+                                                            onChange={(event) => setTenantForm((prev) => ({ ...prev, active: event.target.checked }))}
+                                                            disabled={busy}
+                                                        />
+                                                        <span>Empresa activa</span>
+                                                    </label>
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <textarea
+                                                        value={tenantForm.metadataText}
+                                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, metadataText: event.target.value }))}
+                                                        placeholder="Metadata JSON"
+                                                        rows={5}
+                                                        style={{ width: '100%' }}
+                                                        disabled={busy}
+                                                    />
+                                                </div>
+                                                <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                                    <button
+                                                        type="button"
+                                                        disabled={busy || !tenantForm.name.trim()}
+                                                        onClick={() => runAction(tenantPanelMode === 'create' ? 'Empresa creada' : 'Empresa actualizada', async () => {
+                                                            const payload = {
+                                                                slug: tenantForm.slug || undefined,
+                                                                name: tenantForm.name,
+                                                                plan: tenantForm.plan,
+                                                                active: tenantForm.active !== false,
+                                                                logoUrl: tenantForm.logoUrl || null,
+                                                                coverImageUrl: tenantForm.coverImageUrl || null,
+                                                                metadata: safeJsonParse(tenantForm.metadataText || '{}', {})
+                                                            };
+
+                                                            if (tenantPanelMode === 'create' || !selectedTenant?.id) {
+                                                                const createdPayload = await requestJson('/api/admin/saas/tenants', {
+                                                                    method: 'POST',
+                                                                    body: payload
+                                                                });
+                                                                const createdId = String(createdPayload?.tenant?.id || '').trim();
+                                                                if (createdId) {
+                                                                    setSelectedTenantId(createdId);
+                                                                    setSettingsTenantId(createdId);
+                                                                }
+                                                                setTenantPanelMode('view');
+                                                                return;
+                                                            }
+
+                                                            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(selectedTenant.id)}`, {
+                                                                method: 'PUT',
+                                                                body: payload
+                                                            });
+                                                            setTenantPanelMode('view');
+                                                        })}
+                                                    >
+                                                        {tenantPanelMode === 'create' ? 'Guardar empresa' : 'Actualizar empresa'}
+                                                    </button>
+                                                    <button type="button" disabled={busy} onClick={cancelTenantEdit}>Cancelar</button>
+                                                </div>
+                                            </>
+                                        )}
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </section>
                     )}
-
                     {selectedSectionId === 'saas_usuarios' && (
-                    <section id="saas_usuarios" className="saas-admin-card">
-                        <h3>Usuarios ({overview.users.length})</h3>
-                        <small style={{ color: '#8ea7b8' }}>Selecciona un usuario para editar perfil, avatar y membresias sin perder el menu izquierdo.</small>
-                        <div className="saas-admin-form-row">
-                            <input
-                                value={userForm.id}
-                                onChange={(event) => setUserForm((prev) => ({ ...prev, id: event.target.value }))}
-                                placeholder="user_id"
-                            />
-                            <input
-                                value={userForm.email}
-                                onChange={(event) => setUserForm((prev) => ({ ...prev, email: event.target.value }))}
-                                placeholder="email"
-                            />
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <input
-                                value={userForm.name}
-                                onChange={(event) => setUserForm((prev) => ({ ...prev, name: event.target.value }))}
-                                placeholder="Nombre"
-                            />
-                            <input
-                                value={userForm.password}
-                                onChange={(event) => setUserForm((prev) => ({ ...prev, password: event.target.value }))}
-                                type="password"
-                                placeholder="password"
-                            />
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <select value={userForm.tenantId} onChange={(event) => setUserForm((prev) => ({ ...prev, tenantId: event.target.value }))}>
-                                <option value="">Tenant inicial</option>
-                                {tenantOptions.map((tenant) => (
-                                    <option key={tenant.id} value={tenant.id}>{tenant.name || tenant.id}</option>
-                                ))}
-                            </select>
-                            <select value={userForm.role} onChange={(event) => setUserForm((prev) => ({ ...prev, role: event.target.value }))}>
-                                {roleOptions.map((role) => (
-                                    <option key={role} value={role}>{role}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <input
-                                value={userForm.avatarUrl}
-                                onChange={(event) => setUserForm((prev) => ({ ...prev, avatarUrl: event.target.value }))}
-                                placeholder="Avatar URL"
-                            />
-                            <label className="saas-admin-module-toggle">
-                                <input
-                                    type="checkbox"
-                                    checked={userForm.active !== false}
-                                    onChange={(event) => setUserForm((prev) => ({ ...prev, active: event.target.checked }))}
-                                />
-                                <span>Usuario activo</span>
-                            </label>
-                        </div>
-                        {userForm.avatarUrl && (
-                            <div className="saas-admin-preview-strip">
-                                <img src={userForm.avatarUrl} alt="Avatar usuario" className="saas-admin-preview-thumb" />
-                            </div>
-                        )}
-                        <div className="saas-admin-form-row">
-                            <textarea
-                                value={userForm.metadataText}
-                                onChange={(event) => setUserForm((prev) => ({ ...prev, metadataText: event.target.value }))}
-                                placeholder="Metadata JSON"
-                                rows={4}
-                                style={{ width: '100%' }}
-                            />
-                        </div>
-                                <div className="saas-admin-form-row saas-admin-form-row--actions">
-                            <button
-                                type="button"
-                                disabled={busy || !userForm.email || !userForm.tenantId || (!selectedUser?.id && !userForm.password)}
-                                onClick={() => runAction(selectedUser?.id ? 'Usuario actualizado' : 'Usuario creado', async () => {
-                                    const payload = {
-                                        id: userForm.id || undefined,
-                                        email: userForm.email,
-                                        name: userForm.name,
-                                        active: userForm.active !== false,
-                                        avatarUrl: userForm.avatarUrl || null,
-                                        metadata: safeJsonParse(userForm.metadataText || '{}', {}),
-                                        memberships: [{ tenantId: userForm.tenantId, role: userForm.role, active: true }]
-                                    };
-                                    if (userForm.password) {
-                                        payload.password = userForm.password;
-                                    }
+                    <section id="saas_usuarios" className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <div>
+                                        <h3>Usuarios ({overview.users.length})</h3>
+                                        <small>Listado minimo. El detalle se administra en el panel derecho.</small>
+                                    </div>
+                                    {canManageUsers && (
+                                        <button type="button" disabled={busy} onClick={openUserCreate}>Agregar usuario</button>
+                                    )}
+                                </div>
+                                <div className="saas-admin-list saas-admin-list--compact">
+                                    {(overview.users || []).length === 0 && (
+                                        <div className="saas-admin-empty-state">
+                                            <p>No hay usuarios registrados.</p>
+                                            {canManageUsers && (
+                                                <button type="button" disabled={busy} onClick={openUserCreate}>Crear primer usuario</button>
+                                            )}
+                                        </div>
+                                    )}
+                                    {(overview.users || []).map((user) => {
+                                        const userMemberships = sanitizeMemberships(user?.memberships || []);
+                                        return (
+                                            <button
+                                                key={user.id}
+                                                type="button"
+                                                className={`saas-admin-list-item saas-admin-list-item--button ${selectedUserId === user.id && userPanelMode !== 'create' ? 'active' : ''}`.trim()}
+                                                onClick={() => openUserView(user.id)}
+                                            >
+                                                <strong>{toUserDisplayName(user)}</strong>
+                                                <small>{user.email || '-'} | {user.active === false ? 'inactivo' : 'activo'}</small>
+                                                <small>Membresias: {userMemberships.length}</small>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </aside>
 
-                                    if (selectedUser?.id) {
-                                        await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, {
-                                            method: 'PUT',
-                                            body: payload
-                                        });
-                                        return;
-                                    }
+                            <div className="saas-admin-detail-pane">
+                                {!selectedUser && userPanelMode !== 'create' && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Selecciona un usuario</h4>
+                                        <p>El detalle se mostrara bloqueado aqui. Editar se activa solo por boton.</p>
+                                    </div>
+                                )}
 
-                                    const createdPayload = await requestJson('/api/admin/saas/users', {
-                                        method: 'POST',
-                                        body: payload
-                                    });
-                                    const createdId = String(createdPayload?.user?.id || '').trim();
-                                    if (createdId) setSelectedUserId(createdId);
-                                })}
-                            >
-                                {selectedUser?.id ? 'Guardar usuario' : 'Crear usuario'}
-                            </button>
-                            <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => {
-                                    setSelectedUserId('');
-                                    setUserForm(EMPTY_USER_FORM);
-                                    setEditingMembershipUserId('');
-                                    setMembershipDraft([]);
-                                }}
-                            >
-                                Nuevo usuario
-                            </button>
-                        </div>
-
-                        <div className="saas-admin-list">
-                            {(overview.users || []).map((user) => {
-                                const userMemberships = sanitizeMemberships(user?.memberships || []);
-                                const isEditing = editingMembershipUserId === user.id;
-                                return (
-                                    <div key={user.id} className={`saas-admin-list-item saas-admin-list-item--stacked ${selectedUserId === user.id ? 'active' : ''}`.trim()} onClick={() => setSelectedUserId(user.id)}>
-                                        <div>
-                                            {user.avatarUrl && <img src={user.avatarUrl} alt={user.name || user.email} className="saas-admin-inline-avatar" />}
-                                            <strong>{user.name || user.email}</strong>
-                                            <small>{user.email}</small>
-                                            <small>Actualizado: {formatDateTimeLabel(user.updatedAt)}</small>
-                                            <small>
-                                                {userMemberships.map((membership) => `${membership.tenantId}:${membership.role}${membership.active ? '' : '(off)'}`).join(' | ') || 'sin membresias'}
-                                            </small>
+                                {(selectedUser || userPanelMode === 'create') && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>
+                                                    {userPanelMode === 'create'
+                                                        ? 'Nuevo usuario'
+                                                        : userPanelMode === 'edit'
+                                                            ? `Editando: ${toUserDisplayName(selectedUser || {})}`
+                                                            : toUserDisplayName(selectedUser || {})}
+                                                </h3>
+                                                <small>
+                                                    {userPanelMode === 'view'
+                                                        ? 'Campos bloqueados. Usa Editar para modificar.'
+                                                        : 'ID y correo bloqueados durante edicion para mantener consistencia.'}
+                                                </small>
+                                            </div>
+                                            {userPanelMode === 'view' && selectedUser && canManageUsers && (
+                                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                    <button type="button" disabled={busy} onClick={openUserEdit}>Editar</button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={busy}
+                                                        onClick={() => runAction('Estado de usuario actualizado', async () => {
+                                                            await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, {
+                                                                method: 'PUT',
+                                                                body: {
+                                                                    active: selectedUser.active === false,
+                                                                    avatarUrl: selectedUser.avatarUrl || null,
+                                                                    metadata: selectedUser.metadata || {}
+                                                                }
+                                                            });
+                                                        })}
+                                                    >
+                                                        {selectedUser.active === false ? 'Activar' : 'Desactivar'}
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
 
-                                        <div className="saas-admin-list-actions saas-admin-list-actions--row" onClick={(event) => event.stopPropagation()}>
-                                            <button type="button" disabled={busy} onClick={() => openMembershipEditor(user)}>
-                                                {isEditing ? 'Cerrar membresias' : 'Membresias'}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                disabled={busy}
-                                                onClick={() => runAction('Usuario actualizado', async () => {
-                                                    await requestJson(`/api/admin/saas/users/${encodeURIComponent(user.id)}`, {
-                                                        method: 'PUT',
-                                                        body: {
-                                                            active: user.active === false,
-                                                            avatarUrl: user.avatarUrl || null,
-                                                            metadata: user.metadata || {}
-                                                        }
-                                                    });
-                                                })}
-                                            >
-                                                {user.active === false ? 'Activar' : 'Desactivar'}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                disabled={busy}
-                                                onClick={() => runAction('Usuario eliminado', async () => {
-                                                    await requestJson(`/api/admin/saas/users/${encodeURIComponent(user.id)}`, {
-                                                        method: 'DELETE'
-                                                    });
-                                                })}
-                                            >
-                                                Eliminar
-                                            </button>
-                                        </div>
+                                        {userPanelMode === 'view' && selectedUser && (
+                                            <>
+                                                <div className="saas-admin-hero">
+                                                    <div className="saas-admin-hero-media">
+                                                        {selectedUser.avatarUrl
+                                                            ? <img src={selectedUser.avatarUrl} alt={toUserDisplayName(selectedUser)} className="saas-admin-hero-image" />
+                                                            : <div className="saas-admin-hero-placeholder">{buildInitials(toUserDisplayName(selectedUser || {}))}</div>}
+                                                    </div>
+                                                    <div className="saas-admin-hero-content">
+                                                        <h4>{toUserDisplayName(selectedUser)}</h4>
+                                                        <p>{selectedUser.email || 'Sin correo'}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="saas-admin-detail-grid">
+                                                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedUser?.id || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Correo</span><strong>{selectedUser.email || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedUser.active === false ? 'Inactivo' : 'Activo'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(selectedUser.updatedAt)}</strong></div>
+                                                </div>
 
-                                        {isEditing && (
-                                            <div className="saas-admin-membership-editor">
-                                                {(membershipDraft || []).map((membership, index) => (
-                                                    <div key={`${user.id}_membership_${index}`} className="saas-admin-membership-row">
-                                                        <select
-                                                            value={membership.tenantId}
-                                                            onChange={(event) => updateMembershipDraft(index, { tenantId: event.target.value })}
+                                                {selectedUser.avatarUrl && (
+                                                    <div className="saas-admin-preview-strip">
+                                                        <img src={selectedUser.avatarUrl} alt="Avatar usuario" className="saas-admin-preview-thumb" />
+                                                    </div>
+                                                )}
+
+                                                <div className="saas-admin-related-block">
+                                                    <h4>Empresas vinculadas</h4>
+                                                    <div className="saas-admin-related-list">
+                                                        {sanitizeMemberships(selectedUser.memberships || []).length === 0 && (
+                                                            <div className="saas-admin-empty-inline">Sin membresias activas.</div>
+                                                        )}
+                                                        {sanitizeMemberships(selectedUser.memberships || []).map((membership, index) => {
+                                                            const tenantLabel = toTenantDisplayName(tenantOptions.find((tenant) => tenant.id === membership.tenantId) || {});
+                                                            return (
+                                                                <button
+                                                                    key={`${selectedUser.id}_membership_view_${index}`}
+                                                                    type="button"
+                                                                    className="saas-admin-related-row"
+                                                                    onClick={() => openTenantFromUserMembership(membership.tenantId)}
+                                                                >
+                                                                    <span>{tenantLabel}</span>
+                                                                    <small>{membership.role}{membership.active ? '' : ' (inactivo)'}</small>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+
+                                                <div className="saas-admin-detail-metadata">
+                                                    <h4>Metadata</h4>
+                                                    <pre>{prettyJson(selectedUser.metadata || {})}</pre>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        {userPanelMode !== 'view' && canManageUsers && (
+                                            <>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={userForm.email}
+                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, email: event.target.value }))}
+                                                        placeholder="email"
+                                                        disabled={userPanelMode !== 'create' || busy}
+                                                    />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={userForm.name}
+                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, name: event.target.value }))}
+                                                        placeholder="Nombre"
+                                                        disabled={busy}
+                                                    />
+                                                    <input
+                                                        value={userForm.password}
+                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, password: event.target.value }))}
+                                                        type="password"
+                                                        placeholder={userPanelMode === 'create' ? 'password inicial' : 'nueva password (opcional)'}
+                                                        disabled={busy}
+                                                    />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <label className="saas-admin-module-toggle">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={userForm.active !== false}
+                                                            onChange={(event) => setUserForm((prev) => ({ ...prev, active: event.target.checked }))}
                                                             disabled={busy}
-                                                        >
-                                                            <option value="">Tenant</option>
+                                                        />
+                                                        <span>Usuario activo</span>
+                                                    </label>
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <ImageDropInput
+                                                        label="Reemplazar avatar"
+                                                        disabled={busy}
+                                                        onFile={(file) => handleFormImageUpload({
+                                                            file,
+                                                            scope: 'user_avatar',
+                                                            tenantId: userForm.tenantId || settingsTenantId || selectedTenantId || activeTenantId || 'default',
+                                                            onUploaded: (url) => setUserForm((prev) => ({ ...prev, avatarUrl: url }))
+                                                        })}
+                                                    />
+                                                </div>
+
+                                                {userForm.avatarUrl && (
+                                                    <div className="saas-admin-preview-strip">
+                                                        <img src={userForm.avatarUrl} alt="Avatar usuario" className="saas-admin-preview-thumb" />
+                                                    </div>
+                                                )}
+
+                                                <div className="saas-admin-form-row">
+                                                    <textarea
+                                                        value={userForm.metadataText}
+                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, metadataText: event.target.value }))}
+                                                        placeholder="Metadata JSON"
+                                                        rows={5}
+                                                        style={{ width: '100%' }}
+                                                        disabled={busy}
+                                                    />
+                                                </div>
+
+                                                {userPanelMode === 'create' && (
+                                                    <div className="saas-admin-form-row">
+                                                        <select value={userForm.tenantId} onChange={(event) => setUserForm((prev) => ({ ...prev, tenantId: event.target.value }))} disabled={busy}>
+                                                            <option value="">Tenant inicial</option>
                                                             {tenantOptions.map((tenant) => (
-                                                                <option key={tenant.id} value={tenant.id}>{tenant.name || tenant.id}</option>
+                                                                <option key={tenant.id} value={tenant.id}>{toTenantDisplayName(tenant)}</option>
                                                             ))}
                                                         </select>
-                                                        <select
-                                                            value={membership.role}
-                                                            onChange={(event) => updateMembershipDraft(index, { role: event.target.value })}
-                                                            disabled={busy}
-                                                        >
+                                                        <select value={userForm.role} onChange={(event) => setUserForm((prev) => ({ ...prev, role: event.target.value }))} disabled={busy}>
                                                             {roleOptions.map((role) => (
                                                                 <option key={role} value={role}>{role}</option>
                                                             ))}
                                                         </select>
-                                                        <label className="saas-admin-membership-active">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={membership.active !== false}
-                                                                onChange={(event) => updateMembershipDraft(index, { active: event.target.checked })}
-                                                                disabled={busy}
-                                                            />
-                                                            Activo
-                                                        </label>
-                                                        <button type="button" disabled={busy} onClick={() => removeMembershipDraft(index)}>Quitar</button>
                                                     </div>
-                                                ))}
+                                                )}
 
-                                                <div className="saas-admin-membership-actions">
-                                                    <button type="button" disabled={busy} onClick={addMembershipDraft}>Agregar fila</button>
+                                                {userPanelMode === 'edit' && (
+                                                    <div className="saas-admin-membership-editor">
+                                                        <h4>Membresias</h4>
+                                                        {(membershipDraft || []).map((membership, index) => (
+                                                            <div key={`${selectedUser?.id || 'user'}_membership_${index}`} className="saas-admin-membership-row">
+                                                                <select
+                                                                    value={membership.tenantId}
+                                                                    onChange={(event) => updateMembershipDraft(index, { tenantId: event.target.value })}
+                                                                    disabled={busy}
+                                                                >
+                                                                    <option value="">Tenant</option>
+                                                                    {tenantOptions.map((tenant) => (
+                                                                        <option key={tenant.id} value={tenant.id}>{toTenantDisplayName(tenant)}</option>
+                                                                    ))}
+                                                                </select>
+                                                                <select
+                                                                    value={membership.role}
+                                                                    onChange={(event) => updateMembershipDraft(index, { role: event.target.value })}
+                                                                    disabled={busy}
+                                                                >
+                                                                    {roleOptions.map((role) => (
+                                                                        <option key={role} value={role}>{role}</option>
+                                                                    ))}
+                                                                </select>
+                                                                <label className="saas-admin-membership-active">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={membership.active !== false}
+                                                                        onChange={(event) => updateMembershipDraft(index, { active: event.target.checked })}
+                                                                        disabled={busy}
+                                                                    />
+                                                                    Activo
+                                                                </label>
+                                                                <button type="button" disabled={busy} onClick={() => removeMembershipDraft(index)}>Quitar</button>
+                                                            </div>
+                                                        ))}
+                                                        <div className="saas-admin-membership-actions">
+                                                            <button type="button" disabled={busy} onClick={addMembershipDraft}>Agregar fila</button>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <div className="saas-admin-form-row saas-admin-form-row--actions">
                                                     <button
                                                         type="button"
-                                                        disabled={busy || sanitizeMemberships(membershipDraft).length === 0}
-                                                        onClick={() => runAction('Membresias actualizadas', async () => {
-                                                            await requestJson(`/api/admin/saas/users/${encodeURIComponent(user.id)}/memberships`, {
+                                                        disabled={
+                                                            busy
+                                                            || !userForm.email.trim()
+                                                            || (userPanelMode === 'create' && !userForm.password)
+                                                            || (
+                                                                userPanelMode === 'create'
+                                                                    ? sanitizeMemberships([{ tenantId: userForm.tenantId, role: userForm.role, active: true }]).length === 0
+                                                                    : sanitizeMemberships(membershipDraft).length === 0
+                                                            )
+                                                        }
+                                                        onClick={() => runAction(userPanelMode === 'create' ? 'Usuario creado' : 'Usuario actualizado', async () => {
+                                                            const membershipsPayload = userPanelMode === 'create'
+                                                                ? sanitizeMemberships([{ tenantId: userForm.tenantId, role: userForm.role, active: true }])
+                                                                : sanitizeMemberships(membershipDraft);
+
+                                                            if (membershipsPayload.length === 0) {
+                                                                throw new Error('Debes asignar al menos una empresa/membresia.');
+                                                            }
+
+                                                            const payload = {
+                                                                email: userForm.email,
+                                                                name: userForm.name,
+                                                                active: userForm.active !== false,
+                                                                avatarUrl: userForm.avatarUrl || null,
+                                                                metadata: safeJsonParse(userForm.metadataText || '{}', {}),
+                                                                memberships: membershipsPayload
+                                                            };
+
+                                                            if (userForm.password) {
+                                                                payload.password = userForm.password;
+                                                            }
+
+                                                            if (userPanelMode === 'create' || !selectedUser?.id) {
+                                                                const createdPayload = await requestJson('/api/admin/saas/users', {
+                                                                    method: 'POST',
+                                                                    body: payload
+                                                                });
+                                                                const createdId = String(createdPayload?.user?.id || '').trim();
+                                                                if (createdId) {
+                                                                    setSelectedUserId(createdId);
+                                                                }
+                                                                setUserPanelMode('view');
+                                                                setMembershipDraft([]);
+                                                                return;
+                                                            }
+
+                                                            await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, {
                                                                 method: 'PUT',
-                                                                body: { memberships: sanitizeMemberships(membershipDraft) }
+                                                                body: payload
                                                             });
-                                                            setEditingMembershipUserId('');
+                                                            setUserPanelMode('view');
                                                             setMembershipDraft([]);
                                                         })}
                                                     >
-                                                        Guardar membresias
+                                                        {userPanelMode === 'create' ? 'Guardar usuario' : 'Actualizar usuario'}
                                                     </button>
+                                                    <button type="button" disabled={busy} onClick={cancelUserEdit}>Cancelar</button>
+                                                </div>
+                                            </>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                    )}
+                    {(isGeneralConfigSection || isModulesSection) && (
+                    <section id={isModulesSection ? 'saas_modulos' : 'saas_config'} className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <h3>{isModulesSection ? 'Modulos' : 'Configuracion general'}</h3>
+                                    <small>
+                                        {settingsTenantId
+                                            ? `Empresa: ${toTenantDisplayName(tenantOptions.find((tenant) => tenant.id === settingsTenantId) || {})}`
+                                            : 'Selecciona una empresa para administrar su panel.'}
+                                    </small>
+                                </div>
+
+                                <div className="saas-admin-form-row">
+                                    <select
+                                        value={settingsTenantId}
+                                        onChange={(event) => {
+                                            const nextTenantId = String(event.target.value || '').trim();
+                                            setSettingsTenantId(nextTenantId);
+                                        }}
+                                        disabled={busy}
+                                    >
+                                        <option value="">Seleccionar empresa</option>
+                                        {tenantOptions.map((tenant) => (
+                                            <option key={tenant.id} value={tenant.id}>{toTenantDisplayName(tenant)}</option>
+                                        ))}
+                                    </select>
+                                    <button
+                                        type="button"
+                                        disabled={busy || loadingSettings}
+                                        onClick={() => runAction('Panel recargado', refreshOverview)}
+                                    >
+                                        Recargar
+                                    </button>
+                                </div>
+
+                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                    {isModulesSection && (
+                                        <button type="button" disabled={busy || !settingsTenantId} onClick={openConfigModuleCreate}>
+                                            Nuevo modulo
+                                        </button>
+                                    )}
+                                    {isGeneralConfigSection && (
+                                        <button type="button" disabled={busy || !settingsTenantId} onClick={openConfigSettingsView}>
+                                            Abrir configuracion general
+                                        </button>
+                                    )}
+                                    <button type="button" disabled={busy} onClick={clearConfigSelection}>
+                                        Deseleccionar
+                                    </button>
+                                </div>
+
+                                <div className="saas-admin-list saas-admin-list--compact">
+                                    {!settingsTenantId && (
+                                        <div className="saas-admin-empty-state">
+                                            <h4>Sin empresa seleccionada</h4>
+                                            <p>Elige una empresa para ver su configuracion.</p>
+                                        </div>
+                                    )}
+
+                                    {settingsTenantId && isGeneralConfigSection && (
+                                        <button
+                                            type="button"
+                                            className={`saas-admin-list-item saas-admin-list-item--button ${selectedConfigKey === 'tenant_settings' ? 'active' : ''}`.trim()}
+                                            onClick={openConfigSettingsView}
+                                        >
+                                            <strong>Perfil de empresa</strong>
+                                            <small>Catalogo: {tenantSettings.catalogMode}</small>
+                                            <small>Modulos habilitados: {MODULE_KEYS.filter((entry) => tenantSettings?.enabledModules?.[entry.key] !== false).length}/{MODULE_KEYS.length}</small>
+                                        </button>
+                                    )}
+
+                                    {settingsTenantId && isModulesSection && waModules.length === 0 && (
+                                        <div className="saas-admin-empty-inline">Sin modulos WhatsApp configurados.</div>
+                                    )}
+
+                                    {settingsTenantId && isModulesSection && waModules.map((moduleItem) => (
+                                        <button
+                                            key={moduleItem.moduleId}
+                                            type="button"
+                                            className={`saas-admin-list-item saas-admin-list-item--button ${selectedConfigKey === `wa_module:${moduleItem.moduleId}` ? 'active' : ''}`.trim()}
+                                            onClick={() => openConfigModuleView(moduleItem.moduleId)}
+                                        >
+                                            <strong>{moduleItem.name || 'Modulo sin nombre'}</strong>
+                                            <small>{moduleItem.transportMode === 'cloud' ? 'Cloud API' : 'Web.js'} | {moduleItem.isActive ? 'activo' : 'inactivo'}{moduleItem.isSelected ? ' | en uso' : ''}</small>
+                                            <small>{moduleItem.phoneNumber ? `Numero: ${moduleItem.phoneNumber}` : 'Numero sin configurar'}</small>
+                                        </button>
+                                    ))}
+                                </div>
+                            </aside>
+
+                            <div className="saas-admin-detail-pane">
+                                {!settingsTenantId && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>{isModulesSection ? 'Modulos por empresa' : 'Configuracion por empresa'}</h4>
+                                        <p>Selecciona una empresa en el panel izquierdo para ver el detalle.</p>
+                                    </div>
+                                )}
+
+                                {settingsTenantId && !selectedConfigKey && (isGeneralConfigSection || (isModulesSection && waModulePanelMode !== 'create')) && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Sin elemento seleccionado</h4>
+                                        <p>{isModulesSection ? 'Selecciona un modulo WhatsApp para ver su detalle.' : 'Selecciona el perfil de empresa para ver su detalle.'}</p>
+                                    </div>
+                                )}
+
+                                {settingsTenantId && isGeneralConfigSection && selectedConfigKey === 'tenant_settings' && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>Perfil de empresa</h3>
+                                                <small>{tenantSettingsPanelMode === 'edit' ? 'Edicion activa' : 'Vista de solo lectura'}</small>
+                                            </div>
+                                            <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                {false && (
+                                                    <button type="button" disabled={busy || loadingSettings} onClick={openConfigSettingsEdit}>
+                                                        Editar
+                                                    </button>
+                                                )}
+                                                {false && (
+                                                    <>
+                                                        <button
+                                                            type="button"
+                                                            disabled={busy || loadingSettings}
+                                                            onClick={() => runAction('Configuracion de tenant guardada', async () => {
+                                                                await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/settings`, {
+                                                                    method: 'PUT',
+                                                                    body: {
+                                                                        catalogMode: tenantSettings.catalogMode,
+                                                                        enabledModules: tenantSettings.enabledModules
+                                                                    }
+                                                                });
+                                                                setTenantSettingsPanelMode('view');
+                                                            })}
+                                                        >
+                                                            Guardar
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            disabled={busy || loadingSettings}
+                                                            onClick={async () => {
+                                                                try {
+                                                                    setBusy(true);
+                                                                    await loadTenantSettings(settingsTenantId);
+                                                                    setTenantSettingsPanelMode('view');
+                                                                } catch (err) {
+                                                                    setError(String(err?.message || err || 'No se pudo recargar la configuracion.'));
+                                                                } finally {
+                                                                    setBusy(false);
+                                                                }
+                                                            }}
+                                                        >
+                                                            Cancelar
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {tenantSettingsPanelMode === 'view' && (
+                                            <>
+                                                <div className="saas-admin-detail-grid">
+                                                    <div className="saas-admin-detail-field"><span>Catalogo</span><strong>{tenantSettings.catalogMode}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Modulos habilitados</span><strong>{MODULE_KEYS.filter((entry) => tenantSettings?.enabledModules?.[entry.key] !== false).length}</strong></div>
+                                                </div>
+                                                <div className="saas-admin-related-block">
+                                                    <h4>Estado funcional</h4>
+                                                    <div className="saas-admin-related-list">
+                                                        {MODULE_KEYS.map((entry) => (
+                                                            <div key={`cfg_enabled_${entry.key}`} className="saas-admin-related-row" role="status">
+                                                                <span>{entry.label}</span>
+                                                                <small>{tenantSettings?.enabledModules?.[entry.key] !== false ? 'Habilitado' : 'Deshabilitado'}</small>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        {false && (
+                                                    <>
+                                                <div className="saas-admin-form-row">
+                                                    <select
+                                                        value={tenantSettings.catalogMode}
+                                                        onChange={(event) => setTenantSettings((prev) => ({ ...prev, catalogMode: event.target.value }))}
+                                                        disabled={!settingsTenantId || loadingSettings || busy}
+                                                    >
+                                                        {CATALOG_MODE_OPTIONS.map((mode) => (
+                                                            <option key={mode} value={mode}>{mode}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div className="saas-admin-modules">
+                                                    {MODULE_KEYS.map((moduleEntry) => (
+                                                        <label key={moduleEntry.key} className="saas-admin-module-toggle">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={tenantSettings?.enabledModules?.[moduleEntry.key] !== false}
+                                                                disabled={!settingsTenantId || loadingSettings || busy}
+                                                                onChange={(event) => setTenantSettings((prev) => ({
+                                                                    ...prev,
+                                                                    enabledModules: {
+                                                                        ...(prev?.enabledModules || {}),
+                                                                        [moduleEntry.key]: event.target.checked
+                                                                    }
+                                                                }))}
+                                                            />
+                                                            <span>{moduleEntry.label}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </>
+                                        )}
+                                    </>
+                                )}
+
+                                {settingsTenantId && isModulesSection && (waModulePanelMode === 'create' || selectedConfigModule) && (() => {
+                                    const moduleInDetail = waModulePanelMode === 'create' ? null : selectedConfigModule;
+                                    const isModuleEditing = waModulePanelMode === 'edit' || waModulePanelMode === 'create';
+                                    const assignedLabels = isModuleEditing
+                                        ? assignedModuleUsers.map((user) => toUserDisplayName(user))
+                                        : (moduleInDetail?.assignedUserIds || []).map((userId) => {
+                                            const match = usersForSettingsTenant.find((user) => String(user?.id || '').trim() === String(userId || '').trim());
+                                            return match ? toUserDisplayName(match) : 'Usuario no disponible';
+                                        });
+                                    const moduleCloudConfig = moduleInDetail?.cloudConfig && typeof moduleInDetail.cloudConfig === 'object'
+                                        ? moduleInDetail.cloudConfig
+                                        : {};
+
+                                    return (
+                                        <>
+                                            <div className="saas-admin-pane-header">
+                                                <div>
+                                                    <h3>
+                                                        {waModulePanelMode === 'create'
+                                                            ? 'Nuevo modulo WhatsApp'
+                                                            : isModuleEditing
+                                                                ? `Editando modulo: ${moduleInDetail?.name || 'Sin nombre'}`
+                                                                : moduleInDetail?.name || 'Detalle modulo'}
+                                                    </h3>
+                                                    <small>{isModuleEditing ? 'Edicion activa' : 'Vista de solo lectura'}</small>
+                                                </div>
+                                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                    {!isModuleEditing && moduleInDetail && (
+                                                        <>
+                                                            <button
+                                                                type="button"
+                                                                disabled={busy || !moduleInDetail.isActive}
+                                                                onClick={() => handleOpenOperation(moduleInDetail.moduleId)}
+                                                            >
+                                                                Ir a operacion
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                disabled={busy || moduleInDetail.isSelected}
+                                                                onClick={() => runAction('Modulo WA seleccionado', async () => {
+                                                                    await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/wa-modules/${encodeURIComponent(moduleInDetail.moduleId)}/select`, {
+                                                                        method: 'POST'
+                                                                    });
+                                                                })}
+                                                            >
+                                                                {moduleInDetail.isSelected ? 'En uso' : 'Seleccionar'}
+                                                            </button>
+                                                            <button type="button" disabled={busy} onClick={openConfigModuleEdit}>Editar</button>
+                                                            <button
+                                                                type="button"
+                                                                disabled={busy}
+                                                                onClick={() => runAction('Estado de modulo actualizado', async () => {
+                                                                    await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/wa-modules/${encodeURIComponent(moduleInDetail.moduleId)}`, {
+                                                                        method: 'PUT',
+                                                                        body: {
+                                                                            isActive: moduleInDetail.isActive === false,
+                                                                            imageUrl: moduleInDetail.imageUrl || null,
+                                                                            metadata: moduleInDetail.metadata || {}
+                                                                        }
+                                                                    });
+                                                                })}
+                                                            >
+                                                                {moduleInDetail.isActive ? 'Desactivar' : 'Activar'}
+                                                            </button>
+                                                        </>
+                                                    )}
                                                 </div>
                                             </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
+
+                                            {!isModuleEditing && moduleInDetail && (
+                                                <>
+                                                    <div className="saas-admin-hero">
+                                                        <div className="saas-admin-hero-media">
+                                                            {moduleInDetail.imageUrl
+                                                                ? <img src={moduleInDetail.imageUrl} alt={moduleInDetail.name || 'Modulo'} className="saas-admin-hero-image" />
+                                                                : <div className="saas-admin-hero-placeholder">{buildInitials(moduleInDetail.name || moduleInDetail.moduleId)}</div>}
+                                                        </div>
+                                                        <div className="saas-admin-hero-content">
+                                                            <h4>{moduleInDetail.name || 'Modulo sin nombre'}</h4>
+                                                            <p>{moduleInDetail.phoneNumber || 'Sin numero vinculado'}</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="saas-admin-detail-grid">
+                                                        <div className="saas-admin-detail-field"><span>Codigo</span><strong>{moduleInDetail?.moduleId || '-'}</strong></div>
+                                                        <div className="saas-admin-detail-field"><span>Transporte</span><strong>{moduleInDetail.transportMode === 'cloud' ? 'Cloud API' : 'Web.js'}</strong></div>
+                                                        <div className="saas-admin-detail-field"><span>Telefono</span><strong>{moduleInDetail.phoneNumber || 'Sin numero'}</strong></div>
+                                                        <div className="saas-admin-detail-field"><span>Estado</span><strong>{moduleInDetail.isActive ? 'Activo' : 'Inactivo'}</strong></div>
+                                                        <div className="saas-admin-detail-field"><span>Usuarios asignados</span><strong>{assignedLabels.length}</strong></div>
+                                                        <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(moduleInDetail.updatedAt)}</strong></div>
+                                                    </div>
+
+                                                    {moduleInDetail.imageUrl && (
+                                                        <div className="saas-admin-preview-strip">
+                                                            <img src={moduleInDetail.imageUrl} alt={moduleInDetail.name || 'Modulo'} className="saas-admin-preview-thumb" />
+                                                        </div>
+                                                    )}
+
+                                                    <div className="saas-admin-related-block">
+                                                        <h4>Usuarios del modulo</h4>
+                                                        <div className="saas-admin-related-list">
+                                                            {assignedLabels.length === 0 && <div className="saas-admin-empty-inline">Sin usuarios asignados.</div>}
+                                                            {assignedLabels.map((label, index) => (
+                                                                <div key={`assigned_label_${index}`} className="saas-admin-related-row" role="status">
+                                                                    <span>{label}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="saas-admin-related-block">
+                                                        <h4>Configuracion Meta Cloud</h4>
+                                                        <div className="saas-admin-detail-grid">
+                                                            <div className="saas-admin-detail-field"><span>META_APP_ID</span><strong>{moduleCloudConfig.appId || '-'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_WABA_ID</span><strong>{moduleCloudConfig.wabaId || '-'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_WABA_PHONE_NUMBER_ID</span><strong>{moduleCloudConfig.phoneNumberId || '-'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_VERIFY_TOKEN</span><strong>{moduleCloudConfig.verifyToken || '-'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_GRAPH_VERSION</span><strong>{moduleCloudConfig.graphVersion || '-'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_DISPLAY_PHONE_NUMBER</span><strong>{moduleCloudConfig.displayPhoneNumber || '-'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_BUSINESS_NAME</span><strong>{moduleCloudConfig.businessName || '-'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_ENFORCE_SIGNATURE</span><strong>{moduleCloudConfig.enforceSignature === false ? 'false' : 'true'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_APP_SECRET</span><strong>{moduleCloudConfig.appSecretMasked || 'No configurado'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_SYSTEM_USER_TOKEN</span><strong>{moduleCloudConfig.systemUserTokenMasked || 'No configurado'}</strong></div>
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+
+                                            {isModuleEditing && (
+                                                <>
+                                                    <div className="saas-admin-form-row">
+                                                        <input
+                                                            value={waModuleForm.name}
+                                                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, name: event.target.value }))}
+                                                            placeholder="Nombre del modulo"
+                                                            disabled={!settingsTenantId || busy}
+                                                        />
+                                                        <select
+                                                            value={waModuleForm.transportMode}
+                                                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, transportMode: event.target.value }))}
+                                                            disabled={!settingsTenantId || busy}
+                                                        >
+                                                            <option value="webjs">Web.js</option>
+                                                            <option value="cloud">Cloud API</option>
+                                                        </select>
+                                                    </div>
+
+                                                    <div className="saas-admin-form-row">
+                                                        <input
+                                                            value={waModuleForm.phoneNumber}
+                                                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, phoneNumber: event.target.value }))}
+                                                            placeholder="Numero (ej: +51999999999)"
+                                                            disabled={!settingsTenantId || busy}
+                                                        />
+                                                        <select
+                                                            value={waModuleForm.moduleCatalogMode}
+                                                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, moduleCatalogMode: event.target.value }))}
+                                                            disabled={!settingsTenantId || busy}
+                                                        >
+                                                            <option value="inherit">Catalogo: heredar empresa</option>
+                                                            {CATALOG_MODE_OPTIONS.map((mode) => (
+                                                                <option key={`module_catalog_${mode}`} value={mode}>{`Catalogo: ${mode}`}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+
+                                                    <div className="saas-admin-modules">
+                                                        <label className="saas-admin-module-toggle">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={waModuleForm.moduleAiEnabled !== false}
+                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, moduleAiEnabled: event.target.checked }))}
+                                                                disabled={!settingsTenantId || busy}
+                                                            />
+                                                            <span>IA habilitada</span>
+                                                        </label>
+                                                        <label className="saas-admin-module-toggle">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={waModuleForm.moduleCatalogEnabled !== false}
+                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, moduleCatalogEnabled: event.target.checked }))}
+                                                                disabled={!settingsTenantId || busy}
+                                                            />
+                                                            <span>Catalogo habilitado</span>
+                                                        </label>
+                                                        <label className="saas-admin-module-toggle">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={waModuleForm.moduleCartEnabled !== false}
+                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, moduleCartEnabled: event.target.checked }))}
+                                                                disabled={!settingsTenantId || busy}
+                                                            />
+                                                            <span>Carrito habilitado</span>
+                                                        </label>
+                                                        <label className="saas-admin-module-toggle">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={waModuleForm.moduleQuickRepliesEnabled !== false}
+                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, moduleQuickRepliesEnabled: event.target.checked }))}
+                                                                disabled={!settingsTenantId || busy}
+                                                            />
+                                                            <span>Respuestas rapidas habilitadas</span>
+                                                        </label>
+                                                    </div>
+
+                                                    <div className="saas-admin-form-row">
+                                                        <ImageDropInput
+                                                            label="Reemplazar imagen del modulo"
+                                                            disabled={busy}
+                                                            onFile={(file) => handleFormImageUpload({
+                                                                file,
+                                                                scope: 'wa_module_image',
+                                                                tenantId: settingsTenantId,
+                                                                onUploaded: (url) => setWaModuleForm((prev) => ({ ...prev, imageUrl: url }))
+                                                            })}
+                                                        />
+                                                    </div>
+
+                                                    {waModuleForm.imageUrl && (
+                                                        <div className="saas-admin-preview-strip">
+                                                            <img src={waModuleForm.imageUrl} alt="Imagen modulo" className="saas-admin-preview-thumb" />
+                                                        </div>
+                                                    )}
+
+                                                    <div className="saas-admin-form-row">
+                                                        <select
+                                                            value={moduleUserPickerId}
+                                                            onChange={(event) => setModuleUserPickerId(String(event.target.value || '').trim())}
+                                                            disabled={!settingsTenantId || busy || availableUsersForModulePicker.length === 0}
+                                                        >
+                                                            <option value="">Seleccionar usuario para el modulo</option>
+                                                            {availableUsersForModulePicker.map((user) => (
+                                                                <option key={`wa_module_user_picker_${user.id}`} value={user.id}>{toUserDisplayName(user)}</option>
+                                                            ))}
+                                                        </select>
+                                                        <button
+                                                            type="button"
+                                                            disabled={busy || !moduleUserPickerId}
+                                                            onClick={() => toggleAssignedUserForModule(moduleUserPickerId)}
+                                                        >
+                                                            Agregar usuario
+                                                        </button>
+                                                    </div>
+
+                                                    <div className="saas-admin-related-block">
+                                                        <h4>Usuarios asignados</h4>
+                                                        <div className="saas-admin-related-list">
+                                                            {assignedModuleUsers.length === 0 && (
+                                                                <div className="saas-admin-empty-inline">No hay usuarios asignados al modulo.</div>
+                                                            )}
+                                                            {assignedModuleUsers.map((user) => (
+                                                                <button
+                                                                    key={`assigned_user_${user.id}`}
+                                                                    type="button"
+                                                                    className="saas-admin-related-row"
+                                                                    onClick={() => toggleAssignedUserForModule(user.id)}
+                                                                    disabled={busy}
+                                                                >
+                                                                    <span>{toUserDisplayName(user)}</span>
+                                                                    <small>Quitar del modulo</small>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="saas-admin-related-block">
+                                                        <h4>Credenciales Meta Cloud</h4>
+                                                        <div className="saas-admin-form-row">
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-app-id">META_APP_ID</label>
+                                                                <input
+                                                                    id="wa-module-meta-app-id"
+                                                                    value={waModuleForm.cloudAppId}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudAppId: event.target.value }))}
+                                                                    placeholder="ID de la app de Meta"
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-waba-id">META_WABA_ID</label>
+                                                                <input
+                                                                    id="wa-module-meta-waba-id"
+                                                                    value={waModuleForm.cloudWabaId}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudWabaId: event.target.value }))}
+                                                                    placeholder="ID de la cuenta WABA"
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="saas-admin-form-row">
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-phone-id">META_WABA_PHONE_NUMBER_ID</label>
+                                                                <input
+                                                                    id="wa-module-meta-phone-id"
+                                                                    value={waModuleForm.cloudPhoneNumberId}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudPhoneNumberId: event.target.value }))}
+                                                                    placeholder="ID del numero de telefono en Meta"
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-verify-token">META_VERIFY_TOKEN</label>
+                                                                <input
+                                                                    id="wa-module-meta-verify-token"
+                                                                    value={waModuleForm.cloudVerifyToken}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudVerifyToken: event.target.value }))}
+                                                                    placeholder="Token de verificacion del webhook"
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="saas-admin-form-row">
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-graph-version">META_GRAPH_VERSION</label>
+                                                                <input
+                                                                    id="wa-module-meta-graph-version"
+                                                                    value={waModuleForm.cloudGraphVersion}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudGraphVersion: event.target.value }))}
+                                                                    placeholder="Version Graph API (ej: v22.0)"
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-display-phone">META_DISPLAY_PHONE_NUMBER</label>
+                                                                <input
+                                                                    id="wa-module-meta-display-phone"
+                                                                    value={waModuleForm.cloudDisplayPhoneNumber}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudDisplayPhoneNumber: event.target.value }))}
+                                                                    placeholder="Numero visible (ej: 519XXXXXXXX)"
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="saas-admin-form-row">
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-business-name">META_BUSINESS_NAME</label>
+                                                                <input
+                                                                    id="wa-module-meta-business-name"
+                                                                    value={waModuleForm.cloudBusinessName}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudBusinessName: event.target.value }))}
+                                                                    placeholder="Nombre comercial mostrado"
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-app-secret">META_APP_SECRET</label>
+                                                                <input
+                                                                    id="wa-module-meta-app-secret"
+                                                                    type="password"
+                                                                    value={waModuleForm.cloudAppSecret}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudAppSecret: event.target.value }))}
+                                                                    placeholder={waModuleForm.cloudAppSecretMasked || 'Secreto de la app (opcional para actualizar)'}
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="saas-admin-form-row">
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-system-user-token">META_SYSTEM_USER_TOKEN</label>
+                                                                <input
+                                                                    id="wa-module-meta-system-user-token"
+                                                                    type="password"
+                                                                    value={waModuleForm.cloudSystemUserToken}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudSystemUserToken: event.target.value }))}
+                                                                    placeholder={waModuleForm.cloudSystemUserTokenMasked || 'Token de usuario del sistema (opcional para actualizar)'}
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
+                                                            <div className="saas-admin-field">
+                                                                <label>Estado actual de secretos</label>
+                                                                <input
+                                                                    value={[
+                                                                        waModuleForm.cloudAppSecretMasked ? 'APP_SECRET: configurado' : 'APP_SECRET: vacio',
+                                                                        waModuleForm.cloudSystemUserTokenMasked ? 'SYSTEM_USER_TOKEN: configurado' : 'SYSTEM_USER_TOKEN: vacio'
+                                                                    ].join(' | ')}
+                                                                    disabled
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="saas-admin-modules">
+                                                            <label className="saas-admin-module-toggle">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={waModuleForm.cloudEnforceSignature !== false}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudEnforceSignature: event.target.checked }))}
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                                <span>META_ENFORCE_SIGNATURE (validar firma X-Hub-Signature-256)</span>
+                                                            </label>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                                        <button
+                                                            type="button"
+                                                            disabled={busy || !settingsTenantId || !waModuleForm.name.trim()}
+                                                            onClick={() => runAction(waModulePanelMode === 'create' ? 'Modulo WA creado' : 'Modulo WA actualizado', async () => {
+                                                                const existingMetadata = moduleInDetail?.metadata && typeof moduleInDetail.metadata === 'object'
+                                                                    ? moduleInDetail.metadata
+                                                                    : {};
+                                                                const existingCloudConfig = existingMetadata?.cloudConfig && typeof existingMetadata.cloudConfig === 'object'
+                                                                    ? existingMetadata.cloudConfig
+                                                                    : {};
+                                                                const payload = {
+                                                                    name: waModuleForm.name,
+                                                                    phoneNumber: waModuleForm.phoneNumber,
+                                                                    transportMode: waModuleForm.transportMode,
+                                                                    imageUrl: waModuleForm.imageUrl || null,
+                                                                    assignedUserIds: (Array.isArray(waModuleForm.assignedUserIds) ? waModuleForm.assignedUserIds : [])
+                                                                        .map((entry) => String(entry || '').trim())
+                                                                        .filter(Boolean),
+                                                                    metadata: {
+                                                                        ...existingMetadata,
+                                                                        moduleSettings: {
+                                                                            catalogMode: waModuleForm.moduleCatalogMode || 'inherit',
+                                                                            enabledModules: {
+                                                                                aiPro: waModuleForm.moduleAiEnabled !== false,
+                                                                                catalog: waModuleForm.moduleCatalogEnabled !== false,
+                                                                                cart: waModuleForm.moduleCartEnabled !== false,
+                                                                                quickReplies: waModuleForm.moduleQuickRepliesEnabled !== false
+                                                                            }
+                                                                        },
+                                                                        cloudConfig: {
+                                                                            ...existingCloudConfig,
+                                                                            appId: waModuleForm.cloudAppId || undefined,
+                                                                            wabaId: waModuleForm.cloudWabaId || undefined,
+                                                                            phoneNumberId: waModuleForm.cloudPhoneNumberId || undefined,
+                                                                            verifyToken: waModuleForm.cloudVerifyToken || undefined,
+                                                                            graphVersion: waModuleForm.cloudGraphVersion || undefined,
+                                                                            displayPhoneNumber: waModuleForm.cloudDisplayPhoneNumber || undefined,
+                                                                            businessName: waModuleForm.cloudBusinessName || undefined,
+                                                                            appSecret: waModuleForm.cloudAppSecret || undefined,
+                                                                            systemUserToken: waModuleForm.cloudSystemUserToken || undefined,
+                                                                            enforceSignature: waModuleForm.cloudEnforceSignature !== false
+                                                                        }
+                                                                    }
+                                                                };
+                                                                if (waModulePanelMode === 'edit' && moduleInDetail?.moduleId) {
+                                                                    await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/wa-modules/${encodeURIComponent(moduleInDetail.moduleId)}`, {
+                                                                        method: 'PUT',
+                                                                        body: payload
+                                                                    });
+                                                                    setWaModulePanelMode('view');
+                                                                    setSelectedConfigKey(`wa_module:${moduleInDetail.moduleId}`);
+                                                                    return;
+                                                                }
+
+                                                                const createPayload = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/wa-modules`, {
+                                                                    method: 'POST',
+                                                                    body: payload
+                                                                });
+                                                                const createdModuleId = String(createPayload?.item?.moduleId || '').trim();
+                                                                if (createdModuleId) {
+                                                                    setSelectedWaModuleId(createdModuleId);
+                                                                    setSelectedConfigKey(`wa_module:${createdModuleId}`);
+                                                                }
+                                                                setWaModulePanelMode('view');
+                                                            })}
+                                                        >
+                                                            {waModulePanelMode === 'create' ? 'Guardar modulo' : 'Actualizar modulo'}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            disabled={busy}
+                                                            onClick={() => {
+                                                                if (moduleInDetail?.moduleId) {
+                                                                    openConfigModuleView(moduleInDetail.moduleId);
+                                                                    return;
+                                                                }
+                                                                clearConfigSelection();
+                                                            }}
+                                                        >
+                                                            Cancelar
+                                                        </button>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </>
+                                    );
+                                })()}
+                            </div>
                         </div>
                     </section>
                     )}
 
-                    {selectedSectionId === 'saas_config' && (
-                    <section id="saas_config" className="saas-admin-card saas-admin-card--full">
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-                            <h3 style={{ margin: 0 }}>Configuracion por empresa</h3>
-                            <button
-                                type="button"
-                                disabled={busy || !settingsTenantId || waModules.length === 0}
-                                onClick={() => {
-                                    const fallbackModuleId = String(
-                                        waModules.find((item) => item?.isSelected)?.moduleId
-                                        || waModules.find((item) => item?.isDefault)?.moduleId
-                                        || waModules[0]?.moduleId
-                                        || ''
-                                    ).trim();
-                                    handleOpenOperation(fallbackModuleId);
-                                }}
-                            >
-                                Ir a operacion WhatsApp (nueva pestana)
-                            </button>
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <select value={settingsTenantId} onChange={(event) => setSettingsTenantId(event.target.value)}>
-                                <option value="">Seleccionar tenant</option>
-                                {tenantOptions.map((tenant) => (
-                                    <option key={tenant.id} value={tenant.id}>{tenant.name || tenant.id}</option>
-                                ))}
-                            </select>
-                            <select
-                                value={tenantSettings.catalogMode}
-                                onChange={(event) => setTenantSettings((prev) => ({ ...prev, catalogMode: event.target.value }))}
-                                disabled={!settingsTenantId || loadingSettings}
-                            >
-                                {CATALOG_MODE_OPTIONS.map((mode) => (
-                                    <option key={mode} value={mode}>{mode}</option>
-                                ))}
-                            </select>
-                        </div>
 
-                        <div className="saas-admin-modules">
-                            {MODULE_KEYS.map((moduleEntry) => (
-                                <label key={moduleEntry.key} className="saas-admin-module-toggle">
-                                    <input
-                                        type="checkbox"
-                                        checked={tenantSettings?.enabledModules?.[moduleEntry.key] !== false}
-                                        disabled={!settingsTenantId || loadingSettings}
-                                        onChange={(event) => setTenantSettings((prev) => ({
-                                            ...prev,
-                                            enabledModules: {
-                                                ...(prev?.enabledModules || {}),
-                                                [moduleEntry.key]: event.target.checked
-                                            }
-                                        }))}
-                                    />
-                                    <span>{moduleEntry.label}</span>
-                                </label>
-                            ))}
-                        </div>
-
-                        <div style={{ marginTop: '12px', border: '1px solid rgba(134,150,160,0.22)', borderRadius: '10px', padding: '12px' }}>
-                            <h4 style={{ margin: '0 0 6px', color: '#d7e5ee', fontSize: '0.92rem' }}>Modulos WhatsApp de la empresa</h4>
-                            <small style={{ color: '#8ea7b8' }}>Selecciona un modulo para abrir su detalle completo (credenciales Meta, asignaciones e imagen).</small>
-                            <p style={{ margin: '0 0 10px', color: '#8fa6b6', fontSize: '0.76rem' }}>
-                                Cada modulo representa un numero/canal de WhatsApp (Web.js o Cloud API) para esta empresa. El ID interno se genera automaticamente.
-                            </p>
-
-                            <div className="saas-admin-form-row">
-                                <input
-                                    value={waModuleForm.moduleId}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, moduleId: event.target.value.toLowerCase() }))}
-                                    type="hidden"
-                                    disabled={!settingsTenantId || busy || Boolean(editingWaModuleId)}
-                                />
-                                <input
-                                    value={waModuleForm.name}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, name: event.target.value }))}
-                                    placeholder="Nombre del modulo"
-                                    disabled={!settingsTenantId || busy}
-                                />
-                            </div>
-
-                            <div className="saas-admin-form-row">
-                                <input
-                                    value={waModuleForm.phoneNumber}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, phoneNumber: event.target.value }))}
-                                    placeholder="Numero (ej: +51999999999)"
-                                    disabled={!settingsTenantId || busy}
-                                />
-                                <select
-                                    value={waModuleForm.transportMode}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, transportMode: event.target.value }))}
-                                    disabled={!settingsTenantId || busy}
-                                >
-                                    <option value="webjs">Web.js</option>
-                                    <option value="cloud">Cloud API</option>
-                                </select>
-                            </div>
-                            <div className="saas-admin-form-row">
-                                <input
-                                    value={waModuleForm.imageUrl}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, imageUrl: event.target.value }))}
-                                    placeholder="Imagen URL del modulo"
-                                    disabled={!settingsTenantId || busy}
-                                />
-                            </div>
-                            {waModuleForm.imageUrl && (
-                                <div className="saas-admin-preview-strip">
-                                    <img src={waModuleForm.imageUrl} alt="Imagen modulo" className="saas-admin-preview-thumb" />
+                    {isCatalogSection && (
+                    <section id="saas_catalogos" className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <h3>Catalogos e IA</h3>
+                                    <small>Configuracion por empresa. Las credenciales se guardan cifradas.</small>
                                 </div>
-                            )}
-                            <div className="saas-admin-form-row">
-                                <input
-                                    value={waModuleForm.assignedUserIds}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, assignedUserIds: event.target.value }))}
-                                    placeholder="Usuarios permitidos (csv user_id, opcional)"
-                                    disabled={!settingsTenantId || busy}
-                                />
-                            </div>
-                            <div className="saas-admin-form-row">
-                                <input
-                                    value={waModuleForm.cloudAppId}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudAppId: event.target.value }))}
-                                    placeholder="Meta App ID"
-                                    disabled={!settingsTenantId || busy}
-                                />
-                                <input
-                                    value={waModuleForm.cloudWabaId}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudWabaId: event.target.value }))}
-                                    placeholder="Meta WABA ID"
-                                    disabled={!settingsTenantId || busy}
-                                />
-                            </div>
-                            <div className="saas-admin-form-row">
-                                <input
-                                    value={waModuleForm.cloudPhoneNumberId}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudPhoneNumberId: event.target.value }))}
-                                    placeholder="Meta Phone Number ID"
-                                    disabled={!settingsTenantId || busy}
-                                />
-                                <input
-                                    value={waModuleForm.cloudVerifyToken}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudVerifyToken: event.target.value }))}
-                                    placeholder="Meta Verify Token"
-                                    disabled={!settingsTenantId || busy}
-                                />
-                            </div>
-                            <div className="saas-admin-form-row">
-                                <input
-                                    value={waModuleForm.cloudGraphVersion}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudGraphVersion: event.target.value }))}
-                                    placeholder="Graph version (v22.0)"
-                                    disabled={!settingsTenantId || busy}
-                                />
-                                <input
-                                    value={waModuleForm.cloudDisplayPhoneNumber}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudDisplayPhoneNumber: event.target.value }))}
-                                    placeholder="Display phone"
-                                    disabled={!settingsTenantId || busy}
-                                />
-                            </div>
-                            <div className="saas-admin-form-row">
-                                <input
-                                    value={waModuleForm.cloudBusinessName}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudBusinessName: event.target.value }))}
-                                    placeholder="Business name"
-                                    disabled={!settingsTenantId || busy}
-                                />
-                            </div>
-                            <div className="saas-admin-form-row">
-                                <input
-                                    type="password"
-                                    value={waModuleForm.cloudAppSecret}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudAppSecret: event.target.value }))}
-                                    placeholder={waModuleForm.cloudAppSecretMasked || 'App Secret (opcional para actualizar)'}
-                                    disabled={!settingsTenantId || busy}
-                                />
-                                <input
-                                    type="password"
-                                    value={waModuleForm.cloudSystemUserToken}
-                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudSystemUserToken: event.target.value }))}
-                                    placeholder={waModuleForm.cloudSystemUserTokenMasked || 'System User Token (opcional para actualizar)'}
-                                    disabled={!settingsTenantId || busy}
-                                />
-                            </div>
-                                <div className="saas-admin-form-row saas-admin-form-row--actions">
-                                <button
-                                    type="button"
-                                    disabled={busy || !settingsTenantId || !waModuleForm.name}
-                                    onClick={() => runAction(editingWaModuleId ? 'Modulo WA actualizado' : 'Modulo WA creado', async () => {
-                                        const payload = {
-                                            moduleId: waModuleForm.moduleId,
-                                            name: waModuleForm.name,
-                                            phoneNumber: waModuleForm.phoneNumber,
-                                            transportMode: waModuleForm.transportMode,
-                                            imageUrl: waModuleForm.imageUrl || null,
-                                            assignedUserIds: parseAssignedUserIds(waModuleForm.assignedUserIds),
-                                            metadata: {
-                                                cloudConfig: {
-                                                    appId: waModuleForm.cloudAppId || undefined,
-                                                    wabaId: waModuleForm.cloudWabaId || undefined,
-                                                    phoneNumberId: waModuleForm.cloudPhoneNumberId || undefined,
-                                                    verifyToken: waModuleForm.cloudVerifyToken || undefined,
-                                                    graphVersion: waModuleForm.cloudGraphVersion || undefined,
-                                                    displayPhoneNumber: waModuleForm.cloudDisplayPhoneNumber || undefined,
-                                                    businessName: waModuleForm.cloudBusinessName || undefined,
-                                                    appSecret: waModuleForm.cloudAppSecret || undefined,
-                                                    systemUserToken: waModuleForm.cloudSystemUserToken || undefined
-                                                }
-                                            }
-                                        };
-                                        if (editingWaModuleId) {
-                                            await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(settingsTenantId) + '/wa-modules/' + encodeURIComponent(editingWaModuleId), {
-                                                method: 'PUT',
-                                                body: payload
-                                            });
-                                        } else {
-                                            const createPayload = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(settingsTenantId) + '/wa-modules', {
-                                                method: 'POST',
-                                                body: payload
-                                            });
-                                            const createdModuleId = String(createPayload?.item?.moduleId || '').trim();
-                                            if (createdModuleId) {
-                                                setSelectedWaModuleId(createdModuleId);
-                                                handleOpenOperation(createdModuleId);
-                                            }
-                                        }
-                                        resetWaModuleForm();
-                                    })}
-                                >
-                                    {editingWaModuleId ? 'Guardar modulo' : 'Crear modulo'}
-                                </button>
-                                <button
-                                    type="button"
-                                    disabled={busy}
-                                    onClick={() => {
-                                        setSelectedWaModuleId('');
-                                        resetWaModuleForm();
-                                    }}
-                                >
-                                    Nuevo modulo
-                                </button>
-                                {editingWaModuleId && (
-                                    <button type="button" disabled={busy} onClick={resetWaModuleForm}>
-                                        Cancelar edicion
-                                    </button>
-                                )}
-                            </div>
 
-                            <div className="saas-admin-list">
-                                {waModules.length === 0 && (
-                                    <div className="saas-admin-list-item">
-                                        <small>No hay modulos WhatsApp registrados para este tenant.</small>
+                                <div className="saas-admin-form-row">
+                                    <select
+                                        value={settingsTenantId}
+                                        onChange={(event) => setSettingsTenantId(String(event.target.value || '').trim())}
+                                        disabled={busy}
+                                    >
+                                        <option value="">Seleccionar empresa</option>
+                                        {tenantOptions.map((tenant) => (
+                                            <option key={tenant.id} value={tenant.id}>{toTenantDisplayName(tenant)}</option>
+                                        ))}
+                                    </select>
+                                    <button type="button" disabled={busy || loadingIntegrations} onClick={() => settingsTenantId && loadTenantIntegrations(settingsTenantId)}>
+                                        Recargar
+                                    </button>
+                                </div>
+
+                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                    {catalogPanelMode === 'view' && (
+                                        <button type="button" disabled={busy || !settingsTenantId} onClick={openCatalogEdit}>Editar</button>
+                                    )}
+                                    {catalogPanelMode === 'edit' && (
+                                        <>
+                                            <button
+                                                type="button"
+                                                disabled={busy || !settingsTenantId}
+                                                onClick={() => runAction('Integraciones actualizadas', async () => {
+                                                    await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/integrations`, {
+                                                        method: 'PUT',
+                                                        body: buildIntegrationsUpdatePayload(tenantIntegrations)
+                                                    });
+                                                    setCatalogPanelMode('view');
+                                                    await loadTenantIntegrations(settingsTenantId);
+                                                })}
+                                            >
+                                                Guardar
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={busy || !settingsTenantId}
+                                                onClick={async () => {
+                                                    if (!settingsTenantId) return;
+                                                    setBusy(true);
+                                                    try {
+                                                        await loadTenantIntegrations(settingsTenantId);
+                                                        setCatalogPanelMode('view');
+                                                    } catch (err) {
+                                                        setError(String(err?.message || err || 'No se pudo recargar integraciones.'));
+                                                    } finally {
+                                                        setBusy(false);
+                                                    }
+                                                }}
+                                            >
+                                                Cancelar
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </aside>
+
+                            <div className="saas-admin-detail-pane">
+                                {!settingsTenantId && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Selecciona una empresa</h4>
+                                        <p>Define origen de catalogo, credenciales WooCommerce y modelo IA por tenant.</p>
                                     </div>
                                 )}
-                                {waModules.map((moduleItem) => (
-                                    <div key={moduleItem.moduleId} className={`saas-admin-list-item saas-admin-list-item--stacked ${selectedWaModuleId === moduleItem.moduleId ? 'active' : ''}`.trim()} onClick={() => setSelectedWaModuleId(moduleItem.moduleId)}>
-                                        <div>
-                                            {moduleItem.imageUrl && <img src={moduleItem.imageUrl} alt={moduleItem.name} className="saas-admin-inline-avatar" />}
-                                            <strong>{moduleItem.name}</strong>
-                                            <small>Numero: {moduleItem.phoneNumber || 'sin numero'}</small>
-                                            <small>Transporte: {moduleItem.transportMode === 'cloud' ? 'Cloud API' : 'Web.js'} | {moduleItem.isActive ? 'activo' : 'inactivo'}{moduleItem.isSelected ? ' | seleccionado' : ''}</small>
-                                            <small>Actualizado: {formatDateTimeLabel(moduleItem.updatedAt)}</small>
-                                            {moduleItem.assignedUserIds.length > 0 && (
-                                                <small>Usuarios: {moduleItem.assignedUserIds.join(', ')}</small>
-                                            )}
+
+                                {settingsTenantId && catalogPanelMode === 'view' && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>Integraciones activas</h3>
+                                                <small>Vista de solo lectura por tenant.</small>
+                                            </div>
                                         </div>
-                                        <div className="saas-admin-list-actions saas-admin-list-actions--row" onClick={(event) => event.stopPropagation()}>
-                                            <button
-                                                type="button"
-                                                disabled={busy || !settingsTenantId || !moduleItem.isActive}
-                                                onClick={() => handleOpenOperation(moduleItem.moduleId)}
-                                            >
-                                                Ir a WhatsApp (nueva pestana)
-                                            </button>
-                                            <button
-                                                type="button"
-                                                disabled={busy || !settingsTenantId || moduleItem.isSelected}
-                                                onClick={() => runAction('Modulo WA seleccionado', async () => {
-                                                    await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(settingsTenantId) + '/wa-modules/' + encodeURIComponent(moduleItem.moduleId) + '/select', {
-                                                        method: 'POST'
-                                                    });
-                                                })}
-                                            >
-                                                {moduleItem.isSelected ? 'En uso' : 'Seleccionar'}
-                                            </button>
-                                            <button type="button" disabled={busy} onClick={() => openWaModuleEditor(moduleItem)}>
-                                                Editar
-                                            </button>
-                                            <button
-                                                type="button"
-                                                disabled={busy || !settingsTenantId}
-                                                onClick={() => runAction('Estado de modulo actualizado', async () => {
-                                                    await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(settingsTenantId) + '/wa-modules/' + encodeURIComponent(moduleItem.moduleId), {
-                                                        method: 'PUT',
-                                                        body: {
-                                                            isActive: moduleItem.isActive === false,
-                                                            imageUrl: moduleItem.imageUrl || null,
-                                                            metadata: moduleItem.metadata || {}
-                                                        }
-                                                    });
-                                                })}
-                                            >
-                                                {moduleItem.isActive ? 'Desactivar' : 'Activar'}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                disabled={busy || !settingsTenantId}
-                                                onClick={() => runAction('Modulo WA eliminado', async () => {
-                                                    await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(settingsTenantId) + '/wa-modules/' + encodeURIComponent(moduleItem.moduleId), {
-                                                        method: 'DELETE'
-                                                    });
-                                                    if (editingWaModuleId === moduleItem.moduleId) resetWaModuleForm();
-                                                    if (selectedWaModuleId === moduleItem.moduleId) setSelectedWaModuleId('');
-                                                })}
-                                            >
-                                                Eliminar
-                                            </button>
+
+                                        <div className="saas-admin-detail-grid">
+                                            <div className="saas-admin-detail-field"><span>Modo catalogo</span><strong>{tenantIntegrations.catalogMode}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Meta</span><strong>{tenantIntegrations.metaEnabled ? 'Activo' : 'Inactivo'}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>WooCommerce</span><strong>{tenantIntegrations.wooEnabled ? 'Activo' : 'Inactivo'}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Catalogo local</span><strong>{tenantIntegrations.localEnabled ? 'Activo' : 'Inactivo'}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Modelo IA</span><strong>{tenantIntegrations.aiModel || '-'}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>OpenAI Key</span><strong>{tenantIntegrations.openaiApiKeyMasked || 'No configurada'}</strong></div>
                                         </div>
-                                    </div>
-                                ))}
+
+                                        <div className="saas-admin-related-block">
+                                            <h4>WooCommerce</h4>
+                                            <div className="saas-admin-related-list">
+                                                <div className="saas-admin-related-row" role="status"><span>Base URL</span><small>{tenantIntegrations.wooBaseUrl || 'No configurada'}</small></div>
+                                                <div className="saas-admin-related-row" role="status"><span>Per page</span><small>{tenantIntegrations.wooPerPage}</small></div>
+                                                <div className="saas-admin-related-row" role="status"><span>Max pages</span><small>{tenantIntegrations.wooMaxPages}</small></div>
+                                                <div className="saas-admin-related-row" role="status"><span>Consumer Key</span><small>{tenantIntegrations.wooConsumerKeyMasked || 'No configurada'}</small></div>
+                                                <div className="saas-admin-related-row" role="status"><span>Consumer Secret</span><small>{tenantIntegrations.wooConsumerSecretMasked || 'No configurada'}</small></div>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+
+                                {settingsTenantId && catalogPanelMode === 'edit' && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>Editar integraciones</h3>
+                                                <small>Solo se actualizan secretos si escribes un valor nuevo.</small>
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-form-row">
+                                            <select
+                                                value={tenantIntegrations.catalogMode}
+                                                onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, catalogMode: event.target.value }))}
+                                                disabled={busy}
+                                            >
+                                                {CATALOG_MODE_OPTIONS.map((mode) => (
+                                                    <option key={`tenant_catalog_mode_${mode}`} value={mode}>{mode}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="saas-admin-modules">
+                                            <label className="saas-admin-module-toggle">
+                                                <input type="checkbox" checked={tenantIntegrations.metaEnabled !== false} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, metaEnabled: event.target.checked }))} disabled={busy} />
+                                                <span>Meta catalog habilitado</span>
+                                            </label>
+                                            <label className="saas-admin-module-toggle">
+                                                <input type="checkbox" checked={tenantIntegrations.wooEnabled !== false} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, wooEnabled: event.target.checked }))} disabled={busy} />
+                                                <span>WooCommerce habilitado</span>
+                                            </label>
+                                            <label className="saas-admin-module-toggle">
+                                                <input type="checkbox" checked={tenantIntegrations.localEnabled !== false} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, localEnabled: event.target.checked }))} disabled={busy} />
+                                                <span>Catalogo local habilitado</span>
+                                            </label>
+                                            <label className="saas-admin-module-toggle">
+                                                <input type="checkbox" checked={tenantIntegrations.wooIncludeOutOfStock !== false} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, wooIncludeOutOfStock: event.target.checked }))} disabled={busy} />
+                                                <span>Woo incluye sin stock</span>
+                                            </label>
+                                        </div>
+
+                                        <div className="saas-admin-form-row">
+                                            <input value={tenantIntegrations.wooBaseUrl} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, wooBaseUrl: event.target.value }))} placeholder="Woo base URL (https://tu-tienda.com)" disabled={busy} />
+                                        </div>
+                                        <div className="saas-admin-form-row">
+                                            <input type="number" min={10} max={500} value={tenantIntegrations.wooPerPage} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, wooPerPage: event.target.value }))} placeholder="Woo per page" disabled={busy} />
+                                            <input type="number" min={1} max={200} value={tenantIntegrations.wooMaxPages} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, wooMaxPages: event.target.value }))} placeholder="Woo max pages" disabled={busy} />
+                                        </div>
+                                        <div className="saas-admin-form-row">
+                                            <input value={tenantIntegrations.wooConsumerKey} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, wooConsumerKey: event.target.value }))} placeholder={tenantIntegrations.wooConsumerKeyMasked || 'Woo consumer key (opcional para actualizar)'} disabled={busy} />
+                                            <input type="password" value={tenantIntegrations.wooConsumerSecret} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, wooConsumerSecret: event.target.value }))} placeholder={tenantIntegrations.wooConsumerSecretMasked || 'Woo consumer secret (opcional para actualizar)'} disabled={busy} />
+                                        </div>
+
+                                        <div className="saas-admin-related-block">
+                                            <h4>IA por tenant</h4>
+                                            <div className="saas-admin-form-row">
+                                                <input value={tenantIntegrations.aiProvider} disabled />
+                                                <input value={tenantIntegrations.aiModel} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, aiModel: event.target.value }))} placeholder="Modelo OpenAI" disabled={busy} />
+                                            </div>
+                                            <div className="saas-admin-form-row">
+                                                <input type="password" value={tenantIntegrations.openaiApiKey} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, openaiApiKey: event.target.value }))} placeholder={tenantIntegrations.openaiApiKeyMasked || 'OpenAI API Key (opcional para actualizar)'} disabled={busy} />
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </div>
-                                <div className="saas-admin-form-row saas-admin-form-row--actions">
-                            <button
-                                type="button"
-                                disabled={busy || !settingsTenantId || loadingSettings}
-                                onClick={() => runAction('Configuracion de tenant guardada', async () => {
-                                    await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/settings`, {
-                                        method: 'PUT',
-                                        body: {
-                                            catalogMode: tenantSettings.catalogMode,
-                                            enabledModules: tenantSettings.enabledModules
-                                        }
-                                    });
-                                })}
-                            >
-                                Guardar configuracion
-                            </button>
-                            <button
-                                type="button"
-                                disabled={busy || loadingSettings}
-                                onClick={() => runAction('Panel recargado', refreshOverview)}
-                            >
-                                Recargar panel
-                            </button>
+                    </section>
+                    )}
+
+                    {isPlansSection && (
+                    <section id="saas_planes" className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <h3>Planes SaaS</h3>
+                                    <small>Control global de limites por plan.</small>
+                                </div>
+
+                                <div className="saas-admin-form-row">
+                                    <button type="button" disabled={busy || loadingPlans} onClick={loadPlanMatrix}>Recargar planes</button>
+                                </div>
+
+                                <div className="saas-admin-list saas-admin-list--compact">
+                                    {planIds.map((planId) => (
+                                        <button
+                                            key={`plan_row_${planId}`}
+                                            type="button"
+                                            className={`saas-admin-list-item saas-admin-list-item--button ${selectedPlanId === planId ? 'active' : ''}`.trim()}
+                                            onClick={() => openPlanView(planId)}
+                                        >
+                                            <strong>{planId}</strong>
+                                            <small>Usuarios: {Number(planMatrix?.[planId]?.maxUsers || 0)}</small>
+                                            <small>Modulos WA: {Number(planMatrix?.[planId]?.maxWaModules || 0)} | Catalogos: {Number(planMatrix?.[planId]?.maxCatalogs || 0)}</small>
+                                        </button>
+                                    ))}
+                                </div>
+                            </aside>
+
+                            <div className="saas-admin-detail-pane">
+                                {!selectedPlan && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Selecciona un plan</h4>
+                                        <p>Define limites de usuarios, modulos y catalogos segun el plan.</p>
+                                    </div>
+                                )}
+
+                                {selectedPlan && planPanelMode === 'view' && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>Plan: {selectedPlan.id}</h3>
+                                                <small>Vista de limites activos</small>
+                                            </div>
+                                            <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                <button type="button" disabled={busy} onClick={openPlanEdit}>Editar</button>
+                                            </div>
+                                        </div>
+                                        <div className="saas-admin-detail-grid">
+                                            {PLAN_LIMIT_KEYS.map((entry) => (
+                                                <div key={`plan_limit_view_${entry.key}`} className="saas-admin-detail-field">
+                                                    <span>{entry.label}</span>
+                                                    <strong>{Number(selectedPlan?.limits?.[entry.key] || 0)}</strong>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="saas-admin-related-block">
+                                            <h4>Features</h4>
+                                            <div className="saas-admin-related-list">
+                                                {PLAN_FEATURE_KEYS.map((entry) => (
+                                                    <div key={`plan_feature_view_${entry.key}`} className="saas-admin-related-row" role="status">
+                                                        <span>{entry.label}</span>
+                                                        <small>{selectedPlan?.limits?.features?.[entry.key] === false ? 'Deshabilitado' : 'Habilitado'}</small>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+
+                                {selectedPlan && planPanelMode === 'edit' && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>Editando plan: {planForm.id}</h3>
+                                                <small>Los cambios aplican globalmente a todos los tenants de este plan.</small>
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-form-row">
+                                            {PLAN_LIMIT_KEYS.slice(0, 2).map((entry) => (
+                                                <input
+                                                    key={`plan_limit_edit_top_${entry.key}`}
+                                                    type="number"
+                                                    min={entry.min}
+                                                    max={entry.max}
+                                                    value={planForm?.[entry.key]}
+                                                    onChange={(event) => setPlanForm((prev) => ({ ...prev, [entry.key]: event.target.value }))}
+                                                    placeholder={entry.label}
+                                                    disabled={busy}
+                                                />
+                                            ))}
+                                        </div>
+                                        <div className="saas-admin-form-row">
+                                            {PLAN_LIMIT_KEYS.slice(2, 4).map((entry) => (
+                                                <input
+                                                    key={`plan_limit_edit_mid_${entry.key}`}
+                                                    type="number"
+                                                    min={entry.min}
+                                                    max={entry.max}
+                                                    value={planForm?.[entry.key]}
+                                                    onChange={(event) => setPlanForm((prev) => ({ ...prev, [entry.key]: event.target.value }))}
+                                                    placeholder={entry.label}
+                                                    disabled={busy}
+                                                />
+                                            ))}
+                                        </div>
+                                        <div className="saas-admin-form-row">
+                                            {PLAN_LIMIT_KEYS.slice(4, 6).map((entry) => (
+                                                <input
+                                                    key={`plan_limit_edit_bottom_${entry.key}`}
+                                                    type="number"
+                                                    min={entry.min}
+                                                    max={entry.max}
+                                                    value={planForm?.[entry.key]}
+                                                    onChange={(event) => setPlanForm((prev) => ({ ...prev, [entry.key]: event.target.value }))}
+                                                    placeholder={entry.label}
+                                                    disabled={busy}
+                                                />
+                                            ))}
+                                        </div>
+
+                                        <div className="saas-admin-related-block">
+                                            <h4>Features del plan</h4>
+                                            <div className="saas-admin-modules">
+                                                {PLAN_FEATURE_KEYS.map((entry) => (
+                                                    <label key={`plan_feature_edit_${entry.key}`} className="saas-admin-module-toggle">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={planForm?.features?.[entry.key] !== false}
+                                                            onChange={(event) => setPlanForm((prev) => ({
+                                                                ...prev,
+                                                                features: {
+                                                                    ...(prev?.features || {}),
+                                                                    [entry.key]: event.target.checked
+                                                                }
+                                                            }))}
+                                                            disabled={busy}
+                                                        />
+                                                        <span>{entry.label}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                            <button
+                                                type="button"
+                                                disabled={busy || !planForm?.id}
+                                                onClick={() => runAction('Plan actualizado', async () => {
+                                                    const payload = {};
+                                                    PLAN_LIMIT_KEYS.forEach((entry) => {
+                                                        const rawValue = Number(planForm?.[entry.key]);
+                                                        const bounded = Number.isFinite(rawValue)
+                                                            ? Math.min(entry.max, Math.max(entry.min, Math.floor(rawValue)))
+                                                            : entry.min;
+                                                        payload[entry.key] = bounded;
+                                                    });
+
+                                                    payload.features = {};
+                                                    PLAN_FEATURE_KEYS.forEach((entry) => {
+                                                        payload.features[entry.key] = planForm?.features?.[entry.key] !== false;
+                                                    });
+
+                                                    await requestJson(`/api/admin/saas/plans/${encodeURIComponent(planForm.id)}`, {
+                                                        method: 'PUT',
+                                                        body: payload
+                                                    });
+
+                                                    await loadPlanMatrix();
+                                                    openPlanView(planForm.id);
+                                                    setPlanPanelMode('view');
+                                                })}
+                                            >
+                                                Guardar cambios
+                                            </button>
+                                            <button type="button" disabled={busy} onClick={cancelPlanEdit}>Cancelar</button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </section>
                     )}
                 </div>
+                )}
             </div>
         </div>
     );
 }
-
