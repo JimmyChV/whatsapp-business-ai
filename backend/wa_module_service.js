@@ -15,7 +15,7 @@ const {
 } = require('./meta_config_crypto');
 
 const MODULES_FILE = 'wa_modules.json';
-const ALLOWED_TRANSPORTS = new Set(['webjs', 'cloud']);
+const ALLOWED_TRANSPORTS = new Set(['cloud']);
 const MAX_MODULES_PER_TENANT = Math.max(1, Number(process.env.WA_MODULES_MAX_PER_TENANT || 50));
 let postgresSchemaReadyPromise = null;
 
@@ -73,7 +73,7 @@ function normalizePhone(value = '') {
 function normalizeTransport(value = '') {
     const mode = toText(value).toLowerCase();
     if (ALLOWED_TRANSPORTS.has(mode)) return mode;
-    return 'webjs';
+    return 'cloud';
 }
 
 function normalizeAssignedUserIds(value = []) {
@@ -230,7 +230,7 @@ async function ensurePostgresSchema() {
                 module_id TEXT NOT NULL,
                 module_name TEXT NOT NULL,
                 phone_number TEXT,
-                transport_mode TEXT NOT NULL DEFAULT 'webjs',
+                transport_mode TEXT NOT NULL DEFAULT 'cloud',
                 image_url TEXT,
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 is_default BOOLEAN NOT NULL DEFAULT FALSE,
@@ -629,6 +629,7 @@ module.exports = {
     setSelectedModule,
     getSelectedModule
 };
+
 
 
 

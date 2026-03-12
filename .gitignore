@@ -41,3 +41,5 @@ backend/data/tenants/
 backend/wwebjs_auth/
 backend/backups/
 
+backend/uploads/
+backend/uploads/wa-media/

@@ -11,6 +11,7 @@ const planLimitsService = require('./plan_limits_service');
 const aiUsageService = require('./ai_usage_service');
 const messageHistoryService = require('./message_history_service');
 const waModuleService = require('./wa_module_service');
+const customerService = require('./customer_service');
 const auditLogService = require('./audit_log_service');
 const RateLimiter = require('./rate_limiter');
 const { URL } = require('url');
@@ -2161,7 +2162,7 @@ class SocketManager {
             cloudRequested: Boolean(runtime?.cloudRequested),
             cloudConfigured: Boolean(runtime?.cloudConfigured),
             cloudReady: Boolean(runtime?.cloudReady),
-            availableTransports: Array.isArray(runtime?.availableTransports) ? runtime.availableTransports : ['webjs', 'cloud'],
+            availableTransports: Array.isArray(runtime?.availableTransports) ? runtime.availableTransports : ['cloud'],
             migrationReady: runtime?.migrationReady !== false
         };
     }
@@ -2404,6 +2405,29 @@ class SocketManager {
                     subtitle: senderMeta?.senderPushname || null
                 }
             });
+
+            const customerPhone = coerceHumanPhone(
+                senderMeta?.senderPhone
+                || chatId.split('@')[0]
+                || ''
+            );
+            if (customerPhone) {
+                await customerService.upsertFromInteraction(tenantId, {
+                    moduleId: historyModuleId,
+                    chatId,
+                    phone: customerPhone,
+                    contactName: senderMeta?.notifyName || senderMeta?.senderPushname || null,
+                    direction: msg?.fromMe ? 'outbound' : 'inbound',
+                    messageType: msg?.type || null,
+                    lastMessageAt: new Date().toISOString(),
+                    metadata: {
+                        senderId: senderMeta?.senderId || null,
+                        senderPushname: senderMeta?.senderPushname || null,
+                        waPhoneNumber: historyModulePhone,
+                        fromMe: Boolean(msg?.fromMe)
+                    }
+                });
+            }
             if (HISTORY_DEBUG_ENABLED) {
                 console.info('[History] persist message ok tenant=' + String(tenantId || 'default') + ' chat=' + String(chatId || '') + ' msg=' + String(messageId || '') + ' module=' + String(historyModuleId || 'n/a'));
             }
@@ -2737,13 +2761,8 @@ class SocketManager {
         }
 
         if (requireReady && !waClient.isReady) {
-            const message = activeTransport === 'webjs'
-                ? `WhatsApp aun no esta listo. Escanea el QR y espera sincronizacion para ${action}.`
-                : `Cloud API aun no esta lista para ${action}.`;
+            const message = `Cloud API aun no esta lista para ${action}.`;
             socket.emit(errorEvent, message);
-            if (activeTransport === 'webjs' && waClient.lastQr) {
-                socket.emit('qr', waClient.lastQr);
-            }
             socket.emit('wa_runtime', runtime);
             return false;
         }
@@ -3120,25 +3139,16 @@ class SocketManager {
 
             const ensureTransportForSelectedModule = async (selectedModule = null) => {
                 const moduleTransport = String(selectedModule?.transportMode || '').trim().toLowerCase();
-                if (moduleTransport !== 'webjs' && moduleTransport !== 'cloud') return null;
+                if (moduleTransport !== 'cloud') return null;
+                await applyCloudConfigForModule(selectedModule);
 
-                if (moduleTransport === 'cloud') {
-                    await applyCloudConfigForModule(selectedModule);
-                } else if (typeof waClient.clearCloudRuntimeConfig === 'function') {
-                    waClient.clearCloudRuntimeConfig();
-                }
-
-                let namespaceChanged = false;
-                if (moduleTransport === 'webjs' && typeof waClient.setWebjsSessionNamespace === 'function') {
-                    const namespace = buildWebjsSessionNamespaceFromIds(tenantId, selectedModule?.moduleId || 'default');
-                    namespaceChanged = await waClient.setWebjsSessionNamespace(namespace);
-                }
+                const namespaceChanged = false;
 
                 let runtime = this.getWaRuntime();
                 const activeTransport = String(runtime?.activeTransport || 'idle').trim().toLowerCase();
 
                 if (activeTransport === moduleTransport) {
-                    if (moduleTransport === 'webjs' && namespaceChanged) {
+                    if (namespaceChanged) {
                         try {
                             await waClient.initialize();
                         } catch (_) { }
@@ -3152,8 +3162,6 @@ class SocketManager {
 
                     if (waClient.isReady) {
                         socket.emit('ready', { message: 'WhatsApp transport listo' });
-                    } else if (waClient.lastQr) {
-                        socket.emit('qr', waClient.lastQr);
                     }
 
                     this.setActiveRuntimeContext({
@@ -3162,9 +3170,7 @@ class SocketManager {
                         moduleName: selectedModule?.name || null,
                         modulePhone: selectedModule?.phoneNumber || null,
                         transportMode: moduleTransport,
-                        webjsNamespace: moduleTransport === 'webjs' && typeof waClient.getWebjsSessionNamespace === 'function'
-                            ? waClient.getWebjsSessionNamespace()
-                            : null
+                        webjsNamespace: null
                     });
 
                     return runtime;
@@ -3183,8 +3189,6 @@ class SocketManager {
 
                 if (waClient.isReady) {
                     socket.emit('ready', { message: 'WhatsApp transport listo' });
-                } else if (waClient.lastQr) {
-                    socket.emit('qr', waClient.lastQr);
                 }
 
                 this.setActiveRuntimeContext({
@@ -3193,9 +3197,7 @@ class SocketManager {
                     moduleName: selectedModule?.name || null,
                     modulePhone: selectedModule?.phoneNumber || null,
                     transportMode: moduleTransport,
-                    webjsNamespace: moduleTransport === 'webjs' && typeof waClient.getWebjsSessionNamespace === 'function'
-                        ? waClient.getWebjsSessionNamespace()
-                        : null
+                    webjsNamespace: null
                 });
 
                 return nextRuntime;
@@ -3217,8 +3219,6 @@ class SocketManager {
             if (!WA_REQUIRE_SELECTED_MODULE) {
                 if (waClient.isReady) {
                     socket.emit('ready', { message: 'WhatsApp is ready' });
-                } else if (waClient.lastQr) {
-                    socket.emit('qr', waClient.lastQr);
                 }
             }
             this.emitWaCapabilities(socket);
@@ -3292,13 +3292,18 @@ class SocketManager {
                         return;
                     }
 
+                    if (nextMode !== 'cloud' && nextMode !== 'idle') {
+                        socket.emit('transport_mode_error', 'Modo de transporte invalido. Solo Cloud API esta permitido.');
+                        return;
+                    }
+
                     const selectedModule = socket?.data?.waModule || null;
                     if (WA_REQUIRE_SELECTED_MODULE && !selectedModule?.moduleId) {
                         socket.emit('transport_mode_error', 'Primero selecciona un numero/modulo WhatsApp permitido.');
                         return;
                     }
                     const forcedMode = String(selectedModule?.transportMode || '').trim().toLowerCase();
-                    const hasForcedMode = forcedMode === 'webjs' || forcedMode === 'cloud';
+                    const hasForcedMode = forcedMode === 'cloud';
 
                     if (hasForcedMode && nextMode !== forcedMode) {
                         socket.emit('transport_mode_error', 'Este modulo exige modo ' + forcedMode + '. Cambia de modulo para usar otro transporte.');
@@ -3324,9 +3329,7 @@ class SocketManager {
                         moduleName: selectedModule?.name || null,
                         modulePhone: selectedModule?.phoneNumber || null,
                         transportMode: runtime?.activeTransport || nextMode,
-                        webjsNamespace: String(runtime?.activeTransport || nextMode).toLowerCase() === 'webjs' && typeof waClient.getWebjsSessionNamespace === 'function'
-                            ? waClient.getWebjsSessionNamespace()
-                            : null
+                        webjsNamespace: null
                     });
                     await auditSocketAction('wa.transport_mode.changed', {
                         resourceType: hasForcedMode ? 'wa_module' : 'wa_runtime',
@@ -3341,8 +3344,6 @@ class SocketManager {
 
                     if (waClient.isReady) {
                         socket.emit('ready', { message: 'WhatsApp transport listo' });
-                    } else if (waClient.lastQr) {
-                        socket.emit('qr', waClient.lastQr);
                     }
                 } catch (error) {
                     socket.emit('transport_mode_error', String(error?.message || 'No se pudo cambiar el modo de transporte.'));
@@ -5170,6 +5171,8 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
+
 
 
 

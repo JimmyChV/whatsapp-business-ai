@@ -1,6 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { io } from 'socket.io-client';
-import { QRCodeSVG } from 'qrcode.react';
 
 import Sidebar from './components/Sidebar';
 import BusinessSidebar, { ClientProfilePanel } from './components/BusinessSidebar';
@@ -144,7 +143,7 @@ const normalizeWaModuleItem = (item = {}) => {
     moduleId,
     name: String(source.name || moduleId).trim() || moduleId,
     phoneNumber: String(source.phoneNumber || source.phone || '').trim() || null,
-    transportMode: transportMode === 'cloud' ? 'cloud' : 'webjs',
+    transportMode: 'cloud',
     isActive: source.isActive !== false,
     isDefault: source.isDefault === true,
     isSelected: source.isSelected === true,
@@ -580,7 +579,7 @@ function App() {
   const [qrCode, setQrCode] = useState('');
   const [isClientReady, setIsClientReady] = useState(false);
   const [selectedTransport, setSelectedTransport] = useState('');
-  const [waRuntime, setWaRuntime] = useState({ requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false, cloudReady: false, availableTransports: ['webjs', 'cloud'] });
+  const [waRuntime, setWaRuntime] = useState({ requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false, cloudReady: false, availableTransports: ['cloud'] });
   const [transportError, setTransportError] = useState('');
   const [isSwitchingTransport, setIsSwitchingTransport] = useState(false);
 
@@ -1136,7 +1135,7 @@ function App() {
 
       const selectedMode = String(selected?.transportMode || '').trim().toLowerCase();
       const shouldAutoSelectTransport = forceOperationLaunchRef.current || !canManageSaasRef.current;
-      if (shouldAutoSelectTransport && (selectedMode === 'webjs' || selectedMode === 'cloud') && selectedMode !== selectedTransportRef.current) {
+      if (shouldAutoSelectTransport && selectedMode === 'cloud' && selectedMode !== selectedTransportRef.current) {
         setSelectedTransport(selectedMode);
       }
     });
@@ -1163,7 +1162,7 @@ function App() {
 
       const selectedMode = String(selected?.transportMode || '').trim().toLowerCase();
       const shouldAutoSelectTransport = forceOperationLaunchRef.current || !canManageSaasRef.current;
-      if (shouldAutoSelectTransport && (selectedMode === 'webjs' || selectedMode === 'cloud')) {
+      if (shouldAutoSelectTransport && selectedMode === 'cloud') {
         setSelectedTransport(selectedMode);
       }
     });
@@ -1221,7 +1220,7 @@ function App() {
       setWaRuntime((prev) => ({
         ...prev,
         ...nextRuntime,
-        availableTransports: Array.isArray(nextRuntime?.availableTransports) ? nextRuntime.availableTransports : (prev?.availableTransports || ['webjs', 'cloud'])
+        availableTransports: Array.isArray(nextRuntime?.availableTransports) ? nextRuntime.availableTransports : (prev?.availableTransports || ['cloud'])
       }));
     });
 
@@ -1230,7 +1229,7 @@ function App() {
       setWaRuntime((prev) => ({
         ...prev,
         ...nextRuntime,
-        availableTransports: Array.isArray(nextRuntime?.availableTransports) ? nextRuntime.availableTransports : (prev?.availableTransports || ['webjs', 'cloud'])
+        availableTransports: Array.isArray(nextRuntime?.availableTransports) ? nextRuntime.availableTransports : (prev?.availableTransports || ['cloud'])
       }));
       setTransportError('');
       setIsSwitchingTransport(false);
@@ -1766,7 +1765,7 @@ function App() {
       setEditingMessage(null);
       setReplyingMessage(null);
       setActiveChatId(null);
-      alert('Sesion de WhatsApp cerrada. Escanea nuevamente el QR.');
+      alert('Sesion de WhatsApp cerrada. Vuelve a iniciar para reconectar Cloud API.');
     });
 
     if (socket.connected) {
@@ -2218,7 +2217,7 @@ function App() {
     }
 
     const moduleTransport = String(nextModule?.transportMode || '').trim().toLowerCase();
-    const normalizedTransport = moduleTransport === 'cloud' ? 'cloud' : 'webjs';
+    const normalizedTransport = moduleTransport === 'cloud' ? 'cloud' : 'cloud';
 
     setSelectedWaModule(nextModule);
     setSelectedTransport(normalizedTransport);
@@ -2250,15 +2249,15 @@ function App() {
       if (targetTenantId) nextUrl.searchParams.set('wa_tenant', targetTenantId);
       else nextUrl.searchParams.delete('wa_tenant');
 
-      const popup = window.open(nextUrl.toString(), '_blank', 'noopener,noreferrer');
-      if (popup) popup.focus?.();
+      setShowSaasAdminPanel(false);
+      window.location.assign(nextUrl.toString());
     } catch (_) {
       // no-op
     }
   };
   const handleSelectTransport = (mode) => {
     const safeMode = String(mode || '').trim().toLowerCase();
-    if (safeMode !== 'webjs' && safeMode !== 'cloud') return;
+    if (safeMode !== 'cloud') return;
 
     setSelectedTransport(safeMode);
     setTransportError('');
@@ -2292,7 +2291,7 @@ function App() {
     setIsSwitchingTransport(false);
     setIsClientReady(false);
     setQrCode('');
-    setWaRuntime({ requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false, cloudReady: false, availableTransports: ['webjs', 'cloud'] });
+    setWaRuntime({ requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false, cloudReady: false, availableTransports: ['cloud'] });
     setChats([]);
     setChatsTotal(0);
     setChatsHasMore(true);
@@ -2540,7 +2539,7 @@ REGLA CRITICA:
 
   const activeTransport = String(waRuntime?.activeTransport || 'idle').toLowerCase();
   const cloudConfigured = Boolean(waRuntime?.cloudConfigured);
-  const selectedModeLabel = selectedTransport === 'cloud' ? 'WhatsApp Cloud API' : 'WhatsApp Web.js';
+  const selectedModeLabel = 'WhatsApp Cloud API';
   const saasAuthEnabled = Boolean(saasRuntime?.authEnabled);
   const isSaasAuthenticated = !saasAuthEnabled || Boolean(saasSession?.accessToken);
   const runtimeTenantOptions = Array.isArray(saasRuntime?.tenants) ? saasRuntime.tenants : [];
@@ -2577,6 +2576,7 @@ REGLA CRITICA:
     if (!saasRuntime?.loaded) return;
     if (!saasAuthEnabled || !isSaasAuthenticated) return;
     if (!canManageSaas) return;
+    if (forceOperationLaunch) return;
     if (selectedTransport) return;
 
     const tenantKey = String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || 'default').trim() || 'default';
@@ -2638,6 +2638,15 @@ REGLA CRITICA:
     saasSession?.user?.id,
     saasSession?.user?.email
   ]);
+
+  useEffect(() => {
+    if (selectedTransport) return;
+    if (!saasRuntime?.loaded) return;
+    if (forceOperationLaunch || !canManageSaas) {
+      setShowSaasAdminPanel(false);
+      setSelectedTransport('cloud');
+    }
+  }, [selectedTransport, saasRuntime?.loaded, forceOperationLaunch, canManageSaas]);
 
   if (!saasRuntime?.loaded) {
     return (
@@ -2864,7 +2873,7 @@ REGLA CRITICA:
   // Render: Transport Selector
   // --------------------------------------------------------------
   if (!selectedTransport) {
-    if (canManageSaas) {
+    if (canManageSaas && !forceOperationLaunch) {
       return (
         <SaasAdminPanel
           isOpen
@@ -2883,157 +2892,12 @@ REGLA CRITICA:
 
     return (
       <div className="login-screen">
-        <div style={{ width: '100%', maxWidth: '700px', background: '#1f2c33', border: '1px solid rgba(134,150,160,0.28)', borderRadius: '16px', padding: '26px', boxSizing: 'border-box' }}>
-          <div style={{ textAlign: 'center', marginBottom: '22px' }}>
-            <div style={{ fontSize: '2rem', fontWeight: 300, color: '#e9edef', marginBottom: '8px' }}>Modo de conexion</div>
-            <p style={{ color: '#9eb2bf', fontSize: '0.9rem' }}>Selecciona como quieres operar WhatsApp en esta sesion.</p>
-            {saasAuthEnabled && (
-              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <span style={{ color: '#8ca3b3', fontSize: '0.78rem' }}>
-                  Tenant: <strong style={{ color: '#d3e6f3' }}>{saasSession?.user?.tenantId || saasRuntime?.tenant?.id || 'default'}</strong>
-                </span>
-                {canSwitchTenant && (
-                  <select
-                    value={String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || '')}
-                    onChange={(e) => handleSwitchTenant(e.target.value)}
-                    disabled={tenantSwitchBusy}
-                    style={{ borderRadius: '999px', border: '1px solid rgba(124,200,255,0.45)', background: '#101a21', color: '#d3e6f3', padding: '4px 10px', fontSize: '0.74rem', outline: 'none', minWidth: '150px' }}
-                  >
-                    {availableTenantOptions.map((tenant) => (
-                      <option key={tenant.id} value={tenant.id}>{tenant.name || tenant.id}</option>
-                    ))}
-                  </select>
-                )}
-                <button
-                  type='button'
-                  onClick={handleSaasLogout}
-                  style={{ background: 'transparent', border: '1px solid rgba(255,113,113,0.45)', color: '#ffd1d1', borderRadius: '999px', padding: '4px 10px', fontSize: '0.74rem', cursor: 'pointer' }}
-                >
-                  Cerrar sesion SaaS
-                </button>
-                {canManageSaas && (
-                  <button
-                    type='button'
-                    onClick={() => setShowSaasAdminPanel(true)}
-                    style={{ background: 'transparent', border: '1px solid rgba(0,168,132,0.55)', color: '#baf6e8', borderRadius: '999px', padding: '4px 10px', fontSize: '0.74rem', cursor: 'pointer' }}
-                  >
-                    Panel SaaS
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {hasModuleCatalog ? (
-            <>
-              <div style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(0,168,132,0.32)', background: 'rgba(0,168,132,0.08)', color: '#bff6e9', fontSize: '0.8rem' }}>
-                Esta empresa tiene modulos WhatsApp configurados. Selecciona el numero/canal para iniciar.
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
-                {availableWaModules.map((module) => {
-                  const moduleId = String(module?.moduleId || '').trim();
-                  const selected = selectedWaModuleId && moduleId === selectedWaModuleId;
-                  const modeLabel = module?.transportMode === 'cloud' ? 'Cloud API' : 'Web.js';
-                  return (
-                    <button
-                      key={moduleId}
-                      type="button"
-                      onClick={() => handleSelectWaModule(moduleId)}
-                      style={{
-                        textAlign: 'left',
-                        padding: '14px',
-                        borderRadius: '12px',
-                        border: selected ? '1px solid rgba(0,168,132,0.75)' : '1px solid rgba(134,150,160,0.3)',
-                        background: selected ? 'rgba(0,168,132,0.16)' : '#0f191f',
-                        color: '#e9edef',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', marginBottom: '4px' }}>
-                        <strong style={{ fontSize: '0.96rem' }}>{module?.name || moduleId}</strong>
-                        <span style={{ fontSize: '0.7rem', borderRadius: '999px', border: '1px solid rgba(124,200,255,0.45)', padding: '2px 8px', color: '#bde8ff' }}>{modeLabel}</span>
-                      </div>
-                      <div style={{ fontSize: '0.8rem', color: '#9eb2bf' }}>
-                        {module?.phoneNumber ? ('Numero: ' + module.phoneNumber) : 'Numero no definido'}
-                      </div>
-                      <div style={{ fontSize: '0.74rem', color: '#89a4b2', marginTop: '6px' }}>
-                        {selected ? 'Seleccionado' : 'Click para usar este modulo'}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
-              <button
-                type="button"
-                onClick={() => handleSelectTransport('webjs')}
-                style={{ textAlign: 'left', padding: '16px', borderRadius: '12px', border: '1px solid rgba(0,168,132,0.45)', background: '#0f191f', color: '#e9edef', cursor: 'pointer' }}
-              >
-                <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '6px' }}>WhatsApp Web.js</div>
-                <div style={{ fontSize: '0.82rem', color: '#9eb2bf', lineHeight: 1.5 }}>Ideal para mantener todas las funciones existentes con QR y sincronia del celular.</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectTransport('cloud')}
-                style={{ textAlign: 'left', padding: '16px', borderRadius: '12px', border: cloudConfigured ? '1px solid rgba(124,200,255,0.45)' : '1px solid rgba(255,170,0,0.45)', background: '#0f191f', color: '#e9edef', cursor: 'pointer' }}
-              >
-                <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '6px' }}>WhatsApp Cloud API</div>
-                <div style={{ fontSize: '0.82rem', color: '#9eb2bf', lineHeight: 1.5 }}>Escalable y estable para produccion. {cloudConfigured ? 'Configurada en backend.' : 'Faltan variables META_* en backend/.env.'}</div>
-              </button>
-            </div>
-          )}
-          <div style={{ marginTop: '12px', fontSize: '0.78rem', color: '#8ca3b3', lineHeight: 1.5 }}>
-            Regla actual de backend: <strong style={{ color: '#d3e6f3' }}>{String(waRuntime?.requestedTransport || 'dual')}</strong>.
-            {String(waRuntime?.requestedTransport || '').toLowerCase() === 'dual'
-              ? ' Dual significa que el usuario elige Web.js o Cloud al iniciar.'
-              : ' Si esta en webjs o cloud, ese modo queda forzado para todos.'}
-          </div>
-
-          {hasModuleCatalog && selectedWaModule && (
-            <div style={{ marginTop: '10px', fontSize: '0.78rem', color: '#8ca3b3' }}>
-              Modulo seleccionado: <strong style={{ color: '#d3e6f3' }}>{selectedWaModule.name}</strong>{selectedWaModule.phoneNumber ? (' - ' + selectedWaModule.phoneNumber) : ''}
-            </div>
-          )}
-
-          {waModuleError && (
-            <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,153,102,0.45)', background: 'rgba(255,153,102,0.08)', color: '#ffd9c2', fontSize: '0.82rem' }}>
-              {waModuleError}
-            </div>
-          )}
-
-          {transportError && (
-            <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,113,113,0.4)', background: 'rgba(255,113,113,0.08)', color: '#ffd1d1', fontSize: '0.82rem' }}>
-              {transportError}
-            </div>
-          )}
-
-          {tenantSwitchError && (
-            <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,113,113,0.4)', background: 'rgba(255,113,113,0.08)', color: '#ffd1d1', fontSize: '0.82rem' }}>
-              {tenantSwitchError}
-            </div>
-          )}
-
-          {activeTransport !== 'idle' && (
-            <div style={{ marginTop: '12px', fontSize: '0.78rem', color: '#8ca3b3' }}>
-              Transporte activo en backend: <strong style={{ color: '#d3e6f3' }}>{activeTransport}</strong>
-            </div>
-          )}
+        <div style={{ textAlign: 'center', maxWidth: '520px', width: '100%' }}>
+          <div className="loader" style={{ margin: '0 auto 14px' }} />
+          <p style={{ color: '#9eb2bf', fontSize: '0.9rem', margin: 0 }}>
+            Preparando operacion WhatsApp Cloud API...
+          </p>
         </div>
-        {canManageSaas && (
-          <SaasAdminPanel
-            isOpen={showSaasAdminPanel}
-            onClose={() => setShowSaasAdminPanel(false)}
-            onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
-            buildApiHeaders={buildApiHeaders}
-            activeTenantId={tenantScopeId}
-            canManageSaas={canManageSaas}
-            userRole={saasUserRole}
-            isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
-          />
-        )}
       </div>
     );
   }
@@ -3042,8 +2906,7 @@ REGLA CRITICA:
   // Render: Transport Bootstrap
   // --------------------------------------------------------------
   if (!isClientReady) {
-    const isCloudMode = selectedTransport === 'cloud';
-    const showCloudConfigError = isCloudMode && activeTransport === 'cloud' && !cloudConfigured;
+    const showCloudConfigError = activeTransport === 'cloud' && !cloudConfigured;
 
     return (
       <div className="login-screen">
@@ -3059,35 +2922,16 @@ REGLA CRITICA:
             </div>
           )}
 
-          {isCloudMode ? (
-            showCloudConfigError ? (
-              <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid rgba(255,170,0,0.4)', background: 'rgba(255,170,0,0.08)', color: '#ffe1a3', textAlign: 'left', fontSize: '0.83rem', lineHeight: 1.6 }}>
-                Falta configurar Cloud API en backend/.env.<br />
-                Variables minimas: <strong>META_APP_ID</strong>, <strong>META_SYSTEM_USER_TOKEN</strong>, <strong>META_WABA_PHONE_NUMBER_ID</strong>.
-              </div>
-            ) : (
-              <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(124,200,255,0.35)', background: '#202c33' }}>
-                <div className="loader" style={{ margin: '0 auto 12px' }} />
-                <p style={{ color: '#9eb2bf', fontSize: '0.86rem', margin: 0 }}>Esperando inicializacion de Cloud API...</p>
-              </div>
-            )
+          {showCloudConfigError ? (
+            <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid rgba(255,170,0,0.4)', background: 'rgba(255,170,0,0.08)', color: '#ffe1a3', textAlign: 'left', fontSize: '0.83rem', lineHeight: 1.6 }}>
+              Falta configurar Cloud API en backend/.env.<br />
+              Variables minimas: <strong>META_APP_ID</strong>, <strong>META_SYSTEM_USER_TOKEN</strong>, <strong>META_WABA_PHONE_NUMBER_ID</strong>.
+            </div>
           ) : (
-            <>
-              <div style={{ background: 'white', padding: '24px', borderRadius: '16px', display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.4)' }}>
-                {qrCode
-                  ? <QRCodeSVG value={qrCode} size={260} level="H" includeMargin={true} className="fade-in" />
-                  : <div style={{ width: '260px', height: '260px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="loader" /></div>
-                }
-              </div>
-              <div style={{ marginTop: '20px', padding: '20px', background: '#202c33', borderRadius: '12px', textAlign: 'left' }}>
-                <p style={{ color: '#8696a0', fontSize: '0.85rem', lineHeight: '1.8' }}>
-                  1. Abre <strong style={{ color: '#e9edef' }}>WhatsApp</strong> en tu telefono<br />
-                  2. Toca <strong style={{ color: '#e9edef' }}>Menu (...)</strong> o <strong style={{ color: '#e9edef' }}>Configuracion</strong><br />
-                  3. Selecciona <strong style={{ color: '#e9edef' }}>Dispositivos vinculados</strong><br />
-                  4. Toca <strong style={{ color: '#e9edef' }}>Vincular un dispositivo</strong> y escanea
-                </p>
-              </div>
-            </>
+            <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(124,200,255,0.35)', background: '#202c33' }}>
+              <div className="loader" style={{ margin: '0 auto 12px' }} />
+              <p style={{ color: '#9eb2bf', fontSize: '0.86rem', margin: 0 }}>Esperando inicializacion de Cloud API...</p>
+            </div>
           )}
 
           {waModuleError && (
@@ -3101,14 +2945,6 @@ REGLA CRITICA:
               {transportError}
             </div>
           )}
-
-          <button
-            type="button"
-            onClick={handleResetTransportSelection}
-            style={{ marginTop: '16px', background: 'transparent', border: '1px solid rgba(134,150,160,0.4)', color: '#c9d5de', borderRadius: '999px', padding: '7px 16px', cursor: 'pointer', fontSize: '0.8rem' }}
-          >
-            Cambiar modo
-          </button>
         </div>
       </div>
     );
@@ -3305,6 +3141,15 @@ REGLA CRITICA:
 }
 
 export default App;
+
+
+
+
+
+
+
+
+
 
 
 

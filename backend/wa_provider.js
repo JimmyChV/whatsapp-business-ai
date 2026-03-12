@@ -1,17 +1,19 @@
-const EventEmitter = require('events');
+﻿const EventEmitter = require('events');
 const webjsClient = require('./whatsapp_client');
 const cloudClient = require('./whatsapp_cloud_client');
 
-const ACTIVE_TRANSPORTS = new Set(['webjs', 'cloud']);
-const TRANSPORTS = new Set(['webjs', 'cloud', 'idle']);
+const ACTIVE_TRANSPORTS = new Set(['cloud']);
+const TRANSPORTS = new Set(['cloud', 'idle']);
 const DUAL_MODE_ALIASES = new Set(['dual', 'both', 'selection', 'select', 'idle']);
 const CLOUD_WEBHOOK_AUTO_ACTIVATE = String(process.env.WA_CLOUD_WEBHOOK_AUTO_ACTIVATE || 'true').trim().toLowerCase() !== 'false';
 
 function normalizeMode(value = '') {
     const mode = String(value || '').trim().toLowerCase();
     if (!mode) return '';
+    if (mode === 'webjs') return 'cloud';
     if (DUAL_MODE_ALIASES.has(mode)) return 'idle';
-    return mode;
+    if (mode === 'cloud' || mode === 'idle') return mode;
+    return '';
 }
 
 class WAProvider extends EventEmitter {
@@ -119,7 +121,7 @@ class WAProvider extends EventEmitter {
         const execute = async () => {
             const safeMode = normalizeMode(mode);
             if (!TRANSPORTS.has(safeMode)) {
-                throw new Error('Modo de transporte invalido. Usa webjs o cloud.');
+                throw new Error('Modo de transporte invalido. Usa cloud.');
             }
 
             if (safeMode === 'cloud' && !cloudClient.isConfigured()) {
@@ -228,7 +230,7 @@ class WAProvider extends EventEmitter {
             cloudConfigured,
             cloudReady: this.activeTransport === 'cloud' && Boolean(this.activeAdapter?.isReady),
             runtimeCloudConfig: this.getCloudRuntimeConfigPublic(),
-            availableTransports: ['webjs', 'cloud'],
+            availableTransports: ['cloud'],
             migrationReady: true
         };
     }
@@ -337,4 +339,5 @@ class WAProvider extends EventEmitter {
 }
 
 module.exports = new WAProvider();
+
 
