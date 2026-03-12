@@ -93,7 +93,8 @@ const EMPTY_WA_MODULE_FORM = {
     cloudAppSecret: '',
     cloudSystemUserToken: '',
     cloudAppSecretMasked: '',
-    cloudSystemUserTokenMasked: ''
+    cloudSystemUserTokenMasked: '',
+    cloudEnforceSignature: true
 };
 
 const ROLE_OPTIONS = ['owner', 'admin', 'seller'];
@@ -205,7 +206,8 @@ function normalizeWaModule(item = {}) {
             displayPhoneNumber: String(cloudConfig.displayPhoneNumber || '').trim(),
             businessName: String(cloudConfig.businessName || '').trim(),
             appSecretMasked: String(cloudConfig.appSecretMasked || '').trim(),
-            systemUserTokenMasked: String(cloudConfig.systemUserTokenMasked || '').trim()
+            systemUserTokenMasked: String(cloudConfig.systemUserTokenMasked || '').trim(),
+            enforceSignature: cloudConfig.enforceSignature !== false
         }
     };
 }
@@ -868,7 +870,8 @@ export default function SaasAdminPanel({
             cloudAppSecret: '',
             cloudSystemUserToken: '',
             cloudAppSecretMasked: item?.cloudConfig?.appSecretMasked || '',
-            cloudSystemUserTokenMasked: item?.cloudConfig?.systemUserTokenMasked || ''
+            cloudSystemUserTokenMasked: item?.cloudConfig?.systemUserTokenMasked || '',
+            cloudEnforceSignature: item?.cloudConfig?.enforceSignature !== false
         });
         setModuleUserPickerId('');
     };
@@ -2190,6 +2193,9 @@ export default function SaasAdminPanel({
                                             const match = usersForSettingsTenant.find((user) => String(user?.id || '').trim() === String(userId || '').trim());
                                             return match ? toUserDisplayName(match) : 'Usuario no disponible';
                                         });
+                                    const moduleCloudConfig = moduleInDetail?.cloudConfig && typeof moduleInDetail.cloudConfig === 'object'
+                                        ? moduleInDetail.cloudConfig
+                                        : {};
 
                                     return (
                                         <>
@@ -2284,6 +2290,22 @@ export default function SaasAdminPanel({
                                                                     <span>{label}</span>
                                                                 </div>
                                                             ))}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="saas-admin-related-block">
+                                                        <h4>Configuracion Meta Cloud</h4>
+                                                        <div className="saas-admin-detail-grid">
+                                                            <div className="saas-admin-detail-field"><span>META_APP_ID</span><strong>{moduleCloudConfig.appId || '-'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_WABA_ID</span><strong>{moduleCloudConfig.wabaId || '-'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_WABA_PHONE_NUMBER_ID</span><strong>{moduleCloudConfig.phoneNumberId || '-'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_VERIFY_TOKEN</span><strong>{moduleCloudConfig.verifyToken || '-'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_GRAPH_VERSION</span><strong>{moduleCloudConfig.graphVersion || '-'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_DISPLAY_PHONE_NUMBER</span><strong>{moduleCloudConfig.displayPhoneNumber || '-'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_BUSINESS_NAME</span><strong>{moduleCloudConfig.businessName || '-'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_ENFORCE_SIGNATURE</span><strong>{moduleCloudConfig.enforceSignature === false ? 'false' : 'true'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_APP_SECRET</span><strong>{moduleCloudConfig.appSecretMasked || 'No configurado'}</strong></div>
+                                                            <div className="saas-admin-detail-field"><span>META_SYSTEM_USER_TOKEN</span><strong>{moduleCloudConfig.systemUserTokenMasked || 'No configurado'}</strong></div>
                                                         </div>
                                                     </div>
                                                 </>
@@ -2429,70 +2451,127 @@ export default function SaasAdminPanel({
                                                     <div className="saas-admin-related-block">
                                                         <h4>Credenciales Meta Cloud</h4>
                                                         <div className="saas-admin-form-row">
-                                                            <input
-                                                                value={waModuleForm.cloudAppId}
-                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudAppId: event.target.value }))}
-                                                                placeholder="Meta App ID"
-                                                                disabled={!settingsTenantId || busy}
-                                                            />
-                                                            <input
-                                                                value={waModuleForm.cloudWabaId}
-                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudWabaId: event.target.value }))}
-                                                                placeholder="Meta WABA ID"
-                                                                disabled={!settingsTenantId || busy}
-                                                            />
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-app-id">META_APP_ID</label>
+                                                                <input
+                                                                    id="wa-module-meta-app-id"
+                                                                    value={waModuleForm.cloudAppId}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudAppId: event.target.value }))}
+                                                                    placeholder="ID de la app de Meta"
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-waba-id">META_WABA_ID</label>
+                                                                <input
+                                                                    id="wa-module-meta-waba-id"
+                                                                    value={waModuleForm.cloudWabaId}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudWabaId: event.target.value }))}
+                                                                    placeholder="ID de la cuenta WABA"
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
                                                         </div>
                                                         <div className="saas-admin-form-row">
-                                                            <input
-                                                                value={waModuleForm.cloudPhoneNumberId}
-                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudPhoneNumberId: event.target.value }))}
-                                                                placeholder="Meta Phone Number ID"
-                                                                disabled={!settingsTenantId || busy}
-                                                            />
-                                                            <input
-                                                                value={waModuleForm.cloudVerifyToken}
-                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudVerifyToken: event.target.value }))}
-                                                                placeholder="Meta Verify Token"
-                                                                disabled={!settingsTenantId || busy}
-                                                            />
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-phone-id">META_WABA_PHONE_NUMBER_ID</label>
+                                                                <input
+                                                                    id="wa-module-meta-phone-id"
+                                                                    value={waModuleForm.cloudPhoneNumberId}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudPhoneNumberId: event.target.value }))}
+                                                                    placeholder="ID del numero de telefono en Meta"
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-verify-token">META_VERIFY_TOKEN</label>
+                                                                <input
+                                                                    id="wa-module-meta-verify-token"
+                                                                    value={waModuleForm.cloudVerifyToken}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudVerifyToken: event.target.value }))}
+                                                                    placeholder="Token de verificacion del webhook"
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
                                                         </div>
                                                         <div className="saas-admin-form-row">
-                                                            <input
-                                                                value={waModuleForm.cloudGraphVersion}
-                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudGraphVersion: event.target.value }))}
-                                                                placeholder="Graph version (v22.0)"
-                                                                disabled={!settingsTenantId || busy}
-                                                            />
-                                                            <input
-                                                                value={waModuleForm.cloudDisplayPhoneNumber}
-                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudDisplayPhoneNumber: event.target.value }))}
-                                                                placeholder="Display phone"
-                                                                disabled={!settingsTenantId || busy}
-                                                            />
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-graph-version">META_GRAPH_VERSION</label>
+                                                                <input
+                                                                    id="wa-module-meta-graph-version"
+                                                                    value={waModuleForm.cloudGraphVersion}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudGraphVersion: event.target.value }))}
+                                                                    placeholder="Version Graph API (ej: v22.0)"
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-display-phone">META_DISPLAY_PHONE_NUMBER</label>
+                                                                <input
+                                                                    id="wa-module-meta-display-phone"
+                                                                    value={waModuleForm.cloudDisplayPhoneNumber}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudDisplayPhoneNumber: event.target.value }))}
+                                                                    placeholder="Numero visible (ej: 519XXXXXXXX)"
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
                                                         </div>
                                                         <div className="saas-admin-form-row">
-                                                            <input
-                                                                value={waModuleForm.cloudBusinessName}
-                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudBusinessName: event.target.value }))}
-                                                                placeholder="Business name"
-                                                                disabled={!settingsTenantId || busy}
-                                                            />
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-business-name">META_BUSINESS_NAME</label>
+                                                                <input
+                                                                    id="wa-module-meta-business-name"
+                                                                    value={waModuleForm.cloudBusinessName}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudBusinessName: event.target.value }))}
+                                                                    placeholder="Nombre comercial mostrado"
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-app-secret">META_APP_SECRET</label>
+                                                                <input
+                                                                    id="wa-module-meta-app-secret"
+                                                                    type="password"
+                                                                    value={waModuleForm.cloudAppSecret}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudAppSecret: event.target.value }))}
+                                                                    placeholder={waModuleForm.cloudAppSecretMasked || 'Secreto de la app (opcional para actualizar)'}
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
                                                         </div>
                                                         <div className="saas-admin-form-row">
-                                                            <input
-                                                                type="password"
-                                                                value={waModuleForm.cloudAppSecret}
-                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudAppSecret: event.target.value }))}
-                                                                placeholder={waModuleForm.cloudAppSecretMasked || 'App Secret (opcional para actualizar)'}
-                                                                disabled={!settingsTenantId || busy}
-                                                            />
-                                                            <input
-                                                                type="password"
-                                                                value={waModuleForm.cloudSystemUserToken}
-                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudSystemUserToken: event.target.value }))}
-                                                                placeholder={waModuleForm.cloudSystemUserTokenMasked || 'System User Token (opcional para actualizar)'}
-                                                                disabled={!settingsTenantId || busy}
-                                                            />
+                                                            <div className="saas-admin-field">
+                                                                <label htmlFor="wa-module-meta-system-user-token">META_SYSTEM_USER_TOKEN</label>
+                                                                <input
+                                                                    id="wa-module-meta-system-user-token"
+                                                                    type="password"
+                                                                    value={waModuleForm.cloudSystemUserToken}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudSystemUserToken: event.target.value }))}
+                                                                    placeholder={waModuleForm.cloudSystemUserTokenMasked || 'Token de usuario del sistema (opcional para actualizar)'}
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                            </div>
+                                                            <div className="saas-admin-field">
+                                                                <label>Estado actual de secretos</label>
+                                                                <input
+                                                                    value={[
+                                                                        waModuleForm.cloudAppSecretMasked ? 'APP_SECRET: configurado' : 'APP_SECRET: vacio',
+                                                                        waModuleForm.cloudSystemUserTokenMasked ? 'SYSTEM_USER_TOKEN: configurado' : 'SYSTEM_USER_TOKEN: vacio'
+                                                                    ].join(' | ')}
+                                                                    disabled
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="saas-admin-modules">
+                                                            <label className="saas-admin-module-toggle">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={waModuleForm.cloudEnforceSignature !== false}
+                                                                    onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudEnforceSignature: event.target.checked }))}
+                                                                    disabled={!settingsTenantId || busy}
+                                                                />
+                                                                <span>META_ENFORCE_SIGNATURE (validar firma X-Hub-Signature-256)</span>
+                                                            </label>
                                                         </div>
                                                     </div>
 
@@ -2536,7 +2615,8 @@ export default function SaasAdminPanel({
                                                                             displayPhoneNumber: waModuleForm.cloudDisplayPhoneNumber || undefined,
                                                                             businessName: waModuleForm.cloudBusinessName || undefined,
                                                                             appSecret: waModuleForm.cloudAppSecret || undefined,
-                                                                            systemUserToken: waModuleForm.cloudSystemUserToken || undefined
+                                                                            systemUserToken: waModuleForm.cloudSystemUserToken || undefined,
+                                                                            enforceSignature: waModuleForm.cloudEnforceSignature !== false
                                                                         }
                                                                     }
                                                                 };

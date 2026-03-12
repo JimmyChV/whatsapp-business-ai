@@ -2053,6 +2053,7 @@ async function getWebhookCloudRegistry({ force = false } = {}) {
             items.push({
                 tenantId,
                 moduleId,
+                isSelected: module?.isSelected === true,
                 verifyToken,
                 phoneNumberId,
                 appSecret,
@@ -2071,8 +2072,32 @@ async function getWebhookCloudRegistry({ force = false } = {}) {
 }
 
 function validateMetaWebhookSignature(req, registryItems = []) {
+    const registry = Array.isArray(registryItems) ? registryItems : [];
+    const payload = req?.body && typeof req.body === 'object' ? req.body : {};
+    const phoneNumberId = extractWebhookPhoneNumberId(payload);
+
+    let scoped = registry;
+    if (phoneNumberId) {
+        const byPhone = registry.filter((item) => String(item?.phoneNumberId || '').trim() === phoneNumberId);
+        if (byPhone.length > 0) {
+            scoped = byPhone;
+        }
+    }
+
+    if (!phoneNumberId && scoped.length > 1) {
+        const selectedOnly = scoped.filter((item) => item?.isSelected);
+        if (selectedOnly.length > 0) {
+            scoped = selectedOnly;
+        }
+    }
+
+    const requiresSignature = scoped.filter((item) => (item?.cloudConfig?.enforceSignature !== false));
+    if (requiresSignature.length === 0) {
+        return { ok: true, skipped: true, reason: 'signature_not_required' };
+    }
+
     const secrets = Array.from(new Set(
-        (Array.isArray(registryItems) ? registryItems : [])
+        requiresSignature
             .map((item) => String(item?.appSecret || '').trim())
             .filter(Boolean)
     ));
@@ -2279,9 +2304,3 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
-
-
-
-
-
-

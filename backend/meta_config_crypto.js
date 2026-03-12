@@ -1,4 +1,4 @@
-﻿const crypto = require('crypto');
+const crypto = require('crypto');
 
 const ENCRYPTION_PREFIX = 'encv1:';
 let cachedKey = null;
@@ -87,6 +87,18 @@ function normalizePlain(value = '') {
     return text || null;
 }
 
+function normalizeBoolean(value, fallback = true) {
+    if (typeof value === 'boolean') return value;
+    if (value === 1 || value === '1') return true;
+    if (value === 0 || value === '0') return false;
+    if (typeof value === 'string') {
+        const text = value.trim().toLowerCase();
+        if (['true', 'yes', 'on'].includes(text)) return true;
+        if (['false', 'no', 'off'].includes(text)) return false;
+    }
+    return fallback !== false;
+}
+
 function normalizeCloudConfigPublic(cloud = {}) {
     const source = cloud && typeof cloud === 'object' ? cloud : {};
     const appSecretRaw = String(source.appSecret || source.app_secret || '').trim();
@@ -102,6 +114,7 @@ function normalizeCloudConfigPublic(cloud = {}) {
         graphVersion: normalizePlain(source.graphVersion || source.graph_version),
         displayPhoneNumber: normalizePlain(source.displayPhoneNumber || source.display_phone_number),
         businessName: normalizePlain(source.businessName || source.business_name),
+        enforceSignature: normalizeBoolean(source.enforceSignature, true),
         hasSystemUserToken: Boolean(tokenRaw),
         hasAppSecret: Boolean(appSecretRaw),
         systemUserTokenMasked: tokenPlain ? maskSecret(tokenPlain) : null,
@@ -120,7 +133,8 @@ function normalizeCloudConfigRuntime(cloud = {}) {
         verifyToken: normalizePlain(source.verifyToken || source.verify_token),
         graphVersion: normalizePlain(source.graphVersion || source.graph_version),
         displayPhoneNumber: normalizePlain(source.displayPhoneNumber || source.display_phone_number),
-        businessName: normalizePlain(source.businessName || source.business_name)
+        businessName: normalizePlain(source.businessName || source.business_name),
+        enforceSignature: normalizeBoolean(source.enforceSignature, true)
     };
 }
 
@@ -160,7 +174,8 @@ function prepareModuleMetadataForSave(nextMetadata = {}, existingMetadata = {}) 
         verifyToken: normalizePlain(cloudSource.verifyToken || cloudSource.verify_token),
         graphVersion: normalizePlain(cloudSource.graphVersion || cloudSource.graph_version),
         displayPhoneNumber: normalizePlain(cloudSource.displayPhoneNumber || cloudSource.display_phone_number),
-        businessName: normalizePlain(cloudSource.businessName || cloudSource.business_name)
+        businessName: normalizePlain(cloudSource.businessName || cloudSource.business_name),
+        enforceSignature: normalizeBoolean(cloudSource.enforceSignature, true)
     };
 
     merged.cloudConfig = nextCloud;
