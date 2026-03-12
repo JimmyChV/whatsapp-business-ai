@@ -353,38 +353,55 @@ app.get('/api/ops/metrics', (req, res) => {
 
 app.get('/api/saas/runtime', async (req, res) => {
     const authContext = req.authContext || { enabled: false, isAuthenticated: false, user: null };
+    const authEnabled = authService.isAuthEnabled();
+    const isAuthenticated = Boolean(authContext?.isAuthenticated && authContext?.user);
+
     const allTenants = tenantService.getTenants();
-    const allowedTenants = authContext?.isAuthenticated
+    const allowedTenants = isAuthenticated
         ? authService.getAllowedTenantsForUser(authContext?.user || {}, allTenants)
         : allTenants;
 
-    const requestedTenantId = String(req?.tenantContext?.id || '').trim();
-    const effectiveTenant = allowedTenants.find((tenant) => String(tenant?.id || '').trim() === requestedTenantId)
-        || allowedTenants[0]
-        || req.tenantContext
-        || tenantService.DEFAULT_TENANT;
+    // Avoid exposing tenant/company data before login when SaaS auth is enabled.
+    const exposeTenantData = !authEnabled || isAuthenticated;
+    const runtimeTenants = exposeTenantData ? allowedTenants : [];
 
-    const tenantSettings = await tenantSettingsService.getTenantSettings(String(effectiveTenant?.id || 'default'));
+    const requestedTenantId = String(req?.tenantContext?.id || '').trim();
+    const fallbackTenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+    const effectiveTenant = exposeTenantData
+        ? (runtimeTenants.find((tenant) => String(tenant?.id || '').trim() === requestedTenantId)
+            || runtimeTenants[0]
+            || fallbackTenant)
+        : fallbackTenant;
+
+    const tenantId = String(effectiveTenant?.id || 'default');
     const authUser = authContext?.user && typeof authContext.user === 'object' ? authContext.user : null;
     const runtimeUserId = String(authUser?.userId || authUser?.id || '').trim();
-    const waModules = await waModuleService.listModules(String(effectiveTenant?.id || 'default'), {
-        includeInactive: false,
-        userId: runtimeUserId
-    });
-    const selectedWaModule = await waModuleService.getSelectedModule(String(effectiveTenant?.id || 'default'), {
-        userId: runtimeUserId
-    });
+
+    let tenantSettings = null;
+    let waModules = [];
+    let selectedWaModule = null;
+
+    if (exposeTenantData) {
+        tenantSettings = await tenantSettingsService.getTenantSettings(tenantId);
+        waModules = await waModuleService.listModules(tenantId, {
+            includeInactive: false,
+            userId: runtimeUserId
+        });
+        selectedWaModule = await waModuleService.getSelectedModule(tenantId, {
+            userId: runtimeUserId
+        });
+    }
 
     return res.json({
         ok: true,
         saasEnabled: tenantService.isSaasEnabled(),
-        authEnabled: authService.isAuthEnabled(),
+        authEnabled,
         socketAuthRequired: saasSocketAuthRequired,
-        tenant: toPublicTenant(effectiveTenant),
-        tenantSettings,
-        waModules,
-        selectedWaModule,
-        tenants: (allowedTenants || []).map(toPublicTenant).filter(Boolean),
+        tenant: exposeTenantData ? toPublicTenant(effectiveTenant) : null,
+        tenantSettings: exposeTenantData ? tenantSettings : null,
+        waModules: exposeTenantData ? waModules : [],
+        selectedWaModule: exposeTenantData ? selectedWaModule : null,
+        tenants: exposeTenantData ? (runtimeTenants || []).map(toPublicTenant).filter(Boolean) : [],
         authContext: {
             enabled: Boolean(authContext.enabled),
             isAuthenticated: Boolean(authContext.isAuthenticated),

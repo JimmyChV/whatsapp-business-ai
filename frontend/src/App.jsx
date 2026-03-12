@@ -599,7 +599,6 @@ function App() {
   const [showSaasAdminPanel, setShowSaasAdminPanel] = useState(false);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  const [loginTenantId, setLoginTenantId] = useState('');
   const waLaunchParams = useMemo(() => {
     try {
       const params = new URLSearchParams(window.location.search || '');
@@ -867,9 +866,6 @@ function App() {
           user: runtimeUser
         }
       });
-
-      const suggestedTenant = String(runtimeUser?.tenantId || '').trim();
-      if (suggestedTenant) setLoginTenantId((prev) => prev || suggestedTenant);
       const suggestedEmail = String(runtimeUser?.email || '').trim();
       if (suggestedEmail) setLoginEmail((prev) => prev || suggestedEmail);
 
@@ -1831,7 +1827,6 @@ function App() {
     event?.preventDefault();
     const email = String(loginEmail || '').trim().toLowerCase();
     const password = String(loginPassword || '');
-    const tenantId = String(loginTenantId || '').trim();
 
     if (!email || !password) {
       setSaasAuthError('Ingresa correo y contrasena para continuar.');
@@ -1843,22 +1838,12 @@ function App() {
     setTenantSwitchError('');
 
     try {
-      const runLogin = async (tenantIdForRequest = '') => {
-        const response = await fetch(API_URL + '/api/auth/login', {
-          method: 'POST',
-          headers: buildApiHeaders({ includeJson: true, tenantIdOverride: tenantIdForRequest }),
-          body: JSON.stringify({ email, password, tenantId: tenantIdForRequest || undefined })
-        });
-        const payload = await response.json().catch(() => ({}));
-        return { response, payload };
-      };
-
-      let { response, payload } = await runLogin(tenantId);
-      const firstError = String(payload?.error || '');
-      const tenantMismatch = /usuario sin acceso al tenant seleccionado/i.test(firstError);
-      if ((!response.ok || !payload?.ok) && tenantId && tenantMismatch) {
-        ({ response, payload } = await runLogin(''));
-      }
+      const response = await fetch(API_URL + '/api/auth/login', {
+        method: 'POST',
+        headers: buildApiHeaders({ includeJson: true }),
+        body: JSON.stringify({ email, password })
+      });
+      const payload = await response.json().catch(() => ({}));
 
       if (!response.ok || !payload?.ok) {
         throw new Error(String(payload?.error || 'No se pudo iniciar sesion.'));
@@ -1872,7 +1857,6 @@ function App() {
       setSaasSession(session);
       setLoginPassword('');
       setLoginEmail(String(payload?.user?.email || email));
-      if (payload?.user?.tenantId) setLoginTenantId(String(payload.user.tenantId));
     } catch (error) {
       setSaasAuthError(String(error?.message || 'No se pudo iniciar sesion.'));
     } finally {
@@ -1960,7 +1944,6 @@ function App() {
       if (socket.connected) socket.disconnect();
       setIsConnected(false);
       resetWorkspaceState();
-      setLoginTenantId(targetTenantId);
     } catch (error) {
       setTenantSwitchError(String(error?.message || 'No se pudo cambiar de empresa.'));
     } finally {
@@ -2427,7 +2410,6 @@ REGLA CRITICA:
     tenantOptionsById.set(tenantId, { id: tenantId, slug: tenantId, name: tenantId, active: true, plan: 'starter' });
   });
   const availableTenantOptions = Array.from(tenantOptionsById.values());
-  const loginTenantOptions = runtimeTenantOptions;
   const canSwitchTenant = saasAuthEnabled && isSaasAuthenticated && availableTenantOptions.length > 1;
   const saasUserRole = String(saasSession?.user?.role || '').trim().toLowerCase();
   const canManageSaas = !saasAuthEnabled || Boolean(saasSession?.user?.canManageSaas || saasSession?.user?.isSuperAdmin || saasUserRole === 'owner' || saasUserRole === 'admin' || saasUserRole === 'superadmin');
@@ -2521,55 +2503,39 @@ REGLA CRITICA:
 
   if (saasAuthEnabled && !isSaasAuthenticated) {
     return (
-      <div className='login-screen'>
-        <form onSubmit={handleSaasLogin} style={{ width: '100%', maxWidth: '460px', background: '#1f2c33', border: '1px solid rgba(134,150,160,0.28)', borderRadius: '16px', padding: '24px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ textAlign: 'center', marginBottom: '6px' }}>
-            <div style={{ fontSize: '1.6rem', fontWeight: 500, color: '#e9edef', marginBottom: '6px' }}>Acceso de empresa</div>
-            <p style={{ color: '#9eb2bf', fontSize: '0.86rem', margin: 0 }}>Inicia sesion para continuar con tu tenant SaaS.</p>
+      <div className='login-screen login-screen--saas'>
+        <div className='login-ambient' aria-hidden='true' />
+        <form onSubmit={handleSaasLogin} className='saas-login-card fade-in'>
+          <div className='saas-login-head'>
+            <span className='saas-login-kicker'>Control plane</span>
+            <div className='saas-login-title'>Acceso seguro</div>
+            <p>Inicia sesion con usuario y contrasena. La empresa se asigna automaticamente segun tus permisos.</p>
           </div>
 
-          <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', color: '#9eb2bf', fontSize: '0.78rem' }}>
-            Correo o usuario
+          <label className='saas-login-field'>
+            <span>Usuario o correo</span>
             <input
               type='text'
               value={loginEmail}
               onChange={(e) => setLoginEmail(e.target.value)}
               autoComplete='username'
-              style={{ borderRadius: '10px', border: '1px solid rgba(134,150,160,0.25)', background: '#101a21', color: '#e9edef', padding: '10px 12px', outline: 'none' }}
               placeholder='usuario@empresa.com o user_id'
             />
           </label>
 
-          <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', color: '#9eb2bf', fontSize: '0.78rem' }}>
-            Contrasena
+          <label className='saas-login-field'>
+            <span>Contrasena</span>
             <input
               type='password'
               value={loginPassword}
               onChange={(e) => setLoginPassword(e.target.value)}
               autoComplete='current-password'
-              style={{ borderRadius: '10px', border: '1px solid rgba(134,150,160,0.25)', background: '#101a21', color: '#e9edef', padding: '10px 12px', outline: 'none' }}
               placeholder='********'
             />
           </label>
 
-          {loginTenantOptions.length > 0 && (
-            <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', color: '#9eb2bf', fontSize: '0.78rem' }}>
-              Empresa
-              <select
-                value={loginTenantId}
-                onChange={(e) => setLoginTenantId(e.target.value)}
-                style={{ borderRadius: '10px', border: '1px solid rgba(134,150,160,0.25)', background: '#101a21', color: '#e9edef', padding: '10px 12px', outline: 'none' }}
-              >
-                <option value=''>Seleccionar empresa</option>
-                {loginTenantOptions.map((tenant) => (
-                  <option key={tenant.id} value={tenant.id}>{tenant.name || tenant.id}</option>
-                ))}
-              </select>
-            </label>
-          )}
-
           {saasAuthError && (
-            <div style={{ borderRadius: '10px', border: '1px solid rgba(255,113,113,0.35)', background: 'rgba(255,113,113,0.08)', color: '#ffd1d1', padding: '8px 10px', fontSize: '0.8rem' }}>
+            <div className='saas-login-error'>
               {saasAuthError}
             </div>
           )}
@@ -2577,7 +2543,7 @@ REGLA CRITICA:
           <button
             type='submit'
             disabled={saasAuthBusy}
-            style={{ marginTop: '4px', border: 'none', borderRadius: '10px', background: '#00a884', color: '#fff', padding: '10px 12px', fontWeight: 700, cursor: saasAuthBusy ? 'not-allowed' : 'pointer', opacity: saasAuthBusy ? 0.7 : 1 }}
+            className='saas-login-submit'
           >
             {saasAuthBusy ? 'Ingresando...' : 'Iniciar sesion'}
           </button>
@@ -2587,7 +2553,6 @@ REGLA CRITICA:
   }
 
 
-  // --------------------------------------------------------------
   // Render: Reconnecting
   // --------------------------------------------------------------
   if (!isConnected) {

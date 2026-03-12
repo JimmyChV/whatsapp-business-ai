@@ -627,11 +627,12 @@ export default function SaasAdminPanel({
                         <h3>Flujo operativo recomendado</h3>
                         <p>1) Superadmin crea empresa(s) y define plan/modulos.</p>
                         <p>2) Superadmin crea usuarios y asigna membresias (empresa + rol).</p>
-                        <p>3) Usuario de empresa inicia sesion, elige su empresa y luego el modo WhatsApp (Dual/Webjs/Cloud segun backend).</p>
+                        <p>3) Usuario de empresa inicia sesion con credenciales. El tenant se resuelve por membresias y permisos.</p>
                         <p>4) La operacion diaria (chats, catalogo, IA) corre aislada por tenant activo.</p>
                     </section>
                 )}
 
+                {selectedSectionId !== 'saas_resumen' && (
                 <div className="saas-admin-grid">
                     {selectedSectionId === 'saas_empresas' && (
                     <section id="saas_empresas" className="saas-admin-card">
@@ -1398,6 +1399,7 @@ export default function SaasAdminPanel({
                     </section>
                     )}
                 </div>
+                )}
             </div>
         </div>
     );
