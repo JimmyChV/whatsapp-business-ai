@@ -978,9 +978,15 @@ function extractMessageFileMeta(msg = {}, downloadedMedia = null) {
         }
     }
 
+    const mediaUrl = String(downloadedMedia?.publicUrl || downloadedMedia?.storedPublicUrl || '').trim() || null;
+    const mediaPath = String(downloadedMedia?.relativePath || downloadedMedia?.storedRelativePath || '').trim() || null;
+
     return {
         filename,
-        fileSizeBytes
+        mimetype: mimetype || null,
+        fileSizeBytes,
+        mediaUrl,
+        mediaPath
     };
 }
 
@@ -2384,6 +2390,10 @@ class SocketManager {
                     notifyName: senderMeta?.notifyName || null,
                     senderPushname: senderMeta?.senderPushname || null,
                     isGroupMessage: Boolean(senderMeta?.isGroupMessage),
+                    media: {
+                        url: fileMeta?.mediaUrl || null,
+                        path: fileMeta?.mediaPath || null
+                    },
                     ...(persistedAgentMeta || {})
                 },
                 chat: {
@@ -2640,6 +2650,8 @@ class SocketManager {
             mimetype: row?.mediaMime || null,
             filename: row?.mediaFilename || null,
             fileSizeBytes: Number.isFinite(Number(row?.mediaSizeBytes)) ? Number(row.mediaSizeBytes) : null,
+            mediaUrl: String(metadata?.media?.url || '').trim() || null,
+            mediaPath: String(metadata?.media?.path || '').trim() || null,
             type,
             author: row?.authorId || null,
             notifyName: String(metadata?.notifyName || '').trim() || null,
@@ -3673,6 +3685,8 @@ class SocketManager {
                         mimetype: null,
                         filename: fileMeta.filename,
                         fileSizeBytes: fileMeta.fileSizeBytes,
+                        mediaUrl: fileMeta.mediaUrl || null,
+                        mediaPath: fileMeta.mediaPath || null,
                         type: m.type,
                         author: m?.author || m?._data?.author || null,
                         notifyName: senderMeta.notifyName,
@@ -4921,7 +4935,14 @@ class SocketManager {
         waClient.on('message', async (msg) => {
             if (isStatusOrSystemMessage(msg)) return;
 
-            const media = await mediaManager.processMessageMedia(msg);
+            const historyTenantId = this.resolveHistoryTenantId();
+            const runtimeModuleContext = this.resolveHistoryModuleContext();
+            const media = await mediaManager.processMessageMedia(msg, {
+                tenantId: historyTenantId,
+                moduleId: runtimeModuleContext?.moduleId || '',
+                contactId: msg?.fromMe ? msg?.to : msg?.from,
+                timestampUnix: Number(msg?.timestamp || 0) || null
+            });
             const senderMeta = await resolveMessageSenderMeta(msg);
             const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
@@ -4929,8 +4950,7 @@ class SocketManager {
             const location = extractLocationInfo(msg);
             const messageId = getSerializedMessageId(msg);
             const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId)) : null;
-            const runtimeModuleContext = this.resolveHistoryModuleContext();
-            await this.persistMessageHistory(this.resolveHistoryTenantId(), {
+            await this.persistMessageHistory(historyTenantId, {
                 msg,
                 senderMeta,
                 fileMeta,
@@ -4952,6 +4972,8 @@ class SocketManager {
                 mimetype: media ? media.mimetype : null,
                 filename: fileMeta.filename,
                 fileSizeBytes: fileMeta.fileSizeBytes,
+                        mediaUrl: fileMeta.mediaUrl || null,
+                        mediaPath: fileMeta.mediaPath || null,
                 ack: msg.ack,
                 type: msg.type,
                 author: msg?.author || msg?._data?.author || null,
@@ -4982,15 +5004,21 @@ class SocketManager {
         waClient.on('message_sent', async (msg) => {
             if (isStatusOrSystemMessage(msg)) return;
             // Emite de vuelta para confirmar en UI si se envio desde otro lugar
-            const media = await mediaManager.processMessageMedia(msg);
+            const historyTenantId = this.resolveHistoryTenantId();
+            const runtimeModuleContext = this.resolveHistoryModuleContext();
+            const media = await mediaManager.processMessageMedia(msg, {
+                tenantId: historyTenantId,
+                moduleId: runtimeModuleContext?.moduleId || '',
+                contactId: msg?.fromMe ? msg?.to : msg?.from,
+                timestampUnix: Number(msg?.timestamp || 0) || null
+            });
             const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
             const order = extractOrderInfo(msg);
             const location = extractLocationInfo(msg);
             const messageId = getSerializedMessageId(msg);
             const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId)) : null;
-            const runtimeModuleContext = this.resolveHistoryModuleContext();
-            await this.persistMessageHistory(this.resolveHistoryTenantId(), {
+            await this.persistMessageHistory(historyTenantId, {
                 msg,
                 senderMeta: null,
                 fileMeta,
@@ -5012,6 +5040,8 @@ class SocketManager {
                 mimetype: media ? media.mimetype : null,
                 filename: fileMeta.filename,
                 fileSizeBytes: fileMeta.fileSizeBytes,
+                        mediaUrl: fileMeta.mediaUrl || null,
+                        mediaPath: fileMeta.mediaPath || null,
                 ack: msg.ack,
                 type: msg.type,
                 author: msg?.author || msg?._data?.author || null,

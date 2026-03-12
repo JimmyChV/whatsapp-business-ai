@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -36,9 +37,28 @@ function toBoolean(value, fallback = false) {
 }
 
 function normalizeModuleId(value = '', fallback = '') {
-    const source = toText(value || fallback).toLowerCase();
-    const normalized = source.replace(/[^a-z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+    const source = toText(value || fallback);
+    const normalized = source.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
     return normalized || '';
+}
+
+function normalizeStructuredModuleIdCandidate(value = '', size = 6) {
+    const safeSize = Math.max(4, Math.floor(Number(size) || 6));
+    const clean = String(value || '').trim().toUpperCase();
+    const matcher = new RegExp('^MOD-[A-Z0-9]{' + safeSize + '}$');
+    if (!matcher.test(clean)) return '';
+    return clean;
+}
+
+function randomModuleSuffix(size = 6) {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const safeSize = Math.max(4, Math.floor(Number(size) || 6));
+    const bytes = crypto.randomBytes(safeSize * 2);
+    let out = '';
+    for (let i = 0; i < bytes.length && out.length < safeSize; i += 1) {
+        out += alphabet[bytes[i] % alphabet.length];
+    }
+    return out.slice(0, safeSize);
 }
 
 function normalizePhone(value = '') {
@@ -85,15 +105,20 @@ function normalizeImageUrl(value = '') {
     return /^https?:\/\//i.test(text) ? text : null;
 }
 
-function createUniqueModuleId(modules = [], rawBase = '') {
-    const existing = new Set((Array.isArray(modules) ? modules : []).map((entry) => String(entry?.moduleId || '').trim().toLowerCase()).filter(Boolean));
-    const baseSeed = normalizeModuleId(rawBase || 'modulo_wa', 'modulo_wa');
-    if (!existing.has(baseSeed)) return baseSeed;
-    for (let i = 2; i < 10000; i += 1) {
-        const next = `${baseSeed}_${i}`;
-        if (!existing.has(next)) return next;
+function createUniqueModuleId(modules = []) {
+    const existing = new Set(
+        (Array.isArray(modules) ? modules : [])
+            .map((entry) => String(entry?.moduleId || '').trim().toUpperCase())
+            .filter(Boolean)
+    );
+
+    for (let i = 0; i < 1000; i += 1) {
+        const candidate = 'MOD-' + randomModuleSuffix(6);
+        if (!existing.has(candidate)) return candidate;
     }
-    return `${baseSeed}_${Math.random().toString(36).slice(2, 8)}`;
+
+    const fallback = Date.now().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(-6).padStart(6, '0');
+    return 'MOD-' + fallback;
 }
 function normalizeModule(input = {}, {
     fallbackId = '',
@@ -446,8 +471,9 @@ async function createModule(tenantId = DEFAULT_TENANT_ID, payload = {}) {
         throw new Error(`Se alcanzo el limite de modulos WA por empresa (${MAX_MODULES_PER_TENANT}).`);
     }
 
-    const requestedId = normalizeModuleId(payload?.moduleId || payload?.id || '');
-    const candidateId = requestedId || createUniqueModuleId(modules, payload?.name || `modulo_${modules.length + 1}`);
+    const requestedRaw = String(payload?.moduleId || payload?.id || '').trim();
+    const requestedId = normalizeStructuredModuleIdCandidate(requestedRaw, 6);
+    const candidateId = requestedId || createUniqueModuleId(modules);
 
     const preparedMetadata = prepareModuleMetadataForSave(sanitizeMetadata(payload?.metadata), {});
     const candidate = normalizeModule({
@@ -582,3 +608,4 @@ module.exports = {
     setSelectedModule,
     getSelectedModule
 };
+

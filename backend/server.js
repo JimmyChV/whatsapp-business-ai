@@ -4,6 +4,8 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const { URL } = require('url');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config({ quiet: true });
 const logger = require('./logger');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./security_utils');
@@ -55,6 +57,125 @@ function isCorsOriginAllowed(origin) {
 
 const app = express();
 app.disable('x-powered-by');
+
+const UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.join(__dirname, 'uploads')).trim() || path.join(__dirname, 'uploads'));
+const ADMIN_ASSET_UPLOAD_MAX_BYTES = Math.max(200 * 1024, Number(process.env.ADMIN_ASSET_UPLOAD_MAX_BYTES || 8 * 1024 * 1024));
+if (!fs.existsSync(UPLOADS_ROOT)) {
+    fs.mkdirSync(UPLOADS_ROOT, { recursive: true });
+}
+
+app.use('/uploads', express.static(UPLOADS_ROOT, {
+    fallthrough: true,
+    maxAge: isProduction ? '30d' : 0
+}));
+
+function sanitizeStorageSegment(value = '', fallback = 'default') {
+    const source = String(value || fallback || '').trim();
+    if (!source) return fallback;
+    const clean = source.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+    return clean || fallback;
+}
+
+function getRequestOrigin(req = {}) {
+    const protoRaw = String(req.headers?.['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+    const hostRaw = String(req.headers?.['x-forwarded-host'] || req.headers?.host || '').split(',')[0].trim();
+    const proto = protoRaw || 'http';
+    if (!hostRaw) return '';
+    return proto + '://' + hostRaw;
+}
+
+function normalizeImageExtension(fileName = '', mimeType = '') {
+    const fromName = String(fileName || '').trim().split('.').pop();
+    const cleanNameExt = String(fromName || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (cleanNameExt && ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'].includes(cleanNameExt)) {
+        return cleanNameExt === 'jpg' ? 'jpeg' : cleanNameExt;
+    }
+
+    const mime = String(mimeType || '').trim().toLowerCase().split(';')[0];
+    const map = {
+        'image/png': 'png',
+        'image/jpeg': 'jpeg',
+        'image/jpg': 'jpeg',
+        'image/webp': 'webp',
+        'image/gif': 'gif',
+        'image/svg+xml': 'svg',
+        'image/bmp': 'bmp'
+    };
+    return map[mime] || 'png';
+}
+
+function parseImageUploadPayload(body = {}) {
+    const source = body && typeof body === 'object' ? body : {};
+    const dataUrl = String(source.dataUrl || source.data || '').trim();
+    const base64Raw = String(source.base64 || '').trim();
+
+    if (!dataUrl && !base64Raw) {
+        throw new Error('No se recibio imagen para subir.');
+    }
+
+    let mimeType = String(source.mimeType || source.contentType || '').trim().toLowerCase();
+    let base64Data = base64Raw;
+
+    if (dataUrl) {
+        const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/i);
+        if (!match) {
+            throw new Error('Formato dataUrl invalido.');
+        }
+        mimeType = String(match[1] || mimeType || '').trim().toLowerCase();
+        base64Data = String(match[2] || '').trim();
+    }
+
+    if (!mimeType.startsWith('image/')) {
+        throw new Error('Solo se permiten imagenes.');
+    }
+
+    let buffer;
+    try {
+        buffer = Buffer.from(base64Data, 'base64');
+    } catch (_) {
+        throw new Error('La imagen no es base64 valido.');
+    }
+
+    if (!buffer || !buffer.length) {
+        throw new Error('La imagen esta vacia.');
+    }
+
+    if (buffer.length > ADMIN_ASSET_UPLOAD_MAX_BYTES) {
+        throw new Error('La imagen supera el tamano permitido.');
+    }
+
+    return {
+        mimeType,
+        buffer,
+        fileName: String(source.fileName || source.filename || '').trim() || 'imagen'
+    };
+}
+
+async function saveImageAssetFile({ tenantId = 'default', scope = 'general', mimeType = 'image/png', fileName = 'imagen', buffer = Buffer.alloc(0) } = {}) {
+    const cleanTenant = sanitizeStorageSegment(tenantId, 'default');
+    const cleanScope = sanitizeStorageSegment(scope, 'general');
+    const ext = normalizeImageExtension(fileName, mimeType);
+    const now = new Date();
+    const yyyy = String(now.getUTCFullYear());
+    const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(now.getUTCDate()).padStart(2, '0');
+    const baseName = sanitizeStorageSegment(path.parse(fileName).name || 'imagen', 'imagen').slice(0, 32);
+    const suffix = crypto.randomBytes(5).toString('hex');
+    const outName = baseName + '_' + suffix + '.' + ext;
+
+    const relativeParts = ['saas-assets', cleanTenant, cleanScope, yyyy, mm, dd, outName];
+    const relativePath = relativeParts.join('/');
+    const absolutePath = path.join(UPLOADS_ROOT, ...relativeParts);
+
+    await fs.promises.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.promises.writeFile(absolutePath, buffer);
+
+    return {
+        relativePath,
+        relativeUrl: '/uploads/' + relativePath,
+        absolutePath
+    };
+}
 
 function resolveRequestId(req = {}) {
     const fromHeader = String(req.headers?.['x-request-id'] || req.headers?.['x-correlation-id'] || '').trim();
@@ -129,7 +250,7 @@ if (securityHeadersEnabled) {
 }
 
 app.use(express.json({
-    limit: '1mb',
+    limit: '12mb',
     verify: (req, _res, buf) => {
         req.rawBody = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || '');
     }
@@ -784,6 +905,52 @@ function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
     return base;
 }
 
+app.post('/api/admin/saas/assets/upload', async (req, res) => {
+    try {
+        if (!hasTenantAdminWriteAccess(req)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado para subir archivos.' });
+        }
+
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+        const requestedTenantId = String(body.tenantId || req?.tenantContext?.id || 'default').trim() || 'default';
+        const tenantId = sanitizeStorageSegment(requestedTenantId, 'default');
+
+        if (!req?.authContext?.user?.isSuperAdmin && !isTenantAllowedForUser(req, requestedTenantId)) {
+            return res.status(403).json({ ok: false, error: 'No tienes acceso a ese tenant para subir archivos.' });
+        }
+
+        const scope = sanitizeStorageSegment(body.scope || 'general', 'general');
+        const parsed = parseImageUploadPayload(body);
+        const stored = await saveImageAssetFile({
+            tenantId,
+            scope,
+            mimeType: parsed.mimeType,
+            fileName: parsed.fileName,
+            buffer: parsed.buffer
+        });
+
+        const origin = getRequestOrigin(req);
+        const publicUrl = origin ? origin + stored.relativeUrl : stored.relativeUrl;
+
+        return res.status(201).json({
+            ok: true,
+            tenantId,
+            scope,
+            file: {
+                url: publicUrl,
+                relativeUrl: stored.relativeUrl,
+                relativePath: stored.relativePath,
+                mimeType: parsed.mimeType,
+                sizeBytes: Number(parsed.buffer?.length || 0) || 0,
+                fileName: path.basename(stored.absolutePath)
+            }
+        });
+    } catch (error) {
+        const message = String(error?.message || 'No se pudo subir el archivo.');
+        const status = /tamano|base64|imagen|formato/i.test(message) ? 400 : 500;
+        return res.status(status).json({ ok: false, error: message });
+    }
+});
 app.get('/api/admin/saas/overview', async (req, res) => {
     try {
         if (!hasSaasControlReadAccess(req)) {
@@ -1791,7 +1958,4 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
-
-
-
 
