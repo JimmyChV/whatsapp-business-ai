@@ -560,15 +560,16 @@ async function ensureLoaded() {
         const envSnapshot = buildEnvSnapshot();
         const storageSnapshot = await loadFromStorage();
 
-        let merged = mergeSnapshots(storageSnapshot, envSnapshot);
-
         const storageLooksEmpty = (storageSnapshot.tenants || []).length <= 1 && (storageSnapshot.users || []).length === 0;
         const envHasData = (envSnapshot.tenants || []).length > 1 || (envSnapshot.users || []).length > 0;
 
+        let merged = storageSnapshot;
         if (storageLooksEmpty && envHasData) {
+            merged = mergeSnapshots(storageSnapshot, envSnapshot);
             await persistSnapshot(merged);
         }
 
+        merged = normalizeSnapshot(merged);
         merged.loaded = true;
         cachedSnapshot = merged;
         return cachedSnapshot;
@@ -582,13 +583,8 @@ async function ensureLoaded() {
 }
 
 function getSnapshotSync() {
-    if (!cachedSnapshot.loaded) {
-        cachedSnapshot = mergeSnapshots(cachedSnapshot, buildEnvSnapshot());
-        cachedSnapshot.loaded = false;
-    }
-    return cachedSnapshot;
+    return normalizeSnapshot(cachedSnapshot);
 }
-
 function listTenantsSync({ includeInactive = true } = {}) {
     const snapshot = getSnapshotSync();
     const items = Array.isArray(snapshot.tenants) ? snapshot.tenants : [];
@@ -1076,4 +1072,5 @@ module.exports = {
     CONTROL_FILE_NAME,
     CONTROL_TENANT_ID
 };
+
 

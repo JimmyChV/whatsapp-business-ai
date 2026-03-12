@@ -1,4 +1,4 @@
-const EventEmitter = require('events');
+﻿const EventEmitter = require('events');
 const crypto = require('crypto');
 
 function normalizeDigits(value = '') {
@@ -190,7 +190,7 @@ class WhatsAppCloudClient extends EventEmitter {
     }
 
     get graphVersion() {
-        return String(this.runtimeConfig?.graphVersion || process.env.META_GRAPH_VERSION || 'v22.0').trim();
+        return String(this.runtimeConfig?.graphVersion || 'v22.0').trim();
     }
 
     get graphBaseUrl() {
@@ -198,23 +198,20 @@ class WhatsAppCloudClient extends EventEmitter {
     }
 
     get accessToken() {
-        return String(this.runtimeConfig?.systemUserToken || process.env.META_SYSTEM_USER_TOKEN || '').trim();
+        return String(this.runtimeConfig?.systemUserToken || '').trim();
     }
 
     get phoneNumberId() {
-        return String(this.runtimeConfig?.phoneNumberId || process.env.META_WABA_PHONE_NUMBER_ID || '').trim();
+        return String(this.runtimeConfig?.phoneNumberId || '').trim();
     }
 
     get appId() {
-        return String(this.runtimeConfig?.appId || process.env.META_APP_ID || '').trim();
+        return String(this.runtimeConfig?.appId || '').trim();
     }
 
     get selfDigits() {
         const digits = normalizeDigits(
             this.runtimeConfig?.displayPhoneNumber
-            || process.env.META_DISPLAY_PHONE_NUMBER
-            || process.env.META_SELF_PHONE
-            || process.env.META_WABA_PHONE_NUMBER
             || this.phoneNumberId
             || ''
         );
@@ -236,7 +233,7 @@ class WhatsAppCloudClient extends EventEmitter {
                 user: this.selfDigits,
                 server: 'c.us'
             },
-            pushname: String(this.runtimeConfig?.businessName || process.env.META_BUSINESS_NAME || process.env.META_DISPLAY_NAME || 'Cloud API'),
+            pushname: String(this.runtimeConfig?.businessName || 'Cloud API'),
             platform: 'cloud'
         };
     }
@@ -1215,3 +1212,4 @@ class WhatsAppCloudClient extends EventEmitter {
 }
 
 module.exports = new WhatsAppCloudClient();
+

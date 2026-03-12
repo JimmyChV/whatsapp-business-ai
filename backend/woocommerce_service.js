@@ -1,14 +1,35 @@
-require('dotenv').config({ quiet: true });
+﻿function normalizeText(value = '') {
+    const text = String(value || '').trim();
+    return text || null;
+}
 
-const WC_BASE_URL = (process.env.WC_BASE_URL || '').replace(/\/+$/, '');
-const WC_CONSUMER_KEY = process.env.WC_CONSUMER_KEY || '';
-const WC_CONSUMER_SECRET = process.env.WC_CONSUMER_SECRET || '';
-const WC_PER_PAGE = Number(process.env.WC_PER_PAGE || 100);
-const WC_MAX_PAGES = Number(process.env.WC_MAX_PAGES || 10);
-const WC_INCLUDE_OUT_OF_STOCK = String(process.env.WC_INCLUDE_OUT_OF_STOCK || 'true').toLowerCase() === 'true';
+function normalizePositive(value, fallback, { min = 1, max = 1000 } = {}) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    const rounded = Math.floor(parsed);
+    if (rounded < min) return min;
+    if (rounded > max) return max;
+    return rounded;
+}
 
-function isWooConfigured() {
-    return Boolean(WC_BASE_URL && WC_CONSUMER_KEY && WC_CONSUMER_SECRET);
+function normalizeWooConfig(input = {}) {
+    const source = input && typeof input === 'object' ? input : {};
+    const baseUrlRaw = normalizeText(source.baseUrl || source.url || source.storeUrl || '') || '';
+    const baseUrl = baseUrlRaw.replace(/\/+$/, '');
+    return {
+        enabled: source.enabled !== false,
+        baseUrl,
+        consumerKey: normalizeText(source.consumerKey || source.key || ''),
+        consumerSecret: normalizeText(source.consumerSecret || source.secret || ''),
+        perPage: normalizePositive(source.perPage, 100, { min: 10, max: 500 }),
+        maxPages: normalizePositive(source.maxPages, 10, { min: 1, max: 200 }),
+        includeOutOfStock: source.includeOutOfStock !== false
+    };
+}
+
+function isWooConfigured(config = {}) {
+    const clean = normalizeWooConfig(config);
+    return Boolean(clean.enabled && clean.baseUrl && clean.consumerKey && clean.consumerSecret);
 }
 
 function htmlToText(html) {
@@ -120,82 +141,92 @@ async function fetchJson(endpoint) {
     return payload;
 }
 
-async function fetchWooV3ProductsPage(page = 1) {
+async function fetchWooV3ProductsPage(config, page = 1) {
     const params = new URLSearchParams({
-        consumer_key: WC_CONSUMER_KEY,
-        consumer_secret: WC_CONSUMER_SECRET,
-        per_page: String(WC_PER_PAGE),
+        consumer_key: config.consumerKey,
+        consumer_secret: config.consumerSecret,
+        per_page: String(config.perPage),
         page: String(page),
         status: 'publish',
         orderby: 'date',
         order: 'desc'
     });
 
-    const endpoint = `${WC_BASE_URL}/wp-json/wc/v3/products?${params.toString()}`;
+    const endpoint = `${config.baseUrl}/wp-json/wc/v3/products?${params.toString()}`;
     const payload = await fetchJson(endpoint);
     return Array.isArray(payload) ? payload : [];
 }
 
-async function fetchStoreApiProductsPage(page = 1) {
+async function fetchStoreApiProductsPage(config, page = 1) {
     const params = new URLSearchParams({
-        per_page: String(WC_PER_PAGE),
+        per_page: String(config.perPage),
         page: String(page)
     });
-    const endpoint = `${WC_BASE_URL}/wp-json/wc/store/v1/products?${params.toString()}`;
+    const endpoint = `${config.baseUrl}/wp-json/wc/store/v1/products?${params.toString()}`;
     const payload = await fetchJson(endpoint);
     return Array.isArray(payload) ? payload : [];
 }
 
-function applyStockFilter(products) {
-    return WC_INCLUDE_OUT_OF_STOCK
+function applyStockFilter(products, config) {
+    return config.includeOutOfStock
         ? products
         : products.filter((p) => p?.stockStatus !== 'outofstock');
 }
 
-async function getWooCatalog() {
-    if (!WC_BASE_URL) {
+async function getWooCatalog(options = {}) {
+    const config = normalizeWooConfig(options?.config || options || {});
+    if (!config.enabled) {
+        return {
+            products: [],
+            source: 'none',
+            status: 'disabled',
+            reason: 'WooCommerce deshabilitado para este tenant'
+        };
+    }
+
+    if (!config.baseUrl) {
         return {
             products: [],
             source: 'none',
             status: 'missing_base_url',
-            reason: 'WC_BASE_URL no configurado'
+            reason: 'Base URL de WooCommerce no configurada'
         };
     }
 
-    if (isWooConfigured()) {
+    if (isWooConfigured(config)) {
         try {
             const allV3 = [];
-            for (let page = 1; page <= WC_MAX_PAGES; page += 1) {
-                const pageProducts = await fetchWooV3ProductsPage(page);
+            for (let page = 1; page <= config.maxPages; page += 1) {
+                const pageProducts = await fetchWooV3ProductsPage(config, page);
                 if (!pageProducts.length) break;
                 allV3.push(...pageProducts);
-                if (pageProducts.length < WC_PER_PAGE) break;
+                if (pageProducts.length < config.perPage) break;
             }
 
-            const normalized = applyStockFilter(allV3.map(normalizeWooV3Product));
+            const normalized = applyStockFilter(allV3.map(normalizeWooV3Product), config);
             if (normalized.length > 0) {
                 return { products: normalized, source: 'wc/v3', status: 'ok', reason: null };
             }
-
-        } catch (error) {
+        } catch (_) {
+            // fallback a Store API
         }
     }
 
     try {
         const allStore = [];
-        for (let page = 1; page <= WC_MAX_PAGES; page += 1) {
-            const pageProducts = await fetchStoreApiProductsPage(page);
+        for (let page = 1; page <= config.maxPages; page += 1) {
+            const pageProducts = await fetchStoreApiProductsPage(config, page);
             if (!pageProducts.length) break;
             allStore.push(...pageProducts);
-            if (pageProducts.length < WC_PER_PAGE) break;
+            if (pageProducts.length < config.perPage) break;
         }
 
-        const normalized = applyStockFilter(allStore.map(normalizeStoreApiProduct));
+        const normalized = applyStockFilter(allStore.map(normalizeStoreApiProduct), config);
         return {
             products: normalized,
             source: 'wc/store/v1',
             status: normalized.length > 0 ? 'ok' : 'empty',
-            reason: normalized.length > 0 ? null : 'Store API devolvió catálogo vacío'
+            reason: normalized.length > 0 ? null : 'Store API devolvio catalogo vacio'
         };
     } catch (error) {
         return {
@@ -208,7 +239,7 @@ async function getWooCatalog() {
 }
 
 module.exports = {
+    normalizeWooConfig,
     isWooConfigured,
     getWooCatalog
 };
-

@@ -3,7 +3,9 @@ const assert = require('node:assert/strict');
 
 function loadTenantServiceFresh() {
     const modulePath = require.resolve('../tenant_service');
+    const controlPath = require.resolve('../saas_control_plane_service');
     delete require.cache[modulePath];
+    delete require.cache[controlPath];
     return require('../tenant_service');
 }
 

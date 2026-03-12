@@ -1,7 +1,6 @@
+﻿const fs = require('fs');
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env'), quiet: true });
-require('dotenv').config({ quiet: true });
-const fs = require('fs');
+const tenantIntegrationsService = require('./tenant_integrations_service');
 
 function sanitizeApiKey(value = '') {
     return String(value || '')
@@ -10,26 +9,27 @@ function sanitizeApiKey(value = '') {
         .replace(/\s+/g, '');
 }
 
-function getOpenAIConfig() {
+async function getOpenAIConfig({ tenantId = 'default' } = {}) {
+    const integrations = await tenantIntegrationsService.getTenantIntegrations(tenantId, { runtime: true });
     return {
-        apiKey: sanitizeApiKey(process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || ''),
-        model: String(process.env.OPENAI_MODEL || 'gpt-4o-mini').trim()
+        apiKey: sanitizeApiKey(integrations?.ai?.openaiApiKey || ''),
+        model: String(integrations?.ai?.model || 'gpt-4o-mini').trim() || 'gpt-4o-mini'
     };
 }
 
 function mapAiError(error) {
     const text = String(error?.message || error || '').toLowerCase();
     if (text.includes('api key')) {
-        return 'Error IA: OPENAI_API_KEY invalida o ausente. Verifica tu .env y reinicia backend.';
+        return 'Error IA: API Key invalida o ausente. Configurala en Panel SaaS > Configuracion.';
     }
     if (text.includes('quota') || text.includes('rate limit') || text.includes('resource_exhausted') || error?.status === 429) {
         return 'Error IA: cuota/limite de OpenAI agotado. Revisa billing y limites de tu cuenta.';
     }
     if (text.includes('model') && text.includes('not found')) {
-        return 'Error IA: modelo de OpenAI no disponible. Ajusta OPENAI_MODEL en tu .env.';
+        return 'Error IA: modelo de OpenAI no disponible. Ajusta el modelo en Panel SaaS > Configuracion.';
     }
     if (error?.status === 401) {
-        return 'Error IA: autenticacion fallida con OpenAI (401). Revisa OPENAI_API_KEY/proyecto.';
+        return 'Error IA: autenticacion fallida con OpenAI (401). Revisa la API Key del tenant.';
     }
     if (error?.status === 403) {
         return 'Error IA: acceso denegado por OpenAI (403). Revisa permisos del proyecto.';
@@ -86,13 +86,13 @@ ${externalBusinessContext}`.trim();
 }
 
 /**
- * Genera una sugerencia de respuesta para el cliente basada en el contexto de la conversacion (SOPORTA STREAMING).
+ * Genera sugerencia de respuesta para el cliente (SOPORTA STREAMING).
  */
-async function getChatSuggestion(context, customPrompt = '', onChunk = null, externalBusinessContext = null) {
+async function getChatSuggestion(context, customPrompt = '', onChunk = null, externalBusinessContext = null, options = {}) {
     try {
-        const config = getOpenAIConfig();
+        const config = await getOpenAIConfig({ tenantId: options?.tenantId || 'default' });
         if (!config.apiKey) {
-            return 'IA no configurada. Falta OPENAI_API_KEY.';
+            return 'IA no configurada. Falta OpenAI API Key para este tenant.';
         }
 
         const businessContext = buildBusinessContext(externalBusinessContext);
@@ -123,20 +123,20 @@ Genera la respuesta sugerida que el negocio deberia enviar. Texto directo, sin c
 }
 
 /**
- * Responde consultas internas del vendedor sobre el inventario y negocio (SOPORTA STREAMING).
+ * Responde consultas internas del vendedor (SOPORTA STREAMING).
  */
-async function askInternalCopilot(query, onChunk = null, externalBusinessContext = null) {
+async function askInternalCopilot(query, onChunk = null, externalBusinessContext = null, options = {}) {
     try {
-        const config = getOpenAIConfig();
+        const config = await getOpenAIConfig({ tenantId: options?.tenantId || 'default' });
         if (!config.apiKey) {
-            return 'IA no configurada. Falta OPENAI_API_KEY.';
+            return 'IA no configurada. Falta OpenAI API Key para este tenant.';
         }
 
         const businessContext = buildBusinessContext(externalBusinessContext);
 
         const prompt = `${businessContext}
 
-INSTRUCCION: Eres el copiloto interno. Ayuda al dueno con stock y opciones (sugiere 3 siempre). 
+INSTRUCCION: Eres el copiloto interno. Ayuda al dueno con stock y opciones (sugiere 3 siempre).
 CONSULTA: "${query}"
 
 REGLAS CRITICAS:

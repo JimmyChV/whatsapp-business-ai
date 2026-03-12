@@ -34,6 +34,42 @@ const EMPTY_SETTINGS = {
         quickReplies: true
     }
 };
+const EMPTY_INTEGRATIONS_FORM = {
+    catalogMode: 'hybrid',
+    metaEnabled: true,
+    wooEnabled: true,
+    wooBaseUrl: '',
+    wooPerPage: 100,
+    wooMaxPages: 10,
+    wooIncludeOutOfStock: true,
+    wooConsumerKey: '',
+    wooConsumerSecret: '',
+    wooConsumerKeyMasked: '',
+    wooConsumerSecretMasked: '',
+    localEnabled: true,
+    aiProvider: 'openai',
+    aiModel: 'gpt-4o-mini',
+    openaiApiKey: '',
+    openaiApiKeyMasked: ''
+};
+
+const PLAN_LIMIT_KEYS = [
+    { key: 'maxUsers', label: 'Max usuarios', min: 1, max: 100000 },
+    { key: 'maxWaModules', label: 'Max modulos WA', min: 1, max: 100000 },
+    { key: 'maxCatalogs', label: 'Max catalogos', min: 1, max: 100000 },
+    { key: 'maxCatalogItems', label: 'Max productos catalogo', min: 1, max: 1000000 },
+    { key: 'maxMonthlyAiRequests', label: 'Max IA mensual', min: 1, max: 100000000 },
+    { key: 'maxActiveSessions', label: 'Max sesiones activas', min: 1, max: 100000 }
+];
+
+const PLAN_FEATURE_KEYS = [
+    { key: 'aiPro', label: 'IA Pro' },
+    { key: 'catalog', label: 'Catalogo' },
+    { key: 'cart', label: 'Carrito' },
+    { key: 'quickReplies', label: 'Respuestas rapidas' },
+    { key: 'audit', label: 'Auditoria' },
+    { key: 'opsPanel', label: 'Panel Ops' }
+];
 
 const EMPTY_WA_MODULE_FORM = {
     moduleId: '',
@@ -62,7 +98,7 @@ const EMPTY_WA_MODULE_FORM = {
 
 const ROLE_OPTIONS = ['owner', 'admin', 'seller'];
 const PLAN_OPTIONS = ['starter', 'pro', 'enterprise'];
-const CATALOG_MODE_OPTIONS = ['hybrid', 'woo_only', 'local_only'];
+const CATALOG_MODE_OPTIONS = ['hybrid', 'meta_only', 'woo_only', 'local_only'];
 const MODULE_KEYS = [
     { key: 'aiPro', label: 'IA Pro' },
     { key: 'catalog', label: 'Catalogo' },
@@ -74,6 +110,8 @@ const ADMIN_NAV_ITEMS = [
     { id: 'saas_empresas', label: 'Empresas' },
     { id: 'saas_usuarios', label: 'Usuarios' },
     { id: 'saas_modulos', label: 'Modulos' },
+    { id: 'saas_catalogos', label: 'Catalogos' },
+    { id: 'saas_planes', label: 'Planes' },
     { id: 'saas_config', label: 'Configuracion' }
 ];
 const ADMIN_IMAGE_MAX_BYTES = Math.max(200 * 1024, Number(import.meta.env.VITE_ADMIN_ASSET_MAX_BYTES || 2 * 1024 * 1024));
@@ -172,6 +210,98 @@ function normalizeWaModule(item = {}) {
     };
 }
 
+function normalizeIntegrationsPayload(integrations = {}) {
+    const source = integrations && typeof integrations === 'object' ? integrations : {};
+    const catalog = source.catalog && typeof source.catalog === 'object' ? source.catalog : {};
+    const providers = catalog.providers && typeof catalog.providers === 'object' ? catalog.providers : {};
+    const woo = providers.woocommerce && typeof providers.woocommerce === 'object' ? providers.woocommerce : {};
+    const ai = source.ai && typeof source.ai === 'object' ? source.ai : {};
+
+    return {
+        catalogMode: CATALOG_MODE_OPTIONS.includes(String(catalog.mode || '').trim())
+            ? String(catalog.mode || '').trim()
+            : 'hybrid',
+        metaEnabled: providers?.meta?.enabled !== false,
+        wooEnabled: woo.enabled !== false,
+        wooBaseUrl: String(woo.baseUrl || '').trim(),
+        wooPerPage: Number(woo.perPage || 100) || 100,
+        wooMaxPages: Number(woo.maxPages || 10) || 10,
+        wooIncludeOutOfStock: woo.includeOutOfStock !== false,
+        wooConsumerKey: '',
+        wooConsumerSecret: '',
+        wooConsumerKeyMasked: String(woo.consumerKeyMasked || '').trim(),
+        wooConsumerSecretMasked: String(woo.consumerSecretMasked || '').trim(),
+        localEnabled: providers?.local?.enabled !== false,
+        aiProvider: String(ai.provider || 'openai').trim() || 'openai',
+        aiModel: String(ai.model || 'gpt-4o-mini').trim() || 'gpt-4o-mini',
+        openaiApiKey: '',
+        openaiApiKeyMasked: String(ai.openAiApiKeyMasked || '').trim()
+    };
+}
+
+function buildIntegrationsUpdatePayload(form = {}) {
+    const source = form && typeof form === 'object' ? form : {};
+    const payload = {
+        catalog: {
+            mode: CATALOG_MODE_OPTIONS.includes(String(source.catalogMode || '').trim())
+                ? String(source.catalogMode || '').trim()
+                : 'hybrid',
+            providers: {
+                meta: {
+                    enabled: source.metaEnabled !== false
+                },
+                woocommerce: {
+                    enabled: source.wooEnabled !== false,
+                    baseUrl: String(source.wooBaseUrl || '').trim() || null,
+                    perPage: Math.max(10, Math.min(500, Number(source.wooPerPage || 100) || 100)),
+                    maxPages: Math.max(1, Math.min(200, Number(source.wooMaxPages || 10) || 10)),
+                    includeOutOfStock: source.wooIncludeOutOfStock !== false
+                },
+                local: {
+                    enabled: source.localEnabled !== false
+                }
+            }
+        },
+        ai: {
+            provider: String(source.aiProvider || 'openai').trim() || 'openai',
+            model: String(source.aiModel || 'gpt-4o-mini').trim() || 'gpt-4o-mini'
+        }
+    };
+
+    const wooConsumerKey = String(source.wooConsumerKey || '').trim();
+    const wooConsumerSecret = String(source.wooConsumerSecret || '').trim();
+    const openaiApiKey = String(source.openaiApiKey || '').trim();
+
+    if (wooConsumerKey) payload.catalog.providers.woocommerce.consumerKey = wooConsumerKey;
+    if (wooConsumerSecret) payload.catalog.providers.woocommerce.consumerSecret = wooConsumerSecret;
+    if (openaiApiKey) payload.ai.openaiApiKey = openaiApiKey;
+
+    return payload;
+}
+
+function normalizePlanForm(planId = 'starter', limits = {}) {
+    const source = limits && typeof limits === 'object' ? limits : {};
+    const features = source.features && typeof source.features === 'object' ? source.features : {};
+
+    const base = {
+        id: String(planId || 'starter').trim().toLowerCase() || 'starter',
+        features: {}
+    };
+
+    PLAN_LIMIT_KEYS.forEach((entry) => {
+        const value = Number(source?.[entry.key]);
+        const fallback = entry.key === 'maxMonthlyAiRequests' ? 500 : 1;
+        base[entry.key] = Number.isFinite(value) && value > 0
+            ? Math.floor(value)
+            : fallback;
+    });
+
+    PLAN_FEATURE_KEYS.forEach((entry) => {
+        base.features[entry.key] = features?.[entry.key] !== false;
+    });
+
+    return base;
+}
 function buildTenantFormFromItem(item = null) {
     if (!item || typeof item !== 'object') return EMPTY_TENANT_FORM;
     return {
@@ -345,9 +475,17 @@ export default function SaasAdminPanel({
     const [userPanelMode, setUserPanelMode] = useState('view');
     const [tenantSettingsPanelMode, setTenantSettingsPanelMode] = useState('view');
     const [waModulePanelMode, setWaModulePanelMode] = useState('view');
+    const [tenantIntegrations, setTenantIntegrations] = useState(EMPTY_INTEGRATIONS_FORM);
+    const [catalogPanelMode, setCatalogPanelMode] = useState('view');
+    const [planMatrix, setPlanMatrix] = useState({});
+    const [selectedPlanId, setSelectedPlanId] = useState('');
+    const [planForm, setPlanForm] = useState(() => normalizePlanForm('starter', {}));
+    const [planPanelMode, setPlanPanelMode] = useState('view');
 
     const [busy, setBusy] = useState(false);
     const [loadingSettings, setLoadingSettings] = useState(false);
+    const [loadingIntegrations, setLoadingIntegrations] = useState(false);
+    const [loadingPlans, setLoadingPlans] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
     const [currentSection, setCurrentSection] = useState(String(activeSection || initialSection || 'saas_resumen'));
@@ -431,6 +569,22 @@ export default function SaasAdminPanel({
         () => (waModules || []).find((item) => String(item?.moduleId || '') === String(selectedWaModuleId || '')) || null,
         [waModules, selectedWaModuleId]
     );
+    const planIds = useMemo(() => {
+        const keys = Object.keys(planMatrix || {}).map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean);
+        const merged = Array.from(new Set([...PLAN_OPTIONS, ...keys]));
+        return merged;
+    }, [planMatrix]);
+
+    const selectedPlan = useMemo(() => {
+        const cleanPlanId = String(selectedPlanId || '').trim().toLowerCase();
+        if (!cleanPlanId) return null;
+        return {
+            id: cleanPlanId,
+            limits: planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object'
+                ? planMatrix[cleanPlanId]
+                : null
+        };
+    }, [planMatrix, selectedPlanId]);
 
     const usersByTenant = useMemo(() => {
         const map = new Map();
@@ -481,6 +635,8 @@ export default function SaasAdminPanel({
             if (item.id === 'saas_empresas') return canManageTenants;
             if (item.id === 'saas_usuarios') return canManageUsers;
             if (item.id === 'saas_modulos') return canManageTenantSettings;
+            if (item.id === 'saas_catalogos') return canManageTenantSettings;
+            if (item.id === 'saas_planes') return Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
             if (item.id === 'saas_config') return canManageTenantSettings;
             return true;
         });
@@ -492,6 +648,8 @@ export default function SaasAdminPanel({
         return adminNavItems[0]?.id || 'saas_resumen';
     })();
     const isModulesSection = selectedSectionId === 'saas_modulos';
+    const isCatalogSection = selectedSectionId === 'saas_catalogos';
+    const isPlansSection = selectedSectionId === 'saas_planes';
     const isGeneralConfigSection = selectedSectionId === 'saas_config';
 
     const handleSectionChange = (sectionId) => {
@@ -582,6 +740,74 @@ export default function SaasAdminPanel({
         }
     };
 
+    const loadTenantIntegrations = async (tenantId) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        if (!cleanTenantId) {
+            setTenantIntegrations(EMPTY_INTEGRATIONS_FORM);
+            return;
+        }
+        setLoadingIntegrations(true);
+        try {
+            const payload = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/integrations`);
+            setTenantIntegrations(normalizeIntegrationsPayload(payload?.integrations || {}));
+        } finally {
+            setLoadingIntegrations(false);
+        }
+    };
+
+    const loadPlanMatrix = async () => {
+        setLoadingPlans(true);
+        try {
+            const payload = await requestJson('/api/admin/saas/plans');
+            const rows = Array.isArray(payload?.plans) ? payload.plans : [];
+            const nextMatrix = {};
+            rows.forEach((row) => {
+                const planId = String(row?.id || '').trim().toLowerCase();
+                if (!planId) return;
+                nextMatrix[planId] = row?.limits && typeof row.limits === 'object' ? row.limits : {};
+            });
+            setPlanMatrix(nextMatrix);
+            setSelectedPlanId((prev) => {
+                const cleanPrev = String(prev || '').trim().toLowerCase();
+                if (cleanPrev && nextMatrix?.[cleanPrev]) return cleanPrev;
+                return planIds.find((planId) => nextMatrix?.[planId]) || PLAN_OPTIONS[0] || '';
+            });
+        } finally {
+            setLoadingPlans(false);
+        }
+    };
+
+    const openCatalogView = () => {
+        setCatalogPanelMode('view');
+    };
+
+    const openCatalogEdit = () => {
+        setCatalogPanelMode('edit');
+    };
+
+    const openPlanView = (planId) => {
+        const cleanPlanId = String(planId || '').trim().toLowerCase();
+        if (!cleanPlanId) return;
+        const limits = planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object' ? planMatrix[cleanPlanId] : {};
+        setSelectedPlanId(cleanPlanId);
+        setPlanForm(normalizePlanForm(cleanPlanId, limits));
+        setPlanPanelMode('view');
+    };
+
+    const openPlanEdit = () => {
+        const cleanPlanId = String(selectedPlanId || '').trim().toLowerCase();
+        if (!cleanPlanId) return;
+        const limits = planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object' ? planMatrix[cleanPlanId] : {};
+        setPlanForm(normalizePlanForm(cleanPlanId, limits));
+        setPlanPanelMode('edit');
+    };
+
+    const cancelPlanEdit = () => {
+        const cleanPlanId = String(selectedPlanId || '').trim().toLowerCase();
+        const limits = planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object' ? planMatrix[cleanPlanId] : {};
+        setPlanForm(normalizePlanForm(cleanPlanId, limits));
+        setPlanPanelMode('view');
+    };
     const loadWaModules = async (tenantId) => {
         const cleanTenantId = String(tenantId || '').trim();
         if (!cleanTenantId) {
@@ -605,6 +831,9 @@ export default function SaasAdminPanel({
 
     const resetWaModuleForm = () => {
         setWaModuleForm(EMPTY_WA_MODULE_FORM);
+        setTenantIntegrations(EMPTY_INTEGRATIONS_FORM);
+        setSelectedPlanId('');
+        setPlanForm(normalizePlanForm('starter', {}));
         setEditingWaModuleId('');
         setModuleUserPickerId('');
     };
@@ -717,7 +946,7 @@ export default function SaasAdminPanel({
     useEffect(() => {
         if (!isOpen || !canManageSaas) return;
         runAction('Carga inicial', async () => {
-            await refreshOverview();
+            await Promise.all([refreshOverview(), loadPlanMatrix()]);
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, canManageSaas]);
@@ -731,10 +960,15 @@ export default function SaasAdminPanel({
         setUserPanelMode('view');
         setTenantSettingsPanelMode('view');
         setWaModulePanelMode('view');
+        setCatalogPanelMode('view');
+        setPlanPanelMode('view');
         setMembershipDraft([]);
         setTenantForm(EMPTY_TENANT_FORM);
         setUserForm(EMPTY_USER_FORM);
         setWaModuleForm(EMPTY_WA_MODULE_FORM);
+        setTenantIntegrations(EMPTY_INTEGRATIONS_FORM);
+        setSelectedPlanId('');
+        setPlanForm(normalizePlanForm('starter', {}));
         setEditingWaModuleId('');
         setModuleUserPickerId('');
     }, []);
@@ -758,6 +992,9 @@ export default function SaasAdminPanel({
                 || userPanelMode !== 'view'
                 || tenantSettingsPanelMode !== 'view'
                 || waModulePanelMode !== 'view'
+                || catalogPanelMode !== 'view'
+                || planPanelMode !== 'view'
+                || selectedPlanId
             );
 
             if (hasSelection) {
@@ -785,14 +1022,18 @@ export default function SaasAdminPanel({
         tenantPanelMode,
         tenantSettingsPanelMode,
         userPanelMode,
-        waModulePanelMode
+        waModulePanelMode,
+        catalogPanelMode,
+        planPanelMode,
+        selectedPlanId
     ]);
 
     useEffect(() => {
         if (!isOpen || !canManageSaas || !settingsTenantId) return;
         Promise.all([
             loadTenantSettings(settingsTenantId),
-            loadWaModules(settingsTenantId)
+            loadWaModules(settingsTenantId),
+            loadTenantIntegrations(settingsTenantId)
         ]).catch((err) => {
             setError(String(err?.message || err || 'No se pudo cargar configuracion del tenant.'));
         });
@@ -804,9 +1045,16 @@ export default function SaasAdminPanel({
         setSelectedWaModuleId('');
         setTenantSettingsPanelMode('view');
         setWaModulePanelMode('view');
+        setCatalogPanelMode('view');
         setModuleUserPickerId('');
     }, [settingsTenantId]);
 
+    useEffect(() => {
+        const cleanPlanId = String(selectedPlanId || '').trim().toLowerCase();
+        if (!cleanPlanId) return;
+        const limits = planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object' ? planMatrix[cleanPlanId] : {};
+        setPlanForm(normalizePlanForm(cleanPlanId, limits));
+    }, [selectedPlanId, planMatrix]);
     useEffect(() => {
         if (!String(selectedConfigKey || '').startsWith('wa_module:')) return;
         if (selectedConfigModule) return;
@@ -982,6 +1230,7 @@ export default function SaasAdminPanel({
         setSelectedWaModuleId('');
         setTenantSettingsPanelMode('view');
         setWaModulePanelMode('view');
+        setCatalogPanelMode('view');
         setModuleUserPickerId('');
         resetWaModuleForm();
     };
@@ -1830,12 +2079,12 @@ export default function SaasAdminPanel({
                                                 <small>{tenantSettingsPanelMode === 'edit' ? 'Edicion activa' : 'Vista de solo lectura'}</small>
                                             </div>
                                             <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                                {tenantSettingsPanelMode === 'view' && (
+                                                {false && (
                                                     <button type="button" disabled={busy || loadingSettings} onClick={openConfigSettingsEdit}>
                                                         Editar
                                                     </button>
                                                 )}
-                                                {tenantSettingsPanelMode === 'edit' && (
+                                                {false && (
                                                     <>
                                                         <button
                                                             type="button"
@@ -1895,8 +2144,8 @@ export default function SaasAdminPanel({
                                             </>
                                         )}
 
-                                        {tenantSettingsPanelMode === 'edit' && (
-                                            <>
+                                        {false && (
+                                                    <>
                                                 <div className="saas-admin-form-row">
                                                     <select
                                                         value={tenantSettings.catalogMode}
@@ -2339,28 +2588,370 @@ export default function SaasAdminPanel({
                     </section>
                     )}
 
+
+                    {isCatalogSection && (
+                    <section id="saas_catalogos" className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <h3>Catalogos e IA</h3>
+                                    <small>Configuracion por empresa. Las credenciales se guardan cifradas.</small>
+                                </div>
+
+                                <div className="saas-admin-form-row">
+                                    <select
+                                        value={settingsTenantId}
+                                        onChange={(event) => setSettingsTenantId(String(event.target.value || '').trim())}
+                                        disabled={busy}
+                                    >
+                                        <option value="">Seleccionar empresa</option>
+                                        {tenantOptions.map((tenant) => (
+                                            <option key={tenant.id} value={tenant.id}>{toTenantDisplayName(tenant)}</option>
+                                        ))}
+                                    </select>
+                                    <button type="button" disabled={busy || loadingIntegrations} onClick={() => settingsTenantId && loadTenantIntegrations(settingsTenantId)}>
+                                        Recargar
+                                    </button>
+                                </div>
+
+                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                    {catalogPanelMode === 'view' && (
+                                        <button type="button" disabled={busy || !settingsTenantId} onClick={openCatalogEdit}>Editar</button>
+                                    )}
+                                    {catalogPanelMode === 'edit' && (
+                                        <>
+                                            <button
+                                                type="button"
+                                                disabled={busy || !settingsTenantId}
+                                                onClick={() => runAction('Integraciones actualizadas', async () => {
+                                                    await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/integrations`, {
+                                                        method: 'PUT',
+                                                        body: buildIntegrationsUpdatePayload(tenantIntegrations)
+                                                    });
+                                                    setCatalogPanelMode('view');
+                                                    await loadTenantIntegrations(settingsTenantId);
+                                                })}
+                                            >
+                                                Guardar
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={busy || !settingsTenantId}
+                                                onClick={async () => {
+                                                    if (!settingsTenantId) return;
+                                                    setBusy(true);
+                                                    try {
+                                                        await loadTenantIntegrations(settingsTenantId);
+                                                        setCatalogPanelMode('view');
+                                                    } catch (err) {
+                                                        setError(String(err?.message || err || 'No se pudo recargar integraciones.'));
+                                                    } finally {
+                                                        setBusy(false);
+                                                    }
+                                                }}
+                                            >
+                                                Cancelar
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </aside>
+
+                            <div className="saas-admin-detail-pane">
+                                {!settingsTenantId && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Selecciona una empresa</h4>
+                                        <p>Define origen de catalogo, credenciales WooCommerce y modelo IA por tenant.</p>
+                                    </div>
+                                )}
+
+                                {settingsTenantId && catalogPanelMode === 'view' && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>Integraciones activas</h3>
+                                                <small>Vista de solo lectura por tenant.</small>
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-detail-grid">
+                                            <div className="saas-admin-detail-field"><span>Modo catalogo</span><strong>{tenantIntegrations.catalogMode}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Meta</span><strong>{tenantIntegrations.metaEnabled ? 'Activo' : 'Inactivo'}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>WooCommerce</span><strong>{tenantIntegrations.wooEnabled ? 'Activo' : 'Inactivo'}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Catalogo local</span><strong>{tenantIntegrations.localEnabled ? 'Activo' : 'Inactivo'}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Modelo IA</span><strong>{tenantIntegrations.aiModel || '-'}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>OpenAI Key</span><strong>{tenantIntegrations.openaiApiKeyMasked || 'No configurada'}</strong></div>
+                                        </div>
+
+                                        <div className="saas-admin-related-block">
+                                            <h4>WooCommerce</h4>
+                                            <div className="saas-admin-related-list">
+                                                <div className="saas-admin-related-row" role="status"><span>Base URL</span><small>{tenantIntegrations.wooBaseUrl || 'No configurada'}</small></div>
+                                                <div className="saas-admin-related-row" role="status"><span>Per page</span><small>{tenantIntegrations.wooPerPage}</small></div>
+                                                <div className="saas-admin-related-row" role="status"><span>Max pages</span><small>{tenantIntegrations.wooMaxPages}</small></div>
+                                                <div className="saas-admin-related-row" role="status"><span>Consumer Key</span><small>{tenantIntegrations.wooConsumerKeyMasked || 'No configurada'}</small></div>
+                                                <div className="saas-admin-related-row" role="status"><span>Consumer Secret</span><small>{tenantIntegrations.wooConsumerSecretMasked || 'No configurada'}</small></div>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+
+                                {settingsTenantId && catalogPanelMode === 'edit' && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>Editar integraciones</h3>
+                                                <small>Solo se actualizan secretos si escribes un valor nuevo.</small>
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-form-row">
+                                            <select
+                                                value={tenantIntegrations.catalogMode}
+                                                onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, catalogMode: event.target.value }))}
+                                                disabled={busy}
+                                            >
+                                                {CATALOG_MODE_OPTIONS.map((mode) => (
+                                                    <option key={`tenant_catalog_mode_${mode}`} value={mode}>{mode}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="saas-admin-modules">
+                                            <label className="saas-admin-module-toggle">
+                                                <input type="checkbox" checked={tenantIntegrations.metaEnabled !== false} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, metaEnabled: event.target.checked }))} disabled={busy} />
+                                                <span>Meta catalog habilitado</span>
+                                            </label>
+                                            <label className="saas-admin-module-toggle">
+                                                <input type="checkbox" checked={tenantIntegrations.wooEnabled !== false} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, wooEnabled: event.target.checked }))} disabled={busy} />
+                                                <span>WooCommerce habilitado</span>
+                                            </label>
+                                            <label className="saas-admin-module-toggle">
+                                                <input type="checkbox" checked={tenantIntegrations.localEnabled !== false} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, localEnabled: event.target.checked }))} disabled={busy} />
+                                                <span>Catalogo local habilitado</span>
+                                            </label>
+                                            <label className="saas-admin-module-toggle">
+                                                <input type="checkbox" checked={tenantIntegrations.wooIncludeOutOfStock !== false} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, wooIncludeOutOfStock: event.target.checked }))} disabled={busy} />
+                                                <span>Woo incluye sin stock</span>
+                                            </label>
+                                        </div>
+
+                                        <div className="saas-admin-form-row">
+                                            <input value={tenantIntegrations.wooBaseUrl} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, wooBaseUrl: event.target.value }))} placeholder="Woo base URL (https://tu-tienda.com)" disabled={busy} />
+                                        </div>
+                                        <div className="saas-admin-form-row">
+                                            <input type="number" min={10} max={500} value={tenantIntegrations.wooPerPage} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, wooPerPage: event.target.value }))} placeholder="Woo per page" disabled={busy} />
+                                            <input type="number" min={1} max={200} value={tenantIntegrations.wooMaxPages} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, wooMaxPages: event.target.value }))} placeholder="Woo max pages" disabled={busy} />
+                                        </div>
+                                        <div className="saas-admin-form-row">
+                                            <input value={tenantIntegrations.wooConsumerKey} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, wooConsumerKey: event.target.value }))} placeholder={tenantIntegrations.wooConsumerKeyMasked || 'Woo consumer key (opcional para actualizar)'} disabled={busy} />
+                                            <input type="password" value={tenantIntegrations.wooConsumerSecret} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, wooConsumerSecret: event.target.value }))} placeholder={tenantIntegrations.wooConsumerSecretMasked || 'Woo consumer secret (opcional para actualizar)'} disabled={busy} />
+                                        </div>
+
+                                        <div className="saas-admin-related-block">
+                                            <h4>IA por tenant</h4>
+                                            <div className="saas-admin-form-row">
+                                                <input value={tenantIntegrations.aiProvider} disabled />
+                                                <input value={tenantIntegrations.aiModel} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, aiModel: event.target.value }))} placeholder="Modelo OpenAI" disabled={busy} />
+                                            </div>
+                                            <div className="saas-admin-form-row">
+                                                <input type="password" value={tenantIntegrations.openaiApiKey} onChange={(event) => setTenantIntegrations((prev) => ({ ...prev, openaiApiKey: event.target.value }))} placeholder={tenantIntegrations.openaiApiKeyMasked || 'OpenAI API Key (opcional para actualizar)'} disabled={busy} />
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                    )}
+
+                    {isPlansSection && (
+                    <section id="saas_planes" className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <h3>Planes SaaS</h3>
+                                    <small>Control global de limites por plan.</small>
+                                </div>
+
+                                <div className="saas-admin-form-row">
+                                    <button type="button" disabled={busy || loadingPlans} onClick={loadPlanMatrix}>Recargar planes</button>
+                                </div>
+
+                                <div className="saas-admin-list saas-admin-list--compact">
+                                    {planIds.map((planId) => (
+                                        <button
+                                            key={`plan_row_${planId}`}
+                                            type="button"
+                                            className={`saas-admin-list-item saas-admin-list-item--button ${selectedPlanId === planId ? 'active' : ''}`.trim()}
+                                            onClick={() => openPlanView(planId)}
+                                        >
+                                            <strong>{planId}</strong>
+                                            <small>Usuarios: {Number(planMatrix?.[planId]?.maxUsers || 0)}</small>
+                                            <small>Modulos WA: {Number(planMatrix?.[planId]?.maxWaModules || 0)} | Catalogos: {Number(planMatrix?.[planId]?.maxCatalogs || 0)}</small>
+                                        </button>
+                                    ))}
+                                </div>
+                            </aside>
+
+                            <div className="saas-admin-detail-pane">
+                                {!selectedPlan && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Selecciona un plan</h4>
+                                        <p>Define limites de usuarios, modulos y catalogos segun el plan.</p>
+                                    </div>
+                                )}
+
+                                {selectedPlan && planPanelMode === 'view' && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>Plan: {selectedPlan.id}</h3>
+                                                <small>Vista de limites activos</small>
+                                            </div>
+                                            <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                <button type="button" disabled={busy} onClick={openPlanEdit}>Editar</button>
+                                            </div>
+                                        </div>
+                                        <div className="saas-admin-detail-grid">
+                                            {PLAN_LIMIT_KEYS.map((entry) => (
+                                                <div key={`plan_limit_view_${entry.key}`} className="saas-admin-detail-field">
+                                                    <span>{entry.label}</span>
+                                                    <strong>{Number(selectedPlan?.limits?.[entry.key] || 0)}</strong>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="saas-admin-related-block">
+                                            <h4>Features</h4>
+                                            <div className="saas-admin-related-list">
+                                                {PLAN_FEATURE_KEYS.map((entry) => (
+                                                    <div key={`plan_feature_view_${entry.key}`} className="saas-admin-related-row" role="status">
+                                                        <span>{entry.label}</span>
+                                                        <small>{selectedPlan?.limits?.features?.[entry.key] === false ? 'Deshabilitado' : 'Habilitado'}</small>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+
+                                {selectedPlan && planPanelMode === 'edit' && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>Editando plan: {planForm.id}</h3>
+                                                <small>Los cambios aplican globalmente a todos los tenants de este plan.</small>
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-form-row">
+                                            {PLAN_LIMIT_KEYS.slice(0, 2).map((entry) => (
+                                                <input
+                                                    key={`plan_limit_edit_top_${entry.key}`}
+                                                    type="number"
+                                                    min={entry.min}
+                                                    max={entry.max}
+                                                    value={planForm?.[entry.key]}
+                                                    onChange={(event) => setPlanForm((prev) => ({ ...prev, [entry.key]: event.target.value }))}
+                                                    placeholder={entry.label}
+                                                    disabled={busy}
+                                                />
+                                            ))}
+                                        </div>
+                                        <div className="saas-admin-form-row">
+                                            {PLAN_LIMIT_KEYS.slice(2, 4).map((entry) => (
+                                                <input
+                                                    key={`plan_limit_edit_mid_${entry.key}`}
+                                                    type="number"
+                                                    min={entry.min}
+                                                    max={entry.max}
+                                                    value={planForm?.[entry.key]}
+                                                    onChange={(event) => setPlanForm((prev) => ({ ...prev, [entry.key]: event.target.value }))}
+                                                    placeholder={entry.label}
+                                                    disabled={busy}
+                                                />
+                                            ))}
+                                        </div>
+                                        <div className="saas-admin-form-row">
+                                            {PLAN_LIMIT_KEYS.slice(4, 6).map((entry) => (
+                                                <input
+                                                    key={`plan_limit_edit_bottom_${entry.key}`}
+                                                    type="number"
+                                                    min={entry.min}
+                                                    max={entry.max}
+                                                    value={planForm?.[entry.key]}
+                                                    onChange={(event) => setPlanForm((prev) => ({ ...prev, [entry.key]: event.target.value }))}
+                                                    placeholder={entry.label}
+                                                    disabled={busy}
+                                                />
+                                            ))}
+                                        </div>
+
+                                        <div className="saas-admin-related-block">
+                                            <h4>Features del plan</h4>
+                                            <div className="saas-admin-modules">
+                                                {PLAN_FEATURE_KEYS.map((entry) => (
+                                                    <label key={`plan_feature_edit_${entry.key}`} className="saas-admin-module-toggle">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={planForm?.features?.[entry.key] !== false}
+                                                            onChange={(event) => setPlanForm((prev) => ({
+                                                                ...prev,
+                                                                features: {
+                                                                    ...(prev?.features || {}),
+                                                                    [entry.key]: event.target.checked
+                                                                }
+                                                            }))}
+                                                            disabled={busy}
+                                                        />
+                                                        <span>{entry.label}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                            <button
+                                                type="button"
+                                                disabled={busy || !planForm?.id}
+                                                onClick={() => runAction('Plan actualizado', async () => {
+                                                    const payload = {};
+                                                    PLAN_LIMIT_KEYS.forEach((entry) => {
+                                                        const rawValue = Number(planForm?.[entry.key]);
+                                                        const bounded = Number.isFinite(rawValue)
+                                                            ? Math.min(entry.max, Math.max(entry.min, Math.floor(rawValue)))
+                                                            : entry.min;
+                                                        payload[entry.key] = bounded;
+                                                    });
+
+                                                    payload.features = {};
+                                                    PLAN_FEATURE_KEYS.forEach((entry) => {
+                                                        payload.features[entry.key] = planForm?.features?.[entry.key] !== false;
+                                                    });
+
+                                                    await requestJson(`/api/admin/saas/plans/${encodeURIComponent(planForm.id)}`, {
+                                                        method: 'PUT',
+                                                        body: payload
+                                                    });
+
+                                                    await loadPlanMatrix();
+                                                    openPlanView(planForm.id);
+                                                    setPlanPanelMode('view');
+                                                })}
+                                            >
+                                                Guardar cambios
+                                            </button>
+                                            <button type="button" disabled={busy} onClick={cancelPlanEdit}>Cancelar</button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                    )}
                 </div>
                 )}
             </div>
         </div>
     );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

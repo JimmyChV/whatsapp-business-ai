@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -433,6 +433,25 @@ function resolveModuleCloudConfig(module = {}) {
     return resolveCloudConfigFromMetadata(metadata);
 }
 
+async function listModulesRuntime(tenantId = DEFAULT_TENANT_ID, { includeInactive = true, userId = '' } = {}) {
+    const store = await loadStore(tenantId);
+    return (Array.isArray(store.modules) ? store.modules : [])
+        .filter((module) => includeInactive || module.isActive !== false)
+        .filter((module) => moduleVisibleForUser(module, userId))
+        .map((module) => ({
+            ...module,
+            assignedUserIds: normalizeAssignedUserIds(module.assignedUserIds || []),
+            metadata: sanitizeMetadata(module.metadata)
+        }));
+}
+
+async function getModuleRuntime(tenantId = DEFAULT_TENANT_ID, moduleId = '', { userId = '' } = {}) {
+    const cleanModuleId = normalizeModuleId(moduleId);
+    if (!cleanModuleId) return null;
+
+    const modules = await listModulesRuntime(tenantId, { includeInactive: true, userId });
+    return modules.find((module) => module.moduleId === cleanModuleId) || null;
+}
 function moduleVisibleForUser(module = {}, userId = '') {
     const cleanUserId = toText(userId);
     if (!cleanUserId) return true;
@@ -600,6 +619,8 @@ module.exports = {
     normalizeAssignedUserIds,
     normalizeTransport,
     resolveModuleCloudConfig,
+    listModulesRuntime,
+    getModuleRuntime,
     listModules,
     getModule,
     createModule,
@@ -608,4 +629,6 @@ module.exports = {
     setSelectedModule,
     getSelectedModule
 };
+
+
 

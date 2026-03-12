@@ -17,9 +17,11 @@ const tenantService = require('./tenant_service');
 const tenantSettingsService = require('./tenant_settings_service');
 const saasControlService = require('./saas_control_plane_service');
 const planLimitsService = require('./plan_limits_service');
+const planLimitsStoreService = require('./plan_limits_store_service');
 const aiUsageService = require('./ai_usage_service');
 const messageHistoryService = require('./message_history_service');
 const waModuleService = require('./wa_module_service');
+const tenantIntegrationsService = require('./tenant_integrations_service');
 const opsTelemetry = require('./ops_telemetry');
 
 const waClient = require('./wa_provider');
@@ -1271,13 +1273,51 @@ app.delete('/api/admin/saas/users/:userId', async (req, res) => {
 
 app.get('/api/admin/saas/plans', (req, res) => {
     if (!hasSaasControlReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    const matrix = planLimitsService.getPlanMatrix();
     return res.json({
         ok: true,
-        plans: Object.keys(planLimitsService.DEFAULT_LIMITS).map((plan) => ({
+        plans: Object.keys(matrix).map((plan) => ({
             id: plan,
-            limits: planLimitsService.getPlanLimits(plan)
-        }))
+            limits: matrix[plan]
+        })),
+        overrides: planLimitsService.getPlanOverrides()
     });
+});
+
+app.put('/api/admin/saas/plans/:planId', async (req, res) => {
+    if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para editar planes.' });
+    try {
+        const planId = String(req.params?.planId || '').trim().toLowerCase();
+        if (!planId) return res.status(400).json({ ok: false, error: 'planId invalido.' });
+
+        const patch = req.body && typeof req.body === 'object' ? req.body : {};
+        const current = planLimitsService.getPlanOverrides();
+        const mergedPlanPatch = {
+            ...(current?.[planId] && typeof current[planId] === 'object' ? current[planId] : {}),
+            ...patch
+        };
+        const normalized = planLimitsService.normalizePlanLimits(
+            mergedPlanPatch,
+            planLimitsService.getPlanLimits(planId)
+        );
+
+        const nextOverrides = {
+            ...current,
+            [planId]: normalized
+        };
+        planLimitsService.setPlanOverrides(nextOverrides);
+        await planLimitsStoreService.saveOverrides(nextOverrides);
+
+        return res.json({
+            ok: true,
+            plan: {
+                id: planId,
+                limits: planLimitsService.getPlanLimits(planId)
+            }
+        });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el plan.') });
+    }
 });
 
 app.get('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
@@ -1307,6 +1347,33 @@ app.put('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
     }
 });
 
+app.get('/api/admin/saas/tenants/:tenantId/integrations', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasSaasControlReadAccess(req) || !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const integrations = await tenantIntegrationsService.getTenantIntegrations(tenantId);
+        return res.json({ ok: true, tenantId, integrations });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar integraciones del tenant.') });
+    }
+});
+
+app.put('/api/admin/saas/tenants/:tenantId/integrations', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasTenantAdminWriteAccess(req) || !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const patch = req.body && typeof req.body === 'object' ? req.body : {};
+        const integrations = await tenantIntegrationsService.updateTenantIntegrations(tenantId, patch);
+        return res.json({ ok: true, tenantId, integrations });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar integraciones del tenant.') });
+    }
+});
+
 app.get('/api/admin/saas/tenants/:tenantId/wa-modules', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
@@ -1329,6 +1396,7 @@ app.post('/api/admin/saas/tenants/:tenantId/wa-modules', async (req, res) => {
     try {
         const payload = sanitizeWaModulePayload(req.body, { allowModuleId: true });
         const created = await waModuleService.createModule(tenantId, payload);
+        invalidateWebhookCloudRegistryCache();
         return res.status(201).json({ ok: true, tenantId, item: created });
     } catch (error) {
         return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el modulo WA.') });
@@ -1344,6 +1412,7 @@ app.put('/api/admin/saas/tenants/:tenantId/wa-modules/:moduleId', async (req, re
     try {
         const patch = sanitizeWaModulePayload(req.body, { allowModuleId: true });
         const updated = await waModuleService.updateModule(tenantId, moduleId, patch);
+        invalidateWebhookCloudRegistryCache();
         return res.json({ ok: true, tenantId, item: updated });
     } catch (error) {
         return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el modulo WA.') });
@@ -1358,6 +1427,7 @@ app.delete('/api/admin/saas/tenants/:tenantId/wa-modules/:moduleId', async (req,
 
     try {
         await waModuleService.deleteModule(tenantId, moduleId);
+        invalidateWebhookCloudRegistryCache();
         return res.json({ ok: true, tenantId, moduleId });
     } catch (error) {
         return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar el modulo WA.') });
@@ -1909,10 +1979,16 @@ app.get('/api/map-suggest', async (req, res) => {
     }
 });
 
-const META_VERIFY_TOKEN = String(process.env.META_VERIFY_TOKEN || '').trim();
-const META_APP_SECRET = String(process.env.META_APP_SECRET || '').trim();
-const META_ENFORCE_SIGNATURE = String(process.env.META_ENFORCE_SIGNATURE || 'true').trim().toLowerCase() !== 'false';
 const CLOUD_WEBHOOK_DEBUG = String(process.env.CLOUD_WEBHOOK_DEBUG || 'true').trim().toLowerCase() !== 'false';
+const WEBHOOK_CONFIG_CACHE_TTL_MS = Math.max(3000, Number(process.env.WEBHOOK_CONFIG_CACHE_TTL_MS || 15000));
+let webhookCloudRegistryCache = {
+    expiresAt: 0,
+    items: []
+};
+
+function invalidateWebhookCloudRegistryCache() {
+    webhookCloudRegistryCache = { expiresAt: 0, items: [] };
+}
 
 function timingSafeEqualHex(a = '', b = '') {
     const left = Buffer.from(String(a || ''), 'utf8');
@@ -1925,13 +2001,84 @@ function timingSafeEqualHex(a = '', b = '') {
     }
 }
 
-function validateMetaWebhookSignature(req) {
-    if (!META_ENFORCE_SIGNATURE) {
-        return { ok: true, skipped: true };
+function extractWebhookPhoneNumberId(payload = {}) {
+    const entries = Array.isArray(payload?.entry) ? payload.entry : [];
+    for (const entry of entries) {
+        const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+        for (const change of changes) {
+            const value = change?.value || {};
+            const phoneId = String(
+                value?.metadata?.phone_number_id
+                || value?.phone_number_id
+                || ''
+            ).trim();
+            if (phoneId) return phoneId;
+        }
+    }
+    return '';
+}
+
+async function getWebhookCloudRegistry({ force = false } = {}) {
+    const now = Date.now();
+    if (!force && webhookCloudRegistryCache.expiresAt > now && Array.isArray(webhookCloudRegistryCache.items)) {
+        return webhookCloudRegistryCache.items;
     }
 
-    if (!META_APP_SECRET) {
-        return { ok: true, skipped: true };
+    await saasControlService.ensureLoaded();
+    const tenants = saasControlService.listTenantsSync({ includeInactive: true });
+    const items = [];
+
+    for (const tenant of tenants) {
+        const tenantId = String(tenant?.id || '').trim();
+        if (!tenantId) continue;
+        let modules = [];
+        try {
+            modules = await waModuleService.listModulesRuntime(tenantId, { includeInactive: false });
+        } catch (_) {
+            modules = [];
+        }
+        for (const module of modules) {
+            const transportMode = String(module?.transportMode || '').trim().toLowerCase();
+            if (transportMode !== 'cloud') continue;
+
+            const runtimeCloud = waModuleService.resolveModuleCloudConfig(module);
+            const moduleId = String(module?.moduleId || '').trim();
+            const verifyToken = String(runtimeCloud?.verifyToken || '').trim();
+            const phoneNumberId = String(runtimeCloud?.phoneNumberId || '').trim();
+            const appSecret = String(runtimeCloud?.appSecret || '').trim();
+            const appId = String(runtimeCloud?.appId || '').trim();
+            const systemUserToken = String(runtimeCloud?.systemUserToken || '').trim();
+            if (!moduleId) continue;
+
+            items.push({
+                tenantId,
+                moduleId,
+                verifyToken,
+                phoneNumberId,
+                appSecret,
+                appId,
+                systemUserToken,
+                cloudConfig: runtimeCloud
+            });
+        }
+    }
+
+    webhookCloudRegistryCache = {
+        expiresAt: now + WEBHOOK_CONFIG_CACHE_TTL_MS,
+        items
+    };
+    return items;
+}
+
+function validateMetaWebhookSignature(req, registryItems = []) {
+    const secrets = Array.from(new Set(
+        (Array.isArray(registryItems) ? registryItems : [])
+            .map((item) => String(item?.appSecret || '').trim())
+            .filter(Boolean)
+    ));
+
+    if (secrets.length === 0) {
+        return { ok: true, skipped: true, reason: 'no_app_secret_configured' };
     }
 
     const incoming = String(req.get('x-hub-signature-256') || '').trim();
@@ -1940,22 +2087,31 @@ function validateMetaWebhookSignature(req) {
     }
 
     const rawBody = Buffer.isBuffer(req.rawBody) ? req.rawBody : Buffer.from('');
-    const expectedHash = crypto
-        .createHmac('sha256', META_APP_SECRET)
-        .update(rawBody)
-        .digest('hex');
-    const expected = 'sha256=' + expectedHash;
-    const ok = timingSafeEqualHex(expected, incoming);
-    return { ok, reason: ok ? 'ok' : 'signature_mismatch' };
+    for (const secret of secrets) {
+        const expectedHash = crypto
+            .createHmac('sha256', secret)
+            .update(rawBody)
+            .digest('hex');
+        const expected = 'sha256=' + expectedHash;
+        if (timingSafeEqualHex(expected, incoming)) {
+            return { ok: true, reason: 'ok' };
+        }
+    }
+
+    return { ok: false, reason: 'signature_mismatch' };
 }
 
-function handleMetaWebhookVerification(req, res) {
+async function handleMetaWebhookVerification(req, res) {
     const mode = String(req.query['hub.mode'] || '').trim();
     const token = String(req.query['hub.verify_token'] || '').trim();
     const challenge = String(req.query['hub.challenge'] || '').trim();
 
-    if (mode === 'subscribe' && META_VERIFY_TOKEN && token === META_VERIFY_TOKEN) {
-        return res.status(200).send(challenge);
+    if (mode === 'subscribe' && token) {
+        const registry = await getWebhookCloudRegistry();
+        const match = registry.find((item) => String(item?.verifyToken || '').trim() === token);
+        if (match) {
+            return res.status(200).send(challenge);
+        }
     }
 
     return res.sendStatus(403);
@@ -1988,15 +2144,40 @@ function summarizeMetaWebhookPayload(payload = {}) {
     };
 }
 
+function applyWebhookRuntimeConfigFromPayload(payload = {}, registryItems = []) {
+    const phoneNumberId = extractWebhookPhoneNumberId(payload);
+    const registry = Array.isArray(registryItems) ? registryItems : [];
+    let match = null;
+
+    if (phoneNumberId) {
+        match = registry.find((item) => String(item?.phoneNumberId || '').trim() === phoneNumberId) || null;
+    }
+
+    if (!match && registry.length === 1) {
+        match = registry[0];
+    }
+
+    if (match && typeof waClient.setCloudRuntimeConfig === 'function') {
+        waClient.setCloudRuntimeConfig(match.cloudConfig || {});
+    }
+
+    return {
+        phoneNumberId,
+        matched: match
+    };
+}
+
 async function handleMetaWebhookEvent(req, res) {
     try {
-        const signatureCheck = validateMetaWebhookSignature(req);
+        const payload = req.body || {};
+        const registry = await getWebhookCloudRegistry();
+        const signatureCheck = validateMetaWebhookSignature(req, registry);
         if (!signatureCheck.ok) {
             logger.warn('[WA][Cloud] webhook signature rejected (' + String(signatureCheck.reason || 'invalid') + ').');
             return res.sendStatus(401);
         }
 
-        const payload = req.body || {};
+        const runtimeApplied = applyWebhookRuntimeConfigFromPayload(payload, registry);
         const summary = summarizeMetaWebhookPayload(payload);
         const handled = typeof waClient.handleWebhookPayload === 'function'
             ? await waClient.handleWebhookPayload(payload)
@@ -2008,7 +2189,10 @@ async function handleMetaWebhookEvent(req, res) {
                 + ' changes=' + String(summary.changesCount)
                 + ' messages=' + String(summary.messagesCount)
                 + ' statuses=' + String(summary.statusesCount)
-                + ' handled=' + String(Boolean(handled)));
+                + ' handled=' + String(Boolean(handled))
+                + ' tenant=' + String(runtimeApplied?.matched?.tenantId || 'n/a')
+                + ' module=' + String(runtimeApplied?.matched?.moduleId || 'n/a')
+                + ' phone=' + String(runtimeApplied?.phoneNumberId || 'n/a'));
         }
 
         if (!handled && (summary.messagesCount > 0 || summary.statusesCount > 0)) {
@@ -2083,6 +2267,10 @@ saasControlService.ensureLoaded().catch((error) => {
     logger.warn('[SaaS] no se pudo precargar control plane: ' + String(error?.message || error));
 });
 
+planLimitsStoreService.initializePlanLimits().catch((error) => {
+    logger.warn('[SaaS] no se pudo precargar limites de plan: ' + String(error?.message || error));
+});
+
 server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
     const runtime = typeof waClient.getRuntimeInfo === 'function'
@@ -2091,4 +2279,9 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
+
+
+
+
+
 
