@@ -149,7 +149,20 @@ class WAProvider extends EventEmitter {
         this.transportSwitchPromise = this.transportSwitchPromise.then(execute, execute);
         return this.transportSwitchPromise;
     }
+    setCloudRuntimeConfig(config = {}) {
+        if (typeof cloudClient.setRuntimeConfig !== 'function') return {};
+        return cloudClient.setRuntimeConfig(config || {});
+    }
 
+    clearCloudRuntimeConfig() {
+        if (typeof cloudClient.clearRuntimeConfig !== 'function') return {};
+        return cloudClient.clearRuntimeConfig();
+    }
+
+    getCloudRuntimeConfigPublic() {
+        if (typeof cloudClient.getRuntimeConfigPublic !== 'function') return {};
+        return cloudClient.getRuntimeConfigPublic();
+    }
     async setWebjsSessionNamespace(namespace = 'default') {
         if (typeof webjsClient.setSessionNamespace !== 'function') return false;
         const changed = await webjsClient.setSessionNamespace(namespace);
@@ -214,6 +227,7 @@ class WAProvider extends EventEmitter {
             cloudRequested: this.requestedTransport === 'cloud',
             cloudConfigured,
             cloudReady: this.activeTransport === 'cloud' && Boolean(this.activeAdapter?.isReady),
+            runtimeCloudConfig: this.getCloudRuntimeConfigPublic(),
             availableTransports: ['webjs', 'cloud'],
             migrationReady: true
         };
@@ -323,3 +337,4 @@ class WAProvider extends EventEmitter {
 }
 
 module.exports = new WAProvider();
+

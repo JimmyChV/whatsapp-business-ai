@@ -7,6 +7,12 @@ const {
     queryPostgres
 } = require('./persistence_runtime');
 
+const {
+    prepareModuleMetadataForSave,
+    sanitizeModuleMetadataForPublic,
+    resolveCloudConfigFromMetadata
+} = require('./meta_config_crypto');
+
 const MODULES_FILE = 'wa_modules.json';
 const ALLOWED_TRANSPORTS = new Set(['webjs', 'cloud']);
 const MAX_MODULES_PER_TENANT = Math.max(1, Number(process.env.WA_MODULES_MAX_PER_TENANT || 50));
@@ -64,15 +70,35 @@ function normalizeAssignedUserIds(value = []) {
     return out;
 }
 
-function sanitizeMetadata(value = {}) {
-    return value && typeof value === 'object' && !Array.isArray(value)
+function sanitizeMetadata(value = {}, fallback = {}) {
+    const base = value && typeof value === 'object' && !Array.isArray(value)
         ? value
+        : fallback;
+    return base && typeof base === 'object' && !Array.isArray(base)
+        ? base
         : {};
 }
 
+function normalizeImageUrl(value = '') {
+    const text = String(value || '').trim();
+    if (!text) return null;
+    return /^https?:\/\//i.test(text) ? text : null;
+}
+
+function createUniqueModuleId(modules = [], rawBase = '') {
+    const existing = new Set((Array.isArray(modules) ? modules : []).map((entry) => String(entry?.moduleId || '').trim().toLowerCase()).filter(Boolean));
+    const baseSeed = normalizeModuleId(rawBase || 'modulo_wa', 'modulo_wa');
+    if (!existing.has(baseSeed)) return baseSeed;
+    for (let i = 2; i < 10000; i += 1) {
+        const next = `${baseSeed}_${i}`;
+        if (!existing.has(next)) return next;
+    }
+    return `${baseSeed}_${Math.random().toString(36).slice(2, 8)}`;
+}
 function normalizeModule(input = {}, {
     fallbackId = '',
-    preserveCreatedAt = null
+    preserveCreatedAt = null,
+    previousMetadata = {}
 } = {}) {
     const source = input && typeof input === 'object' ? input : {};
     const moduleId = normalizeModuleId(
@@ -86,22 +112,24 @@ function normalizeModule(input = {}, {
 
     const nowIso = new Date().toISOString();
     const createdAt = toText(source.createdAt || preserveCreatedAt) || nowIso;
+    const baseMetadata = sanitizeMetadata(source.metadata, previousMetadata);
+    const metadata = prepareModuleMetadataForSave(baseMetadata, previousMetadata);
 
     return {
         moduleId,
         name: toText(source.name) || moduleId,
         phoneNumber: normalizePhone(source.phoneNumber || source.phone || source.number),
         transportMode: normalizeTransport(source.transportMode || source.transport || source.mode),
+        imageUrl: normalizeImageUrl(source.imageUrl || source.image_url || source.logoUrl || source.logo_url),
         isActive: toBoolean(source.isActive, true),
         isDefault: toBoolean(source.isDefault, false),
         isSelected: toBoolean(source.isSelected, false),
         assignedUserIds: normalizeAssignedUserIds(source.assignedUserIds || source.assignedUsers || source.assignments || []),
-        metadata: sanitizeMetadata(source.metadata),
+        metadata,
         createdAt,
         updatedAt: nowIso
     };
 }
-
 function normalizeStoreState(input = {}) {
     const source = input && typeof input === 'object' ? input : {};
     const rawModules = Array.isArray(source.modules) ? source.modules : [];
@@ -178,6 +206,7 @@ async function ensurePostgresSchema() {
                 module_name TEXT NOT NULL,
                 phone_number TEXT,
                 transport_mode TEXT NOT NULL DEFAULT 'webjs',
+                image_url TEXT,
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 is_default BOOLEAN NOT NULL DEFAULT FALSE,
                 is_selected BOOLEAN NOT NULL DEFAULT FALSE,
@@ -188,6 +217,7 @@ async function ensurePostgresSchema() {
                 PRIMARY KEY (tenant_id, module_id)
             )`
         );
+        await queryPostgres('ALTER TABLE IF EXISTS wa_modules ADD COLUMN IF NOT EXISTS image_url TEXT');
         await queryPostgres(
             `CREATE INDEX IF NOT EXISTS idx_wa_modules_tenant_default
              ON wa_modules(tenant_id, is_default DESC, created_at ASC)`
@@ -228,6 +258,7 @@ async function loadPostgresStore(tenantId) {
                 module_name,
                 phone_number,
                 transport_mode,
+                image_url,
                 is_active,
                 is_default,
                 is_selected,
@@ -249,6 +280,7 @@ async function loadPostgresStore(tenantId) {
             name: row.module_name,
             phoneNumber: row.phone_number,
             transportMode: row.transport_mode,
+            imageUrl: row.image_url,
             isActive: row.is_active,
             isDefault: row.is_default,
             isSelected: row.is_selected,
@@ -258,7 +290,8 @@ async function loadPostgresStore(tenantId) {
             updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null
         }, {
             fallbackId: '',
-            preserveCreatedAt: row.created_at ? new Date(row.created_at).toISOString() : null
+            preserveCreatedAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+            previousMetadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
         }));
 
         return normalizeStoreState({ modules });
@@ -290,6 +323,7 @@ async function savePostgresStore(tenantId, store = {}, { schemaEnsured = false }
                     module_name,
                     phone_number,
                     transport_mode,
+                    image_url,
                     is_active,
                     is_default,
                     is_selected,
@@ -298,7 +332,7 @@ async function savePostgresStore(tenantId, store = {}, { schemaEnsured = false }
                     created_at,
                     updated_at
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::timestamptz, NOW()
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12::timestamptz, NOW()
                 )`,
                 [
                     tenantId,
@@ -306,6 +340,7 @@ async function savePostgresStore(tenantId, store = {}, { schemaEnsured = false }
                     module.name,
                     module.phoneNumber || null,
                     module.transportMode,
+                    module.imageUrl || null,
                     module.isActive !== false,
                     module.isDefault === true,
                     module.isSelected === true,
@@ -357,14 +392,20 @@ function sanitizeModulePublic(module = {}) {
         name: toText(module.name),
         phoneNumber: module.phoneNumber || null,
         transportMode: normalizeTransport(module.transportMode),
+        imageUrl: normalizeImageUrl(module.imageUrl || module.image_url),
         isActive: module.isActive !== false,
         isDefault: module.isDefault === true,
         isSelected: module.isSelected === true,
         assignedUserIds: normalizeAssignedUserIds(module.assignedUserIds || []),
-        metadata: sanitizeMetadata(module.metadata),
+        metadata: sanitizeModuleMetadataForPublic(sanitizeMetadata(module.metadata)),
         createdAt: toText(module.createdAt) || null,
         updatedAt: toText(module.updatedAt) || null
     };
+}
+
+function resolveModuleCloudConfig(module = {}) {
+    const metadata = sanitizeMetadata(module.metadata);
+    return resolveCloudConfigFromMetadata(metadata);
 }
 
 function moduleVisibleForUser(module = {}, userId = '') {
@@ -405,8 +446,17 @@ async function createModule(tenantId = DEFAULT_TENANT_ID, payload = {}) {
         throw new Error(`Se alcanzo el limite de modulos WA por empresa (${MAX_MODULES_PER_TENANT}).`);
     }
 
-    const candidate = normalizeModule(payload, {
-        fallbackId: normalizeModuleId(payload?.name || `modulo_${modules.length + 1}`)
+    const requestedId = normalizeModuleId(payload?.moduleId || payload?.id || '');
+    const candidateId = requestedId || createUniqueModuleId(modules, payload?.name || `modulo_${modules.length + 1}`);
+
+    const preparedMetadata = prepareModuleMetadataForSave(sanitizeMetadata(payload?.metadata), {});
+    const candidate = normalizeModule({
+        ...payload,
+        moduleId: candidateId,
+        metadata: preparedMetadata
+    }, {
+        fallbackId: candidateId,
+        previousMetadata: {}
     });
 
     if (modules.some((module) => module.moduleId === candidate.moduleId)) {
@@ -445,14 +495,21 @@ async function updateModule(tenantId = DEFAULT_TENANT_ID, moduleId = '', patch =
         throw new Error('No se puede renombrar: ya existe ese moduleId.');
     }
 
+    const patchHasMetadata = Object.prototype.hasOwnProperty.call(patch || {}, 'metadata');
+    const preparedMetadata = patchHasMetadata
+        ? prepareModuleMetadataForSave(sanitizeMetadata(patch.metadata), sanitizeMetadata(current.metadata))
+        : sanitizeMetadata(current.metadata);
+
     const merged = normalizeModule({
         ...current,
         ...patch,
+        metadata: preparedMetadata,
         moduleId: renamedId || cleanModuleId,
         createdAt: current.createdAt
     }, {
         fallbackId: cleanModuleId,
-        preserveCreatedAt: current.createdAt
+        preserveCreatedAt: current.createdAt,
+        previousMetadata: sanitizeMetadata(current.metadata)
     });
 
     modules[index] = merged;
@@ -516,6 +573,7 @@ module.exports = {
     sanitizeModulePublic,
     normalizeAssignedUserIds,
     normalizeTransport,
+    resolveModuleCloudConfig,
     listModules,
     getModule,
     createModule,
@@ -524,4 +582,3 @@ module.exports = {
     setSelectedModule,
     getSelectedModule
 };
-

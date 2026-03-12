@@ -278,12 +278,21 @@ app.get('/', (req, res) => {
 
 function toPublicTenant(tenant = null) {
     if (!tenant || typeof tenant !== 'object') return null;
+    const logoUrl = String(tenant?.logoUrl || tenant?.logo_url || '').trim();
+    const coverImageUrl = String(tenant?.coverImageUrl || tenant?.cover_image_url || '').trim();
+    const metadata = tenant?.metadata && typeof tenant.metadata === 'object' && !Array.isArray(tenant.metadata)
+        ? tenant.metadata
+        : {};
+
     return {
         id: tenant.id,
         slug: tenant.slug,
         name: tenant.name,
         active: tenant.active,
-        plan: tenant.plan
+        plan: tenant.plan,
+        logoUrl: /^https?:\/\//i.test(logoUrl) ? logoUrl : null,
+        coverImageUrl: /^https?:\/\//i.test(coverImageUrl) ? coverImageUrl : null,
+        metadata
     };
 }
 
@@ -658,26 +667,96 @@ function sanitizeMembershipPayload(memberships = []) {
         .filter((item) => Boolean(item.tenantId));
 }
 
+function sanitizeObjectPayload(value = {}) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+    return {};
+}
+
+function sanitizeUrlValue(value = '') {
+    const textValue = String(value || '').trim();
+    if (!textValue) return null;
+    return /^https?:\/\//i.test(textValue) ? textValue : null;
+}
+
+function sanitizeTenantPayload(payload = {}) {
+    const source = sanitizeObjectPayload(payload);
+    const patch = {};
+
+    if (Object.prototype.hasOwnProperty.call(source, 'id') || Object.prototype.hasOwnProperty.call(source, 'tenantId')) {
+        const id = String(source.id || source.tenantId || '').trim();
+        if (id) patch.id = id;
+    }
+    if (Object.prototype.hasOwnProperty.call(source, 'slug')) patch.slug = String(source.slug || '').trim();
+    if (Object.prototype.hasOwnProperty.call(source, 'name')) patch.name = String(source.name || '').trim();
+    if (Object.prototype.hasOwnProperty.call(source, 'plan')) patch.plan = String(source.plan || '').trim().toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(source, 'active')) patch.active = source.active !== false;
+    if (Object.prototype.hasOwnProperty.call(source, 'logoUrl') || Object.prototype.hasOwnProperty.call(source, 'logo_url')) {
+        patch.logoUrl = sanitizeUrlValue(source.logoUrl || source.logo_url);
+    }
+    if (Object.prototype.hasOwnProperty.call(source, 'coverImageUrl') || Object.prototype.hasOwnProperty.call(source, 'cover_image_url')) {
+        patch.coverImageUrl = sanitizeUrlValue(source.coverImageUrl || source.cover_image_url);
+    }
+    if (Object.prototype.hasOwnProperty.call(source, 'metadata')) {
+        patch.metadata = sanitizeObjectPayload(source.metadata);
+    }
+
+    return patch;
+}
+
+function sanitizeUserPayload(payload = {}, { allowMemberships = true } = {}) {
+    const source = sanitizeObjectPayload(payload);
+    const patch = {};
+
+    if (Object.prototype.hasOwnProperty.call(source, 'id') || Object.prototype.hasOwnProperty.call(source, 'userId')) {
+        const id = String(source.id || source.userId || '').trim();
+        if (id) patch.id = id;
+    }
+    if (Object.prototype.hasOwnProperty.call(source, 'email')) patch.email = String(source.email || '').trim().toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(source, 'name')) patch.name = String(source.name || '').trim();
+    if (Object.prototype.hasOwnProperty.call(source, 'password')) patch.password = String(source.password || '');
+    if (Object.prototype.hasOwnProperty.call(source, 'active')) patch.active = source.active !== false;
+    if (Object.prototype.hasOwnProperty.call(source, 'avatarUrl') || Object.prototype.hasOwnProperty.call(source, 'avatar_url')) {
+        patch.avatarUrl = sanitizeUrlValue(source.avatarUrl || source.avatar_url);
+    }
+    if (Object.prototype.hasOwnProperty.call(source, 'metadata')) {
+        patch.metadata = sanitizeObjectPayload(source.metadata);
+    }
+    if (allowMemberships && Object.prototype.hasOwnProperty.call(source, 'memberships')) {
+        patch.memberships = sanitizeMembershipPayload(source.memberships);
+    }
+
+    return patch;
+}
+
 function hasOwnerRoleMembership(memberships = []) {
     const source = Array.isArray(memberships) ? memberships : [];
     return source.some((item) => String(item?.role || '').trim().toLowerCase() === 'owner');
 }
 
 function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
-    const source = payload && typeof payload === 'object' ? payload : {};
+    const source = sanitizeObjectPayload(payload);
+    const sourceMetadata = sanitizeObjectPayload(source.metadata);
+    const topCloudConfig = sanitizeObjectPayload(source.cloudConfig);
+    const nestedCloudConfig = sanitizeObjectPayload(sourceMetadata.cloudConfig);
+    const cloudConfig = Object.keys(topCloudConfig).length > 0
+        ? { ...nestedCloudConfig, ...topCloudConfig }
+        : nestedCloudConfig;
+
     const base = {
         name: String(source.name || '').trim(),
         phoneNumber: String(source.phoneNumber || source.phone || source.number || '').trim() || null,
         transportMode: String(source.transportMode || source.transport || source.mode || '').trim().toLowerCase() || 'webjs',
+        imageUrl: sanitizeUrlValue(source.imageUrl || source.image_url || source.logoUrl || source.logo_url),
         isActive: source.isActive !== false,
         isDefault: source.isDefault === true,
         isSelected: source.isSelected === true,
         assignedUserIds: Array.isArray(source.assignedUserIds)
             ? source.assignedUserIds.map((entry) => String(entry || '').trim()).filter(Boolean)
             : [],
-        metadata: source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
-            ? source.metadata
-            : {}
+        metadata: {
+            ...sourceMetadata,
+            cloudConfig
+        }
     };
 
     if (allowModuleId) {
@@ -729,7 +808,7 @@ app.post('/api/admin/saas/tenants', async (req, res) => {
             return res.status(403).json({ ok: false, error: 'Solo superadmin puede crear empresas.' });
         }
 
-        const payload = req.body && typeof req.body === 'object' ? req.body : {};
+        const payload = sanitizeTenantPayload(req.body);
         const snapshot = await saasControlService.createTenant(payload);
         const createdId = String(payload.id || payload.tenantId || '').trim();
         const tenant = Array.isArray(snapshot?.tenants) ? snapshot.tenants.find((item) => item.id === createdId) : null;
@@ -747,7 +826,7 @@ app.put('/api/admin/saas/tenants/:tenantId', async (req, res) => {
     if (!isTenantAllowedForUser(req, tenantId) && !req?.authContext?.user?.isSuperAdmin) return res.status(403).json({ ok: false, error: 'No tienes acceso a esta empresa.' });
 
     try {
-        const payload = req.body && typeof req.body === 'object' ? req.body : {};
+        const payload = sanitizeTenantPayload(req.body);
         const snapshot = await saasControlService.updateTenant(tenantId, payload);
         const tenant = Array.isArray(snapshot?.tenants) ? snapshot.tenants.find((item) => item.id === tenantId) : null;
         return res.json({ ok: true, tenant: tenant ? saasControlService.sanitizeTenantPublic(tenant) : null });
@@ -791,7 +870,7 @@ app.post('/api/admin/saas/users', async (req, res) => {
     try {
         if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para crear usuarios.' });
 
-        const payload = req.body && typeof req.body === 'object' ? { ...req.body } : {};
+        const payload = sanitizeUserPayload(req.body, { allowMemberships: true });
         payload.memberships = sanitizeMembershipPayload(payload.memberships);
 
         if (!req?.authContext?.user?.isSuperAdmin) {
@@ -801,8 +880,12 @@ app.post('/api/admin/saas/users', async (req, res) => {
         }
 
         const snapshot = await saasControlService.createUser(payload);
+        const createdId = String(payload.id || payload.userId || '').trim();
         const user = Array.isArray(snapshot?.users)
-            ? snapshot.users.find((item) => item.email === String(payload.email || '').trim().toLowerCase())
+            ? snapshot.users.find((item) => {
+                if (createdId && String(item?.id || '').trim() === createdId) return true;
+                return String(item?.email || '').trim().toLowerCase() === String(payload.email || '').trim().toLowerCase();
+            })
             : null;
         return res.status(201).json({ ok: true, user: user ? saasControlService.sanitizeUserPublic(user) : null });
     } catch (error) {
@@ -816,7 +899,7 @@ app.put('/api/admin/saas/users/:userId', async (req, res) => {
         const userId = String(req.params?.userId || '').trim();
         if (!userId) return res.status(400).json({ ok: false, error: 'userId invalido.' });
 
-        const payload = req.body && typeof req.body === 'object' ? { ...req.body } : {};
+        const payload = sanitizeUserPayload(req.body, { allowMemberships: true });
         if (payload.memberships) payload.memberships = sanitizeMembershipPayload(payload.memberships);
 
         if (!req?.authContext?.user?.isSuperAdmin && Array.isArray(payload.memberships)) {

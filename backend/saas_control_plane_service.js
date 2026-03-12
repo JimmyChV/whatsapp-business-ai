@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -26,6 +26,60 @@ function normalizeTenantId(value = '') {
     const raw = String(value || '').trim();
     if (!raw) return '';
     return raw.replace(/[^a-zA-Z0-9_-]/g, '');
+}
+function normalizeSlug(value = '') {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+function sanitizeCodeToken(value = '', fallback = '') {
+    const token = String(value || fallback || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    return token || '';
+}
+
+function normalizeUrlValue(value = '') {
+    const text = String(value || '').trim();
+    if (!text) return null;
+    if (/^https?:\/\//i.test(text)) return text;
+    return null;
+}
+
+function normalizeMetadata(value = {}) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+    return {};
+}
+
+function buildUniqueIdFromSet(existingIds = new Set(), {
+    prefix = '',
+    base = '',
+    fallback = ''
+} = {}) {
+    const normalizedPrefix = sanitizeCodeToken(prefix, 'id');
+    const normalizedBase = sanitizeCodeToken(base, fallback || normalizedPrefix);
+    const root = normalizedBase || sanitizeCodeToken(fallback, normalizedPrefix) || normalizedPrefix;
+
+    let candidate = root;
+    if (!candidate.startsWith(`${normalizedPrefix}_`) && candidate !== normalizedPrefix) {
+        candidate = `${normalizedPrefix}_${candidate}`;
+    }
+
+    if (!existingIds.has(candidate)) return candidate;
+    for (let i = 2; i < 10000; i += 1) {
+        const next = `${candidate}_${i}`;
+        if (!existingIds.has(next)) return next;
+    }
+
+    const randomSuffix = Math.random().toString(36).slice(2, 8);
+    return `${candidate}_${randomSuffix}`;
 }
 
 function parseBoolean(value, fallback = true) {
@@ -104,12 +158,15 @@ function normalizeTenant(input = {}, fallbackIndex = 0) {
     const id = normalizeTenantId(input.id || input.tenantId || `tenant_${fallbackIndex + 1}`);
     if (!id) return null;
 
-    const slug = String(input.slug || id).trim().toLowerCase() || id;
+    const slugCandidate = String(input.slug || '').trim();
+    const slug = normalizeSlug(slugCandidate || id) || id;
     const name = String(input.name || input.displayName || slug || id).trim() || id;
     const active = input.active !== false;
     const plan = String(input.plan || 'starter').trim().toLowerCase() || 'starter';
     const createdAt = String(input.createdAt || '').trim() || nowIso();
     const updatedAt = String(input.updatedAt || '').trim() || nowIso();
+    const logoUrl = normalizeUrlValue(input.logoUrl || input.logo_url || input.imageUrl || input.image_url);
+    const coverImageUrl = normalizeUrlValue(input.coverImageUrl || input.cover_image_url || input.bannerUrl || input.banner_url);
 
     return {
         id,
@@ -117,6 +174,9 @@ function normalizeTenant(input = {}, fallbackIndex = 0) {
         name,
         active,
         plan,
+        logoUrl,
+        coverImageUrl,
+        metadata: normalizeMetadata(input.metadata),
         createdAt,
         updatedAt
     };
@@ -149,6 +209,7 @@ function normalizeUser(input = {}, fallbackIndex = 0) {
 
     const createdAt = String(input.createdAt || '').trim() || nowIso();
     const updatedAt = String(input.updatedAt || '').trim() || nowIso();
+    const avatarUrl = normalizeUrlValue(input.avatarUrl || input.avatar_url || input.photoUrl || input.photo_url || input.imageUrl || input.image_url);
 
     return {
         id,
@@ -156,6 +217,8 @@ function normalizeUser(input = {}, fallbackIndex = 0) {
         name: String(input.name || input.displayName || email).trim() || email,
         active: input.active !== false,
         passwordHash,
+        avatarUrl,
+        metadata: normalizeMetadata(input.metadata),
         memberships,
         createdAt,
         updatedAt
@@ -263,16 +326,33 @@ function missingRelation(error) {
     return code === '42P01';
 }
 
+function missingColumn(error) {
+    const code = String(error?.code || '').trim();
+    return code === '42703';
+}
+
+async function ensurePostgresProfileSchema() {
+    await queryPostgres('ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS logo_url TEXT');
+    await queryPostgres('ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS cover_image_url TEXT');
+    await queryPostgres("ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb");
+
+    await queryPostgres('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS avatar_url TEXT');
+    await queryPostgres("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb");
+}
+
+
 async function loadFromPostgresDriver() {
     try {
+        await ensurePostgresProfileSchema();
+
         const [tenantRows, userRows, membershipRows] = await Promise.all([
             queryPostgres(
-                `SELECT tenant_id, slug, name, plan, is_active, created_at, updated_at
+                `SELECT tenant_id, slug, name, plan, is_active, logo_url, cover_image_url, metadata, created_at, updated_at
                    FROM tenants
                   ORDER BY created_at ASC`
             ),
             queryPostgres(
-                `SELECT user_id, email, password_hash, display_name, is_active, created_at, updated_at
+                `SELECT user_id, email, password_hash, display_name, is_active, avatar_url, metadata, created_at, updated_at
                    FROM users
                   ORDER BY created_at ASC`
             ),
@@ -288,6 +368,9 @@ async function loadFromPostgresDriver() {
             name: row.name,
             active: row.is_active,
             plan: row.plan,
+            logoUrl: row.logo_url,
+            coverImageUrl: row.cover_image_url,
+            metadata: row.metadata,
             createdAt: row.created_at,
             updatedAt: row.updated_at
         })).filter(Boolean);
@@ -313,6 +396,8 @@ async function loadFromPostgresDriver() {
             passwordHash: row.password_hash,
             name: row.display_name,
             active: row.is_active,
+            avatarUrl: row.avatar_url,
+            metadata: row.metadata,
             memberships: membershipByUser.get(String(row.user_id || '').trim()) || [],
             createdAt: row.created_at,
             updatedAt: row.updated_at
@@ -326,6 +411,10 @@ async function loadFromPostgresDriver() {
     } catch (error) {
         if (missingRelation(error)) {
             return normalizeSnapshot({ loaded: true, tenants: [], users: [] });
+        }
+        if (missingColumn(error)) {
+            await ensurePostgresProfileSchema();
+            return loadFromPostgresDriver();
         }
         throw error;
     }
@@ -349,6 +438,7 @@ async function persistToFile(snapshot = {}) {
 
 async function persistToPostgres(snapshot = {}) {
     const safe = normalizeSnapshot(snapshot);
+    await ensurePostgresProfileSchema();
 
     await queryPostgres('BEGIN');
     try {
@@ -358,17 +448,34 @@ async function persistToPostgres(snapshot = {}) {
 
         for (const tenant of safe.tenants) {
             await queryPostgres(
-                `INSERT INTO tenants (tenant_id, slug, name, plan, is_active, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
-                [tenant.id, tenant.slug, tenant.name, tenant.plan, tenant.active !== false]
+                `INSERT INTO tenants (tenant_id, slug, name, plan, is_active, logo_url, cover_image_url, metadata, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW(), NOW())`,
+                [
+                    tenant.id,
+                    tenant.slug,
+                    tenant.name,
+                    tenant.plan,
+                    tenant.active !== false,
+                    tenant.logoUrl || null,
+                    tenant.coverImageUrl || null,
+                    JSON.stringify(tenant.metadata || {})
+                ]
             );
         }
 
         for (const user of safe.users) {
             await queryPostgres(
-                `INSERT INTO users (user_id, email, password_hash, display_name, is_active, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
-                [user.id, user.email, user.passwordHash, user.name || null, user.active !== false]
+                `INSERT INTO users (user_id, email, password_hash, display_name, is_active, avatar_url, metadata, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW(), NOW())`,
+                [
+                    user.id,
+                    user.email,
+                    user.passwordHash,
+                    user.name || null,
+                    user.active !== false,
+                    user.avatarUrl || null,
+                    JSON.stringify(user.metadata || {})
+                ]
             );
 
             for (const membership of user.memberships || []) {
@@ -526,6 +633,8 @@ function sanitizeUserPublic(user = {}) {
         email: user.email,
         name: user.name,
         active: user.active !== false,
+        avatarUrl: normalizeUrlValue(user.avatarUrl || user.avatar_url),
+        metadata: normalizeMetadata(user.metadata),
         memberships: Array.isArray(user.memberships) ? user.memberships.map((membership) => ({
             tenantId: membership.tenantId,
             role: membership.role,
@@ -535,7 +644,6 @@ function sanitizeUserPublic(user = {}) {
         updatedAt: user.updatedAt
     };
 }
-
 function sanitizeTenantPublic(tenant = {}) {
     return {
         id: tenant.id,
@@ -543,12 +651,14 @@ function sanitizeTenantPublic(tenant = {}) {
         name: tenant.name,
         active: tenant.active !== false,
         plan: tenant.plan,
+        logoUrl: normalizeUrlValue(tenant.logoUrl || tenant.logo_url),
+        coverImageUrl: normalizeUrlValue(tenant.coverImageUrl || tenant.cover_image_url),
+        metadata: normalizeMetadata(tenant.metadata),
         limits: planLimitsService.getTenantPlanLimits(tenant),
         createdAt: tenant.createdAt,
         updatedAt: tenant.updatedAt
     };
 }
-
 function sortByName(items = [], key = 'name') {
     return [...items].sort((left, right) => String(left?.[key] || '').localeCompare(String(right?.[key] || ''), 'es', { sensitivity: 'base' }));
 }
@@ -563,21 +673,62 @@ async function updateSnapshot(mutator) {
     return cachedSnapshot;
 }
 
-async function createTenant(payload = {}) {
-    const normalized = normalizeTenant(payload);
-    if (!normalized) throw new Error('Datos invalidos para crear tenant.');
+function deriveUniqueSlug(value = '', usedSlugs = new Set(), fallback = 'tenant') {
+    const base = normalizeSlug(value) || normalizeSlug(fallback) || 'tenant';
+    if (!usedSlugs.has(base)) return base;
+    for (let i = 2; i < 10000; i += 1) {
+        const next = `${base}-${i}`;
+        if (!usedSlugs.has(next)) return next;
+    }
+    const randomSuffix = Math.random().toString(36).slice(2, 6);
+    return `${base}-${randomSuffix}`;
+}
+function deriveTenantAutoId(payload = {}, currentTenants = []) {
+    const requestedId = normalizeTenantId(payload?.id || payload?.tenantId || '');
+    if (requestedId) return requestedId;
 
+    const existingIds = new Set((Array.isArray(currentTenants) ? currentTenants : []).map((tenant) => String(tenant?.id || '').trim()).filter(Boolean));
+    const base = sanitizeCodeToken(payload?.slug || payload?.name || '', 'tenant');
+    return buildUniqueIdFromSet(existingIds, { prefix: 'tenant', base, fallback: 'tenant' });
+}
+
+function deriveUserAutoId(payload = {}, currentUsers = []) {
+    const requestedId = sanitizeCodeToken(payload?.id || payload?.userId || '', '');
+    if (requestedId) return requestedId;
+
+    const email = String(payload?.email || '').trim().toLowerCase();
+    const localPart = email.split('@')[0] || '';
+    const existingIds = new Set((Array.isArray(currentUsers) ? currentUsers : []).map((user) => String(user?.id || '').trim().toLowerCase()).filter(Boolean));
+    const base = sanitizeCodeToken(localPart || payload?.name || 'user', 'user');
+    return buildUniqueIdFromSet(existingIds, { prefix: 'usr', base, fallback: 'user' });
+}
+
+async function createTenant(payload = {}) {
     return updateSnapshot((current) => {
-        if ((current.tenants || []).some((tenant) => tenant.id === normalized.id)) {
+        const currentTenants = Array.isArray(current?.tenants) ? current.tenants : [];
+        const candidateId = deriveTenantAutoId(payload, currentTenants);
+        const usedSlugs = new Set(currentTenants.map((tenant) => String(tenant?.slug || '').trim().toLowerCase()).filter(Boolean));
+        const candidateSlug = deriveUniqueSlug(payload?.slug || payload?.name || candidateId, usedSlugs, candidateId);
+        payload.id = candidateId;
+        payload.slug = candidateSlug;
+
+        const normalized = normalizeTenant({
+            ...payload,
+            id: candidateId,
+            slug: candidateSlug
+        });
+        if (!normalized) throw new Error('Datos invalidos para crear tenant.');
+
+        if (currentTenants.some((tenant) => tenant.id === normalized.id)) {
             throw new Error('Ya existe una empresa con ese id.');
         }
-        if ((current.tenants || []).some((tenant) => tenant.slug === normalized.slug)) {
+        if (currentTenants.some((tenant) => tenant.slug === normalized.slug)) {
             throw new Error('Ya existe una empresa con ese slug.');
         }
 
         return {
             ...current,
-            tenants: sortByName([...current.tenants, {
+            tenants: sortByName([...currentTenants, {
                 ...normalized,
                 createdAt: nowIso(),
                 updatedAt: nowIso()
@@ -641,14 +792,21 @@ async function deleteTenant(tenantId = '') {
 }
 
 async function createUser(payload = {}) {
-    const normalized = normalizeUser(payload);
-    if (!normalized) throw new Error('Datos invalidos para crear usuario.');
-
     return updateSnapshot((current) => {
-        if (current.users.some((user) => user.id === normalized.id)) {
+        const currentUsers = Array.isArray(current?.users) ? current.users : [];
+        const candidateId = deriveUserAutoId(payload, currentUsers);
+        payload.id = candidateId;
+
+        const normalized = normalizeUser({
+            ...payload,
+            id: candidateId
+        });
+        if (!normalized) throw new Error('Datos invalidos para crear usuario.');
+
+        if (currentUsers.some((user) => String(user.id || '').trim().toLowerCase() === String(normalized.id || '').trim().toLowerCase())) {
             throw new Error('Ya existe un usuario con ese id.');
         }
-        if (current.users.some((user) => user.email === normalized.email)) {
+        if (currentUsers.some((user) => user.email === normalized.email)) {
             throw new Error('Ya existe un usuario con ese correo.');
         }
 
@@ -666,7 +824,7 @@ async function createUser(payload = {}) {
 
         return {
             ...current,
-            users: sortByName([...current.users, nextUser], 'email')
+            users: sortByName([...currentUsers, nextUser], 'email')
         };
     });
 }
@@ -701,13 +859,16 @@ async function updateUser(userId = '', patch = {}) {
             email: nextEmail,
             name: String(patch.name || previous.name || nextEmail).trim() || nextEmail,
             active: patch.active === undefined ? previous.active !== false : patch.active !== false,
+            avatarUrl: normalizeUrlValue(patch.avatarUrl || patch.avatar_url || patch.photoUrl || patch.photo_url || previous.avatarUrl || previous.avatar_url),
+            metadata: patch.metadata && typeof patch.metadata === 'object' && !Array.isArray(patch.metadata)
+                ? normalizeMetadata(patch.metadata)
+                : normalizeMetadata(previous.metadata),
             memberships: nextMemberships,
             passwordHash: patch.password
                 ? hashPassword(patch.password)
                 : (String(patch.passwordHash || '').trim().toLowerCase() || previous.passwordHash),
             updatedAt: nowIso()
         };
-
         if (!updated.passwordHash) {
             throw new Error('passwordHash invalido.');
         }

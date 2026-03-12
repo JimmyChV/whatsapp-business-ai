@@ -3083,9 +3083,26 @@ class SocketManager {
                 return payload;
             };
 
+            const applyCloudConfigForModule = (selectedModule = null) => {
+                if (!selectedModule || typeof selectedModule !== 'object') return null;
+                if (String(selectedModule?.transportMode || '').trim().toLowerCase() !== 'cloud') return null;
+                if (typeof waModuleService.resolveModuleCloudConfig !== 'function') return null;
+                if (typeof waClient.setCloudRuntimeConfig !== 'function') return null;
+
+                const runtimeCloudConfig = waModuleService.resolveModuleCloudConfig(selectedModule);
+                waClient.setCloudRuntimeConfig(runtimeCloudConfig || {});
+                return runtimeCloudConfig || null;
+            };
+
             const ensureTransportForSelectedModule = async (selectedModule = null) => {
                 const moduleTransport = String(selectedModule?.transportMode || '').trim().toLowerCase();
                 if (moduleTransport !== 'webjs' && moduleTransport !== 'cloud') return null;
+
+                if (moduleTransport === 'cloud') {
+                    applyCloudConfigForModule(selectedModule);
+                } else if (typeof waClient.clearCloudRuntimeConfig === 'function') {
+                    waClient.clearCloudRuntimeConfig();
+                }
 
                 let namespaceChanged = false;
                 if (moduleTransport === 'webjs' && typeof waClient.setWebjsSessionNamespace === 'function') {
@@ -3268,6 +3285,10 @@ class SocketManager {
                         if (!requireRole(['owner', 'admin'], { errorEvent: 'transport_mode_error', action: 'cambiar el modo de transporte' })) return;
                     }
 
+                    if (nextMode === 'cloud' && selectedModule?.moduleId && typeof waModuleService.resolveModuleCloudConfig === 'function' && typeof waClient.setCloudRuntimeConfig === 'function') {
+                        const runtimeCloudConfig = waModuleService.resolveModuleCloudConfig(selectedModule);
+                        waClient.setCloudRuntimeConfig(runtimeCloudConfig || {});
+                    }
                     const runtime = await waClient.setTransportMode(nextMode);
                     this.invalidateChatListCache();
                     this.contactListCache = { items: [], updatedAt: 0 };
