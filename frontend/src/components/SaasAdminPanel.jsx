@@ -42,6 +42,11 @@ const EMPTY_WA_MODULE_FORM = {
     transportMode: 'webjs',
     imageUrl: '',
     assignedUserIds: [],
+    moduleCatalogMode: 'inherit',
+    moduleAiEnabled: true,
+    moduleCatalogEnabled: true,
+    moduleCartEnabled: true,
+    moduleQuickRepliesEnabled: true,
     cloudAppId: '',
     cloudWabaId: '',
     cloudPhoneNumberId: '',
@@ -68,8 +73,12 @@ const ADMIN_NAV_ITEMS = [
     { id: 'saas_resumen', label: 'Resumen' },
     { id: 'saas_empresas', label: 'Empresas' },
     { id: 'saas_usuarios', label: 'Usuarios' },
+    { id: 'saas_modulos', label: 'Modulos' },
     { id: 'saas_config', label: 'Configuracion' }
 ];
+const ADMIN_IMAGE_MAX_BYTES = Math.max(200 * 1024, Number(import.meta.env.VITE_ADMIN_ASSET_MAX_BYTES || 2 * 1024 * 1024));
+const ADMIN_IMAGE_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL = '.jpg, .jpeg, .png, .webp';
 
 function normalizeOverview(payload = {}) {
     return {
@@ -123,6 +132,9 @@ function normalizeWaModule(item = {}) {
     const cloudConfig = metadata.cloudConfig && typeof metadata.cloudConfig === 'object' && !Array.isArray(metadata.cloudConfig)
         ? metadata.cloudConfig
         : {};
+    const moduleSettings = metadata.moduleSettings && typeof metadata.moduleSettings === 'object' && !Array.isArray(metadata.moduleSettings)
+        ? metadata.moduleSettings
+        : {};
 
     return {
         moduleId,
@@ -136,6 +148,15 @@ function normalizeWaModule(item = {}) {
         assignedUserIds: Array.isArray(source.assignedUserIds)
             ? source.assignedUserIds.map((entry) => String(entry || '').trim()).filter(Boolean)
             : [],
+        moduleCatalogMode: CATALOG_MODE_OPTIONS.includes(String(moduleSettings.catalogMode || '').trim())
+            ? String(moduleSettings.catalogMode || '').trim()
+            : 'inherit',
+        moduleFeatureFlags: {
+            aiPro: moduleSettings?.enabledModules?.aiPro !== false,
+            catalog: moduleSettings?.enabledModules?.catalog !== false,
+            cart: moduleSettings?.enabledModules?.cart !== false,
+            quickReplies: moduleSettings?.enabledModules?.quickReplies !== false
+        },
         metadata,
         cloudConfig: {
             appId: String(cloudConfig.appId || '').trim(),
@@ -210,17 +231,52 @@ function toUserDisplayName(user = {}) {
     const email = String(user?.email || '').trim();
     return name || email || 'Usuario sin nombre';
 }
+function buildInitials(label = '') {
+    const source = String(label || '').trim();
+    if (!source) return 'NA';
+    const chunks = source.split(/\s+/).filter(Boolean).slice(0, 2);
+    const initials = chunks.map((chunk) => String(chunk[0] || '').toUpperCase()).join('');
+    return initials || 'NA';
+}
+
+function formatBytes(bytes = 0) {
+    const safeValue = Number(bytes || 0);
+    if (!Number.isFinite(safeValue) || safeValue <= 0) return '0 B';
+    if (safeValue >= 1024 * 1024) return `${(safeValue / (1024 * 1024)).toFixed(1)} MB`;
+    if (safeValue >= 1024) return `${Math.round(safeValue / 1024)} KB`;
+    return `${Math.round(safeValue)} B`;
+}
+
+function validateImageFile(file = null) {
+    if (!file) return 'Selecciona una imagen valida.';
+    const mimeType = String(file.type || '').trim().toLowerCase();
+    if (!ADMIN_IMAGE_ALLOWED_MIME_TYPES.includes(mimeType)) {
+        return `Formato no permitido. Usa ${ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL}.`;
+    }
+    if (Number(file.size || 0) > ADMIN_IMAGE_MAX_BYTES) {
+        return `Imagen demasiado pesada. Maximo ${formatBytes(ADMIN_IMAGE_MAX_BYTES)}.`;
+    }
+    return '';
+}
+
 function ImageDropInput({
     label = 'Subir imagen',
     disabled = false,
     onFile,
-    helpText = 'Arrastra una imagen o haz clic para seleccionar.'
+    helpText = `Arrastra una imagen o haz clic para seleccionar (${ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL}, max ${formatBytes(ADMIN_IMAGE_MAX_BYTES)}).`
 }) {
     const [dragging, setDragging] = useState(false);
+    const [localError, setLocalError] = useState('');
 
     const handleFiles = (fileList) => {
         const file = fileList && fileList[0] ? fileList[0] : null;
-        if (!file || typeof onFile !== 'function') return;
+        const validationError = validateImageFile(file);
+        if (validationError) {
+            setLocalError(validationError);
+            return;
+        }
+        setLocalError('');
+        if (typeof onFile !== 'function') return;
         onFile(file);
     };
 
@@ -245,18 +301,19 @@ function ImageDropInput({
         >
             <input
                 type="file"
-                accept="image/*"
+                accept={ADMIN_IMAGE_ALLOWED_MIME_TYPES.join(',')}
                 disabled={disabled}
                 onChange={(event) => handleFiles(event.target.files || null)}
             />
             <strong>{label}</strong>
-            <small>{helpText}</small>
+            <small className={localError ? 'saas-admin-dropzone-error' : ''}>{localError || helpText}</small>
         </label>
     );
 }
 export default function SaasAdminPanel({
     isOpen = false,
     onClose,
+    onLogout,
     onOpenWhatsAppOperation,
     buildApiHeaders,
     activeTenantId = '',
@@ -268,6 +325,7 @@ export default function SaasAdminPanel({
     activeSection = '',
     showNavigation = true,
     showHeader = true,
+    closeLabel = 'Cerrar sesion',
 }) {
     const [overview, setOverview] = useState({ tenants: [], users: [], metrics: [], aiUsage: [] });
     const [tenantForm, setTenantForm] = useState(EMPTY_TENANT_FORM);
@@ -422,6 +480,7 @@ export default function SaasAdminPanel({
         return ADMIN_NAV_ITEMS.filter((item) => {
             if (item.id === 'saas_empresas') return canManageTenants;
             if (item.id === 'saas_usuarios') return canManageUsers;
+            if (item.id === 'saas_modulos') return canManageTenantSettings;
             if (item.id === 'saas_config') return canManageTenantSettings;
             return true;
         });
@@ -432,6 +491,8 @@ export default function SaasAdminPanel({
         if (adminNavItems.some((item) => item.id === preferred)) return preferred;
         return adminNavItems[0]?.id || 'saas_resumen';
     })();
+    const isModulesSection = selectedSectionId === 'saas_modulos';
+    const isGeneralConfigSection = selectedSectionId === 'saas_config';
 
     const handleSectionChange = (sectionId) => {
         const next = String(sectionId || '').trim();
@@ -449,6 +510,9 @@ export default function SaasAdminPanel({
         }
 
         if (next === 'saas_config') {
+            clearConfigSelection();
+        }
+        if (next === 'saas_modulos') {
             clearConfigSelection();
         }
 
@@ -560,6 +624,11 @@ export default function SaasAdminPanel({
             transportMode: item.transportMode || 'webjs',
             imageUrl: item.imageUrl || '',
             assignedUserIds: [...(item.assignedUserIds || [])],
+            moduleCatalogMode: item.moduleCatalogMode || 'inherit',
+            moduleAiEnabled: item?.moduleFeatureFlags?.aiPro !== false,
+            moduleCatalogEnabled: item?.moduleFeatureFlags?.catalog !== false,
+            moduleCartEnabled: item?.moduleFeatureFlags?.cart !== false,
+            moduleQuickRepliesEnabled: item?.moduleFeatureFlags?.quickReplies !== false,
             cloudAppId: item?.cloudConfig?.appId || '',
             cloudWabaId: item?.cloudConfig?.wabaId || '',
             cloudPhoneNumberId: item?.cloudConfig?.phoneNumberId || '',
@@ -944,7 +1013,7 @@ export default function SaasAdminPanel({
                     {showHeader && (
                         <div className="saas-admin-header">
                             <h2>Panel SaaS</h2>
-                            {!embedded && <button type="button" onClick={() => onClose?.()}>Cerrar</button>}
+                            {!embedded && <button type="button" onClick={() => { if (typeof onLogout === 'function') { onLogout(); return; } onClose?.(); }}>{closeLabel}</button>}
                         </div>
                     )}
                     <p>No tienes permisos para administrar empresas y usuarios.</p>
@@ -962,7 +1031,7 @@ export default function SaasAdminPanel({
                             <h2>Control SaaS</h2>
                             <span>Empresa activa: {activeTenantLabel}</span>
                         </div>
-                        {!embedded && <button type="button" onClick={() => onClose?.()}>Cerrar</button>}
+                        {!embedded && <button type="button" onClick={() => { if (typeof onLogout === 'function') { onLogout(); return; } onClose?.(); }}>{closeLabel}</button>}
                     </div>
                 )}
 
@@ -1040,7 +1109,8 @@ export default function SaasAdminPanel({
                             <div className="saas-admin-list-actions saas-admin-list-actions--row">
                                 <button type="button" disabled={busy} onClick={() => setCurrentSection('saas_empresas')}>Gestionar empresas</button>
                                 <button type="button" disabled={busy} onClick={() => setCurrentSection('saas_usuarios')}>Gestionar usuarios</button>
-                                <button type="button" disabled={busy} onClick={() => setCurrentSection('saas_config')}>Gestionar configuracion</button>
+                                <button type="button" disabled={busy} onClick={() => setCurrentSection('saas_modulos')}>Gestionar modulos</button>
+                                <button type="button" disabled={busy} onClick={() => setCurrentSection('saas_config')}>Configuracion general</button>
                             </div>
                         </div>
                     </section>
@@ -1143,8 +1213,19 @@ export default function SaasAdminPanel({
 
                                         {tenantPanelMode === 'view' && selectedTenant && (
                                             <>
+                                                <div className="saas-admin-hero">
+                                                    <div className="saas-admin-hero-media">
+                                                        {(selectedTenant.coverImageUrl || selectedTenant.logoUrl)
+                                                            ? <img src={selectedTenant.coverImageUrl || selectedTenant.logoUrl} alt={toTenantDisplayName(selectedTenant)} className="saas-admin-hero-image" />
+                                                            : <div className="saas-admin-hero-placeholder">{buildInitials(toTenantDisplayName(selectedTenant || {}))}</div>}
+                                                    </div>
+                                                    <div className="saas-admin-hero-content">
+                                                        <h4>{toTenantDisplayName(selectedTenant)}</h4>
+                                                        <p>{selectedTenant.slug ? `slug: ${selectedTenant.slug}` : 'Sin slug configurado'}</p>
+                                                    </div>
+                                                </div>
                                                 <div className="saas-admin-detail-grid">
-                                                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>Automatico</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedTenant?.id || '-'}</strong></div>
                                                     <div className="saas-admin-detail-field"><span>Slug</span><strong>{selectedTenant.slug || '-'}</strong></div>
                                                     <div className="saas-admin-detail-field"><span>Plan</span><strong>{selectedTenant.plan || '-'}</strong></div>
                                                     <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedTenant.active === false ? 'Inactiva' : 'Activa'}</strong></div>
@@ -1202,22 +1283,8 @@ export default function SaasAdminPanel({
                                                     </select>
                                                 </div>
                                                 <div className="saas-admin-form-row">
-                                                    <input
-                                                        value={tenantForm.logoUrl}
-                                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, logoUrl: event.target.value }))}
-                                                        placeholder="Logo URL"
-                                                        disabled={busy}
-                                                    />
-                                                    <input
-                                                        value={tenantForm.coverImageUrl}
-                                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, coverImageUrl: event.target.value }))}
-                                                        placeholder="Cover URL"
-                                                        disabled={busy}
-                                                    />
-                                                </div>
-                                                <div className="saas-admin-form-row">
                                                     <ImageDropInput
-                                                        label="Subir logo"
+                                                        label="Reemplazar logo"
                                                         disabled={busy}
                                                         onFile={(file) => handleFormImageUpload({
                                                             file,
@@ -1227,7 +1294,7 @@ export default function SaasAdminPanel({
                                                         })}
                                                     />
                                                     <ImageDropInput
-                                                        label="Subir portada"
+                                                        label="Reemplazar portada"
                                                         disabled={busy}
                                                         onFile={(file) => handleFormImageUpload({
                                                             file,
@@ -1402,8 +1469,19 @@ export default function SaasAdminPanel({
 
                                         {userPanelMode === 'view' && selectedUser && (
                                             <>
+                                                <div className="saas-admin-hero">
+                                                    <div className="saas-admin-hero-media">
+                                                        {selectedUser.avatarUrl
+                                                            ? <img src={selectedUser.avatarUrl} alt={toUserDisplayName(selectedUser)} className="saas-admin-hero-image" />
+                                                            : <div className="saas-admin-hero-placeholder">{buildInitials(toUserDisplayName(selectedUser || {}))}</div>}
+                                                    </div>
+                                                    <div className="saas-admin-hero-content">
+                                                        <h4>{toUserDisplayName(selectedUser)}</h4>
+                                                        <p>{selectedUser.email || 'Sin correo'}</p>
+                                                    </div>
+                                                </div>
                                                 <div className="saas-admin-detail-grid">
-                                                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>Automatico</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedUser?.id || '-'}</strong></div>
                                                     <div className="saas-admin-detail-field"><span>Correo</span><strong>{selectedUser.email || '-'}</strong></div>
                                                     <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedUser.active === false ? 'Inactivo' : 'Activo'}</strong></div>
                                                     <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(selectedUser.updatedAt)}</strong></div>
@@ -1471,12 +1549,6 @@ export default function SaasAdminPanel({
                                                     />
                                                 </div>
                                                 <div className="saas-admin-form-row">
-                                                    <input
-                                                        value={userForm.avatarUrl}
-                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, avatarUrl: event.target.value }))}
-                                                        placeholder="Avatar URL"
-                                                        disabled={busy}
-                                                    />
                                                     <label className="saas-admin-module-toggle">
                                                         <input
                                                             type="checkbox"
@@ -1489,7 +1561,7 @@ export default function SaasAdminPanel({
                                                 </div>
                                                 <div className="saas-admin-form-row">
                                                     <ImageDropInput
-                                                        label="Subir avatar"
+                                                        label="Reemplazar avatar"
                                                         disabled={busy}
                                                         onFile={(file) => handleFormImageUpload({
                                                             file,
@@ -1644,16 +1716,16 @@ export default function SaasAdminPanel({
                         </div>
                     </section>
                     )}
-                    {selectedSectionId === 'saas_config' && (
-                    <section id="saas_config" className="saas-admin-card saas-admin-card--full">
+                    {(isGeneralConfigSection || isModulesSection) && (
+                    <section id={isModulesSection ? 'saas_modulos' : 'saas_config'} className="saas-admin-card saas-admin-card--full">
                         <div className="saas-admin-master-detail">
                             <aside className="saas-admin-master-pane">
                                 <div className="saas-admin-pane-header">
-                                    <h3>Configuracion</h3>
+                                    <h3>{isModulesSection ? 'Modulos' : 'Configuracion general'}</h3>
                                     <small>
                                         {settingsTenantId
                                             ? `Empresa: ${toTenantDisplayName(tenantOptions.find((tenant) => tenant.id === settingsTenantId) || {})}`
-                                            : 'Selecciona una empresa para administrar su configuracion.'}
+                                            : 'Selecciona una empresa para administrar su panel.'}
                                     </small>
                                 </div>
 
@@ -1681,9 +1753,16 @@ export default function SaasAdminPanel({
                                 </div>
 
                                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                    <button type="button" disabled={busy || !settingsTenantId} onClick={openConfigModuleCreate}>
-                                        Nuevo modulo
-                                    </button>
+                                    {isModulesSection && (
+                                        <button type="button" disabled={busy || !settingsTenantId} onClick={openConfigModuleCreate}>
+                                            Nuevo modulo
+                                        </button>
+                                    )}
+                                    {isGeneralConfigSection && (
+                                        <button type="button" disabled={busy || !settingsTenantId} onClick={openConfigSettingsView}>
+                                            Abrir configuracion general
+                                        </button>
+                                    )}
                                     <button type="button" disabled={busy} onClick={clearConfigSelection}>
                                         Deseleccionar
                                     </button>
@@ -1693,59 +1772,57 @@ export default function SaasAdminPanel({
                                     {!settingsTenantId && (
                                         <div className="saas-admin-empty-state">
                                             <h4>Sin empresa seleccionada</h4>
-                                            <p>Elige una empresa para ver su configuracion y modulos WhatsApp.</p>
+                                            <p>Elige una empresa para ver su configuracion.</p>
                                         </div>
                                     )}
 
-                                    {settingsTenantId && (
-                                        <>
-                                            <button
-                                                type="button"
-                                                className={`saas-admin-list-item saas-admin-list-item--button ${selectedConfigKey === 'tenant_settings' ? 'active' : ''}`.trim()}
-                                                onClick={openConfigSettingsView}
-                                            >
-                                                <strong>Perfil de empresa</strong>
-                                                <small>Catalogo: {tenantSettings.catalogMode}</small>
-                                                <small>Modulos funcionales: {MODULE_KEYS.filter((entry) => tenantSettings?.enabledModules?.[entry.key] !== false).length}/{MODULE_KEYS.length}</small>
-                                            </button>
-
-                                            {waModules.length === 0 && (
-                                                <div className="saas-admin-empty-inline">Sin modulos WhatsApp configurados.</div>
-                                            )}
-
-                                            {waModules.map((moduleItem) => (
-                                                <button
-                                                    key={moduleItem.moduleId}
-                                                    type="button"
-                                                    className={`saas-admin-list-item saas-admin-list-item--button ${selectedConfigKey === `wa_module:${moduleItem.moduleId}` ? 'active' : ''}`.trim()}
-                                                    onClick={() => openConfigModuleView(moduleItem.moduleId)}
-                                                >
-                                                    <strong>{moduleItem.name || 'Modulo sin nombre'}</strong>
-                                                    <small>{moduleItem.transportMode === 'cloud' ? 'Cloud API' : 'Web.js'} | {moduleItem.isActive ? 'activo' : 'inactivo'}{moduleItem.isSelected ? ' | en uso' : ''}</small>
-                                                    <small>{moduleItem.phoneNumber ? `Numero: ${moduleItem.phoneNumber}` : 'Numero sin configurar'}</small>
-                                                </button>
-                                            ))}
-                                        </>
+                                    {settingsTenantId && isGeneralConfigSection && (
+                                        <button
+                                            type="button"
+                                            className={`saas-admin-list-item saas-admin-list-item--button ${selectedConfigKey === 'tenant_settings' ? 'active' : ''}`.trim()}
+                                            onClick={openConfigSettingsView}
+                                        >
+                                            <strong>Perfil de empresa</strong>
+                                            <small>Catalogo: {tenantSettings.catalogMode}</small>
+                                            <small>Modulos habilitados: {MODULE_KEYS.filter((entry) => tenantSettings?.enabledModules?.[entry.key] !== false).length}/{MODULE_KEYS.length}</small>
+                                        </button>
                                     )}
+
+                                    {settingsTenantId && isModulesSection && waModules.length === 0 && (
+                                        <div className="saas-admin-empty-inline">Sin modulos WhatsApp configurados.</div>
+                                    )}
+
+                                    {settingsTenantId && isModulesSection && waModules.map((moduleItem) => (
+                                        <button
+                                            key={moduleItem.moduleId}
+                                            type="button"
+                                            className={`saas-admin-list-item saas-admin-list-item--button ${selectedConfigKey === `wa_module:${moduleItem.moduleId}` ? 'active' : ''}`.trim()}
+                                            onClick={() => openConfigModuleView(moduleItem.moduleId)}
+                                        >
+                                            <strong>{moduleItem.name || 'Modulo sin nombre'}</strong>
+                                            <small>{moduleItem.transportMode === 'cloud' ? 'Cloud API' : 'Web.js'} | {moduleItem.isActive ? 'activo' : 'inactivo'}{moduleItem.isSelected ? ' | en uso' : ''}</small>
+                                            <small>{moduleItem.phoneNumber ? `Numero: ${moduleItem.phoneNumber}` : 'Numero sin configurar'}</small>
+                                        </button>
+                                    ))}
                                 </div>
                             </aside>
 
                             <div className="saas-admin-detail-pane">
                                 {!settingsTenantId && (
                                     <div className="saas-admin-empty-state saas-admin-empty-state--detail">
-                                        <h4>Configuracion por empresa</h4>
-                                        <p>Selecciona una empresa en el panel izquierdo para ver o editar su detalle.</p>
+                                        <h4>{isModulesSection ? 'Modulos por empresa' : 'Configuracion por empresa'}</h4>
+                                        <p>Selecciona una empresa en el panel izquierdo para ver el detalle.</p>
                                     </div>
                                 )}
 
-                                {settingsTenantId && !selectedConfigKey && waModulePanelMode !== 'create' && (
+                                {settingsTenantId && !selectedConfigKey && (isGeneralConfigSection || (isModulesSection && waModulePanelMode !== 'create')) && (
                                     <div className="saas-admin-empty-state saas-admin-empty-state--detail">
                                         <h4>Sin elemento seleccionado</h4>
-                                        <p>Selecciona "Perfil de empresa" o un modulo WhatsApp para ver su detalle.</p>
+                                        <p>{isModulesSection ? 'Selecciona un modulo WhatsApp para ver su detalle.' : 'Selecciona el perfil de empresa para ver su detalle.'}</p>
                                     </div>
                                 )}
 
-                                {settingsTenantId && selectedConfigKey === 'tenant_settings' && (
+                                {settingsTenantId && isGeneralConfigSection && selectedConfigKey === 'tenant_settings' && (
                                     <>
                                         <div className="saas-admin-pane-header">
                                             <div>
@@ -1855,7 +1932,7 @@ export default function SaasAdminPanel({
                                     </>
                                 )}
 
-                                {settingsTenantId && (waModulePanelMode === 'create' || selectedConfigModule) && (() => {
+                                {settingsTenantId && isModulesSection && (waModulePanelMode === 'create' || selectedConfigModule) && (() => {
                                     const moduleInDetail = waModulePanelMode === 'create' ? null : selectedConfigModule;
                                     const isModuleEditing = waModulePanelMode === 'edit' || waModulePanelMode === 'create';
                                     const assignedLabels = isModuleEditing
@@ -1923,8 +2000,19 @@ export default function SaasAdminPanel({
 
                                             {!isModuleEditing && moduleInDetail && (
                                                 <>
+                                                    <div className="saas-admin-hero">
+                                                        <div className="saas-admin-hero-media">
+                                                            {moduleInDetail.imageUrl
+                                                                ? <img src={moduleInDetail.imageUrl} alt={moduleInDetail.name || 'Modulo'} className="saas-admin-hero-image" />
+                                                                : <div className="saas-admin-hero-placeholder">{buildInitials(moduleInDetail.name || moduleInDetail.moduleId)}</div>}
+                                                        </div>
+                                                        <div className="saas-admin-hero-content">
+                                                            <h4>{moduleInDetail.name || 'Modulo sin nombre'}</h4>
+                                                            <p>{moduleInDetail.phoneNumber || 'Sin numero vinculado'}</p>
+                                                        </div>
+                                                    </div>
                                                     <div className="saas-admin-detail-grid">
-                                                        <div className="saas-admin-detail-field"><span>Codigo</span><strong>Automatico</strong></div>
+                                                        <div className="saas-admin-detail-field"><span>Codigo</span><strong>{moduleInDetail?.moduleId || '-'}</strong></div>
                                                         <div className="saas-admin-detail-field"><span>Transporte</span><strong>{moduleInDetail.transportMode === 'cloud' ? 'Cloud API' : 'Web.js'}</strong></div>
                                                         <div className="saas-admin-detail-field"><span>Telefono</span><strong>{moduleInDetail.phoneNumber || 'Sin numero'}</strong></div>
                                                         <div className="saas-admin-detail-field"><span>Estado</span><strong>{moduleInDetail.isActive ? 'Activo' : 'Inactivo'}</strong></div>
@@ -1978,17 +2066,60 @@ export default function SaasAdminPanel({
                                                             placeholder="Numero (ej: +51999999999)"
                                                             disabled={!settingsTenantId || busy}
                                                         />
-                                                        <input
-                                                            value={waModuleForm.imageUrl}
-                                                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, imageUrl: event.target.value }))}
-                                                            placeholder="URL imagen del modulo"
+                                                        <select
+                                                            value={waModuleForm.moduleCatalogMode}
+                                                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, moduleCatalogMode: event.target.value }))}
                                                             disabled={!settingsTenantId || busy}
-                                                        />
+                                                        >
+                                                            <option value="inherit">Catalogo: heredar empresa</option>
+                                                            {CATALOG_MODE_OPTIONS.map((mode) => (
+                                                                <option key={`module_catalog_${mode}`} value={mode}>{`Catalogo: ${mode}`}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+
+                                                    <div className="saas-admin-modules">
+                                                        <label className="saas-admin-module-toggle">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={waModuleForm.moduleAiEnabled !== false}
+                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, moduleAiEnabled: event.target.checked }))}
+                                                                disabled={!settingsTenantId || busy}
+                                                            />
+                                                            <span>IA habilitada</span>
+                                                        </label>
+                                                        <label className="saas-admin-module-toggle">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={waModuleForm.moduleCatalogEnabled !== false}
+                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, moduleCatalogEnabled: event.target.checked }))}
+                                                                disabled={!settingsTenantId || busy}
+                                                            />
+                                                            <span>Catalogo habilitado</span>
+                                                        </label>
+                                                        <label className="saas-admin-module-toggle">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={waModuleForm.moduleCartEnabled !== false}
+                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, moduleCartEnabled: event.target.checked }))}
+                                                                disabled={!settingsTenantId || busy}
+                                                            />
+                                                            <span>Carrito habilitado</span>
+                                                        </label>
+                                                        <label className="saas-admin-module-toggle">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={waModuleForm.moduleQuickRepliesEnabled !== false}
+                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, moduleQuickRepliesEnabled: event.target.checked }))}
+                                                                disabled={!settingsTenantId || busy}
+                                                            />
+                                                            <span>Respuestas rapidas habilitadas</span>
+                                                        </label>
                                                     </div>
 
                                                     <div className="saas-admin-form-row">
                                                         <ImageDropInput
-                                                            label="Subir imagen del modulo"
+                                                            label="Reemplazar imagen del modulo"
                                                             disabled={busy}
                                                             onFile={(file) => handleFormImageUpload({
                                                                 file,
@@ -2121,6 +2252,12 @@ export default function SaasAdminPanel({
                                                             type="button"
                                                             disabled={busy || !settingsTenantId || !waModuleForm.name.trim()}
                                                             onClick={() => runAction(waModulePanelMode === 'create' ? 'Modulo WA creado' : 'Modulo WA actualizado', async () => {
+                                                                const existingMetadata = moduleInDetail?.metadata && typeof moduleInDetail.metadata === 'object'
+                                                                    ? moduleInDetail.metadata
+                                                                    : {};
+                                                                const existingCloudConfig = existingMetadata?.cloudConfig && typeof existingMetadata.cloudConfig === 'object'
+                                                                    ? existingMetadata.cloudConfig
+                                                                    : {};
                                                                 const payload = {
                                                                     name: waModuleForm.name,
                                                                     phoneNumber: waModuleForm.phoneNumber,
@@ -2130,7 +2267,18 @@ export default function SaasAdminPanel({
                                                                         .map((entry) => String(entry || '').trim())
                                                                         .filter(Boolean),
                                                                     metadata: {
+                                                                        ...existingMetadata,
+                                                                        moduleSettings: {
+                                                                            catalogMode: waModuleForm.moduleCatalogMode || 'inherit',
+                                                                            enabledModules: {
+                                                                                aiPro: waModuleForm.moduleAiEnabled !== false,
+                                                                                catalog: waModuleForm.moduleCatalogEnabled !== false,
+                                                                                cart: waModuleForm.moduleCartEnabled !== false,
+                                                                                quickReplies: waModuleForm.moduleQuickRepliesEnabled !== false
+                                                                            }
+                                                                        },
                                                                         cloudConfig: {
+                                                                            ...existingCloudConfig,
                                                                             appId: waModuleForm.cloudAppId || undefined,
                                                                             wabaId: waModuleForm.cloudWabaId || undefined,
                                                                             phoneNumberId: waModuleForm.cloudPhoneNumberId || undefined,
@@ -2143,7 +2291,6 @@ export default function SaasAdminPanel({
                                                                         }
                                                                     }
                                                                 };
-
                                                                 if (waModulePanelMode === 'edit' && moduleInDetail?.moduleId) {
                                                                     await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/wa-modules/${encodeURIComponent(moduleInDetail.moduleId)}`, {
                                                                         method: 'PUT',
@@ -2198,6 +2345,22 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

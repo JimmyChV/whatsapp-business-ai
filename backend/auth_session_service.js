@@ -1,8 +1,11 @@
-﻿const crypto = require('crypto');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
     normalizeTenantId,
+    getTenantDataDir,
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
@@ -567,6 +570,89 @@ async function isAccessTokenRevoked({
     return Object.values(store.revokedAccessTokens).some((entry) => String(entry?.jti || '') === cleanJti);
 }
 
+async function revokeUserRefreshSessionsGlobally({
+    userId = '',
+    email = '',
+    reason = 'password_reset'
+} = {}) {
+    const cleanUserId = String(userId || '').trim();
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!cleanUserId && !cleanEmail) {
+        return { ok: false, updated: 0, tenants: 0, reason: 'missing_user' };
+    }
+
+    let updated = 0;
+    let touchedTenants = 0;
+    const nowSec = nowEpochSeconds();
+
+    if (getStorageDriver() === 'postgres') {
+        try {
+            const { rowCount } = await queryPostgres(
+                `UPDATE auth_sessions
+                    SET revoked_at = NOW(),
+                        updated_at = NOW(),
+                        last_used_at = NOW()
+                  WHERE revoked_at IS NULL
+                    AND (
+                        ($1 <> '' AND user_id = $1)
+                        OR ($2 <> '' AND lower(user_email) = lower($2))
+                    )`,
+                [cleanUserId, cleanEmail]
+            );
+            updated += Number(rowCount || 0);
+        } catch (error) {
+            if (!missingRelation(error)) throw error;
+        }
+    }
+
+    const defaultTenantDir = getTenantDataDir(DEFAULT_TENANT_ID);
+    const tenantsRoot = path.dirname(defaultTenantDir);
+    let tenantIds = [];
+    try {
+        tenantIds = fs.readdirSync(tenantsRoot, { withFileTypes: true })
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => String(entry.name || '').trim())
+            .filter(Boolean);
+    } catch (_) {
+        tenantIds = [];
+    }
+
+    for (const tenantId of tenantIds) {
+        const store = cleanupStoreInMemory(await loadTenantStore(tenantId), nowSec);
+        let changed = false;
+
+        for (const [sessionId, session] of Object.entries(store.sessions || {})) {
+            if (!session || typeof session !== 'object') continue;
+            if (session.revokedAtUnix) continue;
+            const expiresAt = Number(session.expiresAtUnix || 0);
+            if (expiresAt && expiresAt <= nowSec) continue;
+
+            const sameUser = cleanUserId && String(session.userId || '').trim() === cleanUserId;
+            const sameEmail = cleanEmail && String(session.userEmail || '').trim().toLowerCase() === cleanEmail;
+            if (!sameUser && !sameEmail) continue;
+
+            store.sessions[sessionId] = {
+                ...session,
+                revokedAtUnix: nowSec,
+                updatedAtUnix: nowSec,
+                revokeReason: String(reason || 'password_reset')
+            };
+            changed = true;
+            updated += 1;
+        }
+
+        if (changed) {
+            await saveTenantStore(tenantId, store);
+            touchedTenants += 1;
+        }
+    }
+
+    return {
+        ok: true,
+        updated,
+        tenants: touchedTenants
+    };
+}
 module.exports = {
     getRefreshTokenTtlSec,
     parseRefreshTokenTenant,
@@ -574,6 +660,7 @@ module.exports = {
     issueRefreshSession,
     rotateRefreshSession,
     revokeRefreshToken,
+    revokeUserRefreshSessionsGlobally,
     revokeAccessToken,
     isAccessTokenRevoked
 };

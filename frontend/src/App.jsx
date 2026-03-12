@@ -599,6 +599,19 @@ function App() {
   const [showSaasAdminPanel, setShowSaasAdminPanel] = useState(false);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [saasAuthNotice, setSaasAuthNotice] = useState('');
+  const [recoveryStep, setRecoveryStep] = useState('idle');
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [recoveryResetToken, setRecoveryResetToken] = useState('');
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryPasswordConfirm, setRecoveryPasswordConfirm] = useState('');
+  const [showRecoveryPassword, setShowRecoveryPassword] = useState(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryError, setRecoveryError] = useState('');
+  const [recoveryNotice, setRecoveryNotice] = useState('');
+  const [recoveryDebugCode, setRecoveryDebugCode] = useState('');
   const waLaunchParams = useMemo(() => {
     try {
       const params = new URLSearchParams(window.location.search || '');
@@ -1825,6 +1838,7 @@ function App() {
 
   const handleSaasLogin = async (event) => {
     event?.preventDefault();
+    if (recoveryStep !== 'idle') return;
     const email = String(loginEmail || '').trim().toLowerCase();
     const password = String(loginPassword || '');
 
@@ -1835,7 +1849,9 @@ function App() {
 
     setSaasAuthBusy(true);
     setSaasAuthError('');
+    setSaasAuthNotice('');
     setTenantSwitchError('');
+    setRecoveryError('');
 
     try {
       const response = await fetch(API_URL + '/api/auth/login', {
@@ -1857,6 +1873,7 @@ function App() {
       setSaasSession(session);
       setLoginPassword('');
       setLoginEmail(String(payload?.user?.email || email));
+      setRecoveryStep('idle');
     } catch (error) {
       setSaasAuthError(String(error?.message || 'No se pudo iniciar sesion.'));
     } finally {
@@ -1864,8 +1881,138 @@ function App() {
     }
   };
 
+  const resetRecoveryFlow = () => {
+    setRecoveryStep('idle');
+    setRecoveryCode('');
+    setRecoveryResetToken('');
+    setRecoveryPassword('');
+    setRecoveryPasswordConfirm('');
+    setRecoveryBusy(false);
+    setRecoveryError('');
+    setRecoveryNotice('');
+    setRecoveryDebugCode('');
+    setShowRecoveryPassword(false);
+  };
+
+  const openRecoveryFlow = () => {
+    const emailSeed = String(loginEmail || '').trim().toLowerCase();
+    setRecoveryEmail(emailSeed);
+    setRecoveryStep('request');
+    setRecoveryCode('');
+    setRecoveryResetToken('');
+    setRecoveryPassword('');
+    setRecoveryPasswordConfirm('');
+    setRecoveryError('');
+    setRecoveryNotice('');
+    setRecoveryDebugCode('');
+    setSaasAuthNotice('');
+  };
+
+  const handleRecoveryRequest = async (event) => {
+    event?.preventDefault();
+    const email = String(recoveryEmail || '').trim().toLowerCase();
+    if (!email) {
+      setRecoveryError('Ingresa tu correo para recuperar acceso.');
+      return;
+    }
+
+    setRecoveryBusy(true);
+    setRecoveryError('');
+    setRecoveryNotice('');
+    try {
+      const response = await fetch(`${API_URL}/api/auth/recovery/request`, {
+        method: 'POST',
+        headers: buildApiHeaders({ includeJson: true }),
+        body: JSON.stringify({ email })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(String(payload?.error || 'No se pudo iniciar la recuperacion.'));
+      }
+      setRecoveryNotice(String(payload?.message || 'Si el correo existe, enviaremos un codigo de recuperacion.'));
+      setRecoveryDebugCode(String(payload?.debugCode || ''));
+      setRecoveryStep('verify');
+    } catch (error) {
+      setRecoveryError(String(error?.message || 'No se pudo iniciar la recuperacion.'));
+    } finally {
+      setRecoveryBusy(false);
+    }
+  };
+
+  const handleRecoveryVerify = async (event) => {
+    event?.preventDefault();
+    const email = String(recoveryEmail || '').trim().toLowerCase();
+    const code = String(recoveryCode || '').trim();
+    if (!email || !code) {
+      setRecoveryError('Ingresa correo y codigo de verificacion.');
+      return;
+    }
+
+    setRecoveryBusy(true);
+    setRecoveryError('');
+    try {
+      const response = await fetch(`${API_URL}/api/auth/recovery/verify`, {
+        method: 'POST',
+        headers: buildApiHeaders({ includeJson: true }),
+        body: JSON.stringify({ email, code })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(String(payload?.error || 'Codigo invalido o expirado.'));
+      }
+      setRecoveryResetToken(String(payload?.resetToken || ''));
+      setRecoveryStep('reset');
+      setRecoveryNotice('Codigo validado. Ahora crea tu nueva contrasena.');
+    } catch (error) {
+      setRecoveryError(String(error?.message || 'No se pudo validar el codigo.'));
+    } finally {
+      setRecoveryBusy(false);
+    }
+  };
+
+  const handleRecoveryReset = async (event) => {
+    event?.preventDefault();
+    const email = String(recoveryEmail || '').trim().toLowerCase();
+    const resetToken = String(recoveryResetToken || '').trim();
+    const newPassword = String(recoveryPassword || '');
+    if (!email || !resetToken) {
+      setRecoveryError('Sesion de recuperacion expirada. Solicita un nuevo codigo.');
+      return;
+    }
+    if (!newPassword || newPassword.length < 10) {
+      setRecoveryError('Usa una contrasena segura (minimo 10 caracteres).');
+      return;
+    }
+    if (newPassword !== String(recoveryPasswordConfirm || '')) {
+      setRecoveryError('Las contrasenas no coinciden.');
+      return;
+    }
+
+    setRecoveryBusy(true);
+    setRecoveryError('');
+    try {
+      const response = await fetch(`${API_URL}/api/auth/recovery/reset`, {
+        method: 'POST',
+        headers: buildApiHeaders({ includeJson: true }),
+        body: JSON.stringify({ email, resetToken, newPassword })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(String(payload?.error || 'No se pudo actualizar la contrasena.'));
+      }
+      setLoginEmail(email);
+      setLoginPassword('');
+      resetRecoveryFlow();
+      setSaasAuthNotice(String(payload?.message || 'Contrasena actualizada. Inicia sesion con la nueva clave.'));
+    } catch (error) {
+      setRecoveryError(String(error?.message || 'No se pudo actualizar la contrasena.'));
+    } finally {
+      setRecoveryBusy(false);
+    }
+  };
+
   const handleSaasLogout = async () => {
-    if (!window.confirm('Cerrar sesion SaaS de esta empresa?')) return;
+    if (!window.confirm('Cerrar sesion de tu cuenta SaaS?')) return;
     const current = saasSessionRef.current;
     try {
       if (current?.accessToken || current?.refreshToken) {
@@ -2520,18 +2667,31 @@ REGLA CRITICA:
               onChange={(e) => setLoginEmail(e.target.value)}
               autoComplete='username'
               placeholder='usuario@empresa.com o user_id'
+              disabled={saasAuthBusy || recoveryBusy}
             />
           </label>
 
           <label className='saas-login-field'>
             <span>Contrasena</span>
-            <input
-              type='password'
-              value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)}
-              autoComplete='current-password'
-              placeholder='********'
-            />
+            <div className='saas-login-password-wrap'>
+              <input
+                type={showLoginPassword ? 'text' : 'password'}
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                autoComplete='current-password'
+                placeholder='********'
+                disabled={saasAuthBusy || recoveryBusy}
+              />
+              <button
+                type='button'
+                className='saas-login-visibility'
+                onClick={() => setShowLoginPassword((prev) => !prev)}
+                disabled={saasAuthBusy || recoveryBusy}
+                aria-label={showLoginPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
+              >
+                {showLoginPassword ? 'Ocultar' : 'Ver'}
+              </button>
+            </div>
           </label>
 
           {saasAuthError && (
@@ -2539,19 +2699,155 @@ REGLA CRITICA:
               {saasAuthError}
             </div>
           )}
+          {saasAuthNotice && (
+            <div className='saas-login-notice'>
+              {saasAuthNotice}
+            </div>
+          )}
 
-          <button
-            type='submit'
-            disabled={saasAuthBusy}
-            className='saas-login-submit'
-          >
-            {saasAuthBusy ? 'Ingresando...' : 'Iniciar sesion'}
-          </button>
+          {recoveryStep === 'idle' ? (
+            <>
+              <button
+                type='submit'
+                disabled={saasAuthBusy || recoveryBusy}
+                className='saas-login-submit'
+              >
+                {saasAuthBusy ? 'Ingresando...' : 'Iniciar sesion'}
+              </button>
+              <button
+                type='button'
+                className='saas-login-link'
+                onClick={openRecoveryFlow}
+                disabled={saasAuthBusy || recoveryBusy}
+              >
+                Olvide mi contrasena
+              </button>
+            </>
+          ) : (
+            <div className='saas-recovery-box'>
+              <div className='saas-recovery-head'>
+                <strong>Recuperar acceso</strong>
+                <small>Paso seguro en 2 etapas con codigo por correo.</small>
+              </div>
+
+              {recoveryNotice && <div className='saas-login-notice'>{recoveryNotice}</div>}
+              {recoveryError && <div className='saas-login-error'>{recoveryError}</div>}
+
+              {recoveryStep === 'request' && (
+                <div className='saas-recovery-form'>
+                  <label className='saas-login-field'>
+                    <span>Correo</span>
+                    <input
+                      type='email'
+                      value={recoveryEmail}
+                      onChange={(event) => setRecoveryEmail(event.target.value)}
+                      placeholder='usuario@empresa.com'
+                      autoComplete='email'
+                      disabled={recoveryBusy}
+                    />
+                  </label>
+                  <button
+                    type='button'
+                    disabled={recoveryBusy}
+                    className='saas-login-submit'
+                    onClick={handleRecoveryRequest}
+                  >
+                    {recoveryBusy ? 'Enviando...' : 'Enviar codigo'}
+                  </button>
+                </div>
+              )}
+
+              {recoveryStep === 'verify' && (
+                <div className='saas-recovery-form'>
+                  <label className='saas-login-field'>
+                    <span>Correo</span>
+                    <input type='email' value={recoveryEmail} disabled />
+                  </label>
+                  <label className='saas-login-field'>
+                    <span>Codigo de verificacion</span>
+                    <input
+                      type='text'
+                      value={recoveryCode}
+                      onChange={(event) => setRecoveryCode(event.target.value)}
+                      placeholder='000000'
+                      autoComplete='one-time-code'
+                      disabled={recoveryBusy}
+                    />
+                  </label>
+                  <button
+                    type='button'
+                    disabled={recoveryBusy}
+                    className='saas-login-submit'
+                    onClick={handleRecoveryVerify}
+                  >
+                    {recoveryBusy ? 'Validando...' : 'Validar codigo'}
+                  </button>
+                  {recoveryDebugCode && (
+                    <div className='saas-login-debug'>
+                      Codigo debug (solo entorno local): <strong>{recoveryDebugCode}</strong>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {recoveryStep === 'reset' && (
+                <div className='saas-recovery-form'>
+                  <label className='saas-login-field'>
+                    <span>Nueva contrasena</span>
+                    <input
+                      type={showRecoveryPassword ? 'text' : 'password'}
+                      value={recoveryPassword}
+                      onChange={(event) => setRecoveryPassword(event.target.value)}
+                      placeholder='Minimo 10 caracteres, mayuscula, numero y simbolo'
+                      autoComplete='new-password'
+                      disabled={recoveryBusy}
+                    />
+                  </label>
+                  <label className='saas-login-field'>
+                    <span>Confirmar contrasena</span>
+                    <input
+                      type={showRecoveryPassword ? 'text' : 'password'}
+                      value={recoveryPasswordConfirm}
+                      onChange={(event) => setRecoveryPasswordConfirm(event.target.value)}
+                      placeholder='Repite la nueva contrasena'
+                      autoComplete='new-password'
+                      disabled={recoveryBusy}
+                    />
+                  </label>
+                  <label className='saas-login-check'>
+                    <input
+                      type='checkbox'
+                      checked={showRecoveryPassword}
+                      onChange={(event) => setShowRecoveryPassword(event.target.checked)}
+                      disabled={recoveryBusy}
+                    />
+                    <span>Mostrar contrasena</span>
+                  </label>
+                  <button
+                    type='button'
+                    disabled={recoveryBusy}
+                    className='saas-login-submit'
+                    onClick={handleRecoveryReset}
+                  >
+                    {recoveryBusy ? 'Actualizando...' : 'Actualizar contrasena'}
+                  </button>
+                </div>
+              )}
+
+              <button
+                type='button'
+                className='saas-login-link'
+                onClick={resetRecoveryFlow}
+                disabled={recoveryBusy}
+              >
+                Volver al inicio de sesion
+              </button>
+            </div>
+          )}
         </form>
       </div>
     );
   }
-
 
   // Render: Reconnecting
   // --------------------------------------------------------------
@@ -2568,6 +2864,23 @@ REGLA CRITICA:
   // Render: Transport Selector
   // --------------------------------------------------------------
   if (!selectedTransport) {
+    if (canManageSaas) {
+      return (
+        <SaasAdminPanel
+          isOpen
+          onClose={handleSaasLogout}
+          onLogout={handleSaasLogout}
+          closeLabel='Cerrar sesion'
+          onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
+          buildApiHeaders={buildApiHeaders}
+          activeTenantId={tenantScopeId}
+          canManageSaas={canManageSaas}
+          userRole={saasUserRole}
+          isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+        />
+      );
+    }
+
     return (
       <div className="login-screen">
         <div style={{ width: '100%', maxWidth: '700px', background: '#1f2c33', border: '1px solid rgba(134,150,160,0.28)', borderRadius: '16px', padding: '26px', boxSizing: 'border-box' }}>
@@ -2978,6 +3291,8 @@ REGLA CRITICA:
       <SaasAdminPanel
         isOpen={showSaasAdminPanel}
         onClose={() => setShowSaasAdminPanel(false)}
+        onLogout={handleSaasLogout}
+        closeLabel='Cerrar sesion'
         onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
         buildApiHeaders={buildApiHeaders}
         activeTenantId={tenantScopeId}
@@ -2990,4 +3305,9 @@ REGLA CRITICA:
 }
 
 export default App;
+
+
+
+
+
 

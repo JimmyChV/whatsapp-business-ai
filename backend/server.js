@@ -11,6 +11,7 @@ const logger = require('./logger');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./security_utils');
 const RateLimiter = require('./rate_limiter');
 const authService = require('./auth_service');
+const authRecoveryService = require('./auth_recovery_service');
 const auditLogService = require('./audit_log_service');
 const tenantService = require('./tenant_service');
 const tenantSettingsService = require('./tenant_settings_service');
@@ -59,7 +60,14 @@ const app = express();
 app.disable('x-powered-by');
 
 const UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.join(__dirname, 'uploads')).trim() || path.join(__dirname, 'uploads'));
-const ADMIN_ASSET_UPLOAD_MAX_BYTES = Math.max(200 * 1024, Number(process.env.ADMIN_ASSET_UPLOAD_MAX_BYTES || 8 * 1024 * 1024));
+const ADMIN_ASSET_UPLOAD_MAX_BYTES = Math.max(200 * 1024, Number(process.env.ADMIN_ASSET_UPLOAD_MAX_BYTES || 2 * 1024 * 1024));
+const ADMIN_ASSET_ALLOWED_MIME_TYPES = new Set((() => {
+    const configured = parseCsvEnv(process.env.ADMIN_ASSET_ALLOWED_MIME_TYPES);
+    const base = configured.length > 0 ? configured : ['image/jpeg', 'image/png', 'image/webp'];
+    return base
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter(Boolean);
+})());
 if (!fs.existsSync(UPLOADS_ROOT)) {
     fs.mkdirSync(UPLOADS_ROOT, { recursive: true });
 }
@@ -87,7 +95,7 @@ function getRequestOrigin(req = {}) {
 function normalizeImageExtension(fileName = '', mimeType = '') {
     const fromName = String(fileName || '').trim().split('.').pop();
     const cleanNameExt = String(fromName || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (cleanNameExt && ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'].includes(cleanNameExt)) {
+    if (cleanNameExt && ['png', 'jpg', 'jpeg', 'webp'].includes(cleanNameExt)) {
         return cleanNameExt === 'jpg' ? 'jpeg' : cleanNameExt;
     }
 
@@ -97,9 +105,7 @@ function normalizeImageExtension(fileName = '', mimeType = '') {
         'image/jpeg': 'jpeg',
         'image/jpg': 'jpeg',
         'image/webp': 'webp',
-        'image/gif': 'gif',
-        'image/svg+xml': 'svg',
-        'image/bmp': 'bmp'
+        
     };
     return map[mime] || 'png';
 }
@@ -127,6 +133,10 @@ function parseImageUploadPayload(body = {}) {
 
     if (!mimeType.startsWith('image/')) {
         throw new Error('Solo se permiten imagenes.');
+    }
+
+    if (!ADMIN_ASSET_ALLOWED_MIME_TYPES.has(mimeType)) {
+        throw new Error('Formato de imagen no permitido. Usa JPG, PNG o WEBP.');
     }
 
     let buffer;
@@ -569,6 +579,129 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+app.post('/api/auth/recovery/request', async (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!email) {
+        return res.status(400).json({ ok: false, error: 'Correo requerido.' });
+    }
+
+    try {
+        const result = await authRecoveryService.requestPasswordRecovery({
+            email,
+            requestIp: String(req.ip || ''),
+            requestId: String(req.requestId || '')
+        });
+
+        await auditLogService.writeAuditLog(req?.tenantContext?.id || 'default', {
+            userId: null,
+            userEmail: email,
+            role: 'seller',
+            action: 'auth.recovery.request',
+            resourceType: 'auth',
+            resourceId: null,
+            source: 'api',
+            ip: String(req.ip || ''),
+            payload: {
+                accepted: Boolean(result?.accepted)
+            }
+        });
+
+        const responsePayload = {
+            ok: true,
+            message: 'Si el correo existe, enviaremos un codigo de recuperacion.'
+        };
+        if (result?.maskedEmail) responsePayload.maskedEmail = result.maskedEmail;
+        if (result?.expiresInSec) responsePayload.expiresInSec = result.expiresInSec;
+        if (!isProduction && result?.debugCode) responsePayload.debugCode = result.debugCode;
+
+        return res.json(responsePayload);
+    } catch (error) {
+        const message = String(error?.message || 'No se pudo iniciar recuperacion.');
+        if (/correo requerido|correo invalido/i.test(message)) {
+            return res.status(400).json({ ok: false, error: message });
+        }
+        return res.json({
+            ok: true,
+            message: 'Si el correo existe, enviaremos un codigo de recuperacion.'
+        });
+    }
+});
+
+app.post('/api/auth/recovery/verify', async (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const code = String(req.body?.code || '').trim();
+
+    if (!email || !code) {
+        return res.status(400).json({ ok: false, error: 'Correo y codigo son requeridos.' });
+    }
+
+    try {
+        const result = await authRecoveryService.verifyPasswordRecoveryCode({ email, code });
+
+        await auditLogService.writeAuditLog(req?.tenantContext?.id || 'default', {
+            userId: null,
+            userEmail: email,
+            role: 'seller',
+            action: 'auth.recovery.verify',
+            resourceType: 'auth',
+            resourceId: null,
+            source: 'api',
+            ip: String(req.ip || ''),
+            payload: { ok: true }
+        });
+
+        return res.json({
+            ok: true,
+            resetToken: result.resetToken,
+            expiresInSec: result.expiresInSec
+        });
+    } catch (error) {
+        const message = String(error?.message || 'Codigo invalido o expirado.');
+        const status = /codigo invalido|expirado/i.test(message) ? 400 : 500;
+        return res.status(status).json({ ok: false, error: message });
+    }
+});
+
+app.post('/api/auth/recovery/reset', async (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const resetToken = String(req.body?.resetToken || '').trim();
+    const newPassword = String(req.body?.newPassword || '');
+
+    if (!email || !resetToken || !newPassword) {
+        return res.status(400).json({ ok: false, error: 'Correo, token y nueva contrasena son requeridos.' });
+    }
+
+    try {
+        const result = await authRecoveryService.resetPasswordWithRecoveryToken({
+            email,
+            resetToken,
+            newPassword
+        });
+
+        await auditLogService.writeAuditLog(req?.tenantContext?.id || 'default', {
+            userId: result?.userId || null,
+            userEmail: email,
+            role: 'seller',
+            action: 'auth.recovery.reset',
+            resourceType: 'auth',
+            resourceId: result?.userId || null,
+            source: 'api',
+            ip: String(req.ip || ''),
+            payload: {
+                revokedSessions: Number(result?.revokedSessions?.updated || 0) || 0
+            }
+        });
+
+        return res.json({
+            ok: true,
+            message: 'Contrasena actualizada correctamente.'
+        });
+    } catch (error) {
+        const message = String(error?.message || 'No se pudo actualizar la contrasena.');
+        const status = /invalido|expirado|contrasena/i.test(message) ? 400 : 500;
+        return res.status(status).json({ ok: false, error: message });
+    }
+});
 app.post('/api/auth/refresh', async (req, res) => {
     try {
         const refreshToken = String(req.body?.refreshToken || '').trim();
