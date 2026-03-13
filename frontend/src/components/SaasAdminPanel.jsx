@@ -1623,34 +1623,6 @@ export default function SaasAdminPanel({
                     </div>
                 )}
 
-                {requiresTenantSelection && (
-                    <div className="saas-admin-form-row" style={{ marginBottom: '10px' }}>
-                        <select
-                            value={settingsTenantId}
-                            onChange={(event) => {
-                                const nextTenantId = String(event.target.value || '').trim();
-                                setSettingsTenantId(nextTenantId);
-                                if (nextTenantId) setSelectedTenantId(nextTenantId);
-                            }}
-                            disabled={busy}
-                        >
-                            <option value="">Seleccionar empresa para trabajar</option>
-                            {tenantOptions.map((tenant) => (
-                                <option key={tenant.id} value={tenant.id}>{toTenantDisplayName(tenant)}</option>
-                            ))}
-                        </select>
-                        <button
-                            type="button"
-                            disabled={busy || !settingsTenantId}
-                            onClick={() => {
-                                setSettingsTenantId('');
-                                setSelectedTenantId('');
-                            }}
-                        >
-                            Limpiar seleccion
-                        </button>
-                    </div>
-                )}
 
                 {showNavigation && (
                     <div className="saas-admin-nav">
@@ -3582,7 +3554,6 @@ export default function SaasAdminPanel({
         </div>
     );
 }
-
 
 
 
