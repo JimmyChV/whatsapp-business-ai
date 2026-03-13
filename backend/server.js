@@ -16,6 +16,7 @@ const auditLogService = require('./audit_log_service');
 const tenantService = require('./tenant_service');
 const tenantSettingsService = require('./tenant_settings_service');
 const saasControlService = require('./saas_control_plane_service');
+const accessPolicyService = require('./access_policy_service');
 const planLimitsService = require('./plan_limits_service');
 const planLimitsStoreService = require('./plan_limits_store_service');
 const aiUsageService = require('./ai_usage_service');
@@ -844,7 +845,33 @@ app.get('/api/tenant/me', (req, res) => {
 });
 
 function getAuthRole(req = {}) {
-    return String(req?.authContext?.user?.role || '').trim().toLowerCase();
+    return accessPolicyService.normalizeRole(req?.authContext?.user?.role || 'seller');
+}
+
+function getUserPermissions(req = {}) {
+    const raw = Array.isArray(req?.authContext?.user?.permissions)
+        ? req.authContext.user.permissions
+        : [];
+    return new Set(
+        raw
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean)
+    );
+}
+
+function hasPermission(req = {}, permission = '') {
+    const key = String(permission || '').trim();
+    if (!key) return false;
+    if (!authService.isAuthEnabled()) return true;
+    const authContext = req.authContext || { isAuthenticated: false, user: null };
+    if (!authContext.isAuthenticated || !authContext.user) return false;
+    if (authContext.user?.isSuperAdmin) return true;
+    return getUserPermissions(req).has(key);
+}
+
+function hasAnyPermission(req = {}, permissions = []) {
+    const source = Array.isArray(permissions) ? permissions : [];
+    return source.some((permission) => hasPermission(req, permission));
 }
 
 function getAllowedTenantIdsFromAuth(req = {}) {
@@ -852,6 +879,7 @@ function getAllowedTenantIdsFromAuth(req = {}) {
         ? req.authContext.user.memberships
         : [];
     const allowed = memberships
+        .filter((membership) => membership?.active !== false)
         .map((membership) => String(membership?.tenantId || '').trim())
         .filter(Boolean);
 
@@ -864,11 +892,10 @@ function getAllowedTenantIdsFromAuth(req = {}) {
 }
 
 function hasSaasControlReadAccess(req = {}) {
-    if (!authService.isAuthEnabled()) return true;
-    const authContext = req.authContext || { isAuthenticated: false, user: null };
-    if (!authContext.isAuthenticated || !authContext.user) return false;
-    const role = getAuthRole(req);
-    return Boolean(authContext.user?.isSuperAdmin || role === 'owner' || role === 'admin');
+    return hasAnyPermission(req, [
+        accessPolicyService.PERMISSIONS.PLATFORM_OVERVIEW_READ,
+        accessPolicyService.PERMISSIONS.TENANT_OVERVIEW_READ
+    ]);
 }
 
 function hasSaasControlWriteAccess(req = {}, { requireSuperAdmin = false } = {}) {
@@ -877,19 +904,15 @@ function hasSaasControlWriteAccess(req = {}, { requireSuperAdmin = false } = {})
     if (!authContext.isAuthenticated || !authContext.user) return false;
 
     if (requireSuperAdmin) return Boolean(authContext.user?.isSuperAdmin);
-    if (authContext.user?.isSuperAdmin) return true;
 
-    const role = getAuthRole(req);
-    return role === 'owner';
+    return hasAnyPermission(req, [
+        accessPolicyService.PERMISSIONS.PLATFORM_TENANTS_MANAGE,
+        accessPolicyService.PERMISSIONS.TENANT_SETTINGS_MANAGE
+    ]);
 }
 
 function hasTenantAdminWriteAccess(req = {}) {
-    if (!authService.isAuthEnabled()) return true;
-    const authContext = req.authContext || { isAuthenticated: false, user: null };
-    if (!authContext.isAuthenticated || !authContext.user) return false;
-    if (authContext.user?.isSuperAdmin) return true;
-    const role = getAuthRole(req);
-    return role === 'owner' || role === 'admin';
+    return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_USERS_MANAGE);
 }
 
 function isTenantAllowedForUser(req = {}, tenantId = '') {
@@ -902,22 +925,53 @@ function isTenantAllowedForUser(req = {}, tenantId = '') {
 
 function hasTenantModuleReadAccess(req = {}, tenantId = '') {
     if (!tenantId) return false;
-    if (!hasSaasControlReadAccess(req)) return false;
-    return isTenantAllowedForUser(req, tenantId);
+    if (!isTenantAllowedForUser(req, tenantId)) return false;
+    return hasAnyPermission(req, [
+        accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
+        accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ
+    ]);
 }
 
 function hasTenantModuleWriteAccess(req = {}, tenantId = '') {
     if (!tenantId) return false;
-    if (!authService.isAuthEnabled()) return true;
-    const authContext = req.authContext || { isAuthenticated: false, user: null };
-    if (!authContext.isAuthenticated || !authContext.user) return false;
-    if (authContext.user?.isSuperAdmin) return true;
-    const role = getAuthRole(req);
-    if (role !== 'owner') return false;
-    return isTenantAllowedForUser(req, tenantId);
+    if (!isTenantAllowedForUser(req, tenantId)) return false;
+    return hasAnyPermission(req, [
+        accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE,
+        accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE
+    ]);
 }
 
+function resolvePrimaryRoleFromMemberships(memberships = [], fallbackRole = 'seller') {
+    const list = Array.isArray(memberships) ? memberships : [];
+    const primary = list.find((item) => item?.active !== false) || list[0] || null;
+    const role = String(primary?.role || fallbackRole || 'seller').trim().toLowerCase();
+    return accessPolicyService.normalizeRole(role);
+}
 
+function canActorAssignRole(req = {}, targetRole = 'seller') {
+    return accessPolicyService.canAssignRole({
+        actorRole: getAuthRole(req),
+        isActorSuperAdmin: Boolean(req?.authContext?.user?.isSuperAdmin),
+        targetRole
+    });
+}
+
+function canActorEditOptionalAccess(req = {}) {
+    return accessPolicyService.canEditOptionalAccess({
+        actorRole: getAuthRole(req),
+        isActorSuperAdmin: Boolean(req?.authContext?.user?.isSuperAdmin)
+    });
+}
+
+function hasAnyAccessOverride(payload = {}) {
+    const source = payload && typeof payload === 'object' ? payload : {};
+    const hasGrants = Object.prototype.hasOwnProperty.call(source, 'permissionGrants');
+    const hasPacks = Object.prototype.hasOwnProperty.call(source, 'permissionPacks');
+    if (!hasGrants && !hasPacks) return false;
+    const grants = Array.isArray(source.permissionGrants) ? source.permissionGrants : [];
+    const packs = Array.isArray(source.permissionPacks) ? source.permissionPacks : [];
+    return grants.length > 0 || packs.length > 0;
+}
 
 function filterAdminOverviewByScope(req = {}, overview = {}) {
     if (req?.authContext?.user?.isSuperAdmin) return overview;
@@ -1006,6 +1060,15 @@ function sanitizeUserPayload(payload = {}, { allowMemberships = true } = {}) {
     if (Object.prototype.hasOwnProperty.call(source, 'metadata')) {
         patch.metadata = sanitizeObjectPayload(source.metadata);
     }
+    if (Object.prototype.hasOwnProperty.call(source, 'permissionGrants')) {
+        patch.permissionGrants = accessPolicyService.normalizePermissionList(source.permissionGrants);
+    }
+    if (Object.prototype.hasOwnProperty.call(source, 'permissionPacks')) {
+        patch.permissionPacks = accessPolicyService.normalizePackList(source.permissionPacks);
+    }
+    if (Object.prototype.hasOwnProperty.call(source, 'role')) {
+        patch.role = accessPolicyService.normalizeRole(source.role || 'seller');
+    }
     if (allowMemberships && Object.prototype.hasOwnProperty.call(source, 'memberships')) {
         patch.memberships = sanitizeMembershipPayload(source.memberships);
     }
@@ -1054,7 +1117,7 @@ function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
 
 app.post('/api/admin/saas/assets/upload', async (req, res) => {
     try {
-        if (!hasTenantAdminWriteAccess(req)) {
+        if (!hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_ASSETS_UPLOAD)) {
             return res.status(403).json({ ok: false, error: 'No autorizado para subir archivos.' });
         }
 
@@ -1118,6 +1181,21 @@ app.get('/api/admin/saas/overview', async (req, res) => {
     }
 });
 
+app.get('/api/admin/saas/access-profiles', (req, res) => {
+    if (!hasSaasControlReadAccess(req)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    const actorRole = getAuthRole(req);
+    const isActorSuperAdmin = Boolean(req?.authContext?.user?.isSuperAdmin);
+    const catalog = accessPolicyService.getAccessCatalog({
+        actorRole,
+        isActorSuperAdmin
+    });
+
+    return res.json({ ok: true, ...catalog });
+});
+
 app.get('/api/admin/saas/tenants', async (req, res) => {
     try {
         if (!hasSaasControlReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
@@ -1169,13 +1247,13 @@ app.put('/api/admin/saas/tenants/:tenantId', async (req, res) => {
 app.delete('/api/admin/saas/tenants/:tenantId', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasSaasControlWriteAccess(req, { requireSuperAdmin: true })) return res.status(403).json({ ok: false, error: 'Solo superadmin puede eliminar empresas.' });
+    if (!hasSaasControlWriteAccess(req, { requireSuperAdmin: true })) return res.status(403).json({ ok: false, error: 'Solo superadmin puede desactivar empresas.' });
 
     try {
         await saasControlService.deleteTenant(tenantId);
         return res.json({ ok: true });
     } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar empresa.') });
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar empresa.') });
     }
 });
 
@@ -1204,12 +1282,24 @@ app.post('/api/admin/saas/users', async (req, res) => {
         const payload = sanitizeUserPayload(req.body, { allowMemberships: true });
         payload.memberships = sanitizeMembershipPayload(payload.memberships);
 
-        if (!req?.authContext?.user?.isSuperAdmin) {
-            const invalid = (payload.memberships || []).some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
-            if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar tenants fuera de tu alcance.' });
-            if (hasOwnerRoleMembership(payload.memberships || [])) return res.status(403).json({ ok: false, error: 'No puedes asignar rol owner.' });
+        if (!payload.memberships.length) {
+            return res.status(400).json({ ok: false, error: 'Debes asignar al menos una empresa al usuario.' });
         }
 
+        const targetRole = resolvePrimaryRoleFromMemberships(payload.memberships, payload.role || 'seller');
+        if (!canActorAssignRole(req, targetRole)) {
+            return res.status(403).json({ ok: false, error: 'No tienes permisos para asignar ese rol.' });
+        }
+
+        if (!req?.authContext?.user?.isSuperAdmin) {
+            const invalid = payload.memberships.some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
+            if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar empresas fuera de tu alcance.' });
+            if (hasAnyAccessOverride(payload) && !canActorEditOptionalAccess(req)) {
+                return res.status(403).json({ ok: false, error: 'No tienes permisos para editar accesos opcionales.' });
+            }
+        }
+
+        delete payload.role;
         const snapshot = await saasControlService.createUser(payload);
         const createdId = String(payload.id || payload.userId || '').trim();
         const user = Array.isArray(snapshot?.users)
@@ -1230,15 +1320,47 @@ app.put('/api/admin/saas/users/:userId', async (req, res) => {
         const userId = String(req.params?.userId || '').trim();
         if (!userId) return res.status(400).json({ ok: false, error: 'userId invalido.' });
 
+        const currentUsers = await saasControlService.listUsers({ includeInactive: true });
+        const targetUser = (Array.isArray(currentUsers) ? currentUsers : []).find((item) => String(item?.id || '').trim() === userId) || null;
+        if (!targetUser) return res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
+
         const payload = sanitizeUserPayload(req.body, { allowMemberships: true });
         if (payload.memberships) payload.memberships = sanitizeMembershipPayload(payload.memberships);
 
-        if (!req?.authContext?.user?.isSuperAdmin && Array.isArray(payload.memberships)) {
-            const invalid = payload.memberships.some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
-            if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar tenants fuera de tu alcance.' });
-            if (hasOwnerRoleMembership(payload.memberships)) return res.status(403).json({ ok: false, error: 'No puedes asignar rol owner.' });
+        if (Object.prototype.hasOwnProperty.call(payload, 'role') && !Array.isArray(payload.memberships)) {
+            const currentMemberships = sanitizeMembershipPayload(targetUser.memberships || []);
+            const currentTenantId = String(currentMemberships[0]?.tenantId || '').trim();
+            payload.memberships = sanitizeMembershipPayload([{ tenantId: currentTenantId, role: payload.role, active: true }]);
         }
 
+        const resultingMemberships = Array.isArray(payload.memberships) && payload.memberships.length > 0
+            ? payload.memberships
+            : sanitizeMembershipPayload(targetUser.memberships || []);
+
+        const targetRole = resolvePrimaryRoleFromMemberships(resultingMemberships, payload.role || targetUser?.memberships?.[0]?.role || 'seller');
+        const authUserId = String(req?.authContext?.user?.userId || req?.authContext?.user?.id || '').trim();
+        const isSelf = Boolean(authUserId && authUserId === userId);
+
+        if (!req?.authContext?.user?.isSuperAdmin) {
+            const targetInScope = sanitizeMembershipPayload(targetUser.memberships || []).some((membership) => isTenantAllowedForUser(req, membership.tenantId));
+            if (!targetInScope) {
+                return res.status(403).json({ ok: false, error: 'No puedes editar usuarios fuera de tu alcance.' });
+            }
+
+            const invalid = resultingMemberships.some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
+            if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar empresas fuera de tu alcance.' });
+
+            const touchesRoleOrAccess = Boolean(Array.isArray(payload.memberships) || Object.prototype.hasOwnProperty.call(payload, 'role') || hasAnyAccessOverride(payload));
+            if ((!isSelf || touchesRoleOrAccess) && !canActorAssignRole(req, targetRole)) {
+                return res.status(403).json({ ok: false, error: 'No tienes permisos para administrar ese rol.' });
+            }
+
+            if (hasAnyAccessOverride(payload) && !canActorEditOptionalAccess(req)) {
+                return res.status(403).json({ ok: false, error: 'No tienes permisos para editar accesos opcionales.' });
+            }
+        }
+
+        delete payload.role;
         const snapshot = await saasControlService.updateUser(userId, payload);
         const user = Array.isArray(snapshot?.users) ? snapshot.users.find((item) => item.id === userId) : null;
         return res.json({ ok: true, user: user ? saasControlService.sanitizeUserPublic(user) : null });
@@ -1256,10 +1378,14 @@ app.put('/api/admin/saas/users/:userId/memberships', async (req, res) => {
         const memberships = sanitizeMembershipPayload(req.body?.memberships || []);
         if (!memberships.length) return res.status(400).json({ ok: false, error: 'Debes enviar al menos una membresia.' });
 
+        const targetRole = resolvePrimaryRoleFromMemberships(memberships, 'seller');
+        if (!canActorAssignRole(req, targetRole)) {
+            return res.status(403).json({ ok: false, error: 'No tienes permisos para asignar ese rol.' });
+        }
+
         if (!req?.authContext?.user?.isSuperAdmin) {
             const invalid = memberships.some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
-            if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar tenants fuera de tu alcance.' });
-            if (hasOwnerRoleMembership(memberships)) return res.status(403).json({ ok: false, error: 'No puedes asignar rol owner.' });
+            if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar empresas fuera de tu alcance.' });
         }
 
         const snapshot = await saasControlService.setUserMemberships(userId, memberships);
@@ -1272,14 +1398,29 @@ app.put('/api/admin/saas/users/:userId/memberships', async (req, res) => {
 
 app.delete('/api/admin/saas/users/:userId', async (req, res) => {
     try {
-        if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para eliminar usuarios.' });
+        if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para desactivar usuarios.' });
         const userId = String(req.params?.userId || '').trim();
         if (!userId) return res.status(400).json({ ok: false, error: 'userId invalido.' });
+
+        const currentUsers = await saasControlService.listUsers({ includeInactive: true });
+        const targetUser = (Array.isArray(currentUsers) ? currentUsers : []).find((item) => String(item?.id || '').trim() === userId) || null;
+        if (!targetUser) return res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
+
+        if (!req?.authContext?.user?.isSuperAdmin) {
+            const memberships = sanitizeMembershipPayload(targetUser.memberships || []);
+            const targetInScope = memberships.some((membership) => isTenantAllowedForUser(req, membership.tenantId));
+            if (!targetInScope) return res.status(403).json({ ok: false, error: 'No puedes desactivar usuarios fuera de tu alcance.' });
+
+            const targetRole = resolvePrimaryRoleFromMemberships(memberships, 'seller');
+            if (!canActorAssignRole(req, targetRole)) {
+                return res.status(403).json({ ok: false, error: 'No tienes permisos para desactivar ese rol.' });
+            }
+        }
 
         await saasControlService.deleteUser(userId);
         return res.json({ ok: true });
     } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar usuario.') });
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar usuario.') });
     }
 });
 
@@ -1335,7 +1476,7 @@ app.put('/api/admin/saas/plans/:planId', async (req, res) => {
 app.get('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasSaasControlReadAccess(req) || !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_SETTINGS_READ, accessPolicyService.PERMISSIONS.TENANT_SETTINGS_MANAGE])) return res.status(403).json({ ok: false, error: 'No autorizado.' });
 
     try {
         const settings = await tenantSettingsService.getTenantSettings(tenantId);
@@ -1348,7 +1489,7 @@ app.get('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
 app.put('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasTenantModuleWriteAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_SETTINGS_MANAGE)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
 
     try {
         const patch = req.body && typeof req.body === 'object' ? req.body : {};
@@ -1362,7 +1503,7 @@ app.put('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
 app.get('/api/admin/saas/tenants/:tenantId/integrations', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasSaasControlReadAccess(req) || !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE])) return res.status(403).json({ ok: false, error: 'No autorizado.' });
 
     try {
         const integrations = await tenantIntegrationsService.getTenantIntegrations(tenantId);
@@ -1375,7 +1516,7 @@ app.get('/api/admin/saas/tenants/:tenantId/integrations', async (req, res) => {
 app.put('/api/admin/saas/tenants/:tenantId/integrations', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasTenantModuleWriteAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
 
     try {
         const patch = req.body && typeof req.body === 'object' ? req.body : {};
@@ -1442,7 +1583,7 @@ app.delete('/api/admin/saas/tenants/:tenantId/wa-modules/:moduleId', async (req,
         invalidateWebhookCloudRegistryCache();
         return res.json({ ok: true, tenantId, moduleId });
     } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar el modulo WA.') });
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar el modulo WA.') });
     }
 });
 
@@ -1463,7 +1604,7 @@ app.post('/api/admin/saas/tenants/:tenantId/wa-modules/:moduleId/select', async 
 app.get('/api/admin/saas/tenants/:tenantId/customers', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasSaasControlReadAccess(req) || !isTenantAllowedForUser(req, tenantId)) {
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_READ)) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -1489,7 +1630,7 @@ app.get('/api/admin/saas/tenants/:tenantId/customers', async (req, res) => {
 app.post('/api/admin/saas/tenants/:tenantId/customers', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasTenantAdminWriteAccess(req) || !isTenantAllowedForUser(req, tenantId)) {
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -1506,7 +1647,7 @@ app.put('/api/admin/saas/tenants/:tenantId/customers/:customerId', async (req, r
     const tenantId = String(req.params?.tenantId || '').trim();
     const customerId = String(req.params?.customerId || '').trim();
     if (!tenantId || !customerId) return res.status(400).json({ ok: false, error: 'tenantId/customerId invalido.' });
-    if (!hasTenantAdminWriteAccess(req) || !isTenantAllowedForUser(req, tenantId)) {
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -1522,7 +1663,7 @@ app.put('/api/admin/saas/tenants/:tenantId/customers/:customerId', async (req, r
 app.post('/api/admin/saas/tenants/:tenantId/customers/import-csv', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasTenantAdminWriteAccess(req) || !isTenantAllowedForUser(req, tenantId)) {
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -1581,7 +1722,7 @@ app.get('/api/tenant/wa-modules', async (req, res) => {
 app.get('/api/admin/saas/tenants/:tenantId/runtime', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasSaasControlReadAccess(req) || !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_RUNTIME_READ)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
 
     try {
         const runtime = typeof waClient.getRuntimeInfo === 'function'
@@ -2419,4 +2560,12 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
+
+
+
+
+
+
+
+
 

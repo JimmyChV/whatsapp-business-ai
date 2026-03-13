@@ -7,6 +7,7 @@ const {
     queryPostgres
 } = require('./persistence_runtime');
 const planLimitsService = require('./plan_limits_service');
+const accessPolicyService = require('./access_policy_service');
 
 const CONTROL_TENANT_ID = '_control';
 const CONTROL_FILE_NAME = 'saas_control_plane.json';
@@ -138,9 +139,7 @@ function parseBoolean(value, fallback = true) {
 }
 
 function normalizeRole(value = '') {
-    const role = String(value || '').trim().toLowerCase();
-    if (role === 'owner' || role === 'admin' || role === 'seller') return role;
-    return 'seller';
+    return accessPolicyService.normalizeRole(value);
 }
 
 function roleWeight(role = '') {
@@ -260,6 +259,25 @@ function normalizeUser(input = {}, fallbackIndex = 0) {
     const createdAt = String(input.createdAt || '').trim() || nowIso();
     const updatedAt = String(input.updatedAt || '').trim() || nowIso();
     const avatarUrl = normalizeUrlValue(input.avatarUrl || input.avatar_url || input.photoUrl || input.photo_url || input.imageUrl || input.image_url);
+    const metadata = normalizeMetadata(input.metadata);
+    const metadataAccess = metadata?.access && typeof metadata.access === 'object' && !Array.isArray(metadata.access)
+        ? metadata.access
+        : {};
+    const primaryMembership = memberships[0] || { role: fallbackRole };
+    const normalizedAccess = accessPolicyService.sanitizeUserAccessInput({
+        role: primaryMembership.role || fallbackRole,
+        permissionGrants: input.permissionGrants || input.permissions || metadataAccess.permissionGrants || [],
+        permissionPacks: input.permissionPacks || metadataAccess.permissionPacks || []
+    });
+
+        const nextMetadata = {
+        ...metadata,
+        access: {
+            ...metadataAccess,
+            permissionGrants: normalizedAccess.permissionGrants,
+            permissionPacks: normalizedAccess.permissionPacks
+        }
+    };
 
     return {
         id,
@@ -268,7 +286,9 @@ function normalizeUser(input = {}, fallbackIndex = 0) {
         active: input.active !== false,
         passwordHash,
         avatarUrl,
-        metadata: normalizeMetadata(input.metadata),
+        metadata: nextMetadata,
+        permissionGrants: normalizedAccess.permissionGrants,
+        permissionPacks: normalizedAccess.permissionPacks,
         memberships,
         createdAt,
         updatedAt
@@ -674,18 +694,37 @@ function validateTenantUserLimits(snapshot = {}) {
 }
 
 function sanitizeUserPublic(user = {}) {
+    const memberships = Array.isArray(user.memberships) ? user.memberships.map((membership) => ({
+        tenantId: membership.tenantId,
+        role: normalizeRole(membership.role),
+        active: membership.active !== false
+    })) : [];
+    const primaryMembership = memberships.find((membership) => membership.active !== false) || memberships[0] || { role: 'seller' };
+    const isSuperAdmin = isSuperAdminUser(user);
+    const access = accessPolicyService.resolveUserPermissions({
+        role: primaryMembership.role,
+        isSuperAdmin,
+        permissionGrants: user.permissionGrants || user.permissions || user?.metadata?.access?.permissionGrants || [],
+        permissionPacks: user.permissionPacks || user?.metadata?.access?.permissionPacks || []
+    });
+
     return {
         id: user.id,
         email: user.email,
         name: user.name,
+        role: access.role,
+        roleLabel: access.label,
         active: user.active !== false,
         avatarUrl: normalizeUrlValue(user.avatarUrl || user.avatar_url),
         metadata: normalizeMetadata(user.metadata),
-        memberships: Array.isArray(user.memberships) ? user.memberships.map((membership) => ({
-            tenantId: membership.tenantId,
-            role: membership.role,
-            active: membership.active !== false
-        })) : [],
+        memberships,
+        permissionGrants: access.permissionGrants,
+        permissionPacks: access.permissionPacks,
+        permissions: access.permissions,
+        requiredPermissions: access.required,
+        optionalPermissions: access.optional,
+        blockedPermissions: access.blocked,
+        isSuperAdmin,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt
     };
@@ -826,27 +865,46 @@ async function updateTenant(tenantId = '', patch = {}) {
 async function deleteTenant(tenantId = '') {
     const cleanTenantId = normalizeTenantId(tenantId || '');
     if (!cleanTenantId || cleanTenantId === DEFAULT_TENANT_ID) {
-        throw new Error('No se puede eliminar el tenant default.');
+        throw new Error('No se puede desactivar el tenant default.');
     }
 
     return updateSnapshot((current) => {
-        if (!current.tenants.some((tenant) => tenant.id === cleanTenantId)) {
+        const index = current.tenants.findIndex((tenant) => tenant.id === cleanTenantId);
+        if (index < 0) {
             throw new Error('Empresa no encontrada.');
         }
 
-        const nextUsers = current.users.map((user) => ({
-            ...user,
-            memberships: (user.memberships || []).filter((membership) => membership.tenantId !== cleanTenantId)
-        })).filter((user) => (user.memberships || []).length > 0);
+        const nextTenants = [...current.tenants];
+        nextTenants[index] = {
+            ...nextTenants[index],
+            active: false,
+            updatedAt: nowIso()
+        };
+
+        const nextUsers = (current.users || []).map((user) => {
+            const nextMemberships = (user.memberships || []).map((membership) => {
+                if (membership.tenantId !== cleanTenantId) return membership;
+                return {
+                    ...membership,
+                    active: false
+                };
+            });
+
+            return {
+                ...user,
+                memberships: nextMemberships,
+                active: (nextMemberships.some((membership) => membership.active !== false) ? user.active : false),
+                updatedAt: nowIso()
+            };
+        });
 
         return {
             ...current,
-            tenants: current.tenants.filter((tenant) => tenant.id !== cleanTenantId),
+            tenants: sortByName(nextTenants),
             users: nextUsers
         };
     });
 }
-
 async function createUser(payload = {}) {
     return updateSnapshot((current) => {
         const currentUsers = Array.isArray(current?.users) ? current.users : [];
@@ -910,15 +968,41 @@ async function updateUser(userId = '', patch = {}) {
             }
         });
 
+        const nextMetadata = patch.metadata && typeof patch.metadata === 'object' && !Array.isArray(patch.metadata)
+            ? normalizeMetadata(patch.metadata)
+            : normalizeMetadata(previous.metadata);
+        const metadataAccess = nextMetadata?.access && typeof nextMetadata.access === 'object' && !Array.isArray(nextMetadata.access)
+            ? nextMetadata.access
+            : {};
+        const primaryMembership = (nextMemberships || []).find((membership) => membership.active !== false)
+            || (nextMemberships || [])[0]
+            || { role: previous?.memberships?.[0]?.role || 'seller' };
+        const normalizedAccess = accessPolicyService.sanitizeUserAccessInput({
+            role: primaryMembership.role,
+            permissionGrants: Object.prototype.hasOwnProperty.call(patch || {}, 'permissionGrants')
+                ? patch.permissionGrants
+                : (previous.permissionGrants || previous?.metadata?.access?.permissionGrants || []),
+            permissionPacks: Object.prototype.hasOwnProperty.call(patch || {}, 'permissionPacks')
+                ? patch.permissionPacks
+                : (previous.permissionPacks || previous?.metadata?.access?.permissionPacks || [])
+        });
+
         const updated = {
             ...previous,
             email: nextEmail,
             name: String(patch.name || previous.name || nextEmail).trim() || nextEmail,
             active: patch.active === undefined ? previous.active !== false : patch.active !== false,
             avatarUrl: normalizeUrlValue(patch.avatarUrl || patch.avatar_url || patch.photoUrl || patch.photo_url || previous.avatarUrl || previous.avatar_url),
-            metadata: patch.metadata && typeof patch.metadata === 'object' && !Array.isArray(patch.metadata)
-                ? normalizeMetadata(patch.metadata)
-                : normalizeMetadata(previous.metadata),
+            metadata: {
+                ...nextMetadata,
+                access: {
+                    ...metadataAccess,
+                    permissionGrants: normalizedAccess.permissionGrants,
+                    permissionPacks: normalizedAccess.permissionPacks
+                }
+            },
+            permissionGrants: normalizedAccess.permissionGrants,
+            permissionPacks: normalizedAccess.permissionPacks,
             memberships: nextMemberships,
             passwordHash: patch.password
                 ? hashPassword(patch.password)
@@ -947,16 +1031,30 @@ async function deleteUser(userId = '') {
     if (!cleanUserId) throw new Error('userId invalido.');
 
     return updateSnapshot((current) => {
-        if (!current.users.some((user) => user.id === cleanUserId)) {
+        const index = current.users.findIndex((user) => user.id === cleanUserId);
+        if (index < 0) {
             throw new Error('Usuario no encontrado.');
         }
+
+        const previous = current.users[index];
+        const updated = {
+            ...previous,
+            active: false,
+            memberships: (previous.memberships || []).map((membership) => ({
+                ...membership,
+                active: false
+            })),
+            updatedAt: nowIso()
+        };
+
+        const nextUsers = [...current.users];
+        nextUsers[index] = updated;
         return {
             ...current,
-            users: current.users.filter((user) => user.id !== cleanUserId)
+            users: sortByName(nextUsers, 'email')
         };
     });
 }
-
 function toAuthUserRecord(user = {}) {
     const id = String(user?.id || user?.userId || user?.user_id || '').trim();
     const email = String(user?.email || user?.mail || '').trim().toLowerCase();
@@ -964,24 +1062,26 @@ function toAuthUserRecord(user = {}) {
     const password = String(user?.password || '').trim();
     const memberships = normalizeMemberships(user.memberships || [], user?.memberships?.[0]?.role || user?.role || 'seller');
     const activeMemberships = memberships.filter((membership) => membership.active !== false);
-    const selectedMembership = activeMemberships[0] || memberships[0] || { tenantId: DEFAULT_TENANT_ID, role: 'seller', active: true };
+    const selectedMembership = activeMemberships[0] || null;
 
     return {
         id,
         email,
         passwordHash,
         password,
-        tenantId: selectedMembership.tenantId,
-        role: selectedMembership.role,
+        tenantId: selectedMembership?.tenantId || '',
+        role: normalizeRole(selectedMembership?.role || user?.role || 'seller'),
         name: user.name,
-        memberships: activeMemberships.length > 0 ? activeMemberships : [selectedMembership]
+        memberships: activeMemberships,
+        permissionGrants: Array.isArray(user?.permissionGrants) ? user.permissionGrants : (user?.metadata?.access?.permissionGrants || []),
+        permissionPacks: Array.isArray(user?.permissionPacks) ? user.permissionPacks : (user?.metadata?.access?.permissionPacks || [])
     };
 }
 
 function getUsersForAuthSync() {
     return listUsersSync({ includeInactive: false })
         .map(toAuthUserRecord)
-        .filter((user) => user && user.id && user.email && (user.passwordHash || user.password));
+        .filter((user) => user && user.id && user.email && user.memberships.length > 0 && (user.passwordHash || user.password));
 }
 
 function findUserRecordSync({ userId = '', email = '' } = {}) {
@@ -1072,5 +1172,17 @@ module.exports = {
     CONTROL_FILE_NAME,
     CONTROL_TENANT_ID
 };
+
+
+
+
+
+
+
+
+
+
+
+
 
 
