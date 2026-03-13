@@ -21,6 +21,7 @@ const planLimitsStoreService = require('./plan_limits_store_service');
 const aiUsageService = require('./ai_usage_service');
 const messageHistoryService = require('./message_history_service');
 const waModuleService = require('./wa_module_service');
+const customerService = require('./customer_service');
 const tenantIntegrationsService = require('./tenant_integrations_service');
 const opsTelemetry = require('./ops_telemetry');
 
@@ -907,9 +908,15 @@ function hasTenantModuleReadAccess(req = {}, tenantId = '') {
 
 function hasTenantModuleWriteAccess(req = {}, tenantId = '') {
     if (!tenantId) return false;
-    if (!hasTenantAdminWriteAccess(req)) return false;
+    if (!authService.isAuthEnabled()) return true;
+    const authContext = req.authContext || { isAuthenticated: false, user: null };
+    if (!authContext.isAuthenticated || !authContext.user) return false;
+    if (authContext.user?.isSuperAdmin) return true;
+    const role = getAuthRole(req);
+    if (role !== 'owner') return false;
     return isTenantAllowedForUser(req, tenantId);
 }
+
 
 
 function filterAdminOverviewByScope(req = {}, overview = {}) {
@@ -931,14 +938,19 @@ function filterAdminOverviewByScope(req = {}, overview = {}) {
 
 function sanitizeMembershipPayload(memberships = []) {
     const source = Array.isArray(memberships) ? memberships : [];
-    return source
+    const normalized = source
         .map((item) => ({
             tenantId: String(item?.tenantId || item?.tenant || item?.id || '').trim(),
             role: String(item?.role || 'seller').trim().toLowerCase() || 'seller',
             active: item?.active !== false
         }))
         .filter((item) => Boolean(item.tenantId));
+
+    if (!normalized.length) return [];
+    const primary = normalized.find((item) => item.active !== false) || normalized[0];
+    return [primary];
 }
+
 
 function sanitizeObjectPayload(value = {}) {
     if (value && typeof value === 'object' && !Array.isArray(value)) return value;
@@ -1018,7 +1030,7 @@ function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
     const base = {
         name: String(source.name || '').trim(),
         phoneNumber: String(source.phoneNumber || source.phone || source.number || '').trim() || null,
-        transportMode: String(source.transportMode || source.transport || source.mode || '').trim().toLowerCase() || 'webjs',
+        transportMode: String(source.transportMode || source.transport || source.mode || '').trim().toLowerCase() || 'cloud',
         imageUrl: sanitizeUrlValue(source.imageUrl || source.image_url || source.logoUrl || source.logo_url),
         isActive: source.isActive !== false,
         isDefault: source.isDefault === true,
@@ -1285,7 +1297,7 @@ app.get('/api/admin/saas/plans', (req, res) => {
 });
 
 app.put('/api/admin/saas/plans/:planId', async (req, res) => {
-    if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para editar planes.' });
+    if (!hasSaasControlWriteAccess(req, { requireSuperAdmin: true })) return res.status(403).json({ ok: false, error: 'Solo superadmin puede editar planes.' });
     try {
         const planId = String(req.params?.planId || '').trim().toLowerCase();
         if (!planId) return res.status(400).json({ ok: false, error: 'planId invalido.' });
@@ -1336,7 +1348,7 @@ app.get('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
 app.put('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasTenantAdminWriteAccess(req) || !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    if (!hasTenantModuleWriteAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
 
     try {
         const patch = req.body && typeof req.body === 'object' ? req.body : {};
@@ -1363,7 +1375,7 @@ app.get('/api/admin/saas/tenants/:tenantId/integrations', async (req, res) => {
 app.put('/api/admin/saas/tenants/:tenantId/integrations', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasTenantAdminWriteAccess(req) || !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    if (!hasTenantModuleWriteAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
 
     try {
         const patch = req.body && typeof req.body === 'object' ? req.body : {};
@@ -1448,6 +1460,109 @@ app.post('/api/admin/saas/tenants/:tenantId/wa-modules/:moduleId/select', async 
     }
 });
 
+app.get('/api/admin/saas/tenants/:tenantId/customers', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasSaasControlReadAccess(req) || !isTenantAllowedForUser(req, tenantId)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const query = String(req.query?.q || req.query?.query || '').trim();
+        const moduleId = String(req.query?.moduleId || '').trim();
+        const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() !== 'false';
+        const limit = Number(req.query?.limit || 50);
+        const offset = Number(req.query?.offset || 0);
+        const result = await customerService.listCustomers(tenantId, {
+            query,
+            moduleId,
+            includeInactive,
+            limit,
+            offset
+        });
+        return res.json({ ok: true, tenantId, ...result });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar clientes.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/customers', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasTenantAdminWriteAccess(req) || !isTenantAllowedForUser(req, tenantId)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const payload = req.body && typeof req.body === 'object' ? req.body : {};
+        const result = await customerService.upsertCustomer(tenantId, payload, { allowPhoneMerge: true });
+        return res.status(result?.created ? 201 : 200).json({ ok: true, tenantId, created: Boolean(result?.created), item: result?.item || null });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar cliente.') });
+    }
+});
+
+app.put('/api/admin/saas/tenants/:tenantId/customers/:customerId', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const customerId = String(req.params?.customerId || '').trim();
+    if (!tenantId || !customerId) return res.status(400).json({ ok: false, error: 'tenantId/customerId invalido.' });
+    if (!hasTenantAdminWriteAccess(req) || !isTenantAllowedForUser(req, tenantId)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const patch = req.body && typeof req.body === 'object' ? req.body : {};
+        const result = await customerService.updateCustomer(tenantId, customerId, patch);
+        return res.json({ ok: true, tenantId, item: result?.item || null });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar cliente.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/customers/import-csv', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasTenantAdminWriteAccess(req) || !isTenantAllowedForUser(req, tenantId)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const csvText = String(req.body?.csvText || '').trim();
+        const moduleId = String(req.body?.moduleId || '').trim();
+        const delimiter = String(req.body?.delimiter || '').trim();
+        const result = await customerService.importCustomersCsv(tenantId, csvText, { moduleId, delimiter });
+        return res.json({ ok: true, tenantId, ...result });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo importar CSV de clientes.') });
+    }
+});
+
+app.get('/api/tenant/customers', async (req, res) => {
+    try {
+        if (authService.isAuthEnabled() && !req?.authContext?.isAuthenticated) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+        const query = String(req.query?.q || req.query?.query || '').trim();
+        const moduleId = String(req.query?.moduleId || '').trim();
+        const limit = Number(req.query?.limit || 50);
+        const offset = Number(req.query?.offset || 0);
+        const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() !== 'false';
+
+        const result = await customerService.listCustomers(tenantId, {
+            query,
+            moduleId,
+            limit,
+            offset,
+            includeInactive
+        });
+
+        return res.json({ ok: true, tenantId, ...result });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar clientes.') });
+    }
+});
 app.get('/api/tenant/wa-modules', async (req, res) => {
     try {
         if (authService.isAuthEnabled() && !req?.authContext?.isAuthenticated) {
@@ -2304,3 +2419,4 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
+

@@ -25,6 +25,23 @@ const EMPTY_USER_FORM = {
     metadataText: '{}'
 };
 
+const EMPTY_CUSTOMER_FORM = {
+    customerId: '',
+    moduleId: '',
+    contactName: '',
+    phoneE164: '',
+    phoneAlt: '',
+    email: '',
+    tagsText: '',
+    profileFirstNames: '',
+    profileLastNamePaternal: '',
+    profileLastNameMaternal: '',
+    profileDocumentNumber: '',
+    profileNotes: '',
+    isActive: true,
+    metadataText: '{}'
+};
+
 const EMPTY_SETTINGS = {
     catalogMode: 'hybrid',
     enabledModules: {
@@ -75,7 +92,7 @@ const EMPTY_WA_MODULE_FORM = {
     moduleId: '',
     name: '',
     phoneNumber: '',
-    transportMode: 'webjs',
+    transportMode: 'cloud',
     imageUrl: '',
     assignedUserIds: [],
     moduleCatalogMode: 'inherit',
@@ -108,11 +125,12 @@ const MODULE_KEYS = [
 ];
 const ADMIN_NAV_ITEMS = [
     { id: 'saas_resumen', label: 'Resumen' },
+    { id: 'saas_planes', label: 'Planes' },
     { id: 'saas_empresas', label: 'Empresas' },
     { id: 'saas_usuarios', label: 'Usuarios' },
+    { id: 'saas_clientes', label: 'Clientes' },
     { id: 'saas_modulos', label: 'Modulos' },
     { id: 'saas_catalogos', label: 'Catalogos' },
-    { id: 'saas_planes', label: 'Planes' },
     { id: 'saas_config', label: 'Configuracion' }
 ];
 const ADMIN_IMAGE_MAX_BYTES = Math.max(200 * 1024, Number(import.meta.env.VITE_ADMIN_ASSET_MAX_BYTES || 2 * 1024 * 1024));
@@ -179,7 +197,7 @@ function normalizeWaModule(item = {}) {
         moduleId,
         name: String(source.name || moduleId).trim() || moduleId,
         phoneNumber: String(source.phoneNumber || '').trim() || '',
-        transportMode: String(source.transportMode || source.mode || 'webjs').trim().toLowerCase() === 'cloud' ? 'cloud' : 'webjs',
+        transportMode: 'cloud',
         imageUrl: String(source.imageUrl || '').trim() || '',
         isActive: source.isActive !== false,
         isDefault: source.isDefault === true,
@@ -341,6 +359,54 @@ function buildUserFormFromItem(item = null) {
     };
 }
 
+function normalizeCustomerFormFromItem(item = null) {
+    if (!item || typeof item !== 'object') return EMPTY_CUSTOMER_FORM;
+    const profile = item.profile && typeof item.profile === 'object' ? item.profile : {};
+    return {
+        customerId: String(item.customerId || '').trim(),
+        moduleId: String(item.moduleId || '').trim(),
+        contactName: String(item.contactName || '').trim(),
+        phoneE164: String(item.phoneE164 || '').trim(),
+        phoneAlt: String(item.phoneAlt || '').trim(),
+        email: String(item.email || '').trim(),
+        tagsText: Array.isArray(item.tags) ? item.tags.join(', ') : String(item.tags || '').trim(),
+        profileFirstNames: String(profile.firstNames || '').trim(),
+        profileLastNamePaternal: String(profile.lastNamePaternal || '').trim(),
+        profileLastNameMaternal: String(profile.lastNameMaternal || '').trim(),
+        profileDocumentNumber: String(profile.documentNumber || '').trim(),
+        profileNotes: String(profile.notes || '').trim(),
+        isActive: item.isActive !== false,
+        metadataText: prettyJson(item.metadata || {})
+    };
+}
+
+function buildCustomerPayloadFromForm(form = {}) {
+    const source = form && typeof form === 'object' ? form : {};
+    const tags = String(source.tagsText || '')
+        .split(/[;,|\n]/g)
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean);
+
+    return {
+        customerId: String(source.customerId || '').trim() || undefined,
+        moduleId: String(source.moduleId || '').trim() || null,
+        contactName: String(source.contactName || '').trim() || null,
+        phoneE164: String(source.phoneE164 || '').trim() || null,
+        phoneAlt: String(source.phoneAlt || '').trim() || null,
+        email: String(source.email || '').trim().toLowerCase() || null,
+        tags,
+        profile: {
+            firstNames: String(source.profileFirstNames || '').trim() || null,
+            lastNamePaternal: String(source.profileLastNamePaternal || '').trim() || null,
+            lastNameMaternal: String(source.profileLastNameMaternal || '').trim() || null,
+            documentNumber: String(source.profileDocumentNumber || '').trim() || null,
+            notes: String(source.profileNotes || '').trim() || null
+        },
+        isActive: source.isActive !== false,
+        metadata: safeJsonParse(source.metadataText || '{}', {})
+    };
+}
+
 function formatDateTimeLabel(value = '') {
     const raw = String(value || '').trim();
     if (!raw) return '-';
@@ -484,6 +550,14 @@ export default function SaasAdminPanel({
     const [planForm, setPlanForm] = useState(() => normalizePlanForm('starter', {}));
     const [planPanelMode, setPlanPanelMode] = useState('view');
 
+    const [customers, setCustomers] = useState([]);
+    const [selectedCustomerId, setSelectedCustomerId] = useState('');
+    const [customerForm, setCustomerForm] = useState(EMPTY_CUSTOMER_FORM);
+    const [customerPanelMode, setCustomerPanelMode] = useState('view');
+    const [customerSearch, setCustomerSearch] = useState('');
+    const [customerCsvText, setCustomerCsvText] = useState('');
+    const [customerImportModuleId, setCustomerImportModuleId] = useState('');
+
     const [busy, setBusy] = useState(false);
     const [loadingSettings, setLoadingSettings] = useState(false);
     const [loadingIntegrations, setLoadingIntegrations] = useState(false);
@@ -496,7 +570,12 @@ export default function SaasAdminPanel({
     const noRoleContext = !normalizedRole;
     const canManageTenants = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
     const canManageUsers = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const canManageTenantSettings = canManageUsers;
+    const canManageTenantSettings = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
+    const canManageCatalog = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const canEditTenantSettings = canManageTenantSettings;
+    const canEditModules = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
+    const canEditCatalog = canManageCatalog;
+    const requiresTenantSelection = Boolean(isSuperAdmin || normalizedRole === 'superadmin');
     const roleOptions = (isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext) ? ROLE_OPTIONS : ROLE_OPTIONS.filter((role) => role !== 'owner');
 
     const requestJson = async (path, { method = 'GET', body = null } = {}) => {
@@ -555,16 +634,64 @@ export default function SaasAdminPanel({
         [tenantOptions, selectedTenantId]
     );
 
+    const tenantScopeId = useMemo(() => {
+        const configuredTenantId = String(settingsTenantId || '').trim();
+        if (configuredTenantId) return configuredTenantId;
+        if (requiresTenantSelection) return '';
+        const activeTenant = String(activeTenantId || '').trim();
+        if (activeTenant) return activeTenant;
+        if (tenantOptions.length === 1) return String(tenantOptions[0]?.id || '').trim();
+        return '';
+    }, [settingsTenantId, requiresTenantSelection, activeTenantId, tenantOptions]);
+
+    const tenantScopeLocked = requiresTenantSelection && !tenantScopeId;
+
     const activeTenantLabel = useMemo(() => {
-        const cleanActiveTenantId = String(activeTenantId || '').trim();
-        if (!cleanActiveTenantId) return '-';
-        const match = tenantOptions.find((tenant) => String(tenant?.id || '').trim() === cleanActiveTenantId);
-        return match ? toTenantDisplayName(match) : 'Empresa activa';
-    }, [activeTenantId, tenantOptions]);
+        if (!tenantScopeId) return requiresTenantSelection ? 'Seleccion pendiente' : '-';
+        const match = tenantOptions.find((tenant) => String(tenant?.id || '').trim() === tenantScopeId);
+        return match ? toTenantDisplayName(match) : tenantScopeId;
+    }, [requiresTenantSelection, tenantOptions, tenantScopeId]);
+
+    const scopedUsers = useMemo(() => {
+        if (!tenantScopeId) return [];
+        return (overview.users || []).filter((user) => {
+            const memberships = sanitizeMemberships(user?.memberships || []);
+            return memberships.some((membership) => String(membership?.tenantId || '').trim() === tenantScopeId);
+        });
+    }, [overview.users, tenantScopeId]);
 
     const selectedUser = useMemo(
-        () => (overview.users || []).find((user) => String(user?.id || '') === String(selectedUserId || '')) || null,
-        [overview.users, selectedUserId]
+        () => scopedUsers.find((user) => String(user?.id || '') === String(selectedUserId || '')) || null,
+        [scopedUsers, selectedUserId]
+    );
+
+    const filteredCustomers = useMemo(() => {
+        const query = String(customerSearch || '').trim().toLowerCase();
+        const sorted = [...(Array.isArray(customers) ? customers : [])].sort((a, b) =>
+            String(b?.updatedAt || '').localeCompare(String(a?.updatedAt || ''))
+        );
+        if (!query) return sorted;
+        return sorted.filter((item) => {
+            const profile = item?.profile && typeof item.profile === 'object' ? item.profile : {};
+            const haystack = [
+                item?.customerId,
+                item?.contactName,
+                item?.phoneE164,
+                item?.phoneAlt,
+                item?.email,
+                item?.moduleId,
+                profile?.firstNames,
+                profile?.lastNamePaternal,
+                profile?.lastNameMaternal,
+                profile?.documentNumber
+            ].map((entry) => String(entry || '').toLowerCase()).join(' ');
+            return haystack.includes(query);
+        });
+    }, [customers, customerSearch]);
+
+    const selectedCustomer = useMemo(
+        () => (Array.isArray(customers) ? customers : []).find((item) => String(item?.customerId || '').trim() === String(selectedCustomerId || '').trim()) || null,
+        [customers, selectedCustomerId]
     );
 
     const selectedWaModule = useMemo(
@@ -606,11 +733,11 @@ export default function SaasAdminPanel({
         return map;
     }, [overview.users]);
     const usersForSettingsTenant = useMemo(() => {
-        const cleanTenantId = String(settingsTenantId || '').trim();
+        const cleanTenantId = String(tenantScopeId || '').trim();
         if (!cleanTenantId) return [];
         return [...(usersByTenant.get(cleanTenantId) || [])]
             .sort((left, right) => toUserDisplayName(left).localeCompare(toUserDisplayName(right), 'es', { sensitivity: 'base' }));
-    }, [settingsTenantId, usersByTenant]);
+    }, [tenantScopeId, usersByTenant]);
 
     const selectedConfigModule = useMemo(() => {
         if (!String(selectedConfigKey || '').startsWith('wa_module:')) return null;
@@ -636,13 +763,14 @@ export default function SaasAdminPanel({
         return ADMIN_NAV_ITEMS.filter((item) => {
             if (item.id === 'saas_empresas') return canManageTenants;
             if (item.id === 'saas_usuarios') return canManageUsers;
+            if (item.id === 'saas_clientes') return canManageUsers;
             if (item.id === 'saas_modulos') return canManageTenantSettings;
-            if (item.id === 'saas_catalogos') return canManageTenantSettings;
+            if (item.id === 'saas_catalogos') return canManageCatalog;
             if (item.id === 'saas_planes') return Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
             if (item.id === 'saas_config') return canManageTenantSettings;
             return true;
         });
-    }, [canManageTenants, canManageUsers, canManageTenantSettings]);
+    }, [canManageTenants, canManageUsers, canManageTenantSettings, canManageCatalog, isSuperAdmin, normalizedRole, noRoleContext]);
 
     const selectedSectionId = (() => {
         const preferred = String(currentSection || activeSection || initialSection || 'saas_resumen').trim();
@@ -652,6 +780,7 @@ export default function SaasAdminPanel({
     const isModulesSection = selectedSectionId === 'saas_modulos';
     const isCatalogSection = selectedSectionId === 'saas_catalogos';
     const isPlansSection = selectedSectionId === 'saas_planes';
+    const isCustomersSection = selectedSectionId === 'saas_clientes';
     const isGeneralConfigSection = selectedSectionId === 'saas_config';
 
     const handleSectionChange = (sectionId) => {
@@ -667,6 +796,11 @@ export default function SaasAdminPanel({
             setSelectedUserId('');
             setUserPanelMode('view');
             setMembershipDraft([]);
+        }
+
+        if (next === 'saas_clientes') {
+            setSelectedCustomerId('');
+            setCustomerPanelMode('view');
         }
 
         if (next === 'saas_config') {
@@ -702,9 +836,11 @@ export default function SaasAdminPanel({
         setSettingsTenantId((prev) => {
             const cleanPrev = String(prev || '').trim();
             if (cleanPrev && availableTenantIds.has(cleanPrev)) return cleanPrev;
+            if (requiresTenantSelection) return '';
 
             const activeTenant = String(activeTenantId || '').trim();
             if (activeTenant && availableTenantIds.has(activeTenant)) return activeTenant;
+            if (availableTenantIds.size === 1) return Array.from(availableTenantIds)[0] || '';
             return '';
         });
 
@@ -784,6 +920,7 @@ export default function SaasAdminPanel({
     };
 
     const openCatalogEdit = () => {
+        if (!canEditCatalog) return;
         setCatalogPanelMode('edit');
     };
 
@@ -831,6 +968,24 @@ export default function SaasAdminPanel({
         });
     };
 
+    const loadCustomers = async (tenantId) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        if (!cleanTenantId) {
+            setCustomers([]);
+            setSelectedCustomerId('');
+            return;
+        }
+        const payload = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(cleanTenantId) + '/customers?limit=300&includeInactive=true');
+        const items = Array.isArray(payload?.items) ? payload.items : [];
+        setCustomers(items);
+        setSelectedCustomerId((prev) => {
+            const cleanPrev = String(prev || '').trim();
+            if (!cleanPrev) return '';
+            const exists = items.some((item) => String(item?.customerId || '').trim() === cleanPrev);
+            return exists ? cleanPrev : '';
+        });
+    };
+
     const resetWaModuleForm = () => {
         setWaModuleForm(EMPTY_WA_MODULE_FORM);
         setTenantIntegrations(EMPTY_INTEGRATIONS_FORM);
@@ -838,6 +993,12 @@ export default function SaasAdminPanel({
         setPlanForm(normalizePlanForm('starter', {}));
         setEditingWaModuleId('');
         setModuleUserPickerId('');
+        setSelectedCustomerId('');
+        setCustomerPanelMode('view');
+        setCustomerForm(EMPTY_CUSTOMER_FORM);
+        setCustomerSearch('');
+        setCustomerCsvText('');
+        setCustomerImportModuleId('');
     };
 
     const openWaModuleEditor = (moduleItem = null) => {
@@ -852,7 +1013,7 @@ export default function SaasAdminPanel({
             moduleId: item.moduleId,
             name: item.name,
             phoneNumber: item.phoneNumber || '',
-            transportMode: item.transportMode || 'webjs',
+            transportMode: item.transportMode || 'cloud',
             imageUrl: item.imageUrl || '',
             assignedUserIds: [...(item.assignedUserIds || [])],
             moduleCatalogMode: item.moduleCatalogMode || 'inherit',
@@ -897,12 +1058,12 @@ export default function SaasAdminPanel({
     const handleOpenOperation = (moduleId = '') => {
         if (typeof onOpenWhatsAppOperation !== 'function') return;
         const cleanModuleId = String(moduleId || '').trim();
-        const cleanTenantId = String(settingsTenantId || activeTenantId || '').trim();
+        const cleanTenantId = String(tenantScopeId || activeTenantId || '').trim();
         onOpenWhatsAppOperation(cleanModuleId, { tenantId: cleanTenantId || undefined });
     };
     const handleFormImageUpload = async ({ file, scope, tenantId, onUploaded }) => {
         if (!file) return;
-        const cleanTenantId = String(tenantId || settingsTenantId || selectedTenantId || activeTenantId || 'default').trim() || 'default';
+        const cleanTenantId = String(tenantId || tenantScopeId || selectedTenantId || activeTenantId || 'default').trim() || 'default';
         setError('');
         setNotice('');
         setBusy(true);
@@ -998,6 +1159,8 @@ export default function SaasAdminPanel({
                 || catalogPanelMode !== 'view'
                 || planPanelMode !== 'view'
                 || selectedPlanId
+                || selectedCustomerId
+                || customerPanelMode !== 'view'
             );
 
             if (hasSelection) {
@@ -1028,20 +1191,23 @@ export default function SaasAdminPanel({
         waModulePanelMode,
         catalogPanelMode,
         planPanelMode,
-        selectedPlanId
+        selectedPlanId,
+        selectedCustomerId,
+        customerPanelMode
     ]);
 
     useEffect(() => {
-        if (!isOpen || !canManageSaas || !settingsTenantId) return;
+        if (!isOpen || !canManageSaas || !tenantScopeId) return;
         Promise.all([
-            loadTenantSettings(settingsTenantId),
-            loadWaModules(settingsTenantId),
-            loadTenantIntegrations(settingsTenantId)
+            loadTenantSettings(tenantScopeId),
+            loadWaModules(tenantScopeId),
+            loadTenantIntegrations(tenantScopeId),
+            loadCustomers(tenantScopeId)
         ]).catch((err) => {
             setError(String(err?.message || err || 'No se pudo cargar configuracion del tenant.'));
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, canManageSaas, settingsTenantId]);
+    }, [isOpen, canManageSaas, tenantScopeId]);
 
     useEffect(() => {
         setSelectedConfigKey('');
@@ -1050,7 +1216,25 @@ export default function SaasAdminPanel({
         setWaModulePanelMode('view');
         setCatalogPanelMode('view');
         setModuleUserPickerId('');
-    }, [settingsTenantId]);
+        setSelectedCustomerId('');
+        setCustomerPanelMode('view');
+        setCustomerSearch('');
+        setCustomerCsvText('');
+    }, [tenantScopeId]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        if (requiresTenantSelection || settingsTenantId) return;
+        const fallbackTenantId = String(activeTenantId || tenantOptions[0]?.id || '').trim();
+        if (!fallbackTenantId) return;
+        setSettingsTenantId(fallbackTenantId);
+    }, [isOpen, requiresTenantSelection, settingsTenantId, activeTenantId, tenantOptions]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        if (!requiresTenantSelection || tenantScopeId) return;
+        setCurrentSection('saas_empresas');
+    }, [isOpen, requiresTenantSelection, tenantScopeId]);
 
     useEffect(() => {
         const cleanPlanId = String(selectedPlanId || '').trim().toLowerCase();
@@ -1100,6 +1284,15 @@ export default function SaasAdminPanel({
     }, [selectedUser, userPanelMode]);
 
     useEffect(() => {
+        if (customerPanelMode === 'create') return;
+        if (!selectedCustomer) {
+            setCustomerForm(EMPTY_CUSTOMER_FORM);
+            return;
+        }
+        setCustomerForm(normalizeCustomerFormFromItem(selectedCustomer));
+    }, [selectedCustomer, customerPanelMode]);
+
+    useEffect(() => {
         if (!selectedWaModule) {
             resetWaModuleForm();
             return;
@@ -1138,7 +1331,7 @@ export default function SaasAdminPanel({
     };
 
     const openUserCreate = () => {
-        const fallbackTenantId = String(settingsTenantId || selectedTenantId || tenantOptions[0]?.id || '').trim();
+        const fallbackTenantId = String(tenantScopeId || selectedTenantId || tenantOptions[0]?.id || '').trim();
         setUserPanelMode('create');
         setSelectedUserId('');
         setMembershipDraft([]);
@@ -1186,6 +1379,38 @@ export default function SaasAdminPanel({
         setCurrentSection('saas_usuarios');
         scrollToSection('saas_usuarios');
     };
+    const openCustomerCreate = () => {
+        setSelectedCustomerId('');
+        setCustomerPanelMode('create');
+        setCustomerForm({
+            ...EMPTY_CUSTOMER_FORM,
+            moduleId: String(customerImportModuleId || '').trim()
+        });
+    };
+
+    const openCustomerView = (customerId) => {
+        const cleanCustomerId = String(customerId || '').trim();
+        if (!cleanCustomerId) return;
+        setSelectedCustomerId(cleanCustomerId);
+        setCustomerPanelMode('view');
+    };
+
+    const openCustomerEdit = () => {
+        if (!selectedCustomer) return;
+        setCustomerForm(normalizeCustomerFormFromItem(selectedCustomer));
+        setCustomerPanelMode('edit');
+    };
+
+    const cancelCustomerEdit = () => {
+        if (selectedCustomer) {
+            setCustomerForm(normalizeCustomerFormFromItem(selectedCustomer));
+            setCustomerPanelMode('view');
+            return;
+        }
+        setCustomerForm(EMPTY_CUSTOMER_FORM);
+        setCustomerPanelMode('view');
+    };
+
     const openConfigSettingsView = () => {
         setSelectedConfigKey('tenant_settings');
         setTenantSettingsPanelMode('view');
@@ -1194,7 +1419,7 @@ export default function SaasAdminPanel({
     };
 
     const openConfigSettingsEdit = () => {
-        if (!settingsTenantId) return;
+        if (!settingsTenantId || !canEditTenantSettings) return;
         setSelectedConfigKey('tenant_settings');
         setTenantSettingsPanelMode('edit');
         setWaModulePanelMode('view');
@@ -1213,6 +1438,7 @@ export default function SaasAdminPanel({
     };
 
     const openConfigModuleCreate = () => {
+        if (!canEditModules) return;
         setSelectedConfigKey('');
         setSelectedWaModuleId('');
         setTenantSettingsPanelMode('view');
@@ -1222,6 +1448,7 @@ export default function SaasAdminPanel({
     };
 
     const openConfigModuleEdit = () => {
+        if (!canEditModules) return;
         if (!selectedConfigModule) return;
         setSelectedConfigKey(`wa_module:${selectedConfigModule.moduleId}`);
         openWaModuleEditor(selectedConfigModule);
@@ -1293,6 +1520,35 @@ export default function SaasAdminPanel({
                     </div>
                 )}
 
+                {requiresTenantSelection && (
+                    <div className="saas-admin-form-row" style={{ marginBottom: '10px' }}>
+                        <select
+                            value={settingsTenantId}
+                            onChange={(event) => {
+                                const nextTenantId = String(event.target.value || '').trim();
+                                setSettingsTenantId(nextTenantId);
+                                if (nextTenantId) setSelectedTenantId(nextTenantId);
+                            }}
+                            disabled={busy}
+                        >
+                            <option value="">Seleccionar empresa para trabajar</option>
+                            {tenantOptions.map((tenant) => (
+                                <option key={tenant.id} value={tenant.id}>{toTenantDisplayName(tenant)}</option>
+                            ))}
+                        </select>
+                        <button
+                            type="button"
+                            disabled={busy || !settingsTenantId}
+                            onClick={() => {
+                                setSettingsTenantId('');
+                                setSelectedTenantId('');
+                            }}
+                        >
+                            Limpiar seleccion
+                        </button>
+                    </div>
+                )}
+
                 {showNavigation && (
                     <div className="saas-admin-nav">
                         {adminNavItems.map((item) => (
@@ -1300,7 +1556,7 @@ export default function SaasAdminPanel({
                                 key={item.id}
                                 type="button"
                                 className={`saas-admin-nav-btn ${selectedSectionId === item.id ? "active" : ""}`.trim()}
-                                disabled={busy}
+                                disabled={busy || (tenantScopeLocked && !['saas_resumen', 'saas_empresas', 'saas_planes'].includes(item.id))}
                                 onClick={() => handleSectionChange(item.id)}
                             >
                                 {item.label}
@@ -1317,7 +1573,7 @@ export default function SaasAdminPanel({
                         </div>
                         <div className="saas-admin-kpi">
                             <small>Usuarios</small>
-                            <strong>{overview.users.length}</strong>
+                            <strong>{scopedUsers.length}</strong>
                         </div>
                         <div className="saas-admin-kpi">
                             <small>Empresa activa</small>
@@ -1637,23 +1893,23 @@ export default function SaasAdminPanel({
                             <aside className="saas-admin-master-pane">
                                 <div className="saas-admin-pane-header">
                                     <div>
-                                        <h3>Usuarios ({overview.users.length})</h3>
+                                        <h3>Usuarios ({scopedUsers.length})</h3>
                                         <small>Listado minimo. El detalle se administra en el panel derecho.</small>
                                     </div>
                                     {canManageUsers && (
-                                        <button type="button" disabled={busy} onClick={openUserCreate}>Agregar usuario</button>
+                                        <button type="button" disabled={busy || tenantScopeLocked} onClick={openUserCreate}>Agregar usuario</button>
                                     )}
                                 </div>
                                 <div className="saas-admin-list saas-admin-list--compact">
-                                    {(overview.users || []).length === 0 && (
+                                    {scopedUsers.length === 0 && (
                                         <div className="saas-admin-empty-state">
-                                            <p>No hay usuarios registrados.</p>
+                                            <p>{tenantScopeLocked ? 'Selecciona una empresa para habilitar usuarios.' : 'No hay usuarios registrados.'}</p>
                                             {canManageUsers && (
-                                                <button type="button" disabled={busy} onClick={openUserCreate}>Crear primer usuario</button>
+                                                <button type="button" disabled={busy || tenantScopeLocked} onClick={openUserCreate}>Crear primer usuario</button>
                                             )}
                                         </div>
                                     )}
-                                    {(overview.users || []).map((user) => {
+                                    {scopedUsers.map((user) => {
                                         const userMemberships = sanitizeMemberships(user?.memberships || []);
                                         return (
                                             <button
@@ -1841,7 +2097,7 @@ export default function SaasAdminPanel({
                                                     />
                                                 </div>
 
-                                                {userPanelMode === 'create' && (
+                                                {userPanelMode !== 'view' && (
                                                     <div className="saas-admin-form-row">
                                                         <select value={userForm.tenantId} onChange={(event) => setUserForm((prev) => ({ ...prev, tenantId: event.target.value }))} disabled={busy}>
                                                             <option value="">Tenant inicial</option>
@@ -1856,66 +2112,19 @@ export default function SaasAdminPanel({
                                                         </select>
                                                     </div>
                                                 )}
-
-                                                {userPanelMode === 'edit' && (
-                                                    <div className="saas-admin-membership-editor">
-                                                        <h4>Membresias</h4>
-                                                        {(membershipDraft || []).map((membership, index) => (
-                                                            <div key={`${selectedUser?.id || 'user'}_membership_${index}`} className="saas-admin-membership-row">
-                                                                <select
-                                                                    value={membership.tenantId}
-                                                                    onChange={(event) => updateMembershipDraft(index, { tenantId: event.target.value })}
-                                                                    disabled={busy}
-                                                                >
-                                                                    <option value="">Tenant</option>
-                                                                    {tenantOptions.map((tenant) => (
-                                                                        <option key={tenant.id} value={tenant.id}>{toTenantDisplayName(tenant)}</option>
-                                                                    ))}
-                                                                </select>
-                                                                <select
-                                                                    value={membership.role}
-                                                                    onChange={(event) => updateMembershipDraft(index, { role: event.target.value })}
-                                                                    disabled={busy}
-                                                                >
-                                                                    {roleOptions.map((role) => (
-                                                                        <option key={role} value={role}>{role}</option>
-                                                                    ))}
-                                                                </select>
-                                                                <label className="saas-admin-membership-active">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={membership.active !== false}
-                                                                        onChange={(event) => updateMembershipDraft(index, { active: event.target.checked })}
-                                                                        disabled={busy}
-                                                                    />
-                                                                    Activo
-                                                                </label>
-                                                                <button type="button" disabled={busy} onClick={() => removeMembershipDraft(index)}>Quitar</button>
-                                                            </div>
-                                                        ))}
-                                                        <div className="saas-admin-membership-actions">
-                                                            <button type="button" disabled={busy} onClick={addMembershipDraft}>Agregar fila</button>
-                                                        </div>
-                                                    </div>
-                                                )}
-
                                                 <div className="saas-admin-form-row saas-admin-form-row--actions">
                                                     <button
                                                         type="button"
                                                         disabled={
                                                             busy
                                                             || !userForm.email.trim()
+                                                            || !userForm.tenantId.trim()
                                                             || (userPanelMode === 'create' && !userForm.password)
-                                                            || (
-                                                                userPanelMode === 'create'
-                                                                    ? sanitizeMemberships([{ tenantId: userForm.tenantId, role: userForm.role, active: true }]).length === 0
-                                                                    : sanitizeMemberships(membershipDraft).length === 0
-                                                            )
                                                         }
                                                         onClick={() => runAction(userPanelMode === 'create' ? 'Usuario creado' : 'Usuario actualizado', async () => {
-                                                            const membershipsPayload = userPanelMode === 'create'
-                                                                ? sanitizeMemberships([{ tenantId: userForm.tenantId, role: userForm.role, active: true }])
-                                                                : sanitizeMemberships(membershipDraft);
+                                                            const membershipsPayload = sanitizeMemberships([
+                                                                { tenantId: userForm.tenantId, role: userForm.role, active: true }
+                                                            ]);
 
                                                             if (membershipsPayload.length === 0) {
                                                                 throw new Error('Debes asignar al menos una empresa/membresia.');
@@ -1944,7 +2153,6 @@ export default function SaasAdminPanel({
                                                                     setSelectedUserId(createdId);
                                                                 }
                                                                 setUserPanelMode('view');
-                                                                setMembershipDraft([]);
                                                                 return;
                                                             }
 
@@ -1953,7 +2161,6 @@ export default function SaasAdminPanel({
                                                                 body: payload
                                                             });
                                                             setUserPanelMode('view');
-                                                            setMembershipDraft([]);
                                                         })}
                                                     >
                                                         {userPanelMode === 'create' ? 'Guardar usuario' : 'Actualizar usuario'}
@@ -1968,6 +2175,244 @@ export default function SaasAdminPanel({
                         </div>
                     </section>
                     )}
+                    {isCustomersSection && (
+                    <section id="saas_clientes" className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <div>
+                                        <h3>Clientes ({filteredCustomers.length})</h3>
+                                        <small>Base de clientes por empresa y modulo.</small>
+                                    </div>
+                                    <button type="button" disabled={busy || tenantScopeLocked} onClick={openCustomerCreate}>Agregar cliente</button>
+                                </div>
+
+                                <div className="saas-admin-form-row">
+                                    <input
+                                        value={customerSearch}
+                                        onChange={(event) => setCustomerSearch(event.target.value)}
+                                        placeholder="Buscar por codigo, nombre, telefono, email o documento"
+                                        disabled={busy || tenantScopeLocked}
+                                    />
+                                </div>
+
+                                <div className="saas-admin-list saas-admin-list--compact">
+                                    {tenantScopeLocked && (
+                                        <div className="saas-admin-empty-state">
+                                            <p>Selecciona una empresa para ver clientes.</p>
+                                        </div>
+                                    )}
+                                    {!tenantScopeLocked && filteredCustomers.length === 0 && (
+                                        <div className="saas-admin-empty-state">
+                                            <p>No hay clientes para esta empresa.</p>
+                                        </div>
+                                    )}
+                                    {!tenantScopeLocked && filteredCustomers.map((customer) => (
+                                        <button
+                                            key={customer.customerId}
+                                            type="button"
+                                            className={("saas-admin-list-item saas-admin-list-item--button " + ((selectedCustomerId === customer.customerId && customerPanelMode !== 'create') ? 'active' : '')).trim()}
+                                            onClick={() => openCustomerView(customer.customerId)}
+                                        >
+                                            <strong>{customer.contactName || customer.customerId}</strong>
+                                            <small>{customer.phoneE164 || customer.email || '-'}</small>
+                                            <small>{customer.moduleId ? ('Modulo: ' + customer.moduleId) : 'Sin modulo'} | {customer.isActive === false ? 'inactivo' : 'activo'}</small>
+                                        </button>
+                                    ))}
+                                </div>
+                            </aside>
+
+                            <div className="saas-admin-detail-pane">
+                                {tenantScopeLocked && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Selecciona una empresa</h4>
+                                        <p>Los clientes estan aislados por tenant.</p>
+                                    </div>
+                                )}
+
+                                {!tenantScopeLocked && !selectedCustomer && customerPanelMode !== 'create' && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Selecciona un cliente</h4>
+                                        <p>El detalle se muestra en este panel derecho.</p>
+                                    </div>
+                                )}
+
+                                {!tenantScopeLocked && (selectedCustomer || customerPanelMode === 'create') && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>{customerPanelMode === 'create' ? 'Nuevo cliente' : (customerPanelMode === 'edit' ? 'Editando cliente' : (selectedCustomer?.contactName || selectedCustomer?.customerId || 'Cliente'))}</h3>
+                                                <small>{customerPanelMode === 'view' ? 'Vista bloqueada.' : 'Edicion activa.'}</small>
+                                            </div>
+                                            {customerPanelMode === 'view' && selectedCustomer && (
+                                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                    <button type="button" disabled={busy} onClick={openCustomerEdit}>Editar</button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={busy}
+                                                        onClick={() => runAction('Estado de cliente actualizado', async () => {
+                                                            await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/' + encodeURIComponent(selectedCustomer.customerId), {
+                                                                method: 'PUT',
+                                                                body: { isActive: selectedCustomer.isActive === false }
+                                                            });
+                                                            await loadCustomers(tenantScopeId);
+                                                        })}
+                                                    >
+                                                        {selectedCustomer.isActive === false ? 'Activar' : 'Desactivar'}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {customerPanelMode === 'view' && selectedCustomer && (
+                                            <>
+                                                <div className="saas-admin-detail-grid">
+                                                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedCustomer.customerId || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Nombre contacto</span><strong>{selectedCustomer.contactName || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Telefono</span><strong>{selectedCustomer.phoneE164 || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Telefono 2</span><strong>{selectedCustomer.phoneAlt || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Email</span><strong>{selectedCustomer.email || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Modulo</span><strong>{selectedCustomer.moduleId || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedCustomer.isActive === false ? 'Inactivo' : 'Activo'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(selectedCustomer.updatedAt)}</strong></div>
+                                                </div>
+                                                <div className="saas-admin-related-block">
+                                                    <h4>Perfil cliente</h4>
+                                                    <div className="saas-admin-related-list">
+                                                        <div className="saas-admin-related-row" role="status"><span>Nombres</span><small>{selectedCustomer?.profile?.firstNames || '-'}</small></div>
+                                                        <div className="saas-admin-related-row" role="status"><span>Apellido paterno</span><small>{selectedCustomer?.profile?.lastNamePaternal || '-'}</small></div>
+                                                        <div className="saas-admin-related-row" role="status"><span>Apellido materno</span><small>{selectedCustomer?.profile?.lastNameMaternal || '-'}</small></div>
+                                                        <div className="saas-admin-related-row" role="status"><span>Documento</span><small>{selectedCustomer?.profile?.documentNumber || '-'}</small></div>
+                                                        <div className="saas-admin-related-row" role="status"><span>Observacion</span><small>{selectedCustomer?.profile?.notes || '-'}</small></div>
+                                                        <div className="saas-admin-related-row" role="status"><span>Etiquetas</span><small>{Array.isArray(selectedCustomer?.tags) ? selectedCustomer.tags.join(', ') : '-'}</small></div>
+                                                    </div>
+                                                </div>
+                                                <div className="saas-admin-detail-metadata">
+                                                    <h4>Metadata</h4>
+                                                    <pre>{prettyJson(selectedCustomer.metadata || {})}</pre>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        {customerPanelMode !== 'view' && (
+                                            <>
+                                                <div className="saas-admin-form-row">
+                                                    <input value={customerForm.contactName} onChange={(event) => setCustomerForm((prev) => ({ ...prev, contactName: event.target.value }))} placeholder="Nombre contacto" disabled={busy} />
+                                                    <input value={customerForm.email} onChange={(event) => setCustomerForm((prev) => ({ ...prev, email: event.target.value }))} placeholder="Correo" disabled={busy} />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <input value={customerForm.phoneE164} onChange={(event) => setCustomerForm((prev) => ({ ...prev, phoneE164: event.target.value }))} placeholder="Telefono principal (+51...)" disabled={busy} />
+                                                    <input value={customerForm.phoneAlt} onChange={(event) => setCustomerForm((prev) => ({ ...prev, phoneAlt: event.target.value }))} placeholder="Telefono alterno" disabled={busy} />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <select value={customerForm.moduleId} onChange={(event) => setCustomerForm((prev) => ({ ...prev, moduleId: event.target.value }))} disabled={busy}>
+                                                        <option value="">Sin modulo</option>
+                                                        {waModules.map((moduleItem) => (
+                                                            <option key={moduleItem.moduleId} value={moduleItem.moduleId}>{moduleItem.name || moduleItem.moduleId}</option>
+                                                        ))}
+                                                    </select>
+                                                    <input value={customerForm.tagsText} onChange={(event) => setCustomerForm((prev) => ({ ...prev, tagsText: event.target.value }))} placeholder="Etiquetas separadas por coma" disabled={busy} />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <input value={customerForm.profileFirstNames} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileFirstNames: event.target.value }))} placeholder="Nombres" disabled={busy} />
+                                                    <input value={customerForm.profileLastNamePaternal} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileLastNamePaternal: event.target.value }))} placeholder="Apellido paterno" disabled={busy} />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <input value={customerForm.profileLastNameMaternal} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileLastNameMaternal: event.target.value }))} placeholder="Apellido materno" disabled={busy} />
+                                                    <input value={customerForm.profileDocumentNumber} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileDocumentNumber: event.target.value }))} placeholder="Documento" disabled={busy} />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <textarea value={customerForm.profileNotes} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileNotes: event.target.value }))} placeholder="Observaciones" rows={3} style={{ width: '100%' }} disabled={busy} />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <textarea value={customerForm.metadataText} onChange={(event) => setCustomerForm((prev) => ({ ...prev, metadataText: event.target.value }))} placeholder="Metadata JSON" rows={4} style={{ width: '100%' }} disabled={busy} />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <label className="saas-admin-module-toggle">
+                                                        <input type="checkbox" checked={customerForm.isActive !== false} onChange={(event) => setCustomerForm((prev) => ({ ...prev, isActive: event.target.checked }))} disabled={busy} />
+                                                        <span>Cliente activo</span>
+                                                    </label>
+                                                </div>
+                                                <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                                    <button
+                                                        type="button"
+                                                        disabled={busy || !customerForm.contactName.trim() || !customerForm.phoneE164.trim()}
+                                                        onClick={() => runAction(customerPanelMode === 'create' ? 'Cliente creado' : 'Cliente actualizado', async () => {
+                                                            const payload = buildCustomerPayloadFromForm(customerForm);
+                                                            if (customerPanelMode === 'create' || !selectedCustomer?.customerId) {
+                                                                const created = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers', {
+                                                                    method: 'POST',
+                                                                    body: payload
+                                                                });
+                                                                const createdId = String(created?.item?.customerId || '').trim();
+                                                                if (createdId) setSelectedCustomerId(createdId);
+                                                                setCustomerPanelMode('view');
+                                                                await loadCustomers(tenantScopeId);
+                                                                return;
+                                                            }
+
+                                                            await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/' + encodeURIComponent(selectedCustomer.customerId), {
+                                                                method: 'PUT',
+                                                                body: payload
+                                                            });
+                                                            setCustomerPanelMode('view');
+                                                            await loadCustomers(tenantScopeId);
+                                                        })}
+                                                    >
+                                                        {customerPanelMode === 'create' ? 'Guardar cliente' : 'Actualizar cliente'}
+                                                    </button>
+                                                    <button type="button" disabled={busy} onClick={cancelCustomerEdit}>Cancelar</button>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        <div className="saas-admin-related-block">
+                                            <h4>Importacion masiva CSV</h4>
+                                            <div className="saas-admin-form-row">
+                                                <select value={customerImportModuleId} onChange={(event) => setCustomerImportModuleId(String(event.target.value || '').trim())} disabled={busy}>
+                                                    <option value="">Sin modulo por defecto</option>
+                                                    {waModules.map((moduleItem) => (
+                                                        <option key={'import_module_' + moduleItem.moduleId} value={moduleItem.moduleId}>{moduleItem.name || moduleItem.moduleId}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="saas-admin-form-row">
+                                                <textarea
+                                                    value={customerCsvText}
+                                                    onChange={(event) => setCustomerCsvText(event.target.value)}
+                                                    placeholder="Pega CSV con encabezados (IdCliente,Contacto,Telefono,CorreoElectronico,...)"
+                                                    rows={6}
+                                                    style={{ width: '100%' }}
+                                                    disabled={busy}
+                                                />
+                                            </div>
+                                            <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                                <button
+                                                    type="button"
+                                                    disabled={busy || !customerCsvText.trim()}
+                                                    onClick={() => runAction('Importacion de clientes ejecutada', async () => {
+                                                        await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/import-csv', {
+                                                            method: 'POST',
+                                                            body: {
+                                                                csvText: customerCsvText,
+                                                                moduleId: customerImportModuleId || undefined
+                                                            }
+                                                        });
+                                                        setCustomerCsvText('');
+                                                        await loadCustomers(tenantScopeId);
+                                                    })}
+                                                >
+                                                    Importar CSV
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                    )}
+
                     {(isGeneralConfigSection || isModulesSection) && (
                     <section id={isModulesSection ? 'saas_modulos' : 'saas_config'} className="saas-admin-card saas-admin-card--full">
                         <div className="saas-admin-master-detail">
@@ -2006,7 +2451,7 @@ export default function SaasAdminPanel({
 
                                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
                                     {isModulesSection && (
-                                        <button type="button" disabled={busy || !settingsTenantId} onClick={openConfigModuleCreate}>
+                                        <button type="button" disabled={busy || !settingsTenantId || !canEditModules} onClick={openConfigModuleCreate}>
                                             Nuevo modulo
                                         </button>
                                     )}
@@ -2052,7 +2497,7 @@ export default function SaasAdminPanel({
                                             onClick={() => openConfigModuleView(moduleItem.moduleId)}
                                         >
                                             <strong>{moduleItem.name || 'Modulo sin nombre'}</strong>
-                                            <small>{moduleItem.transportMode === 'cloud' ? 'Cloud API' : 'Web.js'} | {moduleItem.isActive ? 'activo' : 'inactivo'}{moduleItem.isSelected ? ' | en uso' : ''}</small>
+                                            <small>Cloud API | {moduleItem.isActive ? 'activo' : 'inactivo'}{moduleItem.isSelected ? ' | en uso' : ''}</small>
                                             <small>{moduleItem.phoneNumber ? `Numero: ${moduleItem.phoneNumber}` : 'Numero sin configurar'}</small>
                                         </button>
                                     ))}
@@ -2083,7 +2528,7 @@ export default function SaasAdminPanel({
                                             </div>
                                             <div className="saas-admin-list-actions saas-admin-list-actions--row">
                                                 {false && (
-                                                    <button type="button" disabled={busy || loadingSettings} onClick={openConfigSettingsEdit}>
+                                                    <button type="button" disabled={busy || loadingSettings || !canEditTenantSettings} onClick={openConfigSettingsEdit}>
                                                         Editar
                                                     </button>
                                                 )}
@@ -2222,7 +2667,7 @@ export default function SaasAdminPanel({
                                                             </button>
                                                             <button
                                                                 type="button"
-                                                                disabled={busy || moduleInDetail.isSelected}
+                                                                disabled={busy || moduleInDetail.isSelected || !canEditModules}
                                                                 onClick={() => runAction('Modulo WA seleccionado', async () => {
                                                                     await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/wa-modules/${encodeURIComponent(moduleInDetail.moduleId)}/select`, {
                                                                         method: 'POST'
@@ -2231,10 +2676,10 @@ export default function SaasAdminPanel({
                                                             >
                                                                 {moduleInDetail.isSelected ? 'En uso' : 'Seleccionar'}
                                                             </button>
-                                                            <button type="button" disabled={busy} onClick={openConfigModuleEdit}>Editar</button>
+                                                            <button type="button" disabled={busy || !canEditModules} onClick={openConfigModuleEdit}>Editar</button>
                                                             <button
                                                                 type="button"
-                                                                disabled={busy}
+                                                                disabled={busy || !canEditModules}
                                                                 onClick={() => runAction('Estado de modulo actualizado', async () => {
                                                                     await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/wa-modules/${encodeURIComponent(moduleInDetail.moduleId)}`, {
                                                                         method: 'PUT',
@@ -2268,7 +2713,7 @@ export default function SaasAdminPanel({
                                                     </div>
                                                     <div className="saas-admin-detail-grid">
                                                         <div className="saas-admin-detail-field"><span>Codigo</span><strong>{moduleInDetail?.moduleId || '-'}</strong></div>
-                                                        <div className="saas-admin-detail-field"><span>Transporte</span><strong>{moduleInDetail.transportMode === 'cloud' ? 'Cloud API' : 'Web.js'}</strong></div>
+                                                        <div className="saas-admin-detail-field"><span>Transporte</span><strong>Cloud API</strong></div>
                                                         <div className="saas-admin-detail-field"><span>Telefono</span><strong>{moduleInDetail.phoneNumber || 'Sin numero'}</strong></div>
                                                         <div className="saas-admin-detail-field"><span>Estado</span><strong>{moduleInDetail.isActive ? 'Activo' : 'Inactivo'}</strong></div>
                                                         <div className="saas-admin-detail-field"><span>Usuarios asignados</span><strong>{assignedLabels.length}</strong></div>
@@ -2323,9 +2768,8 @@ export default function SaasAdminPanel({
                                                         <select
                                                             value={waModuleForm.transportMode}
                                                             onChange={(event) => setWaModuleForm((prev) => ({ ...prev, transportMode: event.target.value }))}
-                                                            disabled={!settingsTenantId || busy}
+                                                            disabled={!settingsTenantId || busy || !canEditModules}
                                                         >
-                                                            <option value="webjs">Web.js</option>
                                                             <option value="cloud">Cloud API</option>
                                                         </select>
                                                     </div>
@@ -2578,7 +3022,7 @@ export default function SaasAdminPanel({
                                                     <div className="saas-admin-form-row saas-admin-form-row--actions">
                                                         <button
                                                             type="button"
-                                                            disabled={busy || !settingsTenantId || !waModuleForm.name.trim()}
+                                                            disabled={busy || !settingsTenantId || !waModuleForm.name.trim() || !canEditModules}
                                                             onClick={() => runAction(waModulePanelMode === 'create' ? 'Modulo WA creado' : 'Modulo WA actualizado', async () => {
                                                                 const existingMetadata = moduleInDetail?.metadata && typeof moduleInDetail.metadata === 'object'
                                                                     ? moduleInDetail.metadata
@@ -2589,7 +3033,7 @@ export default function SaasAdminPanel({
                                                                 const payload = {
                                                                     name: waModuleForm.name,
                                                                     phoneNumber: waModuleForm.phoneNumber,
-                                                                    transportMode: waModuleForm.transportMode,
+                                                                    transportMode: 'cloud',
                                                                     imageUrl: waModuleForm.imageUrl || null,
                                                                     assignedUserIds: (Array.isArray(waModuleForm.assignedUserIds) ? waModuleForm.assignedUserIds : [])
                                                                         .map((entry) => String(entry || '').trim())
@@ -2696,13 +3140,13 @@ export default function SaasAdminPanel({
 
                                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
                                     {catalogPanelMode === 'view' && (
-                                        <button type="button" disabled={busy || !settingsTenantId} onClick={openCatalogEdit}>Editar</button>
+                                        <button type="button" disabled={busy || !settingsTenantId || !canEditCatalog} onClick={openCatalogEdit}>Editar</button>
                                     )}
                                     {catalogPanelMode === 'edit' && (
                                         <>
                                             <button
                                                 type="button"
-                                                disabled={busy || !settingsTenantId}
+                                                disabled={busy || !settingsTenantId || !canEditCatalog}
                                                 onClick={() => runAction('Integraciones actualizadas', async () => {
                                                     await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/integrations`, {
                                                         method: 'PUT',
@@ -2716,9 +3160,9 @@ export default function SaasAdminPanel({
                                             </button>
                                             <button
                                                 type="button"
-                                                disabled={busy || !settingsTenantId}
+                                                disabled={busy || !settingsTenantId || !canEditCatalog}
                                                 onClick={async () => {
-                                                    if (!settingsTenantId) return;
+                                                    if (!settingsTenantId || !canEditCatalog) return;
                                                     setBusy(true);
                                                     try {
                                                         await loadTenantIntegrations(settingsTenantId);
@@ -3035,3 +3479,18 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
