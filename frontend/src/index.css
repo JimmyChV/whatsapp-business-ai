@@ -4229,3 +4229,66 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* SaaS admin select consistency */
+.saas-admin-panel select,
+.saas-admin-panel .saas-admin-form-row select,
+.saas-admin-panel .saas-admin-membership-row select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  color: #e8f6ff;
+  background: linear-gradient(180deg, rgba(5, 14, 20, 0.9), rgba(6, 16, 22, 0.84));
+  border: 1px solid rgba(123, 170, 196, 0.32);
+  color-scheme: dark;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saas-admin-panel select:focus {
+  border-color: rgba(0, 199, 160, 0.64);
+  box-shadow: 0 0 0 2px rgba(0, 199, 160, 0.14);
+}
+
+.saas-admin-panel select:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
+}
+
+.saas-admin-panel select option {
+  background: #0b1923;
+  color: #e8f6ff;
+}
+
+.saas-admin-tenant-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(760px, 100%);
+  max-width: 100%;
+  margin-bottom: 10px;
+}
+
+.saas-admin-tenant-picker-row > select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.saas-admin-tenant-picker-clear {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  min-height: 42px;
+}
+
+@media (max-width: 860px) {
+  .saas-admin-tenant-picker-row {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .saas-admin-tenant-picker-clear {
+    width: 100%;
+  }
+}

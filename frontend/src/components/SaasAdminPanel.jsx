@@ -1521,7 +1521,7 @@ export default function SaasAdminPanel({
                 )}
 
                 {requiresTenantSelection && (
-                    <div className="saas-admin-form-row" style={{ marginBottom: '10px' }}>
+                    <div className="saas-admin-form-row saas-admin-tenant-picker-row">
                         <select
                             value={settingsTenantId}
                             onChange={(event) => {
@@ -1538,6 +1538,7 @@ export default function SaasAdminPanel({
                         </select>
                         <button
                             type="button"
+                            className="saas-admin-tenant-picker-clear"
                             disabled={busy || !settingsTenantId}
                             onClick={() => {
                                 setSettingsTenantId('');
@@ -3479,18 +3480,3 @@ export default function SaasAdminPanel({
         </div>
     );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
