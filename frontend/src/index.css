@@ -3999,6 +3999,33 @@ body {
   font-size: 0.76rem;
 }
 
+.saas-admin-inline-checks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.saas-admin-inline-checks label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(123, 170, 196, 0.24);
+  background: rgba(3, 14, 22, 0.75);
+}
+
+.saas-admin-inline-checks input {
+  width: 14px;
+  height: 14px;
+}
+
+.saas-admin-inline-checks small {
+  font-size: 0.72rem;
+  color: #cfe6f7;
+}
 .saas-admin-detail-metadata pre {
   margin: 0;
   max-height: 180px;
@@ -4410,3 +4437,4 @@ body {
   border-color: rgba(255, 126, 126, 0.74) !important;
   filter: brightness(1.08);
 }
+

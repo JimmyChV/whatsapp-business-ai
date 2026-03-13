@@ -82,6 +82,25 @@ const EMPTY_ACCESS_CATALOG = {
     }
 };
 
+function normalizeAccessCatalogPayload(payload = {}) {
+    return {
+        permissions: Array.isArray(payload?.permissions) ? payload.permissions : [],
+        packs: Array.isArray(payload?.packs) ? payload.packs : [],
+        roleProfiles: Array.isArray(payload?.roleProfiles) ? payload.roleProfiles : [],
+        actor: payload?.actor && typeof payload.actor === 'object'
+            ? payload.actor
+            : { assignableRoles: [], canEditOptionalAccess: false }
+    };
+}
+const EMPTY_ROLE_FORM = {
+    role: '',
+    label: '',
+    required: [],
+    optional: [],
+    blocked: [],
+    active: true
+};
+
 const PLAN_LIMIT_KEYS = [
     { key: 'maxUsers', label: 'Max usuarios', min: 1, max: 100000 },
     { key: 'maxWaModules', label: 'Max modulos WA', min: 1, max: 100000 },
@@ -126,7 +145,7 @@ const EMPTY_WA_MODULE_FORM = {
     cloudEnforceSignature: true
 };
 
-const ROLE_OPTIONS = ['owner', 'admin', 'seller'];
+const BASE_ROLE_OPTIONS = ['owner', 'admin', 'seller'];
 const PLAN_OPTIONS = ['starter', 'pro', 'enterprise'];
 const CATALOG_MODE_OPTIONS = ['hybrid', 'meta_only', 'woo_only', 'local_only'];
 const MODULE_KEYS = [
@@ -140,6 +159,7 @@ const ADMIN_NAV_ITEMS = [
     { id: 'saas_planes', label: 'Planes' },
     { id: 'saas_empresas', label: 'Empresas' },
     { id: 'saas_usuarios', label: 'Usuarios' },
+    { id: 'saas_roles', label: 'Roles' },
     { id: 'saas_clientes', label: 'Clientes' },
     { id: 'saas_modulos', label: 'Modulos' },
     { id: 'saas_catalogos', label: 'Catalogos' },
@@ -162,9 +182,7 @@ function sanitizeMemberships(memberships = []) {
     return (Array.isArray(memberships) ? memberships : [])
         .map((entry) => ({
             tenantId: String(entry?.tenantId || '').trim(),
-            role: ROLE_OPTIONS.includes(String(entry?.role || '').trim().toLowerCase())
-                ? String(entry?.role || '').trim().toLowerCase()
-                : 'seller',
+            role: String(entry?.role || '').trim().toLowerCase() || 'seller',
             active: entry?.active !== false
         }))
         .filter((entry) => entry.tenantId);
@@ -334,6 +352,36 @@ function normalizePlanForm(planId = 'starter', limits = {}) {
 
     return base;
 }
+function normalizeRoleProfileItem(item = {}) {
+    const role = String(item?.role || '').trim().toLowerCase();
+    if (!role) return null;
+    return {
+        role,
+        label: String(item?.label || role).trim() || role,
+        required: Array.isArray(item?.required) ? item.required : [],
+        optional: Array.isArray(item?.optional) ? item.optional : [],
+        blocked: Array.isArray(item?.blocked) ? item.blocked : [],
+        active: item?.active !== false,
+        isSystem: item?.isSystem === true
+    };
+}
+
+function buildRoleFormFromItem(item = null) {
+    const profile = normalizeRoleProfileItem(item);
+    if (!profile) return EMPTY_ROLE_FORM;
+    return {
+        role: profile.role,
+        label: profile.label,
+        required: [...profile.required],
+        optional: [...profile.optional],
+        blocked: [...profile.blocked],
+        active: profile.active !== false
+    };
+}
+
+function sanitizeRoleCode(value = '') {
+    return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+}
 function buildTenantFormFromItem(item = null) {
     if (!item || typeof item !== 'object') return EMPTY_TENANT_FORM;
     return {
@@ -354,9 +402,7 @@ function buildUserFormFromItem(item = null) {
     if (!item || typeof item !== 'object') return EMPTY_USER_FORM;
     const memberships = sanitizeMemberships(item.memberships || []);
     const primaryMembership = memberships[0] || { tenantId: '', role: 'seller' };
-    const primaryRole = ROLE_OPTIONS.includes(String(primaryMembership.role || '').trim().toLowerCase())
-        ? String(primaryMembership.role || '').trim().toLowerCase()
-        : 'seller';
+    const primaryRole = String(primaryMembership.role || '').trim().toLowerCase() || 'seller';
 
     return {
         id: String(item.id || '').trim(),
@@ -565,6 +611,9 @@ export default function SaasAdminPanel({
     const [planPanelMode, setPlanPanelMode] = useState('view');
     const [accessCatalog, setAccessCatalog] = useState(EMPTY_ACCESS_CATALOG);
     const [loadingAccessCatalog, setLoadingAccessCatalog] = useState(false);
+    const [selectedRoleKey, setSelectedRoleKey] = useState('');
+    const [roleForm, setRoleForm] = useState(EMPTY_ROLE_FORM);
+    const [rolePanelMode, setRolePanelMode] = useState('view');
 
     const [customers, setCustomers] = useState([]);
     const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -588,6 +637,7 @@ export default function SaasAdminPanel({
     const canManageUsers = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const canManageTenantSettings = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
     const canManageCatalog = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const canManageRoles = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
     const canEditTenantSettings = canManageTenantSettings;
     const canEditModules = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
     const canEditCatalog = canManageCatalog;
@@ -596,13 +646,13 @@ export default function SaasAdminPanel({
         busy || loadingSettings || loadingIntegrations || loadingPlans || loadingAccessCatalog || pendingRequests > 0
     );
     const defaultRoleOptions = (isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext)
-        ? ROLE_OPTIONS
-        : ROLE_OPTIONS.filter((role) => role !== 'owner');
+        ? BASE_ROLE_OPTIONS
+        : BASE_ROLE_OPTIONS.filter((role) => role !== 'owner');
     const roleOptions = useMemo(() => {
         const fromCatalog = Array.isArray(accessCatalog?.actor?.assignableRoles)
             ? accessCatalog.actor.assignableRoles
                 .map((entry) => String(entry || '').trim().toLowerCase())
-                .filter((entry) => ROLE_OPTIONS.includes(entry))
+                .filter((entry) => Boolean(entry))
             : [];
         return fromCatalog.length > 0 ? fromCatalog : defaultRoleOptions;
     }, [accessCatalog?.actor?.assignableRoles, defaultRoleOptions]);
@@ -644,6 +694,35 @@ export default function SaasAdminPanel({
         return allowedPackIds;
     }, [accessCatalog?.roleProfiles, accessCatalog?.packs]);
 
+    const roleProfiles = useMemo(() => {
+        const source = Array.isArray(accessCatalog?.roleProfiles) ? accessCatalog.roleProfiles : [];
+        return [...source].sort((left, right) => String(left?.label || left?.role || '').localeCompare(String(right?.label || right?.role || ''), 'es', { sensitivity: 'base' }));
+    }, [accessCatalog?.roleProfiles]);
+
+    const selectedRoleProfile = useMemo(
+        () => roleProfiles.find((entry) => String(entry?.role || '').trim().toLowerCase() === String(selectedRoleKey || '').trim().toLowerCase()) || null,
+        [roleProfiles, selectedRoleKey]
+    );
+
+    const permissionLabelMap = useMemo(() => {
+        const map = new Map();
+        (Array.isArray(accessCatalog?.permissions) ? accessCatalog.permissions : []).forEach((entry) => {
+            const key = String(entry?.key || '').trim();
+            if (!key) return;
+            map.set(key, String(entry?.label || key));
+        });
+        return map;
+    }, [accessCatalog?.permissions]);
+
+    const rolePermissionOptions = useMemo(() => {
+        return (Array.isArray(accessCatalog?.permissions) ? accessCatalog.permissions : [])
+            .map((entry) => ({
+                key: String(entry?.key || '').trim(),
+                label: String(entry?.label || entry?.key || '').trim()
+            }))
+            .filter((entry) => entry.key)
+            .sort((left, right) => left.label.localeCompare(right.label, 'es', { sensitivity: 'base' }));
+    }, [accessCatalog?.permissions]);
     const requestJson = async (path, { method = 'GET', body = null } = {}) => {
         setPendingRequests((prev) => prev + 1);
         try {
@@ -843,9 +922,10 @@ export default function SaasAdminPanel({
         if (cleanId === 'saas_modulos') return canManageTenantSettings;
         if (cleanId === 'saas_catalogos') return canManageCatalog;
         if (cleanId === 'saas_planes') return Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
+        if (cleanId === 'saas_roles') return canManageRoles;
         if (cleanId === 'saas_config') return canManageTenantSettings;
         return true;
-    }, [canManageTenants, canManageUsers, canManageTenantSettings, canManageCatalog, isSuperAdmin, normalizedRole, noRoleContext]);
+    }, [canManageTenants, canManageUsers, canManageTenantSettings, canManageCatalog, canManageRoles, isSuperAdmin, normalizedRole, noRoleContext]);
 
     const adminNavItems = useMemo(() => {
         return ADMIN_NAV_ITEMS.map((item) => ({
@@ -862,6 +942,7 @@ export default function SaasAdminPanel({
     const isModulesSection = selectedSectionId === 'saas_modulos';
     const isCatalogSection = selectedSectionId === 'saas_catalogos';
     const isPlansSection = selectedSectionId === 'saas_planes';
+    const isRolesSection = selectedSectionId === 'saas_roles';
     const isCustomersSection = selectedSectionId === 'saas_clientes';
     const isGeneralConfigSection = selectedSectionId === 'saas_config';
 
@@ -879,6 +960,12 @@ export default function SaasAdminPanel({
             setSelectedUserId('');
             setUserPanelMode('view');
             setMembershipDraft([]);
+        }
+
+        if (next === 'saas_roles') {
+            setSelectedRoleKey('');
+            setRolePanelMode('view');
+            setRoleForm(EMPTY_ROLE_FORM);
         }
 
         if (next === 'saas_clientes') {
@@ -1015,13 +1102,7 @@ export default function SaasAdminPanel({
         setLoadingAccessCatalog(true);
         try {
             const payload = await requestJson('/api/admin/saas/access-profiles');
-            const nextCatalog = {
-                permissions: Array.isArray(payload?.permissions) ? payload.permissions : [],
-                packs: Array.isArray(payload?.packs) ? payload.packs : [],
-                roleProfiles: Array.isArray(payload?.roleProfiles) ? payload.roleProfiles : [],
-                actor: payload?.actor && typeof payload.actor === 'object' ? payload.actor : { assignableRoles: [], canEditOptionalAccess: false }
-            };
-            setAccessCatalog(nextCatalog);
+            setAccessCatalog(normalizeAccessCatalogPayload(payload));
         } catch (_) {
             setAccessCatalog(EMPTY_ACCESS_CATALOG);
         } finally {
@@ -1045,6 +1126,7 @@ export default function SaasAdminPanel({
         setSelectedPlanId(cleanPlanId);
         setPlanForm(normalizePlanForm(cleanPlanId, limits));
         setPlanPanelMode('view');
+        setRolePanelMode('view');
     };
 
     const openPlanEdit = () => {
@@ -1060,6 +1142,7 @@ export default function SaasAdminPanel({
         const limits = planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object' ? planMatrix[cleanPlanId] : {};
         setPlanForm(normalizePlanForm(cleanPlanId, limits));
         setPlanPanelMode('view');
+        setRolePanelMode('view');
     };
     const loadWaModules = async (tenantId) => {
         const cleanTenantId = String(tenantId || '').trim();
@@ -1105,6 +1188,7 @@ export default function SaasAdminPanel({
         setTenantIntegrations(EMPTY_INTEGRATIONS_FORM);
         setSelectedPlanId('');
         setPlanForm(normalizePlanForm('starter', {}));
+        setRoleForm(EMPTY_ROLE_FORM);
         setEditingWaModuleId('');
         setModuleUserPickerId('');
         setSelectedCustomerId('');
@@ -1198,9 +1282,7 @@ export default function SaasAdminPanel({
             return {
                 ...entry,
                 ...patch,
-                role: ROLE_OPTIONS.includes(String(patch?.role || entry.role || '').trim().toLowerCase())
-                    ? String(patch?.role || entry.role).trim().toLowerCase()
-                    : 'seller'
+                role: String(patch?.role || entry.role || '').trim().toLowerCase() || 'seller'
             };
         }));
     };
@@ -1236,6 +1318,7 @@ export default function SaasAdminPanel({
         setWaModulePanelMode('view');
         setCatalogPanelMode('view');
         setPlanPanelMode('view');
+        setRolePanelMode('view');
         setMembershipDraft([]);
         setTenantForm(EMPTY_TENANT_FORM);
         setUserForm(EMPTY_USER_FORM);
@@ -1243,6 +1326,7 @@ export default function SaasAdminPanel({
         setTenantIntegrations(EMPTY_INTEGRATIONS_FORM);
         setSelectedPlanId('');
         setPlanForm(normalizePlanForm('starter', {}));
+        setRoleForm(EMPTY_ROLE_FORM);
         setEditingWaModuleId('');
         setModuleUserPickerId('');
     }, []);
@@ -1262,12 +1346,14 @@ export default function SaasAdminPanel({
                 || selectedUserId
                 || selectedWaModuleId
                 || selectedConfigKey
+                || selectedRoleKey
                 || tenantPanelMode !== 'view'
                 || userPanelMode !== 'view'
                 || tenantSettingsPanelMode !== 'view'
                 || waModulePanelMode !== 'view'
                 || catalogPanelMode !== 'view'
                 || planPanelMode !== 'view'
+                || rolePanelMode !== 'view'
                 || selectedPlanId
                 || selectedCustomerId
                 || customerPanelMode !== 'view'
@@ -1284,6 +1370,7 @@ export default function SaasAdminPanel({
         clearPanelSelection,
         isOpen,
         selectedConfigKey,
+        selectedRoleKey,
         selectedTenantId,
         selectedUserId,
         selectedWaModuleId,
@@ -1293,6 +1380,7 @@ export default function SaasAdminPanel({
         waModulePanelMode,
         catalogPanelMode,
         planPanelMode,
+        rolePanelMode,
         selectedPlanId,
         selectedCustomerId,
         customerPanelMode
@@ -1320,6 +1408,7 @@ export default function SaasAdminPanel({
 
     useEffect(() => {
         setSelectedConfigKey('');
+        setSelectedRoleKey('');
         setSelectedWaModuleId('');
         setTenantSettingsPanelMode('view');
         setWaModulePanelMode('view');
@@ -1355,6 +1444,7 @@ export default function SaasAdminPanel({
         if (!String(selectedConfigKey || '').startsWith('wa_module:')) return;
         if (selectedConfigModule) return;
         setSelectedConfigKey('');
+        setSelectedRoleKey('');
         setSelectedWaModuleId('');
         setWaModulePanelMode('view');
         resetWaModuleForm();
@@ -1480,6 +1570,118 @@ export default function SaasAdminPanel({
         setUserPanelMode('view');
     };
 
+
+    const openRoleCreate = () => {
+        if (!canManageRoles) return;
+        setSelectedRoleKey('');
+        setRoleForm(EMPTY_ROLE_FORM);
+        setRolePanelMode('create');
+    };
+
+    const openRoleView = (roleKey) => {
+        const cleanRole = String(roleKey || '').trim().toLowerCase();
+        if (!cleanRole) return;
+        setSelectedRoleKey(cleanRole);
+        setRolePanelMode('view');
+    };
+
+    const openRoleEdit = () => {
+        if (!selectedRoleProfile || !canManageRoles) return;
+        setRoleForm(buildRoleFormFromItem(selectedRoleProfile));
+        setRolePanelMode('edit');
+    };
+
+    const cancelRoleEdit = () => {
+        if (selectedRoleProfile) {
+            setRoleForm(buildRoleFormFromItem(selectedRoleProfile));
+            setRolePanelMode('view');
+            return;
+        }
+        setRoleForm(EMPTY_ROLE_FORM);
+        setRolePanelMode('view');
+    };
+
+    const toggleRolePermission = (bucket, permissionKey, enabled) => {
+        const cleanBucket = String(bucket || '').trim().toLowerCase();
+        const cleanPermission = String(permissionKey || '').trim();
+        if (!['required', 'optional', 'blocked'].includes(cleanBucket) || !cleanPermission) return;
+
+        setRoleForm((prev) => {
+            const required = new Set(Array.isArray(prev?.required) ? prev.required.map((entry) => String(entry || '').trim()).filter(Boolean) : []);
+            const optional = new Set(Array.isArray(prev?.optional) ? prev.optional.map((entry) => String(entry || '').trim()).filter(Boolean) : []);
+            const blocked = new Set(Array.isArray(prev?.blocked) ? prev.blocked.map((entry) => String(entry || '').trim()).filter(Boolean) : []);
+
+            required.delete(cleanPermission);
+            optional.delete(cleanPermission);
+            blocked.delete(cleanPermission);
+
+            if (enabled) {
+                if (cleanBucket === 'required') required.add(cleanPermission);
+                if (cleanBucket === 'optional') optional.add(cleanPermission);
+                if (cleanBucket === 'blocked') blocked.add(cleanPermission);
+            }
+
+            return {
+                ...prev,
+                required: [...required].sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' })),
+                optional: [...optional].sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' })),
+                blocked: [...blocked].sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' }))
+            };
+        });
+    };
+
+    const saveRoleProfile = () => {
+        if (!canManageRoles) return;
+
+        runAction(rolePanelMode === 'create' ? 'Rol creado' : 'Rol actualizado', async () => {
+            const cleanRole = sanitizeRoleCode(roleForm?.role || selectedRoleKey);
+            if (!cleanRole) {
+                throw new Error('El codigo del rol es obligatorio.');
+            }
+
+            const required = Array.from(new Set(
+                (Array.isArray(roleForm?.required) ? roleForm.required : [])
+                    .map((entry) => String(entry || '').trim())
+                    .filter(Boolean)
+            ));
+            const optional = Array.from(new Set(
+                (Array.isArray(roleForm?.optional) ? roleForm.optional : [])
+                    .map((entry) => String(entry || '').trim())
+                    .filter((entry) => Boolean(entry) && !required.includes(entry))
+            ));
+            const blocked = Array.from(new Set(
+                (Array.isArray(roleForm?.blocked) ? roleForm.blocked : [])
+                    .map((entry) => String(entry || '').trim())
+                    .filter((entry) => Boolean(entry) && !required.includes(entry) && !optional.includes(entry))
+            ));
+
+            const body = {
+                role: cleanRole,
+                label: String(roleForm?.label || cleanRole).trim() || cleanRole,
+                required,
+                optional,
+                blocked,
+                active: roleForm?.active !== false
+            };
+
+            const endpoint = rolePanelMode === 'create'
+                ? '/api/admin/saas/access-profiles/roles'
+                : `/api/admin/saas/access-profiles/roles/${encodeURIComponent(cleanRole)}`;
+            const method = rolePanelMode === 'create' ? 'POST' : 'PUT';
+
+            const payload = await requestJson(endpoint, { method, body });
+            const nextCatalog = normalizeAccessCatalogPayload(payload);
+            setAccessCatalog(nextCatalog);
+
+            const nextSelectedRole = cleanRole;
+            const nextProfile = (Array.isArray(nextCatalog.roleProfiles) ? nextCatalog.roleProfiles : [])
+                .find((entry) => String(entry?.role || '').trim().toLowerCase() === nextSelectedRole) || null;
+
+            setSelectedRoleKey(nextSelectedRole);
+            setRoleForm(buildRoleFormFromItem(nextProfile));
+            setRolePanelMode('view');
+        });
+    };
     const openTenantFromUserMembership = (tenantId) => {
         openTenantView(tenantId);
         setCurrentSection('saas_empresas');
@@ -1552,6 +1754,7 @@ export default function SaasAdminPanel({
     const openConfigModuleCreate = () => {
         if (!canEditModules) return;
         setSelectedConfigKey('');
+        setSelectedRoleKey('');
         setSelectedWaModuleId('');
         setTenantSettingsPanelMode('view');
         setWaModulePanelMode('create');
@@ -1569,6 +1772,7 @@ export default function SaasAdminPanel({
 
     const clearConfigSelection = () => {
         setSelectedConfigKey('');
+        setSelectedRoleKey('');
         setSelectedWaModuleId('');
         setTenantSettingsPanelMode('view');
         setWaModulePanelMode('view');
@@ -1720,7 +1924,7 @@ export default function SaasAdminPanel({
                                 key={item.id}
                                 type="button"
                                 className={`saas-admin-nav-btn ${selectedSectionId === item.id ? "active" : ""}`.trim()}
-                                disabled={busy || !item.enabled || (tenantScopeLocked && !['saas_resumen', 'saas_empresas', 'saas_planes'].includes(item.id))}
+                                disabled={busy || !item.enabled || (tenantScopeLocked && !['saas_resumen', 'saas_empresas', 'saas_planes', 'saas_roles'].includes(item.id))}
                                 onClick={() => handleSectionChange(item.id)}
                             >
                                 {item.label}
@@ -3491,6 +3695,224 @@ export default function SaasAdminPanel({
                     </section>
                     )}
 
+                    {isRolesSection && (
+                    <section id="saas_roles" className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <div>
+                                        <h3>Roles y accesos</h3>
+                                        <small>Catalogo global de perfiles de acceso.</small>
+                                    </div>
+                                    {canManageRoles && (
+                                        <button type="button" disabled={busy} onClick={openRoleCreate}>Nuevo rol</button>
+                                    )}
+                                </div>
+
+                                <div className="saas-admin-list saas-admin-list--compact">
+                                    {roleProfiles.length === 0 && (
+                                        <div className="saas-admin-empty-state">
+                                            <p>No hay perfiles de rol cargados.</p>
+                                        </div>
+                                    )}
+                                    {roleProfiles.map((profile) => {
+                                        const cleanRole = String(profile?.role || '').trim().toLowerCase();
+                                        const roleLabel = String(profile?.label || cleanRole).trim() || cleanRole;
+                                        const requiredCount = Array.isArray(profile?.required) ? profile.required.length : 0;
+                                        const optionalCount = Array.isArray(profile?.optional) ? profile.optional.length : 0;
+                                        return (
+                                            <button
+                                                key={`role_profile_${cleanRole}`}
+                                                type="button"
+                                                className={`saas-admin-list-item saas-admin-list-item--button ${selectedRoleKey === cleanRole && rolePanelMode !== 'create' ? 'active' : ''}`.trim()}
+                                                onClick={() => openRoleView(cleanRole)}
+                                            >
+                                                <strong>{roleLabel}</strong>
+                                                <small>{cleanRole}</small>
+                                                <small>Req: {requiredCount} | Opc: {optionalCount}</small>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </aside>
+
+                            <div className="saas-admin-detail-pane">
+                                {!selectedRoleProfile && rolePanelMode !== 'create' && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Selecciona un rol</h4>
+                                        <p>Podras revisar su detalle y, como superadmin, ajustar permisos requeridos, opcionales o bloqueados.</p>
+                                    </div>
+                                )}
+
+                                {selectedRoleProfile && rolePanelMode === 'view' && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>{selectedRoleProfile.label || selectedRoleProfile.role}</h3>
+                                                <small>Codigo: {selectedRoleProfile.role}</small>
+                                            </div>
+                                            {canManageRoles && (
+                                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                    <button type="button" disabled={busy} onClick={openRoleEdit}>Editar rol</button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="saas-admin-detail-grid">
+                                            <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedRoleProfile.role}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Etiqueta</span><strong>{selectedRoleProfile.label || selectedRoleProfile.role}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Permisos obligatorios</span><strong>{Array.isArray(selectedRoleProfile.required) ? selectedRoleProfile.required.length : 0}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Permisos opcionales</span><strong>{Array.isArray(selectedRoleProfile.optional) ? selectedRoleProfile.optional.length : 0}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Permisos bloqueados</span><strong>{Array.isArray(selectedRoleProfile.blocked) ? selectedRoleProfile.blocked.length : 0}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedRoleProfile.active === false ? 'Inactivo' : 'Activo'}</strong></div>
+                                        </div>
+
+                                        <div className="saas-admin-related-block">
+                                            <h4>Obligatorios</h4>
+                                            <div className="saas-admin-related-list">
+                                                {(Array.isArray(selectedRoleProfile.required) ? selectedRoleProfile.required : []).length === 0 && (
+                                                    <div className="saas-admin-related-row" role="status"><span>Sin permisos obligatorios.</span></div>
+                                                )}
+                                                {(Array.isArray(selectedRoleProfile.required) ? selectedRoleProfile.required : []).map((permissionKey) => (
+                                                    <div key={`role_required_${permissionKey}`} className="saas-admin-related-row" role="status">
+                                                        <span>{permissionLabelMap.get(permissionKey) || permissionKey}</span>
+                                                        <small>{permissionKey}</small>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-related-block">
+                                            <h4>Opcionales</h4>
+                                            <div className="saas-admin-related-list">
+                                                {(Array.isArray(selectedRoleProfile.optional) ? selectedRoleProfile.optional : []).length === 0 && (
+                                                    <div className="saas-admin-related-row" role="status"><span>Sin permisos opcionales.</span></div>
+                                                )}
+                                                {(Array.isArray(selectedRoleProfile.optional) ? selectedRoleProfile.optional : []).map((permissionKey) => (
+                                                    <div key={`role_optional_${permissionKey}`} className="saas-admin-related-row" role="status">
+                                                        <span>{permissionLabelMap.get(permissionKey) || permissionKey}</span>
+                                                        <small>{permissionKey}</small>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-related-block">
+                                            <h4>Bloqueados</h4>
+                                            <div className="saas-admin-related-list">
+                                                {(Array.isArray(selectedRoleProfile.blocked) ? selectedRoleProfile.blocked : []).length === 0 && (
+                                                    <div className="saas-admin-related-row" role="status"><span>Sin permisos bloqueados.</span></div>
+                                                )}
+                                                {(Array.isArray(selectedRoleProfile.blocked) ? selectedRoleProfile.blocked : []).map((permissionKey) => (
+                                                    <div key={`role_blocked_${permissionKey}`} className="saas-admin-related-row" role="status">
+                                                        <span>{permissionLabelMap.get(permissionKey) || permissionKey}</span>
+                                                        <small>{permissionKey}</small>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+
+                                {(rolePanelMode === 'create' || rolePanelMode === 'edit') && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>{rolePanelMode === 'create' ? 'Nuevo rol' : `Editando rol: ${roleForm.role || selectedRoleKey}`}</h3>
+                                                <small>Define permisos obligatorios, opcionales y bloqueados por perfil.</small>
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-form-row">
+                                            <input
+                                                value={roleForm.role}
+                                                onChange={(event) => setRoleForm((prev) => ({ ...prev, role: sanitizeRoleCode(event.target.value) }))}
+                                                placeholder="Codigo rol (ej: support_manager)"
+                                                disabled={busy || rolePanelMode !== 'create'}
+                                            />
+                                            <input
+                                                value={roleForm.label}
+                                                onChange={(event) => setRoleForm((prev) => ({ ...prev, label: event.target.value }))}
+                                                placeholder="Etiqueta visible"
+                                                disabled={busy}
+                                            />
+                                        </div>
+
+                                        <div className="saas-admin-modules">
+                                            <label className="saas-admin-module-toggle">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={roleForm.active !== false}
+                                                    onChange={(event) => setRoleForm((prev) => ({ ...prev, active: event.target.checked }))}
+                                                    disabled={busy || (rolePanelMode === 'edit' && selectedRoleProfile?.isSystem === true)}
+                                                />
+                                                <span>Rol activo</span>
+                                            </label>
+                                        </div>
+
+                                        <div className="saas-admin-related-block">
+                                            <h4>Matriz de permisos</h4>
+                                            <div className="saas-admin-related-list">
+                                                {rolePermissionOptions.map((permission) => {
+                                                    const permissionKey = String(permission?.key || '').trim();
+                                                    const isRequired = roleForm.required.includes(permissionKey);
+                                                    const isOptional = roleForm.optional.includes(permissionKey);
+                                                    const isBlocked = roleForm.blocked.includes(permissionKey);
+
+                                                    return (
+                                                        <div key={`role_permission_matrix_${permissionKey}`} className="saas-admin-related-row" role="status">
+                                                            <span>{permission.label || permissionKey}</span>
+                                                            <div className="saas-admin-inline-checks">
+                                                                <label>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={isRequired}
+                                                                        onChange={(event) => toggleRolePermission('required', permissionKey, event.target.checked)}
+                                                                        disabled={busy}
+                                                                    />
+                                                                    <small>Obligatorio</small>
+                                                                </label>
+                                                                <label>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={isOptional}
+                                                                        onChange={(event) => toggleRolePermission('optional', permissionKey, event.target.checked)}
+                                                                        disabled={busy}
+                                                                    />
+                                                                    <small>Opcional</small>
+                                                                </label>
+                                                                <label>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={isBlocked}
+                                                                        onChange={(event) => toggleRolePermission('blocked', permissionKey, event.target.checked)}
+                                                                        disabled={busy}
+                                                                    />
+                                                                    <small>Bloqueado</small>
+                                                                </label>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                            <button
+                                                type="button"
+                                                disabled={busy || !String(roleForm.role || selectedRoleKey || '').trim()}
+                                                onClick={saveRoleProfile}
+                                            >
+                                                {rolePanelMode === 'create' ? 'Crear rol' : 'Guardar cambios'}
+                                            </button>
+                                            <button type="button" disabled={busy} onClick={cancelRoleEdit}>Cancelar</button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                    )}
                     {isPlansSection && (
                     <section id="saas_planes" className="saas-admin-card saas-admin-card--full">
                         <div className="saas-admin-master-detail">
@@ -3663,6 +4085,7 @@ export default function SaasAdminPanel({
                                                     await loadPlanMatrix();
                                                     openPlanView(planForm.id);
                                                     setPlanPanelMode('view');
+        setRolePanelMode('view');
                                                 })}
                                             >
                                                 Guardar cambios
@@ -3681,18 +4104,4 @@ export default function SaasAdminPanel({
         </div>
     );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
