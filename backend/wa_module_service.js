@@ -1,4 +1,4 @@
-﻿const crypto = require('crypto');
+const crypto = require('crypto');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -629,7 +629,4 @@ module.exports = {
     setSelectedModule,
     getSelectedModule
 };
-
-
-
 
