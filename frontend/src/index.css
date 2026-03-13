@@ -3130,6 +3130,98 @@ body {
   color: #ffd8d8;
 }
 
+.saas-admin-profile-summary {
+  margin: 10px 16px 0 256px;
+  border: 1px solid rgba(148, 184, 204, 0.2);
+  border-radius: 14px;
+  background: linear-gradient(165deg, rgba(10, 22, 32, 0.88), rgba(7, 18, 26, 0.82));
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.saas-admin-profile-summary__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.saas-admin-profile-summary__avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(124, 200, 255, 0.3);
+  background: rgba(7, 16, 23, 0.85);
+  color: #def3ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.84rem;
+}
+
+.saas-admin-profile-summary__meta {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.saas-admin-profile-summary__meta strong {
+  color: #eaf6ff;
+  font-size: 0.9rem;
+}
+
+.saas-admin-profile-summary__meta span {
+  color: #9ec0d7;
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saas-admin-profile-summary__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.saas-admin-profile-summary__stats div {
+  border: 1px solid rgba(124, 200, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(5, 14, 20, 0.68);
+  padding: 8px 10px;
+  display: grid;
+  gap: 2px;
+}
+
+.saas-admin-profile-summary__stats small {
+  color: #89a8bb;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.saas-admin-profile-summary__stats strong {
+  color: #f0f8ff;
+  font-size: 0.9rem;
+}
+
+.saas-admin-profile-summary__caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.saas-admin-profile-chip {
+  border: 1px solid rgba(0, 199, 160, 0.32);
+  border-radius: 999px;
+  background: rgba(0, 199, 160, 0.12);
+  color: #d9fff5;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
 .saas-admin-nav {
   position: absolute;
   top: 82px;
@@ -3446,6 +3538,7 @@ body {
   }
 
   .saas-admin-alert,
+  .saas-admin-profile-summary,
   .saas-admin-kpis,
   .saas-admin-grid {
     margin-left: 12px;
@@ -3464,6 +3557,10 @@ body {
   }
 
   .saas-admin-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .saas-admin-profile-summary__stats {
     grid-template-columns: 1fr;
   }
 
@@ -3666,6 +3763,7 @@ body {
 }
 
 .saas-admin-alert,
+.saas-admin-profile-summary,
 .saas-admin-kpis,
 .saas-admin-grid,
 .saas-admin-flow-card,
@@ -3794,6 +3892,7 @@ body {
 
 @media (max-width: 1220px) {
   .saas-admin-alert,
+  .saas-admin-profile-summary,
   .saas-admin-kpis,
   .saas-admin-grid,
   .saas-admin-flow-card,
@@ -4437,4 +4536,3 @@ body {
   border-color: rgba(255, 126, 126, 0.74) !important;
   filter: brightness(1.08);
 }
-

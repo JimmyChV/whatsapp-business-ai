@@ -887,7 +887,11 @@ function getAllowedTenantIdsFromAuth(req = {}) {
     return Array.from(new Set(allowed));
 }
 
-function hasSaasControlReadAccess(req = {}) {
+function hasSaasControlReadAccess(req = {}, { requireSuperAdmin = false } = {}) {
+    if (requireSuperAdmin) {
+        return Boolean(req?.authContext?.user?.isSuperAdmin);
+    }
+
     return hasAnyPermission(req, [
         accessPolicyService.PERMISSIONS.PLATFORM_OVERVIEW_READ,
         accessPolicyService.PERMISSIONS.TENANT_OVERVIEW_READ
@@ -959,6 +963,48 @@ function canActorEditOptionalAccess(req = {}) {
     });
 }
 
+const ROLE_PRIORITY = Object.freeze({
+    seller: 1,
+    admin: 2,
+    owner: 3,
+    superadmin: 4
+});
+
+function getRolePriority(role = 'seller') {
+    const cleanRole = String(role || '').trim().toLowerCase();
+    return ROLE_PRIORITY[cleanRole] || ROLE_PRIORITY.seller;
+}
+
+function getAuthUserId(req = {}) {
+    return String(req?.authContext?.user?.userId || req?.authContext?.user?.id || '').trim();
+}
+
+function isSelfUserAction(req = {}, targetUserId = '') {
+    const actorUserId = getAuthUserId(req);
+    const cleanTargetUserId = String(targetUserId || '').trim();
+    return Boolean(actorUserId && cleanTargetUserId && actorUserId === cleanTargetUserId);
+}
+
+function getUserPrimaryRole(user = {}) {
+    const memberships = Array.isArray(user?.memberships) ? user.memberships : [];
+    return resolvePrimaryRoleFromMemberships(memberships, user?.role || 'seller');
+}
+
+function isActorSuperiorToRole(req = {}, targetRole = 'seller') {
+    if (req?.authContext?.user?.isSuperAdmin) return true;
+    const actorRole = getAuthRole(req);
+    return getRolePriority(actorRole) > getRolePriority(targetRole);
+}
+
+function canActorManageRoleChanges(req = {}) {
+    if (req?.authContext?.user?.isSuperAdmin) return true;
+    const actorRole = getAuthRole(req);
+    if (actorRole === 'owner') return true;
+    if (actorRole === 'admin') {
+        return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_USERS_OWNER_ASSIGN);
+    }
+    return false;
+}
 function hasAnyAccessOverride(payload = {}) {
     const source = payload && typeof payload === 'object' ? payload : {};
     const hasGrants = Object.prototype.hasOwnProperty.call(source, 'permissionGrants');
@@ -1172,7 +1218,7 @@ app.get('/api/admin/saas/overview', async (req, res) => {
 });
 
 app.get('/api/admin/saas/access-profiles', (req, res) => {
-    if (!hasSaasControlReadAccess(req)) {
+    if (!hasSaasControlReadAccess(req, { requireSuperAdmin: true })) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -1429,9 +1475,11 @@ app.put('/api/admin/saas/users/:userId', async (req, res) => {
             ? payload.memberships
             : sanitizeMembershipPayload(targetUser.memberships || []);
 
-        const targetRole = resolvePrimaryRoleFromMemberships(resultingMemberships, payload.role || targetUser?.memberships?.[0]?.role || 'seller');
-        const authUserId = String(req?.authContext?.user?.userId || req?.authContext?.user?.id || '').trim();
-        const isSelf = Boolean(authUserId && authUserId === userId);
+        const targetRoleBefore = getUserPrimaryRole(targetUser);
+        const targetRoleAfter = resolvePrimaryRoleFromMemberships(resultingMemberships, payload.role || targetRoleBefore || 'seller');
+        const isSelf = isSelfUserAction(req, userId);
+        const touchesRole = Boolean(Array.isArray(payload.memberships) || Object.prototype.hasOwnProperty.call(payload, 'role'));
+        const touchesOptionalAccess = hasAnyAccessOverride(payload);
 
         if (!req?.authContext?.user?.isSuperAdmin) {
             const targetInScope = sanitizeMembershipPayload(targetUser.memberships || []).some((membership) => isTenantAllowedForUser(req, membership.tenantId));
@@ -1442,13 +1490,29 @@ app.put('/api/admin/saas/users/:userId', async (req, res) => {
             const invalid = resultingMemberships.some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
             if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar empresas fuera de tu alcance.' });
 
-            const touchesRoleOrAccess = Boolean(Array.isArray(payload.memberships) || Object.prototype.hasOwnProperty.call(payload, 'role') || hasAnyAccessOverride(payload));
-            if ((!isSelf || touchesRoleOrAccess) && !canActorAssignRole(req, targetRole)) {
-                return res.status(403).json({ ok: false, error: 'No tienes permisos para administrar ese rol.' });
+            if (!isSelf && !isActorSuperiorToRole(req, targetRoleBefore)) {
+                return res.status(403).json({ ok: false, error: 'No puedes editar usuarios con rol igual o superior al tuyo.' });
             }
 
-            if (hasAnyAccessOverride(payload) && !canActorEditOptionalAccess(req)) {
-                return res.status(403).json({ ok: false, error: 'No tienes permisos para editar accesos opcionales.' });
+            if (touchesRole) {
+                if (isSelf) {
+                    return res.status(403).json({ ok: false, error: 'No puedes editar tu propio rol.' });
+                }
+                if (!canActorManageRoleChanges(req)) {
+                    return res.status(403).json({ ok: false, error: 'No tienes permisos para editar roles de usuarios.' });
+                }
+                if (!canActorAssignRole(req, targetRoleAfter)) {
+                    return res.status(403).json({ ok: false, error: 'No tienes permisos para administrar ese rol.' });
+                }
+            }
+
+            if (touchesOptionalAccess) {
+                if (isSelf) {
+                    return res.status(403).json({ ok: false, error: 'No puedes editar tus propios accesos opcionales.' });
+                }
+                if (!canActorEditOptionalAccess(req)) {
+                    return res.status(403).json({ ok: false, error: 'No tienes permisos para editar accesos opcionales.' });
+                }
             }
         }
 
@@ -1470,14 +1534,32 @@ app.put('/api/admin/saas/users/:userId/memberships', async (req, res) => {
         const memberships = sanitizeMembershipPayload(req.body?.memberships || []);
         if (!memberships.length) return res.status(400).json({ ok: false, error: 'Debes enviar al menos una membresia.' });
 
-        const targetRole = resolvePrimaryRoleFromMemberships(memberships, 'seller');
-        if (!canActorAssignRole(req, targetRole)) {
-            return res.status(403).json({ ok: false, error: 'No tienes permisos para asignar ese rol.' });
-        }
+        const currentUsers = await saasControlService.listUsers({ includeInactive: true });
+        const targetUser = (Array.isArray(currentUsers) ? currentUsers : []).find((item) => String(item?.id || '').trim() === userId) || null;
+        if (!targetUser) return res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
+
+        const targetRoleBefore = getUserPrimaryRole(targetUser);
+        const targetRole = resolvePrimaryRoleFromMemberships(memberships, targetRoleBefore || 'seller');
+        const isSelf = isSelfUserAction(req, userId);
 
         if (!req?.authContext?.user?.isSuperAdmin) {
+            const targetInScope = sanitizeMembershipPayload(targetUser.memberships || []).some((membership) => isTenantAllowedForUser(req, membership.tenantId));
+            if (!targetInScope) return res.status(403).json({ ok: false, error: 'No puedes editar usuarios fuera de tu alcance.' });
+
+            if (isSelf) return res.status(403).json({ ok: false, error: 'No puedes editar tu propio rol.' });
+            if (!isActorSuperiorToRole(req, targetRoleBefore)) {
+                return res.status(403).json({ ok: false, error: 'No puedes editar usuarios con rol igual o superior al tuyo.' });
+            }
+            if (!canActorManageRoleChanges(req)) {
+                return res.status(403).json({ ok: false, error: 'No tienes permisos para editar roles de usuarios.' });
+            }
+
             const invalid = memberships.some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
             if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar empresas fuera de tu alcance.' });
+        }
+
+        if (!canActorAssignRole(req, targetRole)) {
+            return res.status(403).json({ ok: false, error: 'No tienes permisos para asignar ese rol.' });
         }
 
         const snapshot = await saasControlService.setUserMemberships(userId, memberships);
@@ -1498,12 +1580,22 @@ app.delete('/api/admin/saas/users/:userId', async (req, res) => {
         const targetUser = (Array.isArray(currentUsers) ? currentUsers : []).find((item) => String(item?.id || '').trim() === userId) || null;
         if (!targetUser) return res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
 
+        const targetRole = getUserPrimaryRole(targetUser);
+        const isSelf = isSelfUserAction(req, userId);
+
         if (!req?.authContext?.user?.isSuperAdmin) {
             const memberships = sanitizeMembershipPayload(targetUser.memberships || []);
             const targetInScope = memberships.some((membership) => isTenantAllowedForUser(req, membership.tenantId));
             if (!targetInScope) return res.status(403).json({ ok: false, error: 'No puedes desactivar usuarios fuera de tu alcance.' });
 
-            const targetRole = resolvePrimaryRoleFromMemberships(memberships, 'seller');
+            if (isSelf) {
+                return res.status(403).json({ ok: false, error: 'No puedes desactivar tu propio usuario.' });
+            }
+
+            if (!isActorSuperiorToRole(req, targetRole)) {
+                return res.status(403).json({ ok: false, error: 'No puedes desactivar usuarios con rol igual o superior al tuyo.' });
+            }
+
             if (!canActorAssignRole(req, targetRole)) {
                 return res.status(403).json({ ok: false, error: 'No tienes permisos para desactivar ese rol.' });
             }
@@ -1517,7 +1609,7 @@ app.delete('/api/admin/saas/users/:userId', async (req, res) => {
 });
 
 app.get('/api/admin/saas/plans', (req, res) => {
-    if (!hasSaasControlReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    if (!hasSaasControlReadAccess(req, { requireSuperAdmin: true })) return res.status(403).json({ ok: false, error: 'No autorizado.' });
     const matrix = planLimitsService.getPlanMatrix();
     return res.json({
         ok: true,
@@ -2656,4 +2748,3 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
-

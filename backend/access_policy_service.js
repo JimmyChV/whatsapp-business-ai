@@ -279,7 +279,8 @@ function canAssignRole({ actorRole = 'seller', isActorSuperAdmin = false, target
 
 function canEditOptionalAccess({ actorRole = 'seller', isActorSuperAdmin = false } = {}) {
     if (isActorSuperAdmin) return true;
-    return normalizeRole(actorRole) === 'owner';
+    const cleanActorRole = normalizeRole(actorRole);
+    return cleanActorRole === 'owner' || cleanActorRole === 'admin';
 }
 
 function getAccessCatalog({ actorRole = 'seller', isActorSuperAdmin = false } = {}) {

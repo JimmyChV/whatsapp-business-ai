@@ -2932,6 +2932,7 @@ REGLA CRITICA:
           canManageSaas={canManageSaas}
           userRole={saasUserRole}
           isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+          currentUser={saasSession?.user || null}
         />
       );
     }
@@ -3177,8 +3178,9 @@ REGLA CRITICA:
         buildApiHeaders={buildApiHeaders}
         activeTenantId={tenantScopeId}
         canManageSaas={canManageSaas}
-            userRole={saasUserRole}
-            isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+        userRole={saasUserRole}
+        isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+        currentUser={saasSession?.user || null}
           />
     </div>
   );
