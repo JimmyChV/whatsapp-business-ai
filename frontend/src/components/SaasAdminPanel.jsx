@@ -835,7 +835,11 @@ export default function SaasAdminPanel({
         return firstModule;
     }, [selectedWaModule?.moduleId, waModules]);
 
-    const canOpenOperation = Boolean(typeof onOpenWhatsAppOperation === 'function' && preferredModuleIdForOperation);
+    const canOpenOperation = Boolean(
+        typeof onOpenWhatsAppOperation === 'function'
+        && String(tenantScopeId || '').trim()
+        && preferredModuleIdForOperation
+    );
     const scrollToSection = (sectionId, behavior = 'smooth') => {
         const cleanSection = String(sectionId || '').trim();
         if (!cleanSection) return;
@@ -1220,6 +1224,13 @@ export default function SaasAdminPanel({
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, canManageSaas, tenantScopeId]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        if (String(tenantScopeId || '').trim()) return;
+        setWaModules([]);
+        setSelectedWaModuleId('');
+    }, [isOpen, tenantScopeId]);
 
     useEffect(() => {
         setSelectedConfigKey('');
