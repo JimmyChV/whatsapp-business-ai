@@ -3668,7 +3668,8 @@ body {
 .saas-admin-alert,
 .saas-admin-kpis,
 .saas-admin-grid,
-.saas-admin-flow-card {
+.saas-admin-flow-card,
+.saas-admin-tenant-picker-row {
   margin-left: 274px;
   margin-right: 18px;
 }
@@ -3795,7 +3796,8 @@ body {
   .saas-admin-alert,
   .saas-admin-kpis,
   .saas-admin-grid,
-  .saas-admin-flow-card {
+  .saas-admin-flow-card,
+  .saas-admin-tenant-picker-row {
     margin-left: 18px;
   }
 
@@ -3806,6 +3808,10 @@ body {
     flex-direction: row;
     flex-wrap: wrap;
     max-height: none;
+  }
+
+  .saas-admin-tenant-picker-row {
+    width: auto;
   }
 
   .saas-admin-card {
@@ -4292,3 +4298,5 @@ body {
     width: 100%;
   }
 }
+
+
