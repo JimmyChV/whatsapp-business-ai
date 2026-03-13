@@ -4268,43 +4268,54 @@ body {
 }
 
 .saas-admin-tenant-picker-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  width: min(760px, 100%);
+  gap: 10px;
+  width: min(680px, 100%);
   max-width: 100%;
-  margin-bottom: 10px;
+  margin-top: 18px;
+  margin-bottom: 12px;
+  isolation: isolate;
 }
 
 .saas-admin-tenant-picker-row > select {
-  flex: 1 1 auto;
+  appearance: none;
+  -webkit-appearance: none;
   min-width: 0;
+  width: 100%;
 }
 
 .saas-admin-tenant-picker-clear {
-  flex: 0 0 auto;
-  border: 1px solid rgba(123, 170, 196, 0.34);
-  background: linear-gradient(180deg, rgba(124, 200, 255, 0.12), rgba(124, 200, 255, 0.04));
-  color: #dff2ff;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(0, 199, 160, 0.42);
+  background: linear-gradient(180deg, rgba(0, 199, 160, 0.2), rgba(0, 142, 117, 0.16));
+  color: #dcfff6;
   border-radius: 12px;
-  padding: 0 14px;
+  padding: 0 16px;
   font-size: 0.84rem;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1;
   white-space: nowrap;
-  min-height: 42px;
+  min-height: 44px;
   cursor: pointer;
-  transition: border-color 0.12s ease, filter 0.12s ease, transform 0.12s ease;
+  box-shadow: inset 0 0 0 1px rgba(1, 40, 32, 0.38);
+  transition: border-color 0.12s ease, filter 0.12s ease, transform 0.12s ease, background 0.12s ease;
 }
 
 .saas-admin-tenant-picker-clear:hover {
   border-color: rgba(0, 199, 160, 0.62);
-  filter: brightness(1.08);
+  filter: brightness(1.06);
   transform: translateY(-1px);
 }
 
 .saas-admin-tenant-picker-clear:disabled {
-  opacity: 0.45;
+  border-color: rgba(123, 170, 196, 0.24);
+  background: linear-gradient(180deg, rgba(8, 20, 29, 0.82), rgba(8, 20, 29, 0.72));
+  color: rgba(185, 211, 228, 0.58);
+  box-shadow: none;
+  opacity: 1;
   cursor: not-allowed;
   filter: none;
   transform: none;
@@ -4312,7 +4323,7 @@ body {
 
 @media (max-width: 860px) {
   .saas-admin-tenant-picker-row {
-    flex-direction: column;
+    grid-template-columns: 1fr;
     align-items: stretch;
     width: 100%;
   }
@@ -4321,6 +4332,36 @@ body {
     width: 100%;
   }
 }
+/* SaaS panel loading surface */
+.saas-admin-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 13, 18, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.saas-admin-loading-card {
+  width: 70px;
+  height: 70px;
+  border-radius: 16px;
+  border: 1px solid rgba(123, 170, 196, 0.35);
+  background: linear-gradient(165deg, rgba(10, 24, 34, 0.9), rgba(9, 31, 42, 0.82));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12px 28px rgba(2, 7, 10, 0.35);
+}
+
+.saas-admin-loading-card .loader {
+  width: 30px;
+  height: 30px;
+  border-top-color: #00c7a0;
+}
+
 
 
 

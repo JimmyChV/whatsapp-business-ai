@@ -562,8 +562,8 @@ export default function SaasAdminPanel({
     const [loadingSettings, setLoadingSettings] = useState(false);
     const [loadingIntegrations, setLoadingIntegrations] = useState(false);
     const [loadingPlans, setLoadingPlans] = useState(false);
+    const [pendingRequests, setPendingRequests] = useState(0);
     const [error, setError] = useState('');
-    const [notice, setNotice] = useState('');
     const [currentSection, setCurrentSection] = useState(String(activeSection || initialSection || 'saas_resumen'));
 
     const normalizedRole = String(userRole || '').trim().toLowerCase();
@@ -576,19 +576,27 @@ export default function SaasAdminPanel({
     const canEditModules = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
     const canEditCatalog = canManageCatalog;
     const requiresTenantSelection = Boolean(isSuperAdmin || normalizedRole === 'superadmin');
+    const showPanelLoading = Boolean(
+        busy || loadingSettings || loadingIntegrations || loadingPlans || pendingRequests > 0
+    );
     const roleOptions = (isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext) ? ROLE_OPTIONS : ROLE_OPTIONS.filter((role) => role !== 'owner');
 
     const requestJson = async (path, { method = 'GET', body = null } = {}) => {
-        const response = await fetch(`${API_BASE}${path}`, {
-            method,
-            headers: buildApiHeaders?.({ includeJson: body !== null }) || (body !== null ? { 'Content-Type': 'application/json' } : {}),
-            body: body !== null ? JSON.stringify(body) : undefined
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload?.ok === false) {
-            throw new Error(String(payload?.error || 'Operacion fallida.'));
+        setPendingRequests((prev) => prev + 1);
+        try {
+            const response = await fetch(`${API_BASE}${path}`, {
+                method,
+                headers: buildApiHeaders?.({ includeJson: body !== null }) || (body !== null ? { 'Content-Type': 'application/json' } : {}),
+                body: body !== null ? JSON.stringify(body) : undefined
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.ok === false) {
+                throw new Error(String(payload?.error || 'Operacion fallida.'));
+            }
+            return payload;
+        } finally {
+            setPendingRequests((prev) => Math.max(0, prev - 1));
         }
-        return payload;
     };
     const readFileAsDataUrl = (file) => {
         return new Promise((resolve, reject) => {
@@ -1038,7 +1046,6 @@ export default function SaasAdminPanel({
     };
     const runAction = async (label, action) => {
         setError('');
-        setNotice('');
         setBusy(true);
         try {
             await action();
@@ -1047,7 +1054,6 @@ export default function SaasAdminPanel({
                 await loadTenantSettings(settingsTenantId);
                 await loadWaModules(settingsTenantId);
             }
-            setNotice(`${label} completado.`);
         } catch (err) {
             setError(String(err?.message || err || 'Error inesperado.'));
         } finally {
@@ -1065,7 +1071,6 @@ export default function SaasAdminPanel({
         if (!file) return;
         const cleanTenantId = String(tenantId || tenantScopeId || selectedTenantId || activeTenantId || 'default').trim() || 'default';
         setError('');
-        setNotice('');
         setBusy(true);
         try {
             const publicUrl = await uploadImageAsset({ file, tenantId: cleanTenantId, scope });
@@ -1075,7 +1080,6 @@ export default function SaasAdminPanel({
             if (typeof onUploaded === 'function') {
                 onUploaded(publicUrl);
             }
-            setNotice('Imagen subida correctamente.');
         } catch (err) {
             setError(String(err?.message || err || 'No se pudo subir la imagen.'));
         } finally {
@@ -1514,14 +1518,22 @@ export default function SaasAdminPanel({
                     </div>
                 )}
 
-                {(error || notice) && (
-                    <div className={`saas-admin-alert ${error ? 'error' : 'ok'}`}>
-                        {error || notice}
+                {error && (
+                    <div className="saas-admin-alert error">
+                        {error}
+                    </div>
+                )}
+
+                {showPanelLoading && (
+                    <div className="saas-admin-loading-overlay" role="status" aria-live="polite" aria-label="Cargando panel">
+                        <div className="saas-admin-loading-card">
+                            <div className="loader" />
+                        </div>
                     </div>
                 )}
 
                 {requiresTenantSelection && (
-                    <div className="saas-admin-form-row saas-admin-tenant-picker-row">
+                    <div className="saas-admin-tenant-picker-row">
                         <select
                             value={settingsTenantId}
                             onChange={(event) => {
@@ -1536,17 +1548,19 @@ export default function SaasAdminPanel({
                                 <option key={tenant.id} value={tenant.id}>{toTenantDisplayName(tenant)}</option>
                             ))}
                         </select>
-                        <button
-                            type="button"
-                            className="saas-admin-tenant-picker-clear"
-                            disabled={busy || !settingsTenantId}
-                            onClick={() => {
-                                setSettingsTenantId('');
-                                setSelectedTenantId('');
-                            }}
-                        >
-                            Limpiar seleccion
-                        </button>
+                        {settingsTenantId && (
+                            <button
+                                type="button"
+                                className="saas-admin-tenant-picker-clear"
+                                disabled={busy}
+                                onClick={() => {
+                                    setSettingsTenantId('');
+                                    setSelectedTenantId('');
+                                }}
+                            >
+                                Limpiar seleccion
+                            </button>
+                        )}
                     </div>
                 )}
 
