@@ -562,8 +562,8 @@ export default function SaasAdminPanel({
     const [loadingSettings, setLoadingSettings] = useState(false);
     const [loadingIntegrations, setLoadingIntegrations] = useState(false);
     const [loadingPlans, setLoadingPlans] = useState(false);
+    const [pendingRequests, setPendingRequests] = useState(0);
     const [error, setError] = useState('');
-    const [notice, setNotice] = useState('');
     const [currentSection, setCurrentSection] = useState(String(activeSection || initialSection || 'saas_resumen'));
 
     const normalizedRole = String(userRole || '').trim().toLowerCase();
@@ -576,19 +576,27 @@ export default function SaasAdminPanel({
     const canEditModules = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
     const canEditCatalog = canManageCatalog;
     const requiresTenantSelection = Boolean(isSuperAdmin || normalizedRole === 'superadmin');
+    const showPanelLoading = Boolean(
+        busy || loadingSettings || loadingIntegrations || loadingPlans || pendingRequests > 0
+    );
     const roleOptions = (isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext) ? ROLE_OPTIONS : ROLE_OPTIONS.filter((role) => role !== 'owner');
 
     const requestJson = async (path, { method = 'GET', body = null } = {}) => {
-        const response = await fetch(`${API_BASE}${path}`, {
-            method,
-            headers: buildApiHeaders?.({ includeJson: body !== null }) || (body !== null ? { 'Content-Type': 'application/json' } : {}),
-            body: body !== null ? JSON.stringify(body) : undefined
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload?.ok === false) {
-            throw new Error(String(payload?.error || 'Operacion fallida.'));
+        setPendingRequests((prev) => prev + 1);
+        try {
+            const response = await fetch(`${API_BASE}${path}`, {
+                method,
+                headers: buildApiHeaders?.({ includeJson: body !== null }) || (body !== null ? { 'Content-Type': 'application/json' } : {}),
+                body: body !== null ? JSON.stringify(body) : undefined
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.ok === false) {
+                throw new Error(String(payload?.error || 'Operacion fallida.'));
+            }
+            return payload;
+        } finally {
+            setPendingRequests((prev) => Math.max(0, prev - 1));
         }
-        return payload;
     };
     const readFileAsDataUrl = (file) => {
         return new Promise((resolve, reject) => {
@@ -759,23 +767,29 @@ export default function SaasAdminPanel({
             .filter(Boolean));
         return usersForSettingsTenant.filter((user) => !assignedIds.has(String(user?.id || '').trim()));
     }, [usersForSettingsTenant, waModuleForm.assignedUserIds]);
-    const adminNavItems = useMemo(() => {
-        return ADMIN_NAV_ITEMS.filter((item) => {
-            if (item.id === 'saas_empresas') return canManageTenants;
-            if (item.id === 'saas_usuarios') return canManageUsers;
-            if (item.id === 'saas_clientes') return canManageUsers;
-            if (item.id === 'saas_modulos') return canManageTenantSettings;
-            if (item.id === 'saas_catalogos') return canManageCatalog;
-            if (item.id === 'saas_planes') return Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
-            if (item.id === 'saas_config') return canManageTenantSettings;
-            return true;
-        });
+    const isSectionEnabled = useCallback((sectionId) => {
+        const cleanId = String(sectionId || '').trim();
+        if (cleanId === 'saas_empresas') return canManageTenants;
+        if (cleanId === 'saas_usuarios') return canManageUsers;
+        if (cleanId === 'saas_clientes') return canManageUsers;
+        if (cleanId === 'saas_modulos') return canManageTenantSettings;
+        if (cleanId === 'saas_catalogos') return canManageCatalog;
+        if (cleanId === 'saas_planes') return Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
+        if (cleanId === 'saas_config') return canManageTenantSettings;
+        return true;
     }, [canManageTenants, canManageUsers, canManageTenantSettings, canManageCatalog, isSuperAdmin, normalizedRole, noRoleContext]);
+
+    const adminNavItems = useMemo(() => {
+        return ADMIN_NAV_ITEMS.map((item) => ({
+            ...item,
+            enabled: isSectionEnabled(item.id)
+        }));
+    }, [isSectionEnabled]);
 
     const selectedSectionId = (() => {
         const preferred = String(currentSection || activeSection || initialSection || 'saas_resumen').trim();
-        if (adminNavItems.some((item) => item.id === preferred)) return preferred;
-        return adminNavItems[0]?.id || 'saas_resumen';
+        if (adminNavItems.some((item) => item.id === preferred && item.enabled)) return preferred;
+        return adminNavItems.find((item) => item.enabled)?.id || 'saas_resumen';
     })();
     const isModulesSection = selectedSectionId === 'saas_modulos';
     const isCatalogSection = selectedSectionId === 'saas_catalogos';
@@ -786,6 +800,7 @@ export default function SaasAdminPanel({
     const handleSectionChange = (sectionId) => {
         const next = String(sectionId || '').trim();
         if (!next) return;
+        if (!isSectionEnabled(next)) return;
 
         if (next === 'saas_empresas') {
             setSelectedTenantId('');
@@ -812,6 +827,19 @@ export default function SaasAdminPanel({
 
         setCurrentSection(next);
     };
+
+    const preferredModuleIdForOperation = useMemo(() => {
+        const moduleFromSelection = String(selectedWaModule?.moduleId || '').trim();
+        if (moduleFromSelection) return moduleFromSelection;
+        const firstModule = String(waModules?.[0]?.moduleId || '').trim();
+        return firstModule;
+    }, [selectedWaModule?.moduleId, waModules]);
+
+    const canOpenOperation = Boolean(
+        typeof onOpenWhatsAppOperation === 'function'
+        && String(tenantScopeId || '').trim()
+        && preferredModuleIdForOperation
+    );
     const scrollToSection = (sectionId, behavior = 'smooth') => {
         const cleanSection = String(sectionId || '').trim();
         if (!cleanSection) return;
@@ -1038,7 +1066,6 @@ export default function SaasAdminPanel({
     };
     const runAction = async (label, action) => {
         setError('');
-        setNotice('');
         setBusy(true);
         try {
             await action();
@@ -1047,7 +1074,6 @@ export default function SaasAdminPanel({
                 await loadTenantSettings(settingsTenantId);
                 await loadWaModules(settingsTenantId);
             }
-            setNotice(`${label} completado.`);
         } catch (err) {
             setError(String(err?.message || err || 'Error inesperado.'));
         } finally {
@@ -1065,7 +1091,6 @@ export default function SaasAdminPanel({
         if (!file) return;
         const cleanTenantId = String(tenantId || tenantScopeId || selectedTenantId || activeTenantId || 'default').trim() || 'default';
         setError('');
-        setNotice('');
         setBusy(true);
         try {
             const publicUrl = await uploadImageAsset({ file, tenantId: cleanTenantId, scope });
@@ -1075,7 +1100,6 @@ export default function SaasAdminPanel({
             if (typeof onUploaded === 'function') {
                 onUploaded(publicUrl);
             }
-            setNotice('Imagen subida correctamente.');
         } catch (err) {
             setError(String(err?.message || err || 'No se pudo subir la imagen.'));
         } finally {
@@ -1163,24 +1187,16 @@ export default function SaasAdminPanel({
                 || customerPanelMode !== 'view'
             );
 
-            if (hasSelection) {
-                event.preventDefault();
-                clearPanelSelection();
-                return;
-            }
-
-            if (!embedded) {
-                onClose?.();
-            }
+            if (!hasSelection) return;
+            event.preventDefault();
+            clearPanelSelection();
         };
 
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [
         clearPanelSelection,
-        embedded,
         isOpen,
-        onClose,
         selectedConfigKey,
         selectedTenantId,
         selectedUserId,
@@ -1208,6 +1224,13 @@ export default function SaasAdminPanel({
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, canManageSaas, tenantScopeId]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        if (String(tenantScopeId || '').trim()) return;
+        setWaModules([]);
+        setSelectedWaModuleId('');
+    }, [isOpen, tenantScopeId]);
 
     useEffect(() => {
         setSelectedConfigKey('');
@@ -1492,7 +1515,27 @@ export default function SaasAdminPanel({
                     {showHeader && (
                         <div className="saas-admin-header">
                             <h2>Panel SaaS</h2>
-                            {!embedded && <button type="button" onClick={() => { if (typeof onLogout === 'function') { onLogout(); return; } onClose?.(); }}>{closeLabel}</button>}
+                            {!embedded && (
+                            <div className="saas-admin-header-actions">
+                                {typeof onOpenWhatsAppOperation === 'function' && (
+                                    <button
+                                        type="button"
+                                        className="saas-admin-header-open-operation"
+                                        disabled={busy || !canOpenOperation}
+                                        onClick={() => onOpenWhatsAppOperation(preferredModuleIdForOperation, { tenantId: tenantScopeId || settingsTenantId || activeTenantId || undefined })}
+                                    >
+                                        Ir al chat
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    className="saas-admin-header-close-danger"
+                                    onClick={() => { if (typeof onLogout === 'function') { onLogout(); return; } onClose?.(); }}
+                                >
+                                    {closeLabel}
+                                </button>
+                            </div>
+                        )}
                         </div>
                     )}
                     <p>No tienes permisos para administrar empresas y usuarios.</p>
@@ -1510,18 +1553,46 @@ export default function SaasAdminPanel({
                             <h2>Control SaaS</h2>
                             <span>Empresa activa: {activeTenantLabel}</span>
                         </div>
-                        {!embedded && <button type="button" onClick={() => { if (typeof onLogout === 'function') { onLogout(); return; } onClose?.(); }}>{closeLabel}</button>}
+                        {!embedded && (
+                            <div className="saas-admin-header-actions">
+                                {typeof onOpenWhatsAppOperation === 'function' && (
+                                    <button
+                                        type="button"
+                                        className="saas-admin-header-open-operation"
+                                        disabled={busy || !canOpenOperation}
+                                        onClick={() => onOpenWhatsAppOperation(preferredModuleIdForOperation, { tenantId: tenantScopeId || settingsTenantId || activeTenantId || undefined })}
+                                    >
+                                        Ir al chat
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    className="saas-admin-header-close-danger"
+                                    onClick={() => { if (typeof onLogout === 'function') { onLogout(); return; } onClose?.(); }}
+                                >
+                                    {closeLabel}
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
 
-                {(error || notice) && (
-                    <div className={`saas-admin-alert ${error ? 'error' : 'ok'}`}>
-                        {error || notice}
+                {error && (
+                    <div className="saas-admin-alert error">
+                        {error}
+                    </div>
+                )}
+
+                {showPanelLoading && (
+                    <div className="saas-admin-loading-overlay" role="status" aria-live="polite" aria-label="Cargando panel">
+                        <div className="saas-admin-loading-card">
+                            <div className="loader" />
+                        </div>
                     </div>
                 )}
 
                 {requiresTenantSelection && (
-                    <div className="saas-admin-form-row" style={{ marginBottom: '10px' }}>
+                    <div className="saas-admin-tenant-picker-row">
                         <select
                             value={settingsTenantId}
                             onChange={(event) => {
@@ -1536,18 +1607,22 @@ export default function SaasAdminPanel({
                                 <option key={tenant.id} value={tenant.id}>{toTenantDisplayName(tenant)}</option>
                             ))}
                         </select>
-                        <button
-                            type="button"
-                            disabled={busy || !settingsTenantId}
-                            onClick={() => {
-                                setSettingsTenantId('');
-                                setSelectedTenantId('');
-                            }}
-                        >
-                            Limpiar seleccion
-                        </button>
+                        {settingsTenantId && (
+                            <button
+                                type="button"
+                                className="saas-admin-tenant-picker-clear"
+                                disabled={busy}
+                                onClick={() => {
+                                    setSettingsTenantId('');
+                                    setSelectedTenantId('');
+                                }}
+                            >
+                                Limpiar seleccion
+                            </button>
+                        )}
                     </div>
                 )}
+
 
                 {showNavigation && (
                     <div className="saas-admin-nav">
@@ -1556,7 +1631,7 @@ export default function SaasAdminPanel({
                                 key={item.id}
                                 type="button"
                                 className={`saas-admin-nav-btn ${selectedSectionId === item.id ? "active" : ""}`.trim()}
-                                disabled={busy || (tenantScopeLocked && !['saas_resumen', 'saas_empresas', 'saas_planes'].includes(item.id))}
+                                disabled={busy || !item.enabled || (tenantScopeLocked && !['saas_resumen', 'saas_empresas', 'saas_planes'].includes(item.id))}
                                 onClick={() => handleSectionChange(item.id)}
                             >
                                 {item.label}
@@ -1615,10 +1690,10 @@ export default function SaasAdminPanel({
                         <div className="saas-admin-related-block">
                             <h4>Acciones rapidas</h4>
                             <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                <button type="button" disabled={busy} onClick={() => setCurrentSection('saas_empresas')}>Gestionar empresas</button>
-                                <button type="button" disabled={busy} onClick={() => setCurrentSection('saas_usuarios')}>Gestionar usuarios</button>
-                                <button type="button" disabled={busy} onClick={() => setCurrentSection('saas_modulos')}>Gestionar modulos</button>
-                                <button type="button" disabled={busy} onClick={() => setCurrentSection('saas_config')}>Configuracion general</button>
+                                <button type="button" disabled={busy || !isSectionEnabled('saas_empresas')} onClick={() => handleSectionChange('saas_empresas')}>Gestionar empresas</button>
+                                <button type="button" disabled={busy || !isSectionEnabled('saas_usuarios')} onClick={() => handleSectionChange('saas_usuarios')}>Gestionar usuarios</button>
+                                <button type="button" disabled={busy || !isSectionEnabled('saas_modulos')} onClick={() => handleSectionChange('saas_modulos')}>Gestionar modulos</button>
+                                <button type="button" disabled={busy || !isSectionEnabled('saas_config')} onClick={() => handleSectionChange('saas_config')}>Configuracion general</button>
                             </div>
                         </div>
                     </section>
@@ -3479,8 +3554,6 @@ export default function SaasAdminPanel({
         </div>
     );
 }
-
-
 
 
 

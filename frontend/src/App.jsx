@@ -611,6 +611,7 @@ function App() {
   const [recoveryError, setRecoveryError] = useState('');
   const [recoveryNotice, setRecoveryNotice] = useState('');
   const [recoveryDebugCode, setRecoveryDebugCode] = useState('');
+  const [forceOperationLaunchBypass, setForceOperationLaunchBypass] = useState(false);
   const waLaunchParams = useMemo(() => {
     try {
       const params = new URLSearchParams(window.location.search || '');
@@ -630,7 +631,7 @@ function App() {
       };
     }
   }, []);
-  const forceOperationLaunch = waLaunchParams.forceOperationLaunch;
+  const forceOperationLaunch = waLaunchParams.forceOperationLaunch && !forceOperationLaunchBypass;
   const requestedWaModuleFromUrl = waLaunchParams.requestedWaModuleId;
   const requestedWaTenantFromUrl = waLaunchParams.requestedWaTenantId;
   const tenantScopeId = String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || 'default').trim() || 'default';
@@ -1869,9 +1870,51 @@ function App() {
       if (payload?.user && typeof payload.user === 'object') {
         session.user = payload.user;
       }
+
+      try {
+        const meResponse = await fetch(`${API_URL}/api/auth/me`, {
+          method: 'GET',
+          headers: buildApiHeaders({
+            tokenOverride: String(session?.accessToken || ''),
+            tenantIdOverride: String(session?.user?.tenantId || '')
+          })
+        });
+        const mePayload = await meResponse.json().catch(() => ({}));
+        if (meResponse.ok && mePayload?.ok && mePayload?.user && typeof mePayload.user === 'object') {
+          session.user = { ...(session.user || {}), ...mePayload.user };
+        }
+      } catch (_) {
+        // best effort: seguimos con lo recibido en login
+      }
+
+      const loginRole = String(session?.user?.role || '').trim().toLowerCase();
+      const loginCanManageSaas = Boolean(
+        session?.user?.canManageSaas
+        || session?.user?.isSuperAdmin
+        || loginRole === 'owner'
+        || loginRole === 'admin'
+        || loginRole === 'superadmin'
+      );
       setSaasSession(session);
+      setForceOperationLaunchBypass(loginCanManageSaas);
+      if (loginCanManageSaas) {
+        try {
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete('wa_launch');
+          cleanUrl.searchParams.delete('wa_module');
+          cleanUrl.searchParams.delete('wa_tenant');
+          window.history.replaceState({}, '', cleanUrl.toString());
+        } catch (_) {
+          // no-op
+        }
+        setSelectedTransport('');
+        setShowSaasAdminPanel(true);
+      } else {
+        setShowSaasAdminPanel(false);
+        setSelectedTransport('cloud');
+      }
       setLoginPassword('');
-      setLoginEmail(String(payload?.user?.email || email));
+      setLoginEmail(String(session?.user?.email || payload?.user?.email || email));
       setRecoveryStep('idle');
     } catch (error) {
       setSaasAuthError(String(error?.message || 'No se pudo iniciar sesion.'));
@@ -2028,6 +2071,9 @@ function App() {
       // best effort
     }
     setSaasSession(null);
+    setSelectedTransport('');
+    setShowSaasAdminPanel(false);
+    setForceOperationLaunchBypass(false);
     setSaasAuthError('');
     setTenantSwitchError('');
     setTenantSwitchBusy(false);
@@ -2999,8 +3045,6 @@ REGLA CRITICA:
         saasAuthEnabled={saasAuthEnabled}
         tenantOptions={availableTenantOptions}
         activeTenantId={tenantScopeId}
-        onSwitchTenant={handleSwitchTenant}
-        tenantSwitchBusy={tenantSwitchBusy}
         tenantSwitchError={tenantSwitchError}
         onSaasLogout={handleSaasLogout}
         canManageSaas={canManageSaas}
@@ -3141,11 +3185,3 @@ REGLA CRITICA:
 }
 
 export default App;
-
-
-
-
-
-
-
-

@@ -3668,7 +3668,8 @@ body {
 .saas-admin-alert,
 .saas-admin-kpis,
 .saas-admin-grid,
-.saas-admin-flow-card {
+.saas-admin-flow-card,
+.saas-admin-tenant-picker-row {
   margin-left: 274px;
   margin-right: 18px;
 }
@@ -3795,7 +3796,8 @@ body {
   .saas-admin-alert,
   .saas-admin-kpis,
   .saas-admin-grid,
-  .saas-admin-flow-card {
+  .saas-admin-flow-card,
+  .saas-admin-tenant-picker-row {
     margin-left: 18px;
   }
 
@@ -3806,6 +3808,10 @@ body {
     flex-direction: row;
     flex-wrap: wrap;
     max-height: none;
+  }
+
+  .saas-admin-tenant-picker-row {
+    width: auto;
   }
 
   .saas-admin-card {
@@ -4228,4 +4234,179 @@ body {
   .saas-admin-hero {
     grid-template-columns: 1fr;
   }
+}
+
+/* SaaS admin select consistency */
+.saas-admin-panel select,
+.saas-admin-panel .saas-admin-form-row select,
+.saas-admin-panel .saas-admin-membership-row select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  color: #e8f6ff;
+  background: linear-gradient(180deg, rgba(5, 14, 20, 0.9), rgba(6, 16, 22, 0.84));
+  border: 1px solid rgba(123, 170, 196, 0.32);
+  color-scheme: dark;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saas-admin-panel select:focus {
+  border-color: rgba(0, 199, 160, 0.64);
+  box-shadow: 0 0 0 2px rgba(0, 199, 160, 0.14);
+}
+
+.saas-admin-panel select:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
+}
+
+.saas-admin-panel select option {
+  background: #0b1923;
+  color: #e8f6ff;
+}
+
+.saas-admin-tenant-picker-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: min(900px, 100%);
+  max-width: 100%;
+  margin-top: 18px;
+  margin-bottom: 12px;
+  isolation: isolate;
+}
+
+.saas-admin-tenant-picker-row > select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(123, 170, 196, 0.32);
+  color: #e8f6ff;
+  font-size: 0.92rem;
+  font-weight: 600;
+  padding: 0 40px 0 14px;
+  box-shadow: inset 0 0 0 1px rgba(2, 15, 22, 0.35);
+  background-image:
+    linear-gradient(180deg, rgba(5, 14, 20, 0.92), rgba(6, 16, 22, 0.86)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23cce8f8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat, no-repeat;
+  background-position: 0 0, calc(100% - 14px) 50%;
+  background-size: 100% 100%, 12px 12px;
+}
+
+.saas-admin-tenant-picker-clear {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(0, 199, 160, 0.42);
+  background: linear-gradient(180deg, rgba(0, 199, 160, 0.2), rgba(0, 142, 117, 0.16));
+  color: #dcfff6;
+  border-radius: 12px;
+  padding: 0 16px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  min-height: 44px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(1, 40, 32, 0.38);
+  transition: border-color 0.12s ease, filter 0.12s ease, transform 0.12s ease, background 0.12s ease;
+}
+
+.saas-admin-tenant-picker-clear:hover {
+  border-color: rgba(0, 199, 160, 0.62);
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.saas-admin-tenant-picker-clear:disabled {
+  border-color: rgba(123, 170, 196, 0.24);
+  background: linear-gradient(180deg, rgba(8, 20, 29, 0.82), rgba(8, 20, 29, 0.72));
+  color: rgba(185, 211, 228, 0.58);
+  box-shadow: none;
+  opacity: 1;
+  cursor: not-allowed;
+  filter: none;
+  transform: none;
+}
+
+@media (max-width: 860px) {
+  .saas-admin-tenant-picker-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .saas-admin-tenant-picker-clear {
+    width: 100%;
+  }
+}
+/* SaaS panel loading surface */
+.saas-admin-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 13, 18, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.saas-admin-loading-card {
+  width: 70px;
+  height: 70px;
+  border-radius: 16px;
+  border: 1px solid rgba(123, 170, 196, 0.35);
+  background: linear-gradient(165deg, rgba(10, 24, 34, 0.9), rgba(9, 31, 42, 0.82));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12px 28px rgba(2, 7, 10, 0.35);
+}
+
+.saas-admin-loading-card .loader {
+  width: 30px;
+  height: 30px;
+  border-top-color: #00c7a0;
+}
+
+
+
+
+
+
+.saas-admin-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.saas-admin-header-open-operation {
+  border: 1px solid rgba(0, 199, 160, 0.55) !important;
+  background: linear-gradient(180deg, rgba(0, 199, 160, 0.24), rgba(0, 155, 126, 0.16)) !important;
+  color: #dcfff7 !important;
+}
+
+.saas-admin-header-open-operation:disabled {
+  border-color: rgba(123, 170, 196, 0.26) !important;
+  background: linear-gradient(180deg, rgba(8, 20, 29, 0.86), rgba(8, 20, 29, 0.74)) !important;
+  color: rgba(183, 209, 225, 0.6) !important;
+}
+
+.saas-admin-header-close-danger {
+  border: 1px solid rgba(255, 96, 96, 0.62) !important;
+  background: linear-gradient(180deg, rgba(172, 32, 32, 0.38), rgba(138, 22, 22, 0.34)) !important;
+  color: #ffe4e4 !important;
+}
+
+.saas-admin-header-close-danger:hover {
+  border-color: rgba(255, 126, 126, 0.74) !important;
+  filter: brightness(1.08);
 }

@@ -100,8 +100,6 @@ const Sidebar = ({
     saasAuthEnabled = false,
     tenantOptions = [],
     activeTenantId = '',
-    onSwitchTenant,
-    tenantSwitchBusy = false,
     tenantSwitchError = '',
     onSaasLogout,
     canManageSaas = false,
@@ -296,11 +294,12 @@ const Sidebar = ({
         }));
     };
 
-    const canSwitchTenant = Boolean(saasAuthEnabled && Array.isArray(tenantOptions) && tenantOptions.length > 1);
     const currentTenantId = String(activeTenantId || '').trim();
     const sortedTenantOptions = Array.isArray(tenantOptions)
         ? [...tenantOptions].sort((a, b) => String(a?.name || a?.id || '').localeCompare(String(b?.name || b?.id || '')))
         : [];
+    const activeTenantOption = sortedTenantOptions.find((tenant) => String(tenant?.id || '').trim() === currentTenantId) || sortedTenantOptions[0] || null;
+    const activeTenantLabel = activeTenantOption?.name || activeTenantOption?.id || currentTenantId || 'default';
 
     const toggleLabel = (token) => {
         const clean = normalizeFilterToken(token);
@@ -349,24 +348,9 @@ const Sidebar = ({
                             {saasAuthEnabled && (
                                 <div className="sidebar-menu-section">
                                     <div className="sidebar-menu-section-title">Empresa activa</div>
-                                    {canSwitchTenant ? (
-                                        <select
-                                            className="sidebar-tenant-select"
-                                            value={currentTenantId}
-                                            onChange={(e) => onSwitchTenant?.(e.target.value)}
-                                            disabled={tenantSwitchBusy}
-                                        >
-                                            {sortedTenantOptions.map((tenant) => (
-                                                <option key={tenant.id} value={tenant.id}>
-                                                    {tenant.name || tenant.id}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    ) : (
-                                        <div className="sidebar-menu-tenant-label">
-                                            {sortedTenantOptions[0]?.name || sortedTenantOptions[0]?.id || currentTenantId || 'default'}
-                                        </div>
-                                    )}
+                                    <div className="sidebar-menu-tenant-label" title={activeTenantLabel}>
+                                        {activeTenantLabel}
+                                    </div>
                                     {tenantSwitchError && (
                                         <div className="sidebar-menu-error">{tenantSwitchError}</div>
                                     )}
@@ -616,7 +600,3 @@ const Sidebar = ({
 };
 
 export default Sidebar;
-
-
-
-
