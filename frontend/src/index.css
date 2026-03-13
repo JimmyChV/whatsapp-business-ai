@@ -4283,8 +4283,31 @@ body {
 
 .saas-admin-tenant-picker-clear {
   flex: 0 0 auto;
+  border: 1px solid rgba(123, 170, 196, 0.34);
+  background: linear-gradient(180deg, rgba(124, 200, 255, 0.12), rgba(124, 200, 255, 0.04));
+  color: #dff2ff;
+  border-radius: 12px;
+  padding: 0 14px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1;
   white-space: nowrap;
   min-height: 42px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, filter 0.12s ease, transform 0.12s ease;
+}
+
+.saas-admin-tenant-picker-clear:hover {
+  border-color: rgba(0, 199, 160, 0.62);
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.saas-admin-tenant-picker-clear:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: none;
+  transform: none;
 }
 
 @media (max-width: 860px) {
@@ -4298,5 +4321,6 @@ body {
     width: 100%;
   }
 }
+
 
 
