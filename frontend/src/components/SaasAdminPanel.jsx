@@ -162,6 +162,13 @@ const ADMIN_NAV_ITEMS = [
     { id: 'saas_catalogos', label: 'Catalogos' },
     { id: 'saas_config', label: 'Configuracion' }
 ];
+const ROLE_PRIORITY = Object.freeze({
+    seller: 1,
+    admin: 2,
+    owner: 3,
+    superadmin: 4
+});
+const PERMISSION_OWNER_ASSIGN = 'tenant.users.owner.assign';
 const ADMIN_IMAGE_MAX_BYTES = Math.max(200 * 1024, Number(import.meta.env.VITE_ADMIN_ASSET_MAX_BYTES || 2 * 1024 * 1024));
 const ADMIN_IMAGE_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL = '.jpg, .jpeg, .png, .webp';
@@ -185,7 +192,17 @@ function sanitizeMemberships(memberships = []) {
         .filter((entry) => entry.tenantId);
 }
 
+function resolvePrimaryRoleFromMemberships(memberships = [], fallbackRole = 'seller') {
+    const source = Array.isArray(memberships) ? memberships : [];
+    const activeMembership = source.find((item) => item?.active !== false) || source[0] || null;
+    const candidate = String(activeMembership?.role || fallbackRole || 'seller').trim().toLowerCase();
+    return candidate || 'seller';
+}
 
+function getRolePriority(role = 'seller') {
+    const cleanRole = String(role || '').trim().toLowerCase();
+    return ROLE_PRIORITY[cleanRole] || ROLE_PRIORITY.seller;
+}
 
 function normalizeWaModule(item = {}) {
     const source = item && typeof item === 'object' ? item : {};
@@ -559,6 +576,7 @@ export default function SaasAdminPanel({
     showNavigation = true,
     showHeader = true,
     closeLabel = 'Cerrar sesion',
+    currentUser = null,
 }) {
     const [overview, setOverview] = useState({ tenants: [], users: [], metrics: [], aiUsage: [] });
     const [tenantForm, setTenantForm] = useState(EMPTY_TENANT_FORM);
@@ -613,6 +631,7 @@ export default function SaasAdminPanel({
     const canManageTenantSettings = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
     const canManageCatalog = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const canManageRoles = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
+    const canViewSuperAdminSections = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
     const canEditTenantSettings = canManageTenantSettings;
     const canEditModules = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
     const canEditCatalog = canManageCatalog;
@@ -620,21 +639,38 @@ export default function SaasAdminPanel({
     const showPanelLoading = Boolean(
         busy || loadingSettings || loadingIntegrations || loadingPlans || loadingAccessCatalog || pendingRequests > 0
     );
-    const defaultRoleOptions = (isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext)
-        ? BASE_ROLE_OPTIONS
-        : BASE_ROLE_OPTIONS.filter((role) => role !== 'owner');
+    const defaultRoleOptions = useMemo(() => {
+        if (isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext) return BASE_ROLE_OPTIONS;
+        if (normalizedRole === 'owner') return BASE_ROLE_OPTIONS.filter((role) => role !== 'owner');
+        if (normalizedRole === 'admin') return ['seller'];
+        return ['seller'];
+    }, [isSuperAdmin, normalizedRole, noRoleContext]);
     const roleOptions = useMemo(() => {
         const fromCatalog = Array.isArray(accessCatalog?.actor?.assignableRoles)
             ? accessCatalog.actor.assignableRoles
                 .map((entry) => String(entry || '').trim().toLowerCase())
                 .filter((entry) => Boolean(entry))
             : [];
-        return fromCatalog.length > 0 ? fromCatalog : defaultRoleOptions;
+        const merged = fromCatalog.length > 0 ? fromCatalog : defaultRoleOptions;
+        return merged.length > 0 ? merged : ['seller'];
     }, [accessCatalog?.actor?.assignableRoles, defaultRoleOptions]);
     const canEditOptionalAccess = Boolean(
         accessCatalog?.actor?.canEditOptionalAccess
         || isSuperAdmin
         || normalizedRole === 'superadmin'
+    );
+    const actorRoleForPolicy = isSuperAdmin || normalizedRole === 'superadmin' ? 'superadmin' : (normalizedRole || 'seller');
+    const actorRolePriority = getRolePriority(actorRoleForPolicy);
+    const currentUserId = String(currentUser?.userId || currentUser?.id || '').trim();
+    const actorPermissionSet = useMemo(() => new Set(
+        (Array.isArray(currentUser?.permissions) ? currentUser.permissions : [])
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean)
+    ), [currentUser?.permissions]);
+    const canActorManageRoleChanges = Boolean(
+        actorRoleForPolicy === 'superadmin'
+        || actorRoleForPolicy === 'owner'
+        || (actorRoleForPolicy === 'admin' && actorPermissionSet.has(PERMISSION_OWNER_ASSIGN))
     );
     const accessPackOptions = useMemo(
         () => (Array.isArray(accessCatalog?.packs) ? accessCatalog.packs : []),
@@ -673,6 +709,16 @@ export default function SaasAdminPanel({
         const source = Array.isArray(accessCatalog?.roleProfiles) ? accessCatalog.roleProfiles : [];
         return [...source].sort((left, right) => String(left?.label || left?.role || '').localeCompare(String(right?.label || right?.role || ''), 'es', { sensitivity: 'base' }));
     }, [accessCatalog?.roleProfiles]);
+
+    const roleLabelMap = useMemo(() => {
+        const map = new Map();
+        roleProfiles.forEach((entry) => {
+            const key = String(entry?.role || '').trim().toLowerCase();
+            if (!key) return;
+            map.set(key, String(entry?.label || key));
+        });
+        return map;
+    }, [roleProfiles]);
 
     const selectedRoleProfile = useMemo(
         () => roleProfiles.find((entry) => String(entry?.role || '').trim().toLowerCase() === String(selectedRoleKey || '').trim().toLowerCase()) || null,
@@ -777,6 +823,23 @@ export default function SaasAdminPanel({
         return match ? toTenantDisplayName(match) : tenantScopeId;
     }, [requiresTenantSelection, tenantOptions, tenantScopeId]);
 
+    const currentUserDisplayName = String(currentUser?.name || currentUser?.email || currentUser?.userId || 'Usuario actual').trim() || 'Usuario actual';
+    const currentUserEmail = String(currentUser?.email || '-').trim() || '-';
+    const currentUserRole = String(currentUser?.role || actorRoleForPolicy || 'seller').trim().toLowerCase();
+    const currentUserRoleLabel = String(currentUser?.roleLabel || currentUserRole || '-').trim() || '-';
+    const currentUserTenantCount = Array.isArray(currentUser?.memberships) ? currentUser.memberships.length : 0;
+    const currentUserCapabilities = useMemo(() => {
+        const capabilities = [];
+        if (canManageTenants) capabilities.push('Gestion de empresas');
+        if (canManageUsers) capabilities.push('Gestion de usuarios');
+        if (canManageCatalog) capabilities.push('Gestion de catalogos');
+        if (canManageTenantSettings) capabilities.push('Configuracion de empresa');
+        if (canEditModules) capabilities.push('Modulos WhatsApp');
+        if (canViewSuperAdminSections) capabilities.push('Planes y roles globales');
+        if (canEditOptionalAccess) capabilities.push('Accesos opcionales');
+        return capabilities;
+    }, [canManageTenants, canManageUsers, canManageCatalog, canManageTenantSettings, canEditModules, canViewSuperAdminSections, canEditOptionalAccess]);
+
     const scopedUsers = useMemo(() => {
         if (!tenantScopeId) return [];
         return (overview.users || []).filter((user) => {
@@ -789,6 +852,34 @@ export default function SaasAdminPanel({
         () => scopedUsers.find((user) => String(user?.id || '') === String(selectedUserId || '')) || null,
         [scopedUsers, selectedUserId]
     );
+
+    const selectedUserRole = useMemo(() => resolvePrimaryRoleFromMemberships(
+        sanitizeMemberships(selectedUser?.memberships || []),
+        selectedUser?.role || 'seller'
+    ), [selectedUser]);
+    const selectedUserRolePriority = getRolePriority(selectedUserRole);
+    const selectedUserIsSelf = Boolean(selectedUser && currentUserId && String(selectedUser?.id || '').trim() === currentUserId);
+    const canEditSelectedUser = Boolean(
+        selectedUser
+        && canManageUsers
+        && (actorRoleForPolicy === 'superadmin' || selectedUserIsSelf || actorRolePriority > selectedUserRolePriority)
+    );
+    const canEditSelectedUserRole = Boolean(
+        selectedUser
+        && !selectedUserIsSelf
+        && canEditSelectedUser
+        && canActorManageRoleChanges
+    );
+    const canToggleSelectedUserStatus = Boolean(selectedUser && !selectedUserIsSelf && canEditSelectedUser);
+    const canEditSelectedUserOptionalAccess = Boolean(
+        selectedUser
+        && !selectedUserIsSelf
+        && canEditSelectedUser
+        && canEditOptionalAccess
+    );
+    const canEditRoleInUserForm = userPanelMode === 'create' ? canManageUsers : canEditSelectedUserRole;
+    const canEditScopeInUserForm = userPanelMode === 'create' ? canManageUsers : canEditSelectedUserRole;
+    const canConfigureOptionalAccessInUserForm = userPanelMode === 'create' ? canEditOptionalAccess : canEditSelectedUserOptionalAccess;
 
     const allowedPackIdsForUserFormRole = useMemo(
         () => getAllowedPackIdsForRole(userForm.role),
@@ -896,18 +987,20 @@ export default function SaasAdminPanel({
         if (cleanId === 'saas_clientes') return canManageUsers;
         if (cleanId === 'saas_modulos') return canManageTenantSettings;
         if (cleanId === 'saas_catalogos') return canManageCatalog;
-        if (cleanId === 'saas_planes') return Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
-        if (cleanId === 'saas_roles') return canManageRoles;
+        if (cleanId === 'saas_planes') return canViewSuperAdminSections;
+        if (cleanId === 'saas_roles') return canViewSuperAdminSections;
         if (cleanId === 'saas_config') return canManageTenantSettings;
         return true;
-    }, [canManageTenants, canManageUsers, canManageTenantSettings, canManageCatalog, canManageRoles, isSuperAdmin, normalizedRole, noRoleContext]);
+    }, [canManageTenants, canManageUsers, canManageTenantSettings, canManageCatalog, canManageRoles, canViewSuperAdminSections]);
 
     const adminNavItems = useMemo(() => {
-        return ADMIN_NAV_ITEMS.map((item) => ({
-            ...item,
-            enabled: isSectionEnabled(item.id)
-        }));
-    }, [isSectionEnabled]);
+        return ADMIN_NAV_ITEMS
+            .filter((item) => canViewSuperAdminSections || !['saas_planes', 'saas_roles'].includes(String(item?.id || '').trim()))
+            .map((item) => ({
+                ...item,
+                enabled: isSectionEnabled(item.id)
+            }));
+    }, [isSectionEnabled, canViewSuperAdminSections]);
 
     const selectedSectionId = (() => {
         const preferred = String(currentSection || activeSection || initialSection || 'saas_resumen').trim();
@@ -1527,7 +1620,7 @@ export default function SaasAdminPanel({
     };
 
     const openUserEdit = () => {
-        if (!selectedUser) return;
+        if (!selectedUser || !canEditSelectedUser) return;
         setUserForm(buildUserFormFromItem(selectedUser));
         setMembershipDraft(sanitizeMemberships(selectedUser.memberships || []));
         setUserPanelMode('edit');
@@ -1859,6 +1952,26 @@ export default function SaasAdminPanel({
                     </div>
                 )}
 
+                <section className="saas-admin-profile-summary" aria-label="Resumen del usuario actual">
+                    <div className="saas-admin-profile-summary__head">
+                        <div className="saas-admin-profile-summary__avatar">{buildInitials(currentUserDisplayName)}</div>
+                        <div className="saas-admin-profile-summary__meta">
+                            <strong>{currentUserDisplayName}</strong>
+                            <span>{currentUserEmail}</span>
+                        </div>
+                    </div>
+                    <div className="saas-admin-profile-summary__stats">
+                        <div><small>Rol</small><strong>{currentUserRoleLabel}</strong></div>
+                        <div><small>Empresas</small><strong>{currentUserTenantCount}</strong></div>
+                        <div><small>Empresa activa</small><strong>{activeTenantLabel}</strong></div>
+                    </div>
+                    <div className="saas-admin-profile-summary__caps">
+                        {currentUserCapabilities.length === 0 && <span className="saas-admin-profile-chip">Vista basica</span>}
+                        {currentUserCapabilities.map((capability) => (
+                            <span key={`user_cap_${capability}`} className="saas-admin-profile-chip">{capability}</span>
+                        ))}
+                    </div>
+                </section>
                 {requiresTenantSelection && (
                     <div className="saas-admin-tenant-picker-row">
                         <select
@@ -2279,12 +2392,17 @@ export default function SaasAdminPanel({
                                                         : 'ID y correo bloqueados durante edicion para mantener consistencia.'}
                                                 </small>
                                             </div>
+                                            {userPanelMode === 'view' && selectedUser && !canEditSelectedUser && (
+                                                <div className="saas-admin-empty-inline">
+                                                    No puedes editar este usuario porque tiene el mismo nivel o uno superior al tuyo.
+                                                </div>
+                                            )}
                                             {userPanelMode === 'view' && selectedUser && canManageUsers && (
                                                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                                    <button type="button" disabled={busy} onClick={openUserEdit}>Editar</button>
+                                                    <button type="button" disabled={busy || !canEditSelectedUser} onClick={openUserEdit}>Editar</button>
                                                     <button
                                                         type="button"
-                                                        disabled={busy}
+                                                        disabled={busy || !canToggleSelectedUserStatus}
                                                         onClick={() => runAction('Estado de usuario actualizado', async () => {
                                                             await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, {
                                                                 method: 'PUT',
@@ -2364,7 +2482,7 @@ export default function SaasAdminPanel({
                                                 </>
                                         )}
 
-                                        {userPanelMode !== 'view' && canManageUsers && (
+                                        {userPanelMode !== 'view' && canManageUsers && (userPanelMode === 'create' || canEditSelectedUser) && (
                                             <>
                                                 <div className="saas-admin-form-row">
                                                     <input
@@ -2395,7 +2513,7 @@ export default function SaasAdminPanel({
                                                             type="checkbox"
                                                             checked={userForm.active !== false}
                                                             onChange={(event) => setUserForm((prev) => ({ ...prev, active: event.target.checked }))}
-                                                            disabled={busy}
+                                                            disabled={busy || (userPanelMode === 'edit' && !canToggleSelectedUserStatus)}
                                                         />
                                                         <span>Usuario activo</span>
                                                     </label>
@@ -2421,7 +2539,7 @@ export default function SaasAdminPanel({
 
                                                 {userPanelMode !== 'view' && (
                                                     <div className="saas-admin-form-row">
-                                                        <select value={userForm.tenantId} onChange={(event) => setUserForm((prev) => ({ ...prev, tenantId: event.target.value }))} disabled={busy}>
+                                                        <select value={userForm.tenantId} onChange={(event) => setUserForm((prev) => ({ ...prev, tenantId: event.target.value }))} disabled={busy || !canEditScopeInUserForm}>
                                                             <option value="">Tenant inicial</option>
                                                             {tenantOptions.map((tenant) => (
                                                                 <option key={tenant.id} value={tenant.id}>{toTenantDisplayName(tenant)}</option>
@@ -2435,14 +2553,14 @@ export default function SaasAdminPanel({
                                                                     .filter((packId) => allowed.has(String(packId || '').trim()));
                                                                 return { ...prev, role: nextRole, permissionPacks: nextPacks };
                                                             });
-                                                        }} disabled={busy}>
+                                                        }} disabled={busy || !canEditRoleInUserForm}>
                                                             {roleOptions.map((role) => (
-                                                                <option key={role} value={role}>{role}</option>
+                                                                <option key={role} value={role}>{roleLabelMap.get(String(role || '').trim().toLowerCase()) || role}</option>
                                                             ))}
                                                         </select>
                                                     </div>
                                                 )}
-                                                {canEditOptionalAccess && (
+                                                {canConfigureOptionalAccessInUserForm && (
                                                     <div className="saas-admin-related-block">
                                                         <h4>Accesos opcionales (paquetes)</h4>
                                                         <div className="saas-admin-modules">
@@ -2491,8 +2609,9 @@ export default function SaasAdminPanel({
                                                             const membershipsPayload = sanitizeMemberships([
                                                                 { tenantId: userForm.tenantId, role: userForm.role, active: true }
                                                             ]);
+                                                            const isCreateMode = userPanelMode === 'create' || !selectedUser?.id;
 
-                                                            if (membershipsPayload.length === 0) {
+                                                            if (isCreateMode && membershipsPayload.length === 0) {
                                                                 throw new Error('Debes asignar al menos una empresa/membresia.');
                                                             }
 
@@ -2500,11 +2619,14 @@ export default function SaasAdminPanel({
                                                                 email: userForm.email,
                                                                 name: userForm.name,
                                                                 active: userForm.active !== false,
-                                                                avatarUrl: userForm.avatarUrl || null,
-                                                                memberships: membershipsPayload
+                                                                avatarUrl: userForm.avatarUrl || null
                                                             };
 
-                                                            if (canEditOptionalAccess) {
+                                                            if (isCreateMode || canEditScopeInUserForm) {
+                                                                payload.memberships = membershipsPayload;
+                                                            }
+
+                                                            if ((isCreateMode && canEditOptionalAccess) || (!isCreateMode && canConfigureOptionalAccessInUserForm)) {
                                                                 payload.permissionPacks = Array.isArray(userForm.permissionPacks)
                                                                     ? userForm.permissionPacks.map((entry) => String(entry || '').trim()).filter(Boolean)
                                                                     : [];
@@ -4038,5 +4160,3 @@ export default function SaasAdminPanel({
         </div>
     );
 }
-
-
