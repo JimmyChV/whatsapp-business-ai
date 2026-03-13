@@ -415,9 +415,6 @@ function toPublicTenant(tenant = null) {
     if (!tenant || typeof tenant !== 'object') return null;
     const logoUrl = String(tenant?.logoUrl || tenant?.logo_url || '').trim();
     const coverImageUrl = String(tenant?.coverImageUrl || tenant?.cover_image_url || '').trim();
-    const metadata = tenant?.metadata && typeof tenant.metadata === 'object' && !Array.isArray(tenant.metadata)
-        ? tenant.metadata
-        : {};
 
     return {
         id: tenant.id,
@@ -426,8 +423,7 @@ function toPublicTenant(tenant = null) {
         active: tenant.active,
         plan: tenant.plan,
         logoUrl: /^https?:\/\//i.test(logoUrl) ? logoUrl : null,
-        coverImageUrl: /^https?:\/\//i.test(coverImageUrl) ? coverImageUrl : null,
-        metadata
+        coverImageUrl: /^https?:\/\//i.test(coverImageUrl) ? coverImageUrl : null
     };
 }
 
@@ -1035,9 +1031,6 @@ function sanitizeTenantPayload(payload = {}) {
     if (Object.prototype.hasOwnProperty.call(source, 'coverImageUrl') || Object.prototype.hasOwnProperty.call(source, 'cover_image_url')) {
         patch.coverImageUrl = sanitizeUrlValue(source.coverImageUrl || source.cover_image_url);
     }
-    if (Object.prototype.hasOwnProperty.call(source, 'metadata')) {
-        patch.metadata = sanitizeObjectPayload(source.metadata);
-    }
 
     return patch;
 }
@@ -1056,9 +1049,6 @@ function sanitizeUserPayload(payload = {}, { allowMemberships = true } = {}) {
     if (Object.prototype.hasOwnProperty.call(source, 'active')) patch.active = source.active !== false;
     if (Object.prototype.hasOwnProperty.call(source, 'avatarUrl') || Object.prototype.hasOwnProperty.call(source, 'avatar_url')) {
         patch.avatarUrl = sanitizeUrlValue(source.avatarUrl || source.avatar_url);
-    }
-    if (Object.prototype.hasOwnProperty.call(source, 'metadata')) {
-        patch.metadata = sanitizeObjectPayload(source.metadata);
     }
     if (Object.prototype.hasOwnProperty.call(source, 'permissionGrants')) {
         patch.permissionGrants = accessPolicyService.normalizePermissionList(source.permissionGrants);
@@ -1194,6 +1184,108 @@ app.get('/api/admin/saas/access-profiles', (req, res) => {
     });
 
     return res.json({ ok: true, ...catalog });
+});
+
+app.put('/api/admin/saas/access-profiles/roles/:roleKey', async (req, res) => {
+    if (!hasSaasControlWriteAccess(req, { requireSuperAdmin: true })) {
+        return res.status(403).json({ ok: false, error: 'Solo superadmin puede editar roles.' });
+    }
+
+    const roleKey = String(req.params?.roleKey || '').trim().toLowerCase();
+    if (!roleKey) return res.status(400).json({ ok: false, error: 'roleKey invalido.' });
+
+    const source = sanitizeObjectPayload(req.body);
+    try {
+        await accessPolicyService.persistRoleProfile({
+            role: roleKey,
+            label: String(source.label || '').trim(),
+            required: accessPolicyService.normalizePermissionList(source.required || []),
+            optional: accessPolicyService.normalizePermissionList(source.optional || []),
+            blocked: accessPolicyService.normalizePermissionList(source.blocked || []),
+            active: source.active === undefined ? undefined : source.active !== false
+        });
+
+        const actorRole = getAuthRole(req);
+        const isActorSuperAdmin = Boolean(req?.authContext?.user?.isSuperAdmin);
+        const catalog = accessPolicyService.getAccessCatalog({ actorRole, isActorSuperAdmin });
+        return res.json({ ok: true, ...catalog });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar el rol.') });
+    }
+});
+
+app.post('/api/admin/saas/access-profiles/roles', async (req, res) => {
+    if (!hasSaasControlWriteAccess(req, { requireSuperAdmin: true })) {
+        return res.status(403).json({ ok: false, error: 'Solo superadmin puede crear roles.' });
+    }
+
+    const source = sanitizeObjectPayload(req.body);
+    try {
+        await accessPolicyService.persistRoleProfile({
+            role: String(source.role || source.id || '').trim().toLowerCase(),
+            label: String(source.label || '').trim(),
+            required: accessPolicyService.normalizePermissionList(source.required || []),
+            optional: accessPolicyService.normalizePermissionList(source.optional || []),
+            blocked: accessPolicyService.normalizePermissionList(source.blocked || []),
+            active: source.active === undefined ? true : source.active !== false
+        });
+
+        const actorRole = getAuthRole(req);
+        const isActorSuperAdmin = Boolean(req?.authContext?.user?.isSuperAdmin);
+        const catalog = accessPolicyService.getAccessCatalog({ actorRole, isActorSuperAdmin });
+        return res.status(201).json({ ok: true, ...catalog });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el rol.') });
+    }
+});
+
+app.put('/api/admin/saas/access-profiles/packs/:packId', async (req, res) => {
+    if (!hasSaasControlWriteAccess(req, { requireSuperAdmin: true })) {
+        return res.status(403).json({ ok: false, error: 'Solo superadmin puede editar packs.' });
+    }
+
+    const packId = String(req.params?.packId || '').trim().toLowerCase();
+    if (!packId) return res.status(400).json({ ok: false, error: 'packId invalido.' });
+
+    const source = sanitizeObjectPayload(req.body);
+    try {
+        await accessPolicyService.persistPermissionPack({
+            id: packId,
+            label: String(source.label || '').trim(),
+            permissions: accessPolicyService.normalizePermissionList(source.permissions || []),
+            active: source.active === undefined ? undefined : source.active !== false
+        });
+
+        const actorRole = getAuthRole(req);
+        const isActorSuperAdmin = Boolean(req?.authContext?.user?.isSuperAdmin);
+        const catalog = accessPolicyService.getAccessCatalog({ actorRole, isActorSuperAdmin });
+        return res.json({ ok: true, ...catalog });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar el pack.') });
+    }
+});
+
+app.post('/api/admin/saas/access-profiles/packs', async (req, res) => {
+    if (!hasSaasControlWriteAccess(req, { requireSuperAdmin: true })) {
+        return res.status(403).json({ ok: false, error: 'Solo superadmin puede crear packs.' });
+    }
+
+    const source = sanitizeObjectPayload(req.body);
+    try {
+        await accessPolicyService.persistPermissionPack({
+            id: String(source.id || source.packId || '').trim().toLowerCase(),
+            label: String(source.label || '').trim(),
+            permissions: accessPolicyService.normalizePermissionList(source.permissions || []),
+            active: source.active === undefined ? true : source.active !== false
+        });
+
+        const actorRole = getAuthRole(req);
+        const isActorSuperAdmin = Boolean(req?.authContext?.user?.isSuperAdmin);
+        const catalog = accessPolicyService.getAccessCatalog({ actorRole, isActorSuperAdmin });
+        return res.status(201).json({ ok: true, ...catalog });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el pack.') });
+    }
 });
 
 app.get('/api/admin/saas/tenants', async (req, res) => {
@@ -2552,6 +2644,10 @@ planLimitsStoreService.initializePlanLimits().catch((error) => {
     logger.warn('[SaaS] no se pudo precargar limites de plan: ' + String(error?.message || error));
 });
 
+accessPolicyService.initializeAccessPolicy().catch((error) => {
+    logger.warn('[SaaS] no se pudo precargar catalogo de accesos: ' + String(error?.message || error));
+});
+
 server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
     const runtime = typeof waClient.getRuntimeInfo === 'function'
@@ -2560,12 +2656,4 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
-
-
-
-
-
-
-
-
 
