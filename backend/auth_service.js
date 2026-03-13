@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const authSessionService = require('./auth_session_service');
 const tenantService = require('./tenant_service');
 const saasControlService = require('./saas_control_plane_service');
+const accessPolicyService = require('./access_policy_service');
 
 function parseBooleanEnv(value, defaultValue = false) {
     const raw = String(value ?? '').trim().toLowerCase();
@@ -61,9 +62,7 @@ function randomTokenId(prefix = 'tok') {
 }
 
 function normalizeRole(value = '') {
-    const role = String(value || '').trim().toLowerCase();
-    if (['owner', 'admin', 'seller'].includes(role)) return role;
-    return 'seller';
+    return accessPolicyService.normalizeRole(value);
 }
 
 function roleWeight(role = '') {
@@ -390,16 +389,29 @@ function sanitizeUser(user = {}) {
     const scoped = resolveScopedUser(user, user?.tenantId);
     const memberships = sanitizeMemberships(scoped.memberships);
     const isSuperAdmin = saasControlService.isSuperAdminUser(scoped);
+    const resolvedAccess = accessPolicyService.resolveUserPermissions({
+        role: normalizeRole(scoped.role),
+        isSuperAdmin,
+        permissionGrants: scoped.permissionGrants || scoped.permissions || scoped?.metadata?.access?.permissionGrants || [],
+        permissionPacks: scoped.permissionPacks || scoped?.metadata?.access?.permissionPacks || []
+    });
+
     return {
         id: scoped.id,
         email: scoped.email,
         tenantId: scoped.tenantId,
-        role: normalizeRole(scoped.role),
+        role: resolvedAccess.role,
         name: scoped.name,
         memberships,
         canSwitchTenant: memberships.length > 1,
         isSuperAdmin,
-        canManageSaas: Boolean(isSuperAdmin || normalizeRole(scoped.role) === 'owner' || normalizeRole(scoped.role) === 'admin')
+        permissions: resolvedAccess.permissions,
+        requiredPermissions: resolvedAccess.required,
+        optionalPermissions: resolvedAccess.optional,
+        blockedPermissions: resolvedAccess.blocked,
+        permissionGrants: resolvedAccess.permissionGrants,
+        permissionPacks: resolvedAccess.permissionPacks,
+        canManageSaas: Boolean(isSuperAdmin || resolvedAccess.permissions.includes(accessPolicyService.PERMISSIONS.TENANT_OVERVIEW_READ))
     };
 }
 
@@ -424,7 +436,13 @@ function hydrateAuthUser(auth = null) {
             memberships: safeFallback.memberships,
             canSwitchTenant: safeFallback.canSwitchTenant,
             isSuperAdmin: safeFallback.isSuperAdmin,
-            canManageSaas: safeFallback.canManageSaas
+            canManageSaas: safeFallback.canManageSaas,
+            permissions: safeFallback.permissions,
+            requiredPermissions: safeFallback.requiredPermissions,
+            optionalPermissions: safeFallback.optionalPermissions,
+            blockedPermissions: safeFallback.blockedPermissions,
+            permissionGrants: safeFallback.permissionGrants,
+            permissionPacks: safeFallback.permissionPacks
         };
     }
 
@@ -442,7 +460,13 @@ function hydrateAuthUser(auth = null) {
         memberships: safeScoped.memberships,
         canSwitchTenant: safeScoped.canSwitchTenant,
         isSuperAdmin: safeScoped.isSuperAdmin,
-        canManageSaas: safeScoped.canManageSaas
+        canManageSaas: safeScoped.canManageSaas,
+        permissions: safeScoped.permissions,
+        requiredPermissions: safeScoped.requiredPermissions,
+        optionalPermissions: safeScoped.optionalPermissions,
+        blockedPermissions: safeScoped.blockedPermissions,
+        permissionGrants: safeScoped.permissionGrants,
+        permissionPacks: safeScoped.permissionPacks
     };
 }
 
@@ -798,6 +822,11 @@ module.exports = {
     getAllowedTenantsForUser,
     findUserRecord
 };
+
+
+
+
+
 
 
 

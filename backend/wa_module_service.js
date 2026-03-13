@@ -581,9 +581,43 @@ async function deleteModule(tenantId = DEFAULT_TENANT_ID, moduleId = '') {
     if (!cleanModuleId) throw new Error('moduleId invalido.');
 
     const store = await loadStore(cleanTenantId);
-    const modules = (Array.isArray(store.modules) ? store.modules : []).filter((module) => module.moduleId !== cleanModuleId);
-    await saveStore(cleanTenantId, { modules });
-    return { ok: true };
+    const modules = Array.isArray(store.modules) ? [...store.modules] : [];
+    const index = modules.findIndex((module) => module.moduleId === cleanModuleId);
+    if (index < 0) throw new Error('Modulo WA no encontrado.');
+
+    const target = modules[index];
+    const shouldPromoteDefault = target?.isDefault === true;
+    const shouldPromoteSelected = target?.isSelected === true || shouldPromoteDefault;
+
+    modules[index] = {
+        ...target,
+        isActive: false,
+        isSelected: false,
+        isDefault: false,
+        updatedAt: new Date().toISOString()
+    };
+
+    const fallbackIndex = modules.findIndex((module, moduleIndex) => moduleIndex !== index && module?.isActive !== false);
+    if (fallbackIndex >= 0) {
+        modules.forEach((module, moduleIndex) => {
+            if (moduleIndex === fallbackIndex) {
+                if (shouldPromoteSelected) module.isSelected = true;
+                if (shouldPromoteDefault) module.isDefault = true;
+                return;
+            }
+            if (shouldPromoteSelected) module.isSelected = false;
+            if (shouldPromoteDefault) module.isDefault = false;
+        });
+    } else {
+        modules.forEach((module) => {
+            module.isSelected = false;
+            module.isDefault = false;
+        });
+    }
+
+    const selectedModuleId = modules.find((module) => module.isSelected)?.moduleId || null;
+    await saveStore(cleanTenantId, { modules, selectedModuleId });
+    return { ok: true, moduleId: cleanModuleId, deactivated: true };
 }
 
 async function setSelectedModule(tenantId = DEFAULT_TENANT_ID, moduleId = '') {
@@ -629,4 +663,6 @@ module.exports = {
     setSelectedModule,
     getSelectedModule
 };
+
+
 
