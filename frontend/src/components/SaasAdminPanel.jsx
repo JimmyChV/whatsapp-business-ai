@@ -9,8 +9,7 @@ const EMPTY_TENANT_FORM = {
     plan: 'starter',
     active: true,
     logoUrl: '',
-    coverImageUrl: '',
-    metadataText: '{}'
+    coverImageUrl: ''
 };
 
 const EMPTY_USER_FORM = {
@@ -22,7 +21,6 @@ const EMPTY_USER_FORM = {
     role: 'seller',
     active: true,
     avatarUrl: '',
-    metadataText: '{}',
     permissionGrants: [],
     permissionPacks: []
 };
@@ -40,8 +38,7 @@ const EMPTY_CUSTOMER_FORM = {
     profileLastNameMaternal: '',
     profileDocumentNumber: '',
     profileNotes: '',
-    isActive: true,
-    metadataText: '{}'
+    isActive: true
 };
 
 const EMPTY_SETTINGS = {
@@ -189,24 +186,6 @@ function sanitizeMemberships(memberships = []) {
 }
 
 
-
-function safeJsonParse(raw = '{}', fallback = {}) {
-    try {
-        const parsed = JSON.parse(String(raw || '{}'));
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fallback;
-        return parsed;
-    } catch (_) {
-        throw new Error('JSON invalido. Revisa el formato.');
-    }
-}
-
-function prettyJson(value = {}) {
-    try {
-        return JSON.stringify(value && typeof value === 'object' ? value : {}, null, 2);
-    } catch (_) {
-        return '{}';
-    }
-}
 
 function normalizeWaModule(item = {}) {
     const source = item && typeof item === 'object' ? item : {};
@@ -393,8 +372,7 @@ function buildTenantFormFromItem(item = null) {
             : 'starter',
         active: item.active !== false,
         logoUrl: String(item.logoUrl || '').trim(),
-        coverImageUrl: String(item.coverImageUrl || '').trim(),
-        metadataText: prettyJson(item.metadata || {})
+        coverImageUrl: String(item.coverImageUrl || '').trim()
     };
 }
 
@@ -413,7 +391,6 @@ function buildUserFormFromItem(item = null) {
         role: primaryRole,
         active: item.active !== false,
         avatarUrl: String(item.avatarUrl || '').trim(),
-        metadataText: prettyJson(item.metadata || {}),
         permissionGrants: Array.isArray(item.permissionGrants) ? item.permissionGrants : [],
         permissionPacks: Array.isArray(item.permissionPacks) ? item.permissionPacks : []
     };
@@ -435,8 +412,7 @@ function normalizeCustomerFormFromItem(item = null) {
         profileLastNameMaternal: String(profile.lastNameMaternal || '').trim(),
         profileDocumentNumber: String(profile.documentNumber || '').trim(),
         profileNotes: String(profile.notes || '').trim(),
-        isActive: item.isActive !== false,
-        metadataText: prettyJson(item.metadata || {})
+        isActive: item.isActive !== false
     };
 }
 
@@ -462,8 +438,7 @@ function buildCustomerPayloadFromForm(form = {}) {
             documentNumber: String(source.profileDocumentNumber || '').trim() || null,
             notes: String(source.profileNotes || '').trim() || null
         },
-        isActive: source.isActive !== false,
-        metadata: safeJsonParse(source.metadataText || '{}', {})
+        isActive: source.isActive !== false
     };
 }
 
@@ -2075,8 +2050,7 @@ export default function SaasAdminPanel({
                                                                     plan: selectedTenant.plan,
                                                                     active: selectedTenant.active === false,
                                                                     logoUrl: selectedTenant.logoUrl || null,
-                                                                    coverImageUrl: selectedTenant.coverImageUrl || null,
-                                                                    metadata: selectedTenant.metadata || {}
+                                                                    coverImageUrl: selectedTenant.coverImageUrl || null
                                                                 }
                                                             });
                                                         })}
@@ -2128,11 +2102,7 @@ export default function SaasAdminPanel({
                                                         ))}
                                                     </div>
                                                 </div>
-                                                <div className="saas-admin-detail-metadata">
-                                                    <h4>Metadata</h4>
-                                                    <pre>{prettyJson(selectedTenant.metadata || {})}</pre>
-                                                </div>
-                                            </>
+                                                </>
                                         )}
 
                                         {tenantPanelMode !== 'view' && canManageTenants && (
@@ -2197,16 +2167,6 @@ export default function SaasAdminPanel({
                                                         <span>Empresa activa</span>
                                                     </label>
                                                 </div>
-                                                <div className="saas-admin-form-row">
-                                                    <textarea
-                                                        value={tenantForm.metadataText}
-                                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, metadataText: event.target.value }))}
-                                                        placeholder="Metadata JSON"
-                                                        rows={5}
-                                                        style={{ width: '100%' }}
-                                                        disabled={busy}
-                                                    />
-                                                </div>
                                                 <div className="saas-admin-form-row saas-admin-form-row--actions">
                                                     <button
                                                         type="button"
@@ -2218,8 +2178,7 @@ export default function SaasAdminPanel({
                                                                 plan: tenantForm.plan,
                                                                 active: tenantForm.active !== false,
                                                                 logoUrl: tenantForm.logoUrl || null,
-                                                                coverImageUrl: tenantForm.coverImageUrl || null,
-                                                                metadata: safeJsonParse(tenantForm.metadataText || '{}', {})
+                                                                coverImageUrl: tenantForm.coverImageUrl || null
                                                             };
 
                                                             if (tenantPanelMode === 'create' || !selectedTenant?.id) {
@@ -2331,8 +2290,7 @@ export default function SaasAdminPanel({
                                                                 method: 'PUT',
                                                                 body: {
                                                                     active: selectedUser.active === false,
-                                                                    avatarUrl: selectedUser.avatarUrl || null,
-                                                                    metadata: selectedUser.metadata || {}
+                                                                    avatarUrl: selectedUser.avatarUrl || null
                                                                 }
                                                             });
                                                         })}
@@ -2403,11 +2361,7 @@ export default function SaasAdminPanel({
                                                     </div>
                                                 </div>
 
-                                                <div className="saas-admin-detail-metadata">
-                                                    <h4>Metadata</h4>
-                                                    <pre>{prettyJson(selectedUser.metadata || {})}</pre>
-                                                </div>
-                                            </>
+                                                </>
                                         )}
 
                                         {userPanelMode !== 'view' && canManageUsers && (
@@ -2464,17 +2418,6 @@ export default function SaasAdminPanel({
                                                         <img src={userForm.avatarUrl} alt="Avatar usuario" className="saas-admin-preview-thumb" />
                                                     </div>
                                                 )}
-
-                                                <div className="saas-admin-form-row">
-                                                    <textarea
-                                                        value={userForm.metadataText}
-                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, metadataText: event.target.value }))}
-                                                        placeholder="Metadata JSON"
-                                                        rows={5}
-                                                        style={{ width: '100%' }}
-                                                        disabled={busy}
-                                                    />
-                                                </div>
 
                                                 {userPanelMode !== 'view' && (
                                                     <div className="saas-admin-form-row">
@@ -2558,7 +2501,6 @@ export default function SaasAdminPanel({
                                                                 name: userForm.name,
                                                                 active: userForm.active !== false,
                                                                 avatarUrl: userForm.avatarUrl || null,
-                                                                metadata: safeJsonParse(userForm.metadataText || '{}', {}),
                                                                 memberships: membershipsPayload
                                                             };
 
@@ -2716,11 +2658,7 @@ export default function SaasAdminPanel({
                                                         <div className="saas-admin-related-row" role="status"><span>Etiquetas</span><small>{Array.isArray(selectedCustomer?.tags) ? selectedCustomer.tags.join(', ') : '-'}</small></div>
                                                     </div>
                                                 </div>
-                                                <div className="saas-admin-detail-metadata">
-                                                    <h4>Metadata</h4>
-                                                    <pre>{prettyJson(selectedCustomer.metadata || {})}</pre>
-                                                </div>
-                                            </>
+                                                </>
                                         )}
 
                                         {customerPanelMode !== 'view' && (
@@ -2752,9 +2690,6 @@ export default function SaasAdminPanel({
                                                 </div>
                                                 <div className="saas-admin-form-row">
                                                     <textarea value={customerForm.profileNotes} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileNotes: event.target.value }))} placeholder="Observaciones" rows={3} style={{ width: '100%' }} disabled={busy} />
-                                                </div>
-                                                <div className="saas-admin-form-row">
-                                                    <textarea value={customerForm.metadataText} onChange={(event) => setCustomerForm((prev) => ({ ...prev, metadataText: event.target.value }))} placeholder="Metadata JSON" rows={4} style={{ width: '100%' }} disabled={busy} />
                                                 </div>
                                                 <div className="saas-admin-form-row">
                                                     <label className="saas-admin-module-toggle">
@@ -3091,8 +3026,7 @@ export default function SaasAdminPanel({
                                                                         method: 'PUT',
                                                                         body: {
                                                                             isActive: moduleInDetail.isActive === false,
-                                                                            imageUrl: moduleInDetail.imageUrl || null,
-                                                                            metadata: moduleInDetail.metadata || {}
+                                                                            imageUrl: moduleInDetail.imageUrl || null
                                                                         }
                                                                     });
                                                                 })}
@@ -4104,4 +4038,5 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
 

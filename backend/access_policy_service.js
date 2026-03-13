@@ -51,120 +51,6 @@ const ROLE_LABELS = Object.freeze({
     seller: 'Seller'
 });
 
-const PERMISSION_PACKS = Object.freeze({
-    pack_module_manager: {
-        id: 'pack_module_manager',
-        label: 'Gestor de modulos',
-        permissions: [
-            PERMISSIONS.TENANT_MODULES_MANAGE,
-            PERMISSIONS.TENANT_INTEGRATIONS_MANAGE
-        ]
-    },
-    pack_settings_manager: {
-        id: 'pack_settings_manager',
-        label: 'Gestor de configuracion',
-        permissions: [
-            PERMISSIONS.TENANT_SETTINGS_MANAGE
-        ]
-    },
-    pack_catalog_manager: {
-        id: 'pack_catalog_manager',
-        label: 'Gestor de catalogo',
-        permissions: [
-            PERMISSIONS.TENANT_CATALOGS_MANAGE
-        ]
-    },
-    pack_audit_reader: {
-        id: 'pack_audit_reader',
-        label: 'Lectura de auditoria',
-        permissions: [
-            PERMISSIONS.TENANT_AUDIT_READ
-        ]
-    }
-});
-
-const ROLE_PROFILES = Object.freeze({
-    owner: {
-        required: [
-            PERMISSIONS.TENANT_OVERVIEW_READ,
-            PERMISSIONS.TENANT_USERS_MANAGE,
-            PERMISSIONS.TENANT_SETTINGS_READ,
-            PERMISSIONS.TENANT_SETTINGS_MANAGE,
-            PERMISSIONS.TENANT_INTEGRATIONS_READ,
-            PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
-            PERMISSIONS.TENANT_MODULES_READ,
-            PERMISSIONS.TENANT_MODULES_MANAGE,
-            PERMISSIONS.TENANT_CUSTOMERS_READ,
-            PERMISSIONS.TENANT_CUSTOMERS_MANAGE,
-            PERMISSIONS.TENANT_CATALOGS_MANAGE,
-            PERMISSIONS.TENANT_AUDIT_READ,
-            PERMISSIONS.TENANT_RUNTIME_READ,
-            PERMISSIONS.TENANT_ASSETS_UPLOAD,
-            PERMISSIONS.TENANT_CHAT_OPERATE
-        ],
-        optional: [],
-        blocked: [
-            PERMISSIONS.PLATFORM_OVERVIEW_READ,
-            PERMISSIONS.PLATFORM_TENANTS_MANAGE,
-            PERMISSIONS.PLATFORM_PLANS_MANAGE,
-            PERMISSIONS.TENANT_USERS_OWNER_ASSIGN
-        ]
-    },
-    admin: {
-        required: [
-            PERMISSIONS.TENANT_OVERVIEW_READ,
-            PERMISSIONS.TENANT_USERS_MANAGE,
-            PERMISSIONS.TENANT_SETTINGS_READ,
-            PERMISSIONS.TENANT_INTEGRATIONS_READ,
-            PERMISSIONS.TENANT_MODULES_READ,
-            PERMISSIONS.TENANT_CUSTOMERS_READ,
-            PERMISSIONS.TENANT_CUSTOMERS_MANAGE,
-            PERMISSIONS.TENANT_RUNTIME_READ,
-            PERMISSIONS.TENANT_ASSETS_UPLOAD,
-            PERMISSIONS.TENANT_CHAT_OPERATE
-        ],
-        optional: [
-            PERMISSIONS.TENANT_MODULES_MANAGE,
-            PERMISSIONS.TENANT_SETTINGS_MANAGE,
-            PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
-            PERMISSIONS.TENANT_CATALOGS_MANAGE,
-            PERMISSIONS.TENANT_AUDIT_READ
-        ],
-        blocked: [
-            PERMISSIONS.PLATFORM_OVERVIEW_READ,
-            PERMISSIONS.PLATFORM_TENANTS_MANAGE,
-            PERMISSIONS.PLATFORM_PLANS_MANAGE,
-            PERMISSIONS.TENANT_USERS_OWNER_ASSIGN
-        ]
-    },
-    seller: {
-        required: [
-            PERMISSIONS.TENANT_MODULES_READ,
-            PERMISSIONS.TENANT_CUSTOMERS_READ,
-            PERMISSIONS.TENANT_RUNTIME_READ,
-            PERMISSIONS.TENANT_CHAT_OPERATE
-        ],
-        optional: [
-            PERMISSIONS.TENANT_CUSTOMERS_MANAGE,
-            PERMISSIONS.TENANT_CATALOGS_MANAGE
-        ],
-        blocked: [
-            PERMISSIONS.PLATFORM_OVERVIEW_READ,
-            PERMISSIONS.PLATFORM_TENANTS_MANAGE,
-            PERMISSIONS.PLATFORM_PLANS_MANAGE,
-            PERMISSIONS.TENANT_USERS_MANAGE,
-            PERMISSIONS.TENANT_USERS_OWNER_ASSIGN,
-            PERMISSIONS.TENANT_SETTINGS_READ,
-            PERMISSIONS.TENANT_SETTINGS_MANAGE,
-            PERMISSIONS.TENANT_INTEGRATIONS_READ,
-            PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
-            PERMISSIONS.TENANT_MODULES_MANAGE,
-            PERMISSIONS.TENANT_AUDIT_READ,
-            PERMISSIONS.TENANT_ASSETS_UPLOAD
-        ]
-    }
-});
-
 const ALL_PERMISSION_KEYS = Object.freeze(Object.values(PERMISSIONS));
 const ALL_PERMISSION_SET = new Set(ALL_PERMISSION_KEYS);
 
@@ -184,29 +70,16 @@ function normalizeRuntimePackMap(input = {}) {
     const source = input && typeof input === 'object' ? input : {};
     const packs = {};
 
-    Object.values(PERMISSION_PACKS).forEach((pack) => {
-        const id = String(pack?.id || '').trim();
-        if (!id) return;
-        packs[id] = {
-            id,
-            label: String(pack.label || id).trim() || id,
-            permissions: normalizePermissionList(pack.permissions || []),
-            active: true,
-            isSystem: true
-        };
-    });
-
     Object.keys(source).forEach((rawId) => {
         const id = String(rawId || '').trim();
         if (!id) return;
         const entry = source[id] && typeof source[id] === 'object' ? source[id] : {};
-        const previous = packs[id] || null;
         packs[id] = {
             id,
-            label: String(entry.label || previous?.label || id).trim() || id,
-            permissions: normalizePermissionList(entry.permissions || previous?.permissions || []),
-            active: entry.active === undefined ? (previous ? previous.active !== false : true) : entry.active !== false,
-            isSystem: previous?.isSystem === true || entry.isSystem === true
+            label: String(entry.label || id).trim() || id,
+            permissions: normalizePermissionList(entry.permissions || []),
+            active: entry.active !== false,
+            isSystem: entry.isSystem === true
         };
     });
 
@@ -217,52 +90,25 @@ function normalizeRuntimeRoleMap(input = {}) {
     const source = input && typeof input === 'object' ? input : {};
     const roles = {};
 
-    ROLE_VALUES.forEach((role) => {
-        const template = ROLE_PROFILES[role] || ROLE_PROFILES.seller;
-        roles[role] = {
-            role,
-            label: ROLE_LABELS[role] || role,
-            required: normalizePermissionList(template.required || []),
-            optional: normalizePermissionList(template.optional || []),
-            blocked: normalizePermissionList(template.blocked || []),
-            active: true,
-            isSystem: true
-        };
-    });
-
     Object.keys(source).forEach((rawRole) => {
         const role = String(rawRole || '').trim().toLowerCase();
         if (!role) return;
         const entry = source[role] && typeof source[role] === 'object' ? source[role] : {};
-        const previous = roles[role] || null;
 
-        const required = normalizePermissionList(entry.required || previous?.required || []);
-        const optional = normalizePermissionList(entry.optional || previous?.optional || []).filter((permission) => !required.includes(permission));
-        const blocked = normalizePermissionList(entry.blocked || previous?.blocked || []).filter((permission) => !required.includes(permission) && !optional.includes(permission));
+        const required = normalizePermissionList(entry.required || []);
+        const optional = normalizePermissionList(entry.optional || []).filter((permission) => !required.includes(permission));
+        const blocked = normalizePermissionList(entry.blocked || []).filter((permission) => !required.includes(permission) && !optional.includes(permission));
 
         roles[role] = {
             role,
-            label: String(entry.label || previous?.label || ROLE_LABELS[role] || role).trim() || role,
+            label: String(entry.label || ROLE_LABELS[role] || role).trim() || role,
             required,
             optional,
             blocked,
-            active: entry.active === undefined ? (previous ? previous.active !== false : true) : entry.active !== false,
-            isSystem: previous?.isSystem === true || ROLE_VALUES.includes(role) || entry.isSystem === true
+            active: entry.active !== false,
+            isSystem: entry.isSystem === true
         };
     });
-
-    if (!roles.seller || roles.seller.active === false) {
-        const template = ROLE_PROFILES.seller || { required: [], optional: [], blocked: [] };
-        roles.seller = {
-            role: 'seller',
-            label: ROLE_LABELS.seller || 'Seller',
-            required: normalizePermissionList(template.required || []),
-            optional: normalizePermissionList(template.optional || []),
-            blocked: normalizePermissionList(template.blocked || []),
-            active: true,
-            isSystem: true
-        };
-    }
 
     return roles;
 }
@@ -296,8 +142,10 @@ function toSorted(values = []) {
 function normalizeRole(value = '') {
     const cleanRole = String(value || '').trim().toLowerCase();
     const activeRoles = listActiveRoles();
+
     if (cleanRole && activeRoles.includes(cleanRole)) return cleanRole;
     if (activeRoles.includes('seller')) return 'seller';
+    if (cleanRole && ROLE_VALUES.includes(cleanRole)) return cleanRole;
     return activeRoles[0] || 'seller';
 }
 
@@ -322,22 +170,14 @@ function getRoleTemplate(role = '') {
     const catalog = getRuntimeCatalog();
     const cleanRole = normalizeRole(role);
     const roleMap = catalog.roles || {};
-    const template = roleMap[cleanRole] || roleMap.seller || {
-        role: 'seller',
-        label: ROLE_LABELS.seller || 'Seller',
-        required: [],
-        optional: [],
-        blocked: [],
-        active: true,
-        isSystem: true
-    };
+    const template = roleMap[cleanRole] || null;
 
     return {
         role: cleanRole,
-        label: String(template.label || ROLE_LABELS[cleanRole] || cleanRole),
-        required: normalizePermissionList(template.required || []),
-        optional: normalizePermissionList(template.optional || []),
-        blocked: normalizePermissionList(template.blocked || [])
+        label: String(template?.label || ROLE_LABELS[cleanRole] || cleanRole),
+        required: normalizePermissionList(template?.required || []),
+        optional: normalizePermissionList(template?.optional || []),
+        blocked: normalizePermissionList(template?.blocked || [])
     };
 }
 
@@ -560,7 +400,7 @@ async function persistPermissionPack(payload = {}) {
         label: String(payload.label || previous?.label || packId).trim() || packId,
         permissions: normalizePermissionList(payload.permissions || previous?.permissions || []),
         active: payload.active === undefined ? (previous ? previous.active !== false : true) : payload.active !== false,
-        isSystem: Boolean(previous?.isSystem || Object.prototype.hasOwnProperty.call(PERMISSION_PACKS, packId))
+        isSystem: Boolean(previous?.isSystem || payload.isSystem === true)
     };
 
     await accessPolicyStore.updateOverrides((current) => {
@@ -580,7 +420,6 @@ module.exports = {
     PERMISSIONS,
     PERMISSION_LABELS,
     ROLE_LABELS,
-    PERMISSION_PACKS,
     ALL_PERMISSION_KEYS,
     normalizeRole,
     normalizePermissionList,
@@ -597,4 +436,3 @@ module.exports = {
     persistRoleProfile,
     persistPermissionPack,
 };
-

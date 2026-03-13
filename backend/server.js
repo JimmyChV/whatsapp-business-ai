@@ -415,9 +415,6 @@ function toPublicTenant(tenant = null) {
     if (!tenant || typeof tenant !== 'object') return null;
     const logoUrl = String(tenant?.logoUrl || tenant?.logo_url || '').trim();
     const coverImageUrl = String(tenant?.coverImageUrl || tenant?.cover_image_url || '').trim();
-    const metadata = tenant?.metadata && typeof tenant.metadata === 'object' && !Array.isArray(tenant.metadata)
-        ? tenant.metadata
-        : {};
 
     return {
         id: tenant.id,
@@ -426,8 +423,7 @@ function toPublicTenant(tenant = null) {
         active: tenant.active,
         plan: tenant.plan,
         logoUrl: /^https?:\/\//i.test(logoUrl) ? logoUrl : null,
-        coverImageUrl: /^https?:\/\//i.test(coverImageUrl) ? coverImageUrl : null,
-        metadata
+        coverImageUrl: /^https?:\/\//i.test(coverImageUrl) ? coverImageUrl : null
     };
 }
 
@@ -1035,9 +1031,6 @@ function sanitizeTenantPayload(payload = {}) {
     if (Object.prototype.hasOwnProperty.call(source, 'coverImageUrl') || Object.prototype.hasOwnProperty.call(source, 'cover_image_url')) {
         patch.coverImageUrl = sanitizeUrlValue(source.coverImageUrl || source.cover_image_url);
     }
-    if (Object.prototype.hasOwnProperty.call(source, 'metadata')) {
-        patch.metadata = sanitizeObjectPayload(source.metadata);
-    }
 
     return patch;
 }
@@ -1056,9 +1049,6 @@ function sanitizeUserPayload(payload = {}, { allowMemberships = true } = {}) {
     if (Object.prototype.hasOwnProperty.call(source, 'active')) patch.active = source.active !== false;
     if (Object.prototype.hasOwnProperty.call(source, 'avatarUrl') || Object.prototype.hasOwnProperty.call(source, 'avatar_url')) {
         patch.avatarUrl = sanitizeUrlValue(source.avatarUrl || source.avatar_url);
-    }
-    if (Object.prototype.hasOwnProperty.call(source, 'metadata')) {
-        patch.metadata = sanitizeObjectPayload(source.metadata);
     }
     if (Object.prototype.hasOwnProperty.call(source, 'permissionGrants')) {
         patch.permissionGrants = accessPolicyService.normalizePermissionList(source.permissionGrants);

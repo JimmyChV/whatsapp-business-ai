@@ -716,7 +716,6 @@ function sanitizeUserPublic(user = {}) {
         roleLabel: access.label,
         active: user.active !== false,
         avatarUrl: normalizeUrlValue(user.avatarUrl || user.avatar_url),
-        metadata: normalizeMetadata(user.metadata),
         memberships,
         permissionGrants: access.permissionGrants,
         permissionPacks: access.permissionPacks,
@@ -738,7 +737,6 @@ function sanitizeTenantPublic(tenant = {}) {
         plan: tenant.plan,
         logoUrl: normalizeUrlValue(tenant.logoUrl || tenant.logo_url),
         coverImageUrl: normalizeUrlValue(tenant.coverImageUrl || tenant.cover_image_url),
-        metadata: normalizeMetadata(tenant.metadata),
         limits: planLimitsService.getTenantPlanLimits(tenant),
         createdAt: tenant.createdAt,
         updatedAt: tenant.updatedAt
