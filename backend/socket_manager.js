@@ -4871,6 +4871,22 @@ class SocketManager {
                         }
                     }
 
+                    // En modo hibrido priorizamos catalogo local del modulo si existe.
+                    // Esto evita que Woo/Meta "pisen" catalogos separados por modulo.
+                    if (enableLocal) {
+                        const localCatalog = await loadCatalog(catalogScope);
+                        if (Array.isArray(localCatalog) && localCatalog.length > 0) {
+                            catalog = localCatalog;
+                            catalogMeta = {
+                                ...catalogMeta,
+                                source: 'local',
+                                nativeAvailable: false,
+                                wooConfigured,
+                                wooAvailable: false
+                            };
+                        }
+                    }
+
                     if (!catalog.length && enableNative) {
                         try {
                             const nativeProducts = await waClient.getCatalog(meId);
@@ -5562,6 +5578,7 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
 
 
 
