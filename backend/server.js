@@ -1218,7 +1218,7 @@ app.get('/api/admin/saas/overview', async (req, res) => {
 });
 
 app.get('/api/admin/saas/access-profiles', (req, res) => {
-    if (!hasSaasControlReadAccess(req)) {
+    if (!hasSaasControlReadAccess(req, { requireSuperAdmin: true })) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
