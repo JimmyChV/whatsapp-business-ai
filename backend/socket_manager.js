@@ -1,4 +1,4 @@
-const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
+﻿const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
 const waClient = require('./wa_provider');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
