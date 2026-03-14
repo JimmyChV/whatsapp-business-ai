@@ -4694,7 +4694,23 @@ class SocketManager {
                     const enableWoo = catalogMode === 'hybrid' || catalogMode === 'woo_only';
                     const enableLocal = catalogMode === 'hybrid' || catalogMode === 'local_only';
 
-                    if (enableNative) {
+                    // En modo hibrido priorizamos catalogo local del modulo si existe.
+                    // Esto evita que Woo/Meta "pisen" catalogos separados por modulo.
+                    if (enableLocal) {
+                        const localCatalog = await loadCatalog(catalogScope);
+                        if (Array.isArray(localCatalog) && localCatalog.length > 0) {
+                            catalog = localCatalog;
+                            catalogMeta = {
+                                ...catalogMeta,
+                                source: 'local',
+                                nativeAvailable: false,
+                                wooConfigured,
+                                wooAvailable: false
+                            };
+                        }
+                    }
+
+                    if (!catalog.length && enableNative) {
                         try {
                             const nativeProducts = await waClient.getCatalog(meId);
                             if (nativeProducts && nativeProducts.length > 0) {
@@ -4762,7 +4778,8 @@ class SocketManager {
                     )).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
                     catalogMeta = {
                         ...catalogMeta,
-                        categories: catalogCategories
+                        categories: catalogCategories,
+                        scope: catalogScope
                     };
                     logCatalogDebugSnapshot({ catalog, catalogMeta });
                     socket.emit('business_data', { profile, labels, catalog, catalogMeta, tenantSettings, integrations: tenantIntegrations });
@@ -4773,7 +4790,17 @@ class SocketManager {
                         profile: null,
                         labels: [],
                         catalog: await loadCatalog(fallbackCatalogScope),
-                        catalogMeta: { source: 'local', mode: 'hybrid', nativeAvailable: false, wooConfigured: false, wooAvailable: false, wooSource: null, wooStatus: 'error', wooReason: 'Error al obtener datos de negocio' },
+                        catalogMeta: {
+                            source: 'local',
+                            mode: 'hybrid',
+                            nativeAvailable: false,
+                            wooConfigured: false,
+                            wooAvailable: false,
+                            wooSource: null,
+                            wooStatus: 'error',
+                            wooReason: 'Error al obtener datos de negocio',
+                            scope: fallbackCatalogScope
+                        },
                         tenantSettings: await tenantSettingsService.getTenantSettings(tenantId),
                         integrations: await tenantIntegrationsService.getTenantIntegrations(tenantId)
                     });
@@ -5305,6 +5332,7 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
 
 
 
