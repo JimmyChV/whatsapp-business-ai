@@ -1657,15 +1657,28 @@ function App() {
 
     socket.on('business_data', (data) => {
       const normalized = normalizeBusinessDataPayload(data);
-      setBusinessData(normalized);
+      const scopeModuleId = String(normalized?.catalogMeta?.scope?.moduleId || '').trim().toLowerCase();
+      const currentCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
+      const keepScopedCatalog = Boolean(scopeModuleId && currentCatalogModuleId && scopeModuleId !== currentCatalogModuleId);
+
+      setBusinessData((prev) => ({
+        ...normalized,
+        catalog: keepScopedCatalog
+          ? (Array.isArray(prev?.catalog) ? prev.catalog : normalized.catalog)
+          : normalized.catalog,
+        catalogMeta: keepScopedCatalog
+          ? {
+            ...(normalized?.catalogMeta || { source: 'local', nativeAvailable: false }),
+            ...(prev?.catalogMeta || {}),
+            scope: prev?.catalogMeta?.scope || normalized?.catalogMeta?.scope || null
+          }
+          : (normalized?.catalogMeta || { source: 'local', nativeAvailable: false })
+      }));
+
       setLabelDefinitions(normalizeChatLabels(normalized.labels));
 
-      const scopeModuleId = String(normalized?.catalogMeta?.scope?.moduleId || '').trim().toLowerCase();
-      if (scopeModuleId) {
-        const currentCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
-        if (!currentCatalogModuleId) {
-          setSelectedCatalogModuleId(scopeModuleId);
-        }
+      if (scopeModuleId && !currentCatalogModuleId) {
+        setSelectedCatalogModuleId(scopeModuleId);
       }
     });
 
