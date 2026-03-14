@@ -135,6 +135,10 @@ const normalizeCatalogItem = (item = {}, index = 0) => {
         source: safeItem.source || 'unknown',
         sku: safeItem.sku || null,
         stockStatus: safeItem.stockStatus || safeItem.stock_status || null,
+        moduleId: String(safeItem.moduleId || safeItem.module_id || '').trim().toLowerCase() || null,
+        catalogId: String(safeItem.catalogId || safeItem.catalog_id || '').trim().toUpperCase() || null,
+        catalogName: String(safeItem.catalogName || safeItem.catalog_name || safeItem.catalogId || safeItem.catalog_id || '').trim() || null,
+        channelType: String(safeItem.channelType || safeItem.channel_type || '').trim().toLowerCase() || null,
         categories
     };
 };
@@ -541,7 +545,7 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout, p
 // =========================================================
 // CATALOG TAB
 // =========================================================
-const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', onSelectCatalogModule = null }) => {
+const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', onSelectCatalogModule = null, onSelectCatalog = null }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({ title: '', price: '', description: '', imageUrl: '' });
@@ -560,6 +564,15 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
             .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }))
         : [];
     const activeCatalogModuleId = String(selectedCatalogModuleId || '').trim();
+    const activeCatalogId = String(selectedCatalogId || '').trim().toUpperCase();
+    const catalogOptions = Array.isArray(catalogMeta?.scope?.catalogs)
+        ? catalogMeta.scope.catalogs
+            .map((entry) => ({
+                catalogId: String(entry?.catalogId || '').trim().toUpperCase(),
+                name: String(entry?.name || entry?.catalogId || '').trim() || String(entry?.catalogId || '').trim().toUpperCase()
+            }))
+            .filter((entry) => entry.catalogId)
+        : [];
 
     const handleAddClick = () => {
         setEditingProduct(null);
@@ -581,16 +594,16 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     const handleSubmit = (e) => {
         e.preventDefault();
         if (editingProduct) {
-            socket.emit('update_product', { id: editingProduct.id, updates: formData, moduleId: activeCatalogModuleId || null });
+            socket.emit('update_product', { id: editingProduct.id, updates: formData, moduleId: activeCatalogModuleId || null, catalogId: activeCatalogId || null });
         } else {
-            socket.emit('add_product', { ...formData, moduleId: activeCatalogModuleId || null });
+            socket.emit('add_product', { ...formData, moduleId: activeCatalogModuleId || null, catalogId: activeCatalogId || null });
         }
         setShowForm(false);
     };
 
     const handleDelete = (id) => {
         if (window.confirm('Eliminar este producto?')) {
-            socket.emit('delete_product', { id, moduleId: activeCatalogModuleId || null });
+            socket.emit('delete_product', { id, moduleId: activeCatalogModuleId || null, catalogId: activeCatalogId || null });
         }
     };
 
@@ -702,10 +715,10 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                     </div>
                 )}
 
-                {moduleOptions.length > 0 && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
+                                {moduleOptions.length > 0 && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '8px', alignItems: 'end' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <label style={{ fontSize: '0.68rem', color: '#9eb2bf', letterSpacing: '0.02em', textTransform: 'uppercase' }}>Catalogo del modulo</label>
+                            <label style={{ fontSize: '0.68rem', color: '#9eb2bf', letterSpacing: '0.02em', textTransform: 'uppercase' }}>Modulo</label>
                             <select
                                 value={activeCatalogModuleId}
                                 onChange={(event) => {
@@ -720,6 +733,25 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                 ))}
                             </select>
                         </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '0.68rem', color: '#9eb2bf', letterSpacing: '0.02em', textTransform: 'uppercase' }}>Catalogo</label>
+                            <select
+                                value={activeCatalogId}
+                                onChange={(event) => {
+                                    const nextCatalogId = String(event.target.value || '').trim().toUpperCase();
+                                    if (typeof onSelectCatalog !== 'function') return;
+                                    onSelectCatalog(nextCatalogId);
+                                }}
+                                style={{ width: '100%', background: '#101a21', border: '1px solid rgba(0,168,132,0.35)', color: '#e9f2f7', borderRadius: '10px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none' }}
+                            >
+                                {catalogOptions.length === 0 && <option value="">Sin catalogos</option>}
+                                {catalogOptions.map((entry) => (
+                                    <option key={'catalog_option_' + entry.catalogId} value={entry.catalogId}>{entry.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
                         <div style={{ fontSize: '0.68rem', color: '#8ca3b3', whiteSpace: 'nowrap', alignSelf: 'end' }}>
                             Scope: {activeCatalogModuleId || 'tenant'}
                         </div>
@@ -986,7 +1018,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 
 // =========================================================
 
-const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, activeChatPhone = '', onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', onSelectCatalogModule = null }) => {
+const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, activeChatPhone = '', onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', onSelectCatalogModule = null, onSelectCatalog = null }) => {
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     const companyProfileRef = useRef(null);
@@ -1854,7 +1886,7 @@ INSTRUCCIONES OBLIGATORIAS:
 
             {/* CATALOG TAB */}
             {activeTab === 'catalog' && (
-                <CatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} waModules={waModules} selectedCatalogModuleId={selectedCatalogModuleId} onSelectCatalogModule={onSelectCatalogModule} />
+                <CatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} waModules={waModules} selectedCatalogModuleId={selectedCatalogModuleId} selectedCatalogId={selectedCatalogId} onSelectCatalogModule={onSelectCatalogModule} onSelectCatalog={onSelectCatalog} />
             )}
 
                         {/* CART TAB */}
@@ -2183,5 +2215,4 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
-
 

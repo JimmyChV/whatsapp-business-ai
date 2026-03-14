@@ -24,6 +24,7 @@ const messageHistoryService = require('./message_history_service');
 const waModuleService = require('./wa_module_service');
 const customerService = require('./customer_service');
 const tenantIntegrationsService = require('./tenant_integrations_service');
+const tenantCatalogService = require('./tenant_catalog_service');
 const opsTelemetry = require('./ops_telemetry');
 
 const waClient = require('./wa_provider');
@@ -1117,6 +1118,20 @@ function hasOwnerRoleMembership(memberships = []) {
     return source.some((item) => String(item?.role || '').trim().toLowerCase() === 'owner');
 }
 
+function sanitizeCatalogIdListPayload(value = []) {
+    const source = Array.isArray(value) ? value : [];
+    const seen = new Set();
+    const out = [];
+    source.forEach((entry) => {
+        const clean = String(entry || '').trim().toUpperCase();
+        if (!/^CAT-[A-Z0-9]{4,}$/.test(clean)) return;
+        if (seen.has(clean)) return;
+        seen.add(clean);
+        out.push(clean);
+    });
+    return out;
+}
+
 function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
     const source = sanitizeObjectPayload(payload);
     const sourceMetadata = sanitizeObjectPayload(source.metadata);
@@ -1125,6 +1140,13 @@ function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
     const cloudConfig = Object.keys(topCloudConfig).length > 0
         ? { ...nestedCloudConfig, ...topCloudConfig }
         : nestedCloudConfig;
+
+    const metadataModuleSettings = sanitizeObjectPayload(sourceMetadata.moduleSettings);
+    const incomingCatalogIds = sanitizeCatalogIdListPayload(
+        Array.isArray(source.catalogIds)
+            ? source.catalogIds
+            : (Array.isArray(metadataModuleSettings.catalogIds) ? metadataModuleSettings.catalogIds : [])
+    );
 
     const base = {
         name: String(source.name || '').trim(),
@@ -1139,6 +1161,10 @@ function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
             : [],
         metadata: {
             ...sourceMetadata,
+            moduleSettings: {
+                ...metadataModuleSettings,
+                catalogIds: incomingCatalogIds
+            },
             cloudConfig
         }
     };
@@ -1711,6 +1737,79 @@ app.put('/api/admin/saas/tenants/:tenantId/integrations', async (req, res) => {
     }
 });
 
+app.get('/api/admin/saas/tenants/:tenantId/catalogs', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId)
+        || !hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE,
+            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ,
+            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
+            accessPolicyService.PERMISSIONS.TENANT_MODULES_READ
+        ])) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const items = await tenantCatalogService.ensureDefaultCatalog(tenantId);
+        return res.json({ ok: true, tenantId, items });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar catalogos del tenant.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/catalogs', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const payload = req.body && typeof req.body === 'object' ? req.body : {};
+        const tenant = tenantService.findTenantById(tenantId) || tenantService.DEFAULT_TENANT;
+        const limits = planLimitsService.getTenantPlanLimits(tenant);
+        const item = await tenantCatalogService.createCatalog(tenantId, payload, {
+            maxCatalogs: Number(limits?.maxCatalogs || 0) || 0
+        });
+        return res.status(201).json({ ok: true, tenantId, item });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el catalogo.') });
+    }
+});
+
+app.put('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
+    if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const patch = req.body && typeof req.body === 'object' ? req.body : {};
+        const item = await tenantCatalogService.updateCatalog(tenantId, catalogId, patch);
+        return res.json({ ok: true, tenantId, item });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el catalogo.') });
+    }
+});
+
+app.delete('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
+    if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const result = await tenantCatalogService.deactivateCatalog(tenantId, catalogId);
+        return res.json({ ok: true, tenantId, ...result });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar el catalogo.') });
+    }
+});
 app.get('/api/admin/saas/tenants/:tenantId/wa-modules', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
