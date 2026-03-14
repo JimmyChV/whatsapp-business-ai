@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { io } from 'socket.io-client';
 
 import Sidebar from './components/Sidebar';
@@ -96,6 +96,10 @@ const normalizeCatalogItem = (item = {}, index = 0) => {
     source: safeItem.source || 'unknown',
     sku: safeItem.sku || null,
     stockStatus: safeItem.stockStatus || safeItem.stock_status || null,
+    moduleId: String(safeItem.moduleId || safeItem.module_id || '').trim().toLowerCase() || null,
+    catalogId: String(safeItem.catalogId || safeItem.catalog_id || '').trim().toUpperCase() || null,
+    catalogName: String(safeItem.catalogName || safeItem.catalog_name || safeItem.catalogId || safeItem.catalog_id || '').trim() || null,
+    channelType: String(safeItem.channelType || safeItem.channel_type || '').trim().toLowerCase() || null,
     categories
   };
 };
@@ -676,6 +680,7 @@ function App() {
   const [waModules, setWaModules] = useState([]);
   const [selectedWaModule, setSelectedWaModule] = useState(null);
   const [selectedCatalogModuleId, setSelectedCatalogModuleId] = useState('');
+  const [selectedCatalogId, setSelectedCatalogId] = useState('');
   const [waModuleError, setWaModuleError] = useState('');
 
   const [waCapabilities, setWaCapabilities] = useState({ messageEdit: true, messageEditSync: true, messageForward: true, messageDelete: true, messageReply: true, quickReplies: false, quickRepliesRead: false, quickRepliesWrite: false });
@@ -697,6 +702,7 @@ function App() {
   const selectedTransportRef = useRef(selectedTransport);
   const selectedWaModuleRef = useRef(selectedWaModule);
   const selectedCatalogModuleIdRef = useRef(selectedCatalogModuleId);
+  const selectedCatalogIdRef = useRef(selectedCatalogId);
   const saasSessionRef = useRef(saasSession);
   const saasRuntimeRef = useRef(saasRuntime);
   const forceOperationLaunchRef = useRef(forceOperationLaunch);
@@ -1018,6 +1024,10 @@ function App() {
   }, [selectedCatalogModuleId]);
 
   useEffect(() => {
+    selectedCatalogIdRef.current = String(selectedCatalogId || '').trim().toUpperCase();
+  }, [selectedCatalogId]);
+
+  useEffect(() => {
     saasSessionRef.current = saasSession;
     persistSaasSession(saasSession);
   }, [saasSession]);
@@ -1140,8 +1150,11 @@ function App() {
         ? previousCatalogModuleId
         : (selectedModuleId || String(items[0]?.moduleId || '').trim().toLowerCase());
       setSelectedCatalogModuleId(nextCatalogModuleId || '');
+      if (nextCatalogModuleId !== previousCatalogModuleId) {
+        setSelectedCatalogId('');
+      }
       if (nextCatalogModuleId && socket.connected) {
-        socket.emit('get_business_catalog', { moduleId: nextCatalogModuleId });
+        socket.emit('get_business_catalog', { moduleId: nextCatalogModuleId, catalogId: selectedCatalogIdRef.current || undefined });
       }
 
       const requestedModuleId = String(requestedWaModuleFromUrlRef.current || '').trim().toLowerCase();
@@ -1185,6 +1198,7 @@ function App() {
       const currentCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
       if (!currentCatalogModuleId && selectedModuleId) {
         setSelectedCatalogModuleId(selectedModuleId);
+        setSelectedCatalogId('');
         if (socket.connected) {
           socket.emit('get_business_catalog', { moduleId: selectedModuleId });
         }
@@ -1680,6 +1694,16 @@ function App() {
       if (scopeModuleId && !currentCatalogModuleId) {
         setSelectedCatalogModuleId(scopeModuleId);
       }
+
+      if (!keepScopedCatalog) {
+        const scopeCatalogId = String(normalized?.catalogMeta?.scope?.catalogId || '').trim().toUpperCase();
+        const scopeCatalogIds = Array.isArray(normalized?.catalogMeta?.scope?.catalogIds)
+          ? normalized.catalogMeta.scope.catalogIds.map((entry) => String(entry || '').trim().toUpperCase()).filter(Boolean)
+          : [];
+        if (scopeCatalogId) setSelectedCatalogId(scopeCatalogId);
+        else if (scopeCatalogIds.length === 1) setSelectedCatalogId(scopeCatalogIds[0]);
+        else if (scopeCatalogIds.length === 0) setSelectedCatalogId('');
+      }
     });
 
     socket.on('business_data_catalog', (payload) => {
@@ -1690,9 +1714,14 @@ function App() {
         ? scopedPayload.scope
         : null;
       const scopeModuleId = String(scope?.moduleId || '').trim().toLowerCase();
+      const scopeCatalogId = String(scope?.catalogId || '').trim().toUpperCase();
       const activeCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
+      const activeCatalogId = String(selectedCatalogIdRef.current || '').trim().toUpperCase();
 
       if (scopeModuleId && activeCatalogModuleId && scopeModuleId !== activeCatalogModuleId) {
+        return;
+      }
+      if (scopeCatalogId && activeCatalogId && scopeCatalogId !== activeCatalogId) {
         return;
       }
 
@@ -1716,6 +1745,12 @@ function App() {
           scope: scope || prev?.catalogMeta?.scope || null
         }
       }));
+
+      if (scopeCatalogId) {
+        setSelectedCatalogId(scopeCatalogId);
+      } else {
+        setSelectedCatalogId('');
+      }
     });
 
     socket.on('quick_replies', (payload) => {
@@ -1907,6 +1942,7 @@ function App() {
     setWaModules([]);
     setSelectedWaModule(null);
     setSelectedCatalogModuleId('');
+    setSelectedCatalogId('');
     setChats([]);
     setChatsTotal(0);
     setChatsHasMore(true);
@@ -2407,8 +2443,22 @@ function App() {
     }
 
     setSelectedCatalogModuleId(safeModuleId);
+    setSelectedCatalogId('');
     if (isConnected) {
       socket.emit('get_business_catalog', { moduleId: safeModuleId });
+    }
+  };
+
+  const handleSelectCatalog = (catalogId = '') => {
+    const safeCatalogId = String(catalogId || '').trim().toUpperCase();
+    const safeModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
+    if (!safeModuleId) return;
+    setSelectedCatalogId(safeCatalogId);
+    if (isConnected) {
+      socket.emit('get_business_catalog', {
+        moduleId: safeModuleId,
+        catalogId: safeCatalogId || undefined
+      });
     }
   };
   const handleOpenWhatsAppOperation = (moduleId = '', options = {}) => {
@@ -2530,7 +2580,7 @@ function App() {
       .filter((c) => {
         const chatPhone = normalizeDigits(c?.phone || c?.id || '');
         if (!chatPhone) return false;
-        return chatPhone === normalizedPhone || chatPhone.endsWith(normalizedPhone) || normalizedPhone.endsWith(chatPhone);
+        return chatPhone === normalizedPhone;
       })
       .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
@@ -2736,6 +2786,7 @@ REGLA CRITICA:
   const availableWaModules = normalizeWaModules(waModules).filter((module) => module.isActive !== false);
   const hasModuleCatalog = availableWaModules.length > 0;
   const activeCatalogModuleId = String(selectedCatalogModuleId || '').trim();
+  const activeCatalogId = String(selectedCatalogId || '').trim().toUpperCase();
 
   useEffect(() => {
     canManageSaasRef.current = canManageSaas;
@@ -3295,7 +3346,9 @@ REGLA CRITICA:
             openCompanyProfileToken={openCompanyProfileToken}
             waModules={availableWaModules}
             selectedCatalogModuleId={activeCatalogModuleId}
+            selectedCatalogId={activeCatalogId}
             onSelectCatalogModule={handleSelectCatalogModule}
+            onSelectCatalog={handleSelectCatalog}
           />
         )}
       </div>
@@ -3318,16 +3371,5 @@ REGLA CRITICA:
 }
 
 export default App;
-
-
-
-
-
-
-
-
-
-
-
 
 

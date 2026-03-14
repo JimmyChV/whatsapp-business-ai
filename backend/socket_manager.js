@@ -1,4 +1,4 @@
-﻿const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
+const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
 const waClient = require('./wa_provider');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
@@ -11,6 +11,7 @@ const planLimitsService = require('./plan_limits_service');
 const aiUsageService = require('./ai_usage_service');
 const messageHistoryService = require('./message_history_service');
 const waModuleService = require('./wa_module_service');
+const tenantCatalogService = require('./tenant_catalog_service');
 const customerService = require('./customer_service');
 const auditLogService = require('./audit_log_service');
 const RateLimiter = require('./rate_limiter');
@@ -3121,6 +3122,20 @@ class SocketManager {
             };
 
             const normalizeSocketModuleId = (value = '') => String(value || '').trim().toLowerCase();
+            const normalizeSocketCatalogId = (value = '') => String(value || '').trim().toUpperCase();
+            const normalizeSocketCatalogIdList = (value = []) => {
+                const source = Array.isArray(value) ? value : [];
+                const seen = new Set();
+                const out = [];
+                source.forEach((entry) => {
+                    const clean = normalizeSocketCatalogId(entry);
+                    if (!/^CAT-[A-Z0-9]{4,}$/.test(clean)) return;
+                    if (seen.has(clean)) return;
+                    seen.add(clean);
+                    out.push(clean);
+                });
+                return out;
+            };
             const getRequestedModuleIdFromSocket = () => normalizeSocketModuleId(
                 socket?.handshake?.auth?.waModuleId
                 || socket?.handshake?.auth?.moduleId
@@ -3128,19 +3143,114 @@ class SocketManager {
                 || socket?.handshake?.query?.moduleId
                 || ''
             );
+            const getCatalogIdsFromModuleContext = (moduleContext = null) => {
+                const moduleSettings = moduleContext?.metadata?.moduleSettings && typeof moduleContext.metadata.moduleSettings === 'object'
+                    ? moduleContext.metadata.moduleSettings
+                    : {};
+                return normalizeSocketCatalogIdList(moduleSettings.catalogIds);
+            };
 
             const getActiveCatalogScope = () => {
                 const selectedModuleContext = socket?.data?.waModule || null;
                 return {
                     tenantId,
                     moduleId: String(selectedModuleContext?.moduleId || '').trim() || null,
-                    channelType: String(selectedModuleContext?.channelType || '').trim().toLowerCase() || null
+                    channelType: String(selectedModuleContext?.channelType || '').trim().toLowerCase() || null,
+                    catalogIds: getCatalogIdsFromModuleContext(selectedModuleContext)
                 };
             };
 
-            const resolveCatalogScope = async ({ requestedModuleId = '' } = {}) => {
+            const resolveCatalogSelection = async (scope = {}) => {
+                const catalogs = await tenantCatalogService.ensureDefaultCatalog(tenantId).catch(() => []);
+                const activeCatalogs = (Array.isArray(catalogs) ? catalogs : []).filter((entry) => entry?.isActive !== false);
+                const activeCatalogIds = new Set(activeCatalogs.map((entry) => normalizeSocketCatalogId(entry?.catalogId)).filter(Boolean));
+
+                let catalogIds = normalizeSocketCatalogIdList(scope.catalogIds);
+                catalogIds = catalogIds.filter((catalogId) => activeCatalogIds.has(catalogId));
+
+                const defaultCatalogId = normalizeSocketCatalogId(
+                    activeCatalogs.find((entry) => entry?.isDefault)?.catalogId
+                    || activeCatalogs[0]?.catalogId
+                    || ''
+                ) || null;
+
+                if (!catalogIds.length && defaultCatalogId) {
+                    catalogIds = [defaultCatalogId];
+                }
+
+                return {
+                    catalogIds,
+                    defaultCatalogId,
+                    primaryCatalogId: catalogIds[0] || defaultCatalogId || null,
+                    catalogs: activeCatalogs.filter((entry) => catalogIds.includes(normalizeSocketCatalogId(entry?.catalogId)))
+                };
+            };
+
+            const loadScopedLocalCatalog = async (scope = {}, { requestedCatalogId = '' } = {}) => {
+                const selection = await resolveCatalogSelection(scope);
+                let catalogIds = [...selection.catalogIds];
+                const requested = normalizeSocketCatalogId(requestedCatalogId);
+                if (requested && catalogIds.includes(requested)) {
+                    catalogIds = [requested];
+                }
+
+                const catalogNameMap = new Map();
+                (Array.isArray(selection.catalogs) ? selection.catalogs : []).forEach((entry) => {
+                    const cleanCatalogId = normalizeSocketCatalogId(entry?.catalogId);
+                    if (!cleanCatalogId) return;
+                    catalogNameMap.set(cleanCatalogId, String(entry?.name || cleanCatalogId).trim() || cleanCatalogId);
+                });
+
+                const merged = [];
+                for (const catalogId of catalogIds) {
+                    const includeLegacyEmptyCatalogId = Boolean(
+                        catalogId
+                        && selection.defaultCatalogId
+                        && catalogId === selection.defaultCatalogId
+                    );
+                    const scopedItems = await loadCatalog({
+                        tenantId: scope?.tenantId || tenantId,
+                        moduleId: scope?.moduleId || null,
+                        channelType: scope?.channelType || null,
+                        catalogId,
+                        includeLegacyEmptyCatalogId
+                    });
+                    (Array.isArray(scopedItems) ? scopedItems : []).forEach((item) => {
+                        merged.push({
+                            ...item,
+                            catalogId: normalizeSocketCatalogId(item?.catalogId || catalogId || '') || null,
+                            catalogName: catalogNameMap.get(catalogId) || catalogId || null
+                        });
+                    });
+                }
+
+                return {
+                    items: merged,
+                    selection: {
+                        ...selection,
+                        catalogIds,
+                        catalogs: (Array.isArray(selection.catalogs) ? selection.catalogs : [])
+                            .filter((entry) => catalogIds.includes(normalizeSocketCatalogId(entry?.catalogId))),
+                        primaryCatalogId: catalogIds[0] || selection.primaryCatalogId || null
+                    }
+                };
+            };
+
+            const resolveCatalogScope = async ({ requestedModuleId = '', requestedCatalogId = '' } = {}) => {
                 const normalizedRequested = normalizeSocketModuleId(requestedModuleId);
-                if (!normalizedRequested) return getActiveCatalogScope();
+                if (!normalizedRequested) {
+                    const activeScope = getActiveCatalogScope();
+                    const activeSelection = await resolveCatalogSelection(activeScope);
+                    const overrideCatalogId = normalizeSocketCatalogId(requestedCatalogId);
+                    const nextCatalogIds = overrideCatalogId && activeSelection.catalogIds.includes(overrideCatalogId)
+                        ? [overrideCatalogId]
+                        : activeSelection.catalogIds;
+                    return {
+                        ...activeScope,
+                        catalogIds: nextCatalogIds,
+                        catalogId: nextCatalogIds[0] || activeSelection.primaryCatalogId || null
+                    };
+                }
 
                 const activeModuleId = normalizeSocketModuleId(
                     socket?.data?.waModule?.moduleId
@@ -3148,7 +3258,17 @@ class SocketManager {
                     || ''
                 );
                 if (activeModuleId && activeModuleId === normalizedRequested) {
-                    return getActiveCatalogScope();
+                    const activeScope = getActiveCatalogScope();
+                    const activeSelection = await resolveCatalogSelection(activeScope);
+                    const overrideCatalogId = normalizeSocketCatalogId(requestedCatalogId);
+                    const nextCatalogIds = overrideCatalogId && activeSelection.catalogIds.includes(overrideCatalogId)
+                        ? [overrideCatalogId]
+                        : activeSelection.catalogIds;
+                    return {
+                        ...activeScope,
+                        catalogIds: nextCatalogIds,
+                        catalogId: nextCatalogIds[0] || activeSelection.primaryCatalogId || null
+                    };
                 }
 
                 const userId = String(authContext?.userId || authContext?.id || '').trim();
@@ -3162,10 +3282,22 @@ class SocketManager {
                     throw new Error('No tienes acceso al modulo solicitado para catalogo.');
                 }
 
-                return {
+                const baseScope = {
                     tenantId,
                     moduleId: String(selected?.moduleId || '').trim() || null,
-                    channelType: String(selected?.channelType || '').trim().toLowerCase() || null
+                    channelType: String(selected?.channelType || '').trim().toLowerCase() || null,
+                    catalogIds: getCatalogIdsFromModuleContext(selected)
+                };
+                const selection = await resolveCatalogSelection(baseScope);
+                const overrideCatalogId = normalizeSocketCatalogId(requestedCatalogId);
+                const nextCatalogIds = overrideCatalogId && selection.catalogIds.includes(overrideCatalogId)
+                    ? [overrideCatalogId]
+                    : selection.catalogIds;
+
+                return {
+                    ...baseScope,
+                    catalogIds: nextCatalogIds,
+                    catalogId: nextCatalogIds[0] || selection.primaryCatalogId || null
                 };
             };
             const emitWaModuleContext = async ({ requestedModuleId = '' } = {}) => {
@@ -4555,14 +4687,24 @@ class SocketManager {
                     }
                 });
             });
-            socket.on('get_business_catalog', async ({ moduleId } = {}) => {
+            socket.on('get_business_catalog', async ({ moduleId, catalogId } = {}) => {
                 try {
-                    const catalogScope = await resolveCatalogScope({ requestedModuleId: moduleId });
-                    const scopedCatalog = await loadCatalog(catalogScope);
-                    socket.emit('business_data_catalog', {
-                        scope: catalogScope,
-                        items: scopedCatalog
+                    const catalogScope = await resolveCatalogScope({
+                        requestedModuleId: moduleId,
+                        requestedCatalogId: catalogId
                     });
+                    const scopedCatalog = await loadScopedLocalCatalog(catalogScope, {
+                        requestedCatalogId: catalogId
+                    });
+                    socket.emit('business_data_catalog', {
+                        scope: {
+                            ...catalogScope,
+                            catalogIds: scopedCatalog.selection.catalogIds,
+                            catalogId: scopedCatalog.selection.primaryCatalogId,
+                            catalogs: scopedCatalog.selection.catalogs || []
+                        },
+                        items: scopedCatalog.items
+                                });
                 } catch (error) {
                     socket.emit('error', String(error?.message || 'No se pudo cargar el catalogo del modulo.'));
                 }
@@ -4572,13 +4714,25 @@ class SocketManager {
                 try {
                     const selectedModuleContext = socket?.data?.waModule || null;
                     const catalogScope = getActiveCatalogScope();
+                    const resolvedCatalogSelection = await resolveCatalogSelection(catalogScope);
 
                     if (!this.ensureTransportReady(socket, { action: 'cargar datos del negocio', errorEvent: 'error' })) {
+                        const scopedLocalFallback = await loadScopedLocalCatalog(catalogScope);
                         socket.emit('business_data', {
                             profile: null,
                             labels: [],
-                            catalog: await loadCatalog(catalogScope),
-                            catalogMeta: { source: 'local', nativeAvailable: false, wooConfigured: false, wooAvailable: false }
+                            catalog: scopedLocalFallback.items,
+                            catalogMeta: {
+                                source: 'local',
+                                nativeAvailable: false,
+                                wooConfigured: false,
+                                wooAvailable: false,
+                                scope: {
+                                    ...catalogScope,
+                                    catalogIds: scopedLocalFallback.selection.catalogIds,
+                                    catalogId: scopedLocalFallback.selection.primaryCatalogId
+                                }
+                            }
                         });
                         return;
                     }
@@ -4693,6 +4847,29 @@ class SocketManager {
                     const enableNative = catalogMode === 'hybrid' || catalogMode === 'meta_only';
                     const enableWoo = catalogMode === 'hybrid' || catalogMode === 'woo_only';
                     const enableLocal = catalogMode === 'hybrid' || catalogMode === 'local_only';
+                    let scopedLocalCatalogResult = null;
+                    // En modo hibrido priorizamos catalogo local del modulo si existe.
+                    // Esto evita que Woo/Meta pisen catalogos separados por modulo.
+                    if (enableLocal) {
+                        scopedLocalCatalogResult = await loadScopedLocalCatalog(catalogScope);
+                        const localCatalog = scopedLocalCatalogResult.items;
+                        if (Array.isArray(localCatalog) && localCatalog.length > 0) {
+                            catalog = localCatalog;
+                            catalogMeta = {
+                                ...catalogMeta,
+                                source: 'local',
+                                nativeAvailable: false,
+                                wooConfigured,
+                                wooAvailable: false,
+                                scope: {
+                                    ...catalogScope,
+                                    catalogIds: scopedLocalCatalogResult.selection.catalogIds,
+                                    catalogId: scopedLocalCatalogResult.selection.primaryCatalogId,
+                                    catalogs: scopedLocalCatalogResult.selection.catalogs || []
+                                }
+                            };
+                        }
+                    }
 
                     // En modo hibrido priorizamos catalogo local del modulo si existe.
                     // Esto evita que Woo/Meta "pisen" catalogos separados por modulo.
@@ -4760,13 +4937,22 @@ class SocketManager {
                     }
 
                     if (!catalog.length && enableLocal) {
-                        catalog = await loadCatalog(catalogScope);
+                        if (!scopedLocalCatalogResult) {
+                            scopedLocalCatalogResult = await loadScopedLocalCatalog(catalogScope);
+                        }
+                        catalog = scopedLocalCatalogResult.items;
                         catalogMeta = {
                             ...catalogMeta,
                             source: 'local',
                             nativeAvailable: false,
                             wooConfigured,
-                            wooAvailable: false
+                            wooAvailable: false,
+                            scope: {
+                                ...catalogScope,
+                                catalogIds: scopedLocalCatalogResult.selection.catalogIds,
+                                catalogId: scopedLocalCatalogResult.selection.primaryCatalogId,
+                                    catalogs: scopedLocalCatalogResult.selection.catalogs || []
+                                }
                         };
                     }
 
@@ -4776,20 +4962,34 @@ class SocketManager {
                             .map((entry) => String(entry || '').trim())
                             .filter(Boolean)
                     )).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+                    const resolvedScope = scopedLocalCatalogResult?.selection
+                        ? {
+                            ...catalogScope,
+                            catalogIds: scopedLocalCatalogResult.selection.catalogIds,
+                            catalogId: scopedLocalCatalogResult.selection.primaryCatalogId,
+                                    catalogs: scopedLocalCatalogResult.selection.catalogs || []
+                                }
+                        : {
+                            ...catalogScope,
+                            catalogIds: resolvedCatalogSelection.catalogIds,
+                            catalogId: resolvedCatalogSelection.primaryCatalogId,
+                            catalogs: resolvedCatalogSelection.catalogs || []
+                        };
                     catalogMeta = {
                         ...catalogMeta,
                         categories: catalogCategories,
-                        scope: catalogScope
+                        scope: resolvedScope
                     };
                     logCatalogDebugSnapshot({ catalog, catalogMeta });
                     socket.emit('business_data', { profile, labels, catalog, catalogMeta, tenantSettings, integrations: tenantIntegrations });
                 } catch (e) {
                     console.error('Error fetching business data:', e);
                     const fallbackCatalogScope = getActiveCatalogScope();
+                    const fallbackCatalog = await loadScopedLocalCatalog(fallbackCatalogScope);
                     socket.emit('business_data', {
                         profile: null,
                         labels: [],
-                        catalog: await loadCatalog(fallbackCatalogScope),
+                        catalog: fallbackCatalog.items,
                         catalogMeta: {
                             source: 'local',
                             mode: 'hybrid',
@@ -4799,7 +4999,12 @@ class SocketManager {
                             wooSource: null,
                             wooStatus: 'error',
                             wooReason: 'Error al obtener datos de negocio',
-                            scope: fallbackCatalogScope
+                            scope: {
+                                ...fallbackCatalogScope,
+                                catalogIds: fallbackCatalog.selection.catalogIds,
+                                catalogId: fallbackCatalog.selection.primaryCatalogId,
+                                catalogs: fallbackCatalog.selection.catalogs || []
+                            }
                         },
                         tenantSettings: await tenantSettingsService.getTenantSettings(tenantId),
                         integrations: await tenantIntegrationsService.getTenantIntegrations(tenantId)
@@ -4819,8 +5024,14 @@ class SocketManager {
 
                     const tenant = tenantService.findTenantById(tenantId) || tenantService.DEFAULT_TENANT;
                     const limits = planLimitsService.getTenantPlanLimits(tenant);
-                    const catalogScope = await resolveCatalogScope({ requestedModuleId: product?.moduleId });
-                    const currentCatalog = await loadCatalog(catalogScope);
+                    const catalogScope = await resolveCatalogScope({
+                        requestedModuleId: product?.moduleId,
+                        requestedCatalogId: product?.catalogId
+                    });
+                    const currentCatalogState = await loadScopedLocalCatalog(catalogScope, {
+                        requestedCatalogId: catalogScope.catalogId
+                    });
+                    const currentCatalog = currentCatalogState.items;
                     const maxCatalogItems = Number(limits?.maxCatalogItems || 0);
                     if (Number.isFinite(maxCatalogItems) && maxCatalogItems > 0 && currentCatalog.length >= maxCatalogItems) {
                         socket.emit('error', 'No puedes agregar mas productos: limite del plan (' + maxCatalogItems + ').');
@@ -4829,11 +5040,19 @@ class SocketManager {
 
                     const cleanProduct = product && typeof product === 'object' ? { ...product } : {};
                     delete cleanProduct.moduleId;
+                    cleanProduct.catalogId = catalogScope.catalogId || null;
                     const newProduct = await addProduct(cleanProduct, catalogScope);
-                    const scopedCatalog = await loadCatalog(catalogScope);
+                    const scopedCatalog = await loadScopedLocalCatalog(catalogScope, {
+                        requestedCatalogId: catalogScope.catalogId
+                    });
                     this.emitToTenant(tenantId, 'business_data_catalog', {
-                        scope: catalogScope,
-                        items: scopedCatalog
+                        scope: {
+                            ...catalogScope,
+                            catalogIds: scopedCatalog.selection.catalogIds,
+                            catalogId: scopedCatalog.selection.primaryCatalogId,
+                            catalogs: scopedCatalog.selection.catalogs || []
+                        },
+                        items: scopedCatalog.items
                     });
                     socket.emit('product_added', newProduct);
                     await auditSocketAction('catalog.product.added', {
@@ -4841,10 +5060,12 @@ class SocketManager {
                         resourceId: newProduct?.id || null,
                         payload: { title: newProduct?.title || null }
                     });
-                } catch (e) { console.error('add_product error:', e); }
+                } catch (e) {
+                    console.error('add_product error:', e);
+                }
             });
 
-            socket.on('update_product', async ({ id, updates, moduleId } = {}) => {
+            socket.on('update_product', async ({ id, updates, moduleId, catalogId } = {}) => {
                 if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'editar productos del catalogo' })) return;
                 try {
                     const catalogEnabled = await this.isFeatureEnabledForTenant(tenantId, 'catalog');
@@ -4853,14 +5074,25 @@ class SocketManager {
                         return;
                     }
 
-                    const catalogScope = await resolveCatalogScope({ requestedModuleId: moduleId || updates?.moduleId });
+                    const catalogScope = await resolveCatalogScope({
+                        requestedModuleId: moduleId || updates?.moduleId,
+                        requestedCatalogId: catalogId || updates?.catalogId
+                    });
                     const safeUpdates = updates && typeof updates === 'object' ? { ...updates } : {};
                     delete safeUpdates.moduleId;
+                    if (!safeUpdates.catalogId) safeUpdates.catalogId = catalogScope.catalogId || null;
                     const updated = await updateProduct(id, safeUpdates, catalogScope);
-                    const scopedCatalog = await loadCatalog(catalogScope);
+                    const scopedCatalog = await loadScopedLocalCatalog(catalogScope, {
+                        requestedCatalogId: catalogScope.catalogId
+                    });
                     this.emitToTenant(tenantId, 'business_data_catalog', {
-                        scope: catalogScope,
-                        items: scopedCatalog
+                        scope: {
+                            ...catalogScope,
+                            catalogIds: scopedCatalog.selection.catalogIds,
+                            catalogId: scopedCatalog.selection.primaryCatalogId,
+                            catalogs: scopedCatalog.selection.catalogs || []
+                        },
+                        items: scopedCatalog.items
                     });
                     socket.emit('product_updated', updated);
                     await auditSocketAction('catalog.product.updated', {
@@ -4868,7 +5100,9 @@ class SocketManager {
                         resourceId: updated?.id || id || null,
                         payload: { updates: safeUpdates }
                     });
-                } catch (e) { console.error('update_product error:', e); }
+                } catch (e) {
+                    console.error('update_product error:', e);
+                }
             });
 
             socket.on('delete_product', async (payload) => {
@@ -4888,21 +5122,33 @@ class SocketManager {
                         return;
                     }
                     const requestedModuleId = payload && typeof payload === 'object' ? payload?.moduleId : '';
-                    const catalogScope = await resolveCatalogScope({ requestedModuleId });
+                    const requestedCatalogId = payload && typeof payload === 'object' ? payload?.catalogId : '';
+                    const catalogScope = await resolveCatalogScope({
+                        requestedModuleId,
+                        requestedCatalogId
+                    });
                     await deleteProduct(requestedId, catalogScope);
-                    const scopedCatalog = await loadCatalog(catalogScope);
+                    const scopedCatalog = await loadScopedLocalCatalog(catalogScope, {
+                        requestedCatalogId: catalogScope.catalogId
+                    });
                     this.emitToTenant(tenantId, 'business_data_catalog', {
-                        scope: catalogScope,
-                        items: scopedCatalog
+                        scope: {
+                            ...catalogScope,
+                            catalogIds: scopedCatalog.selection.catalogIds,
+                            catalogId: scopedCatalog.selection.primaryCatalogId,
+                            catalogs: scopedCatalog.selection.catalogs || []
+                        },
+                        items: scopedCatalog.items
                     });
                     await auditSocketAction('catalog.product.deleted', {
                         resourceType: 'catalog_item',
                         resourceId: requestedId || null,
                         payload: {}
                     });
-                } catch (e) { console.error('delete_product error:', e); }
+                } catch (e) {
+                    console.error('delete_product error:', e);
+                }
             });
-
             socket.on('get_my_profile', async () => {
                 try {
                     if (!this.ensureTransportReady(socket, { action: 'cargar perfil de empresa', errorEvent: 'error' })) {
@@ -5332,6 +5578,10 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
+
+
+
 
 
 
