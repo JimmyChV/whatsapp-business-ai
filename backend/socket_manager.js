@@ -1,4 +1,4 @@
-const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
+﻿const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
 const waClient = require('./wa_provider');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
@@ -3137,6 +3137,37 @@ class SocketManager {
                     channelType: String(selectedModuleContext?.channelType || '').trim().toLowerCase() || null
                 };
             };
+
+            const resolveCatalogScope = async ({ requestedModuleId = '' } = {}) => {
+                const normalizedRequested = normalizeSocketModuleId(requestedModuleId);
+                if (!normalizedRequested) return getActiveCatalogScope();
+
+                const activeModuleId = normalizeSocketModuleId(
+                    socket?.data?.waModule?.moduleId
+                    || socket?.data?.waModuleId
+                    || ''
+                );
+                if (activeModuleId && activeModuleId === normalizedRequested) {
+                    return getActiveCatalogScope();
+                }
+
+                const userId = String(authContext?.userId || authContext?.id || '').trim();
+                const allowedModules = await waModuleService.listModules(tenantId, {
+                    includeInactive: false,
+                    userId
+                });
+                const selected = (Array.isArray(allowedModules) ? allowedModules : [])
+                    .find((entry) => normalizeSocketModuleId(entry?.moduleId) === normalizedRequested);
+                if (!selected) {
+                    throw new Error('No tienes acceso al modulo solicitado para catalogo.');
+                }
+
+                return {
+                    tenantId,
+                    moduleId: String(selected?.moduleId || '').trim() || null,
+                    channelType: String(selected?.channelType || '').trim().toLowerCase() || null
+                };
+            };
             const emitWaModuleContext = async ({ requestedModuleId = '' } = {}) => {
                 const cleanRequested = normalizeSocketModuleId(requestedModuleId || getRequestedModuleIdFromSocket());
                 const moduleContext = await resolveSocketModuleContext(tenantId, authContext, cleanRequested);
@@ -4524,6 +4555,19 @@ class SocketManager {
                     }
                 });
             });
+            socket.on('get_business_catalog', async ({ moduleId } = {}) => {
+                try {
+                    const catalogScope = await resolveCatalogScope({ requestedModuleId: moduleId });
+                    const scopedCatalog = await loadCatalog(catalogScope);
+                    socket.emit('business_data_catalog', {
+                        scope: catalogScope,
+                        items: scopedCatalog
+                    });
+                } catch (error) {
+                    socket.emit('error', String(error?.message || 'No se pudo cargar el catalogo del modulo.'));
+                }
+            });
+
             socket.on('get_business_data', async () => {
                 try {
                     const selectedModuleContext = socket?.data?.waModule || null;
@@ -4748,15 +4792,17 @@ class SocketManager {
 
                     const tenant = tenantService.findTenantById(tenantId) || tenantService.DEFAULT_TENANT;
                     const limits = planLimitsService.getTenantPlanLimits(tenant);
-                    const catalogScope = getActiveCatalogScope();
-                    const currentCatalog = await loadCatalog({ tenantId });
+                    const catalogScope = await resolveCatalogScope({ requestedModuleId: product?.moduleId });
+                    const currentCatalog = await loadCatalog(catalogScope);
                     const maxCatalogItems = Number(limits?.maxCatalogItems || 0);
                     if (Number.isFinite(maxCatalogItems) && maxCatalogItems > 0 && currentCatalog.length >= maxCatalogItems) {
                         socket.emit('error', 'No puedes agregar mas productos: limite del plan (' + maxCatalogItems + ').');
                         return;
                     }
 
-                    const newProduct = await addProduct(product, catalogScope);
+                    const cleanProduct = product && typeof product === 'object' ? { ...product } : {};
+                    delete cleanProduct.moduleId;
+                    const newProduct = await addProduct(cleanProduct, catalogScope);
                     const scopedCatalog = await loadCatalog(catalogScope);
                     this.emitToTenant(tenantId, 'business_data_catalog', {
                         scope: catalogScope,
@@ -4771,7 +4817,7 @@ class SocketManager {
                 } catch (e) { console.error('add_product error:', e); }
             });
 
-            socket.on('update_product', async ({ id, updates }) => {
+            socket.on('update_product', async ({ id, updates, moduleId } = {}) => {
                 if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'editar productos del catalogo' })) return;
                 try {
                     const catalogEnabled = await this.isFeatureEnabledForTenant(tenantId, 'catalog');
@@ -4780,8 +4826,10 @@ class SocketManager {
                         return;
                     }
 
-                    const catalogScope = getActiveCatalogScope();
-                    const updated = await updateProduct(id, updates, catalogScope);
+                    const catalogScope = await resolveCatalogScope({ requestedModuleId: moduleId || updates?.moduleId });
+                    const safeUpdates = updates && typeof updates === 'object' ? { ...updates } : {};
+                    delete safeUpdates.moduleId;
+                    const updated = await updateProduct(id, safeUpdates, catalogScope);
                     const scopedCatalog = await loadCatalog(catalogScope);
                     this.emitToTenant(tenantId, 'business_data_catalog', {
                         scope: catalogScope,
@@ -4791,12 +4839,12 @@ class SocketManager {
                     await auditSocketAction('catalog.product.updated', {
                         resourceType: 'catalog_item',
                         resourceId: updated?.id || id || null,
-                        payload: { updates }
+                        payload: { updates: safeUpdates }
                     });
                 } catch (e) { console.error('update_product error:', e); }
             });
 
-            socket.on('delete_product', async (id) => {
+            socket.on('delete_product', async (payload) => {
                 if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'eliminar productos del catalogo' })) return;
                 try {
                     const catalogEnabled = await this.isFeatureEnabledForTenant(tenantId, 'catalog');
@@ -4805,8 +4853,16 @@ class SocketManager {
                         return;
                     }
 
-                    const catalogScope = getActiveCatalogScope();
-                    await deleteProduct(id, catalogScope);
+                    const requestedId = payload && typeof payload === 'object'
+                        ? String(payload?.id || '').trim()
+                        : String(payload || '').trim();
+                    if (!requestedId) {
+                        socket.emit('error', 'Producto invalido para eliminar.');
+                        return;
+                    }
+                    const requestedModuleId = payload && typeof payload === 'object' ? payload?.moduleId : '';
+                    const catalogScope = await resolveCatalogScope({ requestedModuleId });
+                    await deleteProduct(requestedId, catalogScope);
                     const scopedCatalog = await loadCatalog(catalogScope);
                     this.emitToTenant(tenantId, 'business_data_catalog', {
                         scope: catalogScope,
@@ -4814,7 +4870,7 @@ class SocketManager {
                     });
                     await auditSocketAction('catalog.product.deleted', {
                         resourceType: 'catalog_item',
-                        resourceId: String(id || '').trim() || null,
+                        resourceId: requestedId || null,
                         payload: {}
                     });
                 } catch (e) { console.error('delete_product error:', e); }
@@ -5249,6 +5305,11 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
+
+
+
+
 
 
 

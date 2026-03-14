@@ -541,7 +541,7 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout, p
 // =========================================================
 // CATALOG TAB
 // =========================================================
-const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [] }) => {
+const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', onSelectCatalogModule = null }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({ title: '', price: '', description: '', imageUrl: '' });
@@ -550,6 +550,16 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     const [catalogTypeFilter, setCatalogTypeFilter] = useState('all');
     const [showCatalogFilters, setShowCatalogFilters] = useState(false);
     const isExternalCatalog = ['native', 'woocommerce'].includes(catalogMeta?.source);
+    const moduleOptions = Array.isArray(waModules)
+        ? waModules
+            .filter((module) => module && String(module.moduleId || '').trim())
+            .map((module) => ({
+                moduleId: String(module.moduleId || '').trim(),
+                name: String(module.name || module.moduleId || '').trim() || String(module.moduleId || '').trim()
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }))
+        : [];
+    const activeCatalogModuleId = String(selectedCatalogModuleId || '').trim();
 
     const handleAddClick = () => {
         setEditingProduct(null);
@@ -571,16 +581,16 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     const handleSubmit = (e) => {
         e.preventDefault();
         if (editingProduct) {
-            socket.emit('update_product', { id: editingProduct.id, updates: formData });
+            socket.emit('update_product', { id: editingProduct.id, updates: formData, moduleId: activeCatalogModuleId || null });
         } else {
-            socket.emit('add_product', formData);
+            socket.emit('add_product', { ...formData, moduleId: activeCatalogModuleId || null });
         }
         setShowForm(false);
     };
 
     const handleDelete = (id) => {
         if (window.confirm('Eliminar este producto?')) {
-            socket.emit('delete_product', id);
+            socket.emit('delete_product', { id, moduleId: activeCatalogModuleId || null });
         }
     };
 
@@ -692,6 +702,29 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                     </div>
                 )}
 
+                {moduleOptions.length > 0 && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '0.68rem', color: '#9eb2bf', letterSpacing: '0.02em', textTransform: 'uppercase' }}>Catalogo del modulo</label>
+                            <select
+                                value={activeCatalogModuleId}
+                                onChange={(event) => {
+                                    const nextModuleId = String(event.target.value || '').trim();
+                                    if (!nextModuleId || typeof onSelectCatalogModule !== 'function') return;
+                                    onSelectCatalogModule(nextModuleId);
+                                }}
+                                style={{ width: '100%', background: '#101a21', border: '1px solid rgba(0,168,132,0.35)', color: '#e9f2f7', borderRadius: '10px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none' }}
+                            >
+                                {moduleOptions.map((module) => (
+                                    <option key={'catalog_module_' + module.moduleId} value={module.moduleId}>{module.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: '#8ca3b3', whiteSpace: 'nowrap', alignSelf: 'end' }}>
+                            Scope: {activeCatalogModuleId || 'tenant'}
+                        </div>
+                    </div>
+                )}
                 <div style={{ background: '#17242c', border: '1px solid rgba(0,168,132,0.24)', borderRadius: '11px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '7px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#111b21', border: '1px solid rgba(0,168,132,0.4)', borderRadius: '10px', padding: '0 10px', minWidth: 0 }}>
@@ -953,7 +986,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 
 // =========================================================
 
-const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, activeChatPhone = '', onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0 }) => {
+const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, activeChatPhone = '', onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', onSelectCatalogModule = null }) => {
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     const companyProfileRef = useRef(null);
@@ -1821,7 +1854,7 @@ INSTRUCCIONES OBLIGATORIAS:
 
             {/* CATALOG TAB */}
             {activeTab === 'catalog' && (
-                <CatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} />
+                <CatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} waModules={waModules} selectedCatalogModuleId={selectedCatalogModuleId} onSelectCatalogModule={onSelectCatalogModule} />
             )}
 
                         {/* CART TAB */}
@@ -2150,4 +2183,5 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
+
 

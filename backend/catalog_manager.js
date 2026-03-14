@@ -1,4 +1,4 @@
-const path = require('path');
+﻿const path = require('path');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -17,6 +17,10 @@ function normalizeModuleId(value = '') {
     const text = String(value || '').trim();
     if (!text) return null;
     return text;
+}
+
+function toModuleKey(value = '') {
+    return normalizeModuleId(value || '') || '';
 }
 
 function normalizeChannelType(value = '') {
@@ -88,6 +92,37 @@ async function ensurePostgresSchema() {
     postgresSchemaReadyPromise = (async () => {
         await queryPostgres('ALTER TABLE IF EXISTS catalog_items ADD COLUMN IF NOT EXISTS module_id TEXT');
         await queryPostgres('ALTER TABLE IF EXISTS catalog_items ADD COLUMN IF NOT EXISTS channel_type TEXT');
+        await queryPostgres("UPDATE catalog_items SET module_id = '' WHERE module_id IS NULL");
+        await queryPostgres("ALTER TABLE IF EXISTS catalog_items ALTER COLUMN module_id SET DEFAULT ''");
+        await queryPostgres("ALTER TABLE IF EXISTS catalog_items ALTER COLUMN module_id SET NOT NULL");
+        await queryPostgres(
+            `DO $$
+             BEGIN
+               IF to_regclass('catalog_items') IS NULL THEN
+                 RETURN;
+               END IF;
+
+               IF EXISTS (
+                 SELECT 1
+                 FROM pg_constraint
+                 WHERE conname = 'catalog_items_pkey'
+                   AND conrelid = to_regclass('catalog_items')
+               ) THEN
+                 IF NOT EXISTS (
+                   SELECT 1
+                   FROM pg_constraint
+                   WHERE conname = 'catalog_items_pkey'
+                     AND conrelid = to_regclass('catalog_items')
+                     AND cardinality(conkey) = 3
+                 ) THEN
+                   ALTER TABLE catalog_items DROP CONSTRAINT catalog_items_pkey;
+                   ALTER TABLE catalog_items ADD CONSTRAINT catalog_items_pkey PRIMARY KEY (tenant_id, item_id, module_id);
+                 END IF;
+               ELSE
+                 ALTER TABLE catalog_items ADD CONSTRAINT catalog_items_pkey PRIMARY KEY (tenant_id, item_id, module_id);
+               END IF;
+             END $$;`
+        );
         await queryPostgres(
             `CREATE INDEX IF NOT EXISTS idx_catalog_items_tenant_module_created
              ON catalog_items(tenant_id, module_id, created_at DESC)`
@@ -186,7 +221,7 @@ async function upsertCatalogItemPostgres(item, options = {}) {
     await queryPostgres(
         `INSERT INTO catalog_items (tenant_id, item_id, module_id, channel_type, title, price, description, image_url, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
-         ON CONFLICT (tenant_id, item_id)
+         ON CONFLICT (tenant_id, item_id, module_id)
          DO UPDATE SET
             module_id = EXCLUDED.module_id,
             channel_type = EXCLUDED.channel_type,
@@ -195,7 +230,7 @@ async function upsertCatalogItemPostgres(item, options = {}) {
             description = EXCLUDED.description,
             image_url = EXCLUDED.image_url,
             updated_at = NOW()`,
-        [tenantId, item.id, item.moduleId || null, item.channelType || null, item.title, item.price, item.description, item.imageUrl]
+        [tenantId, item.id, toModuleKey(item.moduleId), item.channelType || null, item.title, item.price, item.description, item.imageUrl]
     );
 }
 
@@ -209,7 +244,7 @@ async function deleteCatalogItemPostgres(itemId, options = {}) {
               WHERE tenant_id = $1
                 AND item_id = $2
                 AND module_id = $3`,
-            [tenantId, itemId, moduleId]
+            [tenantId, itemId, toModuleKey(moduleId)]
         );
         return;
     }
@@ -304,3 +339,4 @@ module.exports = {
     updateProduct,
     deleteProduct
 };
+

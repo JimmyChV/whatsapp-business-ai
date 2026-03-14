@@ -1062,17 +1062,9 @@ export default function SaasAdminPanel({
         setCurrentSection(next);
     };
 
-    const preferredModuleIdForOperation = useMemo(() => {
-        const moduleFromSelection = String(selectedWaModule?.moduleId || '').trim();
-        if (moduleFromSelection) return moduleFromSelection;
-        const firstModule = String(waModules?.[0]?.moduleId || '').trim();
-        return firstModule;
-    }, [selectedWaModule?.moduleId, waModules]);
-
     const canOpenOperation = Boolean(
         typeof onOpenWhatsAppOperation === 'function'
-        && String(tenantScopeId || '').trim()
-        && preferredModuleIdForOperation
+        && String(tenantScopeId || settingsTenantId || activeTenantId || '').trim()
     );
     const scrollToSection = (sectionId, behavior = 'smooth') => {
         const cleanSection = String(sectionId || '').trim();
@@ -1330,11 +1322,10 @@ export default function SaasAdminPanel({
         }
     };
 
-    const handleOpenOperation = (moduleId = '') => {
+    const handleOpenOperation = () => {
         if (typeof onOpenWhatsAppOperation !== 'function') return;
-        const cleanModuleId = String(moduleId || '').trim();
         const cleanTenantId = String(tenantScopeId || activeTenantId || '').trim();
-        onOpenWhatsAppOperation(cleanModuleId, { tenantId: cleanTenantId || undefined });
+        onOpenWhatsAppOperation('', { tenantId: cleanTenantId || undefined });
     };
     const handleFormImageUpload = async ({ file, scope, tenantId, onUploaded }) => {
         if (!file) return;
@@ -1911,7 +1902,7 @@ export default function SaasAdminPanel({
                                         type="button"
                                         className="saas-admin-header-open-operation"
                                         disabled={busy || !canOpenOperation}
-                                        onClick={() => onOpenWhatsAppOperation(preferredModuleIdForOperation, { tenantId: tenantScopeId || settingsTenantId || activeTenantId || undefined })}
+                                        onClick={() => onOpenWhatsAppOperation('', { tenantId: tenantScopeId || settingsTenantId || activeTenantId || undefined })}
                                     >
                                         Ir al chat
                                     </button>
@@ -1960,7 +1951,7 @@ export default function SaasAdminPanel({
                                         type="button"
                                         className="saas-admin-header-open-operation"
                                         disabled={busy || !canOpenOperation}
-                                        onClick={() => onOpenWhatsAppOperation(preferredModuleIdForOperation, { tenantId: tenantScopeId || settingsTenantId || activeTenantId || undefined })}
+                                        onClick={() => onOpenWhatsAppOperation('', { tenantId: tenantScopeId || settingsTenantId || activeTenantId || undefined })}
                                     >
                                         Ir al chat
                                     </button>
@@ -2111,8 +2102,8 @@ export default function SaasAdminPanel({
                                 <strong>{waModules.length}</strong>
                             </div>
                             <div className="saas-admin-kpi">
-                                <small>Modulo seleccionado</small>
-                                <strong>{selectedWaModule?.name || 'Sin seleccion'}</strong>
+                                <small>Bandeja multicanal</small>
+                                <strong>Todos los modulos</strong>
                             </div>
                         </div>
 
@@ -3063,7 +3054,7 @@ export default function SaasAdminPanel({
                                             onClick={() => openConfigModuleView(moduleItem.moduleId)}
                                         >
                                             <strong>{moduleItem.name || 'Modulo sin nombre'}</strong>
-                                            <small>Cloud API | {moduleItem.isActive ? 'activo' : 'inactivo'}{moduleItem.isSelected ? ' | en uso' : ''}</small>
+                                            <small>Cloud API | {moduleItem.isActive ? 'activo' : 'inactivo'}</small>
                                             <small>{moduleItem.phoneNumber ? `Numero: ${moduleItem.phoneNumber}` : 'Numero sin configurar'}</small>
                                         </button>
                                     ))}
@@ -3227,21 +3218,11 @@ export default function SaasAdminPanel({
                                                             <button
                                                                 type="button"
                                                                 disabled={busy || !moduleInDetail.isActive}
-                                                                onClick={() => handleOpenOperation(moduleInDetail.moduleId)}
+                                                                onClick={() => handleOpenOperation()}
                                                             >
                                                                 Ir a operacion
                                                             </button>
-                                                            <button
-                                                                type="button"
-                                                                disabled={busy || moduleInDetail.isSelected || !canEditModules}
-                                                                onClick={() => runAction('Modulo WA seleccionado', async () => {
-                                                                    await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/wa-modules/${encodeURIComponent(moduleInDetail.moduleId)}/select`, {
-                                                                        method: 'POST'
-                                                                    });
-                                                                })}
-                                                            >
-                                                                {moduleInDetail.isSelected ? 'En uso' : 'Seleccionar'}
-                                                            </button>
+                                                            <span style={{ fontSize: '0.72rem', color: '#8eb3c7', alignSelf: 'center' }}>Operacion: seleccion dinamica por chat</span>
                                                             <button type="button" disabled={busy || !canEditModules} onClick={openConfigModuleEdit}>Editar</button>
                                                             <button
                                                                 type="button"
@@ -4263,3 +4244,6 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
