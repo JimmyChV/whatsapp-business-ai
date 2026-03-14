@@ -685,16 +685,20 @@ export default function SaasAdminPanel({
         });
         return map;
     }, [accessPackOptions]);
-    const getAllowedPackIdsForRole = useCallback((roleValue = 'seller') => {
+    const getOptionalPermissionKeysForRole = useCallback((roleValue = 'seller') => {
         const cleanRole = String(roleValue || 'seller').trim().toLowerCase();
         const profiles = Array.isArray(accessCatalog?.roleProfiles) ? accessCatalog.roleProfiles : [];
-        const packs = Array.isArray(accessCatalog?.packs) ? accessCatalog.packs : [];
         const profile = profiles.find((entry) => String(entry?.role || '').trim().toLowerCase() === cleanRole) || null;
-        const optionalSet = new Set(
+        return new Set(
             (Array.isArray(profile?.optional) ? profile.optional : [])
                 .map((entry) => String(entry || '').trim())
                 .filter(Boolean)
         );
+    }, [accessCatalog?.roleProfiles]);
+
+    const getAllowedPackIdsForRole = useCallback((roleValue = 'seller') => {
+        const optionalSet = getOptionalPermissionKeysForRole(roleValue);
+        const packs = Array.isArray(accessCatalog?.packs) ? accessCatalog.packs : [];
         const allowedPackIds = new Set();
         packs.forEach((pack) => {
             const permissions = Array.isArray(pack?.permissions) ? pack.permissions : [];
@@ -703,7 +707,7 @@ export default function SaasAdminPanel({
             }
         });
         return allowedPackIds;
-    }, [accessCatalog?.roleProfiles, accessCatalog?.packs]);
+    }, [accessCatalog?.packs, getOptionalPermissionKeysForRole]);
 
     const roleProfiles = useMemo(() => {
         const source = Array.isArray(accessCatalog?.roleProfiles) ? accessCatalog.roleProfiles : [];
@@ -744,6 +748,7 @@ export default function SaasAdminPanel({
             .filter((entry) => entry.key)
             .sort((left, right) => left.label.localeCompare(right.label, 'es', { sensitivity: 'base' }));
     }, [accessCatalog?.permissions]);
+    const hasAccessCatalogData = Boolean(roleProfiles.length || accessPackOptions.length || rolePermissionOptions.length);
     const requestJson = async (path, { method = 'GET', body = null } = {}) => {
         setPendingRequests((prev) => prev + 1);
         try {
@@ -825,6 +830,7 @@ export default function SaasAdminPanel({
 
     const currentUserDisplayName = String(currentUser?.name || currentUser?.email || currentUser?.userId || 'Usuario actual').trim() || 'Usuario actual';
     const currentUserEmail = String(currentUser?.email || '-').trim() || '-';
+    const currentUserAvatarUrl = String(currentUser?.avatarUrl || '').trim();
     const currentUserRole = String(currentUser?.role || actorRoleForPolicy || 'seller').trim().toLowerCase();
     const currentUserRoleLabel = String(currentUser?.roleLabel || currentUserRole || '-').trim() || '-';
     const currentUserTenantCount = Array.isArray(currentUser?.memberships) ? currentUser.memberships.length : 0;
@@ -880,6 +886,11 @@ export default function SaasAdminPanel({
     const canEditRoleInUserForm = userPanelMode === 'create' ? canManageUsers : canEditSelectedUserRole;
     const canEditScopeInUserForm = userPanelMode === 'create' ? canManageUsers : canEditSelectedUserRole;
     const canConfigureOptionalAccessInUserForm = userPanelMode === 'create' ? canEditOptionalAccess : canEditSelectedUserOptionalAccess;
+
+    const allowedOptionalPermissionsForUserFormRole = useMemo(() => {
+        return Array.from(getOptionalPermissionKeysForRole(userForm.role))
+            .sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' }));
+    }, [getOptionalPermissionKeysForRole, userForm.role]);
 
     const allowedPackIdsForUserFormRole = useMemo(
         () => getAllowedPackIdsForRole(userForm.role),
@@ -1370,10 +1381,21 @@ export default function SaasAdminPanel({
     useEffect(() => {
         if (!isOpen || !canManageSaas) return;
         runAction('Carga inicial', async () => {
-            await Promise.all([refreshOverview(), loadPlanMatrix(), loadAccessCatalog()]);
+            const tasks = [
+                refreshOverview(),
+                loadAccessCatalog()
+            ];
+            if (canViewSuperAdminSections) {
+                tasks.push(loadPlanMatrix());
+            }
+            const results = await Promise.allSettled(tasks);
+            const firstError = results.find((entry) => entry.status === 'rejected');
+            if (firstError?.status === 'rejected') {
+                throw firstError.reason;
+            }
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, canManageSaas]);
+    }, [isOpen, canManageSaas, canViewSuperAdminSections]);
 
     const clearPanelSelection = useCallback(() => {
         setSelectedTenantId('');
@@ -1598,6 +1620,9 @@ export default function SaasAdminPanel({
     };
 
     const openUserCreate = () => {
+        if (!loadingAccessCatalog && (!Array.isArray(accessCatalog?.roleProfiles) || accessCatalog.roleProfiles.length === 0)) {
+            loadAccessCatalog().catch(() => undefined);
+        }
         const fallbackTenantId = String(tenantScopeId || selectedTenantId || tenantOptions[0]?.id || '').trim();
         setUserPanelMode('create');
         setSelectedUserId('');
@@ -1621,6 +1646,9 @@ export default function SaasAdminPanel({
 
     const openUserEdit = () => {
         if (!selectedUser || !canEditSelectedUser) return;
+        if (!loadingAccessCatalog && (!Array.isArray(accessCatalog?.roleProfiles) || accessCatalog.roleProfiles.length === 0)) {
+            loadAccessCatalog().catch(() => undefined);
+        }
         setUserForm(buildUserFormFromItem(selectedUser));
         setMembershipDraft(sanitizeMemberships(selectedUser.memberships || []));
         setUserPanelMode('edit');
@@ -1888,6 +1916,17 @@ export default function SaasAdminPanel({
                                         Ir al chat
                                     </button>
                                 )}
+                                <div className="saas-admin-header-profile" role="status" aria-label="Usuario en sesion">
+                                    <div className="saas-admin-header-profile-avatar">
+                                        {currentUserAvatarUrl
+                                            ? <img src={currentUserAvatarUrl} alt={currentUserDisplayName} />
+                                            : <span>{buildInitials(currentUserDisplayName)}</span>}
+                                    </div>
+                                    <div className="saas-admin-header-profile-meta">
+                                        <strong>{currentUserDisplayName}</strong>
+                                        <small>{currentUserRoleLabel}</small>
+                                    </div>
+                                </div>
                                 <button
                                     type="button"
                                     className="saas-admin-header-close-danger"
@@ -1926,6 +1965,17 @@ export default function SaasAdminPanel({
                                         Ir al chat
                                     </button>
                                 )}
+                                <div className="saas-admin-header-profile" role="status" aria-label="Usuario en sesion">
+                                    <div className="saas-admin-header-profile-avatar">
+                                        {currentUserAvatarUrl
+                                            ? <img src={currentUserAvatarUrl} alt={currentUserDisplayName} />
+                                            : <span>{buildInitials(currentUserDisplayName)}</span>}
+                                    </div>
+                                    <div className="saas-admin-header-profile-meta">
+                                        <strong>{currentUserDisplayName}</strong>
+                                        <small>{currentUserRoleLabel}</small>
+                                    </div>
+                                </div>
                                 <button
                                     type="button"
                                     className="saas-admin-header-close-danger"
@@ -1951,27 +2001,6 @@ export default function SaasAdminPanel({
                         </div>
                     </div>
                 )}
-
-                <section className="saas-admin-profile-summary" aria-label="Resumen del usuario actual">
-                    <div className="saas-admin-profile-summary__head">
-                        <div className="saas-admin-profile-summary__avatar">{buildInitials(currentUserDisplayName)}</div>
-                        <div className="saas-admin-profile-summary__meta">
-                            <strong>{currentUserDisplayName}</strong>
-                            <span>{currentUserEmail}</span>
-                        </div>
-                    </div>
-                    <div className="saas-admin-profile-summary__stats">
-                        <div><small>Rol</small><strong>{currentUserRoleLabel}</strong></div>
-                        <div><small>Empresas</small><strong>{currentUserTenantCount}</strong></div>
-                        <div><small>Empresa activa</small><strong>{activeTenantLabel}</strong></div>
-                    </div>
-                    <div className="saas-admin-profile-summary__caps">
-                        {currentUserCapabilities.length === 0 && <span className="saas-admin-profile-chip">Vista basica</span>}
-                        {currentUserCapabilities.map((capability) => (
-                            <span key={`user_cap_${capability}`} className="saas-admin-profile-chip">{capability}</span>
-                        ))}
-                    </div>
-                </section>
                 {requiresTenantSelection && (
                     <div className="saas-admin-tenant-picker-row">
                         <select
@@ -2021,49 +2050,68 @@ export default function SaasAdminPanel({
                     </div>
                 )}
 
-                {(!embedded || showNavigation) && (
-                    <div className="saas-admin-kpis">
-                        <div className="saas-admin-kpi">
-                            <small>Empresas</small>
-                            <strong>{overview.tenants.length}</strong>
-                        </div>
-                        <div className="saas-admin-kpi">
-                            <small>Usuarios</small>
-                            <strong>{scopedUsers.length}</strong>
-                        </div>
-                        <div className="saas-admin-kpi">
-                            <small>Empresa activa</small>
-                            <strong>{activeTenantLabel}</strong>
-                        </div>
-                    </div>
-                )}
-
                 {selectedSectionId === 'saas_resumen' && (
                     <section id="saas_resumen" className="saas-admin-card saas-admin-card--full saas-admin-flow-card">
-                        <h3>Resumen operativo</h3>
-                        <div className="saas-admin-detail-grid">
-                            <div className="saas-admin-detail-field">
-                                <span>Empresas activas</span>
+                        <div className="saas-admin-summary-top">
+                            <section className="saas-admin-profile-summary" aria-label="Resumen del usuario actual">
+                                <div className="saas-admin-profile-summary__head">
+                                    <div className="saas-admin-profile-summary__avatar">
+                                        {currentUserAvatarUrl
+                                            ? <img src={currentUserAvatarUrl} alt={currentUserDisplayName} className="saas-admin-inline-avatar" />
+                                            : buildInitials(currentUserDisplayName)}
+                                    </div>
+                                    <div className="saas-admin-profile-summary__meta">
+                                        <strong>{currentUserDisplayName}</strong>
+                                        <span>{currentUserEmail}</span>
+                                    </div>
+                                </div>
+                                <div className="saas-admin-profile-summary__stats">
+                                    <div><small>Rol</small><strong>{currentUserRoleLabel}</strong></div>
+                                    <div><small>Empresas</small><strong>{currentUserTenantCount}</strong></div>
+                                    <div><small>Empresa activa</small><strong>{activeTenantLabel}</strong></div>
+                                </div>
+                                <div className="saas-admin-profile-summary__caps">
+                                    {currentUserCapabilities.length === 0 && <span className="saas-admin-profile-chip">Vista basica</span>}
+                                    {currentUserCapabilities.map((capability) => (
+                                        <span key={`user_cap_${capability}`} className="saas-admin-profile-chip">{capability}</span>
+                                    ))}
+                                </div>
+                            </section>
+
+                            <section className="saas-admin-summary-focus" aria-label="Estado operativo">
+                                <h3>Contexto operativo</h3>
+                                <div className="saas-admin-summary-focus-grid">
+                                    <div className="saas-admin-detail-field">
+                                        <span>Alcance actual</span>
+                                        <strong>{tenantScopeLocked ? 'Seleccion pendiente' : activeTenantLabel}</strong>
+                                    </div>
+                                    <div className="saas-admin-detail-field">
+                                        <span>Plan</span>
+                                        <strong>{tenantOptions.find((tenant) => String(tenant?.id || '').trim() === tenantScopeId)?.plan || '-'}</strong>
+                                    </div>
+                                    <div className="saas-admin-detail-field">
+                                        <span>Estado del panel</span>
+                                        <strong>{tenantScopeLocked ? 'Bloqueado por tenant' : 'Listo para operar'}</strong>
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
+
+                        <div className="saas-admin-kpis saas-admin-kpis--embedded">
+                            <div className="saas-admin-kpi">
+                                <small>Empresas activas</small>
                                 <strong>{(overview.tenants || []).filter((tenant) => tenant.active !== false).length}</strong>
                             </div>
-                            <div className="saas-admin-detail-field">
-                                <span>Empresas inactivas</span>
-                                <strong>{(overview.tenants || []).filter((tenant) => tenant.active === false).length}</strong>
+                            <div className="saas-admin-kpi">
+                                <small>Usuarios activos (alcance)</small>
+                                <strong>{(scopedUsers || []).filter((user) => user.active !== false).length}</strong>
                             </div>
-                            <div className="saas-admin-detail-field">
-                                <span>Usuarios activos</span>
-                                <strong>{(overview.users || []).filter((user) => user.active !== false).length}</strong>
-                            </div>
-                            <div className="saas-admin-detail-field">
-                                <span>Usuarios inactivos</span>
-                                <strong>{(overview.users || []).filter((user) => user.active === false).length}</strong>
-                            </div>
-                            <div className="saas-admin-detail-field">
-                                <span>Modulos WhatsApp</span>
+                            <div className="saas-admin-kpi">
+                                <small>Modulos WhatsApp</small>
                                 <strong>{waModules.length}</strong>
                             </div>
-                            <div className="saas-admin-detail-field">
-                                <span>Modulo seleccionado</span>
+                            <div className="saas-admin-kpi">
+                                <small>Modulo seleccionado</small>
                                 <strong>{selectedWaModule?.name || 'Sin seleccion'}</strong>
                             </div>
                         </div>
@@ -2548,10 +2596,19 @@ export default function SaasAdminPanel({
                                                         <select value={userForm.role} onChange={(event) => {
                                                             const nextRole = event.target.value;
                                                             setUserForm((prev) => {
-                                                                const allowed = getAllowedPackIdsForRole(nextRole);
+                                                                const allowedPacks = getAllowedPackIdsForRole(nextRole);
+                                                                const allowedPermissions = getOptionalPermissionKeysForRole(nextRole);
                                                                 const nextPacks = (Array.isArray(prev.permissionPacks) ? prev.permissionPacks : [])
-                                                                    .filter((packId) => allowed.has(String(packId || '').trim()));
-                                                                return { ...prev, role: nextRole, permissionPacks: nextPacks };
+                                                                    .filter((packId) => allowedPacks.has(String(packId || '').trim()));
+                                                                const nextGrants = (Array.isArray(prev.permissionGrants) ? prev.permissionGrants : [])
+                                                                    .map((entry) => String(entry || '').trim())
+                                                                    .filter((permission) => allowedPermissions.has(permission));
+                                                                return {
+                                                                    ...prev,
+                                                                    role: nextRole,
+                                                                    permissionPacks: nextPacks,
+                                                                    permissionGrants: Array.from(new Set(nextGrants))
+                                                                };
                                                             });
                                                         }} disabled={busy || !canEditRoleInUserForm}>
                                                             {roleOptions.map((role) => (
@@ -2562,37 +2619,80 @@ export default function SaasAdminPanel({
                                                 )}
                                                 {canConfigureOptionalAccessInUserForm && (
                                                     <div className="saas-admin-related-block">
-                                                        <h4>Accesos opcionales (paquetes)</h4>
-                                                        <div className="saas-admin-modules">
-                                                            {accessPackOptions.length === 0 && (
-                                                                <div className="saas-admin-empty-inline">Sin paquetes configurados.</div>
-                                                            )}
-                                                            {accessPackOptions.map((pack) => {
-                                                                const packId = String(pack?.id || '').trim();
-                                                                if (!packId) return null;
-                                                                const packAllowed = allowedPackIdsForUserFormRole.has(packId);
-                                                                const checked = Array.isArray(userForm.permissionPacks) && userForm.permissionPacks.includes(packId);
-                                                                return (
-                                                                    <label key={`user_pack_${packId}`} className="saas-admin-module-toggle">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={checked}
-                                                                            disabled={busy || !packAllowed}
-                                                                            onChange={(event) => setUserForm((prev) => {
-                                                                                const current = Array.isArray(prev.permissionPacks) ? prev.permissionPacks : [];
-                                                                                const nextSet = new Set(current.map((entry) => String(entry || '').trim()).filter(Boolean));
-                                                                                if (event.target.checked) {
-                                                                                    nextSet.add(packId);
-                                                                                } else {
-                                                                                    nextSet.delete(packId);
-                                                                                }
-                                                                                return { ...prev, permissionPacks: Array.from(nextSet) };
-                                                                            })}
-                                                                        />
-                                                                        <span>{String(pack?.label || packId)}{packAllowed ? '' : ' (no aplica al rol)'}</span>
-                                                                    </label>
-                                                                );
-                                                            })}
+                                                        <h4>Accesos opcionales</h4>
+                                                        {loadingAccessCatalog && (
+                                                            <div className="saas-admin-empty-inline">Cargando catalogo de accesos...</div>
+                                                        )}
+                                                        {!loadingAccessCatalog && !hasAccessCatalogData && (
+                                                            <div className="saas-admin-empty-inline">No se pudo cargar el catalogo de accesos. Reabre el editor de usuario para reintentar.</div>
+                                                        )}
+                                                        <div className="saas-admin-optional-access-grid">
+                                                            <div className="saas-admin-optional-access-column">
+                                                                <small className="saas-admin-optional-access-title">Paquetes</small>
+                                                                <div className="saas-admin-modules">
+                                                                    {accessPackOptions.length === 0 && (
+                                                                        <div className="saas-admin-empty-inline">Sin paquetes configurados. Puedes trabajar con permisos directos.</div>
+                                                                    )}
+                                                                    {accessPackOptions.map((pack) => {
+                                                                        const packId = String(pack?.id || '').trim();
+                                                                        if (!packId) return null;
+                                                                        const packAllowed = allowedPackIdsForUserFormRole.has(packId);
+                                                                        const checked = Array.isArray(userForm.permissionPacks) && userForm.permissionPacks.includes(packId);
+                                                                        return (
+                                                                            <label key={`user_pack_${packId}`} className="saas-admin-module-toggle">
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={checked}
+                                                                                    disabled={busy || loadingAccessCatalog || !packAllowed}
+                                                                                    onChange={(event) => setUserForm((prev) => {
+                                                                                        const current = Array.isArray(prev.permissionPacks) ? prev.permissionPacks : [];
+                                                                                        const nextSet = new Set(current.map((entry) => String(entry || '').trim()).filter(Boolean));
+                                                                                        if (event.target.checked) {
+                                                                                            nextSet.add(packId);
+                                                                                        } else {
+                                                                                            nextSet.delete(packId);
+                                                                                        }
+                                                                                        return { ...prev, permissionPacks: Array.from(nextSet) };
+                                                                                    })}
+                                                                                />
+                                                                                <span>{String(pack?.label || packId)}{packAllowed ? '' : ' (no aplica al rol)'}</span>
+                                                                            </label>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                            <div className="saas-admin-optional-access-column">
+                                                                <small className="saas-admin-optional-access-title">Permisos directos por rol</small>
+                                                                <div className="saas-admin-modules">
+                                                                    {allowedOptionalPermissionsForUserFormRole.length === 0 && (
+                                                                        <div className="saas-admin-empty-inline">El rol actual no tiene permisos opcionales habilitados.</div>
+                                                                    )}
+                                                                    {allowedOptionalPermissionsForUserFormRole.map((permissionKey) => {
+                                                                        const checked = Array.isArray(userForm.permissionGrants) && userForm.permissionGrants.includes(permissionKey);
+                                                                        const permissionLabel = permissionLabelMap.get(permissionKey) || permissionKey;
+                                                                        return (
+                                                                            <label key={`user_permission_${permissionKey}`} className="saas-admin-module-toggle">
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={checked}
+                                                                                    disabled={busy || loadingAccessCatalog}
+                                                                                    onChange={(event) => setUserForm((prev) => {
+                                                                                        const current = Array.isArray(prev.permissionGrants) ? prev.permissionGrants : [];
+                                                                                        const nextSet = new Set(current.map((entry) => String(entry || '').trim()).filter(Boolean));
+                                                                                        if (event.target.checked) {
+                                                                                            nextSet.add(permissionKey);
+                                                                                        } else {
+                                                                                            nextSet.delete(permissionKey);
+                                                                                        }
+                                                                                        return { ...prev, permissionGrants: Array.from(nextSet) };
+                                                                                    })}
+                                                                                />
+                                                                                <span>{permissionLabel}</span>
+                                                                            </label>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 )}
@@ -2629,6 +2729,9 @@ export default function SaasAdminPanel({
                                                             if ((isCreateMode && canEditOptionalAccess) || (!isCreateMode && canConfigureOptionalAccessInUserForm)) {
                                                                 payload.permissionPacks = Array.isArray(userForm.permissionPacks)
                                                                     ? userForm.permissionPacks.map((entry) => String(entry || '').trim()).filter(Boolean)
+                                                                    : [];
+                                                                payload.permissionGrants = Array.isArray(userForm.permissionGrants)
+                                                                    ? userForm.permissionGrants.map((entry) => String(entry || '').trim()).filter(Boolean)
                                                                     : [];
                                                             }
 
