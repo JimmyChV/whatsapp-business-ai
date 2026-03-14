@@ -675,6 +675,7 @@ function App() {
   const [quickReplies, setQuickReplies] = useState([]);
   const [waModules, setWaModules] = useState([]);
   const [selectedWaModule, setSelectedWaModule] = useState(null);
+  const [selectedCatalogModuleId, setSelectedCatalogModuleId] = useState('');
   const [waModuleError, setWaModuleError] = useState('');
 
   const [waCapabilities, setWaCapabilities] = useState({ messageEdit: true, messageEditSync: true, messageForward: true, messageDelete: true, messageReply: true, quickReplies: false, quickRepliesRead: false, quickRepliesWrite: false });
@@ -695,6 +696,7 @@ function App() {
   const suppressSmoothScrollUntilRef = useRef(0);
   const selectedTransportRef = useRef(selectedTransport);
   const selectedWaModuleRef = useRef(selectedWaModule);
+  const selectedCatalogModuleIdRef = useRef(selectedCatalogModuleId);
   const saasSessionRef = useRef(saasSession);
   const saasRuntimeRef = useRef(saasRuntime);
   const forceOperationLaunchRef = useRef(forceOperationLaunch);
@@ -1012,6 +1014,10 @@ function App() {
   }, [selectedWaModule]);
 
   useEffect(() => {
+    selectedCatalogModuleIdRef.current = String(selectedCatalogModuleId || '').trim().toLowerCase();
+  }, [selectedCatalogModuleId]);
+
+  useEffect(() => {
     saasSessionRef.current = saasSession;
     persistSaasSession(saasSession);
   }, [saasSession]);
@@ -1119,10 +1125,24 @@ function App() {
 
     socket.on('wa_module_context', (payload) => {
       const items = normalizeWaModules(payload?.items || []);
+      const previousModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
       const selected = resolveSelectedWaModule(items, payload?.selected || selectedWaModuleRef.current);
+      const selectedModuleId = String(selected?.moduleId || '').trim().toLowerCase();
       setWaModules(items);
       setSelectedWaModule(selected);
       setWaModuleError('');
+
+      const previousCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
+      const selectedCatalogExists = previousCatalogModuleId
+        ? items.some((item) => String(item?.moduleId || '').trim().toLowerCase() === previousCatalogModuleId)
+        : false;
+      const nextCatalogModuleId = selectedCatalogExists
+        ? previousCatalogModuleId
+        : (selectedModuleId || String(items[0]?.moduleId || '').trim().toLowerCase());
+      setSelectedCatalogModuleId(nextCatalogModuleId || '');
+      if (nextCatalogModuleId && socket.connected) {
+        socket.emit('get_business_catalog', { moduleId: nextCatalogModuleId });
+      }
 
       const requestedModuleId = String(requestedWaModuleFromUrlRef.current || '').trim().toLowerCase();
       if (requestedModuleId) {
@@ -1139,11 +1159,17 @@ function App() {
       if (shouldAutoSelectTransport && selectedMode === 'cloud' && selectedMode !== selectedTransportRef.current) {
         setSelectedTransport(selectedMode);
       }
+
+      if (selectedModuleId && selectedModuleId !== previousModuleId) {
+        socket.emit('get_business_data');
+      }
     });
 
     socket.on('wa_module_selected', (payload) => {
       const selected = normalizeWaModuleItem(payload?.selected || payload?.item || payload || null);
       if (!selected?.moduleId) return;
+      const previousModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
+      const selectedModuleId = String(selected?.moduleId || '').trim().toLowerCase();
 
       setWaModules((prev) => {
         const base = normalizeWaModules(prev || []);
@@ -1156,6 +1182,14 @@ function App() {
       setSelectedWaModule(selected);
       setWaModuleError('');
 
+      const currentCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
+      if (!currentCatalogModuleId && selectedModuleId) {
+        setSelectedCatalogModuleId(selectedModuleId);
+        if (socket.connected) {
+          socket.emit('get_business_catalog', { moduleId: selectedModuleId });
+        }
+      }
+
       const selectedId = String(selected?.moduleId || '').trim().toLowerCase();
       if (selectedId && selectedId === String(requestedWaModuleFromUrlRef.current || '').trim().toLowerCase()) {
         requestedWaModuleFromUrlRef.current = '';
@@ -1165,6 +1199,10 @@ function App() {
       const shouldAutoSelectTransport = forceOperationLaunchRef.current || !canManageSaasRef.current;
       if (shouldAutoSelectTransport && selectedMode === 'cloud') {
         setSelectedTransport(selectedMode);
+      }
+
+      if (selectedModuleId && selectedModuleId !== previousModuleId) {
+        socket.emit('get_business_data');
       }
     });
 
@@ -1255,24 +1293,32 @@ function App() {
       if (incomingFilterKey && incomingFilterKey !== buildFiltersKey(chatFiltersRef.current)) return;
 
       const rawItems = Array.isArray(page.items) ? page.items : [];
+      const previousById = new Map(
+        (Array.isArray(chatsRef.current) ? chatsRef.current : [])
+          .filter((chat) => chat?.id)
+          .map((chat) => [String(chat.id), chat])
+      );
       const hydrated = rawItems
         .filter((chat) => chat?.id && isVisibleChatId(chat.id))
-        .map((chat) => ({
-          ...chat,
-          name: sanitizeDisplayText(chat?.name || ''),
-          subtitle: sanitizeDisplayText(chat?.subtitle || ''),
-          status: sanitizeDisplayText(chat?.status || ''),
-          phone: getBestChatPhone(chat),
-          lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
-          labels: normalizeChatLabels(chat.labels),
-          profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
-          isMyContact: chat?.isMyContact === true,
-          archived: Boolean(chat?.archived),
-          lastMessageModuleId: String(chat?.lastMessageModuleId || chat?.sentViaModuleId || '').trim().toLowerCase() || null,
-          lastMessageModuleName: String(chat?.lastMessageModuleName || chat?.sentViaModuleName || '').trim() || null,
-          lastMessageTransport: String(chat?.lastMessageTransport || chat?.sentViaTransport || '').trim().toLowerCase() || null,
-          lastMessageChannelType: String(chat?.lastMessageChannelType || chat?.sentViaChannelType || '').trim().toLowerCase() || null
-        }))
+        .map((chat) => {
+          const previous = previousById.get(String(chat?.id || '')) || null;
+          return {
+            ...chat,
+            name: sanitizeDisplayText(chat?.name || ''),
+            subtitle: sanitizeDisplayText(chat?.subtitle || ''),
+            status: sanitizeDisplayText(chat?.status || ''),
+            phone: getBestChatPhone(chat),
+            lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
+            labels: normalizeChatLabels(chat.labels),
+            profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
+            isMyContact: chat?.isMyContact === true,
+            archived: Boolean(chat?.archived),
+            lastMessageModuleId: String(chat?.lastMessageModuleId || chat?.sentViaModuleId || previous?.lastMessageModuleId || '').trim().toLowerCase() || null,
+            lastMessageModuleName: String(chat?.lastMessageModuleName || chat?.sentViaModuleName || previous?.lastMessageModuleName || '').trim() || null,
+            lastMessageTransport: String(chat?.lastMessageTransport || chat?.sentViaTransport || previous?.lastMessageTransport || '').trim().toLowerCase() || null,
+            lastMessageChannelType: String(chat?.lastMessageChannelType || chat?.sentViaChannelType || previous?.lastMessageChannelType || '').trim().toLowerCase() || null
+          };
+        })
         .filter((chat) => chatMatchesFilters(chat, chatFiltersRef.current));
 
       const pageOffset = Number.isFinite(Number(page.offset)) ? Number(page.offset) : 0;
@@ -1296,6 +1342,7 @@ function App() {
 
     socket.on('chat_updated', (chat) => {
       if (!chat?.id || !isVisibleChatId(chat.id)) return;
+      const previous = (Array.isArray(chatsRef.current) ? chatsRef.current : []).find((entry) => String(entry?.id || '') === String(chat.id || '')) || null;
       const hydrated = {
         ...chat,
         name: sanitizeDisplayText(chat?.name || ''),
@@ -1303,14 +1350,14 @@ function App() {
         status: sanitizeDisplayText(chat?.status || ''),
         phone: getBestChatPhone(chat),
         lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
-          labels: normalizeChatLabels(chat.labels),
-          profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
-          isMyContact: chat?.isMyContact === true,
-          archived: Boolean(chat?.archived),
-          lastMessageModuleId: String(chat?.lastMessageModuleId || chat?.sentViaModuleId || '').trim().toLowerCase() || null,
-          lastMessageModuleName: String(chat?.lastMessageModuleName || chat?.sentViaModuleName || '').trim() || null,
-          lastMessageTransport: String(chat?.lastMessageTransport || chat?.sentViaTransport || '').trim().toLowerCase() || null,
-          lastMessageChannelType: String(chat?.lastMessageChannelType || chat?.sentViaChannelType || '').trim().toLowerCase() || null
+        labels: normalizeChatLabels(chat.labels),
+        profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
+        isMyContact: chat?.isMyContact === true,
+        archived: Boolean(chat?.archived),
+        lastMessageModuleId: String(chat?.lastMessageModuleId || chat?.sentViaModuleId || previous?.lastMessageModuleId || '').trim().toLowerCase() || null,
+        lastMessageModuleName: String(chat?.lastMessageModuleName || chat?.sentViaModuleName || previous?.lastMessageModuleName || '').trim() || null,
+        lastMessageTransport: String(chat?.lastMessageTransport || chat?.sentViaTransport || previous?.lastMessageTransport || '').trim().toLowerCase() || null,
+        lastMessageChannelType: String(chat?.lastMessageChannelType || chat?.sentViaChannelType || previous?.lastMessageChannelType || '').trim().toLowerCase() || null
       };
 
       if (!chatMatchesQuery(hydrated, chatSearchRef.current) || !chatMatchesFilters(hydrated, chatFiltersRef.current)) {
@@ -1612,9 +1659,17 @@ function App() {
       const normalized = normalizeBusinessDataPayload(data);
       setBusinessData(normalized);
       setLabelDefinitions(normalizeChatLabels(normalized.labels));
+
+      const scopeModuleId = String(normalized?.catalogMeta?.scope?.moduleId || '').trim().toLowerCase();
+      if (scopeModuleId) {
+        const currentCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
+        if (!currentCatalogModuleId) {
+          setSelectedCatalogModuleId(scopeModuleId);
+        }
+      }
     });
 
-        socket.on('business_data_catalog', (payload) => {
+    socket.on('business_data_catalog', (payload) => {
       const scopedPayload = payload && typeof payload === 'object' && !Array.isArray(payload)
         ? payload
         : null;
@@ -1622,9 +1677,9 @@ function App() {
         ? scopedPayload.scope
         : null;
       const scopeModuleId = String(scope?.moduleId || '').trim().toLowerCase();
-      const activeModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
+      const activeCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
 
-      if (scopeModuleId && activeModuleId && scopeModuleId !== activeModuleId) {
+      if (scopeModuleId && activeCatalogModuleId && scopeModuleId !== activeCatalogModuleId) {
         return;
       }
 
@@ -1648,7 +1703,9 @@ function App() {
           scope: scope || prev?.catalogMeta?.scope || null
         }
       }));
-    });    socket.on('quick_replies', (payload) => {
+    });
+
+    socket.on('quick_replies', (payload) => {
       const items = Array.isArray(payload?.items) ? payload.items : [];
       const normalized = items
         .map((item, idx) => ({
@@ -1836,6 +1893,7 @@ function App() {
     setSelectedTransport('');
     setWaModules([]);
     setSelectedWaModule(null);
+    setSelectedCatalogModuleId('');
     setChats([]);
     setChatsTotal(0);
     setChatsHasMore(true);
@@ -2107,6 +2165,7 @@ function App() {
     setTenantSwitchBusy(false);
     setWaModules([]);
     setSelectedWaModule(null);
+    setSelectedCatalogModuleId('');
     if (socket.connected) socket.disconnect();
     setIsConnected(false);
     resetWorkspaceState();
@@ -2322,20 +2381,31 @@ function App() {
 
     handleSelectTransport(normalizedTransport);
   };
+
+  const handleSelectCatalogModule = (moduleId = '') => {
+    const safeModuleId = String(moduleId || '').trim().toLowerCase();
+    if (!safeModuleId) return;
+
+    const moduleExists = (Array.isArray(waModules) ? waModules : [])
+      .some((item) => String(item?.moduleId || '').trim().toLowerCase() === safeModuleId && item?.isActive !== false);
+    if (!moduleExists) {
+      setWaModuleError('No se encontro el modulo para ese catalogo.');
+      return;
+    }
+
+    setSelectedCatalogModuleId(safeModuleId);
+    if (isConnected) {
+      socket.emit('get_business_catalog', { moduleId: safeModuleId });
+    }
+  };
   const handleOpenWhatsAppOperation = (moduleId = '', options = {}) => {
     const preferredModuleId = String(moduleId || '').trim();
-    const fallbackModuleId = String(
-      preferredModuleId
-      || selectedWaModuleRef.current?.moduleId
-      || (Array.isArray(waModules) ? waModules[0]?.moduleId : '')
-      || ''
-    ).trim();
     const targetTenantId = String(options?.tenantId || tenantScopeId || '').trim();
 
     try {
       const nextUrl = new URL(window.location.href);
       nextUrl.searchParams.set('wa_launch', 'operation');
-      if (fallbackModuleId) nextUrl.searchParams.set('wa_module', fallbackModuleId);
+      if (preferredModuleId) nextUrl.searchParams.set('wa_module', preferredModuleId);
       else nextUrl.searchParams.delete('wa_module');
       if (targetTenantId) nextUrl.searchParams.set('wa_tenant', targetTenantId);
       else nextUrl.searchParams.delete('wa_tenant');
@@ -2652,7 +2722,7 @@ REGLA CRITICA:
   const canManageSaas = !saasAuthEnabled || Boolean(saasSession?.user?.canManageSaas || saasSession?.user?.isSuperAdmin || saasUserRole === 'owner' || saasUserRole === 'admin' || saasUserRole === 'superadmin');
   const availableWaModules = normalizeWaModules(waModules).filter((module) => module.isActive !== false);
   const hasModuleCatalog = availableWaModules.length > 0;
-  const selectedWaModuleId = String(selectedWaModule?.moduleId || '').trim();
+  const activeCatalogModuleId = String(selectedCatalogModuleId || '').trim();
 
   useEffect(() => {
     canManageSaasRef.current = canManageSaas;
@@ -3210,6 +3280,9 @@ REGLA CRITICA:
             pendingOrderCartLoad={pendingOrderCartLoad}
             waCapabilities={waCapabilities}
             openCompanyProfileToken={openCompanyProfileToken}
+            waModules={availableWaModules}
+            selectedCatalogModuleId={activeCatalogModuleId}
+            onSelectCatalogModule={handleSelectCatalogModule}
           />
         )}
       </div>
@@ -3232,3 +3305,16 @@ REGLA CRITICA:
 }
 
 export default App;
+
+
+
+
+
+
+
+
+
+
+
+
+
