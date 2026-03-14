@@ -1267,7 +1267,11 @@ function App() {
           labels: normalizeChatLabels(chat.labels),
           profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
           isMyContact: chat?.isMyContact === true,
-          archived: Boolean(chat?.archived)
+          archived: Boolean(chat?.archived),
+          lastMessageModuleId: String(chat?.lastMessageModuleId || chat?.sentViaModuleId || '').trim().toLowerCase() || null,
+          lastMessageModuleName: String(chat?.lastMessageModuleName || chat?.sentViaModuleName || '').trim() || null,
+          lastMessageTransport: String(chat?.lastMessageTransport || chat?.sentViaTransport || '').trim().toLowerCase() || null,
+          lastMessageChannelType: String(chat?.lastMessageChannelType || chat?.sentViaChannelType || '').trim().toLowerCase() || null
         }))
         .filter((chat) => chatMatchesFilters(chat, chatFiltersRef.current));
 
@@ -1299,10 +1303,14 @@ function App() {
         status: sanitizeDisplayText(chat?.status || ''),
         phone: getBestChatPhone(chat),
         lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
-        labels: normalizeChatLabels(chat.labels),
-        profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
-        isMyContact: chat?.isMyContact === true,
-        archived: Boolean(chat?.archived)
+          labels: normalizeChatLabels(chat.labels),
+          profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
+          isMyContact: chat?.isMyContact === true,
+          archived: Boolean(chat?.archived),
+          lastMessageModuleId: String(chat?.lastMessageModuleId || chat?.sentViaModuleId || '').trim().toLowerCase() || null,
+          lastMessageModuleName: String(chat?.lastMessageModuleName || chat?.sentViaModuleName || '').trim() || null,
+          lastMessageTransport: String(chat?.lastMessageTransport || chat?.sentViaTransport || '').trim().toLowerCase() || null,
+          lastMessageChannelType: String(chat?.lastMessageChannelType || chat?.sentViaChannelType || '').trim().toLowerCase() || null
       };
 
       if (!chatMatchesQuery(hydrated, chatSearchRef.current) || !chatMatchesFilters(hydrated, chatFiltersRef.current)) {
@@ -1529,6 +1537,10 @@ function App() {
           ack: msg.ack || 0,
           isMyContact: existing?.isMyContact === true,
           unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (canonicalId === activeChatIdRef.current ? 0 : (existing?.unreadCount || 0) + 1),
+          lastMessageModuleId: String(msg?.sentViaModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null,
+          lastMessageModuleName: String(msg?.sentViaModuleName || existing?.lastMessageModuleName || '').trim() || null,
+          lastMessageTransport: String(msg?.sentViaTransport || existing?.lastMessageTransport || '').trim().toLowerCase() || null,
+          lastMessageChannelType: String(msg?.sentViaChannelType || existing?.lastMessageChannelType || '').trim().toLowerCase() || null,
         };
 
         if (!chatMatchesQuery(nextChat, chatSearchRef.current) || !chatMatchesFilters(nextChat, chatFiltersRef.current)) {
@@ -1602,8 +1614,24 @@ function App() {
       setLabelDefinitions(normalizeChatLabels(normalized.labels));
     });
 
-    socket.on('business_data_catalog', (catalog) => {
-      const normalizedCatalog = Array.isArray(catalog) ? catalog.map((item, idx) => normalizeCatalogItem(item, idx)) : [];
+        socket.on('business_data_catalog', (payload) => {
+      const scopedPayload = payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? payload
+        : null;
+      const scope = scopedPayload?.scope && typeof scopedPayload.scope === 'object'
+        ? scopedPayload.scope
+        : null;
+      const scopeModuleId = String(scope?.moduleId || '').trim().toLowerCase();
+      const activeModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
+
+      if (scopeModuleId && activeModuleId && scopeModuleId !== activeModuleId) {
+        return;
+      }
+
+      const rawItems = Array.isArray(scopedPayload?.items)
+        ? scopedPayload.items
+        : (Array.isArray(payload) ? payload : []);
+      const normalizedCatalog = rawItems.map((item, idx) => normalizeCatalogItem(item, idx));
       const normalizedCategories = Array.from(new Set(
         normalizedCatalog
           .flatMap((item) => (Array.isArray(item?.categories) ? item.categories : []))
@@ -1616,11 +1644,11 @@ function App() {
         catalog: normalizedCatalog,
         catalogMeta: {
           ...(prev?.catalogMeta || { source: 'local', nativeAvailable: false }),
-          categories: normalizedCategories
+          categories: normalizedCategories,
+          scope: scope || prev?.catalogMeta?.scope || null
         }
       }));
-    });
-    socket.on('quick_replies', (payload) => {
+    });    socket.on('quick_replies', (payload) => {
       const items = Array.isArray(payload?.items) ? payload.items : [];
       const normalized = items
         .map((item, idx) => ({
@@ -2152,6 +2180,24 @@ function App() {
       requestChatsPage({ reset: true });
     }
 
+    const selectedChat = chatsRef.current.find((c) => String(c?.id || '') === String(chatId || '')) || null;
+    const targetModuleId = String(selectedChat?.lastMessageModuleId || '').trim().toLowerCase();
+    const currentModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
+    if (targetModuleId && targetModuleId !== currentModuleId) {
+      const targetModule = (Array.isArray(waModules) ? waModules : [])
+        .find((item) => String(item?.moduleId || '').trim().toLowerCase() === targetModuleId);
+      if (targetModule?.moduleId) {
+        setSelectedWaModule(targetModule);
+        setWaModules((prev) => normalizeWaModules((Array.isArray(prev) ? prev : []).map((item) => ({
+          ...item,
+          isSelected: String(item?.moduleId || '').trim().toLowerCase() === targetModuleId
+        }))));
+        if (socket.connected) {
+          socket.emit('set_wa_module', { moduleId: targetModule.moduleId });
+        }
+      }
+    }
+
     activeChatIdRef.current = chatId;
     setActiveChatId(chatId);
     shouldInstantScrollRef.current = true;
@@ -2167,7 +2213,6 @@ function App() {
     socket.emit('get_contact_info', chatId);
     setChats((prev) => prev.map((c) => c.id === chatId ? { ...c, unreadCount: 0 } : c));
   };
-
   const handleExitActiveChat = () => {
     activeChatIdRef.current = null;
     setActiveChatId(null);

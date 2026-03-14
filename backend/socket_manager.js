@@ -118,19 +118,47 @@ function buildSocketAgentMeta(authContext = null, moduleContext = null) {
         sentByRole: role,
         sentViaModuleId: String(moduleContext?.moduleId || '').trim() || null,
         sentViaModuleName: String(moduleContext?.name || '').trim() || null,
-        sentViaTransport: String(moduleContext?.transportMode || '').trim().toLowerCase() || null
+        sentViaTransport: String(moduleContext?.transportMode || '').trim().toLowerCase() || null,
+        sentViaPhoneNumber: coerceHumanPhone(moduleContext?.phoneNumber || moduleContext?.phone || '') || null,
+        sentViaChannelType: String(moduleContext?.channelType || '').trim().toLowerCase() || null
     };
 }
 
 function sanitizeAgentMeta(agentMeta = null) {
     if (!agentMeta || typeof agentMeta !== 'object') return null;
     const out = {};
-    ['sentByUserId', 'sentByName', 'sentByEmail', 'sentByRole', 'sentViaModuleId', 'sentViaModuleName', 'sentViaTransport'].forEach((key) => {
+    ['sentByUserId', 'sentByName', 'sentByEmail', 'sentByRole', 'sentViaModuleId', 'sentViaModuleName', 'sentViaTransport', 'sentViaPhoneNumber', 'sentViaChannelType'].forEach((key) => {
         const value = String(agentMeta?.[key] || '').trim();
         if (value) out[key] = value;
     });
     return Object.keys(out).length > 0 ? out : null;
 }
+
+function buildModuleAttributionMeta(moduleContext = null) {
+    if (!moduleContext || typeof moduleContext !== 'object') return null;
+    const sentViaModuleId = String(moduleContext?.moduleId || '').trim().toLowerCase() || null;
+    const sentViaModuleName = String(moduleContext?.name || '').trim() || null;
+    const sentViaTransport = String(moduleContext?.transportMode || '').trim().toLowerCase() || null;
+    const sentViaPhoneNumber = coerceHumanPhone(
+        moduleContext?.phoneNumber
+        || moduleContext?.phone
+        || ''
+    ) || null;
+    const sentViaChannelType = String(moduleContext?.channelType || '').trim().toLowerCase() || null;
+
+    if (!sentViaModuleId && !sentViaModuleName && !sentViaTransport && !sentViaPhoneNumber && !sentViaChannelType) {
+        return null;
+    }
+
+    return {
+        sentViaModuleId,
+        sentViaModuleName,
+        sentViaTransport,
+        sentViaPhoneNumber,
+        sentViaChannelType
+    };
+}
+
 
 async function resolveSocketModuleContext(tenantId = 'default', authContext = null, requestedModuleId = '') {
     const cleanTenantId = String(tenantId || 'default').trim() || 'default';
@@ -2247,11 +2275,12 @@ class SocketManager {
         this.io.to(this.getTenantModuleRoom(tenantId, moduleId)).emit(eventName, payload);
     }
 
-    setActiveRuntimeContext({
+        setActiveRuntimeContext({
         tenantId = 'default',
         moduleId = 'default',
         moduleName = null,
         modulePhone = null,
+        channelType = null,
         transportMode = 'idle',
         webjsNamespace = null
     } = {}) {
@@ -2260,6 +2289,7 @@ class SocketManager {
             moduleId: String(moduleId || 'default').trim().toLowerCase() || 'default',
             moduleName: String(moduleName || '').trim() || null,
             modulePhone: coerceHumanPhone(modulePhone || '') || null,
+            channelType: String(channelType || '').trim().toLowerCase() || null,
             transportMode: String(transportMode || 'idle').trim().toLowerCase() || 'idle',
             webjsNamespace: String(webjsNamespace || '').trim() || null,
             updatedAt: Date.now()
@@ -2294,13 +2324,10 @@ class SocketManager {
         return candidate;
     }
 
-    emitToRuntimeContext(eventName, payload, { includeTenantFallback = false } = {}) {
+    emitToRuntimeContext(eventName, payload) {
         const target = this.resolveRuntimeEventTarget();
-        if (target?.tenantId && target?.moduleId) {
-            this.emitToTenantModule(target.tenantId, target.moduleId, eventName, payload);
-            if (includeTenantFallback) {
-                this.emitToTenant(target.tenantId, eventName, payload);
-            }
+        if (target?.tenantId) {
+            this.emitToTenant(target.tenantId, eventName, payload);
             return;
         }
         this.io.emit(eventName, payload);
@@ -2367,6 +2394,7 @@ class SocketManager {
                 || moduleContext?.phone
                 || ''
             ) || null;
+            const moduleAttributionMeta = buildModuleAttributionMeta(moduleContext);
             await messageHistoryService.upsertMessage(tenantId, {
                 messageId,
                 chatId,
@@ -2396,6 +2424,11 @@ class SocketManager {
                         url: fileMeta?.mediaUrl || null,
                         path: fileMeta?.mediaPath || null
                     },
+                    sentViaModuleId: moduleAttributionMeta?.sentViaModuleId || persistedAgentMeta?.sentViaModuleId || historyModuleId || null,
+                    sentViaModuleName: moduleAttributionMeta?.sentViaModuleName || persistedAgentMeta?.sentViaModuleName || null,
+                    sentViaTransport: moduleAttributionMeta?.sentViaTransport || persistedAgentMeta?.sentViaTransport || null,
+                    sentViaPhoneNumber: moduleAttributionMeta?.sentViaPhoneNumber || historyModulePhone || null,
+                    sentViaChannelType: moduleAttributionMeta?.sentViaChannelType || null,
                     ...(persistedAgentMeta || {})
                 },
                 chat: {
@@ -2493,12 +2526,14 @@ class SocketManager {
         const phoneNumber = coerceHumanPhone(runtimeContext?.modulePhone || '') || null;
         const moduleName = String(runtimeContext?.moduleName || '').trim() || null;
         const transportMode = String(runtimeContext?.transportMode || this.getWaRuntime()?.activeTransport || '').trim().toLowerCase() || null;
+        const channelType = String(runtimeContext?.channelType || '').trim().toLowerCase() || null;
 
         return {
             moduleId,
             phoneNumber,
             name: moduleName,
-            transportMode
+            transportMode,
+            channelType
         };
     }
 
@@ -2539,6 +2574,11 @@ class SocketManager {
         const labels = this.normalizeHistoryLabels(metadata?.labels || []);
         const profilePicUrl = String(metadata?.profilePicUrl || '').trim() || null;
 
+        const lastMessageModuleId = String(entry?.lastMessageModuleId || metadata?.sentViaModuleId || '').trim().toLowerCase() || null;
+        const lastMessageModuleName = String(entry?.lastMessageModuleName || metadata?.sentViaModuleName || '').trim() || null;
+        const lastMessageTransport = String(entry?.lastMessageTransport || metadata?.sentViaTransport || '').trim().toLowerCase() || null;
+        const lastMessageChannelType = String(entry?.lastMessageChannelType || metadata?.sentViaChannelType || '').trim().toLowerCase() || null;
+
         return {
             id: chatId,
             name: fallbackName,
@@ -2552,6 +2592,10 @@ class SocketManager {
             labels,
             profilePicUrl,
             isMyContact: Boolean(metadata?.isMyContact),
+            lastMessageModuleId,
+            lastMessageModuleName,
+            lastMessageTransport,
+            lastMessageChannelType,
             archived: Boolean(entry?.archived)
         };
     }
@@ -2692,6 +2736,7 @@ class SocketManager {
             sentViaPhoneNumber: String(row?.waPhoneNumber || '').trim() || null,
             sentViaModuleName: String(metadata?.sentViaModuleName || '').trim() || null,
             sentViaTransport: String(metadata?.sentViaTransport || '').trim() || null,
+            sentViaChannelType: String(metadata?.sentViaChannelType || '').trim() || null,
             ack: Number.isFinite(Number(row?.ack)) ? Number(row.ack) : 0,
             edited: Boolean(row?.edited),
             editedAt: Number(row?.editedAtUnix || 0) || null,
@@ -3084,6 +3129,14 @@ class SocketManager {
                 || ''
             );
 
+            const getActiveCatalogScope = () => {
+                const selectedModuleContext = socket?.data?.waModule || null;
+                return {
+                    tenantId,
+                    moduleId: String(selectedModuleContext?.moduleId || '').trim() || null,
+                    channelType: String(selectedModuleContext?.channelType || '').trim().toLowerCase() || null
+                };
+            };
             const emitWaModuleContext = async ({ requestedModuleId = '' } = {}) => {
                 const cleanRequested = normalizeSocketModuleId(requestedModuleId || getRequestedModuleIdFromSocket());
                 const moduleContext = await resolveSocketModuleContext(tenantId, authContext, cleanRequested);
@@ -3169,6 +3222,7 @@ class SocketManager {
                         moduleId: selectedModule?.moduleId || 'default',
                         moduleName: selectedModule?.name || null,
                         modulePhone: selectedModule?.phoneNumber || null,
+                        channelType: selectedModule?.channelType || null,
                         transportMode: moduleTransport,
                         webjsNamespace: null
                     });
@@ -3196,6 +3250,7 @@ class SocketManager {
                     moduleId: selectedModule?.moduleId || 'default',
                     moduleName: selectedModule?.name || null,
                     modulePhone: selectedModule?.phoneNumber || null,
+                    channelType: selectedModule?.channelType || null,
                     transportMode: moduleTransport,
                     webjsNamespace: null
                 });
@@ -3328,6 +3383,7 @@ class SocketManager {
                         moduleId: selectedModule?.moduleId || socket?.data?.waModuleId || 'default',
                         moduleName: selectedModule?.name || null,
                         modulePhone: selectedModule?.phoneNumber || null,
+                        channelType: selectedModule?.channelType || null,
                         transportMode: runtime?.activeTransport || nextMode,
                         webjsNamespace: null
                     });
@@ -3983,6 +4039,7 @@ class SocketManager {
                 const mediaFilename = mediaPayload && typeof mediaPayload === 'object' ? String(mediaPayload?.filename || '').trim() : '';
                 const mediaSizeBytesRaw = mediaPayload && typeof mediaPayload === 'object' ? Number(mediaPayload?.fileSizeBytes) : null;
                 const mediaSizeBytes = Number.isFinite(mediaSizeBytesRaw) ? mediaSizeBytesRaw : null;
+                const moduleAttributionMeta = buildModuleAttributionMeta(moduleContext);
 
                 const payload = {
                     id: messageId,
@@ -4008,7 +4065,12 @@ class SocketManager {
                     order: null,
                     location: null,
                     quotedMessage: quotedId ? { id: quotedId, body: '', fromMe: false, hasMedia: false, type: 'chat' } : null,
-                    ...(agentMeta || {})
+                    ...(agentMeta || {}),
+                    sentViaModuleId: moduleAttributionMeta?.sentViaModuleId || String(agentMeta?.sentViaModuleId || '').trim() || null,
+                    sentViaModuleName: moduleAttributionMeta?.sentViaModuleName || String(agentMeta?.sentViaModuleName || '').trim() || null,
+                    sentViaTransport: moduleAttributionMeta?.sentViaTransport || String(agentMeta?.sentViaTransport || '').trim().toLowerCase() || null,
+                    sentViaPhoneNumber: moduleAttributionMeta?.sentViaPhoneNumber || String(agentMeta?.sentViaPhoneNumber || '').trim() || null,
+                    sentViaChannelType: moduleAttributionMeta?.sentViaChannelType || String(agentMeta?.sentViaChannelType || '').trim().toLowerCase() || null
                 };
 
                 const persistedMessage = {
@@ -4038,17 +4100,15 @@ class SocketManager {
                     moduleContext
                 });
 
-                const moduleId = String(moduleContext?.moduleId || socket?.data?.waModuleId || 'default').trim().toLowerCase() || 'default';
-                this.emitToTenantModule(tenantId, moduleId, 'message', payload);
+                this.emitToRuntimeContext('message', payload);
 
                 try {
                     this.invalidateChatListCache();
                     const chat = await waClient.client.getChatById(targetChatId);
                     const summary = await this.toChatSummary(chat, { includeHeavyMeta: false });
-                    if (summary) this.emitToTenantModule(tenantId, moduleId, 'chat_updated', summary);
+                    if (summary) this.emitToRuntimeContext('chat_updated', summary);
                 } catch (_) { }
             };
-
             socket.on('send_message', async ({ to, toPhone, body, quotedMessageId }) => {
                 if (!guardRateLimit(socket, 'send_message')) return;
                 if (!this.ensureTransportReady(socket, { action: 'enviar mensajes', errorEvent: 'error' })) return;
@@ -4464,14 +4524,16 @@ class SocketManager {
                     }
                 });
             });
-
             socket.on('get_business_data', async () => {
                 try {
+                    const selectedModuleContext = socket?.data?.waModule || null;
+                    const catalogScope = getActiveCatalogScope();
+
                     if (!this.ensureTransportReady(socket, { action: 'cargar datos del negocio', errorEvent: 'error' })) {
                         socket.emit('business_data', {
                             profile: null,
                             labels: [],
-                            catalog: await loadCatalog({ tenantId }),
+                            catalog: await loadCatalog(catalogScope),
                             catalogMeta: { source: 'local', nativeAvailable: false, wooConfigured: false, wooAvailable: false }
                         });
                         return;
@@ -4539,7 +4601,6 @@ class SocketManager {
 
                     const tenantSettings = await tenantSettingsService.getTenantSettings(tenantId);
                     const tenantIntegrations = await tenantIntegrationsService.getTenantIntegrations(tenantId, { runtime: true });
-                    const selectedModuleContext = socket?.data?.waModule || null;
                     const moduleCatalogMode = String(selectedModuleContext?.metadata?.moduleSettings?.catalogMode || '').trim().toLowerCase();
                     const configuredCatalogMode = String(tenantIntegrations?.catalog?.mode || tenantSettings?.catalogMode || 'hybrid').trim().toLowerCase();
                     const catalogMode = moduleCatalogMode && moduleCatalogMode !== 'inherit'
@@ -4639,7 +4700,7 @@ class SocketManager {
                     }
 
                     if (!catalog.length && enableLocal) {
-                        catalog = await loadCatalog({ tenantId });
+                        catalog = await loadCatalog(catalogScope);
                         catalogMeta = {
                             ...catalogMeta,
                             source: 'local',
@@ -4663,10 +4724,11 @@ class SocketManager {
                     socket.emit('business_data', { profile, labels, catalog, catalogMeta, tenantSettings, integrations: tenantIntegrations });
                 } catch (e) {
                     console.error('Error fetching business data:', e);
+                    const fallbackCatalogScope = getActiveCatalogScope();
                     socket.emit('business_data', {
                         profile: null,
                         labels: [],
-                        catalog: await loadCatalog({ tenantId }),
+                        catalog: await loadCatalog(fallbackCatalogScope),
                         catalogMeta: { source: 'local', mode: 'hybrid', nativeAvailable: false, wooConfigured: false, wooAvailable: false, wooSource: null, wooStatus: 'error', wooReason: 'Error al obtener datos de negocio' },
                         tenantSettings: await tenantSettingsService.getTenantSettings(tenantId),
                         integrations: await tenantIntegrationsService.getTenantIntegrations(tenantId)
@@ -4686,6 +4748,7 @@ class SocketManager {
 
                     const tenant = tenantService.findTenantById(tenantId) || tenantService.DEFAULT_TENANT;
                     const limits = planLimitsService.getTenantPlanLimits(tenant);
+                    const catalogScope = getActiveCatalogScope();
                     const currentCatalog = await loadCatalog({ tenantId });
                     const maxCatalogItems = Number(limits?.maxCatalogItems || 0);
                     if (Number.isFinite(maxCatalogItems) && maxCatalogItems > 0 && currentCatalog.length >= maxCatalogItems) {
@@ -4693,9 +4756,12 @@ class SocketManager {
                         return;
                     }
 
-                    const newProduct = await addProduct(product, { tenantId });
-                    const tenantCatalog = await loadCatalog({ tenantId });
-                    this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
+                    const newProduct = await addProduct(product, catalogScope);
+                    const scopedCatalog = await loadCatalog(catalogScope);
+                    this.emitToTenant(tenantId, 'business_data_catalog', {
+                        scope: catalogScope,
+                        items: scopedCatalog
+                    });
                     socket.emit('product_added', newProduct);
                     await auditSocketAction('catalog.product.added', {
                         resourceType: 'catalog_item',
@@ -4714,9 +4780,13 @@ class SocketManager {
                         return;
                     }
 
-                    const updated = await updateProduct(id, updates, { tenantId });
-                    const tenantCatalog = await loadCatalog({ tenantId });
-                    this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
+                    const catalogScope = getActiveCatalogScope();
+                    const updated = await updateProduct(id, updates, catalogScope);
+                    const scopedCatalog = await loadCatalog(catalogScope);
+                    this.emitToTenant(tenantId, 'business_data_catalog', {
+                        scope: catalogScope,
+                        items: scopedCatalog
+                    });
                     socket.emit('product_updated', updated);
                     await auditSocketAction('catalog.product.updated', {
                         resourceType: 'catalog_item',
@@ -4735,9 +4805,13 @@ class SocketManager {
                         return;
                     }
 
-                    await deleteProduct(id, { tenantId });
-                    const tenantCatalog = await loadCatalog({ tenantId });
-                    this.emitToTenant(tenantId, 'business_data_catalog', tenantCatalog);
+                    const catalogScope = getActiveCatalogScope();
+                    await deleteProduct(id, catalogScope);
+                    const scopedCatalog = await loadCatalog(catalogScope);
+                    this.emitToTenant(tenantId, 'business_data_catalog', {
+                        scope: catalogScope,
+                        items: scopedCatalog
+                    });
                     await auditSocketAction('catalog.product.deleted', {
                         resourceType: 'catalog_item',
                         resourceId: String(id || '').trim() || null,
@@ -4961,6 +5035,7 @@ class SocketManager {
 
             const historyTenantId = this.resolveHistoryTenantId();
             const runtimeModuleContext = this.resolveHistoryModuleContext();
+            const moduleAttributionMeta = buildModuleAttributionMeta(runtimeModuleContext);
             const media = await mediaManager.processMessageMedia(msg, {
                 tenantId: historyTenantId,
                 moduleId: runtimeModuleContext?.moduleId || '',
@@ -5010,6 +5085,7 @@ class SocketManager {
                 order,
                 location,
                 quotedMessage,
+                ...(moduleAttributionMeta || {}),
                 ...(agentMeta || {})
             });
 
@@ -5030,6 +5106,7 @@ class SocketManager {
             // Emite de vuelta para confirmar en UI si se envio desde otro lugar
             const historyTenantId = this.resolveHistoryTenantId();
             const runtimeModuleContext = this.resolveHistoryModuleContext();
+            const moduleAttributionMeta = buildModuleAttributionMeta(runtimeModuleContext);
             const media = await mediaManager.processMessageMedia(msg, {
                 tenantId: historyTenantId,
                 moduleId: runtimeModuleContext?.moduleId || '',
@@ -5078,6 +5155,7 @@ class SocketManager {
                 order,
                 location,
                 quotedMessage,
+                ...(moduleAttributionMeta || {}),
                 ...(agentMeta || {})
             });
 
@@ -5171,6 +5249,24 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

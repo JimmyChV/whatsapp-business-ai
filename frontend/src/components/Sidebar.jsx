@@ -284,6 +284,18 @@ const Sidebar = ({
         return '';
     };
 
+    const getChannelBadge = (chat) => {
+        const moduleName = sanitizeDisplayText(chat?.lastMessageModuleName || '');
+        const moduleId = String(chat?.lastMessageModuleId || '').trim().toUpperCase();
+        const channelType = String(chat?.lastMessageChannelType || '').trim().toLowerCase();
+        const channelLabel = channelType ? channelType.toUpperCase() : '';
+        const source = moduleName || moduleId;
+
+        if (source && channelLabel) return `${source} · ${channelLabel}`;
+        if (source) return source;
+        if (channelLabel) return channelLabel;
+        return '';
+    };
     const resetFilters = () => {
         onFiltersChange?.(normalizeFilters({
             labelTokens: [],
@@ -536,6 +548,7 @@ const Sidebar = ({
                     filteredChats.map((chat) => {
                         const displayName = getDisplayName(chat);
                         const subtitle = getSubtitle(chat);
+                        const moduleBadge = getChannelBadge(chat);
                         const lastMessage = sanitizeDisplayText(chat.lastMessage || '') || 'Haz clic para chatear';
                         const labels = Array.isArray(chat?.labels) ? chat.labels : [];
                         return (
@@ -560,6 +573,8 @@ const Sidebar = ({
                                     </div>
 
                                     {subtitle && <p className="chat-subtitle-modern">{subtitle}</p>}
+
+                                    {moduleBadge && <p className="chat-module-badge">{moduleBadge}</p>}
 
                                     {labels.length > 0 && (
                                         <div className="chat-inline-labels">

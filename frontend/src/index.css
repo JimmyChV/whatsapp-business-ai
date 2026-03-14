@@ -1125,6 +1125,25 @@ body {
   white-space: nowrap;
 }
 
+.chat-module-badge {
+  margin: 0;
+  display: inline-flex;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(47, 220, 182, 0.32);
+  background: rgba(10, 176, 147, 0.14);
+  color: #9df6df;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-last-message {
   margin: 0;
   display: flex;
