@@ -2493,6 +2493,9 @@ async function getWebhookCloudRegistry({ force = false } = {}) {
             items.push({
                 tenantId,
                 moduleId,
+                moduleName: String(module?.name || '').trim() || null,
+                modulePhone: String(module?.phoneNumber || '').trim() || null,
+                channelType: String(module?.channelType || '').trim().toLowerCase() || null,
                 isSelected: module?.isSelected === true,
                 verifyToken,
                 phoneNumberId,
@@ -2643,6 +2646,18 @@ async function handleMetaWebhookEvent(req, res) {
         }
 
         const runtimeApplied = applyWebhookRuntimeConfigFromPayload(payload, registry);
+        if (runtimeApplied?.matched && typeof socketManager?.setActiveRuntimeContext === 'function') {
+            const matched = runtimeApplied.matched || {};
+            socketManager.setActiveRuntimeContext({
+                tenantId: String(matched?.tenantId || 'default').trim() || 'default',
+                moduleId: String(matched?.moduleId || 'default').trim().toLowerCase() || 'default',
+                moduleName: String(matched?.moduleName || '').trim() || null,
+                modulePhone: String(matched?.modulePhone || matched?.cloudConfig?.displayPhoneNumber || '').trim() || null,
+                channelType: String(matched?.channelType || 'whatsapp').trim().toLowerCase() || 'whatsapp',
+                transportMode: 'cloud',
+                webjsNamespace: null
+            });
+        }
         const summary = summarizeMetaWebhookPayload(payload);
         const handled = typeof waClient.handleWebhookPayload === 'function'
             ? await waClient.handleWebhookPayload(payload)

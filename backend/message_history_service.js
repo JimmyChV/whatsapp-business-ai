@@ -480,7 +480,12 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
             const { rows } = await queryPostgres(
                 `SELECT c.chat_id, c.display_name, c.phone, c.subtitle, c.unread_count, c.archived, c.pinned,
                         c.last_message_id, c.last_message_at, c.metadata,
-                        m.body AS last_message_body, m.from_me AS last_message_from_me, m.ack AS last_message_ack
+                        m.body AS last_message_body,
+                        m.from_me AS last_message_from_me,
+                        m.ack AS last_message_ack,
+                        m.wa_module_id AS last_message_module_id,
+                        m.wa_phone_number AS last_message_phone_number,
+                        m.metadata AS last_message_metadata
                    FROM tenant_chats c
                    LEFT JOIN tenant_messages m
                      ON m.tenant_id = c.tenant_id
@@ -490,21 +495,37 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
                   LIMIT $2 OFFSET $3`,
                 [cleanTenant, safeLimit, safeOffset]
             );
-            return rows.map((row) => ({
-                chatId: row.chat_id,
-                displayName: row.display_name,
-                phone: row.phone,
-                subtitle: row.subtitle,
-                unreadCount: Number(row.unread_count || 0),
-                archived: Boolean(row.archived),
-                pinned: Boolean(row.pinned),
-                lastMessageId: row.last_message_id,
-                lastMessageAt: Number(row.last_message_at || 0) || null,
-                lastMessageBody: row.last_message_body || '',
-                lastMessageFromMe: Boolean(row.last_message_from_me),
-                lastMessageAck: Number.isFinite(Number(row.last_message_ack)) ? Number(row.last_message_ack) : 0,
-                metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
-            }));
+
+            return rows.map((row) => {
+                const chatMetadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+                const lastMessageMetadata = row.last_message_metadata && typeof row.last_message_metadata === 'object'
+                    ? row.last_message_metadata
+                    : {};
+                const lastMessageModuleId = toSafeString(row.last_message_module_id || lastMessageMetadata.sentViaModuleId)?.toLowerCase() || null;
+                const lastMessageModuleName = toSafeString(lastMessageMetadata.sentViaModuleName) || null;
+                const lastMessageTransport = toSafeString(lastMessageMetadata.sentViaTransport)?.toLowerCase() || null;
+                const lastMessageChannelType = toSafeString(lastMessageMetadata.sentViaChannelType)?.toLowerCase() || null;
+
+                return {
+                    chatId: row.chat_id,
+                    displayName: row.display_name,
+                    phone: row.phone,
+                    subtitle: row.subtitle,
+                    unreadCount: Number(row.unread_count || 0),
+                    archived: Boolean(row.archived),
+                    pinned: Boolean(row.pinned),
+                    lastMessageId: row.last_message_id,
+                    lastMessageAt: Number(row.last_message_at || 0) || null,
+                    lastMessageBody: row.last_message_body || '',
+                    lastMessageFromMe: Boolean(row.last_message_from_me),
+                    lastMessageAck: Number.isFinite(Number(row.last_message_ack)) ? Number(row.last_message_ack) : 0,
+                    lastMessageModuleId,
+                    lastMessageModuleName,
+                    lastMessageTransport,
+                    lastMessageChannelType,
+                    metadata: chatMetadata
+                };
+            });
         } catch (error) {
             if (missingRelation(error) || missingColumn(error, 'wa_module_id')) return [];
             throw error;
@@ -517,6 +538,14 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
         .slice(safeOffset, safeOffset + safeLimit)
         .map((chat) => {
             const lastMessage = chat?.lastMessageId ? store.messages[chat.lastMessageId] : null;
+            const lastMessageMetadata = lastMessage?.metadata && typeof lastMessage.metadata === 'object'
+                ? lastMessage.metadata
+                : {};
+            const lastMessageModuleId = toSafeString(lastMessage?.waModuleId || lastMessageMetadata.sentViaModuleId)?.toLowerCase() || null;
+            const lastMessageModuleName = toSafeString(lastMessageMetadata.sentViaModuleName) || null;
+            const lastMessageTransport = toSafeString(lastMessageMetadata.sentViaTransport)?.toLowerCase() || null;
+            const lastMessageChannelType = toSafeString(lastMessageMetadata.sentViaChannelType)?.toLowerCase() || null;
+
             return {
                 chatId: chat.id,
                 displayName: chat.displayName || null,
@@ -530,11 +559,14 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
                 lastMessageBody: String(lastMessage?.body || ''),
                 lastMessageFromMe: Boolean(lastMessage?.fromMe),
                 lastMessageAck: Number.isFinite(Number(lastMessage?.ack)) ? Number(lastMessage.ack) : 0,
+                lastMessageModuleId,
+                lastMessageModuleName,
+                lastMessageTransport,
+                lastMessageChannelType,
                 metadata: chat.metadata && typeof chat.metadata === 'object' ? chat.metadata : {}
             };
         });
 }
-
 async function listMessages(tenantId = DEFAULT_TENANT_ID, {
     chatId = '',
     limit = 200,

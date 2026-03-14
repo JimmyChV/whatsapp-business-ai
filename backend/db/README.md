@@ -1,4 +1,4 @@
-# Postgres migration guide (SaaS phase 2)
+# Postgres migration guide (SaaS phase 2+)
 
 ## 1) Configure backend env
 
@@ -23,6 +23,9 @@ psql "$env:DATABASE_URL" -f db/migrations/003_message_history.sql
 psql "$env:DATABASE_URL" -f db/migrations/004_auth_sessions.sql
 psql "$env:DATABASE_URL" -f db/migrations/005_wa_modules.sql
 psql "$env:DATABASE_URL" -f db/migrations/006_message_history_module_context.sql
+psql "$env:DATABASE_URL" -f db/migrations/007_admin_profiles_and_module_media.sql
+psql "$env:DATABASE_URL" -f db/migrations/008_customers.sql
+psql "$env:DATABASE_URL" -f db/migrations/009_multichannel_unified_inbox.sql
 ```
 
 Or with split vars already exported:
@@ -34,6 +37,9 @@ psql -f db/migrations/003_message_history.sql
 psql -f db/migrations/004_auth_sessions.sql
 psql -f db/migrations/005_wa_modules.sql
 psql -f db/migrations/006_message_history_module_context.sql
+psql -f db/migrations/007_admin_profiles_and_module_media.sql
+psql -f db/migrations/008_customers.sql
+psql -f db/migrations/009_multichannel_unified_inbox.sql
 ```
 
 ## 3) Verify
@@ -55,9 +61,13 @@ Expected core tables:
 - `tenant_settings`
 - `tenant_chats`
 - `tenant_messages`
-- `audit_logs`
 - `auth_sessions`
 - `auth_token_revocations`
+- `wa_modules`
+- `tenant_customers`
+- `tenant_customer_identities`
+- `tenant_channel_events`
+- `audit_logs`
 
 ## 4) Tenant settings API
 
@@ -72,8 +82,6 @@ Current key settings:
 
 ## Notes
 
-- Current runtime keeps `file` as default driver for backward compatibility.
-- `postgres` driver is wired for `catalog_manager`, `quick_replies_manager` and `tenant_settings_service`.
+- Runtime keeps `file` as default driver for backward compatibility.
+- `postgres` driver is wired for `catalog_manager`, `quick_replies_manager`, `tenant_settings_service`, `wa_module_service`, `customer_service` and `message_history_service`.
 - If `pg` dependency is missing, backend will show a clear error when `SAAS_STORAGE_DRIVER=postgres`.
-
-

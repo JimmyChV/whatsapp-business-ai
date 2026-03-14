@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -16,6 +16,7 @@ const {
 
 const MODULES_FILE = 'wa_modules.json';
 const ALLOWED_TRANSPORTS = new Set(['cloud']);
+const ALLOWED_CHANNEL_TYPES = new Set(['whatsapp', 'instagram', 'messenger', 'webchat']);
 const MAX_MODULES_PER_TENANT = Math.max(1, Number(process.env.WA_MODULES_MAX_PER_TENANT || 50));
 let postgresSchemaReadyPromise = null;
 
@@ -76,6 +77,24 @@ function normalizeTransport(value = '') {
     return 'cloud';
 }
 
+function normalizeChannelType(value = '', fallback = 'whatsapp') {
+    const source = toText(value || fallback).toLowerCase();
+    if (!source) return 'whatsapp';
+    if (ALLOWED_CHANNEL_TYPES.has(source)) return source;
+    const clean = source.replace(/[^a-z0-9_-]/g, '').slice(0, 32);
+    return clean || 'whatsapp';
+}
+
+function normalizeChannelAccountId(value = '', fallback = null) {
+    const clean = toText(value || fallback || '');
+    return clean || null;
+}
+
+function normalizeChannelLabel(value = '', fallback = '') {
+    const clean = toText(value || fallback);
+    return clean || null;
+}
+
 function normalizeAssignedUserIds(value = []) {
     const source = Array.isArray(value) ? value : [];
     const seen = new Set();
@@ -120,6 +139,7 @@ function createUniqueModuleId(modules = []) {
     const fallback = Date.now().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(-6).padStart(6, '0');
     return 'MOD-' + fallback;
 }
+
 function normalizeModule(input = {}, {
     fallbackId = '',
     preserveCreatedAt = null,
@@ -140,10 +160,35 @@ function normalizeModule(input = {}, {
     const baseMetadata = sanitizeMetadata(source.metadata, previousMetadata);
     const metadata = prepareModuleMetadataForSave(baseMetadata, previousMetadata);
 
+    const phoneNumber = normalizePhone(source.phoneNumber || source.phone || source.number);
+    const channelType = normalizeChannelType(
+        source.channelType
+        || source.channel_type
+        || source.channel
+        || source.metadata?.channelType
+        || 'whatsapp'
+    );
+    const channelAccountId = normalizeChannelAccountId(
+        source.channelAccountId
+        || source.channel_account_id
+        || source.accountId
+        || (channelType === 'whatsapp' ? phoneNumber : null)
+    );
+    const channelLabel = normalizeChannelLabel(
+        source.channelLabel
+        || source.channel_label
+        || source.accountLabel
+        || source.name
+        || moduleId
+    );
+
     return {
         moduleId,
         name: toText(source.name) || moduleId,
-        phoneNumber: normalizePhone(source.phoneNumber || source.phone || source.number),
+        phoneNumber,
+        channelType,
+        channelAccountId,
+        channelLabel,
         transportMode: normalizeTransport(source.transportMode || source.transport || source.mode),
         imageUrl: normalizeImageUrl(source.imageUrl || source.image_url || source.logoUrl || source.logo_url),
         isActive: toBoolean(source.isActive, true),
@@ -155,6 +200,7 @@ function normalizeModule(input = {}, {
         updatedAt: nowIso
     };
 }
+
 function normalizeStoreState(input = {}) {
     const source = input && typeof input === 'object' ? input : {};
     const rawModules = Array.isArray(source.modules) ? source.modules : [];
@@ -230,6 +276,9 @@ async function ensurePostgresSchema() {
                 module_id TEXT NOT NULL,
                 module_name TEXT NOT NULL,
                 phone_number TEXT,
+                channel_type TEXT NOT NULL DEFAULT 'whatsapp',
+                channel_account_id TEXT,
+                channel_label TEXT,
                 transport_mode TEXT NOT NULL DEFAULT 'cloud',
                 image_url TEXT,
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -243,6 +292,9 @@ async function ensurePostgresSchema() {
             )`
         );
         await queryPostgres('ALTER TABLE IF EXISTS wa_modules ADD COLUMN IF NOT EXISTS image_url TEXT');
+        await queryPostgres("ALTER TABLE IF EXISTS wa_modules ADD COLUMN IF NOT EXISTS channel_type TEXT NOT NULL DEFAULT 'whatsapp'");
+        await queryPostgres('ALTER TABLE IF EXISTS wa_modules ADD COLUMN IF NOT EXISTS channel_account_id TEXT');
+        await queryPostgres('ALTER TABLE IF EXISTS wa_modules ADD COLUMN IF NOT EXISTS channel_label TEXT');
         await queryPostgres(
             `CREATE INDEX IF NOT EXISTS idx_wa_modules_tenant_default
              ON wa_modules(tenant_id, is_default DESC, created_at ASC)`
@@ -250,6 +302,10 @@ async function ensurePostgresSchema() {
         await queryPostgres(
             `CREATE INDEX IF NOT EXISTS idx_wa_modules_tenant_selected
              ON wa_modules(tenant_id, is_selected DESC, updated_at DESC)`
+        );
+        await queryPostgres(
+            `CREATE INDEX IF NOT EXISTS idx_wa_modules_tenant_channel
+             ON wa_modules(tenant_id, channel_type, is_active DESC, updated_at DESC)`
         );
     })();
 
@@ -282,6 +338,9 @@ async function loadPostgresStore(tenantId) {
                 module_id,
                 module_name,
                 phone_number,
+                channel_type,
+                channel_account_id,
+                channel_label,
                 transport_mode,
                 image_url,
                 is_active,
@@ -304,6 +363,9 @@ async function loadPostgresStore(tenantId) {
             moduleId: row.module_id,
             name: row.module_name,
             phoneNumber: row.phone_number,
+            channelType: row.channel_type,
+            channelAccountId: row.channel_account_id,
+            channelLabel: row.channel_label,
             transportMode: row.transport_mode,
             imageUrl: row.image_url,
             isActive: row.is_active,
@@ -347,6 +409,9 @@ async function savePostgresStore(tenantId, store = {}, { schemaEnsured = false }
                     module_id,
                     module_name,
                     phone_number,
+                    channel_type,
+                    channel_account_id,
+                    channel_label,
                     transport_mode,
                     image_url,
                     is_active,
@@ -357,13 +422,16 @@ async function savePostgresStore(tenantId, store = {}, { schemaEnsured = false }
                     created_at,
                     updated_at
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12::timestamptz, NOW()
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14::jsonb, $15::timestamptz, NOW()
                 )`,
                 [
                     tenantId,
                     module.moduleId,
                     module.name,
                     module.phoneNumber || null,
+                    normalizeChannelType(module.channelType || 'whatsapp'),
+                    normalizeChannelAccountId(module.channelAccountId, module.phoneNumber || null),
+                    normalizeChannelLabel(module.channelLabel, module.name || module.moduleId),
                     module.transportMode,
                     module.imageUrl || null,
                     module.isActive !== false,
@@ -412,10 +480,18 @@ async function saveStore(tenantId = DEFAULT_TENANT_ID, store = {}) {
 }
 
 function sanitizeModulePublic(module = {}) {
+    const moduleId = toText(module.moduleId);
+    const name = toText(module.name) || moduleId;
+    const phoneNumber = module.phoneNumber || null;
+    const channelType = normalizeChannelType(module.channelType || 'whatsapp');
+
     return {
-        moduleId: toText(module.moduleId),
-        name: toText(module.name),
-        phoneNumber: module.phoneNumber || null,
+        moduleId,
+        name,
+        phoneNumber,
+        channelType,
+        channelAccountId: normalizeChannelAccountId(module.channelAccountId, channelType === 'whatsapp' ? phoneNumber : null),
+        channelLabel: normalizeChannelLabel(module.channelLabel, name || moduleId),
         transportMode: normalizeTransport(module.transportMode),
         imageUrl: normalizeImageUrl(module.imageUrl || module.image_url),
         isActive: module.isActive !== false,
@@ -440,6 +516,9 @@ async function listModulesRuntime(tenantId = DEFAULT_TENANT_ID, { includeInactiv
         .filter((module) => moduleVisibleForUser(module, userId))
         .map((module) => ({
             ...module,
+            channelType: normalizeChannelType(module.channelType || 'whatsapp'),
+            channelAccountId: normalizeChannelAccountId(module.channelAccountId, module.phoneNumber || null),
+            channelLabel: normalizeChannelLabel(module.channelLabel, module.name || module.moduleId),
             assignedUserIds: normalizeAssignedUserIds(module.assignedUserIds || []),
             metadata: sanitizeMetadata(module.metadata)
         }));
@@ -452,6 +531,7 @@ async function getModuleRuntime(tenantId = DEFAULT_TENANT_ID, moduleId = '', { u
     const modules = await listModulesRuntime(tenantId, { includeInactive: true, userId });
     return modules.find((module) => module.moduleId === cleanModuleId) || null;
 }
+
 function moduleVisibleForUser(module = {}, userId = '') {
     const cleanUserId = toText(userId);
     if (!cleanUserId) return true;
@@ -648,10 +728,12 @@ async function getSelectedModule(tenantId = DEFAULT_TENANT_ID, { userId = '' } =
 
 module.exports = {
     ALLOWED_TRANSPORTS: Array.from(ALLOWED_TRANSPORTS),
+    ALLOWED_CHANNEL_TYPES: Array.from(ALLOWED_CHANNEL_TYPES),
     MAX_MODULES_PER_TENANT,
     sanitizeModulePublic,
     normalizeAssignedUserIds,
     normalizeTransport,
+    normalizeChannelType,
     resolveModuleCloudConfig,
     listModulesRuntime,
     getModuleRuntime,
@@ -663,6 +745,3 @@ module.exports = {
     setSelectedModule,
     getSelectedModule
 };
-
-
-
