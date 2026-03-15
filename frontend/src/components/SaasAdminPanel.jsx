@@ -86,6 +86,104 @@ const EMPTY_TENANT_CATALOG_FORM = {
     wooConsumerSecretMasked: ''
 };
 
+const EMPTY_CATALOG_PRODUCT_FORM = {
+    productId: '',
+    title: '',
+    price: '',
+    regularPrice: '',
+    salePrice: '',
+    description: '',
+    imageUrl: '',
+    sku: '',
+    stockStatus: 'instock',
+    stockQuantity: '',
+    categoriesText: '',
+    url: '',
+    brand: '',
+    isActive: true
+};
+
+function normalizeCatalogProductItem(item = {}) {
+    const source = item && typeof item === 'object' ? item : {};
+    const productId = String(source.id || source.productId || '').trim();
+    if (!productId) return null;
+    const categories = Array.isArray(source.categories)
+        ? source.categories
+        : String(source.category || '').split(',');
+    const cleanCategories = categories
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean);
+
+    const metadata = source.metadata && typeof source.metadata === 'object' ? source.metadata : {};
+    const isActive = metadata?.isActive !== false && String(source.stockStatus || source.stock_status || '').trim().toLowerCase() !== 'outofstock';
+
+    return {
+        productId,
+        title: String(source.title || source.name || '').trim() || productId,
+        price: String(source.price || '').trim(),
+        regularPrice: String(source.regularPrice || source.regular_price || '').trim(),
+        salePrice: String(source.salePrice || source.sale_price || '').trim(),
+        description: String(source.description || '').trim(),
+        imageUrl: String(source.imageUrl || source.image || '').trim(),
+        sku: String(source.sku || '').trim(),
+        stockStatus: String(source.stockStatus || source.stock_status || '').trim().toLowerCase() || 'instock',
+        stockQuantity: Number.isFinite(Number(source.stockQuantity)) ? String(source.stockQuantity) : '',
+        categories: cleanCategories,
+        categoriesText: cleanCategories.join(', '),
+        url: String(source.url || source.permalink || source.productUrl || source.link || '').trim(),
+        brand: String(source.brand || '').trim(),
+        moduleId: String(source.moduleId || '').trim().toLowerCase(),
+        catalogId: String(source.catalogId || '').trim().toUpperCase(),
+        createdAt: String(source.createdAt || '').trim(),
+        isActive
+    };
+}
+
+function buildCatalogProductFormFromItem(item = null) {
+    if (!item || typeof item !== 'object') return { ...EMPTY_CATALOG_PRODUCT_FORM };
+    return {
+        productId: String(item.productId || item.id || '').trim(),
+        title: String(item.title || '').trim(),
+        price: String(item.price || '').trim(),
+        regularPrice: String(item.regularPrice || '').trim(),
+        salePrice: String(item.salePrice || '').trim(),
+        description: String(item.description || '').trim(),
+        imageUrl: String(item.imageUrl || '').trim(),
+        sku: String(item.sku || '').trim(),
+        stockStatus: String(item.stockStatus || 'instock').trim().toLowerCase() || 'instock',
+        stockQuantity: String(item.stockQuantity || '').trim(),
+        categoriesText: String(item.categoriesText || '').trim(),
+        url: String(item.url || '').trim(),
+        brand: String(item.brand || '').trim(),
+        isActive: item.isActive !== false
+    };
+}
+
+function buildCatalogProductPayload(form = {}, { moduleId = '', catalogId = '' } = {}) {
+    const source = form && typeof form === 'object' ? form : {};
+    const categories = String(source.categoriesText || '')
+        .split(',')
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean);
+
+    return {
+        title: String(source.title || '').trim(),
+        price: String(source.price || '').trim(),
+        regularPrice: String(source.regularPrice || '').trim(),
+        salePrice: String(source.salePrice || '').trim(),
+        description: String(source.description || '').trim(),
+        imageUrl: String(source.imageUrl || '').trim(),
+        sku: String(source.sku || '').trim(),
+        stockStatus: String(source.stockStatus || '').trim().toLowerCase(),
+        stockQuantity: String(source.stockQuantity || '').trim(),
+        categories,
+        category: categories[0] || '',
+        url: String(source.url || '').trim(),
+        brand: String(source.brand || '').trim(),
+        moduleId: String(moduleId || '').trim().toLowerCase(),
+        catalogId: String(catalogId || '').trim().toUpperCase()
+    };
+}
 function normalizeCatalogIdsList(value = []) {
     const source = Array.isArray(value) ? value : [];
     const seen = new Set();
@@ -112,7 +210,6 @@ function normalizeTenantCatalogItem(item = {}) {
         sourceType: ['local', 'woocommerce', 'meta'].includes(String(source.sourceType || '').trim().toLowerCase())
             ? String(source.sourceType || '').trim().toLowerCase()
             : 'local',
-        isActive: source.isActive !== false,
         isDefault: source.isDefault === true,
         wooBaseUrl: String(woo.baseUrl || '').trim(),
         wooPerPage: Number(woo.perPage || 100) || 100,
@@ -156,7 +253,6 @@ function buildTenantCatalogPayload(form = {}) {
         sourceType: ['local', 'woocommerce', 'meta'].includes(String(source.sourceType || '').trim().toLowerCase())
             ? String(source.sourceType || '').trim().toLowerCase()
             : 'local',
-        isActive: source.isActive !== false,
         isDefault: source.isDefault === true,
         config: {
             woocommerce: {
@@ -332,7 +428,6 @@ function normalizeWaModule(item = {}) {
         phoneNumber: String(source.phoneNumber || '').trim() || '',
         transportMode: 'cloud',
         imageUrl: String(source.imageUrl || '').trim() || '',
-        isActive: source.isActive !== false,
         isDefault: source.isDefault === true,
         isSelected: source.isSelected === true,
         assignedUserIds: Array.isArray(source.assignedUserIds)
@@ -712,6 +807,13 @@ export default function SaasAdminPanel({
     const [tenantCatalogForm, setTenantCatalogForm] = useState(EMPTY_TENANT_CATALOG_FORM);
     const [loadingTenantCatalogs, setLoadingTenantCatalogs] = useState(false);
     const [catalogPanelMode, setCatalogPanelMode] = useState('view');
+    const [tenantCatalogProducts, setTenantCatalogProducts] = useState([]);
+    const [selectedCatalogProductId, setSelectedCatalogProductId] = useState('');
+    const [catalogProductForm, setCatalogProductForm] = useState(EMPTY_CATALOG_PRODUCT_FORM);
+    const [catalogProductPanelMode, setCatalogProductPanelMode] = useState('view');
+    const [loadingCatalogProducts, setLoadingCatalogProducts] = useState(false);
+    const [catalogProductImageUploading, setCatalogProductImageUploading] = useState(false);
+    const [catalogProductImageError, setCatalogProductImageError] = useState('');
     const [planMatrix, setPlanMatrix] = useState({});
     const [selectedPlanId, setSelectedPlanId] = useState('');
     const [planForm, setPlanForm] = useState(() => normalizePlanForm('starter', {}));
@@ -1057,6 +1159,11 @@ export default function SaasAdminPanel({
         [tenantCatalogItems, selectedCatalogId]
     );
 
+
+    const selectedCatalogProduct = useMemo(
+        () => (Array.isArray(tenantCatalogProducts) ? tenantCatalogProducts : []).find((item) => String(item?.productId || '').trim() === String(selectedCatalogProductId || '').trim()) || null,
+        [tenantCatalogProducts, selectedCatalogProductId]
+    );
     const activeCatalogOptions = useMemo(
         () => tenantCatalogItems.filter((entry) => entry?.isActive !== false),
         [tenantCatalogItems]
@@ -1279,6 +1386,9 @@ export default function SaasAdminPanel({
         if (!cleanTenantId) {
             setTenantIntegrations(EMPTY_INTEGRATIONS_FORM);
         setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
+        setTenantCatalogProducts([]);
+        setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
+        setCatalogProductImageError('');
             return;
         }
         setLoadingIntegrations(true);
@@ -1295,6 +1405,11 @@ export default function SaasAdminPanel({
             setTenantCatalogs([]);
             setSelectedCatalogId('');
             setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
+            setTenantCatalogProducts([]);
+            setSelectedCatalogProductId('');
+            setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
+            setCatalogProductPanelMode('view');
+            setCatalogProductImageError('');
             return;
         }
         setLoadingTenantCatalogs(true);
@@ -1313,6 +1428,136 @@ export default function SaasAdminPanel({
             });
         } finally {
             setLoadingTenantCatalogs(false);
+        }
+    };
+    const loadTenantCatalogProducts = async (tenantId, catalogId) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        const cleanCatalogId = String(catalogId || '').trim().toUpperCase();
+        if (!cleanTenantId || !cleanCatalogId) {
+            setTenantCatalogProducts([]);
+            setSelectedCatalogProductId('');
+            setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
+            setCatalogProductPanelMode('view');
+            setCatalogProductImageError('');
+            return;
+        }
+
+        setLoadingCatalogProducts(true);
+        try {
+            const payload = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/catalogs/${encodeURIComponent(cleanCatalogId)}/products`);
+            const items = (Array.isArray(payload?.items) ? payload.items : [])
+                .map((entry) => normalizeCatalogProductItem(entry))
+                .filter(Boolean)
+                .sort((a, b) => String(a?.title || '').localeCompare(String(b?.title || ''), 'es', { sensitivity: 'base' }));
+
+            setTenantCatalogProducts(items);
+            setSelectedCatalogProductId((prev) => {
+                const cleanPrev = String(prev || '').trim();
+                if (cleanPrev && items.some((item) => String(item?.productId || '').trim() === cleanPrev)) {
+                    return cleanPrev;
+                }
+                return '';
+            });
+        } finally {
+            setLoadingCatalogProducts(false);
+        }
+    };
+
+    const openCatalogProductCreate = () => {
+        if (!canEditCatalog || !selectedTenantCatalog || selectedTenantCatalog.sourceType !== 'local') return;
+        setSelectedCatalogProductId('');
+        setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
+        setCatalogProductPanelMode('create');
+        setCatalogProductImageError('');
+    };
+
+    const openCatalogProductEdit = (product) => {
+        if (!canEditCatalog || !product) return;
+        setSelectedCatalogProductId(String(product.productId || '').trim());
+        setCatalogProductForm(buildCatalogProductFormFromItem(product));
+        setCatalogProductPanelMode('edit');
+        setCatalogProductImageError('');
+    };
+
+    const cancelCatalogProductEdit = () => {
+        if (selectedCatalogProduct) {
+            setCatalogProductForm(buildCatalogProductFormFromItem(selectedCatalogProduct));
+        } else {
+            setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
+        }
+        setCatalogProductPanelMode('view');
+        setCatalogProductImageError('');
+    };
+
+    const saveCatalogProduct = async () => {
+        const cleanTenantId = String(settingsTenantId || '').trim();
+        const cleanCatalogId = String(selectedTenantCatalog?.catalogId || '').trim().toUpperCase();
+        if (!cleanTenantId || !cleanCatalogId) throw new Error('Selecciona tenant y catalogo antes de guardar.');
+
+        const payload = buildCatalogProductPayload(catalogProductForm, {
+            moduleId: '',
+            catalogId: cleanCatalogId
+        });
+
+        if (!String(payload.title || '').trim()) throw new Error('Titulo de producto es obligatorio.');
+        if (!String(payload.price || '').trim()) throw new Error('Precio de producto es obligatorio.');
+
+        if (catalogProductPanelMode === 'create') {
+            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/catalogs/${encodeURIComponent(cleanCatalogId)}/products`, {
+                method: 'POST',
+                body: payload
+            });
+        } else {
+            const cleanProductId = String(catalogProductForm.productId || selectedCatalogProductId || '').trim();
+            if (!cleanProductId) throw new Error('Producto invalido para actualizar.');
+            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/catalogs/${encodeURIComponent(cleanCatalogId)}/products/${encodeURIComponent(cleanProductId)}`, {
+                method: 'PUT',
+                body: payload
+            });
+        }
+
+        await loadTenantCatalogProducts(cleanTenantId, cleanCatalogId);
+        setCatalogProductPanelMode('view');
+        setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
+    };
+
+    const deactivateCatalogProduct = async (productId) => {
+        const cleanTenantId = String(settingsTenantId || '').trim();
+        const cleanCatalogId = String(selectedTenantCatalog?.catalogId || '').trim().toUpperCase();
+        const cleanProductId = String(productId || '').trim();
+        if (!cleanTenantId || !cleanCatalogId || !cleanProductId) return;
+
+        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/catalogs/${encodeURIComponent(cleanCatalogId)}/products/${encodeURIComponent(cleanProductId)}/deactivate`, {
+            method: 'POST',
+            body: {}
+        });
+        await loadTenantCatalogProducts(cleanTenantId, cleanCatalogId);
+        setCatalogProductPanelMode('view');
+    };
+
+    const handleCatalogProductImageUpload = async (file) => {
+        if (!file) return;
+        const cleanTenantId = String(settingsTenantId || '').trim();
+        const cleanCatalogId = String(selectedTenantCatalog?.catalogId || '').trim().toUpperCase();
+        if (!cleanTenantId || !cleanCatalogId) {
+            setCatalogProductImageError('Selecciona un catalogo local antes de subir imagen.');
+            return;
+        }
+
+        try {
+            setCatalogProductImageUploading(true);
+            setCatalogProductImageError('');
+            const uploadedUrl = await uploadImageAsset({
+                file,
+                tenantId: cleanTenantId,
+                scope: `catalog-product-${cleanCatalogId.toLowerCase()}`
+            });
+            if (!uploadedUrl) throw new Error('No se recibio URL de imagen.');
+            setCatalogProductForm((prev) => ({ ...prev, imageUrl: uploadedUrl }));
+        } catch (error) {
+            setCatalogProductImageError(String(error?.message || 'No se pudo subir la imagen del producto.'));
+        } finally {
+            setCatalogProductImageUploading(false);
         }
     };
     const loadPlanMatrix = async () => {
@@ -1356,11 +1601,13 @@ export default function SaasAdminPanel({
             setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
         }
         setCatalogPanelMode('view');
+        setCatalogProductPanelMode('view');
     };
 
     const openCatalogCreate = () => {
         if (!canEditCatalog) return;
         setSelectedCatalogId('');
+        setSelectedCatalogProductId('');
         setCatalogPanelMode('create');
         setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
     };
@@ -1413,6 +1660,11 @@ export default function SaasAdminPanel({
         setTenantCatalogs([]);
         setSelectedCatalogId('');
         setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
+        setTenantCatalogProducts([]);
+        setSelectedCatalogProductId('');
+        setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
+        setCatalogProductPanelMode('view');
+        setCatalogProductImageError('');
             return;
         }
         const payload = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(cleanTenantId) + '/wa-modules');
@@ -1589,12 +1841,14 @@ export default function SaasAdminPanel({
         setSelectedUserId('');
         setSelectedWaModuleId('');
         setSelectedCatalogId('');
+        setSelectedCatalogProductId('');
         setSelectedConfigKey('');
         setTenantPanelMode('view');
         setUserPanelMode('view');
         setTenantSettingsPanelMode('view');
         setWaModulePanelMode('view');
         setCatalogPanelMode('view');
+        setCatalogProductPanelMode('view');
         setPlanPanelMode('view');
         setRolePanelMode('view');
         setMembershipDraft([]);
@@ -1603,6 +1857,9 @@ export default function SaasAdminPanel({
         setWaModuleForm(EMPTY_WA_MODULE_FORM);
         setTenantIntegrations(EMPTY_INTEGRATIONS_FORM);
         setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
+        setTenantCatalogProducts([]);
+        setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
+        setCatalogProductImageError('');
         setSelectedPlanId('');
         setPlanForm(normalizePlanForm('starter', {}));
         setRoleForm(EMPTY_ROLE_FORM);
@@ -1625,6 +1882,7 @@ export default function SaasAdminPanel({
                 || selectedUserId
                 || selectedWaModuleId
                 || selectedCatalogId
+                || selectedCatalogProductId
                 || selectedConfigKey
                 || selectedRoleKey
                 || tenantPanelMode !== 'view'
@@ -1632,6 +1890,7 @@ export default function SaasAdminPanel({
                 || tenantSettingsPanelMode !== 'view'
                 || waModulePanelMode !== 'view'
                 || catalogPanelMode !== 'view'
+                || catalogProductPanelMode !== 'view'
                 || planPanelMode !== 'view'
                 || rolePanelMode !== 'view'
                 || selectedPlanId
@@ -1689,6 +1948,11 @@ export default function SaasAdminPanel({
         setTenantCatalogs([]);
         setSelectedCatalogId('');
         setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
+        setTenantCatalogProducts([]);
+        setSelectedCatalogProductId('');
+        setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
+        setCatalogProductPanelMode('view');
+        setCatalogProductImageError('');
     }, [isOpen, tenantScopeId]);
 
     useEffect(() => {
@@ -1783,6 +2047,18 @@ export default function SaasAdminPanel({
         }
         setTenantCatalogForm(buildTenantCatalogFormFromItem(selectedTenantCatalog));
     }, [selectedTenantCatalog, catalogPanelMode]);
+    useEffect(() => {
+        if (!isOpen || !settingsTenantId || !selectedTenantCatalog || selectedTenantCatalog.sourceType !== 'local') {
+            setTenantCatalogProducts([]);
+            setSelectedCatalogProductId('');
+            setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
+            setCatalogProductPanelMode('view');
+            setCatalogProductImageError('');
+            return;
+        }
+        loadTenantCatalogProducts(settingsTenantId, selectedTenantCatalog.catalogId)
+            .catch((err) => setError(String(err?.message || err || 'No se pudieron cargar productos del catalogo.')));
+    }, [isOpen, settingsTenantId, selectedTenantCatalog]);
     useEffect(() => {
         if (!selectedWaModule) {
             resetWaModuleForm();
@@ -3591,7 +3867,7 @@ export default function SaasAdminPanel({
                                                         <small>Selecciona uno o mas catalogos activos para este modulo.</small>
                                                         <div className="saas-admin-modules">
                                                             {activeCatalogOptions.length === 0 && (
-                                                                <div className="saas-admin-empty-inline">No hay catalogos activos. Crea uno en la pesta�a Catalogos.</div>
+                                                                <div className="saas-admin-empty-inline">No hay catalogos activos. Crea uno en la pestaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±a Catalogos.</div>
                                                             )}
                                                             {activeCatalogOptions.map((catalogItem) => {
                                                                 const catalogId = String(catalogItem?.catalogId || '').trim().toUpperCase();
@@ -4064,6 +4340,317 @@ export default function SaasAdminPanel({
                                             </div>
                                         </div>
 
+
+                                        {selectedTenantCatalog.sourceType === 'local' && (
+                                            <div className="saas-admin-related-block saas-admin-catalog-products-block">
+                                                <div className="saas-admin-pane-header">
+                                                    <div>
+                                                        <h4>Productos locales</h4>
+                                                        <small>Gestiona productos con imagen, precio y detalle para este catalogo.</small>
+                                                    </div>
+                                                    <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                        <button
+                                                            type="button"
+                                                            disabled={busy || loadingCatalogProducts}
+                                                            onClick={() => loadTenantCatalogProducts(settingsTenantId, selectedTenantCatalog.catalogId)}
+                                                        >
+                                                            Recargar
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            disabled={busy || !canEditCatalog}
+                                                            onClick={openCatalogProductCreate}
+                                                        >
+                                                            Nuevo producto
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                <div className="saas-admin-catalog-products-layout">
+                                                    <aside className="saas-admin-catalog-products-list">
+                                                        {loadingCatalogProducts && (
+                                                            <div className="saas-admin-empty-state">
+                                                                <p>Cargando productos...</p>
+                                                            </div>
+                                                        )}
+
+                                                        {!loadingCatalogProducts && tenantCatalogProducts.length === 0 && (
+                                                            <div className="saas-admin-empty-state">
+                                                                <p>Sin productos en este catalogo.</p>
+                                                                {canEditCatalog && (
+                                                                    <button type="button" disabled={busy} onClick={openCatalogProductCreate}>
+                                                                        Crear primer producto
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {!loadingCatalogProducts && tenantCatalogProducts.map((productItem) => (
+                                                            <button
+                                                                key={`catalog_product_${productItem.productId}`}
+                                                                type="button"
+                                                                className={`saas-admin-list-item saas-admin-list-item--button ${selectedCatalogProductId === productItem.productId && catalogProductPanelMode !== 'create' ? 'active' : ''}`.trim()}
+                                                                onClick={() => {
+                                                                    setSelectedCatalogProductId(productItem.productId);
+                                                                    setCatalogProductPanelMode('view');
+                                                                    setCatalogProductForm(buildCatalogProductFormFromItem(productItem));
+                                                                    setCatalogProductImageError('');
+                                                                }}
+                                                            >
+                                                                <strong>{productItem.title || productItem.productId}</strong>
+                                                                <small>{productItem.productId}</small>
+                                                                <small>{productItem.price ? `Precio: ${productItem.price}` : 'Sin precio'} | {productItem.isActive ? 'activo' : 'inactivo'}</small>
+                                                            </button>
+                                                        ))}
+                                                    </aside>
+
+                                                    <div className="saas-admin-catalog-product-detail">
+                                                        {catalogProductPanelMode === 'view' && !selectedCatalogProduct && (
+                                                            <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                                                <h4>Sin producto seleccionado</h4>
+                                                                <p>Selecciona un producto para ver su detalle o crea uno nuevo.</p>
+                                                            </div>
+                                                        )}
+
+                                                        {catalogProductPanelMode === 'view' && selectedCatalogProduct && (
+                                                            <>
+                                                                <div className="saas-admin-pane-header">
+                                                                    <div>
+                                                                        <h3>{selectedCatalogProduct.title || selectedCatalogProduct.productId}</h3>
+                                                                        <small>{selectedCatalogProduct.productId}</small>
+                                                                    </div>
+                                                                    <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                                        <button type="button" disabled={busy || !canEditCatalog} onClick={() => openCatalogProductEdit(selectedCatalogProduct)}>
+                                                                            Editar
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            disabled={busy || !canEditCatalog || selectedCatalogProduct.isActive === false}
+                                                                            onClick={() => runAction('Producto desactivado', async () => {
+                                                                                await deactivateCatalogProduct(selectedCatalogProduct.productId);
+                                                                            })}
+                                                                        >
+                                                                            Desactivar
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+
+                                                                {selectedCatalogProduct.imageUrl && (
+                                                                    <img src={selectedCatalogProduct.imageUrl} alt={selectedCatalogProduct.title || selectedCatalogProduct.productId} className="saas-admin-catalog-product-image" />
+                                                                )}
+
+                                                                <div className="saas-admin-detail-grid">
+                                                                    <div className="saas-admin-detail-field"><span>ID producto</span><strong>{selectedCatalogProduct.productId}</strong></div>
+                                                                    <div className="saas-admin-detail-field"><span>Precio</span><strong>{selectedCatalogProduct.price || '-'}</strong></div>
+                                                                    <div className="saas-admin-detail-field"><span>SKU</span><strong>{selectedCatalogProduct.sku || '-'}</strong></div>
+                                                                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedCatalogProduct.isActive ? 'Activo' : 'Inactivo'}</strong></div>
+                                                                    <div className="saas-admin-detail-field"><span>Stock</span><strong>{selectedCatalogProduct.stockQuantity || '-'}</strong></div>
+                                                                    <div className="saas-admin-detail-field"><span>Categoria(s)</span><strong>{selectedCatalogProduct.categoriesText || '-'}</strong></div>
+                                                                    <div className="saas-admin-detail-field"><span>Marca</span><strong>{selectedCatalogProduct.brand || '-'}</strong></div>
+                                                                    <div className="saas-admin-detail-field"><span>URL</span><strong>{selectedCatalogProduct.url || '-'}</strong></div>
+                                                                </div>
+
+                                                                <div className="saas-admin-related-block">
+                                                                    <h4>Descripcion</h4>
+                                                                    <div className="saas-admin-related-list">
+                                                                        <div className="saas-admin-related-row" role="status">
+                                                                            <span>{selectedCatalogProduct.description || 'Sin descripcion'}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </>
+                                                        )}
+
+                                                        {(catalogProductPanelMode === 'create' || catalogProductPanelMode === 'edit') && (
+                                                            <>
+                                                                <div className="saas-admin-pane-header">
+                                                                    <div>
+                                                                        <h3>{catalogProductPanelMode === 'create' ? 'Nuevo producto' : 'Editar producto'}</h3>
+                                                                        <small>{catalogProductPanelMode === 'create' ? 'Completa los datos principales y guarda.' : 'Actualiza los campos necesarios y guarda.'}</small>
+                                                                    </div>
+                                                                </div>
+
+                                                                {catalogProductPanelMode === 'edit' && (
+                                                                    <div className="saas-admin-detail-field">
+                                                                        <span>ID producto</span>
+                                                                        <strong>{catalogProductForm.productId || '-'}</strong>
+                                                                    </div>
+                                                                )}
+
+                                                                <div className="saas-admin-form-row">
+                                                                    <div className="saas-admin-field">
+                                                                        <label>Titulo</label>
+                                                                        <input
+                                                                            value={catalogProductForm.title}
+                                                                            onChange={(event) => setCatalogProductForm((prev) => ({ ...prev, title: event.target.value }))}
+                                                                            placeholder="Nombre del producto"
+                                                                            disabled={busy}
+                                                                        />
+                                                                    </div>
+                                                                    <div className="saas-admin-field">
+                                                                        <label>Precio</label>
+                                                                        <input
+                                                                            value={catalogProductForm.price}
+                                                                            onChange={(event) => setCatalogProductForm((prev) => ({ ...prev, price: event.target.value }))}
+                                                                            placeholder="Ej: 29.90"
+                                                                            disabled={busy}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="saas-admin-form-row">
+                                                                    <div className="saas-admin-field">
+                                                                        <label>Precio regular</label>
+                                                                        <input
+                                                                            value={catalogProductForm.regularPrice}
+                                                                            onChange={(event) => setCatalogProductForm((prev) => ({ ...prev, regularPrice: event.target.value }))}
+                                                                            placeholder="Precio regular"
+                                                                            disabled={busy}
+                                                                        />
+                                                                    </div>
+                                                                    <div className="saas-admin-field">
+                                                                        <label>Precio oferta</label>
+                                                                        <input
+                                                                            value={catalogProductForm.salePrice}
+                                                                            onChange={(event) => setCatalogProductForm((prev) => ({ ...prev, salePrice: event.target.value }))}
+                                                                            placeholder="Precio de oferta"
+                                                                            disabled={busy}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="saas-admin-form-row">
+                                                                    <div className="saas-admin-field">
+                                                                        <label>SKU</label>
+                                                                        <input
+                                                                            value={catalogProductForm.sku}
+                                                                            onChange={(event) => setCatalogProductForm((prev) => ({ ...prev, sku: event.target.value }))}
+                                                                            placeholder="SKU"
+                                                                            disabled={busy}
+                                                                        />
+                                                                    </div>
+                                                                    <div className="saas-admin-field">
+                                                                        <label>Stock (cantidad)</label>
+                                                                        <input
+                                                                            type="number"
+                                                                            min={0}
+                                                                            value={catalogProductForm.stockQuantity}
+                                                                            onChange={(event) => setCatalogProductForm((prev) => ({ ...prev, stockQuantity: event.target.value }))}
+                                                                            placeholder="Cantidad"
+                                                                            disabled={busy}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="saas-admin-form-row">
+                                                                    <div className="saas-admin-field">
+                                                                        <label>Estado de stock</label>
+                                                                        <select
+                                                                            value={catalogProductForm.stockStatus}
+                                                                            onChange={(event) => setCatalogProductForm((prev) => ({ ...prev, stockStatus: event.target.value }))}
+                                                                            disabled={busy}
+                                                                        >
+                                                                            <option value="instock">En stock</option>
+                                                                            <option value="outofstock">Sin stock</option>
+                                                                            <option value="onbackorder">Backorder</option>
+                                                                        </select>
+                                                                    </div>
+                                                                    <div className="saas-admin-field">
+                                                                        <label>Marca</label>
+                                                                        <input
+                                                                            value={catalogProductForm.brand}
+                                                                            onChange={(event) => setCatalogProductForm((prev) => ({ ...prev, brand: event.target.value }))}
+                                                                            placeholder="Marca"
+                                                                            disabled={busy}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="saas-admin-form-row">
+                                                                    <div className="saas-admin-field">
+                                                                        <label>Categorias (coma separadas)</label>
+                                                                        <input
+                                                                            value={catalogProductForm.categoriesText}
+                                                                            onChange={(event) => setCatalogProductForm((prev) => ({ ...prev, categoriesText: event.target.value }))}
+                                                                            placeholder="Ej: Limpieza, Hogar"
+                                                                            disabled={busy}
+                                                                        />
+                                                                    </div>
+                                                                    <div className="saas-admin-field">
+                                                                        <label>URL del producto</label>
+                                                                        <input
+                                                                            value={catalogProductForm.url}
+                                                                            onChange={(event) => setCatalogProductForm((prev) => ({ ...prev, url: event.target.value }))}
+                                                                            placeholder="https://..."
+                                                                            disabled={busy}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="saas-admin-field">
+                                                                    <label>Descripcion</label>
+                                                                    <textarea
+                                                                        value={catalogProductForm.description}
+                                                                        onChange={(event) => setCatalogProductForm((prev) => ({ ...prev, description: event.target.value }))}
+                                                                        placeholder="Descripcion del producto"
+                                                                        rows={4}
+                                                                        disabled={busy}
+                                                                    />
+                                                                </div>
+
+                                                                <label className="saas-admin-module-toggle">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={catalogProductForm.isActive !== false}
+                                                                        onChange={(event) => setCatalogProductForm((prev) => ({ ...prev, isActive: event.target.checked }))}
+                                                                        disabled={busy}
+                                                                    />
+                                                                    <span>Producto activo</span>
+                                                                </label>
+
+                                                                {catalogProductForm.imageUrl && (
+                                                                    <div className="saas-admin-preview-strip">
+                                                                        <img src={catalogProductForm.imageUrl} alt={catalogProductForm.title || 'Producto'} className="saas-admin-hero-image" />
+                                                                    </div>
+                                                                )}
+
+                                                                <div className="saas-admin-field">
+                                                                    <label>URL de imagen</label>
+                                                                    <input
+                                                                        value={catalogProductForm.imageUrl}
+                                                                        onChange={(event) => setCatalogProductForm((prev) => ({ ...prev, imageUrl: event.target.value }))}
+                                                                        placeholder="https://.../imagen.jpg"
+                                                                        disabled={busy || catalogProductImageUploading}
+                                                                    />
+                                                                </div>
+
+                                                                <ImageDropInput
+                                                                    label={catalogProductImageUploading ? 'Subiendo imagen...' : 'Subir imagen de producto'}
+                                                                    disabled={busy || catalogProductImageUploading}
+                                                                    onFile={(file) => handleCatalogProductImageUpload(file)}
+                                                                    helpText="PNG/JPG/WEBP, max 4 MB. Se guarda en archivos del tenant."
+                                                                />
+
+                                                                {catalogProductImageError && <div className="saas-admin-alert error">{catalogProductImageError}</div>}
+
+                                                                <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled={busy || !canEditCatalog || !String(catalogProductForm.title || '').trim() || !String(catalogProductForm.price || '').trim()}
+                                                                        onClick={() => runAction(catalogProductPanelMode === 'create' ? 'Producto creado' : 'Producto actualizado', async () => {
+                                                                            await saveCatalogProduct();
+                                                                        })}
+                                                                    >
+                                                                        {catalogProductPanelMode === 'create' ? 'Guardar producto' : 'Actualizar producto'}
+                                                                    </button>
+                                                                    <button type="button" disabled={busy} onClick={cancelCatalogProductEdit}>Cancelar</button>
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                         {selectedTenantCatalog.sourceType === 'woocommerce' && (
                                             <div className="saas-admin-related-block">
                                                 <h4>WooCommerce</h4>

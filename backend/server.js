@@ -25,6 +25,7 @@ const waModuleService = require('./wa_module_service');
 const customerService = require('./customer_service');
 const tenantIntegrationsService = require('./tenant_integrations_service');
 const tenantCatalogService = require('./tenant_catalog_service');
+const { loadCatalog, addProduct, updateProduct } = require('./catalog_manager');
 const opsTelemetry = require('./ops_telemetry');
 
 const waClient = require('./wa_provider');
@@ -1808,6 +1809,188 @@ app.delete('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId', async (req, 
         return res.json({ ok: true, tenantId, ...result });
     } catch (error) {
         return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar el catalogo.') });
+    }
+});
+
+function sanitizeCatalogProductPayload(payload = {}, { allowPartial = false } = {}) {
+    const source = payload && typeof payload === 'object' ? payload : {};
+    const categories = Array.isArray(source.categories)
+        ? source.categories
+        : String(source.categoriesText || source.categories || source.category || '')
+            .split(',');
+
+    const cleanCategories = categories
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean);
+    const hasIsActive = Object.prototype.hasOwnProperty.call(source, 'isActive');
+
+    const out = {
+        title: String(source.title || source.name || '').trim(),
+        price: String(source.price || '').trim(),
+        regularPrice: String(source.regularPrice || source.regular_price || '').trim(),
+        salePrice: String(source.salePrice || source.sale_price || '').trim(),
+        description: String(source.description || '').trim(),
+        imageUrl: String(source.imageUrl || source.image || source.image_url || '').trim(),
+        sku: String(source.sku || '').trim(),
+        stockStatus: String(source.stockStatus || source.stock_status || '').trim().toLowerCase(),
+        stockQuantity: source.stockQuantity,
+        categories: cleanCategories,
+        category: cleanCategories[0] || '',
+        url: String(source.url || source.permalink || source.productUrl || source.link || '').trim(),
+        brand: String(source.brand || '').trim(),
+        moduleId: String(source.moduleId || '').trim().toLowerCase(),
+        catalogId: String(source.catalogId || '').trim().toUpperCase()
+    };
+
+    if (!allowPartial || hasIsActive) {
+        out.isActive = source.isActive !== false;
+    }
+
+    if (!allowPartial) {
+        if (!out.title) throw new Error('Titulo de producto es obligatorio.');
+        if (!out.price) throw new Error('Precio de producto es obligatorio.');
+    }
+
+    const parsedStock = Number.parseInt(String(out.stockQuantity || '').trim(), 10);
+    if (Number.isFinite(parsedStock)) {
+        out.stockQuantity = parsedStock;
+    } else {
+        delete out.stockQuantity;
+    }
+
+    const clean = {};
+    Object.keys(out).forEach((key) => {
+        const value = out[key];
+        if (value === null || value === undefined) return;
+        if (typeof value === 'string' && !value.trim()) return;
+        if (Array.isArray(value) && value.length === 0) return;
+        clean[key] = value;
+    });
+
+    if (allowPartial) return clean;
+
+    return {
+        ...clean,
+        source: 'local'
+    };
+}
+
+app.get('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId/products', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
+    const moduleId = String(req.query?.moduleId || '').trim().toLowerCase();
+    if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId)
+        || !hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE,
+            accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
+            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ
+        ])) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const items = await loadCatalog({
+            tenantId,
+            catalogId,
+            moduleId: moduleId || null
+        });
+        return res.json({ ok: true, tenantId, catalogId, moduleId: moduleId || null, items: Array.isArray(items) ? items : [] });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar los productos del catalogo.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId/products', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
+    if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const payload = sanitizeCatalogProductPayload(req.body, { allowPartial: false });
+        const moduleId = String(payload.moduleId || req.body?.moduleId || '').trim().toLowerCase();
+        const item = await addProduct({
+            ...payload,
+            catalogId,
+            moduleId: moduleId || undefined,
+            metadata: {
+                ...(req.body?.metadata && typeof req.body.metadata === 'object' ? req.body.metadata : {}),
+                isActive: payload.isActive !== false
+            }
+        }, {
+            tenantId,
+            catalogId,
+            moduleId: moduleId || null
+        });
+        return res.status(201).json({ ok: true, tenantId, catalogId, item });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el producto del catalogo.') });
+    }
+});
+
+app.put('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId/products/:productId', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
+    const productId = String(req.params?.productId || '').trim();
+    if (!tenantId || !catalogId || !productId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId/productId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const updates = sanitizeCatalogProductPayload(req.body, { allowPartial: true });
+        const moduleId = String(updates.moduleId || req.body?.moduleId || '').trim().toLowerCase();
+        const metadataPatch = req.body?.metadata && typeof req.body.metadata === 'object' ? { ...req.body.metadata } : {};
+        if (Object.prototype.hasOwnProperty.call(updates, 'isActive')) {
+            metadataPatch.isActive = updates.isActive !== false;
+            delete updates.isActive;
+        }
+        const item = await updateProduct(productId, {
+            ...updates,
+            catalogId,
+            moduleId: moduleId || undefined,
+            ...(Object.keys(metadataPatch).length > 0 ? { metadata: metadataPatch } : {})
+        }, {
+            tenantId,
+            catalogId,
+            moduleId: moduleId || null
+        });
+        if (!item) {
+            return res.status(404).json({ ok: false, error: 'Producto no encontrado para este catalogo.' });
+        }
+        return res.json({ ok: true, tenantId, catalogId, item });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el producto.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId/products/:productId/deactivate', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
+    const productId = String(req.params?.productId || '').trim();
+    if (!tenantId || !catalogId || !productId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId/productId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const item = await updateProduct(productId, {
+            catalogId,
+            stockStatus: 'outofstock',
+            metadata: {
+                ...(req.body?.metadata && typeof req.body.metadata === 'object' ? req.body.metadata : {}),
+                isActive: false
+            }
+        }, { tenantId, catalogId });
+        if (!item) {
+            return res.status(404).json({ ok: false, error: 'Producto no encontrado para este catalogo.' });
+        }
+        return res.json({ ok: true, tenantId, catalogId, item });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar el producto.') });
     }
 });
 app.get('/api/admin/saas/tenants/:tenantId/wa-modules', async (req, res) => {

@@ -568,7 +568,6 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     const [catalogCategoryFilter, setCatalogCategoryFilter] = useState('all');
     const [catalogTypeFilter, setCatalogTypeFilter] = useState('all');
     const [showCatalogFilters, setShowCatalogFilters] = useState(false);
-    const isExternalCatalog = ['native', 'woocommerce'].includes(catalogMeta?.source);
     const moduleOptions = Array.isArray(waModules)
         ? waModules
             .filter((module) => module && String(module.moduleId || '').trim())
@@ -584,11 +583,14 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
         ? catalogMeta.scope.catalogs
             .map((entry) => ({
                 catalogId: String(entry?.catalogId || '').trim().toUpperCase(),
-                name: String(entry?.name || entry?.catalogId || '').trim() || String(entry?.catalogId || '').trim().toUpperCase()
+                name: String(entry?.name || entry?.catalogId || '').trim() || String(entry?.catalogId || '').trim().toUpperCase(),
+                sourceType: String(entry?.sourceType || entry?.source || '').trim().toLowerCase() || 'local'
             }))
             .filter((entry) => entry.catalogId)
         : [];
-
+    const activeCatalogOption = catalogOptions.find((entry) => entry.catalogId === activeCatalogId) || null;
+    const effectiveCatalogSource = String(activeCatalogOption?.sourceType || catalogMeta?.source || 'local').trim().toLowerCase() || 'local';
+    const isExternalCatalog = ['native', 'woocommerce', 'meta'].includes(effectiveCatalogSource);
     const emptyFormData = () => ({
         title: '',
         price: '',
