@@ -1,4 +1,4 @@
-﻿const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
+const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
 const waClient = require('./wa_provider');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
@@ -17,6 +17,8 @@ const auditLogService = require('./audit_log_service');
 const RateLimiter = require('./rate_limiter');
 const { URL } = require('url');
 const { resolveAndValidatePublicHost } = require('./security_utils');
+const fs = require('fs');
+const path = require('path');
 
 const eventRateLimiter = new RateLimiter({
     windowMs: Number(process.env.SOCKET_RATE_LIMIT_WINDOW_MS || 10000),
@@ -41,6 +43,7 @@ const WA_REQUIRE_SELECTED_MODULE = ['1', 'true', 'yes', 'on'].includes(String(pr
 const WA_ENFORCE_WEBJS_PHONE_MATCH = ['1', 'true', 'yes', 'on'].includes(String(process.env.WA_ENFORCE_WEBJS_PHONE_MATCH || '').trim().toLowerCase());
 let sharpImageProcessor = null;
 let sharpLoadAttempted = false;
+const SAAS_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.join(__dirname, 'uploads')).trim() || path.join(__dirname, 'uploads'));
 
 function guardRateLimit(socket, eventName) {
     const key = `${socket.id}:${eventName}`;
@@ -1351,9 +1354,131 @@ function buildCatalogImageCandidateUrls(imageUrl = '') {
     return candidates;
 }
 
+function normalizeUploadsRelativePath(value = '') {
+    const raw = String(value || '').replace(/\\+/g, '/').trim();
+    if (!raw) return '';
+    const normalized = path.posix.normalize(raw).replace(/^\/+/, '');
+    if (!normalized || normalized === '.' || normalized.startsWith('..') || normalized.includes('/../')) return '';
+    return normalized;
+}
+
+function resolveLocalUploadReference(rawUrl = '') {
+    const clean = String(rawUrl || '').trim();
+    if (!clean) return null;
+
+    let pathname = clean;
+    if (/^https?:\/\//i.test(clean)) {
+        try {
+            const parsedUrl = new URL(clean);
+            const localHostNames = new Set(['localhost', '127.0.0.1', '::1']);
+            const hostName = String(parsedUrl.hostname || '').trim().toLowerCase();
+            if (!localHostNames.has(hostName)) return null;
+            pathname = String(parsedUrl.pathname || '').trim();
+        } catch (e) {
+            return null;
+        }
+    }
+
+    if (!pathname) return null;
+    if (!pathname.startsWith('/uploads/') && !pathname.startsWith('uploads/')) return null;
+
+    const relativePart = pathname.startsWith('/uploads/')
+        ? pathname.slice('/uploads/'.length)
+        : pathname.slice('uploads/'.length);
+
+    const normalizedRelative = normalizeUploadsRelativePath(relativePart);
+    if (!normalizedRelative) return null;
+
+    const absolutePath = path.resolve(SAAS_UPLOADS_ROOT, normalizedRelative);
+    const relativeToRoot = path.relative(SAAS_UPLOADS_ROOT, absolutePath);
+    if (!relativeToRoot || relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) return null;
+
+    return {
+        sourceUrl: clean,
+        publicUrl: '/uploads/' + normalizedRelative,
+        relativePath: normalizedRelative,
+        absolutePath
+    };
+}
+
+function guessMimeFromPathOrUrl(input = '') {
+    const ext = String(path.extname(String(input || '')).replace(/^\./, '') || '').trim().toLowerCase();
+    const map = {
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        webp: 'image/webp',
+        gif: 'image/gif',
+        avif: 'image/avif'
+    };
+    return map[ext] || 'image/jpeg';
+}
+
+function parseCatalogImageDataUrl(rawValue = '', { maxBytes = 4 * 1024 * 1024 } = {}) {
+    const clean = String(rawValue || '').trim();
+    if (!/^data:image\//i.test(clean)) return null;
+
+    const match = clean.match(/^data:([^;]+);base64,(.+)$/i);
+    if (!match) return null;
+
+    const mimetype = String(match[1] || '').trim().toLowerCase();
+    if (!mimetype.startsWith('image/')) return null;
+
+    let buffer;
+    try {
+        buffer = Buffer.from(String(match[2] || '').trim(), 'base64');
+    } catch (e) {
+        return null;
+    }
+
+    if (!buffer?.length || buffer.length > maxBytes) return null;
+
+    return {
+        mediaData: buffer.toString('base64'),
+        mimetype,
+        extension: CATALOG_IMAGE_EXT_BY_MIME[mimetype] || ((() => { const suffix = String(mimetype.split('/')[1] || '').trim().toLowerCase(); if (suffix === 'jpeg' || suffix === 'jpg') return 'jpg'; return suffix || 'jpg'; })()),
+        fileSizeBytes: buffer.length,
+        sourceUrl: null,
+        publicUrl: null,
+        relativePath: null
+    };
+}
+
+async function fetchCatalogProductImageFromLocalUpload(reference = null, { maxBytes = 4 * 1024 * 1024 } = {}) {
+    if (!reference?.absolutePath) return null;
+
+    try {
+        const stat = await fs.promises.stat(reference.absolutePath);
+        if (!stat?.isFile()) return null;
+        if (Number(stat.size || 0) <= 0 || Number(stat.size || 0) > maxBytes) return null;
+
+        const imageBuffer = await fs.promises.readFile(reference.absolutePath);
+        if (!imageBuffer?.length || imageBuffer.length > maxBytes) return null;
+
+        const guessedMime = guessMimeFromPathOrUrl(reference.absolutePath);
+        return {
+            mediaData: imageBuffer.toString('base64'),
+            mimetype: guessedMime,
+            extension: CATALOG_IMAGE_EXT_BY_MIME[guessedMime] || String(path.extname(reference.absolutePath || '').replace(/^\./, '') || 'jpg').toLowerCase(),
+            sourceUrl: reference.sourceUrl || reference.publicUrl || null,
+            publicUrl: reference.publicUrl || null,
+            relativePath: reference.relativePath || null,
+            fileSizeBytes: Number(imageBuffer.length || 0) || null
+        };
+    } catch (e) {
+        return null;
+    }
+}
+
 async function fetchCatalogProductImageFromUrl(rawUrl, { maxBytes = 4 * 1024 * 1024, timeoutMs = 7000 } = {}) {
     const cleanUrl = String(rawUrl || '').trim();
     if (!cleanUrl || !/^https?:\/\//i.test(cleanUrl)) return null;
+
+    const localReference = resolveLocalUploadReference(cleanUrl);
+    if (localReference) {
+        const localMedia = await fetchCatalogProductImageFromLocalUpload(localReference, { maxBytes });
+        if (localMedia) return localMedia;
+    }
 
     let parsed;
     try {
@@ -1405,17 +1530,32 @@ async function fetchCatalogProductImageFromUrl(rawUrl, { maxBytes = 4 * 1024 * 1
         mediaData: imageBuffer.toString('base64'),
         mimetype: contentType,
         extension: CATALOG_IMAGE_EXT_BY_MIME[contentType] || 'jpg',
-        sourceUrl: parsed.toString()
+        sourceUrl: parsed.toString(),
+        publicUrl: parsed.toString(),
+        relativePath: null,
+        fileSizeBytes: Number(imageBuffer.length || 0) || null
     };
 }
 
 async function fetchCatalogProductImage(imageUrl, { maxBytes = 4 * 1024 * 1024, timeoutMs = 7000 } = {}) {
+    const inline = parseCatalogImageDataUrl(imageUrl, { maxBytes });
+    if (inline) return inline;
+
+    const localReference = resolveLocalUploadReference(imageUrl);
+    if (localReference) {
+        const localMedia = await fetchCatalogProductImageFromLocalUpload(localReference, { maxBytes });
+        if (localMedia) return localMedia;
+    }
+
     const candidates = buildCatalogImageCandidateUrls(imageUrl);
     if (!candidates.length) return null;
 
     let fallbackUnsupported = null;
     for (const candidate of candidates) {
-        const media = await fetchCatalogProductImageFromUrl(candidate, { maxBytes, timeoutMs });
+        const localCandidate = resolveLocalUploadReference(candidate);
+        const media = localCandidate
+            ? await fetchCatalogProductImageFromLocalUpload(localCandidate, { maxBytes })
+            : await fetchCatalogProductImageFromUrl(candidate, { maxBytes, timeoutMs });
         if (!media) continue;
         const mediaMime = String(media?.mimetype || '').trim().toLowerCase();
         if (CLOUD_CATALOG_COMPATIBLE_MIME.has(mediaMime)) return media;
@@ -1434,7 +1574,11 @@ async function ensureCloudApiCompatibleCatalogImage(media = null, { maxBytes = 4
         return {
             mediaData: String(media.mediaData || ''),
             mimetype: mediaMime,
-            extension: CATALOG_IMAGE_EXT_BY_MIME[mediaMime] || 'jpg'
+            extension: CATALOG_IMAGE_EXT_BY_MIME[mediaMime] || 'jpg',
+            sourceUrl: String(media?.sourceUrl || '').trim() || null,
+            publicUrl: String(media?.publicUrl || media?.sourceUrl || '').trim() || null,
+            relativePath: String(media?.relativePath || '').trim() || null,
+            fileSizeBytes: Number(media?.fileSizeBytes || 0) || null
         };
     }
 
@@ -1457,7 +1601,11 @@ async function ensureCloudApiCompatibleCatalogImage(media = null, { maxBytes = 4
             mediaData: convertedBuffer.toString('base64'),
             mimetype: 'image/jpeg',
             extension: 'jpg',
-            convertedFrom: mediaMime
+            convertedFrom: mediaMime,
+            sourceUrl: String(media?.sourceUrl || '').trim() || null,
+            publicUrl: String(media?.publicUrl || media?.sourceUrl || '').trim() || null,
+            relativePath: String(media?.relativePath || '').trim() || null,
+            fileSizeBytes: Number(convertedBuffer.length || 0) || null
         };
     } catch (error) {
         return null;
@@ -4492,7 +4640,7 @@ class SocketManager {
                             fallbackBody: firstText,
                             moduleContext: activeModuleContext,
                             agentMeta: firstAgentMeta,
-                            mediaPayload: null
+                            mediaPayload: catalogMediaPayload
                         });
                     }
 
@@ -4675,6 +4823,8 @@ class SocketManager {
                 const mediaData = mediaPayload && typeof mediaPayload === 'object' ? String(mediaPayload?.data || '').trim() : '';
                 const mediaMimetype = mediaPayload && typeof mediaPayload === 'object' ? String(mediaPayload?.mimetype || '').trim() : '';
                 const mediaFilename = mediaPayload && typeof mediaPayload === 'object' ? String(mediaPayload?.filename || '').trim() : '';
+                const mediaUrl = mediaPayload && typeof mediaPayload === 'object' ? String(mediaPayload?.mediaUrl || mediaPayload?.url || '').trim() : '';
+                const mediaPath = mediaPayload && typeof mediaPayload === 'object' ? String(mediaPayload?.mediaPath || mediaPayload?.path || '').trim() : '';
                 const mediaSizeBytesRaw = mediaPayload && typeof mediaPayload === 'object' ? Number(mediaPayload?.fileSizeBytes) : null;
                 const mediaSizeBytes = Number.isFinite(mediaSizeBytesRaw) ? mediaSizeBytesRaw : null;
                 const moduleAttributionMeta = buildModuleAttributionMeta(moduleContext);
@@ -4696,13 +4846,15 @@ class SocketManager {
                     body: String(safeSentMessage?.body ?? fallbackBody ?? ''),
                     timestamp,
                     fromMe: true,
-                    hasMedia: Boolean(mediaData || safeSentMessage?.hasMedia),
+                    hasMedia: Boolean(mediaData || mediaUrl || safeSentMessage?.hasMedia),
                     mediaData: mediaData || null,
                     mimetype: mediaMimetype || null,
                     filename: mediaFilename || null,
+                    mediaUrl: mediaUrl || null,
+                    mediaPath: mediaPath || null,
                     fileSizeBytes: mediaSizeBytes,
                     ack,
-                    type: String(safeSentMessage?.type || (mediaData ? 'media' : 'chat')),
+                    type: String(safeSentMessage?.type || ((mediaData || mediaUrl) ? 'media' : 'chat')),
                     author: String(safeSentMessage?.author || safeSentMessage?._data?.author || '').trim() || null,
                     notifyName: null,
                     senderPhone: null,
@@ -4740,7 +4892,9 @@ class SocketManager {
                     fileMeta: {
                         mimetype: payload.mimetype,
                         filename: payload.filename,
-                        fileSizeBytes: payload.fileSizeBytes
+                        fileSizeBytes: payload.fileSizeBytes,
+                        mediaUrl: payload.mediaUrl,
+                        mediaPath: payload.mediaPath
                     },
                     order: null,
                     location: null,
@@ -4877,7 +5031,7 @@ class SocketManager {
                         quotedMessageId: quoted,
                         moduleContext,
                         agentMeta,
-                        mediaPayload: null
+                        mediaPayload: catalogMediaPayload
                     });
                 } catch (e) {
                     const detail = String(e?.message || e || 'Failed to send message.');
@@ -5127,6 +5281,7 @@ class SocketManager {
 
                     let sentWithImage = false;
                     let sentResponse = null;
+                    let catalogMediaPayload = null;
                     if (imageUrl) {
                         const maxCatalogImageBytes = Number(process.env.CATALOG_IMAGE_MAX_BYTES || 4 * 1024 * 1024);
                         const media = await fetchCatalogProductImage(imageUrl, {
@@ -5149,6 +5304,13 @@ class SocketManager {
                                 false
                             );
                             sentWithImage = true;
+                            catalogMediaPayload = {
+                                mimetype: compatibleMedia.mimetype,
+                                filename,
+                                fileSizeBytes: Number(compatibleMedia?.fileSizeBytes || 0) || null,
+                                mediaUrl: String(compatibleMedia?.publicUrl || compatibleMedia?.sourceUrl || imageUrl || '').trim() || null,
+                                mediaPath: String(compatibleMedia?.relativePath || '').trim() || null
+                            };
                         } else if (media?.mimetype) {
                             console.warn('[WA][SendCatalogProduct] media no compatible para Cloud API (' + String(media.mimetype) + '), se enviara solo texto.');
                         }
@@ -5179,7 +5341,7 @@ class SocketManager {
                         fallbackBody: caption,
                         moduleContext,
                         agentMeta,
-                        mediaPayload: null
+                        mediaPayload: catalogMediaPayload
                     });
                     socket.emit('catalog_product_sent', {
                         to: target.scopedChatId || target.targetChatId,

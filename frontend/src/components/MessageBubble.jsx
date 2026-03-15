@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import moment from 'moment';
 import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, FileText, FileSpreadsheet, FileArchive, FileType2, Download } from 'lucide-react';
 
@@ -812,6 +812,17 @@ const MessageBubble = ({
     const mediaDataUrl = msg.hasMedia && msg.mediaData
         ? `data:${msg.mimetype || 'application/octet-stream'};base64,${msg.mediaData}`
         : null;
+    const rawMediaUrl = msg.hasMedia ? String(msg?.mediaUrl || '').trim() : '';
+    const mediaUrl = (() => {
+        if (!rawMediaUrl) return '';
+        if (/^https?:\/\//i.test(rawMediaUrl)) return rawMediaUrl;
+        if (/^data:/i.test(rawMediaUrl)) return rawMediaUrl;
+        const normalizedPath = rawMediaUrl.startsWith('/') ? rawMediaUrl : `/${rawMediaUrl}`;
+        return `${String(API_URL || '').replace(/\/+$/, '')}${normalizedPath}`;
+    })();
+    const mediaImageSrc = mediaDataUrl || (mediaUrl || null);
+    const mediaLooksImageByUrl = Boolean(mediaUrl && /\.(png|jpe?g|webp|gif|avif)(?:$|[?#])/i.test(mediaUrl));
+    const isImageMedia = Boolean(String(msg?.mimetype || '').trim().toLowerCase().startsWith('image/')) || mediaLooksImageByUrl;
 
     const hasBinaryAttachment = Boolean(
         msg.hasMedia
@@ -1041,9 +1052,9 @@ const MessageBubble = ({
                 </div>
             )}
 
-            {msg.hasMedia && msg.mediaData && msg.mimetype?.startsWith('image/') && (
+            {msg.hasMedia && mediaImageSrc && isImageMedia && (
                 <img
-                    src={mediaDataUrl}
+                    src={mediaImageSrc}
                     className="message-media"
                     alt="Media"
                     style={{
@@ -1055,7 +1066,7 @@ const MessageBubble = ({
                         cursor: 'zoom-in',
                         display: 'block'
                     }}
-                    onClick={() => onOpenMedia && onOpenMedia({ src: mediaDataUrl, mimetype: msg.mimetype, messageId: msg.id })}
+                    onClick={() => onOpenMedia && onOpenMedia({ src: mediaImageSrc, mimetype: msg.mimetype, messageId: msg.id })}
                 />
             )}
 
