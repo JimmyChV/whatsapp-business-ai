@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --app-background: #111b21;
   --panel-background: #202c33;
   --sidebar-background: #111b21;
@@ -1081,6 +1081,52 @@ body {
   color: #fff;
   font-weight: 700;
 }
+.chat-avatar-modern--module {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 8px 16px rgba(0, 0, 0, 0.35);
+}
+
+.chat-avatar-channel-tag {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  min-width: 19px;
+  height: 19px;
+  border-radius: 999px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  color: #f4fbff;
+  background: rgba(31, 45, 56, 0.92);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.chat-avatar-channel-tag--whatsapp {
+  background: #0f7a53;
+}
+
+.chat-avatar-channel-tag--instagram {
+  background: linear-gradient(135deg, #833ab4 0%, #fd1d1d 52%, #fcb045 100%);
+}
+
+.chat-avatar-channel-tag--messenger {
+  background: #2463eb;
+}
+
+.chat-avatar-channel-tag--webchat {
+  background: #136f9f;
+}
+
+.chat-avatar-channel-tag--generic {
+  background: #3d5562;
+}
+
 
 .chat-info-modern {
   min-width: 0;
@@ -1130,32 +1176,32 @@ body {
   display: inline-flex;
   align-self: flex-start;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   max-width: 100%;
-  padding: 3px 10px;
+  padding: 4px 12px 4px 7px;
   border-radius: 999px;
-  border: 1px solid rgba(47, 220, 182, 0.42);
-  background: rgba(10, 176, 147, 0.22);
-  color: #b9ffe9;
-  font-size: 0.7rem;
-  font-weight: 700;
+  border: 1px solid rgba(47, 220, 182, 0.5);
+  background: linear-gradient(120deg, rgba(6, 82, 75, 0.92) 0%, rgba(11, 48, 70, 0.92) 100%);
+  color: #d4fff2;
+  font-size: 0.72rem;
+  font-weight: 800;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 
 .chat-module-badge-avatar {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   border-radius: 999px;
   object-fit: cover;
-  border: 1px solid rgba(185, 255, 233, 0.85);
-  box-shadow: 0 0 0 2px rgba(24, 39, 46, 0.45);
+  border: 1px solid rgba(207, 255, 243, 0.9);
+  box-shadow: 0 0 0 2px rgba(14, 35, 39, 0.62);
   flex-shrink: 0;
 }
 
 .chat-module-badge-dot {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 999px;
   background: #2ce4bf;
   box-shadow: 0 0 0 2px rgba(44, 228, 191, 0.24);
@@ -2266,6 +2312,50 @@ body {
   font-weight: 600;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.06), 0 6px 14px rgba(0, 0, 0, 0.35);
 }
+.chat-header-avatar--module {
+  position: relative;
+  overflow: hidden;
+}
+
+.chat-header-avatar-channel {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.54rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  color: #f4fbff;
+  background: rgba(39, 57, 70, 0.95);
+}
+
+.chat-header-avatar-channel--whatsapp {
+  background: #0f7a53;
+}
+
+.chat-header-avatar-channel--instagram {
+  background: linear-gradient(135deg, #833ab4 0%, #fd1d1d 52%, #fcb045 100%);
+}
+
+.chat-header-avatar-channel--messenger {
+  background: #2463eb;
+}
+
+.chat-header-avatar-channel--webchat {
+  background: #136f9f;
+}
+
+.chat-header-avatar-channel--generic {
+  background: #3d5562;
+}
+
 
 .chat-header-meta {
   margin-left: 11px;
@@ -2302,33 +2392,33 @@ body {
 }
 
 .chat-header-module-pill {
-  border: 1px solid rgba(124, 200, 255, 0.48);
-  background: rgba(56, 94, 115, 0.36);
-  color: #e6f4ff;
+  border: 1px solid rgba(124, 200, 255, 0.58);
+  background: linear-gradient(120deg, rgba(34, 73, 98, 0.82) 0%, rgba(16, 39, 59, 0.9) 100%);
+  color: #f0f8ff;
   border-radius: 999px;
-  padding: 3px 10px 3px 7px;
-  font-size: 0.66rem;
+  padding: 4px 12px 4px 8px;
+  font-size: 0.68rem;
   letter-spacing: 0.02em;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   flex-shrink: 1;
   min-width: 0;
 }
 
 .chat-header-module-avatar {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.48);
-  box-shadow: 0 0 0 2px rgba(21, 36, 47, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  box-shadow: 0 0 0 2px rgba(21, 36, 47, 0.58);
   flex-shrink: 0;
 }
 
 .chat-header-module-dot {
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
   border-radius: 999px;
   background: #7cc8ff;
   box-shadow: 0 0 0 1px rgba(124, 200, 255, 0.35);
@@ -2339,12 +2429,13 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 180px;
+  max-width: 210px;
+  font-weight: 700;
 }
 
 .chat-header-module-channel {
-  font-weight: 700;
-  color: #a7d7ff;
+  font-weight: 800;
+  color: #c4e5ff;
   flex-shrink: 0;
 }
 

@@ -317,12 +317,19 @@ const Sidebar = ({
             || parsed?.scopeModuleId
             || ''
         );
+        const rawModuleName = sanitizeDisplayText(chat?.lastMessageModuleName || '');
+        const normalizedModuleName = String(rawModuleName || '').trim().toLowerCase();
         const moduleConfig = Array.isArray(waModules)
-            ? waModules.find((entry) => normalizeModuleKey(entry?.moduleId || entry?.id || '') === chatModuleId)
+            ? (
+                waModules.find((entry) => normalizeModuleKey(entry?.moduleId || entry?.id || '') === chatModuleId)
+                || waModules.find((entry) => normalizedModuleName && String(entry?.name || '').trim().toLowerCase() === normalizedModuleName)
+                || null
+            )
             : null;
 
-        const moduleName = sanitizeDisplayText(chat?.lastMessageModuleName || moduleConfig?.name || '');
-        const moduleId = String(chatModuleId || '').trim().toUpperCase();
+        const resolvedModuleId = normalizeModuleKey(chatModuleId || moduleConfig?.moduleId || moduleConfig?.id || '');
+        const moduleName = sanitizeDisplayText(rawModuleName || moduleConfig?.name || '');
+        const moduleId = String(resolvedModuleId || '').trim().toUpperCase();
         const channelType = String(chat?.lastMessageChannelType || moduleConfig?.channelType || '').trim().toLowerCase();
         const channelLabel = channelType ? channelType.toUpperCase() : '';
         const source = moduleName || moduleId;
@@ -342,7 +349,19 @@ const Sidebar = ({
         return {
             label,
             imageUrl: imageUrl || null,
+            moduleName: moduleName || null,
+            moduleId: moduleId || null,
+            channelType: channelType || null
         };
+    };
+    const getChannelMarker = (channelType = '') => {
+        const clean = String(channelType || '').trim().toLowerCase();
+        if (!clean) return { key: 'generic', short: 'CH', label: 'Canal' };
+        if (clean === 'whatsapp') return { key: 'whatsapp', short: 'WA', label: 'WhatsApp' };
+        if (clean === 'instagram') return { key: 'instagram', short: 'IG', label: 'Instagram' };
+        if (clean === 'messenger') return { key: 'messenger', short: 'MS', label: 'Messenger' };
+        if (clean === 'webchat') return { key: 'webchat', short: 'WEB', label: 'Webchat' };
+        return { key: 'generic', short: clean.slice(0, 3).toUpperCase(), label: clean.toUpperCase() };
     };
     const resetFilters = () => {
         onFiltersChange?.(normalizeFilters({
@@ -597,6 +616,11 @@ const Sidebar = ({
                         const displayName = getDisplayName(chat);
                         const subtitle = getSubtitle(chat);
                         const moduleBadge = getChannelBadge(chat);
+                        const channelMarker = getChannelMarker(moduleBadge?.channelType || '');
+                        const moduleAvatarImage = moduleBadge?.imageUrl || null;
+                        const avatarFallback = moduleBadge?.moduleName
+                            ? avatarLetter(moduleBadge.moduleName)
+                            : avatarLetter(displayName);
                         const lastMessage = sanitizeDisplayText(chat.lastMessage || '') || 'Haz clic para chatear';
                         const labels = Array.isArray(chat?.labels) ? chat.labels : [];
                         return (
@@ -606,10 +630,16 @@ const Sidebar = ({
                                 onClick={() => onChatSelect(chat.id, { clearSearch: true })}
                             >
                                 <div
-                                    className="chat-avatar-modern"
-                                    style={{ background: chat.profilePicUrl ? `url(${chat.profilePicUrl}) center/cover` : avatarColor(displayName) }}
+                                    className="chat-avatar-modern chat-avatar-modern--module"
+                                    style={{ background: moduleAvatarImage ? `url(${moduleAvatarImage}) center/cover` : avatarColor(moduleBadge?.moduleName || displayName) }}
                                 >
-                                    {!chat.profilePicUrl && avatarLetter(displayName)}
+                                    {!moduleAvatarImage && avatarFallback}
+                                    <span
+                                        className={`chat-avatar-channel-tag chat-avatar-channel-tag--${channelMarker.key}`}
+                                        title={channelMarker.label}
+                                    >
+                                        {channelMarker.short}
+                                    </span>
                                 </div>
 
                                 <div className="chat-info chat-info-modern">
@@ -670,4 +700,3 @@ const Sidebar = ({
 };
 
 export default Sidebar;
-

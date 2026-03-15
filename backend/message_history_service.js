@@ -534,6 +534,7 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
                     : {};
                 const lastMessageModuleId = toSafeString(row.last_message_module_id || lastMessageMetadata.sentViaModuleId)?.toLowerCase() || null;
                 const lastMessageModuleName = toSafeString(lastMessageMetadata.sentViaModuleName) || null;
+                const lastMessageModuleImageUrl = toSafeString(lastMessageMetadata.sentViaModuleImageUrl) || null;
                 const lastMessageTransport = toSafeString(lastMessageMetadata.sentViaTransport)?.toLowerCase() || null;
                 const lastMessageChannelType = toSafeString(lastMessageMetadata.sentViaChannelType)?.toLowerCase() || null;
 
@@ -552,6 +553,7 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
                     lastMessageAck: Number.isFinite(Number(row.last_message_ack)) ? Number(row.last_message_ack) : 0,
                     lastMessageModuleId,
                     lastMessageModuleName,
+                    lastMessageModuleImageUrl,
                     lastMessageTransport,
                     lastMessageChannelType,
                     metadata: chatMetadata
@@ -596,6 +598,7 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
                 : {};
             const lastMessageModuleId = toSafeString(lastMessage?.waModuleId || lastMessageMetadata.sentViaModuleId)?.toLowerCase() || null;
             const lastMessageModuleName = toSafeString(lastMessageMetadata.sentViaModuleName) || null;
+            const lastMessageModuleImageUrl = toSafeString(lastMessageMetadata.sentViaModuleImageUrl) || null;
             const lastMessageTransport = toSafeString(lastMessageMetadata.sentViaTransport)?.toLowerCase() || null;
             const lastMessageChannelType = toSafeString(lastMessageMetadata.sentViaChannelType)?.toLowerCase() || null;
 
@@ -614,6 +617,7 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
                 lastMessageAck: Number.isFinite(Number(lastMessage?.ack)) ? Number(lastMessage.ack) : 0,
                 lastMessageModuleId,
                 lastMessageModuleName,
+                lastMessageModuleImageUrl,
                 lastMessageTransport,
                 lastMessageChannelType,
                 metadata: chat.metadata && typeof chat.metadata === 'object' ? chat.metadata : {}
@@ -727,4 +731,3 @@ module.exports = {
     listChats,
     listMessages
 };
-

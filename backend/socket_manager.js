@@ -1,4 +1,4 @@
-const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
+﻿const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
 const waClient = require('./wa_provider');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
@@ -2551,6 +2551,7 @@ class SocketManager {
                     },
                     sentViaModuleId: moduleAttributionMeta?.sentViaModuleId || persistedAgentMeta?.sentViaModuleId || historyModuleId || null,
                     sentViaModuleName: moduleAttributionMeta?.sentViaModuleName || persistedAgentMeta?.sentViaModuleName || null,
+                    sentViaModuleImageUrl: moduleAttributionMeta?.sentViaModuleImageUrl || persistedAgentMeta?.sentViaModuleImageUrl || null,
                     sentViaTransport: moduleAttributionMeta?.sentViaTransport || persistedAgentMeta?.sentViaTransport || null,
                     sentViaPhoneNumber: moduleAttributionMeta?.sentViaPhoneNumber || historyModulePhone || null,
                     sentViaChannelType: moduleAttributionMeta?.sentViaChannelType || null,
@@ -2880,6 +2881,7 @@ class SocketManager {
             sentViaModuleId: String(row?.waModuleId || metadata?.sentViaModuleId || '').trim() || null,
             sentViaPhoneNumber: String(row?.waPhoneNumber || '').trim() || null,
             sentViaModuleName: String(metadata?.sentViaModuleName || '').trim() || null,
+            sentViaModuleImageUrl: String(metadata?.sentViaModuleImageUrl || '').trim() || null,
             sentViaTransport: String(metadata?.sentViaTransport || '').trim() || null,
             sentViaChannelType: String(metadata?.sentViaChannelType || '').trim() || null,
             ack: Number.isFinite(Number(row?.ack)) ? Number(row.ack) : 0,
@@ -4358,7 +4360,21 @@ class SocketManager {
                     } catch (e) { }
 
                     if (firstMessage && String(firstMessage).trim()) {
-                        await waClient.sendMessage(directChatId, String(firstMessage).trim());
+                        const firstText = String(firstMessage).trim();
+                        const firstSentMessage = await waClient.sendMessage(directChatId, firstText);
+                        const firstAgentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, activeModuleContext));
+                        const firstSentMessageId = getSerializedMessageId(firstSentMessage);
+                        if (firstSentMessageId && firstAgentMeta) {
+                            rememberOutgoingAgentMeta(firstSentMessageId, firstAgentMeta);
+                        }
+                        await emitRealtimeOutgoingMessage({
+                            sentMessage: firstSentMessage,
+                            fallbackChatId: directChatId,
+                            fallbackBody: firstText,
+                            moduleContext: activeModuleContext,
+                            agentMeta: firstAgentMeta,
+                            mediaPayload: null
+                        });
                     }
 
                     try {
@@ -4529,9 +4545,10 @@ class SocketManager {
                 mediaPayload = null
             } = {}) => {
                 const safeSentMessage = sentMessage && typeof sentMessage === 'object' ? sentMessage : {};
-                const messageId = getSerializedMessageId(safeSentMessage);
+                const serializedMessageId = getSerializedMessageId(safeSentMessage);
+                const messageId = serializedMessageId || ('local_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9));
                 const targetChatId = String(safeSentMessage?.to || fallbackChatId || '').trim();
-                if (!messageId || !targetChatId || !isVisibleChatId(targetChatId)) return;
+                if (!targetChatId || !isVisibleChatId(targetChatId)) return;
 
                 const timestamp = Number(safeSentMessage?.timestamp || 0) || Math.floor(Date.now() / 1000);
                 const ack = Number.isFinite(Number(safeSentMessage?.ack)) ? Number(safeSentMessage.ack) : 0;
@@ -5013,33 +5030,28 @@ class SocketManager {
                     }
 
 
-                    const sentMessageId = String(
-                        sentResponse?.messages?.[0]?.id
-                        || sentResponse?.message_id
-                        || ''
-                    ).trim();
+                    const sentMessageId = getSerializedMessageId(sentResponse)
+                        || String(sentResponse?.messages?.[0]?.id || sentResponse?.message_id || '').trim();
                     if (sentMessageId && agentMeta) {
                         rememberOutgoingAgentMeta(sentMessageId, agentMeta);
                     }
-                    if (sentMessageId) {
-                        await emitRealtimeOutgoingMessage({
-                            sentMessage: {
-                                id: { _serialized: sentMessageId },
-                                to: target.targetChatId,
-                                body: caption,
-                                fromMe: true,
-                                timestamp: Math.floor(Date.now() / 1000),
-                                ack: 1,
-                                hasMedia: sentWithImage,
-                                type: sentWithImage ? 'image' : 'chat'
-                            },
-                            fallbackChatId: target.targetChatId,
-                            fallbackBody: caption,
-                            moduleContext,
-                            agentMeta,
-                            mediaPayload: null
-                        });
-                    }
+                    await emitRealtimeOutgoingMessage({
+                        sentMessage: sentResponse || {
+                            id: sentMessageId ? { _serialized: sentMessageId } : null,
+                            to: target.targetChatId,
+                            body: caption,
+                            fromMe: true,
+                            timestamp: Math.floor(Date.now() / 1000),
+                            ack: 1,
+                            hasMedia: sentWithImage,
+                            type: sentWithImage ? 'image' : 'chat'
+                        },
+                        fallbackChatId: target.targetChatId,
+                        fallbackBody: caption,
+                        moduleContext,
+                        agentMeta,
+                        mediaPayload: null
+                    });
                     socket.emit('catalog_product_sent', {
                         to: target.scopedChatId || target.targetChatId,
                         baseChatId: target.targetChatId,
@@ -5122,7 +5134,7 @@ class SocketManager {
                     }
                 });
             });
-            socket.on('get_business_catalog', async ({ moduleId, catalogId } = {}) => {
+            socket.on('get_business_catalog', async ({ moduleId, catalogId, requestSeq } = {}) => {
                 try {
                     const catalogScope = await resolveCatalogScope({
                         requestedModuleId: moduleId,
@@ -5139,17 +5151,30 @@ class SocketManager {
                             catalogs: scopedCatalog.selection.catalogs || []
                         },
                         source: 'local',
+                        requestSeq: Number(requestSeq || 0) || null,
                         items: scopedCatalog.items
-                                });
+                    });
                 } catch (error) {
                     socket.emit('error', String(error?.message || 'No se pudo cargar el catalogo del modulo.'));
                 }
             });
 
-            socket.on('get_business_data', async () => {
+            socket.on('get_business_data', async (scopeRequest = {}) => {
+                const requestSeq = scopeRequest && typeof scopeRequest === 'object'
+                    ? (Number(scopeRequest?.requestSeq || 0) || null)
+                    : null;
                 try {
-                    const selectedModuleContext = socket?.data?.waModule || null;
-                    const catalogScope = getActiveCatalogScope();
+                    const requestedModuleId = scopeRequest && typeof scopeRequest === 'object' ? scopeRequest?.moduleId : '';
+                    const requestedCatalogId = scopeRequest && typeof scopeRequest === 'object' ? scopeRequest?.catalogId : '';
+                    const catalogScope = await resolveCatalogScope({
+                        requestedModuleId,
+                        requestedCatalogId
+                    });
+                    const requestedModuleScopeId = normalizeSocketModuleId(catalogScope?.moduleId || requestedModuleId);
+                    const availableSocketModules = Array.isArray(socket?.data?.waModules) ? socket.data.waModules : [];
+                    const selectedModuleContext = requestedModuleScopeId
+                        ? (availableSocketModules.find((entry) => normalizeSocketModuleId(entry?.moduleId) === requestedModuleScopeId) || socket?.data?.waModule || null)
+                        : (socket?.data?.waModule || null);
                     const resolvedCatalogSelection = await resolveCatalogSelection(catalogScope);
 
                     if (!this.ensureTransportReady(socket, { action: 'cargar datos del negocio', errorEvent: 'error' })) {
@@ -5158,6 +5183,7 @@ class SocketManager {
                             profile: null,
                             labels: [],
                             catalog: scopedLocalFallback.items,
+                            requestSeq,
                             catalogMeta: {
                                 source: 'local',
                                 nativeAvailable: false,
@@ -5235,11 +5261,22 @@ class SocketManager {
 
                     const tenantSettings = await tenantSettingsService.getTenantSettings(tenantId);
                     const tenantIntegrations = await tenantIntegrationsService.getTenantIntegrations(tenantId, { runtime: true });
+                    const activeCatalogId = normalizeSocketCatalogId(catalogScope?.catalogId || resolvedCatalogSelection?.primaryCatalogId || '');
+                    const activeCatalogConfig = (Array.isArray(resolvedCatalogSelection?.catalogs) ? resolvedCatalogSelection.catalogs : [])
+                        .find((entry) => normalizeSocketCatalogId(entry?.catalogId) === activeCatalogId) || null;
+                    const activeCatalogSourceType = String(activeCatalogConfig?.sourceType || '').trim().toLowerCase();
+
                     const moduleCatalogMode = String(selectedModuleContext?.metadata?.moduleSettings?.catalogMode || '').trim().toLowerCase();
                     const configuredCatalogMode = String(tenantIntegrations?.catalog?.mode || tenantSettings?.catalogMode || 'hybrid').trim().toLowerCase();
-                    const catalogMode = moduleCatalogMode && moduleCatalogMode !== 'inherit'
-                        ? moduleCatalogMode
-                        : configuredCatalogMode;
+                    const forcedCatalogMode = activeCatalogSourceType === 'local'
+                        ? 'local_only'
+                        : (activeCatalogSourceType === 'woocommerce'
+                            ? 'woo_only'
+                            : (activeCatalogSourceType === 'meta' ? 'meta_only' : ''));
+                    const catalogMode = forcedCatalogMode
+                        || (moduleCatalogMode && moduleCatalogMode !== 'inherit'
+                            ? moduleCatalogMode
+                            : configuredCatalogMode);
 
                     const wooConfig = {
                         ...(tenantIntegrations?.catalog?.providers?.woocommerce || {}),
@@ -5256,6 +5293,7 @@ class SocketManager {
                             catalogMeta: {
                                 source: 'disabled',
                                 mode: catalogMode,
+                                selectedCatalogSource: activeCatalogSourceType || null,
                                 nativeAvailable: false,
                                 wooConfigured,
                                 wooAvailable: false,
@@ -5272,6 +5310,7 @@ class SocketManager {
                     let catalogMeta = {
                         source: 'native',
                         mode: catalogMode,
+                        selectedCatalogSource: activeCatalogSourceType || null,
                         nativeAvailable: false,
                         wooConfigured,
                         wooAvailable: false,
@@ -5400,7 +5439,7 @@ class SocketManager {
                         scope: resolvedScope
                     };
                     logCatalogDebugSnapshot({ catalog, catalogMeta });
-                    socket.emit('business_data', { profile, labels, catalog, catalogMeta, tenantSettings, integrations: tenantIntegrations });
+                    socket.emit('business_data', { profile, labels, catalog, catalogMeta, tenantSettings, integrations: tenantIntegrations, requestSeq });
                 } catch (e) {
                     console.error('Error fetching business data:', e);
                     const fallbackCatalogScope = getActiveCatalogScope();
@@ -5409,6 +5448,7 @@ class SocketManager {
                         profile: null,
                         labels: [],
                         catalog: fallbackCatalog.items,
+                        requestSeq,
                         catalogMeta: {
                             source: 'local',
                             mode: 'hybrid',
@@ -5432,144 +5472,16 @@ class SocketManager {
             });
 
             // --- Catalog CRUD ---
-            socket.on('add_product', async (product) => {
-                if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'agregar productos al catalogo' })) return;
-                try {
-                    const catalogEnabled = await this.isFeatureEnabledForTenant(tenantId, 'catalog');
-                    if (!catalogEnabled) {
-                        socket.emit('error', 'Catalogo deshabilitado para esta empresa o plan.');
-                        return;
-                    }
-
-                    const tenant = tenantService.findTenantById(tenantId) || tenantService.DEFAULT_TENANT;
-                    const limits = planLimitsService.getTenantPlanLimits(tenant);
-                    const catalogScope = await resolveCatalogScope({
-                        requestedModuleId: product?.moduleId,
-                        requestedCatalogId: product?.catalogId
-                    });
-                    const currentCatalogState = await loadScopedLocalCatalog(catalogScope, {
-                        requestedCatalogId: catalogScope.catalogId
-                    });
-                    const currentCatalog = currentCatalogState.items;
-                    const maxCatalogItems = Number(limits?.maxCatalogItems || 0);
-                    if (Number.isFinite(maxCatalogItems) && maxCatalogItems > 0 && currentCatalog.length >= maxCatalogItems) {
-                        socket.emit('error', 'No puedes agregar mas productos: limite del plan (' + maxCatalogItems + ').');
-                        return;
-                    }
-
-                    const cleanProduct = product && typeof product === 'object' ? { ...product } : {};
-                    delete cleanProduct.moduleId;
-                    cleanProduct.catalogId = catalogScope.catalogId || null;
-                    const newProduct = await addProduct(cleanProduct, catalogScope);
-                    const scopedCatalog = await loadScopedLocalCatalog(catalogScope, {
-                        requestedCatalogId: catalogScope.catalogId
-                    });
-                    this.emitToTenant(tenantId, 'business_data_catalog', {
-                        scope: {
-                            ...catalogScope,
-                            catalogIds: scopedCatalog.selection.catalogIds,
-                            catalogId: scopedCatalog.selection.primaryCatalogId,
-                            catalogs: scopedCatalog.selection.catalogs || []
-                        },
-                        source: 'local',
-                        items: scopedCatalog.items
-                    });
-                    socket.emit('product_added', newProduct);
-                    await auditSocketAction('catalog.product.added', {
-                        resourceType: 'catalog_item',
-                        resourceId: newProduct?.id || null,
-                        payload: { title: newProduct?.title || null }
-                    });
-                } catch (e) {
-                    console.error('add_product error:', e);
-                }
+            socket.on('add_product', async () => {
+                socket.emit('error', 'La edicion de productos desde chat esta deshabilitada. Gestiona el catalogo desde Panel SaaS.');
             });
 
-            socket.on('update_product', async ({ id, updates, moduleId, catalogId } = {}) => {
-                if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'editar productos del catalogo' })) return;
-                try {
-                    const catalogEnabled = await this.isFeatureEnabledForTenant(tenantId, 'catalog');
-                    if (!catalogEnabled) {
-                        socket.emit('error', 'Catalogo deshabilitado para esta empresa o plan.');
-                        return;
-                    }
-
-                    const catalogScope = await resolveCatalogScope({
-                        requestedModuleId: moduleId || updates?.moduleId,
-                        requestedCatalogId: catalogId || updates?.catalogId
-                    });
-                    const safeUpdates = updates && typeof updates === 'object' ? { ...updates } : {};
-                    delete safeUpdates.moduleId;
-                    if (!safeUpdates.catalogId) safeUpdates.catalogId = catalogScope.catalogId || null;
-                    const updated = await updateProduct(id, safeUpdates, catalogScope);
-                    const scopedCatalog = await loadScopedLocalCatalog(catalogScope, {
-                        requestedCatalogId: catalogScope.catalogId
-                    });
-                    this.emitToTenant(tenantId, 'business_data_catalog', {
-                        scope: {
-                            ...catalogScope,
-                            catalogIds: scopedCatalog.selection.catalogIds,
-                            catalogId: scopedCatalog.selection.primaryCatalogId,
-                            catalogs: scopedCatalog.selection.catalogs || []
-                        },
-                        source: 'local',
-                        items: scopedCatalog.items
-                    });
-                    socket.emit('product_updated', updated);
-                    await auditSocketAction('catalog.product.updated', {
-                        resourceType: 'catalog_item',
-                        resourceId: updated?.id || id || null,
-                        payload: { updates: safeUpdates }
-                    });
-                } catch (e) {
-                    console.error('update_product error:', e);
-                }
+            socket.on('update_product', async () => {
+                socket.emit('error', 'La edicion de productos desde chat esta deshabilitada. Gestiona el catalogo desde Panel SaaS.');
             });
 
-            socket.on('delete_product', async (payload) => {
-                if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'eliminar productos del catalogo' })) return;
-                try {
-                    const catalogEnabled = await this.isFeatureEnabledForTenant(tenantId, 'catalog');
-                    if (!catalogEnabled) {
-                        socket.emit('error', 'Catalogo deshabilitado para esta empresa o plan.');
-                        return;
-                    }
-
-                    const requestedId = payload && typeof payload === 'object'
-                        ? String(payload?.id || '').trim()
-                        : String(payload || '').trim();
-                    if (!requestedId) {
-                        socket.emit('error', 'Producto invalido para eliminar.');
-                        return;
-                    }
-                    const requestedModuleId = payload && typeof payload === 'object' ? payload?.moduleId : '';
-                    const requestedCatalogId = payload && typeof payload === 'object' ? payload?.catalogId : '';
-                    const catalogScope = await resolveCatalogScope({
-                        requestedModuleId,
-                        requestedCatalogId
-                    });
-                    await deleteProduct(requestedId, catalogScope);
-                    const scopedCatalog = await loadScopedLocalCatalog(catalogScope, {
-                        requestedCatalogId: catalogScope.catalogId
-                    });
-                    this.emitToTenant(tenantId, 'business_data_catalog', {
-                        scope: {
-                            ...catalogScope,
-                            catalogIds: scopedCatalog.selection.catalogIds,
-                            catalogId: scopedCatalog.selection.primaryCatalogId,
-                            catalogs: scopedCatalog.selection.catalogs || []
-                        },
-                        source: 'local',
-                        items: scopedCatalog.items
-                    });
-                    await auditSocketAction('catalog.product.deleted', {
-                        resourceType: 'catalog_item',
-                        resourceId: requestedId || null,
-                        payload: {}
-                    });
-                } catch (e) {
-                    console.error('delete_product error:', e);
-                }
+            socket.on('delete_product', async () => {
+                socket.emit('error', 'La edicion de productos desde chat esta deshabilitada. Gestiona el catalogo desde Panel SaaS.');
             });
             socket.on('get_my_profile', async () => {
                 try {
@@ -6064,4 +5976,3 @@ class SocketManager {
 
 
 module.exports = SocketManager;
-
