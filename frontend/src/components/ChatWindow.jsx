@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import { Search, MoreVertical, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart, ChevronUp, ChevronDown, Tag, MapPin, Share2 } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import moment from 'moment';
 import EmojiPicker from 'emoji-picker-react';
+import ChannelBrandIcon from './ChannelBrandIcon';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -617,6 +618,7 @@ const ChatWindow = ({
         if (clean === 'whatsapp') return { key: 'whatsapp', short: 'WA', label: 'WhatsApp' };
         if (clean === 'instagram') return { key: 'instagram', short: 'IG', label: 'Instagram' };
         if (clean === 'messenger') return { key: 'messenger', short: 'MS', label: 'Messenger' };
+        if (clean === 'facebook') return { key: 'facebook', short: 'FB', label: 'Facebook' };
         if (clean === 'webchat') return { key: 'webchat', short: 'WEB', label: 'Webchat' };
         return { key: 'generic', short: clean.slice(0, 3).toUpperCase(), label: clean.toUpperCase() };
     };
@@ -988,7 +990,12 @@ const ChatWindow = ({
                         className={`chat-header-avatar-channel chat-header-avatar-channel--${headerChannelMarker.key}`}
                         title={headerChannelMarker.label}
                     >
-                        {headerChannelMarker.short}
+                        <ChannelBrandIcon
+                            channelType={headerChannelMarker.key}
+                            className="chat-header-avatar-channel-icon"
+                            size={10}
+                            title={headerChannelMarker.label}
+                        />
                     </span>
                 </div>
                 <div className="chat-header-meta">
@@ -1001,7 +1008,17 @@ const ChatWindow = ({
                                     ? <img src={headerModuleImageUrl} alt={headerModuleName || 'Modulo'} className="chat-header-module-avatar" />
                                     : <span className="chat-header-module-dot" aria-hidden="true" />}
                                 <span className="chat-header-module-name">{headerModuleName || 'MODULO'}</span>
-                                {headerModuleChannel && <span className="chat-header-module-channel">{headerModuleChannel}</span>}
+                                {headerModuleChannel && (
+                                    <span className="chat-header-module-channel">
+                                        <ChannelBrandIcon
+                                            channelType={headerModuleChannelType}
+                                            className="chat-header-module-channel-icon"
+                                            size={10}
+                                            title={headerModuleChannel}
+                                        />
+                                        {headerModuleChannel}
+                                    </span>
+                                )}
                             </span>
                         )}
                     </div>
@@ -1258,3 +1275,5 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
+
+

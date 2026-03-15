@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+﻿import React, { useMemo, useState } from 'react';
 import { MoreVertical, Search, Check, CheckCheck, X, SlidersHorizontal, Tags, Users, UserRoundX, Archive } from 'lucide-react';
 import moment from 'moment';
+import ChannelBrandIcon from './ChannelBrandIcon';
 
 const WA_LABEL_COLORS = ['#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#00A884', '#7D8D95'];
 
@@ -332,7 +333,8 @@ const Sidebar = ({
         const moduleId = String(resolvedModuleId || '').trim().toUpperCase();
         const channelType = String(chat?.lastMessageChannelType || moduleConfig?.channelType || '').trim().toLowerCase();
         const channelLabel = channelType ? channelType.toUpperCase() : '';
-        const source = moduleName || moduleId;
+        const sourceRaw = moduleName || moduleId;
+        const source = String(sourceRaw || '').replace(/\s*\|\s*(whatsapp|instagram|messenger|facebook|webchat)\s*$/i, '').trim() || sourceRaw;
         const imageUrl = normalizeModuleImageUrl(
             chat?.lastMessageModuleImageUrl
             || moduleConfig?.imageUrl
@@ -340,10 +342,7 @@ const Sidebar = ({
             || ''
         );
 
-        let label = '';
-        if (source && channelLabel) label = `${source} | ${channelLabel}`;
-        else if (source) label = source;
-        else if (channelLabel) label = channelLabel;
+        const label = source || channelLabel || '';
 
         if (!label) return null;
         return {
@@ -360,6 +359,7 @@ const Sidebar = ({
         if (clean === 'whatsapp') return { key: 'whatsapp', short: 'WA', label: 'WhatsApp' };
         if (clean === 'instagram') return { key: 'instagram', short: 'IG', label: 'Instagram' };
         if (clean === 'messenger') return { key: 'messenger', short: 'MS', label: 'Messenger' };
+        if (clean === 'facebook') return { key: 'facebook', short: 'FB', label: 'Facebook' };
         if (clean === 'webchat') return { key: 'webchat', short: 'WEB', label: 'Webchat' };
         return { key: 'generic', short: clean.slice(0, 3).toUpperCase(), label: clean.toUpperCase() };
     };
@@ -638,7 +638,12 @@ const Sidebar = ({
                                         className={`chat-avatar-channel-tag chat-avatar-channel-tag--${channelMarker.key}`}
                                         title={channelMarker.label}
                                     >
-                                        {channelMarker.short}
+                                        <ChannelBrandIcon
+                                            channelType={channelMarker.key}
+                                            className="chat-avatar-channel-icon"
+                                            size={11}
+                                            title={channelMarker.label}
+                                        />
                                     </span>
                                 </div>
 
@@ -654,9 +659,24 @@ const Sidebar = ({
 
                                     {moduleBadge?.label && (
                                         <p className="chat-module-badge">
-                                            {moduleBadge.imageUrl
-                                                ? <img src={moduleBadge.imageUrl} alt={moduleBadge.label} className="chat-module-badge-avatar" />
-                                                : <span className="chat-module-badge-dot" aria-hidden="true" />}
+                                            <span className="chat-module-badge-media">
+                                                {moduleBadge.imageUrl
+                                                    ? <img src={moduleBadge.imageUrl} alt={moduleBadge.label} className="chat-module-badge-avatar" />
+                                                    : <span className="chat-module-badge-dot" aria-hidden="true" />}
+                                                {moduleBadge?.channelType && (
+                                                    <span
+                                                        className={`chat-module-badge-channel chat-module-badge-channel--${channelMarker.key}`}
+                                                        title={channelMarker.label}
+                                                    >
+                                                        <ChannelBrandIcon
+                                                            channelType={channelMarker.key}
+                                                            className="chat-module-badge-channel-icon"
+                                                            size={8}
+                                                            title={channelMarker.label}
+                                                        />
+                                                    </span>
+                                                )}
+                                            </span>
                                             <span className="chat-module-badge-label">{moduleBadge.label}</span>
                                         </p>
                                     )}
