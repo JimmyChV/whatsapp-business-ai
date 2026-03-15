@@ -119,6 +119,7 @@ function buildSocketAgentMeta(authContext = null, moduleContext = null) {
         sentByRole: role,
         sentViaModuleId: String(moduleContext?.moduleId || '').trim() || null,
         sentViaModuleName: String(moduleContext?.name || '').trim() || null,
+        sentViaModuleImageUrl: String(moduleContext?.imageUrl || moduleContext?.logoUrl || '').trim() || null,
         sentViaTransport: String(moduleContext?.transportMode || '').trim().toLowerCase() || null,
         sentViaPhoneNumber: coerceHumanPhone(moduleContext?.phoneNumber || moduleContext?.phone || '') || null,
         sentViaChannelType: String(moduleContext?.channelType || '').trim().toLowerCase() || null
@@ -128,7 +129,7 @@ function buildSocketAgentMeta(authContext = null, moduleContext = null) {
 function sanitizeAgentMeta(agentMeta = null) {
     if (!agentMeta || typeof agentMeta !== 'object') return null;
     const out = {};
-    ['sentByUserId', 'sentByName', 'sentByEmail', 'sentByRole', 'sentViaModuleId', 'sentViaModuleName', 'sentViaTransport', 'sentViaPhoneNumber', 'sentViaChannelType'].forEach((key) => {
+    ['sentByUserId', 'sentByName', 'sentByEmail', 'sentByRole', 'sentViaModuleId', 'sentViaModuleName', 'sentViaModuleImageUrl', 'sentViaTransport', 'sentViaPhoneNumber', 'sentViaChannelType'].forEach((key) => {
         const value = String(agentMeta?.[key] || '').trim();
         if (value) out[key] = value;
     });
@@ -139,6 +140,7 @@ function buildModuleAttributionMeta(moduleContext = null) {
     if (!moduleContext || typeof moduleContext !== 'object') return null;
     const sentViaModuleId = String(moduleContext?.moduleId || '').trim().toLowerCase() || null;
     const sentViaModuleName = String(moduleContext?.name || '').trim() || null;
+    const sentViaModuleImageUrl = String(moduleContext?.imageUrl || moduleContext?.logoUrl || '').trim() || null;
     const sentViaTransport = String(moduleContext?.transportMode || '').trim().toLowerCase() || null;
     const sentViaPhoneNumber = coerceHumanPhone(
         moduleContext?.phoneNumber
@@ -147,13 +149,14 @@ function buildModuleAttributionMeta(moduleContext = null) {
     ) || null;
     const sentViaChannelType = String(moduleContext?.channelType || '').trim().toLowerCase() || null;
 
-    if (!sentViaModuleId && !sentViaModuleName && !sentViaTransport && !sentViaPhoneNumber && !sentViaChannelType) {
+    if (!sentViaModuleId && !sentViaModuleName && !sentViaModuleImageUrl && !sentViaTransport && !sentViaPhoneNumber && !sentViaChannelType) {
         return null;
     }
 
     return {
         sentViaModuleId,
         sentViaModuleName,
+        sentViaModuleImageUrl,
         sentViaTransport,
         sentViaPhoneNumber,
         sentViaChannelType
@@ -1874,11 +1877,59 @@ function resolveCloudDestinationChatId(chatId = '', explicitPhone = '') {
     const byExplicit = coerceHumanPhone(explicitPhone || '');
     if (byExplicit) return `${byExplicit}@c.us`;
 
-    const fromChatId = String(chatId || '').trim();
+    const scoped = parseScopedChatId(chatId || '');
+    const fromChatId = String(scoped.chatId || chatId || '').trim();
     const fromChatDigits = coerceHumanPhone(fromChatId.split('@')[0] || '');
     if (fromChatDigits) return `${fromChatDigits}@c.us`;
 
     return null;
+}
+
+const CHAT_SCOPE_SEPARATOR = '::mod::';
+
+function normalizeScopedModuleId(value = '') {
+    return String(value || '').trim().toLowerCase();
+}
+
+function parseScopedChatId(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return { chatId: '', moduleId: '' };
+
+    const idx = raw.lastIndexOf(CHAT_SCOPE_SEPARATOR);
+    if (idx < 0) return { chatId: raw, moduleId: '' };
+
+    const chatId = String(raw.slice(0, idx) || '').trim();
+    const moduleId = normalizeScopedModuleId(raw.slice(idx + CHAT_SCOPE_SEPARATOR.length));
+    if (!chatId || !moduleId) return { chatId: raw, moduleId: '' };
+    return { chatId, moduleId };
+}
+
+function buildScopedChatId(chatId = '', moduleId = '') {
+    const base = String(parseScopedChatId(chatId).chatId || chatId || '').trim();
+    const scopedModuleId = normalizeScopedModuleId(moduleId);
+    if (!base || !scopedModuleId) return base;
+    return base + CHAT_SCOPE_SEPARATOR + scopedModuleId;
+}
+
+function getSummaryModuleScopeId(summary = {}) {
+    return normalizeScopedModuleId(
+        summary?.scopeModuleId
+        || summary?.lastMessageModuleId
+        || summary?.sentViaModuleId
+        || parseScopedChatId(summary?.id || '').moduleId
+        || ''
+    ) || '';
+}
+
+function resolveScopedChatTarget(rawChatId = '', fallbackModuleId = '') {
+    const parsed = parseScopedChatId(rawChatId || '');
+    const baseChatId = String(parsed.chatId || rawChatId || '').trim();
+    const moduleId = normalizeScopedModuleId(parsed.moduleId || fallbackModuleId || '');
+    return {
+        baseChatId,
+        moduleId,
+        scopedChatId: buildScopedChatId(baseChatId, moduleId)
+    };
 }
 
 function isLidIdentifier(value = '') {
@@ -1969,10 +2020,13 @@ function extractPhoneFromSummary(summary = {}) {
 }
 
 function buildChatIdentityKeyFromSummary(summary = {}) {
-    const id = String(summary?.id || '');
-    const phone = extractPhoneFromSummary(summary);
-    if (phone) return 'phone:' + phone;
-    return 'id:' + id;
+    const scoped = parseScopedChatId(summary?.id || '');
+    const baseId = String(summary?.baseChatId || scoped.chatId || summary?.id || '');
+    const phone = extractPhoneFromSummary({ ...summary, id: baseId });
+    const moduleScopeId = getSummaryModuleScopeId(summary);
+
+    if (phone) return moduleScopeId ? ('module:' + moduleScopeId + '|phone:' + phone) : ('phone:' + phone);
+    return moduleScopeId ? ('module:' + moduleScopeId + '|id:' + baseId) : ('id:' + baseId);
 }
 
 function pickPreferredSummary(prevItem = {}, incoming = {}) {
@@ -1984,9 +2038,17 @@ function pickPreferredSummary(prevItem = {}, incoming = {}) {
     const primary = pickIncoming ? incoming : prevItem;
     const secondary = pickIncoming ? prevItem : incoming;
 
+    const primaryScoped = parseScopedChatId(primary?.id || '');
+    const secondaryScoped = parseScopedChatId(secondary?.id || '');
+    const baseChatId = String(primary?.baseChatId || primaryScoped.chatId || secondary?.baseChatId || secondaryScoped.chatId || '').trim();
+    const scopeModuleId = getSummaryModuleScopeId(primary) || getSummaryModuleScopeId(secondary) || '';
+
     const merged = {
         ...secondary,
         ...primary,
+        id: buildScopedChatId(baseChatId || primary?.id || secondary?.id || '', scopeModuleId),
+        baseChatId: baseChatId || null,
+        scopeModuleId: scopeModuleId || null,
         phone: primary?.phone || secondary?.phone || null,
         subtitle: primary?.subtitle || secondary?.subtitle || null,
         isMyContact: Boolean(primary?.isMyContact ?? secondary?.isMyContact),
@@ -2001,6 +2063,10 @@ function pickPreferredSummary(prevItem = {}, incoming = {}) {
     const secondaryName = String(secondary?.name || '').trim();
     const primaryLooksInternal = primaryName.includes('@') || /^\d{14,}$/.test(primaryName);
     merged.name = (!primaryLooksInternal && primaryName) ? primaryName : (secondaryName || primaryName || 'Sin nombre');
+
+    if (!merged.lastMessageModuleId && scopeModuleId) {
+        merged.lastMessageModuleId = scopeModuleId;
+    }
 
     return merged;
 }
@@ -2577,11 +2643,16 @@ class SocketManager {
 
         const lastMessageModuleId = String(entry?.lastMessageModuleId || metadata?.sentViaModuleId || '').trim().toLowerCase() || null;
         const lastMessageModuleName = String(entry?.lastMessageModuleName || metadata?.sentViaModuleName || '').trim() || null;
+        const lastMessageModuleImageUrl = String(entry?.lastMessageModuleImageUrl || metadata?.sentViaModuleImageUrl || '').trim() || null;
         const lastMessageTransport = String(entry?.lastMessageTransport || metadata?.sentViaTransport || '').trim().toLowerCase() || null;
         const lastMessageChannelType = String(entry?.lastMessageChannelType || metadata?.sentViaChannelType || '').trim().toLowerCase() || null;
+        const scopeModuleId = getSummaryModuleScopeId({ scopeModuleId: entry?.scopeModuleId, lastMessageModuleId, id: chatId }) || null;
+        const scopedId = buildScopedChatId(chatId, scopeModuleId || '');
 
         return {
-            id: chatId,
+            id: scopedId || chatId,
+            baseChatId: chatId,
+            scopeModuleId,
             name: fallbackName,
             phone,
             subtitle,
@@ -2593,8 +2664,9 @@ class SocketManager {
             labels,
             profilePicUrl,
             isMyContact: Boolean(metadata?.isMyContact),
-            lastMessageModuleId,
+            lastMessageModuleId: scopeModuleId || lastMessageModuleId,
             lastMessageModuleName,
+            lastMessageModuleImageUrl,
             lastMessageTransport,
             lastMessageChannelType,
             archived: Boolean(entry?.archived)
@@ -2608,7 +2680,8 @@ class SocketManager {
         const subtitle = String(summary?.subtitle || '').toLowerCase();
         const lastMessage = String(summary?.lastMessage || '').toLowerCase();
         const phone = normalizePhoneDigits(summary?.phone || '');
-        const idDigits = normalizePhoneDigits(String(summary?.id || '').split('@')[0] || '');
+        const baseSummaryId = String(summary?.baseChatId || parseScopedChatId(summary?.id || '').chatId || summary?.id || '');
+        const idDigits = normalizePhoneDigits(String(baseSummaryId || '').split('@')[0] || '');
 
         if (queryDigits) {
             const byPhone = phone.includes(queryDigits);
@@ -2650,13 +2723,15 @@ class SocketManager {
         limit = 80,
         query = '',
         filters = {},
-        filterKey = ''
+        filterKey = '',
+        scopeModuleId = ''
     } = {}) {
         const safeOffset = Number.isFinite(Number(offset)) ? Math.max(0, Math.floor(Number(offset))) : 0;
         const safeLimit = Number.isFinite(Number(limit)) ? Math.min(250, Math.max(20, Math.floor(Number(limit)))) : 80;
         const queryText = String(query || '').trim();
         const queryLower = queryText.toLowerCase();
         const queryDigits = normalizePhoneDigits(queryText);
+        const normalizedScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
 
         const allRows = [];
         let cursor = 0;
@@ -2674,6 +2749,16 @@ class SocketManager {
         const normalized = allRows
             .map((entry) => this.toHistoryChatSummary(entry))
             .filter(Boolean)
+            .filter((summary) => {
+                if (!normalizedScopeModuleId) return true;
+                const summaryScopeId = normalizeScopedModuleId(
+                    summary?.scopeModuleId
+                    || summary?.lastMessageModuleId
+                    || summary?.sentViaModuleId
+                    || ''
+                );
+                return summaryScopeId === normalizedScopeModuleId;
+            })
             .filter((summary) => this.historySummaryMatches(summary, {
                 queryLower,
                 queryDigits,
@@ -2696,6 +2781,7 @@ class SocketManager {
             query: queryText,
             filters,
             filterKey,
+            scopeModuleId: normalizedScopeModuleId || null,
             source: 'history_fallback'
         };
     }
@@ -2748,20 +2834,33 @@ class SocketManager {
         };
     }
 
-    async getHistoryChatHistory(tenantId, { chatId = '', limit = 60 } = {}) {
+    async getHistoryChatHistory(tenantId, { chatId = '', limit = 60, scopeModuleId = '' } = {}) {
         const requestedChatId = String(chatId || '').trim();
         const safeLimit = Number.isFinite(Number(limit)) ? Math.min(300, Math.max(20, Math.floor(Number(limit)))) : 60;
+        const normalizedScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
+
+        const filterRowsByScope = (rows = []) => {
+            const source = Array.isArray(rows) ? rows : [];
+            if (!normalizedScopeModuleId) return source;
+            const withScope = source.filter((row) => normalizeScopedModuleId(row?.waModuleId || row?.metadata?.sentViaModuleId || '') === normalizedScopeModuleId);
+            return withScope;
+        };
 
         let resolvedChatId = requestedChatId;
         let rows = requestedChatId
             ? await messageHistoryService.listMessages(tenantId, { chatId: requestedChatId, limit: safeLimit })
             : [];
+        rows = filterRowsByScope(rows);
 
         if ((!Array.isArray(rows) || rows.length === 0) && requestedChatId) {
             const digits = normalizePhoneDigits(requestedChatId.split('@')[0] || '');
             if (digits) {
                 const candidates = await messageHistoryService.listChats(tenantId, { limit: 500, offset: 0 });
                 const candidate = (Array.isArray(candidates) ? candidates : []).find((entry) => {
+                    if (normalizedScopeModuleId) {
+                        const candidateModuleId = normalizeScopedModuleId(entry?.lastMessageModuleId || entry?.metadata?.sentViaModuleId || '');
+                        if (candidateModuleId && candidateModuleId !== normalizedScopeModuleId) return false;
+                    }
                     const phoneDigits = normalizePhoneDigits(entry?.phone || '');
                     const idDigits = normalizePhoneDigits(String(entry?.chatId || '').split('@')[0] || '');
                     return (phoneDigits && (phoneDigits === digits || phoneDigits.endsWith(digits) || digits.endsWith(phoneDigits)))
@@ -2770,6 +2869,7 @@ class SocketManager {
                 if (candidate?.chatId) {
                     resolvedChatId = String(candidate.chatId);
                     rows = await messageHistoryService.listMessages(tenantId, { chatId: resolvedChatId, limit: safeLimit });
+                    rows = filterRowsByScope(rows);
                 }
             }
         }
@@ -2788,6 +2888,7 @@ class SocketManager {
         return {
             chatId: resolvedChatId || requestedChatId,
             requestedChatId,
+            scopeModuleId: normalizedScopeModuleId || null,
             messages,
             source: 'history_fallback'
         };
@@ -3021,7 +3122,14 @@ class SocketManager {
 
         return chats.filter((_, idx) => included[idx]);
     }
-    async toChatSummary(chat, { includeHeavyMeta = false } = {}) {
+    async toChatSummary(chat, {
+        includeHeavyMeta = false,
+        scopeModuleId = '',
+        scopeModuleName = null,
+        scopeModuleImageUrl = null,
+        scopeChannelType = null,
+        scopeTransport = null
+    } = {}) {
         const chatId = chat?.id?._serialized;
         if (!isVisibleChatId(chatId)) return null;
 
@@ -3053,9 +3161,13 @@ class SocketManager {
         const effectiveChat = { ...chat, contact };
         const phone = isGroup ? null : extractPhoneFromChat(effectiveChat);
         const subtitle = contact?.pushname || contact?.shortName || contact?.name || null;
+        const normalizedScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
+        const scopedSummaryId = buildScopedChatId(chatId, normalizedScopeModuleId);
 
         return {
-            id: chatId,
+            id: scopedSummaryId || chatId,
+            baseChatId: chatId,
+            scopeModuleId: normalizedScopeModuleId || null,
             name: resolveChatDisplayName(effectiveChat),
             phone,
             subtitle,
@@ -3067,7 +3179,12 @@ class SocketManager {
             labels,
             profilePicUrl,
             isMyContact: Boolean(contact?.isMyContact),
-            archived: Boolean(chat?.archived)
+            archived: Boolean(chat?.archived),
+            lastMessageModuleId: normalizedScopeModuleId || null,
+            lastMessageModuleName: String(scopeModuleName || '').trim() || null,
+            lastMessageModuleImageUrl: String(scopeModuleImageUrl || '').trim() || null,
+            lastMessageTransport: String(scopeTransport || '').trim().toLowerCase() || null,
+            lastMessageChannelType: String(scopeChannelType || '').trim().toLowerCase() || null
         };
     }
 
@@ -3593,6 +3710,10 @@ class SocketManager {
                             : 'all'
                     };
 
+                    const selectedModuleContext = socket?.data?.waModule || null;
+                    const activeScopeModuleId = normalizeScopedModuleId(selectedModuleContext?.moduleId || socket?.data?.waModuleId || '');
+                    const summaryScopeOptions = {};
+
                     const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.floor(rawOffset)) : 0;
                     const limit = Number.isFinite(rawLimit)
                         ? Math.min(250, Math.max(20, Math.floor(rawLimit)))
@@ -3604,7 +3725,8 @@ class SocketManager {
                             limit,
                             query,
                             filters: activeFilters,
-                            filterKey
+                            filterKey,
+                            scopeModuleId: null
                         });
                         socket.emit('chats', fallbackPage);
                         return;
@@ -3637,7 +3759,7 @@ class SocketManager {
 
                     const page = filtered.slice(offset, offset + limit);
                     const scannedCount = page.length;
-                    const formatted = await Promise.all(page.map((c) => this.toChatSummary(c, { includeHeavyMeta: false })));
+                    const formatted = await Promise.all(page.map((c) => this.toChatSummary(c, { includeHeavyMeta: false, ...summaryScopeOptions })));
 
                     let items = formatted.filter(Boolean);
                     if (queryLower && offset === 0 && items.length < limit && !hasActiveFilters) {
@@ -3656,7 +3778,19 @@ class SocketManager {
                             .map((c) => {
                                 const phone = normalizePhoneDigits(c?.phone || '');
                                 const canonicalId = phone ? phoneToExistingChatId.get(phone) : null;
-                                return canonicalId ? { ...c, id: canonicalId } : c;
+                                const baseId = String(canonicalId || c?.id || '').trim();
+                                const scopedId = buildScopedChatId(baseId, '');
+                                return {
+                                    ...c,
+                                    id: scopedId || baseId,
+                                    baseChatId: baseId || null,
+                                    scopeModuleId: null,
+                                    lastMessageModuleId: null,
+                                    lastMessageModuleName: null,
+                                    lastMessageModuleImageUrl: null,
+                                    lastMessageTransport: null,
+                                    lastMessageChannelType: null
+                                };
                             })
                             .filter((c) => {
                                 if (!c?.id || existingIds.has(c.id)) return false;
@@ -3685,7 +3819,7 @@ class SocketManager {
 
                             try {
                                 const chat = await waClient.client.getChatById(canonicalChatId);
-                                const summary = await this.toChatSummary(chat, { includeHeavyMeta: true });
+                                const summary = await this.toChatSummary(chat, { includeHeavyMeta: true, ...summaryScopeOptions });
                                 if (summary) items = [summary];
                             } catch (e) {
                                 items = [{
@@ -3726,7 +3860,8 @@ class SocketManager {
                             limit,
                             query,
                             filters: activeFilters,
-                            filterKey
+                            filterKey,
+                            scopeModuleId: null
                         });
                         if (Array.isArray(fallbackPageIfEmpty?.items) && fallbackPageIfEmpty.items.length > 0) {
                             socket.emit('chats', fallbackPageIfEmpty);
@@ -3744,7 +3879,8 @@ class SocketManager {
                                 limit,
                                 query,
                                 filters: activeFilters,
-                                filterKey
+                                filterKey,
+                                scopeModuleId: null
                             });
 
                             historyTotalHint = Math.max(0, Number(cloudHistoryPage?.total || 0));
@@ -3808,7 +3944,7 @@ class SocketManager {
                         setImmediate(async () => {
                             for (const chat of pendingMetaChats) {
                                 try {
-                                    const summary = await this.toChatSummary(chat, { includeHeavyMeta: true });
+                                    const summary = await this.toChatSummary(chat, { includeHeavyMeta: true, ...summaryScopeOptions });
                                     if (summary) socket.emit('chat_updated', summary);
                                 } catch (_) { }
                             }
@@ -3822,7 +3958,8 @@ class SocketManager {
                             limit: Number(payload?.limit ?? 80),
                             query: String(payload?.query || '').trim(),
                             filters: payload?.filters || {},
-                            filterKey: String(payload?.filterKey || '').trim()
+                            filterKey: String(payload?.filterKey || '').trim(),
+                            scopeModuleId: normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '') || null
                         });
                         socket.emit('chats', fallbackPage);
                     } catch (historyErr) {
@@ -3844,14 +3981,38 @@ class SocketManager {
 
             socket.on('get_chat_history', async (chatId) => {
                 try {
-                    let historyChatId = String(chatId || '');
+                    const requestedRawChatId = String(chatId || '').trim();
+                    const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                    const scopedTarget = resolveScopedChatTarget(requestedRawChatId, selectedScopeModuleId);
+                    const scopeModuleId = normalizeScopedModuleId(scopedTarget.moduleId || selectedScopeModuleId || '');
+                    const requestedScopedChatId = scopedTarget.scopedChatId
+                        || buildScopedChatId(String(scopedTarget.baseChatId || requestedRawChatId || '').trim(), scopeModuleId || '');
+                    let historyChatId = String(scopedTarget.baseChatId || requestedRawChatId || '').trim();
+
+                    if (!historyChatId) {
+                        socket.emit('chat_history', {
+                            chatId: requestedScopedChatId || requestedRawChatId,
+                            requestedChatId: requestedRawChatId,
+                            baseChatId: null,
+                            scopeModuleId: scopeModuleId || null,
+                            messages: []
+                        });
+                        return;
+                    }
 
                     if (!this.ensureTransportReady(socket, { action: 'abrir historial', errorEvent: 'transport_info' })) {
                         const fallbackHistory = await this.getHistoryChatHistory(tenantId, {
                             chatId: historyChatId,
-                            limit: 60
+                            limit: 60,
+                            scopeModuleId
                         });
-                        socket.emit('chat_history', fallbackHistory);
+                        socket.emit('chat_history', {
+                            ...fallbackHistory,
+                            chatId: requestedScopedChatId || fallbackHistory?.chatId || historyChatId,
+                            requestedChatId: requestedRawChatId,
+                            baseChatId: fallbackHistory?.chatId || historyChatId,
+                            scopeModuleId: scopeModuleId || null
+                        });
                         return;
                     }
 
@@ -3873,6 +4034,7 @@ class SocketManager {
                             throw directErr;
                         }
                     }
+
                     const visible = messages.filter((m) => !isStatusOrSystemMessage(m));
                     const outgoingIds = visible
                         .filter((m) => Boolean(m?.fromMe))
@@ -3891,19 +4053,32 @@ class SocketManager {
                                     const key = String(row?.messageId || '').trim();
                                     if (!key) return null;
                                     const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
-                                    return [key, metadata];
+                                    return [key, {
+                                        metadata,
+                                        waModuleId: String(row?.waModuleId || '').trim().toLowerCase() || null,
+                                        waPhoneNumber: String(row?.waPhoneNumber || '').trim() || null
+                                    }];
                                 })
                                 .filter(Boolean)
                         );
                     } catch (_) { }
 
-                    const formatted = await Promise.all(visible.map(async (m) => {
+                    const formattedAll = await Promise.all(visible.map(async (m) => {
                         const senderMeta = await resolveMessageSenderMeta(m);
                         const fileMeta = extractMessageFileMeta(m);
                         const messageId = String(m?.id?._serialized || '').trim();
-                        const persistedAgentMeta = historyMetaByMessageId.get(messageId) || null;
+                        const persistedEntry = historyMetaByMessageId.get(messageId) || null;
+                        const persistedMeta = persistedEntry?.metadata || null;
+                        const persistedModuleId = normalizeScopedModuleId(persistedEntry?.waModuleId || persistedMeta?.sentViaModuleId || '');
                         const pendingAgentMeta = m?.fromMe ? getOutgoingAgentMeta(messageId) : null;
-                        const agentMeta = mergeAgentMeta(persistedAgentMeta, pendingAgentMeta);
+                        const agentMeta = mergeAgentMeta(persistedMeta, pendingAgentMeta);
+                        const resolvedMessageModuleId = normalizeScopedModuleId(
+                            agentMeta?.sentViaModuleId
+                            || persistedModuleId
+                            || (m?.fromMe ? scopeModuleId : '')
+                            || ''
+                        ) || null;
+
                         return ({
                         id: m.id._serialized,
                         from: m.from,
@@ -3932,20 +4107,48 @@ class SocketManager {
                         order: extractOrderInfo(m),
                         location: extractLocationInfo(m),
                         quotedMessage: await extractQuotedMessageInfo(m),
-                        ...(agentMeta || {})
+                        ...(agentMeta || {}),
+                        sentViaModuleId: resolvedMessageModuleId,
+                        sentViaModuleName: String(agentMeta?.sentViaModuleName || '').trim() || null,
+                        sentViaModuleImageUrl: String(agentMeta?.sentViaModuleImageUrl || '').trim() || null,
+                        sentViaTransport: String(agentMeta?.sentViaTransport || '').trim().toLowerCase() || null,
+                        sentViaPhoneNumber: String(agentMeta?.sentViaPhoneNumber || persistedEntry?.waPhoneNumber || '').trim() || null,
+                        sentViaChannelType: String(agentMeta?.sentViaChannelType || '').trim().toLowerCase() || null
                         });
                     }));
+
+                    const formatted = scopeModuleId
+                        ? (() => {
+                            const scopedOnly = formattedAll.filter((entry) => normalizeScopedModuleId(entry?.sentViaModuleId || '') === scopeModuleId);
+                            return scopedOnly;
+                        })()
+                        : formattedAll;
+
                     if (formatted.length === 0) {
                         const historyFallbackIfEmpty = await this.getHistoryChatHistory(tenantId, {
                             chatId: historyChatId,
-                            limit: 60
+                            limit: 60,
+                            scopeModuleId
                         });
                         if (Array.isArray(historyFallbackIfEmpty?.messages) && historyFallbackIfEmpty.messages.length > 0) {
-                            socket.emit('chat_history', historyFallbackIfEmpty);
+                            socket.emit('chat_history', {
+                                ...historyFallbackIfEmpty,
+                                chatId: requestedScopedChatId || historyFallbackIfEmpty?.chatId || historyChatId,
+                                requestedChatId: requestedRawChatId,
+                                baseChatId: historyFallbackIfEmpty?.chatId || historyChatId,
+                                scopeModuleId: scopeModuleId || null
+                            });
                             return;
                         }
                     }
-                    socket.emit('chat_history', { chatId: historyChatId, requestedChatId: chatId, messages: formatted });
+
+                    socket.emit('chat_history', {
+                        chatId: requestedScopedChatId || historyChatId,
+                        requestedChatId: requestedRawChatId,
+                        baseChatId: historyChatId,
+                        scopeModuleId: scopeModuleId || null,
+                        messages: formatted
+                    });
 
                     // Avoid blocking chat open while media is downloaded/cached.
                     visible
@@ -3957,7 +4160,9 @@ class SocketManager {
                                 if (!media) return;
                                 const mediaMeta = extractMessageFileMeta(m, media);
                                 socket.emit('chat_media', {
-                                    chatId: historyChatId,
+                                    chatId: requestedScopedChatId || historyChatId,
+                                    baseChatId: historyChatId,
+                                    scopeModuleId: scopeModuleId || null,
                                     messageId: m.id._serialized,
                                     mediaData: media.data,
                                     mimetype: media.mimetype,
@@ -3969,15 +4174,30 @@ class SocketManager {
                 } catch (e) {
                     console.error('Error fetching history:', e);
                     try {
+                        const requestedRawChatId = String(chatId || '').trim();
+                        const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                        const scopedTarget = resolveScopedChatTarget(requestedRawChatId, selectedScopeModuleId);
+                        const scopeModuleId = normalizeScopedModuleId(scopedTarget.moduleId || selectedScopeModuleId || '');
                         const fallbackHistory = await this.getHistoryChatHistory(tenantId, {
-                            chatId,
-                            limit: 60
+                            chatId: String(scopedTarget.baseChatId || requestedRawChatId || '').trim(),
+                            limit: 60,
+                            scopeModuleId
                         });
-                        socket.emit('chat_history', fallbackHistory);
+                        const requestedScopedChatId = scopedTarget.scopedChatId
+                            || buildScopedChatId(String(scopedTarget.baseChatId || requestedRawChatId || '').trim(), scopeModuleId || '');
+                        socket.emit('chat_history', {
+                            ...fallbackHistory,
+                            chatId: requestedScopedChatId || fallbackHistory?.chatId || scopedTarget.baseChatId || requestedRawChatId,
+                            requestedChatId: requestedRawChatId,
+                            baseChatId: fallbackHistory?.chatId || scopedTarget.baseChatId || requestedRawChatId,
+                            scopeModuleId: scopeModuleId || null
+                        });
                     } catch (historyErr) {
                         socket.emit('chat_history', {
                             chatId: String(chatId || ''),
                             requestedChatId: String(chatId || ''),
+                            baseChatId: String(resolveScopedChatTarget(String(chatId || ''), '').baseChatId || chatId || ''),
+                            scopeModuleId: normalizeScopedModuleId(resolveScopedChatTarget(String(chatId || ''), '').moduleId || '') || null,
                             messages: [],
                             source: 'history_fallback'
                         });
@@ -3985,11 +4205,36 @@ class SocketManager {
                 }
             });
 
-            socket.on('start_new_chat', async ({ phone, firstMessage }) => {
+            socket.on('start_new_chat', async ({ phone, firstMessage, moduleId } = {}) => {
                 try {
                     if (!this.ensureTransportReady(socket, { action: 'abrir un chat nuevo', errorEvent: 'start_new_chat_error' })) {
                         return;
                     }
+
+                    const requestedModuleId = normalizeSocketModuleId(moduleId || '');
+                    let activeModuleContext = socket?.data?.waModule || null;
+                    if (requestedModuleId) {
+                        const currentModuleId = normalizeSocketModuleId(activeModuleContext?.moduleId || socket?.data?.waModuleId || '');
+                        if (!currentModuleId || currentModuleId !== requestedModuleId) {
+                            const moduleContextPayload = await resolveSocketModuleContext(tenantId, authContext, requestedModuleId);
+                            activeModuleContext = moduleContextPayload?.selected || null;
+                            if (!activeModuleContext?.moduleId || normalizeSocketModuleId(activeModuleContext.moduleId) !== requestedModuleId) {
+                                socket.emit('start_new_chat_error', 'No tienes acceso al modulo solicitado para abrir este chat.');
+                                return;
+                            }
+                            await ensureTransportForSelectedModule(activeModuleContext);
+                        }
+                    }
+
+                    const activeScopeModuleId = normalizeScopedModuleId(activeModuleContext?.moduleId || socket?.data?.waModuleId || '');
+                    const scopeSummaryOptions = {
+                        scopeModuleId: activeScopeModuleId,
+                        scopeModuleName: String(activeModuleContext?.name || '').trim() || null,
+                        scopeModuleImageUrl: String(activeModuleContext?.imageUrl || activeModuleContext?.logoUrl || '').trim() || null,
+                        scopeChannelType: String(activeModuleContext?.channelType || '').trim().toLowerCase() || null,
+                        scopeTransport: String(activeModuleContext?.transportMode || '').trim().toLowerCase() || null
+                    };
+
                     const clean = normalizePhoneDigits(phone);
                     if (!clean) {
                         socket.emit('start_new_chat_error', 'Numero invalido.');
@@ -4028,7 +4273,7 @@ class SocketManager {
                     }
 
                     const normalizedRegistered = normalizePhoneDigits(registeredUser);
-                    const directChatId = `${registeredUser}@c.us`;
+                    const directChatId = String(registeredUser) + '@c.us';
                     let canonicalChatId = directChatId;
 
                     try {
@@ -4045,23 +4290,29 @@ class SocketManager {
 
                     try {
                         const chat = await waClient.client.getChatById(canonicalChatId);
-                        const summary = await this.toChatSummary(chat, { includeHeavyMeta: true });
+                        const summary = await this.toChatSummary(chat, { includeHeavyMeta: true, ...scopeSummaryOptions });
                         if (summary) {
-                            canonicalChatId = summary.id || canonicalChatId;
+                            canonicalChatId = String(summary.baseChatId || parseScopedChatId(summary.id).chatId || canonicalChatId || '').trim() || canonicalChatId;
                             this.io.emit('chat_updated', summary);
                         }
                     } catch (e) {
                         try {
                             const fallbackChat = await waClient.client.getChatById(directChatId);
-                            const fallbackSummary = await this.toChatSummary(fallbackChat, { includeHeavyMeta: true });
+                            const fallbackSummary = await this.toChatSummary(fallbackChat, { includeHeavyMeta: true, ...scopeSummaryOptions });
                             if (fallbackSummary) {
-                                canonicalChatId = fallbackSummary.id || directChatId;
+                                canonicalChatId = String(fallbackSummary.baseChatId || parseScopedChatId(fallbackSummary.id).chatId || directChatId || '').trim() || directChatId;
                                 this.io.emit('chat_updated', fallbackSummary);
                             }
                         } catch (fallbackErr) { }
                     }
 
-                    socket.emit('chat_opened', { chatId: canonicalChatId, phone: registeredUser });
+                    const scopedChatId = buildScopedChatId(canonicalChatId, activeScopeModuleId || '');
+                    socket.emit('chat_opened', {
+                        chatId: scopedChatId || canonicalChatId,
+                        baseChatId: canonicalChatId,
+                        moduleId: activeScopeModuleId || null,
+                        phone: registeredUser
+                    });
                 } catch (e) {
                     console.error('start_new_chat error:', e.message);
                     socket.emit('start_new_chat_error', 'No se pudo iniciar el chat.');
@@ -4074,7 +4325,18 @@ class SocketManager {
                     if (!this.ensureTransportReady(socket, { action: 'gestionar etiquetas', errorEvent: 'chat_labels_error' })) {
                         return;
                     }
-                    if (!chatId) {
+                    const requestedChatId = String(chatId || '').trim();
+                    if (!requestedChatId) {
+                        socket.emit('chat_labels_error', 'Chat invalido para etiquetar.');
+                        return;
+                    }
+
+                    const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                    const scopedTarget = resolveScopedChatTarget(requestedChatId, selectedScopeModuleId);
+                    const safeChatId = String(scopedTarget.baseChatId || '').trim();
+                    const scopeModuleId = normalizeScopedModuleId(scopedTarget.moduleId || selectedScopeModuleId || '');
+                    const scopedChatId = scopedTarget.scopedChatId || buildScopedChatId(safeChatId, scopeModuleId || '');
+                    if (!safeChatId) {
                         socket.emit('chat_labels_error', 'Chat invalido para etiquetar.');
                         return;
                     }
@@ -4083,11 +4345,11 @@ class SocketManager {
                         ? labelIds.filter((v) => v !== null && v !== undefined && String(v).trim() !== '').map((v) => Number.isNaN(Number(v)) ? String(v) : Number(v))
                         : [];
 
-                    const chat = await waClient.client.getChatById(chatId);
+                    const chat = await waClient.client.getChatById(safeChatId);
                     if (chat?.changeLabels) {
                         await chat.changeLabels(ids);
                     } else if (waClient.client?.addOrRemoveLabels) {
-                        await waClient.client.addOrRemoveLabels(ids, [chatId]);
+                        await waClient.client.addOrRemoveLabels(ids, [safeChatId]);
                     }
 
                     let updatedLabels = [];
@@ -4096,20 +4358,24 @@ class SocketManager {
                     } catch (e) { }
 
                     const payload = {
-                        chatId,
+                        chatId: scopedChatId || safeChatId,
+                        baseChatId: safeChatId,
+                        scopeModuleId: scopeModuleId || null,
                         labels: (updatedLabels || []).map((l) => ({ id: l.id, name: l.name, color: l.color }))
                     };
-                    const cachedMeta = this.getCachedChatMeta(chatId) || {};
-                    this.chatMetaCache.set(String(chatId), {
+                    const cachedMeta = this.getCachedChatMeta(safeChatId) || this.getCachedChatMeta(requestedChatId) || {};
+                    const cacheEntry = {
                         labels: payload.labels,
                         profilePicUrl: cachedMeta.profilePicUrl || null,
                         updatedAt: Date.now()
-                    });
+                    };
+                    this.chatMetaCache.set(String(safeChatId), cacheEntry);
+                    if (scopedChatId) this.chatMetaCache.set(String(scopedChatId), cacheEntry);
                     this.emitToTenant(tenantId, 'chat_labels_updated', payload);
-                    socket.emit('chat_labels_saved', { chatId, ok: true });
+                    socket.emit('chat_labels_saved', { chatId: payload.chatId || safeChatId, baseChatId: safeChatId, scopeModuleId: payload.scopeModuleId || null, ok: true });
                     await auditSocketAction('chat.labels.updated', {
                         resourceType: 'chat',
-                        resourceId: chatId,
+                        resourceId: safeChatId,
                         payload: { labelIds: ids, labels: payload.labels }
                     });
                 } catch (e) {
@@ -4203,11 +4469,21 @@ class SocketManager {
                 const mediaSizeBytesRaw = mediaPayload && typeof mediaPayload === 'object' ? Number(mediaPayload?.fileSizeBytes) : null;
                 const mediaSizeBytes = Number.isFinite(mediaSizeBytesRaw) ? mediaSizeBytesRaw : null;
                 const moduleAttributionMeta = buildModuleAttributionMeta(moduleContext);
+                const moduleScopeId = normalizeScopedModuleId(
+                    moduleContext?.moduleId
+                    || moduleAttributionMeta?.sentViaModuleId
+                    || agentMeta?.sentViaModuleId
+                    || ''
+                );
+                const scopedTargetChatId = buildScopedChatId(targetChatId, moduleScopeId || '');
 
                 const payload = {
                     id: messageId,
                     from: String(safeSentMessage?.from || '').trim() || null,
-                    to: targetChatId,
+                    to: scopedTargetChatId || targetChatId,
+                    chatId: scopedTargetChatId || targetChatId,
+                    baseChatId: targetChatId,
+                    scopeModuleId: moduleScopeId || null,
                     body: String(safeSentMessage?.body ?? fallbackBody ?? ''),
                     timestamp,
                     fromMe: true,
@@ -4231,6 +4507,7 @@ class SocketManager {
                     ...(agentMeta || {}),
                     sentViaModuleId: moduleAttributionMeta?.sentViaModuleId || String(agentMeta?.sentViaModuleId || '').trim() || null,
                     sentViaModuleName: moduleAttributionMeta?.sentViaModuleName || String(agentMeta?.sentViaModuleName || '').trim() || null,
+                    sentViaModuleImageUrl: moduleAttributionMeta?.sentViaModuleImageUrl || String(agentMeta?.sentViaModuleImageUrl || '').trim() || null,
                     sentViaTransport: moduleAttributionMeta?.sentViaTransport || String(agentMeta?.sentViaTransport || '').trim().toLowerCase() || null,
                     sentViaPhoneNumber: moduleAttributionMeta?.sentViaPhoneNumber || String(agentMeta?.sentViaPhoneNumber || '').trim() || null,
                     sentViaChannelType: moduleAttributionMeta?.sentViaChannelType || String(agentMeta?.sentViaChannelType || '').trim().toLowerCase() || null
@@ -4268,60 +4545,115 @@ class SocketManager {
                 try {
                     this.invalidateChatListCache();
                     const chat = await waClient.client.getChatById(targetChatId);
-                    const summary = await this.toChatSummary(chat, { includeHeavyMeta: false });
+                    const summary = await this.toChatSummary(chat, {
+                        includeHeavyMeta: false,
+                        scopeModuleId: String(moduleContext?.moduleId || '').trim().toLowerCase() || '',
+                        scopeModuleName: String(moduleContext?.name || '').trim() || null,
+                        scopeModuleImageUrl: String(moduleContext?.imageUrl || moduleContext?.logoUrl || '').trim() || null,
+                        scopeChannelType: String(moduleContext?.channelType || '').trim().toLowerCase() || null,
+                        scopeTransport: String(moduleContext?.transportMode || '').trim().toLowerCase() || null
+                    });
                     if (summary) this.emitToRuntimeContext('chat_updated', summary);
                 } catch (_) { }
             };
+            const resolveScopedSendTarget = async ({ rawChatId = '', rawPhone = '', errorEvent = 'error', action = 'enviar mensajes' } = {}) => {
+                const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                const scopedTarget = resolveScopedChatTarget(String(rawChatId || '').trim(), selectedScopeModuleId);
+                let scopeModuleId = normalizeScopedModuleId(scopedTarget.moduleId || selectedScopeModuleId || '');
+                let moduleContext = socket?.data?.waModule || null;
+
+                if (scopeModuleId) {
+                    const currentModuleId = normalizeScopedModuleId(moduleContext?.moduleId || socket?.data?.waModuleId || '');
+                    if (!currentModuleId || currentModuleId !== scopeModuleId) {
+                        const moduleContextPayload = await resolveSocketModuleContext(tenantId, authContext, scopeModuleId);
+                        moduleContext = moduleContextPayload?.selected || null;
+                        const resolvedModuleId = normalizeScopedModuleId(moduleContext?.moduleId || '');
+                        if (!resolvedModuleId || resolvedModuleId !== scopeModuleId) {
+                            socket.emit(errorEvent, 'No tienes acceso al modulo solicitado para ' + action + '.');
+                            return { ok: false };
+                        }
+                        await ensureTransportForSelectedModule(moduleContext);
+                    }
+                }
+
+                if (!scopeModuleId) {
+                    scopeModuleId = normalizeScopedModuleId(moduleContext?.moduleId || socket?.data?.waModuleId || '');
+                }
+
+                const runtime = this.getWaRuntime();
+                const activeTransport = String(runtime?.activeTransport || '').trim().toLowerCase();
+                const targetPhone = coerceHumanPhone(rawPhone || '');
+                let targetChatId = String(scopedTarget.baseChatId || '').trim();
+
+                if (activeTransport === 'cloud') {
+                    const resolvedCloudChatId = resolveCloudDestinationChatId(targetChatId, targetPhone);
+                    if (!resolvedCloudChatId) {
+                        socket.emit(errorEvent, 'No se pudo resolver un numero WhatsApp valido para este chat en Cloud API. Abre chat por numero real.');
+                        return { ok: false };
+                    }
+                    targetChatId = resolvedCloudChatId;
+                }
+
+                if (!targetChatId) {
+                    socket.emit(errorEvent, 'Datos invalidos para ' + action + '.');
+                    return { ok: false };
+                }
+
+                return {
+                    ok: true,
+                    activeTransport,
+                    targetPhone,
+                    targetChatId,
+                    moduleContext,
+                    scopeModuleId,
+                    scopedChatId: buildScopedChatId(targetChatId, scopeModuleId || '')
+                };
+            };
+
             socket.on('send_message', async ({ to, toPhone, body, quotedMessageId }) => {
                 if (!guardRateLimit(socket, 'send_message')) return;
                 if (!this.ensureTransportReady(socket, { action: 'enviar mensajes', errorEvent: 'error' })) return;
                 try {
-                    let targetChatId = String(to || '').trim();
-                    const targetPhone = coerceHumanPhone(toPhone || '');
                     const text = String(body || '');
                     const quoted = String(quotedMessageId || '').trim();
-                    const runtime = this.getWaRuntime();
-                    const activeTransport = String(runtime?.activeTransport || '').trim().toLowerCase();
-                    if (activeTransport === 'cloud') {
-                        const resolvedCloudChatId = resolveCloudDestinationChatId(targetChatId, targetPhone);
-                        if (!resolvedCloudChatId) {
-                            socket.emit('error', 'No se pudo resolver un numero WhatsApp valido para este chat en Cloud API. Abre chat por numero real.');
-                            return;
-                        }
-                        targetChatId = resolvedCloudChatId;
-                    }
-                    if (!targetChatId || !text.trim()) {
+                    if (!text.trim()) {
                         socket.emit('error', 'Datos invalidos para enviar mensaje.');
                         return;
                     }
 
-                    const moduleContext = socket?.data?.waModule || null;
+                    const target = await resolveScopedSendTarget({
+                        rawChatId: to,
+                        rawPhone: toPhone,
+                        errorEvent: 'error',
+                        action: 'enviar mensajes'
+                    });
+                    if (!target?.ok) return;
+
+                    const moduleContext = target.moduleContext || socket?.data?.waModule || null;
                     const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
                     let sentMessage = null;
 
                     if (quoted) {
-                        let quotedTargetChatId = targetChatId;
+                        let quotedTargetChatId = target.targetChatId;
                         try {
                             const quotedMsg = await waClient.getMessageById(quoted);
                             const fromQuoted = String(quotedMsg?.fromMe ? quotedMsg?.to : quotedMsg?.from || '').trim();
                             if (fromQuoted && isVisibleChatId(fromQuoted)) {
-                                quotedTargetChatId = fromQuoted;
+                                quotedTargetChatId = String(parseScopedChatId(fromQuoted).chatId || fromQuoted).trim();
                             }
-                            if (activeTransport === 'cloud' && isLidIdentifier(quotedTargetChatId)) {
-                                quotedTargetChatId = targetChatId;
+                            if (target.activeTransport === 'cloud' && isLidIdentifier(quotedTargetChatId)) {
+                                quotedTargetChatId = target.targetChatId;
                             }
                         } catch (resolveQuotedError) {
                         }
 
                         try {
-                            // Prefer native quotedMessageId path so replies stay linked on WhatsApp mobile.
                             sentMessage = await waClient.sendMessage(quotedTargetChatId, text, { quotedMessageId: quoted });
                         } catch (sendWithQuoteError) {
-                            // Fallback for runtime variants where quotedMessageId is not accepted directly.
                             sentMessage = await waClient.replyToMessage(quotedTargetChatId, quoted, text);
                         }
                     } else {
-                        sentMessage = await waClient.sendMessage(targetChatId, text);
+                        sentMessage = await waClient.sendMessage(target.targetChatId, text);
                     }
 
                     const sentMessageId = getSerializedMessageId(sentMessage);
@@ -4331,7 +4663,7 @@ class SocketManager {
 
                     await emitRealtimeOutgoingMessage({
                         sentMessage,
-                        fallbackChatId: targetChatId,
+                        fallbackChatId: target.targetChatId,
                         fallbackBody: text,
                         quotedMessageId: quoted,
                         moduleContext,
@@ -4419,28 +4751,24 @@ class SocketManager {
                         return;
                     }
 
-                    let targetChatId = String(to || '').trim();
-                    const targetPhone = coerceHumanPhone(toPhone || '');
                     const caption = String(body || '');
                     const quoted = String(quotedMessageId || '').trim();
-                    const runtime = this.getWaRuntime();
-                    const activeTransport = String(runtime?.activeTransport || '').trim().toLowerCase();
-                    if (activeTransport === 'cloud') {
-                        const resolvedCloudChatId = resolveCloudDestinationChatId(targetChatId, targetPhone);
-                        if (!resolvedCloudChatId) {
-                            socket.emit('error', 'No se pudo resolver un numero WhatsApp valido para este chat en Cloud API. Abre chat por numero real.');
-                            return;
-                        }
-                        targetChatId = resolvedCloudChatId;
-                    }
-                    if (!targetChatId || !String(mediaData || '').trim()) {
+                    if (!String(mediaData || '').trim()) {
                         socket.emit('error', 'Datos invalidos para enviar adjunto.');
                         return;
                     }
 
-                    const moduleContext = socket?.data?.waModule || null;
+                    const target = await resolveScopedSendTarget({
+                        rawChatId: to,
+                        rawPhone: toPhone,
+                        errorEvent: 'error',
+                        action: 'enviar adjuntos'
+                    });
+                    if (!target?.ok) return;
+
+                    const moduleContext = target.moduleContext || socket?.data?.waModule || null;
                     const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
-                    const sentMessage = await waClient.sendMedia(targetChatId, mediaData, mimetype, filename, caption, isPtt, quoted || null);
+                    const sentMessage = await waClient.sendMedia(target.targetChatId, mediaData, mimetype, filename, caption, isPtt, quoted || null);
                     const sentMessageId = getSerializedMessageId(sentMessage);
                     if (sentMessageId && agentMeta) {
                         rememberOutgoingAgentMeta(sentMessageId, agentMeta);
@@ -4448,7 +4776,7 @@ class SocketManager {
 
                     await emitRealtimeOutgoingMessage({
                         sentMessage,
-                        fallbackChatId: targetChatId,
+                        fallbackChatId: target.targetChatId,
                         fallbackBody: caption,
                         quotedMessageId: quoted,
                         moduleContext,
@@ -4574,22 +4902,13 @@ class SocketManager {
                     return;
                 }
                 try {
-                    let to = String(payload?.to || '').trim();
-                    const toPhone = coerceHumanPhone(payload?.toPhone || '');
-                    const runtime = this.getWaRuntime();
-                    const activeTransport = String(runtime?.activeTransport || '').trim().toLowerCase();
-                    if (activeTransport === 'cloud') {
-                        const resolvedCloudChatId = resolveCloudDestinationChatId(to, toPhone);
-                        if (!resolvedCloudChatId) {
-                            socket.emit('error', 'No se pudo resolver un numero WhatsApp valido para este chat en Cloud API. Abre chat por numero real.');
-                            return;
-                        }
-                        to = resolvedCloudChatId;
-                    }
-                    if (!to) {
-                        socket.emit('error', 'Selecciona un chat antes de enviar producto.');
-                        return;
-                    }
+                    const target = await resolveScopedSendTarget({
+                        rawChatId: payload?.to,
+                        rawPhone: payload?.toPhone,
+                        errorEvent: 'error',
+                        action: 'enviar productos de catalogo'
+                    });
+                    if (!target?.ok) return;
 
                     const product = payload?.product && typeof payload.product === 'object' ? payload.product : {};
                     const caption = buildCatalogProductCaption(product);
@@ -4603,18 +4922,20 @@ class SocketManager {
                         });
                         if (media) {
                             const baseName = slugifyFileName(product?.title || product?.name || 'producto');
-                            const filename = `${baseName}.${media.extension}`;
-                            await waClient.sendMedia(to, media.mediaData, media.mimetype, filename, caption, false);
+                            const filename = String(baseName || 'producto') + '.' + String(media.extension || 'jpg');
+                            await waClient.sendMedia(target.targetChatId, media.mediaData, media.mimetype, filename, caption, false);
                             sentWithImage = true;
                         }
                     }
 
                     if (!sentWithImage) {
-                        await waClient.sendMessage(to, caption);
+                        await waClient.sendMessage(target.targetChatId, caption);
                     }
 
                     socket.emit('catalog_product_sent', {
-                        to,
+                        to: target.scopedChatId || target.targetChatId,
+                        baseChatId: target.targetChatId,
+                        scopeModuleId: target.scopeModuleId || null,
                         title: String(product?.title || product?.name || 'Producto'),
                         withImage: sentWithImage
                     });
@@ -4627,7 +4948,13 @@ class SocketManager {
 
             socket.on('mark_chat_read', async (chatId) => {
                 try {
-                    await waClient.markAsRead(chatId);
+                    const requestedChatId = String(chatId || '').trim();
+                    if (!requestedChatId) return;
+                    const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                    const scopedTarget = resolveScopedChatTarget(requestedChatId, selectedScopeModuleId);
+                    const safeChatId = String(scopedTarget.baseChatId || '').trim();
+                    if (!safeChatId) return;
+                    await waClient.markAsRead(safeChatId);
                 } catch (e) { }
             });
 
@@ -5219,7 +5546,10 @@ class SocketManager {
                     if (!this.ensureTransportReady(socket, { action: 'cargar perfil de contacto', errorEvent: 'error' })) {
                         return;
                     }
-                    const safeContactId = String(contactId || '').trim();
+                    const requestedContactId = String(contactId || '').trim();
+                    const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                    const scopedContactTarget = resolveScopedChatTarget(requestedContactId, selectedScopeModuleId);
+                    const safeContactId = String(scopedContactTarget.baseChatId || '').trim();
                     if (!safeContactId) return;
 
                     const contact = await waClient.client.getContactById(safeContactId);
@@ -5279,7 +5609,9 @@ class SocketManager {
                         : null;
 
                     socket.emit('contact_info', {
-                        id: safeContactId,
+                        id: scopedContactTarget.scopedChatId || buildScopedChatId(safeContactId, scopedContactTarget.moduleId || ''),
+                        baseChatId: safeContactId,
+                        scopeModuleId: scopedContactTarget.moduleId || null,
                         name: contact?.name || contact?.pushname || contact?.number || null,
                         phone: contact?.number || null,
                         number: contact?.number || null,
@@ -5365,10 +5697,17 @@ class SocketManager {
             const historyTenantId = this.resolveHistoryTenantId();
             const runtimeModuleContext = this.resolveHistoryModuleContext();
             const moduleAttributionMeta = buildModuleAttributionMeta(runtimeModuleContext);
+            const relatedChatIdBase = String(msg?.fromMe ? msg?.to : msg?.from || '').trim();
+            const scopeModuleId = normalizeScopedModuleId(
+                runtimeModuleContext?.moduleId
+                || moduleAttributionMeta?.sentViaModuleId
+                || ''
+            );
+            const scopedChatId = buildScopedChatId(relatedChatIdBase, scopeModuleId || '');
             const media = await mediaManager.processMessageMedia(msg, {
                 tenantId: historyTenantId,
                 moduleId: runtimeModuleContext?.moduleId || '',
-                contactId: msg?.fromMe ? msg?.to : msg?.from,
+                contactId: relatedChatIdBase,
                 timestampUnix: Number(msg?.timestamp || 0) || null
             });
             const senderMeta = await resolveMessageSenderMeta(msg);
@@ -5388,22 +5727,26 @@ class SocketManager {
                 agentMeta,
                 moduleContext: runtimeModuleContext
             });
+
             this.emitToRuntimeContext('message', {
                 id: messageId,
-                from: msg.from,
-                to: msg.to,
-                body: msg.body,
-                timestamp: msg.timestamp,
-                fromMe: msg.fromMe,
-                hasMedia: msg.hasMedia,
+                chatId: scopedChatId || relatedChatIdBase,
+                baseChatId: relatedChatIdBase || null,
+                scopeModuleId: scopeModuleId || null,
+                from: String(msg?.from || '').trim() || null,
+                to: String(msg?.fromMe ? (scopedChatId || msg?.to) : msg?.to || '').trim() || null,
+                body: msg?.body,
+                timestamp: msg?.timestamp,
+                fromMe: msg?.fromMe,
+                hasMedia: msg?.hasMedia,
                 mediaData: media ? media.data : null,
                 mimetype: media ? media.mimetype : null,
                 filename: fileMeta.filename,
                 fileSizeBytes: fileMeta.fileSizeBytes,
-                        mediaUrl: fileMeta.mediaUrl || null,
-                        mediaPath: fileMeta.mediaPath || null,
-                ack: msg.ack,
-                type: msg.type,
+                mediaUrl: fileMeta.mediaUrl || null,
+                mediaPath: fileMeta.mediaPath || null,
+                ack: msg?.ack,
+                type: msg?.type,
                 author: msg?.author || msg?._data?.author || null,
                 notifyName: senderMeta.notifyName,
                 senderPhone: senderMeta.senderPhone,
@@ -5414,32 +5757,50 @@ class SocketManager {
                 order,
                 location,
                 quotedMessage,
-                ...(moduleAttributionMeta || {}),
+                sentViaModuleId: moduleAttributionMeta?.sentViaModuleId || null,
+                sentViaModuleName: moduleAttributionMeta?.sentViaModuleName || null,
+                sentViaModuleImageUrl: moduleAttributionMeta?.sentViaModuleImageUrl || null,
+                sentViaTransport: moduleAttributionMeta?.sentViaTransport || null,
+                sentViaPhoneNumber: moduleAttributionMeta?.sentViaPhoneNumber || null,
+                sentViaChannelType: moduleAttributionMeta?.sentViaChannelType || null,
                 ...(agentMeta || {})
             });
 
             try {
-                const relatedChatId = msg.fromMe ? msg.to : msg.from;
-                if (isVisibleChatId(relatedChatId)) {
+                if (isVisibleChatId(relatedChatIdBase)) {
                     this.invalidateChatListCache();
-                    const chat = await waClient.client.getChatById(relatedChatId);
-                    const summary = await this.toChatSummary(chat, { includeHeavyMeta: false });
+                    const chat = await waClient.client.getChatById(relatedChatIdBase);
+                    const summary = await this.toChatSummary(chat, {
+                        includeHeavyMeta: false,
+                        scopeModuleId: String(runtimeModuleContext?.moduleId || '').trim().toLowerCase() || '',
+                        scopeModuleName: String(runtimeModuleContext?.name || '').trim() || null,
+                        scopeModuleImageUrl: String(runtimeModuleContext?.imageUrl || runtimeModuleContext?.logoUrl || '').trim() || null,
+                        scopeChannelType: String(runtimeModuleContext?.channelType || '').trim().toLowerCase() || null,
+                        scopeTransport: String(runtimeModuleContext?.transportMode || '').trim().toLowerCase() || null
+                    });
                     if (summary) this.emitToRuntimeContext('chat_updated', summary);
                 }
             } catch (e) {
                 // silent: message delivery should not fail by chat refresh issues
             }
         });
+
         waClient.on('message_sent', async (msg) => {
             if (isStatusOrSystemMessage(msg)) return;
-            // Emite de vuelta para confirmar en UI si se envio desde otro lugar
             const historyTenantId = this.resolveHistoryTenantId();
             const runtimeModuleContext = this.resolveHistoryModuleContext();
             const moduleAttributionMeta = buildModuleAttributionMeta(runtimeModuleContext);
+            const relatedChatIdBase = String(msg?.to || msg?.from || '').trim();
+            const scopeModuleId = normalizeScopedModuleId(
+                runtimeModuleContext?.moduleId
+                || moduleAttributionMeta?.sentViaModuleId
+                || ''
+            );
+            const scopedChatId = buildScopedChatId(relatedChatIdBase, scopeModuleId || '');
             const media = await mediaManager.processMessageMedia(msg, {
                 tenantId: historyTenantId,
                 moduleId: runtimeModuleContext?.moduleId || '',
-                contactId: msg?.fromMe ? msg?.to : msg?.from,
+                contactId: relatedChatIdBase,
                 timestampUnix: Number(msg?.timestamp || 0) || null
             });
             const fileMeta = extractMessageFileMeta(msg, media);
@@ -5460,20 +5821,23 @@ class SocketManager {
             });
             this.emitToRuntimeContext('message', {
                 id: messageId,
-                from: msg.from,
-                to: msg.to,
-                body: msg.body,
-                timestamp: msg.timestamp,
+                chatId: scopedChatId || relatedChatIdBase,
+                baseChatId: relatedChatIdBase || null,
+                scopeModuleId: scopeModuleId || null,
+                from: String(msg?.from || '').trim() || null,
+                to: String(scopedChatId || msg?.to || '').trim() || null,
+                body: msg?.body,
+                timestamp: msg?.timestamp,
                 fromMe: true,
-                hasMedia: msg.hasMedia,
+                hasMedia: msg?.hasMedia,
                 mediaData: media ? media.data : null,
                 mimetype: media ? media.mimetype : null,
                 filename: fileMeta.filename,
                 fileSizeBytes: fileMeta.fileSizeBytes,
-                        mediaUrl: fileMeta.mediaUrl || null,
-                        mediaPath: fileMeta.mediaPath || null,
-                ack: msg.ack,
-                type: msg.type,
+                mediaUrl: fileMeta.mediaUrl || null,
+                mediaPath: fileMeta.mediaPath || null,
+                ack: msg?.ack,
+                type: msg?.type,
                 author: msg?.author || msg?._data?.author || null,
                 notifyName: null,
                 senderPhone: null,
@@ -5484,25 +5848,37 @@ class SocketManager {
                 order,
                 location,
                 quotedMessage,
-                ...(moduleAttributionMeta || {}),
+                sentViaModuleId: moduleAttributionMeta?.sentViaModuleId || null,
+                sentViaModuleName: moduleAttributionMeta?.sentViaModuleName || null,
+                sentViaModuleImageUrl: moduleAttributionMeta?.sentViaModuleImageUrl || null,
+                sentViaTransport: moduleAttributionMeta?.sentViaTransport || null,
+                sentViaPhoneNumber: moduleAttributionMeta?.sentViaPhoneNumber || null,
+                sentViaChannelType: moduleAttributionMeta?.sentViaChannelType || null,
                 ...(agentMeta || {})
             });
 
             if (messageId) {
-                this.emitMessageEditability(messageId, msg.to || msg.from);
-                this.scheduleEditabilityRefresh(messageId, msg.to || msg.from);
+                this.emitMessageEditability(messageId, scopedChatId || relatedChatIdBase);
+                this.scheduleEditabilityRefresh(messageId, scopedChatId || relatedChatIdBase);
             }
 
             try {
-                const relatedChatId = msg.to || msg.from;
-                if (isVisibleChatId(relatedChatId)) {
+                if (isVisibleChatId(relatedChatIdBase)) {
                     this.invalidateChatListCache();
-                    const chat = await waClient.client.getChatById(relatedChatId);
-                    const summary = await this.toChatSummary(chat, { includeHeavyMeta: false });
+                    const chat = await waClient.client.getChatById(relatedChatIdBase);
+                    const summary = await this.toChatSummary(chat, {
+                        includeHeavyMeta: false,
+                        scopeModuleId: String(runtimeModuleContext?.moduleId || '').trim().toLowerCase() || '',
+                        scopeModuleName: String(runtimeModuleContext?.name || '').trim() || null,
+                        scopeModuleImageUrl: String(runtimeModuleContext?.imageUrl || runtimeModuleContext?.logoUrl || '').trim() || null,
+                        scopeChannelType: String(runtimeModuleContext?.channelType || '').trim().toLowerCase() || null,
+                        scopeTransport: String(runtimeModuleContext?.transportMode || '').trim().toLowerCase() || null
+                    });
                     if (summary) this.emitToRuntimeContext('chat_updated', summary);
                 }
             } catch (e) { }
         });
+
         waClient.on('message_edit', async ({ message, newBody, prevBody }) => {
             if (!message || isStatusOrSystemMessage(message)) return;
             const chatId = message.fromMe ? message.to : message.from;
@@ -5540,18 +5916,29 @@ class SocketManager {
             try {
                 this.invalidateChatListCache();
                 const refreshedChat = await waClient.client.getChatById(chatId);
-                const summary = await this.toChatSummary(refreshedChat, { includeHeavyMeta: false });
+                const runtimeModuleContext = this.resolveHistoryModuleContext();
+                const summary = await this.toChatSummary(refreshedChat, {
+                    includeHeavyMeta: false,
+                    scopeModuleId: String(runtimeModuleContext?.moduleId || '').trim().toLowerCase() || '',
+                    scopeModuleName: String(runtimeModuleContext?.name || '').trim() || null,
+                    scopeModuleImageUrl: String(runtimeModuleContext?.imageUrl || runtimeModuleContext?.logoUrl || '').trim() || null,
+                    scopeChannelType: String(runtimeModuleContext?.channelType || '').trim().toLowerCase() || null,
+                    scopeTransport: String(runtimeModuleContext?.transportMode || '').trim().toLowerCase() || null
+                });
                 if (summary) this.emitToRuntimeContext('chat_updated', summary);
             } catch (e) { }
         });
 
         waClient.on('message_ack', async ({ message, ack }) => {
             const messageId = getSerializedMessageId(message);
-            const chatId = message?.to || message?.from || '';
+            const baseChatId = String(message?.to || message?.from || '').trim();
             const isFromMe = Boolean(message?.fromMe);
+            const runtimeModuleContext = this.resolveHistoryModuleContext();
+            const scopeModuleId = normalizeScopedModuleId(runtimeModuleContext?.moduleId || '');
+            const scopedChatId = buildScopedChatId(baseChatId, scopeModuleId || '');
             await this.persistMessageAck(this.resolveHistoryTenantId(), {
                 messageId,
-                chatId,
+                chatId: baseChatId,
                 ack
             });
 
@@ -5564,13 +5951,15 @@ class SocketManager {
 
             this.emitToRuntimeContext('message_ack', {
                 id: messageId,
-                chatId,
+                chatId: scopedChatId || baseChatId,
+                baseChatId: baseChatId || null,
+                scopeModuleId: scopeModuleId || null,
                 ack: ack,
                 canEdit
             });
 
             if (isFromMe && messageId) {
-                this.scheduleEditabilityRefresh(messageId, chatId, [900, 2600]);
+                this.scheduleEditabilityRefresh(messageId, scopedChatId || baseChatId, [900, 2600]);
             }
         });
     }
@@ -5578,39 +5967,4 @@ class SocketManager {
 
 
 module.exports = SocketManager;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

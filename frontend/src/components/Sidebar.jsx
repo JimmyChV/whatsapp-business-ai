@@ -4,8 +4,32 @@ import moment from 'moment';
 
 const WA_LABEL_COLORS = ['#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#00A884', '#7D8D95'];
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+const normalizeModuleImageUrl = (rawUrl = '') => {
+    const value = String(rawUrl || '').trim();
+    if (!value) return null;
+    if (value.startsWith('data:') || value.startsWith('blob:')) return value;
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.startsWith('/')) return `${API_URL}${value}`;
+    return `${API_URL}/${value}`;
+};
+
+
 const normalizePhoneDigits = (value = '') => String(value || '').replace(/\D/g, '');
 const normalizeFilterToken = (value = '') => String(value || '').trim().toLowerCase();
+const CHAT_SCOPE_SEPARATOR = '::mod::';
+const normalizeModuleKey = (value = '') => String(value || '').trim().toLowerCase();
+const parseScopedChatId = (value = '') => {
+    const raw = String(value || '').trim();
+    if (!raw) return { baseChatId: '', scopeModuleId: '' };
+    const idx = raw.lastIndexOf(CHAT_SCOPE_SEPARATOR);
+    if (idx < 0) return { baseChatId: raw, scopeModuleId: '' };
+    const baseChatId = String(raw.slice(0, idx) || '').trim();
+    const scopeModuleId = normalizeModuleKey(raw.slice(idx + CHAT_SCOPE_SEPARATOR.length));
+    if (!baseChatId || !scopeModuleId) return { baseChatId: raw, scopeModuleId: '' };
+    return { baseChatId, scopeModuleId };
+};
 
 const normalizeFilters = (filters = {}) => {
     const rawTokens = Array.isArray(filters?.labelTokens) ? filters.labelTokens : [];
@@ -104,6 +128,7 @@ const Sidebar = ({
     onSaasLogout,
     canManageSaas = false,
     onOpenSaasAdmin,
+    waModules = [],
 }) => {
     const [showMenu, setShowMenu] = useState(false);
     const [showLabelPanel, setShowLabelPanel] = useState(false);
@@ -285,16 +310,39 @@ const Sidebar = ({
     };
 
     const getChannelBadge = (chat) => {
-        const moduleName = sanitizeDisplayText(chat?.lastMessageModuleName || '');
-        const moduleId = String(chat?.lastMessageModuleId || '').trim().toUpperCase();
-        const channelType = String(chat?.lastMessageChannelType || '').trim().toLowerCase();
+        const parsed = parseScopedChatId(chat?.id || '');
+        const chatModuleId = normalizeModuleKey(
+            chat?.lastMessageModuleId
+            || chat?.scopeModuleId
+            || parsed?.scopeModuleId
+            || ''
+        );
+        const moduleConfig = Array.isArray(waModules)
+            ? waModules.find((entry) => normalizeModuleKey(entry?.moduleId || entry?.id || '') === chatModuleId)
+            : null;
+
+        const moduleName = sanitizeDisplayText(chat?.lastMessageModuleName || moduleConfig?.name || '');
+        const moduleId = String(chatModuleId || '').trim().toUpperCase();
+        const channelType = String(chat?.lastMessageChannelType || moduleConfig?.channelType || '').trim().toLowerCase();
         const channelLabel = channelType ? channelType.toUpperCase() : '';
         const source = moduleName || moduleId;
+        const imageUrl = normalizeModuleImageUrl(
+            chat?.lastMessageModuleImageUrl
+            || moduleConfig?.imageUrl
+            || moduleConfig?.logoUrl
+            || ''
+        );
 
-        if (source && channelLabel) return `${source} · ${channelLabel}`;
-        if (source) return source;
-        if (channelLabel) return channelLabel;
-        return '';
+        let label = '';
+        if (source && channelLabel) label = `${source} | ${channelLabel}`;
+        else if (source) label = source;
+        else if (channelLabel) label = channelLabel;
+
+        if (!label) return null;
+        return {
+            label,
+            imageUrl: imageUrl || null,
+        };
     };
     const resetFilters = () => {
         onFiltersChange?.(normalizeFilters({
@@ -574,7 +622,14 @@ const Sidebar = ({
 
                                     {subtitle && <p className="chat-subtitle-modern">{subtitle}</p>}
 
-                                    {moduleBadge && <p className="chat-module-badge">{moduleBadge}</p>}
+                                    {moduleBadge?.label && (
+                                        <p className="chat-module-badge">
+                                            {moduleBadge.imageUrl
+                                                ? <img src={moduleBadge.imageUrl} alt={moduleBadge.label} className="chat-module-badge-avatar" />
+                                                : <span className="chat-module-badge-dot" aria-hidden="true" />}
+                                            <span className="chat-module-badge-label">{moduleBadge.label}</span>
+                                        </p>
+                                    )}
 
                                     {labels.length > 0 && (
                                         <div className="chat-inline-labels">
@@ -615,3 +670,4 @@ const Sidebar = ({
 };
 
 export default Sidebar;
+

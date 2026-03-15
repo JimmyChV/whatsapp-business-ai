@@ -6,6 +6,15 @@ import EmojiPicker from 'emoji-picker-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+const normalizeModuleImageUrl = (rawUrl = '') => {
+    const value = String(rawUrl || '').trim();
+    if (!value) return null;
+    if (value.startsWith('data:') || value.startsWith('blob:')) return value;
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.startsWith('/')) return `${API_URL}${value}`;
+    return `${API_URL}/${value}`;
+};
+
 const ChatInput = ({
     inputText, setInputText, onSendMessage, onKeyDown, onFileClick,
     attachment, attachmentPreview, removeAttachment, isAiLoading,
@@ -621,7 +630,11 @@ const ChatWindow = ({
         : (headerPhone || 'Sin numero visible');
     const headerHint = activeChatDetails?.isGroup
         ? 'Grupo'
-        : (activeChatDetails?.pushname ? `Pushname: ${activeChatDetails.pushname}` : 'Haz clic para ver el perfil');
+        : (activeChatDetails?.pushname ? `Pushname: ${activeChatDetails.pushname}` : 'Haz clic para ver el perfil');    const headerModuleId = String(activeChatDetails?.scopeModuleId || activeChatDetails?.lastMessageModuleId || '').trim().toUpperCase();
+    const headerModuleName = String(activeChatDetails?.lastMessageModuleName || '').trim() || headerModuleId;
+    const headerModuleChannel = String(activeChatDetails?.lastMessageChannelType || '').trim().toUpperCase();
+    const headerModuleImageUrl = normalizeModuleImageUrl(activeChatDetails?.lastMessageModuleImageUrl || '');
+    const showHeaderModule = Boolean(headerModuleName || headerModuleChannel);
     const normalizeSenderDigits = (value = '') => String(value || '').replace(/\D/g, '');
     const participantRecords = Array.isArray(activeChatDetails?.participantsList) ? activeChatDetails.participantsList : [];
     const participantNameById = new Map();
@@ -948,6 +961,15 @@ const ChatWindow = ({
                     <div className="chat-header-title-row">
                         <h3 className="chat-header-name">{activeChatDetails?.name || 'Sin nombre'}</h3>
                         {activeChatDetails?.isBusiness && <span className="chat-header-pill">Business</span>}
+                        {showHeaderModule && (
+                            <span className="chat-header-module-pill" title={headerModuleName || 'Modulo'}>
+                                {headerModuleImageUrl
+                                    ? <img src={headerModuleImageUrl} alt={headerModuleName || 'Modulo'} className="chat-header-module-avatar" />
+                                    : <span className="chat-header-module-dot" aria-hidden="true" />}
+                                <span className="chat-header-module-name">{headerModuleName || 'MODULO'}</span>
+                                {headerModuleChannel && <span className="chat-header-module-channel">{headerModuleChannel}</span>}
+                            </span>
+                        )}
                     </div>
                     <div className="chat-header-subline">
                         <span className="chat-header-primary">{headerSubline}</span>
@@ -1202,3 +1224,4 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
+
