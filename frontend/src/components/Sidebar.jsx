@@ -333,7 +333,8 @@ const Sidebar = ({
         const moduleId = String(resolvedModuleId || '').trim().toUpperCase();
         const channelType = String(chat?.lastMessageChannelType || moduleConfig?.channelType || '').trim().toLowerCase();
         const channelLabel = channelType ? channelType.toUpperCase() : '';
-        const source = moduleName || moduleId;
+        const sourceRaw = moduleName || moduleId;
+        const source = String(sourceRaw || '').replace(/\s*\|\s*(whatsapp|instagram|messenger|facebook|webchat)\s*$/i, '').trim() || sourceRaw;
         const imageUrl = normalizeModuleImageUrl(
             chat?.lastMessageModuleImageUrl
             || moduleConfig?.imageUrl
@@ -341,10 +342,7 @@ const Sidebar = ({
             || ''
         );
 
-        let label = '';
-        if (source && channelLabel) label = `${source} | ${channelLabel}`;
-        else if (source) label = source;
-        else if (channelLabel) label = channelLabel;
+        const label = source || channelLabel || '';
 
         if (!label) return null;
         return {
@@ -661,22 +659,24 @@ const Sidebar = ({
 
                                     {moduleBadge?.label && (
                                         <p className="chat-module-badge">
-                                            {moduleBadge.imageUrl
-                                                ? <img src={moduleBadge.imageUrl} alt={moduleBadge.label} className="chat-module-badge-avatar" />
-                                                : <span className="chat-module-badge-dot" aria-hidden="true" />}
-                                            {moduleBadge?.channelType && (
-                                                <span
-                                                    className={`chat-module-badge-channel chat-module-badge-channel--${channelMarker.key}`}
-                                                    title={channelMarker.label}
-                                                >
-                                                    <ChannelBrandIcon
-                                                        channelType={channelMarker.key}
-                                                        className="chat-module-badge-channel-icon"
-                                                        size={10}
+                                            <span className="chat-module-badge-media">
+                                                {moduleBadge.imageUrl
+                                                    ? <img src={moduleBadge.imageUrl} alt={moduleBadge.label} className="chat-module-badge-avatar" />
+                                                    : <span className="chat-module-badge-dot" aria-hidden="true" />}
+                                                {moduleBadge?.channelType && (
+                                                    <span
+                                                        className={`chat-module-badge-channel chat-module-badge-channel--${channelMarker.key}`}
                                                         title={channelMarker.label}
-                                                    />
-                                                </span>
-                                            )}
+                                                    >
+                                                        <ChannelBrandIcon
+                                                            channelType={channelMarker.key}
+                                                            className="chat-module-badge-channel-icon"
+                                                            size={8}
+                                                            title={channelMarker.label}
+                                                        />
+                                                    </span>
+                                                )}
+                                            </span>
                                             <span className="chat-module-badge-label">{moduleBadge.label}</span>
                                         </p>
                                     )}
@@ -720,7 +720,3 @@ const Sidebar = ({
 };
 
 export default Sidebar;
-
-
-
-
