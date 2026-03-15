@@ -321,7 +321,10 @@ async function loadCatalogFromFile(options = {}) {
         fallbackChannelType: channelType
     });
     if (moduleId) {
-        items = items.filter((item) => String(item?.moduleId || '') === moduleId);
+        items = items.filter((item) => {
+            const itemModuleId = String(item?.moduleId || '');
+            return itemModuleId === moduleId || itemModuleId === '';
+        });
     }
     if (catalogId) {
         items = items.filter((item) => {
@@ -361,7 +364,7 @@ async function loadCatalogFromPostgres(options = {}) {
     let idx = 2;
 
     if (moduleId) {
-        clauses.push(`module_id = $${idx}`);
+        clauses.push(`(module_id = $${idx} OR module_id = '')`);
         params.push(moduleId);
         idx += 1;
     }
@@ -457,8 +460,8 @@ async function deleteCatalogItemPostgres(itemId, options = {}) {
             `DELETE FROM catalog_items
               WHERE tenant_id = $1
                 AND item_id = $2
-                AND module_id = $3
-                AND catalog_id = $4`,
+                AND (module_id = $3 OR module_id = '')
+                AND (catalog_id = $4 OR catalog_id = '')`,
             [tenantId, itemId, toModuleKey(moduleId), toCatalogKey(catalogId)]
         );
         return;
@@ -469,7 +472,7 @@ async function deleteCatalogItemPostgres(itemId, options = {}) {
             `DELETE FROM catalog_items
               WHERE tenant_id = $1
                 AND item_id = $2
-                AND module_id = $3`,
+                AND (module_id = $3 OR module_id = '')`,
             [tenantId, itemId, toModuleKey(moduleId)]
         );
         return;
@@ -480,7 +483,7 @@ async function deleteCatalogItemPostgres(itemId, options = {}) {
             `DELETE FROM catalog_items
               WHERE tenant_id = $1
                 AND item_id = $2
-                AND catalog_id = $3`,
+                AND (catalog_id = $3 OR catalog_id = '')`,
             [tenantId, itemId, toCatalogKey(catalogId)]
         );
         return;
@@ -533,8 +536,8 @@ async function updateProduct(id, updates = {}, options = null) {
     const existingCatalog = await loadCatalog({ tenantId });
     const current = existingCatalog.find((item) => (
         item.id === cleanId
-        && (!moduleId || String(item?.moduleId || '') === moduleId)
-        && (!catalogId || String(item?.catalogId || '') === catalogId)
+        && (!moduleId || String(item?.moduleId || '') === moduleId || String(item?.moduleId || '') === '')
+        && (!catalogId || String(item?.catalogId || '') === catalogId || String(item?.catalogId || '') === '')
     ));
     if (!current) return null;
 
@@ -572,8 +575,8 @@ async function deleteProduct(id, options = null) {
     const catalog = await loadCatalogFromFile({ tenantId });
     const next = catalog.filter((item) => !(
         item.id === cleanId
-        && (!moduleId || String(item?.moduleId || '') === moduleId)
-        && (!catalogId || String(item?.catalogId || '') === catalogId)
+        && (!moduleId || String(item?.moduleId || '') === moduleId || String(item?.moduleId || '') === '')
+        && (!catalogId || String(item?.catalogId || '') === catalogId || String(item?.catalogId || '') === '')
     ));
     await saveCatalogToFile(next, { tenantId });
 }
