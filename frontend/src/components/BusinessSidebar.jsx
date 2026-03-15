@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Send, X, ShoppingCart, Clock, Sparkles, Trash2, Plus, Minus, ChevronRight, ChevronDown, ChevronUp, Package, MessageSquare, PlusCircle, Edit2, Check, Search, SlidersHorizontal } from 'lucide-react';
 import moment from 'moment';
 
