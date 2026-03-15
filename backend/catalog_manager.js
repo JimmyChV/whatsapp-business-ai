@@ -16,7 +16,7 @@ let postgresSchemaReadyPromise = null;
 function normalizeModuleId(value = '') {
     const text = String(value || '').trim();
     if (!text) return null;
-    return text;
+    return text.toLowerCase();
 }
 
 function normalizeCatalogId(value = '') {
@@ -335,7 +335,10 @@ async function loadCatalogFromFile(options = {}) {
         });
     }
     if (channelType) {
-        items = items.filter((item) => String(item?.channelType || '') === channelType);
+        items = items.filter((item) => {
+            const itemChannelType = String(item?.channelType || '').trim().toLowerCase();
+            return !itemChannelType || itemChannelType === channelType;
+        });
     }
     return items;
 }
@@ -379,7 +382,7 @@ async function loadCatalogFromPostgres(options = {}) {
         idx += 1;
     }
     if (channelType) {
-        clauses.push(`channel_type = $${idx}`);
+        clauses.push(`(channel_type = $${idx} OR channel_type IS NULL OR channel_type = '')`);
         params.push(channelType);
         idx += 1;
     }
@@ -587,4 +590,3 @@ module.exports = {
     updateProduct,
     deleteProduct
 };
-

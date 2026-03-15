@@ -159,6 +159,9 @@ const normalizeWaModuleItem = (item = {}) => {
     isActive: source.isActive !== false,
     isDefault: source.isDefault === true,
     isSelected: source.isSelected === true,
+    channelType: String(source.channelType || source.channel || '').trim().toLowerCase() || null,
+    imageUrl: normalizeModuleImageUrl(source.imageUrl || source.logoUrl || source.avatarUrl || '') || null,
+    logoUrl: normalizeModuleImageUrl(source.logoUrl || source.imageUrl || source.avatarUrl || '') || null,
     assignedUserIds: Array.isArray(source.assignedUserIds)
       ? source.assignedUserIds.map((entry) => String(entry || '').trim()).filter(Boolean)
       : []
@@ -782,6 +785,8 @@ function App() {
   const saasAdminAutoOpenRef = useRef('');
   const labelDefsPersistenceStateRef = useRef({ key: '', loaded: false });
   const tenantScopeRef = useRef(tenantScopeId);
+  const businessDataRequestSeqRef = useRef(0);
+  const businessDataResponseSeqRef = useRef(0);
 
   // --------------------------------------------------------------
   // Notifications
@@ -834,6 +839,49 @@ function App() {
     return headers;
   }, []);
 
+  const resolveSessionSenderIdentity = useCallback(() => {
+    const sessionUser = (saasSessionRef.current?.user && typeof saasSessionRef.current.user === 'object')
+      ? saasSessionRef.current.user
+      : null;
+    const runtimeAuthUser = (saasRuntimeRef.current?.authContext?.user && typeof saasRuntimeRef.current.authContext.user === 'object')
+      ? saasRuntimeRef.current.authContext.user
+      : null;
+    const user = sessionUser || runtimeAuthUser;
+    const id = String(user?.id || user?.userId || '').trim();
+    const email = String(user?.email || '').trim();
+    const role = String(user?.role || '').trim().toLowerCase();
+    const explicitName = String(user?.name || user?.displayName || user?.fullName || '').trim();
+    const name = String(explicitName || email || id || '').trim();
+    return {
+      id: id || null,
+      email: email || null,
+      role: role || null,
+      name: name || null
+    };
+  }, []);
+
+  const emitScopedBusinessDataRequest = useCallback((scope = {}) => {
+    if (!socket.connected) return;
+    const requestedModuleId = String(
+      scope?.moduleId
+      || selectedCatalogModuleIdRef.current
+      || selectedWaModuleRef.current?.moduleId
+      || ''
+    ).trim().toLowerCase();
+    const requestedCatalogId = String(
+      scope?.catalogId
+      || selectedCatalogIdRef.current
+      || ''
+    ).trim().toUpperCase();
+
+    const payload = {};
+    if (requestedModuleId) payload.moduleId = requestedModuleId;
+    if (requestedCatalogId) payload.catalogId = requestedCatalogId;
+    const requestSeq = (businessDataRequestSeqRef.current || 0) + 1;
+    businessDataRequestSeqRef.current = requestSeq;
+    payload.requestSeq = requestSeq;
+    socket.emit('get_business_data', payload);
+  }, []);
   const normalizeSaasSessionPayload = useCallback((payload = {}, previousSession = null) => {
     const accessToken = String(payload?.accessToken || '').trim();
     const refreshToken = String(payload?.refreshToken || '').trim() || String(previousSession?.refreshToken || '').trim();
@@ -1224,10 +1272,14 @@ function App() {
         : (selectedModuleId || String(items[0]?.moduleId || '').trim().toLowerCase());
       setSelectedCatalogModuleId(nextCatalogModuleId || '');
       if (nextCatalogModuleId !== previousCatalogModuleId) {
+        selectedCatalogIdRef.current = '';
         setSelectedCatalogId('');
       }
       if (nextCatalogModuleId && socket.connected) {
-        socket.emit('get_business_catalog', { moduleId: nextCatalogModuleId, catalogId: selectedCatalogIdRef.current || undefined });
+        const nextCatalogId = nextCatalogModuleId === previousCatalogModuleId
+          ? (selectedCatalogIdRef.current || '')
+          : '';
+        emitScopedBusinessDataRequest({ moduleId: nextCatalogModuleId, catalogId: nextCatalogId });
       }
 
       const requestedModuleId = String(requestedWaModuleFromUrlRef.current || '').trim().toLowerCase();
@@ -1247,7 +1299,7 @@ function App() {
       }
 
       if (selectedModuleId && selectedModuleId !== previousModuleId) {
-        socket.emit('get_business_data');
+        emitScopedBusinessDataRequest({ moduleId: selectedModuleId || selectedCatalogModuleIdRef.current, catalogId: selectedCatalogIdRef.current || '' });
       }
     });
 
@@ -1271,9 +1323,10 @@ function App() {
       const currentCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
       if (!currentCatalogModuleId && selectedModuleId) {
         setSelectedCatalogModuleId(selectedModuleId);
+        selectedCatalogIdRef.current = '';
         setSelectedCatalogId('');
         if (socket.connected) {
-          socket.emit('get_business_catalog', { moduleId: selectedModuleId });
+          emitScopedBusinessDataRequest({ moduleId: selectedModuleId, catalogId: '' });
         }
       }
 
@@ -1289,7 +1342,7 @@ function App() {
       }
 
       if (selectedModuleId && selectedModuleId !== previousModuleId) {
-        socket.emit('get_business_data');
+        emitScopedBusinessDataRequest({ moduleId: selectedModuleId || selectedCatalogModuleIdRef.current, catalogId: selectedCatalogIdRef.current || '' });
       }
     });
 
@@ -1311,7 +1364,7 @@ function App() {
       setIsSwitchingTransport(false);
       setQrCode('');
       requestChatsPage({ reset: true });
-      socket.emit('get_business_data');
+      emitScopedBusinessDataRequest({ moduleId: selectedCatalogModuleIdRef.current || selectedWaModuleRef.current?.moduleId || '', catalogId: selectedCatalogIdRef.current || '' });
       socket.emit('get_my_profile');
 
       socket.emit('get_wa_capabilities');
@@ -1569,20 +1622,37 @@ function App() {
         socket.emit('get_contact_info', resolvedChatId);
       }
 
+      const sessionSenderIdentity = resolveSessionSenderIdentity();
+      const sessionSenderId = String(sessionSenderIdentity?.id || '').trim();
+      const sessionSenderName = String(sessionSenderIdentity?.name || '').trim();
+      const sessionSenderEmail = String(sessionSenderIdentity?.email || '').trim();
+      const sessionSenderRole = String(sessionSenderIdentity?.role || '').trim().toLowerCase();
       const sanitizedMessages = Array.isArray(data.messages)
-        ? data.messages.map((m) => ({
-          ...m,
-          body: repairMojibake(m?.body || ''),
-          location: normalizeMessageLocation(m?.location),
-          filename: normalizeMessageFilename(m?.filename),
-          fileSizeBytes: Number.isFinite(Number(m?.fileSizeBytes)) ? Number(m.fileSizeBytes) : null,
-          ack: Number.isFinite(Number(m?.ack)) ? Number(m.ack) : 0,
-          edited: Boolean(m?.edited),
+        ? data.messages.map((m) => {
+          const normalizedMessage = {
+            ...m,
+            body: repairMojibake(m?.body || ''),
+            location: normalizeMessageLocation(m?.location),
+            filename: normalizeMessageFilename(m?.filename),
+            fileSizeBytes: Number.isFinite(Number(m?.fileSizeBytes)) ? Number(m.fileSizeBytes) : null,
+            ack: Number.isFinite(Number(m?.ack)) ? Number(m.ack) : 0,
+            edited: Boolean(m?.edited),
+            editedAt: Number(m?.editedAt || 0) || null,
+            canEdit: Boolean(m?.canEdit),
+            quotedMessage: normalizeQuotedMessage(m?.quotedMessage),
+            sentViaModuleImageUrl: normalizeModuleImageUrl(m?.sentViaModuleImageUrl || '') || null
+          };
 
-          editedAt: Number(m?.editedAt || 0) || null,
-          canEdit: Boolean(m?.canEdit),
-          quotedMessage: normalizeQuotedMessage(m?.quotedMessage)
-        }))
+          if (!normalizedMessage?.fromMe) return normalizedMessage;
+
+          return {
+            ...normalizedMessage,
+            sentByUserId: String(normalizedMessage?.sentByUserId || sessionSenderId || '').trim() || null,
+            sentByName: String(normalizedMessage?.sentByName || normalizedMessage?.sentByEmail || sessionSenderName || '').trim() || null,
+            sentByEmail: String(normalizedMessage?.sentByEmail || sessionSenderEmail || '').trim() || null,
+            sentByRole: String(normalizedMessage?.sentByRole || sessionSenderRole || '').trim() || null
+          };
+        })
         : [];
       setMessages(sanitizedMessages);
     });
@@ -1738,6 +1808,7 @@ function App() {
         return upsertAndSortChat(prev, nextChat);
       });
 
+      const sessionSenderIdentity = resolveSessionSenderIdentity();
       setMessages((prev) => {
         const normalizedIncoming = {
           ...msg,
@@ -1749,6 +1820,16 @@ function App() {
           quotedMessage: normalizeQuotedMessage(msg?.quotedMessage)
         };
 
+        const fallbackSessionName = normalizedIncoming?.fromMe
+          ? String(sessionSenderIdentity?.name || '').trim()
+          : '';
+        const fallbackSessionEmail = normalizedIncoming?.fromMe
+          ? String(sessionSenderIdentity?.email || '').trim()
+          : '';
+        const fallbackSessionRole = normalizedIncoming?.fromMe
+          ? String(sessionSenderIdentity?.role || '').trim().toLowerCase()
+          : '';
+
         const incomingId = String(normalizedIncoming?.id || '').trim();
         if (incomingId) {
           const existingIndex = prev.findIndex((m) => String(m?.id || '').trim() === incomingId);
@@ -1757,10 +1838,10 @@ function App() {
             const merged = {
               ...existing,
               ...normalizedIncoming,
-              sentByUserId: String(normalizedIncoming?.sentByUserId || existing?.sentByUserId || '').trim() || null,
-              sentByName: String(normalizedIncoming?.sentByName || normalizedIncoming?.sentByEmail || existing?.sentByName || existing?.sentByEmail || '').trim() || null,
-              sentByEmail: String(normalizedIncoming?.sentByEmail || existing?.sentByEmail || '').trim() || null,
-              sentByRole: String(normalizedIncoming?.sentByRole || existing?.sentByRole || '').trim() || null,
+              sentByUserId: String(normalizedIncoming?.sentByUserId || existing?.sentByUserId || (normalizedIncoming?.fromMe ? (sessionSenderIdentity?.id || '') : '')).trim() || null,
+              sentByName: String(normalizedIncoming?.sentByName || normalizedIncoming?.sentByEmail || existing?.sentByName || existing?.sentByEmail || fallbackSessionName).trim() || null,
+              sentByEmail: String(normalizedIncoming?.sentByEmail || existing?.sentByEmail || fallbackSessionEmail).trim() || null,
+              sentByRole: String(normalizedIncoming?.sentByRole || existing?.sentByRole || fallbackSessionRole).trim() || null,
               sentViaModuleId: String(normalizedIncoming?.sentViaModuleId || existing?.sentViaModuleId || '').trim() || null,
               sentViaModuleName: String(normalizedIncoming?.sentViaModuleName || existing?.sentViaModuleName || '').trim() || null,
               sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || existing?.sentViaModuleImageUrl || '') || null,
@@ -1776,29 +1857,51 @@ function App() {
         const activeId = String(activeChatIdRef.current || '');
         const incomingChatId = String(normalizedIncoming?.chatId || (normalizedIncoming.fromMe ? normalizedIncoming.to : normalizedIncoming.from) || '').trim();
         if (!chatIdsReferSameScope(incomingChatId, activeId)) return prev;
-        return [...prev, normalizedIncoming];
+
+        const enrichedIncoming = {
+          ...normalizedIncoming,
+          sentByUserId: String(normalizedIncoming?.sentByUserId || (normalizedIncoming?.fromMe ? (sessionSenderIdentity?.id || '') : '')).trim() || null,
+          sentByName: String(normalizedIncoming?.sentByName || normalizedIncoming?.sentByEmail || fallbackSessionName).trim() || null,
+          sentByEmail: String(normalizedIncoming?.sentByEmail || fallbackSessionEmail).trim() || null,
+          sentByRole: String(normalizedIncoming?.sentByRole || fallbackSessionRole).trim() || null,
+          sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || '') || null
+        };
+
+        return [...prev, enrichedIncoming];
       });
     });
 
     socket.on('business_data', (data) => {
       const normalized = normalizeBusinessDataPayload(data);
-      const scopeModuleId = String(normalized?.catalogMeta?.scope?.moduleId || '').trim().toLowerCase();
-      const currentCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
-      const keepScopedCatalog = Boolean(scopeModuleId && currentCatalogModuleId && scopeModuleId !== currentCatalogModuleId);
+      const responseSeq = Number(data?.requestSeq || normalized?.requestSeq || 0);
+      if (Number.isFinite(responseSeq) && responseSeq > 0) {
+        if (responseSeq < (businessDataRequestSeqRef.current || 0)) return;
+        businessDataResponseSeqRef.current = responseSeq;
+      }
 
-      setBusinessData((prev) => ({
+      const scope = (normalized?.catalogMeta?.scope && typeof normalized.catalogMeta.scope === 'object')
+        ? normalized.catalogMeta.scope
+        : null;
+      const scopeModuleId = String(scope?.moduleId || '').trim().toLowerCase();
+      const scopeCatalogId = String(scope?.catalogId || '').trim().toUpperCase();
+      const scopeCatalogIds = Array.isArray(scope?.catalogIds)
+        ? scope.catalogIds.map((entry) => String(entry || '').trim().toUpperCase()).filter(Boolean)
+        : [];
+      const currentCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
+      const currentCatalogId = String(selectedCatalogIdRef.current || '').trim().toUpperCase();
+      const hasModuleSelection = Boolean(currentCatalogModuleId);
+
+      if (hasModuleSelection && (!scopeModuleId || scopeModuleId !== currentCatalogModuleId)) {
+        return;
+      }
+      if (scopeCatalogId && currentCatalogId && scopeCatalogId !== currentCatalogId && scopeCatalogIds.includes(currentCatalogId)) {
+        return;
+      }
+
+      setBusinessData({
         ...normalized,
-        catalog: keepScopedCatalog
-          ? (Array.isArray(prev?.catalog) ? prev.catalog : normalized.catalog)
-          : normalized.catalog,
-        catalogMeta: keepScopedCatalog
-          ? {
-            ...(normalized?.catalogMeta || { source: 'local', nativeAvailable: false }),
-            ...(prev?.catalogMeta || {}),
-            scope: prev?.catalogMeta?.scope || normalized?.catalogMeta?.scope || null
-          }
-          : (normalized?.catalogMeta || { source: 'local', nativeAvailable: false })
-      }));
+        catalogMeta: normalized?.catalogMeta || { source: 'local', nativeAvailable: false }
+      });
 
       setLabelDefinitions(normalizeChatLabels(normalized.labels));
 
@@ -1806,14 +1909,21 @@ function App() {
         setSelectedCatalogModuleId(scopeModuleId);
       }
 
-      if (!keepScopedCatalog) {
-        const scopeCatalogId = String(normalized?.catalogMeta?.scope?.catalogId || '').trim().toUpperCase();
-        const scopeCatalogIds = Array.isArray(normalized?.catalogMeta?.scope?.catalogIds)
-          ? normalized.catalogMeta.scope.catalogIds.map((entry) => String(entry || '').trim().toUpperCase()).filter(Boolean)
-          : [];
-        if (scopeCatalogId) setSelectedCatalogId(scopeCatalogId);
-        else if (scopeCatalogIds.length === 1) setSelectedCatalogId(scopeCatalogIds[0]);
-        else if (scopeCatalogIds.length === 0) setSelectedCatalogId('');
+      let nextCatalogId = currentCatalogId;
+      if (scopeCatalogId) {
+        nextCatalogId = scopeCatalogId;
+      } else if (scopeCatalogIds.length === 1) {
+        nextCatalogId = scopeCatalogIds[0];
+      } else if (currentCatalogId && scopeCatalogIds.includes(currentCatalogId)) {
+        nextCatalogId = currentCatalogId;
+      } else if (scopeCatalogIds.length > 0) {
+        nextCatalogId = scopeCatalogIds[0];
+      } else {
+        nextCatalogId = '';
+      }
+
+      if (nextCatalogId !== currentCatalogId) {
+        setSelectedCatalogId(nextCatalogId);
       }
     });
 
@@ -1821,18 +1931,27 @@ function App() {
       const scopedPayload = payload && typeof payload === 'object' && !Array.isArray(payload)
         ? payload
         : null;
+      const responseSeq = Number(scopedPayload?.requestSeq || payload?.requestSeq || 0);
+      if (Number.isFinite(responseSeq) && responseSeq > 0) {
+        if (responseSeq < (businessDataRequestSeqRef.current || 0)) return;
+        businessDataResponseSeqRef.current = responseSeq;
+      }
+
       const scope = scopedPayload?.scope && typeof scopedPayload.scope === 'object'
         ? scopedPayload.scope
         : null;
       const scopeModuleId = String(scope?.moduleId || '').trim().toLowerCase();
       const scopeCatalogId = String(scope?.catalogId || '').trim().toUpperCase();
+      const scopeCatalogIds = Array.isArray(scope?.catalogIds)
+        ? scope.catalogIds.map((entry) => String(entry || '').trim().toUpperCase()).filter(Boolean)
+        : [];
       const activeCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
       const activeCatalogId = String(selectedCatalogIdRef.current || '').trim().toUpperCase();
 
       if (scopeModuleId && activeCatalogModuleId && scopeModuleId !== activeCatalogModuleId) {
         return;
       }
-      if (scopeCatalogId && activeCatalogId && scopeCatalogId !== activeCatalogId) {
+      if (scopeCatalogId && activeCatalogId && scopeCatalogId !== activeCatalogId && scopeCatalogIds.includes(activeCatalogId)) {
         return;
       }
 
@@ -1858,10 +1977,25 @@ function App() {
         }
       }));
 
+      if (scopeModuleId && !activeCatalogModuleId) {
+        setSelectedCatalogModuleId(scopeModuleId);
+      }
+
+      let nextCatalogId = activeCatalogId;
       if (scopeCatalogId) {
-        setSelectedCatalogId(scopeCatalogId);
+        nextCatalogId = scopeCatalogId;
+      } else if (scopeCatalogIds.length === 1) {
+        nextCatalogId = scopeCatalogIds[0];
+      } else if (activeCatalogId && scopeCatalogIds.includes(activeCatalogId)) {
+        nextCatalogId = activeCatalogId;
+      } else if (scopeCatalogIds.length > 0) {
+        nextCatalogId = scopeCatalogIds[0];
       } else {
-        setSelectedCatalogId('');
+        nextCatalogId = '';
+      }
+
+      if (nextCatalogId !== activeCatalogId) {
+        setSelectedCatalogId(nextCatalogId);
       }
     });
 
@@ -2389,7 +2523,7 @@ function App() {
     }
   };
 
-    const handleChatSelect = (chatId, options = {}) => {
+  const handleChatSelect = (chatId, options = {}) => {
     if (!chatId) return;
     const clearSearch = Boolean(options?.clearSearch);
     if (clearSearch && chatSearchRef.current) {
@@ -2401,10 +2535,12 @@ function App() {
     const requestedChatId = String(chatId || '').trim();
     let resolvedChatId = requestedChatId;
     let selectedChat = chatsRef.current.find((c) => String(c?.id || '') === requestedChatId) || null;
+    let resolvedScopeModuleId = '';
 
     if (selectedChat) {
       const parsedSelected = parseScopedChatId(selectedChat?.id || '');
       const selectedScopeModuleId = String(parsedSelected?.scopeModuleId || selectedChat?.scopeModuleId || selectedChat?.lastMessageModuleId || '').trim().toLowerCase();
+      resolvedScopeModuleId = selectedScopeModuleId;
       if (!selectedScopeModuleId) {
         const baseSelectedChatId = String(parsedSelected?.baseChatId || selectedChat?.baseChatId || selectedChat?.id || '').trim();
         if (baseSelectedChatId) {
@@ -2419,11 +2555,32 @@ function App() {
           if (scopedCandidates.length > 0) {
             selectedChat = scopedCandidates[0];
             resolvedChatId = String(selectedChat?.id || requestedChatId);
+            const parsedResolved = parseScopedChatId(selectedChat?.id || '');
+            resolvedScopeModuleId = String(parsedResolved?.scopeModuleId || selectedChat?.scopeModuleId || selectedChat?.lastMessageModuleId || '').trim().toLowerCase();
           }
         }
       }
     }
 
+    if (resolvedScopeModuleId) {
+      const currentCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
+      const currentWaModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
+
+      if (resolvedScopeModuleId !== currentCatalogModuleId) {
+        selectedCatalogModuleIdRef.current = resolvedScopeModuleId;
+        selectedCatalogIdRef.current = '';
+        setSelectedCatalogModuleId(resolvedScopeModuleId);
+        setSelectedCatalogId('');
+      }
+
+      if (isConnected) {
+        if (resolvedScopeModuleId !== currentWaModuleId) {
+          socket.emit('set_wa_module', { moduleId: resolvedScopeModuleId });
+        } else {
+          emitScopedBusinessDataRequest({ moduleId: resolvedScopeModuleId, catalogId: selectedCatalogIdRef.current || '' });
+        }
+      }
+    }
 
     activeChatIdRef.current = resolvedChatId;
     setActiveChatId(resolvedChatId);
@@ -2565,8 +2722,20 @@ function App() {
     selectedCatalogIdRef.current = '';
     setSelectedCatalogModuleId(safeModuleId);
     setSelectedCatalogId('');
+    setBusinessData((prev) => ({
+      ...prev,
+      catalog: [],
+      catalogMeta: {
+        ...(prev?.catalogMeta || { source: 'local', nativeAvailable: false }),
+        scope: {
+          ...(prev?.catalogMeta?.scope || {}),
+          moduleId: safeModuleId,
+          catalogId: ''
+        }
+      }
+    }));
     if (isConnected) {
-      socket.emit('get_business_catalog', { moduleId: safeModuleId });
+      emitScopedBusinessDataRequest({ moduleId: safeModuleId, catalogId: '' });
     }
   };
 
@@ -2576,10 +2745,22 @@ function App() {
     if (!safeModuleId) return;
     selectedCatalogIdRef.current = safeCatalogId;
     setSelectedCatalogId(safeCatalogId);
+    setBusinessData((prev) => ({
+      ...prev,
+      catalog: [],
+      catalogMeta: {
+        ...(prev?.catalogMeta || { source: 'local', nativeAvailable: false }),
+        scope: {
+          ...(prev?.catalogMeta?.scope || {}),
+          moduleId: safeModuleId,
+          catalogId: safeCatalogId || ''
+        }
+      }
+    }));
     if (isConnected) {
-      socket.emit('get_business_catalog', {
+      emitScopedBusinessDataRequest({
         moduleId: safeModuleId,
-        catalogId: safeCatalogId || undefined
+        catalogId: safeCatalogId || ''
       });
     }
   };
@@ -3518,6 +3699,7 @@ REGLA CRITICA:
               replyingMessage={replyingMessage}
               buildApiHeaders={buildApiHeaders}
               canEditMessages={waCapabilities.messageEdit}
+              waModules={availableWaModules}
             />
 
             {/* Client Profile Panel (slides in from right) */}
@@ -3672,4 +3854,3 @@ REGLA CRITICA:
 }
 
 export default App;
-

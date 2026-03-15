@@ -557,6 +557,7 @@ const ChatWindow = ({
 
     canEditMessages = true,
     buildApiHeaders,
+    waModules = [],
     ...inputProps
 }) => {
     const [showMenu, setShowMenu] = useState(false);
@@ -610,6 +611,16 @@ const ChatWindow = ({
         return colors[name.charCodeAt(0) % colors.length];
     };
 
+    const getChannelMarker = (channelType = '') => {
+        const clean = String(channelType || '').trim().toLowerCase();
+        if (!clean) return { key: 'generic', short: 'CH', label: 'Canal' };
+        if (clean === 'whatsapp') return { key: 'whatsapp', short: 'WA', label: 'WhatsApp' };
+        if (clean === 'instagram') return { key: 'instagram', short: 'IG', label: 'Instagram' };
+        if (clean === 'messenger') return { key: 'messenger', short: 'MS', label: 'Messenger' };
+        if (clean === 'webchat') return { key: 'webchat', short: 'WEB', label: 'Webchat' };
+        return { key: 'generic', short: clean.slice(0, 3).toUpperCase(), label: clean.toUpperCase() };
+    };
+
     const formatHeaderPhone = (phoneValue) => {
         const raw = String(phoneValue || '').trim();
         if (!raw) return '';
@@ -630,11 +641,28 @@ const ChatWindow = ({
         : (headerPhone || 'Sin numero visible');
     const headerHint = activeChatDetails?.isGroup
         ? 'Grupo'
-        : (activeChatDetails?.pushname ? `Pushname: ${activeChatDetails.pushname}` : 'Haz clic para ver el perfil');    const headerModuleId = String(activeChatDetails?.scopeModuleId || activeChatDetails?.lastMessageModuleId || '').trim().toUpperCase();
-    const headerModuleName = String(activeChatDetails?.lastMessageModuleName || '').trim() || headerModuleId;
-    const headerModuleChannel = String(activeChatDetails?.lastMessageChannelType || '').trim().toUpperCase();
-    const headerModuleImageUrl = normalizeModuleImageUrl(activeChatDetails?.lastMessageModuleImageUrl || '');
+        : (activeChatDetails?.pushname ? `Pushname: ${activeChatDetails.pushname}` : 'Haz clic para ver el perfil');    const normalizeModuleKey = (value = '') => String(value || '').trim().toLowerCase();
+    const headerModuleId = String(activeChatDetails?.scopeModuleId || activeChatDetails?.lastMessageModuleId || '').trim().toUpperCase();
+    const normalizedHeaderModuleId = normalizeModuleKey(activeChatDetails?.scopeModuleId || activeChatDetails?.lastMessageModuleId || '');
+    const headerRawModuleName = String(activeChatDetails?.lastMessageModuleName || '').trim();
+    const normalizedHeaderModuleName = String(headerRawModuleName || '').trim().toLowerCase();
+    const modulePool = Array.isArray(waModules) ? waModules : [];
+    const headerModuleConfig = modulePool.find((moduleEntry) => normalizeModuleKey(moduleEntry?.moduleId || moduleEntry?.id || '') === normalizedHeaderModuleId)
+        || modulePool.find((moduleEntry) => normalizedHeaderModuleName && String(moduleEntry?.name || '').trim().toLowerCase() === normalizedHeaderModuleName)
+        || null;
+    const headerModuleName = headerRawModuleName || String(headerModuleConfig?.name || '').trim() || headerModuleId;
+    const headerModuleChannelType = String(activeChatDetails?.lastMessageChannelType || headerModuleConfig?.channelType || '').trim().toLowerCase();
+    const headerModuleChannel = headerModuleChannelType ? headerModuleChannelType.toUpperCase() : '';
+    const headerModuleImageUrl = normalizeModuleImageUrl(
+        activeChatDetails?.lastMessageModuleImageUrl
+        || headerModuleConfig?.imageUrl
+        || headerModuleConfig?.logoUrl
+        || ''
+    );
     const showHeaderModule = Boolean(headerModuleName || headerModuleChannel);
+    const headerChannelMarker = getChannelMarker(headerModuleChannelType);
+    const headerAvatarImageUrl = headerModuleImageUrl || null;
+    const headerAvatarFallback = headerChannelMarker.short || (headerModuleName ? String(headerModuleName).charAt(0).toUpperCase() : (activeChatDetails?.name?.charAt(0)?.toUpperCase() || '?'));
     const normalizeSenderDigits = (value = '') => String(value || '').replace(/\D/g, '');
     const participantRecords = Array.isArray(activeChatDetails?.participantsList) ? activeChatDetails.participantsList : [];
     const participantNameById = new Map();
@@ -948,14 +976,20 @@ const ChatWindow = ({
             {/* Chat Header */}
             <div className="chat-header chat-header-pro" onClick={() => setShowClientProfile(v => !v)}>
                 <div
-                    className="chat-header-avatar"
+                    className="chat-header-avatar chat-header-avatar--module"
                     style={{
-                        background: activeChatDetails?.profilePicUrl
-                            ? `url(${activeChatDetails.profilePicUrl}) center/cover`
-                            : avatarColor(activeChatDetails?.name),
+                        background: headerAvatarImageUrl
+                            ? `url(${headerAvatarImageUrl}) center/cover`
+                            : avatarColor(headerModuleName || activeChatDetails?.name),
                     }}
                 >
-                    {!activeChatDetails?.profilePicUrl && activeChatDetails?.name?.charAt(0)?.toUpperCase()}
+                    {!headerAvatarImageUrl && headerAvatarFallback}
+                    <span
+                        className={`chat-header-avatar-channel chat-header-avatar-channel--${headerChannelMarker.key}`}
+                        title={headerChannelMarker.label}
+                    >
+                        {headerChannelMarker.short}
+                    </span>
                 </div>
                 <div className="chat-header-meta">
                     <div className="chat-header-title-row">
@@ -1224,4 +1258,3 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
-

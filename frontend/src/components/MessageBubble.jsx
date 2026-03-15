@@ -939,11 +939,20 @@ const MessageBubble = ({
     const sentByRole = String(msg?.sentByRole || '').trim();
     const sentViaModuleName = String(msg?.sentViaModuleName || '').trim();
     const safeSentByName = sentByName.replace(/\s+/g, ' ').trim();
+    const roleLabelMap = {
+        superadmin: 'Superadmin',
+        owner: 'Owner',
+        admin: 'Admin',
+        seller: 'Vendedor'
+    };
+    const safeRoleLabel = roleLabelMap[String(sentByRole || '').trim().toLowerCase()] || '';
+    const fallbackSentByUserId = String(msg?.sentByUserId || '').trim();
+    const displaySentByName = String(safeSentByName || safeRoleLabel || fallbackSentByUserId || 'Operador').trim();
     const safeSentViaLabel = String(sentViaModuleName || sentByRole || '')
-        .replace(/[\u25C6\u25C8\u2022\u00B7]+/g, ' ')
+        .replace(/[\u25C6\u25C8\u2022\u00B7\uFFFD<>|]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
-    const showOutgoingAttribution = Boolean(isOut && (safeSentByName || safeSentViaLabel));
+    const showOutgoingAttribution = Boolean(isOut && (displaySentByName || safeSentViaLabel));
 
     const canEditMessage = Boolean(
         canEditMessages
@@ -1518,7 +1527,7 @@ const MessageBubble = ({
                         alignSelf: 'flex-end',
                         textAlign: 'right'
                     }}>
-                        Respondio: <strong style={{ color: '#e8f3f8', fontWeight: 600 }}>{safeSentByName || 'Operador'}</strong>
+                        Respondio: <strong style={{ color: '#e8f3f8', fontWeight: 600 }}>{displaySentByName}</strong>
                         {safeSentViaLabel && (
                             <span style={{ color: '#9eb2bf' }}>
                                 {' - '}{safeSentViaLabel}
@@ -1546,4 +1555,3 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
-
