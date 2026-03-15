@@ -5030,6 +5030,7 @@ class SocketManager {
                             catalogId: scopedCatalog.selection.primaryCatalogId,
                             catalogs: scopedCatalog.selection.catalogs || []
                         },
+                        source: 'local',
                         items: scopedCatalog.items
                                 });
                 } catch (error) {
@@ -5379,6 +5380,7 @@ class SocketManager {
                             catalogId: scopedCatalog.selection.primaryCatalogId,
                             catalogs: scopedCatalog.selection.catalogs || []
                         },
+                        source: 'local',
                         items: scopedCatalog.items
                     });
                     socket.emit('product_added', newProduct);
@@ -5419,6 +5421,7 @@ class SocketManager {
                             catalogId: scopedCatalog.selection.primaryCatalogId,
                             catalogs: scopedCatalog.selection.catalogs || []
                         },
+                        source: 'local',
                         items: scopedCatalog.items
                     });
                     socket.emit('product_updated', updated);
@@ -5465,6 +5468,7 @@ class SocketManager {
                             catalogId: scopedCatalog.selection.primaryCatalogId,
                             catalogs: scopedCatalog.selection.catalogs || []
                         },
+                        source: 'local',
                         items: scopedCatalog.items
                     });
                     await auditSocketAction('catalog.product.deleted', {

@@ -743,6 +743,13 @@ function App() {
   const [selectedCatalogModuleId, setSelectedCatalogModuleId] = useState('');
   const [selectedCatalogId, setSelectedCatalogId] = useState('');
   const [waModuleError, setWaModuleError] = useState('');
+  const [newChatDialog, setNewChatDialog] = useState({
+    open: false,
+    phone: '',
+    firstMessage: '',
+    moduleId: '',
+    error: ''
+  });
 
   const [waCapabilities, setWaCapabilities] = useState({ messageEdit: true, messageEditSync: true, messageForward: true, messageDelete: true, messageReply: true, quickReplies: false, quickRepliesRead: false, quickRepliesWrite: false });
   const [toasts, setToasts] = useState([]);
@@ -1845,6 +1852,7 @@ function App() {
         catalog: normalizedCatalog,
         catalogMeta: {
           ...(prev?.catalogMeta || { source: 'local', nativeAvailable: false }),
+          source: String(scopedPayload?.source || 'local').trim().toLowerCase() || 'local',
           categories: normalizedCategories,
           scope: scope || prev?.catalogMeta?.scope || null
         }
@@ -2714,54 +2722,45 @@ function App() {
     socket.emit('set_chat_labels', { chatId, labelIds: nextIds });
   };
 
-  const handleStartNewChat = (phoneArg, firstMessageArg = '') => {
-    const phone = phoneArg || window.prompt('Numero del cliente (con codigo de pais, sin +):');
-    if (!phone) return;
-    const normalizedPhone = normalizeDigits(phone);
-    if (!normalizedPhone) return;
-    const firstMessage = typeof firstMessageArg === 'string' ? firstMessageArg : (window.prompt('Mensaje inicial (opcional):') || '');
+  const resolveNewChatAvailableModules = useCallback(() => (
+    normalizeWaModules(waModulesRef.current).filter((module) => module.isActive !== false)
+  ), []);
 
-    const availableModules = normalizeWaModules(waModulesRef.current).filter((module) => module.isActive !== false);
+  const resolveDefaultNewChatModuleId = useCallback((availableModules = []) => {
     const preferredModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
-    let targetModuleId = '';
-
     if (availableModules.length === 1) {
-      targetModuleId = String(availableModules[0]?.moduleId || '').trim().toLowerCase();
-    } else if (availableModules.length > 1) {
-      const defaultModule = availableModules.find((module) => String(module?.moduleId || '').trim().toLowerCase() === preferredModuleId)
-        || availableModules[0];
-      const listing = availableModules
-        .map((module, idx) => `${idx + 1}. ${module.name} (${module.moduleId})`)
-        .join('\n');
-      const rawPick = window.prompt(
-        `Selecciona el modulo para iniciar el chat:\n${listing}`,
-        String(defaultModule?.moduleId || '').trim()
-      );
-      if (!rawPick) return;
-      const picked = String(rawPick || '').trim().toLowerCase();
-      const asIndex = Number.parseInt(picked, 10);
-      if (Number.isFinite(asIndex) && asIndex >= 1 && asIndex <= availableModules.length) {
-        targetModuleId = String(availableModules[asIndex - 1]?.moduleId || '').trim().toLowerCase();
-      } else {
-        const pickedModule = availableModules.find((module) => String(module?.moduleId || '').trim().toLowerCase() === picked);
-        if (!pickedModule?.moduleId) {
-          window.alert('Modulo invalido para iniciar el chat.');
-          return;
-        }
-        targetModuleId = String(pickedModule.moduleId || '').trim().toLowerCase();
-      }
-    } else if (preferredModuleId) {
-      targetModuleId = preferredModuleId;
+      return String(availableModules[0]?.moduleId || '').trim().toLowerCase();
     }
+    if (preferredModuleId) {
+      const preferred = availableModules.find((module) => String(module?.moduleId || '').trim().toLowerCase() === preferredModuleId);
+      if (preferred?.moduleId) return String(preferred.moduleId || '').trim().toLowerCase();
+    }
+    return String(availableModules[0]?.moduleId || '').trim().toLowerCase();
+  }, []);
+
+  const resetNewChatDialog = useCallback(() => {
+    setNewChatDialog({
+      open: false,
+      phone: '',
+      firstMessage: '',
+      moduleId: '',
+      error: ''
+    });
+  }, []);
+
+  const executeStartNewChat = useCallback(({ normalizedPhone = '', firstMessage = '', targetModuleId = '' } = {}) => {
+    const cleanPhone = normalizeDigits(normalizedPhone);
+    const cleanModuleId = String(targetModuleId || '').trim().toLowerCase();
+    if (!cleanPhone) return;
 
     const candidates = chatsRef.current
       .filter((c) => {
         const chatPhone = normalizeDigits(getBestChatPhone(c) || '');
-        if (!chatPhone || chatPhone !== normalizedPhone) return false;
-        if (!targetModuleId) return true;
+        if (!chatPhone || chatPhone !== cleanPhone) return false;
+        if (!cleanModuleId) return true;
         const scoped = parseScopedChatId(c?.id || '');
         const chatModuleId = String(scoped.scopeModuleId || c?.lastMessageModuleId || '').trim().toLowerCase();
-        return chatModuleId === targetModuleId;
+        return chatModuleId === cleanModuleId;
       })
       .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
@@ -2769,11 +2768,11 @@ function App() {
       const best = candidates[0];
       if (best?.id) {
         handleChatSelect(best.id, { clearSearch: true });
-        if (firstMessage?.trim()) {
+        if (String(firstMessage || '').trim()) {
           socket.emit('send_message', {
             to: best.id,
-            toPhone: normalizedPhone,
-            body: firstMessage.trim()
+            toPhone: cleanPhone,
+            body: String(firstMessage || '').trim()
           });
         }
         return;
@@ -2781,13 +2780,62 @@ function App() {
     }
 
     socket.emit('start_new_chat', {
-      phone: normalizedPhone,
-      firstMessage,
-      moduleId: targetModuleId || undefined
+      phone: cleanPhone,
+      firstMessage: String(firstMessage || '').trim(),
+      moduleId: cleanModuleId || undefined
     });
-  };
+  }, [handleChatSelect]);
 
+  const openStartNewChatDialog = useCallback((phoneArg = '', firstMessageArg = '') => {
+    const availableModules = resolveNewChatAvailableModules();
+    const defaultModuleId = resolveDefaultNewChatModuleId(availableModules);
+    setNewChatDialog({
+      open: true,
+      phone: String(phoneArg || '').trim(),
+      firstMessage: typeof firstMessageArg === 'string' ? firstMessageArg : '',
+      moduleId: defaultModuleId || '',
+      error: ''
+    });
+  }, [resolveDefaultNewChatModuleId, resolveNewChatAvailableModules]);
 
+  const handleStartNewChat = useCallback((phoneArg = '', firstMessageArg = '') => {
+    openStartNewChatDialog(phoneArg, firstMessageArg);
+  }, [openStartNewChatDialog]);
+
+  const handleCancelNewChatDialog = useCallback(() => {
+    resetNewChatDialog();
+  }, [resetNewChatDialog]);
+
+  const handleConfirmNewChat = useCallback(() => {
+    const normalizedPhone = normalizeDigits(newChatDialog.phone || '');
+    if (!normalizedPhone || normalizedPhone.length < 8) {
+      setNewChatDialog((prev) => ({ ...prev, error: 'Ingresa un numero valido con codigo de pais.' }));
+      return;
+    }
+
+    const availableModules = resolveNewChatAvailableModules();
+    const selectedModuleId = String(newChatDialog.moduleId || '').trim().toLowerCase();
+    const defaultModuleId = resolveDefaultNewChatModuleId(availableModules);
+    let targetModuleId = selectedModuleId || defaultModuleId;
+
+    if (availableModules.length > 0) {
+      const moduleIsValid = availableModules.some((module) => String(module?.moduleId || '').trim().toLowerCase() === targetModuleId);
+      if (!moduleIsValid) {
+        setNewChatDialog((prev) => ({ ...prev, error: 'Selecciona un modulo activo para iniciar el chat.' }));
+        return;
+      }
+    } else {
+      const preferredModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
+      targetModuleId = preferredModuleId || '';
+    }
+
+    executeStartNewChat({
+      normalizedPhone,
+      firstMessage: newChatDialog.firstMessage || '',
+      targetModuleId
+    });
+    resetNewChatDialog();
+  }, [executeStartNewChat, newChatDialog.firstMessage, newChatDialog.moduleId, newChatDialog.phone, resetNewChatDialog, resolveDefaultNewChatModuleId, resolveNewChatAvailableModules]);
   const handleEditMessage = (messageId, currentBody) => {
     if (!waCapabilities.messageEdit) {
       alert('La edicion de mensajes no esta disponible en esta sesion de WhatsApp.');
@@ -3380,6 +3428,8 @@ REGLA CRITICA:
     }))
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
+  const newChatAvailableModules = resolveNewChatAvailableModules();
+
   return (
     <div className="app-container">
       {/* Hidden file input */}
@@ -3543,6 +3593,63 @@ REGLA CRITICA:
           />
         )}
       </div>
+
+      {newChatDialog.open && (
+        <div className="new-chat-modal-overlay" onClick={handleCancelNewChatDialog}>
+          <div className="new-chat-modal-card" role="dialog" aria-modal="true" aria-label="Nuevo chat" onClick={(event) => event.stopPropagation()}>
+            <div className="new-chat-modal-header">
+              <h3>Nuevo chat</h3>
+              <button type="button" className="new-chat-modal-close" onClick={handleCancelNewChatDialog} aria-label="Cerrar">x</button>
+            </div>
+            <p className="new-chat-modal-subtitle">Selecciona el modulo y abre una conversacion sin mezclar chats entre canales.</p>
+
+            <label className="new-chat-modal-label" htmlFor="new-chat-phone">Numero (con codigo de pais)</label>
+            <input
+              id="new-chat-phone"
+              type="text"
+              value={newChatDialog.phone}
+              onChange={(event) => setNewChatDialog((prev) => ({ ...prev, phone: event.target.value, error: '' }))}
+              onKeyDown={(event) => { if (event.key === 'Enter') handleConfirmNewChat(); }}
+              className="new-chat-modal-input"
+              placeholder="Ej: 51955123456"
+              autoFocus
+            />
+
+            <label className="new-chat-modal-label" htmlFor="new-chat-module">Modulo</label>
+            <select
+              id="new-chat-module"
+              value={newChatDialog.moduleId}
+              onChange={(event) => setNewChatDialog((prev) => ({ ...prev, moduleId: event.target.value, error: '' }))}
+              className="new-chat-modal-select"
+              disabled={newChatAvailableModules.length === 0}
+            >
+              {newChatAvailableModules.length === 0 && <option value="">Sin modulos activos</option>}
+              {newChatAvailableModules.map((module) => (
+                <option key={`new_chat_module_${module.moduleId}`} value={module.moduleId}>
+                  {module.name}
+                </option>
+              ))}
+            </select>
+
+            <label className="new-chat-modal-label" htmlFor="new-chat-first-message">Mensaje inicial (opcional)</label>
+            <textarea
+              id="new-chat-first-message"
+              value={newChatDialog.firstMessage}
+              onChange={(event) => setNewChatDialog((prev) => ({ ...prev, firstMessage: event.target.value, error: '' }))}
+              className="new-chat-modal-textarea"
+              rows={3}
+              placeholder="Escribe un mensaje de apertura"
+            />
+
+            {newChatDialog.error && <div className="new-chat-modal-error">{newChatDialog.error}</div>}
+
+            <div className="new-chat-modal-actions">
+              <button type="button" className="new-chat-modal-btn new-chat-modal-btn--ghost" onClick={handleCancelNewChatDialog}>Cancelar</button>
+              <button type="button" className="new-chat-modal-btn new-chat-modal-btn--primary" onClick={handleConfirmNewChat}>Iniciar chat</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <SaasAdminPanel
         isOpen={showSaasAdminPanel}
