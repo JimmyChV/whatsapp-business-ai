@@ -478,20 +478,51 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
         try {
             await ensurePostgresMessageColumns();
             const { rows } = await queryPostgres(
-                `SELECT c.chat_id, c.display_name, c.phone, c.subtitle, c.unread_count, c.archived, c.pinned,
-                        c.last_message_id, c.last_message_at, c.metadata,
-                        m.body AS last_message_body,
-                        m.from_me AS last_message_from_me,
-                        m.ack AS last_message_ack,
-                        m.wa_module_id AS last_message_module_id,
-                        m.wa_phone_number AS last_message_phone_number,
-                        m.metadata AS last_message_metadata
-                   FROM tenant_chats c
-                   LEFT JOIN tenant_messages m
-                     ON m.tenant_id = c.tenant_id
-                    AND m.message_id = c.last_message_id
-                  WHERE c.tenant_id = $1
-                  ORDER BY c.last_message_at DESC NULLS LAST, c.updated_at DESC
+                `WITH latest_by_scope AS (
+                     SELECT DISTINCT ON (
+                                m.chat_id,
+                                COALESCE(NULLIF(LOWER(TRIM(m.wa_module_id)), ''), '__default__')
+                            )
+                            m.chat_id,
+                            COALESCE(NULLIF(LOWER(TRIM(m.wa_module_id)), ''), '') AS scope_module_id,
+                            m.message_id,
+                            m.timestamp_unix,
+                            m.body,
+                            m.from_me,
+                            m.ack,
+                            m.wa_module_id,
+                            m.wa_phone_number,
+                            m.metadata AS last_message_metadata
+                       FROM tenant_messages m
+                      WHERE m.tenant_id = $1
+                      ORDER BY
+                            m.chat_id,
+                            COALESCE(NULLIF(LOWER(TRIM(m.wa_module_id)), ''), '__default__'),
+                            COALESCE(m.timestamp_unix, 0) DESC,
+                            m.created_at DESC
+                 )
+                 SELECT
+                        l.chat_id,
+                        c.display_name,
+                        c.phone,
+                        c.subtitle,
+                        c.unread_count,
+                        c.archived,
+                        c.pinned,
+                        l.message_id AS last_message_id,
+                        l.timestamp_unix AS last_message_at,
+                        l.body AS last_message_body,
+                        l.from_me AS last_message_from_me,
+                        l.ack AS last_message_ack,
+                        l.wa_module_id AS last_message_module_id,
+                        l.wa_phone_number AS last_message_phone_number,
+                        l.last_message_metadata,
+                        c.metadata
+                   FROM latest_by_scope l
+                   LEFT JOIN tenant_chats c
+                     ON c.tenant_id = $1
+                    AND c.chat_id = l.chat_id
+                  ORDER BY COALESCE(l.timestamp_unix, 0) DESC, c.updated_at DESC NULLS LAST
                   LIMIT $2 OFFSET $3`,
                 [cleanTenant, safeLimit, safeOffset]
             );
@@ -533,11 +564,33 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
     }
 
     const store = await loadStore(cleanTenant);
-    return Object.values(store.chats)
-        .sort((a, b) => (Number(b.lastMessageAt || 0) - Number(a.lastMessageAt || 0)))
-        .slice(safeOffset, safeOffset + safeLimit)
-        .map((chat) => {
-            const lastMessage = chat?.lastMessageId ? store.messages[chat.lastMessageId] : null;
+    const scopedRows = [];
+    const chats = Object.values(store.chats || {});
+
+    for (const chat of chats) {
+        const orderedIds = Array.isArray(store.messageOrderByChat?.[chat?.id]) ? store.messageOrderByChat[chat.id] : [];
+        const latestByScope = new Map();
+
+        orderedIds.forEach((messageId) => {
+            const message = store.messages?.[messageId];
+            if (!message) return;
+            const metadata = message?.metadata && typeof message.metadata === 'object' ? message.metadata : {};
+            const scopeModuleId = toSafeString(message?.waModuleId || metadata?.sentViaModuleId)?.toLowerCase() || '';
+            const scopeKey = scopeModuleId || '__default__';
+            const current = latestByScope.get(scopeKey);
+            const messageTs = Number(message?.timestampUnix || 0) || 0;
+            const currentTs = Number(current?.timestampUnix || 0) || 0;
+            if (!current || messageTs >= currentTs) {
+                latestByScope.set(scopeKey, message);
+            }
+        });
+
+        if (latestByScope.size === 0) {
+            latestByScope.set('__default__', chat?.lastMessageId ? store.messages?.[chat.lastMessageId] || null : null);
+        }
+
+        for (const lastMessageValue of latestByScope.values()) {
+            const lastMessage = lastMessageValue && typeof lastMessageValue === 'object' ? lastMessageValue : null;
             const lastMessageMetadata = lastMessage?.metadata && typeof lastMessage.metadata === 'object'
                 ? lastMessage.metadata
                 : {};
@@ -546,7 +599,7 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
             const lastMessageTransport = toSafeString(lastMessageMetadata.sentViaTransport)?.toLowerCase() || null;
             const lastMessageChannelType = toSafeString(lastMessageMetadata.sentViaChannelType)?.toLowerCase() || null;
 
-            return {
+            scopedRows.push({
                 chatId: chat.id,
                 displayName: chat.displayName || null,
                 phone: chat.phone || null,
@@ -554,8 +607,8 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
                 unreadCount: Number(chat.unreadCount || 0),
                 archived: Boolean(chat.archived),
                 pinned: Boolean(chat.pinned),
-                lastMessageId: chat.lastMessageId || null,
-                lastMessageAt: Number(chat.lastMessageAt || 0) || null,
+                lastMessageId: lastMessage?.messageId || chat.lastMessageId || null,
+                lastMessageAt: Number(lastMessage?.timestampUnix || chat.lastMessageAt || 0) || null,
                 lastMessageBody: String(lastMessage?.body || ''),
                 lastMessageFromMe: Boolean(lastMessage?.fromMe),
                 lastMessageAck: Number.isFinite(Number(lastMessage?.ack)) ? Number(lastMessage.ack) : 0,
@@ -564,8 +617,13 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
                 lastMessageTransport,
                 lastMessageChannelType,
                 metadata: chat.metadata && typeof chat.metadata === 'object' ? chat.metadata : {}
-            };
-        });
+            });
+        }
+    }
+
+    return scopedRows
+        .sort((a, b) => (Number(b?.lastMessageAt || 0) - Number(a?.lastMessageAt || 0)))
+        .slice(safeOffset, safeOffset + safeLimit);
 }
 async function listMessages(tenantId = DEFAULT_TENANT_ID, {
     chatId = '',

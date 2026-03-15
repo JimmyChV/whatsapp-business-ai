@@ -2561,6 +2561,8 @@ function App() {
       return;
     }
 
+    selectedCatalogModuleIdRef.current = safeModuleId;
+    selectedCatalogIdRef.current = '';
     setSelectedCatalogModuleId(safeModuleId);
     setSelectedCatalogId('');
     if (isConnected) {
@@ -2572,6 +2574,7 @@ function App() {
     const safeCatalogId = String(catalogId || '').trim().toUpperCase();
     const safeModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
     if (!safeModuleId) return;
+    selectedCatalogIdRef.current = safeCatalogId;
     setSelectedCatalogId(safeCatalogId);
     if (isConnected) {
       socket.emit('get_business_catalog', {

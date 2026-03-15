@@ -1130,34 +1130,35 @@ body {
   display: inline-flex;
   align-self: flex-start;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   max-width: 100%;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(47, 220, 182, 0.32);
-  background: rgba(10, 176, 147, 0.14);
-  color: #9df6df;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  border: 1px solid rgba(47, 220, 182, 0.42);
+  background: rgba(10, 176, 147, 0.22);
+  color: #b9ffe9;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 
 .chat-module-badge-avatar {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
   object-fit: cover;
-  border: 1px solid rgba(157, 246, 223, 0.5);
+  border: 1px solid rgba(185, 255, 233, 0.85);
+  box-shadow: 0 0 0 2px rgba(24, 39, 46, 0.45);
   flex-shrink: 0;
 }
 
 .chat-module-badge-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 999px;
   background: #2ce4bf;
-  box-shadow: 0 0 0 2px rgba(44, 228, 191, 0.16);
+  box-shadow: 0 0 0 2px rgba(44, 228, 191, 0.24);
   flex-shrink: 0;
 }
 
@@ -2301,26 +2302,27 @@ body {
 }
 
 .chat-header-module-pill {
-  border: 1px solid rgba(124, 200, 255, 0.42);
-  background: rgba(50, 80, 96, 0.34);
-  color: #d9efff;
+  border: 1px solid rgba(124, 200, 255, 0.48);
+  background: rgba(56, 94, 115, 0.36);
+  color: #e6f4ff;
   border-radius: 999px;
-  padding: 2px 9px 2px 6px;
-  font-size: 0.64rem;
+  padding: 3px 10px 3px 7px;
+  font-size: 0.66rem;
   letter-spacing: 0.02em;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   flex-shrink: 1;
   min-width: 0;
 }
 
 .chat-header-module-avatar {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  box-shadow: 0 0 0 2px rgba(21, 36, 47, 0.45);
   flex-shrink: 0;
 }
 

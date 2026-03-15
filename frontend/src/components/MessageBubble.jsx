@@ -938,7 +938,12 @@ const MessageBubble = ({
     const sentByName = String(msg?.sentByName || msg?.sentByEmail || '').trim();
     const sentByRole = String(msg?.sentByRole || '').trim();
     const sentViaModuleName = String(msg?.sentViaModuleName || '').trim();
-    const showOutgoingAttribution = Boolean(isOut && (sentByName || sentViaModuleName || sentByRole));
+    const safeSentByName = sentByName.replace(/\s+/g, ' ').trim();
+    const safeSentViaLabel = String(sentViaModuleName || sentByRole || '')
+        .replace(/[\u25C6\u25C8\u2022\u00B7]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const showOutgoingAttribution = Boolean(isOut && (safeSentByName || safeSentViaLabel));
 
     const canEditMessage = Boolean(
         canEditMessages
@@ -1513,10 +1518,10 @@ const MessageBubble = ({
                         alignSelf: 'flex-end',
                         textAlign: 'right'
                     }}>
-                        Respondio: <strong style={{ color: '#e8f3f8', fontWeight: 600 }}>{sentByName || 'Usuario'}</strong>
-                        {(sentViaModuleName || sentByRole) && (
+                        Respondio: <strong style={{ color: '#e8f3f8', fontWeight: 600 }}>{safeSentByName || 'Operador'}</strong>
+                        {safeSentViaLabel && (
                             <span style={{ color: '#9eb2bf' }}>
-                                {' · '}{sentViaModuleName || sentByRole}
+                                {' - '}{safeSentViaLabel}
                             </span>
                         )}
                     </div>
@@ -1541,5 +1546,4 @@ const MessageBubble = ({
 };
 
 export default MessageBubble;
-
 
