@@ -39,6 +39,8 @@ const OUTGOING_AGENT_META_TTL_MS = Math.max(60 * 1000, Number(process.env.OUTGOI
 const SOCKET_RBAC_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAAS_AUTH_ENABLED || '').trim().toLowerCase());
 const WA_REQUIRE_SELECTED_MODULE = ['1', 'true', 'yes', 'on'].includes(String(process.env.WA_REQUIRE_SELECTED_MODULE || '').trim().toLowerCase());
 const WA_ENFORCE_WEBJS_PHONE_MATCH = ['1', 'true', 'yes', 'on'].includes(String(process.env.WA_ENFORCE_WEBJS_PHONE_MATCH || '').trim().toLowerCase());
+let sharpImageProcessor = null;
+let sharpLoadAttempted = false;
 
 function guardRateLimit(socket, eventName) {
     const key = `${socket.id}:${eventName}`;
@@ -48,6 +50,17 @@ function guardRateLimit(socket, eventName) {
         return false;
     }
     return true;
+}
+
+function getSharpImageProcessor() {
+    if (sharpLoadAttempted) return sharpImageProcessor;
+    sharpLoadAttempted = true;
+    try {
+        sharpImageProcessor = require('sharp');
+    } catch (error) {
+        sharpImageProcessor = null;
+    }
+    return sharpImageProcessor;
 }
 
 function cleanupOutgoingAgentMeta() {
@@ -1244,6 +1257,9 @@ const CATALOG_IMAGE_EXT_BY_MIME = {
     'image/gif': 'gif'
 };
 
+const CLOUD_CATALOG_COMPATIBLE_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png']);
+const CATALOG_IMAGE_FETCH_ACCEPT = 'image/jpeg,image/png,image/*;q=0.85,*/*;q=0.5';
+
 function slugifyFileName(value = 'producto') {
     const clean = String(value || '')
         .toLowerCase()
@@ -1290,13 +1306,58 @@ function buildCatalogProductCaption(product = {}) {
     return lines.join('\n');
 }
 
-async function fetchCatalogProductImage(imageUrl, { maxBytes = 4 * 1024 * 1024, timeoutMs = 7000 } = {}) {
+function buildCatalogImageCandidateUrls(imageUrl = '') {
     const rawUrl = String(imageUrl || '').trim();
-    if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) return null;
+    if (!rawUrl) return [];
+
+    const candidates = [];
+    const seen = new Set();
+    const pushCandidate = (nextUrl = '') => {
+        const clean = String(nextUrl || '').trim();
+        if (!clean || seen.has(clean)) return;
+        seen.add(clean);
+        candidates.push(clean);
+    };
+
+    pushCandidate(rawUrl);
 
     let parsed;
     try {
         parsed = new URL(rawUrl);
+    } catch (e) {
+        return candidates;
+    }
+
+    const pathname = String(parsed.pathname || '');
+    const extMatch = pathname.match(/\.([a-z0-9]{3,4})$/i);
+    const ext = String(extMatch?.[1] || '').toLowerCase();
+    if (['webp', 'gif', 'avif'].includes(ext)) {
+        for (const fallbackExt of ['jpg', 'jpeg', 'png']) {
+            const clone = new URL(parsed.toString());
+            clone.pathname = pathname.replace(/\.[a-z0-9]{3,4}$/i, '.' + fallbackExt);
+            pushCandidate(clone.toString());
+        }
+    }
+
+    const queryKeys = ['format', 'fm', 'output-format', 'ext'];
+    for (const key of queryKeys) {
+        const current = String(parsed.searchParams.get(key) || '').trim().toLowerCase();
+        if (!['webp', 'gif', 'avif'].includes(current)) continue;
+        const clone = new URL(parsed.toString());
+        clone.searchParams.set(key, 'jpg');
+        pushCandidate(clone.toString());
+    }
+
+    return candidates;
+}
+
+async function fetchCatalogProductImageFromUrl(rawUrl, { maxBytes = 4 * 1024 * 1024, timeoutMs = 7000 } = {}) {
+    const cleanUrl = String(rawUrl || '').trim();
+    if (!cleanUrl || !/^https?:\/\//i.test(cleanUrl)) return null;
+
+    let parsed;
+    try {
+        parsed = new URL(cleanUrl);
     } catch (e) {
         return null;
     }
@@ -1316,7 +1377,10 @@ async function fetchCatalogProductImage(imageUrl, { maxBytes = 4 * 1024 * 1024, 
     try {
         response = await fetch(parsed.toString(), {
             redirect: 'follow',
-            headers: { 'User-Agent': 'Mozilla/5.0 (WhatsApp Business Pro Catalog Fetcher)' },
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (WhatsApp Business Pro Catalog Fetcher)',
+                'Accept': CATALOG_IMAGE_FETCH_ACCEPT
+            },
             signal: controller.signal
         });
     } catch (e) {
@@ -1340,10 +1404,65 @@ async function fetchCatalogProductImage(imageUrl, { maxBytes = 4 * 1024 * 1024, 
     return {
         mediaData: imageBuffer.toString('base64'),
         mimetype: contentType,
-        extension: CATALOG_IMAGE_EXT_BY_MIME[contentType] || 'jpg'
+        extension: CATALOG_IMAGE_EXT_BY_MIME[contentType] || 'jpg',
+        sourceUrl: parsed.toString()
     };
 }
 
+async function fetchCatalogProductImage(imageUrl, { maxBytes = 4 * 1024 * 1024, timeoutMs = 7000 } = {}) {
+    const candidates = buildCatalogImageCandidateUrls(imageUrl);
+    if (!candidates.length) return null;
+
+    let fallbackUnsupported = null;
+    for (const candidate of candidates) {
+        const media = await fetchCatalogProductImageFromUrl(candidate, { maxBytes, timeoutMs });
+        if (!media) continue;
+        const mediaMime = String(media?.mimetype || '').trim().toLowerCase();
+        if (CLOUD_CATALOG_COMPATIBLE_MIME.has(mediaMime)) return media;
+        if (!fallbackUnsupported && mediaMime.startsWith('image/')) fallbackUnsupported = media;
+    }
+
+    return fallbackUnsupported;
+}
+
+async function ensureCloudApiCompatibleCatalogImage(media = null, { maxBytes = 4 * 1024 * 1024 } = {}) {
+    if (!media || typeof media !== 'object') return null;
+    const mediaMime = String(media?.mimetype || '').trim().toLowerCase();
+    if (!mediaMime.startsWith('image/')) return null;
+
+    if (CLOUD_CATALOG_COMPATIBLE_MIME.has(mediaMime)) {
+        return {
+            mediaData: String(media.mediaData || ''),
+            mimetype: mediaMime,
+            extension: CATALOG_IMAGE_EXT_BY_MIME[mediaMime] || 'jpg'
+        };
+    }
+
+    const sharp = getSharpImageProcessor();
+    if (!sharp) return null;
+
+    try {
+        const inputBuffer = Buffer.from(String(media.mediaData || ''), 'base64');
+        if (!inputBuffer.length) return null;
+
+        const convertedBuffer = await sharp(inputBuffer, { failOn: 'none', animated: false })
+            .rotate()
+            .flatten({ background: '#ffffff' })
+            .jpeg({ quality: 86, mozjpeg: true })
+            .toBuffer();
+
+        if (!convertedBuffer.length || convertedBuffer.length > maxBytes) return null;
+
+        return {
+            mediaData: convertedBuffer.toString('base64'),
+            mimetype: 'image/jpeg',
+            extension: 'jpg',
+            convertedFrom: mediaMime
+        };
+    } catch (error) {
+        return null;
+    }
+}
 function resolveChatDisplayName(chat) {
     if (!chat) return 'Sin nombre';
 
@@ -5009,19 +5128,29 @@ class SocketManager {
                     let sentWithImage = false;
                     let sentResponse = null;
                     if (imageUrl) {
+                        const maxCatalogImageBytes = Number(process.env.CATALOG_IMAGE_MAX_BYTES || 4 * 1024 * 1024);
                         const media = await fetchCatalogProductImage(imageUrl, {
-                            maxBytes: Number(process.env.CATALOG_IMAGE_MAX_BYTES || 4 * 1024 * 1024),
+                            maxBytes: maxCatalogImageBytes,
                             timeoutMs: Number(process.env.CATALOG_IMAGE_TIMEOUT_MS || 7000)
                         });
-                        const allowedImageMime = new Set(['image/jpeg', 'image/jpg', 'image/png']);
-                        const mediaMime = String(media?.mimetype || '').trim().toLowerCase();
-                        if (media && allowedImageMime.has(mediaMime)) {
+                        const compatibleMedia = await ensureCloudApiCompatibleCatalogImage(media, {
+                            maxBytes: maxCatalogImageBytes
+                        });
+
+                        if (compatibleMedia) {
                             const baseName = slugifyFileName(product?.title || product?.name || 'producto');
-                            const filename = String(baseName || 'producto') + '.' + String(media.extension || 'jpg');
-                            sentResponse = await waClient.sendMedia(target.targetChatId, media.mediaData, media.mimetype, filename, caption, false);
+                            const filename = String(baseName || 'producto') + '.' + String(compatibleMedia.extension || 'jpg');
+                            sentResponse = await waClient.sendMedia(
+                                target.targetChatId,
+                                compatibleMedia.mediaData,
+                                compatibleMedia.mimetype,
+                                filename,
+                                caption,
+                                false
+                            );
                             sentWithImage = true;
-                        } else if (media && mediaMime) {
-                            console.warn('[WA][SendCatalogProduct] media no compatible para Cloud API (' + mediaMime + '), se enviara solo texto.');
+                        } else if (media?.mimetype) {
+                            console.warn('[WA][SendCatalogProduct] media no compatible para Cloud API (' + String(media.mimetype) + '), se enviara solo texto.');
                         }
                     }
 
@@ -5976,3 +6105,4 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
