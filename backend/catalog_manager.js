@@ -69,6 +69,70 @@ function sanitizePrice(value = '') {
     return parsed.toFixed(2);
 }
 
+function sanitizeText(value = '') {
+    const clean = String(value ?? '').trim();
+    return clean || '';
+}
+
+function sanitizeUrl(value = '') {
+    const clean = String(value ?? '').trim();
+    if (!clean) return '';
+    return clean;
+}
+
+function sanitizeInteger(value, fallback = null) {
+    if (value === null || value === undefined || value === '') return fallback;
+    const parsed = Number.parseInt(String(value).trim(), 10);
+    if (!Number.isFinite(parsed)) return fallback;
+    return parsed;
+}
+
+function normalizeCategoryEntries(...inputs) {
+    const list = [];
+    inputs.forEach((source) => {
+        if (!source) return;
+        if (Array.isArray(source)) {
+            source.forEach((entry) => {
+                if (!entry) return;
+                if (typeof entry === 'string') {
+                    list.push(entry);
+                    return;
+                }
+                if (typeof entry === 'object') {
+                    list.push(entry.name || entry.slug || entry.label || entry.title || '');
+                }
+            });
+            return;
+        }
+
+        if (typeof source === 'string') {
+            source.split(',').forEach((token) => list.push(token));
+            return;
+        }
+
+        if (typeof source === 'object') {
+            list.push(source.name || source.slug || source.label || source.title || '');
+        }
+    });
+
+    const unique = new Set();
+    list
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean)
+        .forEach((entry) => unique.add(entry));
+    return Array.from(unique);
+}
+
+function computeDiscountPct({ explicitDiscount = '', regularPrice = '', finalPrice = '' } = {}) {
+    const explicit = Number.parseFloat(String(explicitDiscount ?? '').replace(',', '.'));
+    if (Number.isFinite(explicit) && explicit >= 0) return Number(explicit.toFixed(2));
+
+    const regular = Number.parseFloat(String(regularPrice ?? '').replace(',', '.'));
+    const final = Number.parseFloat(String(finalPrice ?? '').replace(',', '.'));
+    if (!Number.isFinite(regular) || !Number.isFinite(final) || regular <= 0 || final <= 0 || final >= regular) return 0;
+    return Number((((regular - final) / regular) * 100).toFixed(2));
+}
+
 function normalizeProduct(item = {}, {
     withDefaults = false,
     fallbackModuleId = null,
@@ -76,14 +140,68 @@ function normalizeProduct(item = {}, {
     fallbackChannelType = null
 } = {}) {
     const source = item && typeof item === 'object' ? item : {};
+    const rawMetadata = source?.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+        ? source.metadata
+        : {};
+
     const id = String(source?.id || '').trim();
     const title = String(source?.title || source?.name || '').trim();
     const description = String(source?.description || '').trim();
-    const imageUrl = source?.imageUrl ? String(source.imageUrl).trim() : null;
+    const imageUrl = sanitizeUrl(source?.imageUrl || source?.image || source?.image_url || rawMetadata?.imageUrl || rawMetadata?.image_url || '');
     const createdAt = String(source?.createdAt || '').trim() || new Date().toISOString();
-    const moduleId = normalizeModuleId(source?.moduleId || source?.module_id || fallbackModuleId || '');
-    const catalogId = normalizeCatalogId(source?.catalogId || source?.catalog_id || fallbackCatalogId || '');
-    const channelType = normalizeChannelType(source?.channelType || source?.channel_type || fallbackChannelType || '');
+    const moduleId = normalizeModuleId(source?.moduleId || source?.module_id || rawMetadata?.moduleId || fallbackModuleId || '');
+    const catalogId = normalizeCatalogId(source?.catalogId || source?.catalog_id || rawMetadata?.catalogId || fallbackCatalogId || '');
+    const channelType = normalizeChannelType(source?.channelType || source?.channel_type || rawMetadata?.channelType || fallbackChannelType || '');
+    const sourceType = String(source?.source || rawMetadata?.source || 'local').trim().toLowerCase() || 'local';
+
+    let finalPrice = sanitizePrice(source?.price ?? source?.amount ?? rawMetadata?.price ?? '');
+    let regularPrice = sanitizePrice(source?.regularPrice ?? source?.regular_price ?? rawMetadata?.regularPrice ?? rawMetadata?.regular_price ?? source?.price ?? '');
+    let salePrice = sanitizePrice(source?.salePrice ?? source?.sale_price ?? rawMetadata?.salePrice ?? rawMetadata?.sale_price ?? '');
+
+    if (!finalPrice) finalPrice = salePrice || regularPrice || '';
+    if (!regularPrice) regularPrice = finalPrice || '';
+    if (!salePrice) salePrice = '';
+
+    const categories = normalizeCategoryEntries(
+        source?.categories,
+        source?.category,
+        source?.categoryName,
+        source?.category_slug,
+        rawMetadata?.categories,
+        rawMetadata?.category,
+        rawMetadata?.categoryName
+    );
+    const category = categories[0] || '';
+    const sku = sanitizeText(source?.sku || rawMetadata?.sku || '');
+    const stockStatus = sanitizeText(source?.stockStatus || source?.stock_status || rawMetadata?.stockStatus || rawMetadata?.stock_status || '');
+    const stockQuantity = sanitizeInteger(
+        source?.stockQuantity ?? source?.stock_quantity ?? rawMetadata?.stockQuantity ?? rawMetadata?.stock_quantity,
+        null
+    );
+    const url = sanitizeUrl(source?.url || source?.permalink || source?.productUrl || source?.link || rawMetadata?.url || rawMetadata?.permalink || rawMetadata?.productUrl || rawMetadata?.link || '');
+    const brand = sanitizeText(source?.brand || rawMetadata?.brand || '');
+    const catalogName = sanitizeText(source?.catalogName || source?.catalog_name || rawMetadata?.catalogName || rawMetadata?.catalog_name || '');
+    const discountPct = computeDiscountPct({
+        explicitDiscount: source?.discountPct ?? source?.discount_pct ?? rawMetadata?.discountPct ?? rawMetadata?.discount_pct,
+        regularPrice,
+        finalPrice
+    });
+
+    const metadata = {
+        ...rawMetadata,
+        regularPrice: regularPrice || null,
+        salePrice: salePrice || null,
+        discountPct,
+        sku: sku || null,
+        stockStatus: stockStatus || null,
+        stockQuantity,
+        categories,
+        category: category || null,
+        url: url || null,
+        brand: brand || null,
+        catalogName: catalogName || null,
+        source: sourceType
+    };
 
     const base = {
         id,
@@ -91,9 +209,22 @@ function normalizeProduct(item = {}, {
         catalogId,
         channelType,
         title: title || (withDefaults ? 'Sin nombre' : ''),
-        price: sanitizePrice(source?.price ?? ''),
+        price: finalPrice || '',
+        regularPrice: regularPrice || null,
+        salePrice: salePrice || null,
+        discountPct,
         description,
         imageUrl: imageUrl || null,
+        source: sourceType,
+        sku: sku || null,
+        stockStatus: stockStatus || null,
+        stockQuantity,
+        url: url || null,
+        brand: brand || null,
+        category: category || null,
+        categories,
+        catalogName: catalogName || null,
+        metadata,
         createdAt
     };
 
@@ -107,10 +238,13 @@ function normalizeCatalog(items = [], {
     fallbackChannelType = null
 } = {}) {
     return (Array.isArray(items) ? items : [])
-        .map((item) => normalizeProduct(item, { fallbackModuleId, fallbackCatalogId, fallbackChannelType }))
+        .map((item) => normalizeProduct(item, {
+            fallbackModuleId,
+            fallbackCatalogId,
+            fallbackChannelType
+        }))
         .filter(Boolean);
 }
-
 async function ensurePostgresSchema() {
     if (postgresSchemaReadyPromise) return postgresSchemaReadyPromise;
 
@@ -118,12 +252,19 @@ async function ensurePostgresSchema() {
         await queryPostgres('ALTER TABLE IF EXISTS catalog_items ADD COLUMN IF NOT EXISTS module_id TEXT');
         await queryPostgres('ALTER TABLE IF EXISTS catalog_items ADD COLUMN IF NOT EXISTS catalog_id TEXT');
         await queryPostgres('ALTER TABLE IF EXISTS catalog_items ADD COLUMN IF NOT EXISTS channel_type TEXT');
+        await queryPostgres('ALTER TABLE IF EXISTS catalog_items ADD COLUMN IF NOT EXISTS source TEXT');
+        await queryPostgres("ALTER TABLE IF EXISTS catalog_items ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb");
         await queryPostgres("UPDATE catalog_items SET module_id = '' WHERE module_id IS NULL");
         await queryPostgres("UPDATE catalog_items SET catalog_id = '' WHERE catalog_id IS NULL");
         await queryPostgres("ALTER TABLE IF EXISTS catalog_items ALTER COLUMN module_id SET DEFAULT ''");
         await queryPostgres("ALTER TABLE IF EXISTS catalog_items ALTER COLUMN catalog_id SET DEFAULT ''");
         await queryPostgres("ALTER TABLE IF EXISTS catalog_items ALTER COLUMN module_id SET NOT NULL");
         await queryPostgres("ALTER TABLE IF EXISTS catalog_items ALTER COLUMN catalog_id SET NOT NULL");
+        await queryPostgres("UPDATE catalog_items SET source = 'local' WHERE source IS NULL OR source = ''");
+        await queryPostgres("UPDATE catalog_items SET metadata = '{}'::jsonb WHERE metadata IS NULL");
+        await queryPostgres("ALTER TABLE IF EXISTS catalog_items ALTER COLUMN source SET DEFAULT 'local'");
+        await queryPostgres("ALTER TABLE IF EXISTS catalog_items ALTER COLUMN metadata SET DEFAULT '{}'::jsonb");
+        await queryPostgres("ALTER TABLE IF EXISTS catalog_items ALTER COLUMN metadata SET NOT NULL");
         await queryPostgres(
             `DO $$
              BEGIN
@@ -242,23 +383,30 @@ async function loadCatalogFromPostgres(options = {}) {
 
     try {
         const { rows } = await queryPostgres(
-            `SELECT item_id, module_id, catalog_id, channel_type, title, price, description, image_url, created_at
+            `SELECT item_id, module_id, catalog_id, channel_type, title, price, description, image_url, source, metadata, created_at
                FROM catalog_items
               WHERE ${clauses.join(' AND ')}
               ORDER BY created_at DESC, item_id DESC, catalog_id DESC`,
             params
         );
 
-        return rows.map((row) => ({
+        return rows.map((row) => normalizeProduct({
             id: String(row.item_id || '').trim(),
-            moduleId: normalizeModuleId(row.module_id || ''),
-            catalogId: normalizeCatalogId(row.catalog_id || catalogId || ''),
-            channelType: normalizeChannelType(row.channel_type || ''),
-            title: String(row.title || '').trim() || 'Sin nombre',
-            price: sanitizePrice(row.price ?? ''),
-            description: String(row.description || '').trim(),
+            moduleId: row.module_id || '',
+            catalogId: row.catalog_id || catalogId || '',
+            channelType: row.channel_type || '',
+            title: row.title || '',
+            price: row.price ?? '',
+            description: row.description || '',
             imageUrl: row.image_url ? String(row.image_url).trim() : null,
+            source: row.source || 'local',
+            metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {},
             createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString()
+        }, {
+            withDefaults: true,
+            fallbackModuleId: moduleId,
+            fallbackCatalogId: catalogId,
+            fallbackChannelType: channelType
         }));
     } catch (error) {
         if (isMissingRelationError(error)) return [];
@@ -271,8 +419,8 @@ async function upsertCatalogItemPostgres(item, options = {}) {
     await ensurePostgresSchema();
 
     await queryPostgres(
-        `INSERT INTO catalog_items (tenant_id, item_id, module_id, catalog_id, channel_type, title, price, description, image_url, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+        `INSERT INTO catalog_items (tenant_id, item_id, module_id, catalog_id, channel_type, title, price, description, image_url, source, metadata, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, NOW(), NOW())
          ON CONFLICT (tenant_id, item_id, module_id, catalog_id)
          DO UPDATE SET
             module_id = EXCLUDED.module_id,
@@ -282,11 +430,24 @@ async function upsertCatalogItemPostgres(item, options = {}) {
             price = EXCLUDED.price,
             description = EXCLUDED.description,
             image_url = EXCLUDED.image_url,
+            source = EXCLUDED.source,
+            metadata = EXCLUDED.metadata,
             updated_at = NOW()`,
-        [tenantId, item.id, toModuleKey(item.moduleId), toCatalogKey(item.catalogId), item.channelType || null, item.title, item.price, item.description, item.imageUrl]
+        [
+            tenantId,
+            item.id,
+            toModuleKey(item.moduleId),
+            toCatalogKey(item.catalogId),
+            item.channelType || null,
+            item.title,
+            item.price,
+            item.description,
+            item.imageUrl,
+            item.source || 'local',
+            JSON.stringify(item?.metadata && typeof item.metadata === 'object' ? item.metadata : {})
+        ]
     );
 }
-
 async function deleteCatalogItemPostgres(itemId, options = {}) {
     const { tenantId, moduleId, catalogId } = resolveOptions(options);
     await ensurePostgresSchema();
@@ -342,16 +503,14 @@ async function loadCatalog(options = null) {
 }
 
 async function addProduct(product = {}, options = null) {
-    const { tenantId, moduleId, catalogId, channelType, includeLegacyEmptyCatalogId } = resolveOptions(options);
+    const { tenantId, moduleId, catalogId, channelType } = resolveOptions(options);
     const nextProduct = normalizeProduct({
+        ...(product && typeof product === 'object' ? product : {}),
         id: `prod_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
         moduleId: normalizeModuleId(product?.moduleId || moduleId || ''),
         catalogId: normalizeCatalogId(product?.catalogId || catalogId || ''),
         channelType: normalizeChannelType(product?.channelType || channelType || ''),
         title: product?.title || product?.name || 'Sin nombre',
-        price: product?.price || '',
-        description: product?.description || '',
-        imageUrl: product?.imageUrl || null,
         createdAt: new Date().toISOString()
     }, { withDefaults: true });
 
@@ -370,7 +529,7 @@ async function updateProduct(id, updates = {}, options = null) {
     const cleanId = String(id || '').trim();
     if (!cleanId) return null;
 
-    const { tenantId, moduleId, catalogId, channelType, includeLegacyEmptyCatalogId } = resolveOptions(options);
+    const { tenantId, moduleId, catalogId, channelType } = resolveOptions(options);
     const existingCatalog = await loadCatalog({ tenantId });
     const current = existingCatalog.find((item) => (
         item.id === cleanId

@@ -119,6 +119,14 @@ const normalizeProfilePhotoUrl = (rawUrl = '') => {
   return `${API_URL}/api/profile-photo?url=${encodeURIComponent(value)}`;
 };
 
+const normalizeModuleImageUrl = (rawUrl = '') => {
+  const value = String(rawUrl || '').trim();
+  if (!value) return null;
+  if (value.startsWith('data:') || value.startsWith('blob:')) return value;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith('/')) return `${API_URL}${value}`;
+  return `${API_URL}/${value}`;
+};
 const normalizeProfilePayload = (profile = null) => {
   if (!profile || typeof profile !== 'object') return null;
   return {
@@ -194,6 +202,39 @@ const isLikelyPhoneDigits = (digits = '') => {
   return d.length >= 8 && d.length <= 12;
 };
 
+const CHAT_SCOPE_SEPARATOR = '::mod::';
+const normalizeScopedModuleId = (value = '') => String(value || '').trim().toLowerCase();
+const parseScopedChatId = (value = '') => {
+  const raw = String(value || '').trim();
+  if (!raw) return { baseChatId: '', scopeModuleId: '' };
+  const idx = raw.lastIndexOf(CHAT_SCOPE_SEPARATOR);
+  if (idx < 0) return { baseChatId: raw, scopeModuleId: '' };
+  const baseChatId = String(raw.slice(0, idx) || '').trim();
+  const scopeModuleId = normalizeScopedModuleId(raw.slice(idx + CHAT_SCOPE_SEPARATOR.length));
+  if (!baseChatId || !scopeModuleId) return { baseChatId: raw, scopeModuleId: '' };
+  return { baseChatId, scopeModuleId };
+};
+const buildScopedChatId = (baseChatId = '', scopeModuleId = '') => {
+  const base = String(baseChatId || '').trim();
+  const scope = normalizeScopedModuleId(scopeModuleId);
+  if (!base || !scope) return base;
+  return `${base}${CHAT_SCOPE_SEPARATOR}${scope}`;
+};
+const normalizeChatScopedId = (chatId = '', fallbackModuleId = '') => {
+  const parsed = parseScopedChatId(chatId);
+  const base = String(parsed.baseChatId || chatId || '').trim();
+  const scope = parsed.scopeModuleId || normalizeScopedModuleId(fallbackModuleId);
+  return buildScopedChatId(base, scope) || base;
+};
+const chatIdsReferSameScope = (left = '', right = '') => {
+  const l = parseScopedChatId(left);
+  const r = parseScopedChatId(right);
+  const leftBase = String(l.baseChatId || left || '').trim();
+  const rightBase = String(r.baseChatId || right || '').trim();
+  if (!leftBase || !rightBase) return false;
+  if (leftBase !== rightBase) return false;
+  return String(l.scopeModuleId || '') === String(r.scopeModuleId || '');
+};
 const extractPhoneFromText = (value = '') => {
   const text = String(value || '');
   if (!text) return null;
@@ -424,10 +465,14 @@ const isPlaceholderChat = (chat = {}) => {
 };
 
 const chatIdentityKey = (chat = {}) => {
-  const id = String(chat?.id || '').trim();
+  const scopedId = normalizeChatScopedId(
+    chat?.id || '',
+    chat?.scopeModuleId || chat?.lastMessageModuleId || ''
+  );
+  if (scopedId) return `id:${scopedId}`;
   const phone = getBestChatPhone(chat);
   if (phone) return `phone:${phone}`;
-  return `id:${id}`;
+  return 'id:';
 };
 
 const dedupeChats = (list = []) => {
@@ -440,14 +485,30 @@ const dedupeChats = (list = []) => {
     deduped.push(chat);
   }
 
-  const namesWithHistory = new Set(
+  const scopedBases = new Set(
     deduped
+      .map((chat) => parseScopedChatId(chat?.id || ''))
+      .filter((parsed) => Boolean(parsed?.baseChatId) && Boolean(parsed?.scopeModuleId))
+      .map((parsed) => String(parsed.baseChatId || '').trim())
+      .filter(Boolean)
+  );
+
+  const scopeFiltered = deduped.filter((chat) => {
+    const parsed = parseScopedChatId(chat?.id || '');
+    const baseChatId = String(parsed?.baseChatId || chat?.baseChatId || chat?.id || '').trim();
+    if (!baseChatId) return true;
+    if (!parsed?.scopeModuleId && scopedBases.has(baseChatId)) return false;
+    return true;
+  });
+
+  const namesWithHistory = new Set(
+    scopeFiltered
       .filter((chat) => !isPlaceholderChat(chat))
       .map((chat) => normalizeDisplayNameKey(chat?.name || ''))
       .filter(Boolean)
   );
 
-  return deduped.filter((chat) => {
+  return scopeFiltered.filter((chat) => {
     if (!isPlaceholderChat(chat)) return true;
     const nameKey = normalizeDisplayNameKey(chat?.name || '');
     if (!nameKey) return true;
@@ -701,6 +762,7 @@ function App() {
   const suppressSmoothScrollUntilRef = useRef(0);
   const selectedTransportRef = useRef(selectedTransport);
   const selectedWaModuleRef = useRef(selectedWaModule);
+  const waModulesRef = useRef(waModules);
   const selectedCatalogModuleIdRef = useRef(selectedCatalogModuleId);
   const selectedCatalogIdRef = useRef(selectedCatalogId);
   const saasSessionRef = useRef(saasSession);
@@ -1020,6 +1082,10 @@ function App() {
   }, [selectedWaModule]);
 
   useEffect(() => {
+    waModulesRef.current = Array.isArray(waModules) ? waModules : [];
+  }, [waModules]);
+
+  useEffect(() => {
     selectedCatalogModuleIdRef.current = String(selectedCatalogModuleId || '').trim().toLowerCase();
   }, [selectedCatalogModuleId]);
 
@@ -1315,9 +1381,20 @@ function App() {
       const hydrated = rawItems
         .filter((chat) => chat?.id && isVisibleChatId(chat.id))
         .map((chat) => {
-          const previous = previousById.get(String(chat?.id || '')) || null;
+          const incomingScopeModuleId = String(chat?.scopeModuleId || chat?.lastMessageModuleId || chat?.sentViaModuleId || '').trim().toLowerCase();
+          const incomingChatId = String(chat?.id || '').trim();
+          const normalizedIncomingId = normalizeChatScopedId(incomingChatId, incomingScopeModuleId || '');
+          const previous = previousById.get(String(normalizedIncomingId || '')) || previousById.get(incomingChatId) || null;
+          const previousScopeModuleId = String(previous?.scopeModuleId || previous?.lastMessageModuleId || '').trim().toLowerCase();
+          const finalId = normalizeChatScopedId(normalizedIncomingId || incomingChatId, incomingScopeModuleId || previousScopeModuleId || '');
+          const parsedFinal = parseScopedChatId(finalId || incomingChatId);
+          const scopeModuleId = String(parsedFinal?.scopeModuleId || incomingScopeModuleId || previousScopeModuleId || '').trim().toLowerCase() || null;
+          const baseChatId = String(parsedFinal?.baseChatId || chat?.baseChatId || previous?.baseChatId || incomingChatId).trim() || null;
           return {
             ...chat,
+            id: finalId || incomingChatId,
+            baseChatId,
+            scopeModuleId,
             name: sanitizeDisplayText(chat?.name || ''),
             subtitle: sanitizeDisplayText(chat?.subtitle || ''),
             status: sanitizeDisplayText(chat?.status || ''),
@@ -1327,8 +1404,9 @@ function App() {
             profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
             isMyContact: chat?.isMyContact === true,
             archived: Boolean(chat?.archived),
-            lastMessageModuleId: String(chat?.lastMessageModuleId || chat?.sentViaModuleId || previous?.lastMessageModuleId || '').trim().toLowerCase() || null,
+            lastMessageModuleId: String(chat?.lastMessageModuleId || chat?.sentViaModuleId || scopeModuleId || previous?.lastMessageModuleId || '').trim().toLowerCase() || null,
             lastMessageModuleName: String(chat?.lastMessageModuleName || chat?.sentViaModuleName || previous?.lastMessageModuleName || '').trim() || null,
+            lastMessageModuleImageUrl: normalizeModuleImageUrl(chat?.lastMessageModuleImageUrl || chat?.sentViaModuleImageUrl || previous?.lastMessageModuleImageUrl || '') || null,
             lastMessageTransport: String(chat?.lastMessageTransport || chat?.sentViaTransport || previous?.lastMessageTransport || '').trim().toLowerCase() || null,
             lastMessageChannelType: String(chat?.lastMessageChannelType || chat?.sentViaChannelType || previous?.lastMessageChannelType || '').trim().toLowerCase() || null
           };
@@ -1356,9 +1434,24 @@ function App() {
 
     socket.on('chat_updated', (chat) => {
       if (!chat?.id || !isVisibleChatId(chat.id)) return;
-      const previous = (Array.isArray(chatsRef.current) ? chatsRef.current : []).find((entry) => String(entry?.id || '') === String(chat.id || '')) || null;
+            const incomingScopeModuleId = String(chat?.scopeModuleId || chat?.lastMessageModuleId || chat?.sentViaModuleId || '').trim().toLowerCase();
+      const incomingChatId = String(chat?.id || '').trim();
+      const normalizedIncomingId = normalizeChatScopedId(incomingChatId, incomingScopeModuleId || '');
+      const previous = (Array.isArray(chatsRef.current) ? chatsRef.current : []).find((entry) => {
+        if (!entry?.id) return false;
+        if (String(entry.id) === String(normalizedIncomingId || incomingChatId)) return true;
+        return chatIdsReferSameScope(String(entry.id), String(normalizedIncomingId || incomingChatId));
+      }) || null;
+      const previousScopeModuleId = String(previous?.scopeModuleId || previous?.lastMessageModuleId || '').trim().toLowerCase();
+      const finalId = normalizeChatScopedId(normalizedIncomingId || incomingChatId, incomingScopeModuleId || previousScopeModuleId || '');
+      const parsedFinal = parseScopedChatId(finalId || incomingChatId);
+      const scopeModuleId = String(parsedFinal?.scopeModuleId || incomingScopeModuleId || previousScopeModuleId || '').trim().toLowerCase() || null;
+      const baseChatId = String(parsedFinal?.baseChatId || chat?.baseChatId || previous?.baseChatId || incomingChatId).trim() || null;
       const hydrated = {
         ...chat,
+        id: finalId || incomingChatId,
+        baseChatId,
+        scopeModuleId,
         name: sanitizeDisplayText(chat?.name || ''),
         subtitle: sanitizeDisplayText(chat?.subtitle || ''),
         status: sanitizeDisplayText(chat?.status || ''),
@@ -1368,8 +1461,9 @@ function App() {
         profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
         isMyContact: chat?.isMyContact === true,
         archived: Boolean(chat?.archived),
-        lastMessageModuleId: String(chat?.lastMessageModuleId || chat?.sentViaModuleId || previous?.lastMessageModuleId || '').trim().toLowerCase() || null,
+        lastMessageModuleId: String(chat?.lastMessageModuleId || chat?.sentViaModuleId || scopeModuleId || previous?.lastMessageModuleId || '').trim().toLowerCase() || null,
         lastMessageModuleName: String(chat?.lastMessageModuleName || chat?.sentViaModuleName || previous?.lastMessageModuleName || '').trim() || null,
+        lastMessageModuleImageUrl: normalizeModuleImageUrl(chat?.lastMessageModuleImageUrl || chat?.sentViaModuleImageUrl || previous?.lastMessageModuleImageUrl || '') || null,
         lastMessageTransport: String(chat?.lastMessageTransport || chat?.sentViaTransport || previous?.lastMessageTransport || '').trim().toLowerCase() || null,
         lastMessageChannelType: String(chat?.lastMessageChannelType || chat?.sentViaChannelType || previous?.lastMessageChannelType || '').trim().toLowerCase() || null
       };
@@ -1382,23 +1476,50 @@ function App() {
       setChats((prev) => upsertAndSortChat(prev, hydrated));
     });
 
-    socket.on('chat_opened', ({ chatId, phone }) => {
-      if (!chatId) {
+    socket.on('chat_opened', ({ chatId, baseChatId, moduleId, phone }) => {
+      const targetChatId = String(chatId || '').trim();
+      if (!targetChatId) {
         requestChatsPage({ reset: true });
         return;
       }
 
-      const normalizedPhone = normalizeDigits(phone || '');
-      let targetChatId = chatId;
+      const parsed = parseScopedChatId(targetChatId);
+      const scopeModuleId = String(parsed?.scopeModuleId || moduleId || '').trim().toLowerCase() || null;
+      const safeBaseChatId = String(parsed?.baseChatId || baseChatId || targetChatId).trim();
+      const safePhone = normalizeDigits(phone || '');
 
-      if (normalizedPhone) {
-        const existing = chatsRef.current.find((c) => normalizeDigits(c?.phone || '') === normalizedPhone || chatIdentityKey(c) === ('phone:' + normalizedPhone));
-        if (existing?.id) targetChatId = existing.id;
-      }
+      setChats((prev) => {
+        if ((Array.isArray(prev) ? prev : []).some((entry) => chatIdsReferSameScope(String(entry?.id || ''), targetChatId))) {
+          return prev;
+        }
 
-      if (targetChatId !== chatId) {
-        setChats((prev) => prev.filter((c) => c.id !== chatId));
-      }
+        const moduleConfig = normalizeWaModules(waModulesRef.current || [])
+          .find((entry) => String(entry?.moduleId || '').trim().toLowerCase() === String(scopeModuleId || '').trim().toLowerCase()) || null;
+
+        const placeholder = {
+          id: targetChatId,
+          baseChatId: safeBaseChatId || null,
+          scopeModuleId,
+          name: safePhone ? ('+' + safePhone) : 'Nuevo chat',
+          phone: safePhone || null,
+          subtitle: null,
+          unreadCount: 0,
+          timestamp: Math.floor(Date.now() / 1000),
+          lastMessage: '',
+          lastMessageFromMe: false,
+          ack: 0,
+          labels: [],
+          archived: false,
+          isMyContact: false,
+          lastMessageModuleId: scopeModuleId,
+          lastMessageModuleName: String(moduleConfig?.name || '').trim() || (scopeModuleId ? String(scopeModuleId || '').toUpperCase() : null),
+          lastMessageModuleImageUrl: normalizeModuleImageUrl(moduleConfig?.imageUrl || moduleConfig?.logoUrl || '') || null,
+          lastMessageChannelType: String(moduleConfig?.channelType || '').trim().toLowerCase() || null,
+          lastMessageTransport: String(moduleConfig?.transportMode || '').trim().toLowerCase() || null
+        };
+
+        return upsertAndSortChat(prev, placeholder);
+      });
 
       handleChatSelect(targetChatId, { clearSearch: true });
     });
@@ -1461,15 +1582,8 @@ function App() {
 
     socket.on('chat_media', ({ chatId, messageId, mediaData, mimetype, filename, fileSizeBytes }) => {
       const active = String(activeChatIdRef.current || '');
-      const incoming = String(chatId || '');
-      if (incoming !== active) {
-        const incomingDigits = normalizeDigits(incoming.split('@')[0] || '');
-        const activeDigits = normalizeDigits(active.split('@')[0] || '');
-        const sameByDigits = incomingDigits && activeDigits && (
-          incomingDigits === activeDigits || incomingDigits.endsWith(activeDigits) || activeDigits.endsWith(incomingDigits)
-        );
-        if (!sameByDigits) return;
-      }
+      const incoming = String(chatId || '').trim();
+      if (!incoming || !chatIdsReferSameScope(incoming, active)) return;
       if (!messageId || !mediaData) return;
       const nextFilename = normalizeMessageFilename(filename);
       const nextSize = Number.isFinite(Number(fileSizeBytes)) ? Number(fileSizeBytes) : null;
@@ -1517,7 +1631,7 @@ function App() {
       });
 
       setChats((prev) => {
-        const existing = prev.find((c) => c.id === contactId || (contactPhone && getBestChatPhone(c) === contactPhone));
+        const existing = prev.find((c) => chatIdsReferSameScope(String(c?.id || ''), contactId));
         if (!existing) return prev;
 
         const fallbackName = sanitizeDisplayText(contact?.name || contact?.pushname || contact?.shortName || existing?.name || '');
@@ -1546,7 +1660,7 @@ function App() {
     });
 
     socket.on('message', (msg) => {
-      const relatedChatId = msg.fromMe ? msg.to : msg.from;
+      const relatedChatId = String(msg?.chatId || (msg.fromMe ? msg.to : msg.from) || '').trim();
       if (!isVisibleChatId(relatedChatId)) return;
 
       if (!msg.fromMe && Notification.permission === 'granted') {
@@ -1556,7 +1670,7 @@ function App() {
         });
       }
 
-      if (!msg.fromMe && relatedChatId !== activeChatIdRef.current) {
+      if (!msg.fromMe && !chatIdsReferSameScope(relatedChatId, String(activeChatIdRef.current || ''))) {
         const toastId = String(msg.id || Date.now());
         setToasts((prev) => [...prev, {
           id: toastId,
@@ -1581,12 +1695,18 @@ function App() {
           ? fallbackName
           : (isLikelyPhoneDigits(fallbackDigits) ? ('+' + fallbackDigits) : 'Contacto');
 
-        const incomingIdentity = chatIdentityKey({ id: relatedChatId, phone: fallbackDigits, subtitle: fallbackName });
-        const existing = prev.find((c) => c.id === relatedChatId || chatIdentityKey(c) === incomingIdentity);
-        const canonicalId = existing?.id || relatedChatId;
+                const incomingScopeModuleId = String(msg?.scopeModuleId || msg?.sentViaModuleId || '').trim().toLowerCase();
+        const incomingIdentity = `id:${normalizeChatScopedId(relatedChatId, incomingScopeModuleId || '')}`;
+        const existing = prev.find((c) => chatIdsReferSameScope(String(c?.id || ''), relatedChatId));
+        const canonicalId = normalizeChatScopedId(existing?.id || relatedChatId, incomingScopeModuleId || '');
+        const parsedCanonicalId = parseScopedChatId(canonicalId);
+        const canonicalScopeModuleId = String(parsedCanonicalId?.scopeModuleId || incomingScopeModuleId || existing?.scopeModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null;
+        const baseChatId = String(parsedCanonicalId?.baseChatId || existing?.baseChatId || relatedChatId).trim() || null;
         const nextChat = {
-          ...(existing || { id: canonicalId, name: safeName, phone: isLikelyPhoneDigits(fallbackDigits) ? fallbackDigits : null, subtitle: null, labels: [] }),
+          ...(existing || { id: canonicalId, baseChatId, scopeModuleId: canonicalScopeModuleId, name: safeName, phone: isLikelyPhoneDigits(fallbackDigits) ? fallbackDigits : null, subtitle: null, labels: [] }),
           id: canonicalId,
+          baseChatId,
+          scopeModuleId: canonicalScopeModuleId,
           name: sanitizeDisplayText(existing?.name || '') && !isInternalIdentifier(existing?.name || '')
             ? existing.name
             : safeName,
@@ -1597,9 +1717,10 @@ function App() {
           lastMessageFromMe: !!msg.fromMe,
           ack: msg.ack || 0,
           isMyContact: existing?.isMyContact === true,
-          unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (canonicalId === activeChatIdRef.current ? 0 : (existing?.unreadCount || 0) + 1),
-          lastMessageModuleId: String(msg?.sentViaModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null,
+          unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (chatIdsReferSameScope(canonicalId, String(activeChatIdRef.current || '')) ? 0 : (existing?.unreadCount || 0) + 1),
+          lastMessageModuleId: String(msg?.sentViaModuleId || canonicalScopeModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null,
           lastMessageModuleName: String(msg?.sentViaModuleName || existing?.lastMessageModuleName || '').trim() || null,
+          lastMessageModuleImageUrl: normalizeModuleImageUrl(msg?.sentViaModuleImageUrl || existing?.lastMessageModuleImageUrl || '') || null,
           lastMessageTransport: String(msg?.sentViaTransport || existing?.lastMessageTransport || '').trim().toLowerCase() || null,
           lastMessageChannelType: String(msg?.sentViaChannelType || existing?.lastMessageChannelType || '').trim().toLowerCase() || null,
         };
@@ -1635,6 +1756,7 @@ function App() {
               sentByRole: String(normalizedIncoming?.sentByRole || existing?.sentByRole || '').trim() || null,
               sentViaModuleId: String(normalizedIncoming?.sentViaModuleId || existing?.sentViaModuleId || '').trim() || null,
               sentViaModuleName: String(normalizedIncoming?.sentViaModuleName || existing?.sentViaModuleName || '').trim() || null,
+              sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || existing?.sentViaModuleImageUrl || '') || null,
               sentViaTransport: String(normalizedIncoming?.sentViaTransport || existing?.sentViaTransport || '').trim() || null,
               quotedMessage: normalizeQuotedMessage(normalizedIncoming?.quotedMessage || existing?.quotedMessage)
             };
@@ -1645,26 +1767,8 @@ function App() {
         }
 
         const activeId = String(activeChatIdRef.current || '');
-        const incomingChatId = String((msg.fromMe ? msg.to : msg.from) || '');
-        const activeIdDigits = normalizeDigits(activeId.split('@')[0] || '');
-        const incomingDigits = normalizeDigits(incomingChatId.split('@')[0] || '');
-        const activeChat = chatsRef.current.find((c) => c.id === activeId);
-        const activePhoneDigits = normalizeDigits(activeChat?.phone || '');
-
-        const sameById = incomingChatId === activeId;
-        const sameByIdDigits = activeIdDigits && incomingDigits && (
-          activeIdDigits === incomingDigits
-          || activeIdDigits.endsWith(incomingDigits)
-          || incomingDigits.endsWith(activeIdDigits)
-        );
-        const sameByPhone = activePhoneDigits && incomingDigits && (
-          activePhoneDigits === incomingDigits
-          || activePhoneDigits.endsWith(incomingDigits)
-          || incomingDigits.endsWith(activePhoneDigits)
-        );
-
-        const shouldAdd = sameById || sameByIdDigits || sameByPhone;
-        if (!shouldAdd) return prev;
+        const incomingChatId = String(normalizedIncoming?.chatId || (normalizedIncoming.fromMe ? normalizedIncoming.to : normalizedIncoming.from) || '').trim();
+        if (!chatIdsReferSameScope(incomingChatId, activeId)) return prev;
         return [...prev, normalizedIncoming];
       });
     });
@@ -1856,17 +1960,15 @@ function App() {
     });
 
 
-    socket.on('message_ack', ({ id, ack, chatId, canEdit }) => {
+    socket.on('message_ack', ({ id, ack, chatId, baseChatId, scopeModuleId, canEdit }) => {
       setMessages(prev => prev.map((m) => (
         m.id === id
           ? { ...m, ack, canEdit: typeof canEdit === 'boolean' ? canEdit : m.canEdit }
           : m
       )));
-      const ackChatId = String(chatId || '');
-      const ackDigits = normalizeDigits(ackChatId.split('@')[0] || '');
+            const ackChatId = normalizeChatScopedId(chatId || baseChatId || '', scopeModuleId || '');
       setChats(prev => prev.map((c) => {
-        const chatDigits = normalizeDigits(c?.phone || c?.id || '');
-        const sameChat = c.id === ackChatId || (ackDigits && chatDigits && (chatDigits === ackDigits || chatDigits.endsWith(ackDigits) || ackDigits.endsWith(chatDigits)));
+        const sameChat = ackChatId ? chatIdsReferSameScope(String(c?.id || ''), ackChatId) : false;
         if (!sameChat || !c.lastMessageFromMe) return c;
         return { ...c, ack };
       }));
@@ -2279,7 +2381,7 @@ function App() {
     }
   };
 
-  const handleChatSelect = (chatId, options = {}) => {
+    const handleChatSelect = (chatId, options = {}) => {
     if (!chatId) return;
     const clearSearch = Boolean(options?.clearSearch);
     if (clearSearch && chatSearchRef.current) {
@@ -2288,26 +2390,35 @@ function App() {
       requestChatsPage({ reset: true });
     }
 
-    const selectedChat = chatsRef.current.find((c) => String(c?.id || '') === String(chatId || '')) || null;
-    const targetModuleId = String(selectedChat?.lastMessageModuleId || '').trim().toLowerCase();
-    const currentModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
-    if (targetModuleId && targetModuleId !== currentModuleId) {
-      const targetModule = (Array.isArray(waModules) ? waModules : [])
-        .find((item) => String(item?.moduleId || '').trim().toLowerCase() === targetModuleId);
-      if (targetModule?.moduleId) {
-        setSelectedWaModule(targetModule);
-        setWaModules((prev) => normalizeWaModules((Array.isArray(prev) ? prev : []).map((item) => ({
-          ...item,
-          isSelected: String(item?.moduleId || '').trim().toLowerCase() === targetModuleId
-        }))));
-        if (socket.connected) {
-          socket.emit('set_wa_module', { moduleId: targetModule.moduleId });
+    const requestedChatId = String(chatId || '').trim();
+    let resolvedChatId = requestedChatId;
+    let selectedChat = chatsRef.current.find((c) => String(c?.id || '') === requestedChatId) || null;
+
+    if (selectedChat) {
+      const parsedSelected = parseScopedChatId(selectedChat?.id || '');
+      const selectedScopeModuleId = String(parsedSelected?.scopeModuleId || selectedChat?.scopeModuleId || selectedChat?.lastMessageModuleId || '').trim().toLowerCase();
+      if (!selectedScopeModuleId) {
+        const baseSelectedChatId = String(parsedSelected?.baseChatId || selectedChat?.baseChatId || selectedChat?.id || '').trim();
+        if (baseSelectedChatId) {
+          const scopedCandidates = chatsRef.current
+            .filter((entry) => {
+              const parsedEntry = parseScopedChatId(entry?.id || '');
+              const entryBase = String(parsedEntry?.baseChatId || entry?.baseChatId || entry?.id || '').trim();
+              const entryScope = String(parsedEntry?.scopeModuleId || entry?.scopeModuleId || entry?.lastMessageModuleId || '').trim().toLowerCase();
+              return Boolean(entryBase && entryBase === baseSelectedChatId && entryScope);
+            })
+            .sort((a, b) => Number(b?.timestamp || 0) - Number(a?.timestamp || 0));
+          if (scopedCandidates.length > 0) {
+            selectedChat = scopedCandidates[0];
+            resolvedChatId = String(selectedChat?.id || requestedChatId);
+          }
         }
       }
     }
 
-    activeChatIdRef.current = chatId;
-    setActiveChatId(chatId);
+
+    activeChatIdRef.current = resolvedChatId;
+    setActiveChatId(resolvedChatId);
     shouldInstantScrollRef.current = true;
     suppressSmoothScrollUntilRef.current = Date.now() + 2200;
     prevMessagesMetaRef.current = { count: 0, lastId: '' };
@@ -2316,10 +2427,10 @@ function App() {
     setReplyingMessage(null);
     setShowClientProfile(false);
     setClientContact(null);
-    socket.emit('get_chat_history', chatId);
-    socket.emit('mark_chat_read', chatId);
-    socket.emit('get_contact_info', chatId);
-    setChats((prev) => prev.map((c) => c.id === chatId ? { ...c, unreadCount: 0 } : c));
+    socket.emit('get_chat_history', resolvedChatId);
+    socket.emit('mark_chat_read', resolvedChatId);
+    socket.emit('get_contact_info', resolvedChatId);
+    setChats((prev) => prev.map((c) => chatIdsReferSameScope(String(c?.id || ''), resolvedChatId) ? { ...c, unreadCount: 0 } : c));
   };
   const handleExitActiveChat = () => {
     activeChatIdRef.current = null;
@@ -2461,6 +2572,40 @@ function App() {
       });
     }
   };
+  const handleUploadCatalogImage = async ({ dataUrl, fileName, scope = '' } = {}) => {
+    const safeDataUrl = String(dataUrl || '').trim();
+    if (!safeDataUrl) throw new Error('No se recibio imagen para subir.');
+
+    const tenantId = String(saasSessionRef.current?.user?.tenantId || saasRuntimeRef.current?.tenant?.id || tenantScopeId || 'default').trim() || 'default';
+    const moduleId = String(selectedCatalogModuleIdRef.current || selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
+    const scopeSuffix = moduleId ? `catalog-${moduleId}` : 'catalog';
+    const safeScope = String(scope || scopeSuffix).trim() || scopeSuffix;
+
+    const response = await fetch(`${API_URL}/api/admin/saas/assets/upload`, {
+      method: 'POST',
+      headers: buildApiHeaders({ includeJson: true }),
+      body: JSON.stringify({
+        tenantId,
+        scope: safeScope,
+        fileName: String(fileName || 'producto').trim() || 'producto',
+        dataUrl: safeDataUrl
+      })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(String(payload?.error || 'No se pudo subir la imagen.'));
+    }
+
+    const url = String(payload?.file?.url || payload?.file?.relativeUrl || '').trim();
+    if (!url) throw new Error('El servidor no devolvio URL para la imagen.');
+    return {
+      url,
+      relativeUrl: String(payload?.file?.relativeUrl || '').trim() || null,
+      mimeType: String(payload?.file?.mimeType || '').trim() || null,
+      sizeBytes: Number(payload?.file?.sizeBytes || 0) || 0
+    };
+  };
   const handleOpenWhatsAppOperation = (moduleId = '', options = {}) => {
     const preferredModuleId = String(moduleId || '').trim();
     const targetTenantId = String(options?.tenantId || tenantScopeId || '').trim();
@@ -2576,11 +2721,47 @@ function App() {
     if (!normalizedPhone) return;
     const firstMessage = typeof firstMessageArg === 'string' ? firstMessageArg : (window.prompt('Mensaje inicial (opcional):') || '');
 
+    const availableModules = normalizeWaModules(waModulesRef.current).filter((module) => module.isActive !== false);
+    const preferredModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
+    let targetModuleId = '';
+
+    if (availableModules.length === 1) {
+      targetModuleId = String(availableModules[0]?.moduleId || '').trim().toLowerCase();
+    } else if (availableModules.length > 1) {
+      const defaultModule = availableModules.find((module) => String(module?.moduleId || '').trim().toLowerCase() === preferredModuleId)
+        || availableModules[0];
+      const listing = availableModules
+        .map((module, idx) => `${idx + 1}. ${module.name} (${module.moduleId})`)
+        .join('\n');
+      const rawPick = window.prompt(
+        `Selecciona el modulo para iniciar el chat:\n${listing}`,
+        String(defaultModule?.moduleId || '').trim()
+      );
+      if (!rawPick) return;
+      const picked = String(rawPick || '').trim().toLowerCase();
+      const asIndex = Number.parseInt(picked, 10);
+      if (Number.isFinite(asIndex) && asIndex >= 1 && asIndex <= availableModules.length) {
+        targetModuleId = String(availableModules[asIndex - 1]?.moduleId || '').trim().toLowerCase();
+      } else {
+        const pickedModule = availableModules.find((module) => String(module?.moduleId || '').trim().toLowerCase() === picked);
+        if (!pickedModule?.moduleId) {
+          window.alert('Modulo invalido para iniciar el chat.');
+          return;
+        }
+        targetModuleId = String(pickedModule.moduleId || '').trim().toLowerCase();
+      }
+    } else if (preferredModuleId) {
+      targetModuleId = preferredModuleId;
+    }
+
     const candidates = chatsRef.current
       .filter((c) => {
-        const chatPhone = normalizeDigits(c?.phone || c?.id || '');
-        if (!chatPhone) return false;
-        return chatPhone === normalizedPhone;
+        const chatPhone = normalizeDigits(getBestChatPhone(c) || '');
+        if (!chatPhone || chatPhone !== normalizedPhone) return false;
+        if (!targetModuleId) return true;
+        const scoped = parseScopedChatId(c?.id || '');
+        const chatModuleId = String(scoped.scopeModuleId || c?.lastMessageModuleId || '').trim().toLowerCase();
+        return chatModuleId === targetModuleId;
       })
       .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
@@ -2589,13 +2770,21 @@ function App() {
       if (best?.id) {
         handleChatSelect(best.id, { clearSearch: true });
         if (firstMessage?.trim()) {
-          socket.emit('send_message', { to: best.id, body: firstMessage.trim() });
+          socket.emit('send_message', {
+            to: best.id,
+            toPhone: normalizedPhone,
+            body: firstMessage.trim()
+          });
         }
         return;
       }
     }
 
-    socket.emit('start_new_chat', { phone: normalizedPhone, firstMessage });
+    socket.emit('start_new_chat', {
+      phone: normalizedPhone,
+      firstMessage,
+      moduleId: targetModuleId || undefined
+    });
   };
 
 
@@ -3229,6 +3418,7 @@ REGLA CRITICA:
         onSaasLogout={handleSaasLogout}
         canManageSaas={canManageSaas}
         onOpenSaasAdmin={() => setShowSaasAdminPanel(true)}
+        waModules={availableWaModules}
       />
 
       {/* Main Content Area */}
@@ -3349,6 +3539,7 @@ REGLA CRITICA:
             selectedCatalogId={activeCatalogId}
             onSelectCatalogModule={handleSelectCatalogModule}
             onSelectCatalog={handleSelectCatalog}
+            onUploadCatalogImage={handleUploadCatalogImage}
           />
         )}
       </div>
@@ -3371,5 +3562,4 @@ REGLA CRITICA:
 }
 
 export default App;
-
 
