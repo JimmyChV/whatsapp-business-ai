@@ -137,6 +137,24 @@ function createUniqueAssistantId(items = []) {
     return `AIA-${fallback}`;
 }
 
+function createStableAssistantId(seed = '', usedIds = []) {
+    const blocked = new Set(
+        (Array.isArray(usedIds) ? usedIds : [])
+            .map((entry) => normalizeAiAssistantId(entry || ''))
+            .filter(Boolean)
+    );
+    const safeSeed = String(seed || '').trim() || 'assistant';
+
+    for (let i = 0; i < 256; i += 1) {
+        const digest = crypto.createHash('sha1').update(`${safeSeed}|${i}`).digest('hex').toUpperCase();
+        const suffix = String(digest || '').replace(/[^A-Z0-9]/g, '').slice(0, 6).padEnd(6, '0');
+        const candidate = `AIA-${suffix}`;
+        if (!blocked.has(candidate)) return candidate;
+    }
+
+    return createUniqueAssistantId(Array.from(blocked).map((assistantId) => ({ assistantId })));
+}
+
 function normalizeFloatInRange(value, fallback = 1, { min = 0, max = 1, decimals = 2 } = {}) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return fallback;
@@ -153,13 +171,10 @@ function normalizeAiAssistantRecord(input = {}, existing = {}, {
     const source = isPlainObject(input) ? input : {};
     const current = isPlainObject(existing) ? existing : {};
 
-    const assistantId = normalizeAiAssistantId(
-        source.assistantId
-        || source.id
-        || fallbackId
-        || current.assistantId
-        || current.id
-    );
+    const sourceAssistantId = normalizeAiAssistantId(source.assistantId || source.id || '');
+    const currentAssistantId = normalizeAiAssistantId(current.assistantId || current.id || '');
+    const fallbackAssistantId = normalizeAiAssistantId(fallbackId || '');
+    const assistantId = sourceAssistantId || currentAssistantId || fallbackAssistantId;
     if (!assistantId) return null;
 
     const hasSourceAiApiKey = Object.prototype.hasOwnProperty.call(source, 'openaiApiKey');
@@ -232,7 +247,14 @@ function normalizeAssistantListForStorage(sourceAi = {}, currentAi = {}, {
     (Array.isArray(working) ? working : []).forEach((entry) => {
         const cleanId = normalizeAiAssistantId(entry?.assistantId || entry?.id || '');
         const existing = cleanId ? (currentById.get(cleanId) || {}) : {};
-        const fallbackId = createUniqueAssistantId(normalized);
+        const stableSeed = [
+            String(entry?.assistantId || entry?.id || '').trim(),
+            String(entry?.name || '').trim(),
+            String(entry?.createdAt || '').trim(),
+            String(entry?.updatedAt || '').trim(),
+            String(normalized.length)
+        ].join('|');
+        const fallbackId = createStableAssistantId(stableSeed, [...currentById.keys(), ...seen]);
         const normalizedEntry = normalizeAiAssistantRecord(
             cleanId ? { ...entry, assistantId: cleanId } : entry,
             existing,

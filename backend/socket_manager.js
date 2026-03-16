@@ -4640,7 +4640,7 @@ class SocketManager {
                             fallbackBody: firstText,
                             moduleContext: activeModuleContext,
                             agentMeta: firstAgentMeta,
-                            mediaPayload: catalogMediaPayload
+                            mediaPayload: null
                         });
                     }
 
@@ -5031,7 +5031,7 @@ class SocketManager {
                         quotedMessageId: quoted,
                         moduleContext,
                         agentMeta,
-                        mediaPayload: catalogMediaPayload
+                        mediaPayload: null
                     });
                 } catch (e) {
                     const detail = String(e?.message || e || 'Failed to send message.');
