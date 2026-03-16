@@ -271,7 +271,16 @@ function normalizeAssistantListForStorage(sourceAi = {}, currentAi = {}, {
     });
 
     if (!normalized.length) {
-        const bootstrapId = createUniqueAssistantId([]);
+        const preferredBootstrapId = normalizeAiAssistantId(sourceAi?.defaultAssistantId || currentAi?.defaultAssistantId || '');
+        const bootstrapSeed = [
+            String(sourceAi?.provider ?? currentAi?.provider ?? fallbackProvider),
+            String(sourceAi?.model ?? currentAi?.model ?? fallbackModel),
+            String(sourceAi?.name || ''),
+            String(sourceAi?.description || ''),
+            String(sourceAi?.systemPrompt || ''),
+            String(sourceAi?.openaiApiKey ?? currentAi?.openaiApiKey ?? fallbackApiKey ?? '')
+        ].join('|');
+        const bootstrapId = preferredBootstrapId || createStableAssistantId(`bootstrap|${bootstrapSeed}`, []);
         const bootstrap = normalizeAiAssistantRecord({
             assistantId: bootstrapId,
             name: 'Asistente principal',
@@ -749,7 +758,7 @@ async function createTenantAiAssistant(tenantId = DEFAULT_TENANT_ID, payload = {
 
     const source = isPlainObject(payload) ? payload : {};
     const requestedId = normalizeAiAssistantId(source.assistantId || source.id || '');
-    if (requestedId && assistants.some((entry) => entry.assistantId === requestedId)) {
+    if (requestedId && assistants.some((entry) => normalizeAiAssistantId(entry?.assistantId || entry?.id || '') === requestedId)) {
         throw new Error('Ya existe un asistente IA con ese codigo.');
     }
 
@@ -807,7 +816,7 @@ async function updateTenantAiAssistant(tenantId = DEFAULT_TENANT_ID, assistantId
     const clean = normalizeIntegrationsForStorage(current, current);
     const aiCurrent = isPlainObject(clean.ai) ? clean.ai : {};
     const assistants = Array.isArray(aiCurrent.assistants) ? aiCurrent.assistants : [];
-    const index = assistants.findIndex((entry) => entry.assistantId === targetId);
+    const index = assistants.findIndex((entry) => normalizeAiAssistantId(entry?.assistantId || entry?.id || '') === targetId);
     if (index < 0) throw new Error('Asistente IA no encontrado.');
 
     const source = isPlainObject(patch) ? patch : {};
@@ -872,7 +881,7 @@ async function setDefaultTenantAiAssistant(tenantId = DEFAULT_TENANT_ID, assista
     const clean = normalizeIntegrationsForStorage(current, current);
     const aiCurrent = isPlainObject(clean.ai) ? clean.ai : {};
     const assistants = Array.isArray(aiCurrent.assistants) ? aiCurrent.assistants : [];
-    const target = assistants.find((entry) => entry.assistantId === targetId) || null;
+    const target = assistants.find((entry) => normalizeAiAssistantId(entry?.assistantId || entry?.id || '') === targetId) || null;
     if (!target) throw new Error('Asistente IA no encontrado.');
     if (target.isActive === false) throw new Error('No se puede establecer como principal un asistente inactivo.');
 
