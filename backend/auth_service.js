@@ -3,6 +3,7 @@ const authSessionService = require('./auth_session_service');
 const tenantService = require('./tenant_service');
 const saasControlService = require('./saas_control_plane_service');
 const accessPolicyService = require('./access_policy_service');
+const passwordHashService = require('./password_hash_service');
 
 function parseBooleanEnv(value, defaultValue = false) {
     const raw = String(value ?? '').trim().toLowerCase();
@@ -43,10 +44,6 @@ function safeEqual(left = '', right = '') {
 
 function nowEpochSeconds() {
     return Math.floor(Date.now() / 1000);
-}
-
-function sha256Hex(value = '') {
-    return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
 }
 
 function normalizePasswordInput(value = '') {
@@ -142,7 +139,7 @@ function parseUsersFromEnv() {
                 const role = normalizeRole(entry.role || memberships?.[0]?.role || 'seller');
                 const name = String(entry.name || entry.displayName || email || id).trim();
                 const password = String(entry.password || '');
-                const passwordHash = String(entry.passwordHash || entry.sha256 || '').trim().toLowerCase();
+                const passwordHash = passwordHashService.normalizeStoredHash(entry.passwordHash || entry.sha256 || '');
                 if (!id || !email || !tenantId) return null;
                 if (!password && !passwordHash) return null;
                 return { id, email, tenantId, role, memberships, name, password, passwordHash };
@@ -160,7 +157,7 @@ function normalizeAuthUserRecord(entry = {}) {
     const id = String(entry.id || entry.userId || entry.user_id || '').trim();
     const email = String(entry.email || entry.mail || '').trim().toLowerCase();
     const password = String(entry.password || '').trim();
-    const passwordHash = String(entry.passwordHash || entry.password_hash || '').trim().toLowerCase();
+    const passwordHash = passwordHashService.normalizeStoredHash(entry.passwordHash || entry.password_hash || '');
 
     const rawMemberships = Array.isArray(entry.memberships)
         ? entry.memberships.filter((membership) => {
@@ -332,12 +329,9 @@ function verifyUserPassword(user = {}, password = '') {
         return candidates.some((candidate) => safeEqual(storedPassword, candidate));
     }
 
-    const storedPasswordHash = String(user?.passwordHash || user?.password_hash || '').trim().toLowerCase();
+    const storedPasswordHash = passwordHashService.normalizeStoredHash(user?.passwordHash || user?.password_hash || '');
     if (storedPasswordHash) {
-        return candidates.some((candidate) => {
-            const computed = sha256Hex(candidate);
-            return safeEqual(storedPasswordHash, computed);
-        });
+        return candidates.some((candidate) => passwordHashService.verifyPassword(candidate, storedPasswordHash));
     }
 
     return false;
@@ -822,12 +816,4 @@ module.exports = {
     getAllowedTenantsForUser,
     findUserRecord
 };
-
-
-
-
-
-
-
-
 

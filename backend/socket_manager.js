@@ -9,6 +9,7 @@ const tenantIntegrationsService = require('./tenant_integrations_service');
 const tenantService = require('./tenant_service');
 const planLimitsService = require('./plan_limits_service');
 const aiUsageService = require('./ai_usage_service');
+const aiChatHistoryService = require('./ai_chat_history_service');
 const messageHistoryService = require('./message_history_service');
 const waModuleService = require('./wa_module_service');
 const tenantCatalogService = require('./tenant_catalog_service');
@@ -2256,6 +2257,41 @@ function resolveScopedChatTarget(rawChatId = '', fallbackModuleId = '') {
         scopedChatId: buildScopedChatId(baseChatId, moduleId)
     };
 }
+
+function resolveAiHistoryScope(payload = {}, fallbackModuleId = '') {
+    const safePayload = payload && typeof payload === 'object' ? payload : {};
+    const runtimeContext = safePayload.runtimeContext && typeof safePayload.runtimeContext === 'object'
+        ? safePayload.runtimeContext
+        : null;
+    const runtimeModuleId = normalizeScopedModuleId(
+        runtimeContext?.module?.moduleId
+        || runtimeContext?.chat?.scopeModuleId
+        || ''
+    );
+    const rawFallbackModuleId = normalizeScopedModuleId(
+        safePayload.scopeModuleId
+        || safePayload.moduleId
+        || fallbackModuleId
+        || runtimeModuleId
+        || ''
+    );
+    const rawChatId = String(
+        safePayload.chatId
+        || safePayload.scopeChatId
+        || safePayload.scopedChatId
+        || runtimeContext?.chat?.chatId
+        || ''
+    ).trim();
+    const target = resolveScopedChatTarget(rawChatId, rawFallbackModuleId || runtimeModuleId);
+    const scopeModuleId = normalizeScopedModuleId(target.moduleId || rawFallbackModuleId || runtimeModuleId || '');
+    const baseChatId = String(target.baseChatId || '').trim();
+    return {
+        scopeChatId: String(target.scopedChatId || baseChatId || '').trim(),
+        baseChatId,
+        scopeModuleId: scopeModuleId || null
+    };
+}
+
 
 function isLidIdentifier(value = '') {
     return String(value || '').trim().endsWith('@lid');
@@ -4640,7 +4676,7 @@ class SocketManager {
                             fallbackBody: firstText,
                             moduleContext: activeModuleContext,
                             agentMeta: firstAgentMeta,
-                            mediaPayload: catalogMediaPayload
+                            mediaPayload: null
                         });
                     }
 
@@ -5031,7 +5067,7 @@ class SocketManager {
                         quotedMessageId: quoted,
                         moduleContext,
                         agentMeta,
-                        mediaPayload: catalogMediaPayload
+                        mediaPayload: null
                     });
                 } catch (e) {
                     const detail = String(e?.message || e || 'Failed to send message.');
@@ -5370,6 +5406,61 @@ class SocketManager {
             });
 
             // --- AI ---
+            socket.on('get_ai_chat_history', async (payload = {}) => {
+                try {
+                    const safePayload = payload && typeof payload === 'object'
+                        ? payload
+                        : { chatId: String(payload || '').trim() };
+                    const requestSeq = Number(safePayload?.requestSeq || 0) || null;
+                    const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                    const historyScope = resolveAiHistoryScope({
+                        chatId: safePayload.chatId || safePayload.scopeChatId || safePayload.scopedChatId || '',
+                        scopeModuleId: safePayload.scopeModuleId || safePayload.moduleId || selectedScopeModuleId || '',
+                        runtimeContext: safePayload.runtimeContext && typeof safePayload.runtimeContext === 'object'
+                            ? safePayload.runtimeContext
+                            : null
+                    }, selectedScopeModuleId);
+
+                    if (!historyScope.scopeChatId) {
+                        socket.emit('ai_chat_history', {
+                            requestSeq,
+                            scopeChatId: null,
+                            baseChatId: null,
+                            scopeModuleId: historyScope.scopeModuleId || null,
+                            items: []
+                        });
+                        return;
+                    }
+
+                    const rawLimit = Number(safePayload.limit || 80);
+                    const limit = Number.isFinite(rawLimit)
+                        ? Math.min(200, Math.max(20, Math.floor(rawLimit)))
+                        : 80;
+
+                    const items = await aiChatHistoryService.listEntries(tenantId, {
+                        scopeChatId: historyScope.scopeChatId,
+                        limit,
+                        beforeTimestamp: Number(safePayload.beforeTimestamp || 0) || null
+                    });
+
+                    socket.emit('ai_chat_history', {
+                        requestSeq,
+                        scopeChatId: historyScope.scopeChatId,
+                        baseChatId: historyScope.baseChatId || null,
+                        scopeModuleId: historyScope.scopeModuleId || null,
+                        items: Array.isArray(items) ? items : []
+                    });
+                } catch (error) {
+                    socket.emit('ai_chat_history', {
+                        requestSeq: Number(payload?.requestSeq || 0) || null,
+                        scopeChatId: null,
+                        baseChatId: null,
+                        scopeModuleId: null,
+                        items: [],
+                        error: 'No se pudo cargar historial IA.'
+                    });
+                }
+            });
             socket.on('request_ai_suggestion', (payload) => {
                 if (!guardRateLimit(socket, 'request_ai_suggestion')) return;
                 const { contextText, customPrompt, businessContext, moduleId, runtimeContext } = payload || {};
@@ -5392,17 +5483,40 @@ class SocketManager {
                             }
                         }
                         const moduleAssistantId = String(aiModuleContext?.metadata?.moduleSettings?.aiAssistantId || '').trim().toUpperCase();
-
+                        const safeRuntimeContext = runtimeContext && typeof runtimeContext === 'object' ? runtimeContext : null;
                         const aiText = await getChatSuggestion(contextText, customPrompt, (chunk) => {
                             socket.emit('ai_suggestion_chunk', chunk);
                         }, businessContext, {
                             tenantId,
                             moduleAssistantId,
-                            runtimeContext: runtimeContext && typeof runtimeContext === 'object' ? runtimeContext : null,
+                            runtimeContext: safeRuntimeContext,
                             moduleContext: aiModuleContext && typeof aiModuleContext === 'object' ? aiModuleContext : null
                         });
                         if (typeof aiText === 'string' && aiText.startsWith('Error IA:')) {
                             socket.emit('ai_error', aiText);
+                        } else {
+                            const historyScope = resolveAiHistoryScope({
+                                chatId: safeRuntimeContext?.chat?.chatId || '',
+                                scopeModuleId: safeRuntimeContext?.module?.moduleId || requestedModuleId || activeModuleId || '',
+                                runtimeContext: safeRuntimeContext
+                            }, normalizeSocketModuleId(aiModuleContext?.moduleId || requestedModuleId || activeModuleId || ''));
+                            const suggestionPrompt = String(contextText || customPrompt || '').trim();
+                            if (historyScope.scopeChatId && suggestionPrompt && String(aiText || '').trim()) {
+                                try {
+                                    await aiChatHistoryService.appendInteraction(tenantId, {
+                                        scopeChatId: historyScope.scopeChatId,
+                                        baseChatId: historyScope.baseChatId,
+                                        scopeModuleId: historyScope.scopeModuleId,
+                                        mode: 'suggestion',
+                                        assistantId: moduleAssistantId || null,
+                                        userId: String(authContext?.userId || authContext?.id || '').trim() || null,
+                                        userName: String(authContext?.name || authContext?.displayName || authContext?.email || '').trim() || null,
+                                        query: suggestionPrompt,
+                                        response: String(aiText || '').trim(),
+                                        runtimeContext: safeRuntimeContext
+                                    });
+                                } catch (_) { }
+                            }
                         }
                         socket.emit('ai_suggestion_complete');
                     } catch (e) {
@@ -5437,17 +5551,41 @@ class SocketManager {
                             }
                         }
                         const moduleAssistantId = String(aiModuleContext?.metadata?.moduleSettings?.aiAssistantId || '').trim().toUpperCase();
-
+                        const safeRuntimeContext = runtimeContext && typeof runtimeContext === 'object' ? runtimeContext : null;
                         const copilotText = await askInternalCopilot(query, (chunk) => {
                             socket.emit('internal_ai_chunk', chunk);
                         }, businessContext, {
                             tenantId,
                             moduleAssistantId,
-                            runtimeContext: runtimeContext && typeof runtimeContext === 'object' ? runtimeContext : null,
+                            runtimeContext: safeRuntimeContext,
                             moduleContext: aiModuleContext && typeof aiModuleContext === 'object' ? aiModuleContext : null
                         });
                         if (typeof copilotText === 'string' && copilotText.startsWith('Error IA:')) {
                             socket.emit('internal_ai_error', copilotText);
+                        } else {
+                            const historyScope = resolveAiHistoryScope({
+                                chatId: safeRuntimeContext?.chat?.chatId || '',
+                                scopeModuleId: safeRuntimeContext?.module?.moduleId || requestedModuleId || activeModuleId || '',
+                                runtimeContext: safeRuntimeContext
+                            }, normalizeSocketModuleId(aiModuleContext?.moduleId || requestedModuleId || activeModuleId || ''));
+                            const cleanQuery = String(query || '').trim();
+                            const cleanCopilotText = String(copilotText || '').trim();
+                            if (historyScope.scopeChatId && cleanQuery && cleanCopilotText) {
+                                try {
+                                    await aiChatHistoryService.appendInteraction(tenantId, {
+                                        scopeChatId: historyScope.scopeChatId,
+                                        baseChatId: historyScope.baseChatId,
+                                        scopeModuleId: historyScope.scopeModuleId,
+                                        mode: 'copilot',
+                                        assistantId: moduleAssistantId || null,
+                                        userId: String(authContext?.userId || authContext?.id || '').trim() || null,
+                                        userName: String(authContext?.name || authContext?.displayName || authContext?.email || '').trim() || null,
+                                        query: cleanQuery,
+                                        response: cleanCopilotText,
+                                        runtimeContext: safeRuntimeContext
+                                    });
+                                } catch (_) { }
+                            }
                         }
                         socket.emit('internal_ai_complete');
                     } catch (e) {

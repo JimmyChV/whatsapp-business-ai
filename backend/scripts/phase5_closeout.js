@@ -198,10 +198,28 @@ async function runBackup(backupFile) {
         await safeTable('memberships', 'SELECT * FROM memberships WHERE tenant_id = ANY($1::text[])', [tenantIds]);
         await safeTable('users', `SELECT DISTINCT u.* FROM users u INNER JOIN memberships m ON m.user_id = u.user_id WHERE m.tenant_id = ANY($1::text[])`, [tenantIds]);
 
-        const scoped = ['wa_sessions', 'wa_modules', 'quick_replies', 'catalog_items', 'tenant_settings', 'tenant_chats', 'tenant_messages', 'audit_logs', 'auth_sessions', 'auth_token_revocations'];
+        const scoped = [
+            'wa_sessions',
+            'wa_modules',
+            'quick_replies',
+            'catalog_items',
+            'tenant_settings',
+            'tenant_chats',
+            'tenant_messages',
+            'audit_logs',
+            'auth_sessions',
+            'auth_token_revocations',
+            'tenant_catalogs',
+            'tenant_integrations',
+            'tenant_ai_chat_history',
+            'tenant_ai_usage'
+        ];
         for (const table of scoped) {
             await safeTable(table, `SELECT * FROM ${table} WHERE tenant_id = ANY($1::text[])`, [tenantIds]);
         }
+
+        await safeTable('saas_access_catalog', 'SELECT * FROM saas_access_catalog');
+        await safeTable('saas_plan_limits', 'SELECT * FROM saas_plan_limits');
 
         payload.data.postgres = { tables, warnings };
     } else {

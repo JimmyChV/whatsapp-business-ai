@@ -196,6 +196,53 @@ const avatarColorForName = (name) => {
     if (!name) return colors[0];
     return colors[name.charCodeAt(0) % colors.length];
 };
+
+const AI_CHAT_SCOPE_SEPARATOR = '::mod::';
+const AI_DEFAULT_GREETING = 'Hola, soy tu copiloto comercial de Lavitat. Estoy viendo el contexto real del chat para ayudarte a vender mejor.\n\nPrueba: "Dame 3 respuestas sugeridas" o "Genera 3 cotizaciones con enfoque entrada, equilibrio y premium".';
+
+const buildDefaultAiThread = () => ([
+    { role: 'assistant', content: AI_DEFAULT_GREETING }
+]);
+
+const normalizeAiScopeModuleId = (value = '') => String(value || '').trim().toLowerCase();
+
+const parseAiScopedChatId = (value = '') => {
+    const raw = String(value || '').trim();
+    if (!raw) return { baseChatId: '', scopeModuleId: '' };
+    const idx = raw.lastIndexOf(AI_CHAT_SCOPE_SEPARATOR);
+    if (idx < 0) return { baseChatId: raw, scopeModuleId: '' };
+    const baseChatId = String(raw.slice(0, idx) || '').trim();
+    const scopeModuleId = normalizeAiScopeModuleId(raw.slice(idx + AI_CHAT_SCOPE_SEPARATOR.length));
+    if (!baseChatId || !scopeModuleId) return { baseChatId: raw, scopeModuleId: '' };
+    return { baseChatId, scopeModuleId };
+};
+
+const buildAiScopedChatId = (baseChatId = '', scopeModuleId = '') => {
+    const safeBase = String(baseChatId || '').trim();
+    const safeScope = normalizeAiScopeModuleId(scopeModuleId);
+    if (!safeBase) return '';
+    if (!safeScope) return safeBase;
+    return `${safeBase}${AI_CHAT_SCOPE_SEPARATOR}${safeScope}`;
+};
+
+const buildAiScopeInfo = (tenantId = 'default', chatId = '', fallbackModuleId = '') => {
+    const safeTenant = String(tenantId || 'default').trim() || 'default';
+    const parsed = parseAiScopedChatId(chatId);
+    const scopeModuleId = normalizeAiScopeModuleId(parsed.scopeModuleId || fallbackModuleId || '');
+    const baseChatId = String(parsed.baseChatId || chatId || '').trim();
+    const scopeChatId = buildAiScopedChatId(baseChatId, scopeModuleId) || baseChatId;
+    const scopeKey = scopeChatId
+        ? `${safeTenant}::chat::${scopeChatId}`
+        : `${safeTenant}::chat::__tenant__`;
+    return {
+        tenantId: safeTenant,
+        baseChatId,
+        scopeModuleId: scopeModuleId || null,
+        scopeChatId: scopeChatId || '',
+        scopeKey
+    };
+};
+
 // =========================================================
 // CLIENT PROFILE PANEL
 // =========================================================
@@ -1320,12 +1367,15 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     const companyProfileRef = useRef(null);
     // AI Chat State
-    const [aiMessages, setAiMessages] = useState([
-        { role: 'assistant', content: 'Hola, soy tu copiloto comercial de Lavitat. Estoy viendo el contexto real del chat para ayudarte a vender mejor.\n\nPrueba: "Dame 3 respuestas sugeridas" o "Genera 3 cotizaciones con enfoque entrada, equilibrio y premium".' }
-    ]);
+    const [aiThreadsByScope, setAiThreadsByScope] = useState({});
     const [aiInput, setAiInput] = useState('');
-    const [isAiLoading, setIsAiLoading] = useState(false);
+    const [aiLoadingByScope, setAiLoadingByScope] = useState({});
     const aiEndRef = useRef(null);
+    const aiRequestScopeRef = useRef('');
+    const aiScopeKeyRef = useRef('');
+    const aiHistoryLoadedRef = useRef(new Set());
+    const aiHistoryRequestSeqRef = useRef(0);
+    const aiHistoryScopeBySeqRef = useRef(new Map());
 
         // Cart State
     const [cart, setCart] = useState([]);
@@ -1344,6 +1394,47 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const lastImportedOrderRef = useRef('');
     const tenantScopeRef = useRef(String(tenantScopeKey || 'default').trim() || 'default');
 
+    const activeTenantScopeId = String(tenantScopeKey || tenantScopeRef.current || 'default').trim() || 'default';
+    const activeScopeModuleCandidate = normalizeAiScopeModuleId(activeChatDetails?.scopeModuleId || activeModuleId || selectedCatalogModuleId || '');
+    const activeAiScope = buildAiScopeInfo(activeTenantScopeId, activeChatId, activeScopeModuleCandidate);
+    const currentAiScopeKey = activeAiScope.scopeKey;
+    const currentAiScopeChatId = activeAiScope.scopeChatId;
+
+    const aiMessages = Array.isArray(aiThreadsByScope[currentAiScopeKey]) && aiThreadsByScope[currentAiScopeKey].length > 0
+        ? aiThreadsByScope[currentAiScopeKey]
+        : buildDefaultAiThread();
+    const isAiLoading = Boolean(aiLoadingByScope[currentAiScopeKey]);
+
+    const setAiThreadMessages = (scopeKey = '', updater = null) => {
+        const safeScopeKey = String(scopeKey || '').trim();
+        if (!safeScopeKey) return;
+        setAiThreadsByScope((previous) => {
+            const baseThread = Array.isArray(previous?.[safeScopeKey]) && previous[safeScopeKey].length > 0
+                ? previous[safeScopeKey]
+                : buildDefaultAiThread();
+            const nextThread = typeof updater === 'function' ? updater(baseThread) : updater;
+            if (!Array.isArray(nextThread) || nextThread.length === 0) {
+                return {
+                    ...previous,
+                    [safeScopeKey]: buildDefaultAiThread()
+                };
+            }
+            return {
+                ...previous,
+                [safeScopeKey]: nextThread
+            };
+        });
+    };
+
+    const setAiScopeLoading = (scopeKey = '', nextValue = false) => {
+        const safeScopeKey = String(scopeKey || '').trim();
+        if (!safeScopeKey) return;
+        setAiLoadingByScope((previous) => ({
+            ...previous,
+            [safeScopeKey]: Boolean(nextValue)
+        }));
+    };
+
     const catalog = (businessData.catalog || []).map((item, idx) => normalizeCatalogItem(item, idx));
     const labels = businessData.labels || [];
     const profile = businessData.profile || myProfile || null;
@@ -1357,9 +1448,13 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 
         setActiveTab('ai');
         setShowCompanyProfile(false);
-        setAiMessages([
-            { role: 'assistant', content: 'Hola, soy tu copiloto comercial de Lavitat. Estoy viendo el contexto real del chat para ayudarte a vender mejor.\n\nPrueba: "Dame 3 respuestas sugeridas" o "Genera 3 cotizaciones con enfoque entrada, equilibrio y premium".' }
-        ]);
+        setAiThreadsByScope({});
+        setAiLoadingByScope({});
+        aiRequestScopeRef.current = '';
+        aiScopeKeyRef.current = '';
+        aiHistoryLoadedRef.current = new Set();
+        aiHistoryRequestSeqRef.current = 0;
+        aiHistoryScopeBySeqRef.current = new Map();
         setAiInput('');
         setCart([]);
         setShowOrderAdjustments(false);
@@ -1376,6 +1471,36 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setOrderImportStatus(null);
         lastImportedOrderRef.current = '';
     }, [tenantScopeKey]);
+
+    useEffect(() => {
+        aiScopeKeyRef.current = currentAiScopeKey;
+        setAiThreadsByScope((previous) => {
+            const existing = previous?.[currentAiScopeKey];
+            if (Array.isArray(existing) && existing.length > 0) return previous;
+            return {
+                ...previous,
+                [currentAiScopeKey]: buildDefaultAiThread()
+            };
+        });
+    }, [currentAiScopeKey]);
+
+    useEffect(() => {
+        if (!socket) return;
+        if (!currentAiScopeChatId) return;
+        if (aiHistoryLoadedRef.current.has(currentAiScopeKey)) return;
+
+        aiHistoryLoadedRef.current.add(currentAiScopeKey);
+        const requestSeq = aiHistoryRequestSeqRef.current + 1;
+        aiHistoryRequestSeqRef.current = requestSeq;
+        aiHistoryScopeBySeqRef.current.set(requestSeq, currentAiScopeKey);
+
+        socket.emit('get_ai_chat_history', {
+            requestSeq,
+            chatId: currentAiScopeChatId,
+            scopeModuleId: activeAiScope.scopeModuleId || null,
+            limit: 120
+        });
+    }, [socket, currentAiScopeKey, currentAiScopeChatId, activeAiScope.scopeModuleId]);
 
     useEffect(() => {
         setOrderImportStatus(null);
@@ -1737,41 +1862,100 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         if (!socket) return;
         let buffer = '';
 
-        const onChunk = (chunk) => {
-            buffer += repairMojibake(chunk);
-            setAiMessages(prev => {
-                const last = prev[prev.length - 1];
-                if (last?.role === 'assistant' && last?.streaming) {
-                    return [...prev.slice(0, -1), { ...last, content: buffer }];
+        const resolveTargetScope = (fallback = '') => {
+            const safeFallback = String(fallback || '').trim();
+            if (safeFallback) return safeFallback;
+            const fromRef = String(aiRequestScopeRef.current || aiScopeKeyRef.current || '').trim();
+            if (fromRef) return fromRef;
+            return currentAiScopeKey;
+        };
+
+        const onHistory = (payload = {}) => {
+            const requestSeq = Number(payload?.requestSeq || 0) || 0;
+            const mappedScope = requestSeq ? aiHistoryScopeBySeqRef.current.get(requestSeq) : '';
+            if (requestSeq) aiHistoryScopeBySeqRef.current.delete(requestSeq);
+
+            const incomingScopeInfo = buildAiScopeInfo(
+                tenantScopeRef.current || 'default',
+                payload?.scopeChatId || payload?.chatId || payload?.baseChatId || '',
+                payload?.scopeModuleId || ''
+            );
+            const scopeKey = resolveTargetScope(mappedScope || incomingScopeInfo.scopeKey);
+            const entries = Array.isArray(payload?.items) ? payload.items : [];
+            const normalized = entries
+                .map((entry) => {
+                    const role = String(entry?.role || '').trim().toLowerCase() === 'user' ? 'user' : 'assistant';
+                    const content = repairMojibake(String(entry?.content || '').trim());
+                    if (!content) return null;
+                    return { role, content };
+                })
+                .filter(Boolean);
+
+            setAiThreadsByScope((previous) => {
+                const existing = Array.isArray(previous?.[scopeKey]) ? previous[scopeKey] : [];
+                if (existing.some((entry) => entry?.streaming)) return previous;
+                if (normalized.length === 0) {
+                    if (existing.length > 0) return previous;
+                    return {
+                        ...previous,
+                        [scopeKey]: buildDefaultAiThread()
+                    };
                 }
-                return [...prev, { role: 'assistant', content: buffer, streaming: true }];
+                return {
+                    ...previous,
+                    [scopeKey]: normalized
+                };
+            });
+            setAiScopeLoading(scopeKey, false);
+        };
+
+        const onChunk = (chunk) => {
+            const scopeKey = resolveTargetScope();
+            buffer += repairMojibake(chunk);
+            setAiThreadMessages(scopeKey, (previous) => {
+                const safePrevious = Array.isArray(previous) ? previous : buildDefaultAiThread();
+                const last = safePrevious[safePrevious.length - 1];
+                if (last?.role === 'assistant' && last?.streaming) {
+                    return [...safePrevious.slice(0, -1), { ...last, content: buffer }];
+                }
+                return [...safePrevious, { role: 'assistant', content: buffer, streaming: true }];
             });
         };
 
         const onComplete = () => {
+            const scopeKey = resolveTargetScope();
             buffer = '';
-            setIsAiLoading(false);
-            setAiMessages(prev => {
-                const last = prev[prev.length - 1];
-                if (last?.streaming) return [...prev.slice(0, -1), { ...last, streaming: false }];
-                return prev;
+            setAiScopeLoading(scopeKey, false);
+            setAiThreadMessages(scopeKey, (previous) => {
+                const safePrevious = Array.isArray(previous) ? previous : buildDefaultAiThread();
+                const last = safePrevious[safePrevious.length - 1];
+                if (last?.streaming) return [...safePrevious.slice(0, -1), { ...last, streaming: false }];
+                return safePrevious;
             });
+            aiRequestScopeRef.current = '';
         };
 
         const onError = (msg) => {
-            setIsAiLoading(false);
-            setAiMessages(prev => [...prev, { role: 'assistant', content: repairMojibake(msg || 'Error IA: no se pudo generar respuesta.') }]);
+            const scopeKey = resolveTargetScope();
+            setAiScopeLoading(scopeKey, false);
+            setAiThreadMessages(scopeKey, (previous) => {
+                const safePrevious = Array.isArray(previous) ? previous : buildDefaultAiThread();
+                return [...safePrevious, { role: 'assistant', content: repairMojibake(msg || 'Error IA: no se pudo generar respuesta.') }];
+            });
+            aiRequestScopeRef.current = '';
         };
 
+        socket.on('ai_chat_history', onHistory);
         socket.on('internal_ai_chunk', onChunk);
         socket.on('internal_ai_complete', onComplete);
         socket.on('internal_ai_error', onError);
         return () => {
+            socket.off('ai_chat_history', onHistory);
             socket.off('internal_ai_chunk', onChunk);
             socket.off('internal_ai_complete', onComplete);
             socket.off('internal_ai_error', onError);
         };
-    }, [socket]);
+    }, [socket, currentAiScopeKey]);
 
     const buildBusinessContext = () => {
         const catalogText = catalog.length > 0
@@ -1839,7 +2023,7 @@ INSTRUCCIONES OBLIGATORIAS:
 
         return {
             tenant: {
-                id: String(tenantScopeRef.current || 'default').trim() || 'default',
+                id: String(activeTenantScopeId || tenantScopeRef.current || 'default').trim() || 'default',
                 name: String(profile?.name || profile?.pushname || '').trim() || null,
                 plan: null
             },
@@ -1895,7 +2079,8 @@ INSTRUCCIONES OBLIGATORIAS:
                 notes: `delivery=${deliveryType}; globalDiscount=${globalDiscountEnabled ? `${globalDiscountType}:${normalizedGlobalDiscountValue}` : 'none'}`
             },
             chat: {
-                chatId: String(activeChatId || '').trim(),
+                chatId: String(currentAiScopeChatId || activeChatId || '').trim(),
+                scopeModuleId: activeAiScope.scopeModuleId || null,
                 phone: e164Phone || null,
                 recentMessages: (Array.isArray(messages) ? messages : []).slice(-18).map((entry) => ({
                     fromMe: entry?.fromMe === true,
@@ -1917,16 +2102,25 @@ INSTRUCCIONES OBLIGATORIAS:
 
     const sendAiMessage = () => {
         if (!aiInput.trim() || isAiLoading || !socket) return;
-        const userMsg = { role: 'user', content: aiInput.trim() };
-        setAiMessages(prev => [...prev, userMsg]);
+        const scopeKey = String(currentAiScopeKey || '').trim();
+        if (!scopeKey) return;
+
+        const cleanPrompt = aiInput.trim();
+        const userMsg = { role: 'user', content: cleanPrompt };
+        setAiThreadMessages(scopeKey, (previous) => {
+            const safePrevious = Array.isArray(previous) ? previous : buildDefaultAiThread();
+            return [...safePrevious, userMsg];
+        });
         setAiInput('');
-        setIsAiLoading(true);
+        setAiScopeLoading(scopeKey, true);
+        aiRequestScopeRef.current = scopeKey;
+        aiHistoryLoadedRef.current.add(scopeKey);
 
         const runtimeContext = buildAiRuntimeContextPayload();
         const moduleId = String(runtimeContext?.module?.moduleId || '').trim().toLowerCase();
 
         socket.emit('internal_ai_query', {
-            query: aiInput.trim(),
+            query: cleanPrompt,
             businessContext: buildBusinessContext(),
             moduleId: moduleId || undefined,
             runtimeContext
@@ -2665,5 +2859,13 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
+
+
+
+
+
+
+
+
 
 

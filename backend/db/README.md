@@ -1,20 +1,20 @@
-# Postgres migration guide (SaaS phase 2+)
+# Postgres migrations (SaaS)
 
-## 1) Configure backend env
+## 1) Variables requeridas
 
-Set these variables in `backend/.env`:
+En `backend/.env` define al menos:
 
 - `SAAS_STORAGE_DRIVER=postgres`
 - `DATABASE_URL=postgresql://user:pass@host:5432/dbname`
 
-Alternative split vars:
+Alternativa por variables separadas:
 
 - `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`
-- Optional `PGSSL=true`
+- opcional: `PGSSL=true`
 
-## 2) Apply migrations
+## 2) Aplicar migraciones en orden
 
-Run from backend folder in order:
+Desde `backend/`:
 
 ```powershell
 psql "$env:DATABASE_URL" -f db/migrations/001_saas_foundation.sql
@@ -26,62 +26,59 @@ psql "$env:DATABASE_URL" -f db/migrations/006_message_history_module_context.sql
 psql "$env:DATABASE_URL" -f db/migrations/007_admin_profiles_and_module_media.sql
 psql "$env:DATABASE_URL" -f db/migrations/008_customers.sql
 psql "$env:DATABASE_URL" -f db/migrations/009_multichannel_unified_inbox.sql
+psql "$env:DATABASE_URL" -f db/migrations/010_catalog_items_module_pk.sql
+psql "$env:DATABASE_URL" -f db/migrations/011_ai_chat_history.sql
+psql "$env:DATABASE_URL" -f db/migrations/012_control_plane_hardening.sql
 ```
 
-Or with split vars already exported:
+## 3) Tablas esperadas
 
-```powershell
-psql -f db/migrations/001_saas_foundation.sql
-psql -f db/migrations/002_tenant_settings.sql
-psql -f db/migrations/003_message_history.sql
-psql -f db/migrations/004_auth_sessions.sql
-psql -f db/migrations/005_wa_modules.sql
-psql -f db/migrations/006_message_history_module_context.sql
-psql -f db/migrations/007_admin_profiles_and_module_media.sql
-psql -f db/migrations/008_customers.sql
-psql -f db/migrations/009_multichannel_unified_inbox.sql
-```
-
-## 3) Verify
-
-Check tables:
-
-```sql
-\dt
-```
-
-Expected core tables:
+Core SaaS:
 
 - `tenants`
 - `users`
 - `memberships`
-- `wa_sessions`
+- `tenant_settings`
+- `wa_modules`
 - `quick_replies`
 - `catalog_items`
-- `tenant_settings`
+- `tenant_catalogs`
+- `tenant_integrations`
+
+Operacion/Historial:
+
 - `tenant_chats`
 - `tenant_messages`
-- `auth_sessions`
-- `auth_token_revocations`
-- `wa_modules`
+- `tenant_ai_chat_history`
 - `tenant_customers`
 - `tenant_customer_identities`
 - `tenant_channel_events`
 - `audit_logs`
 
-## 4) Tenant settings API
+Auth / seguridad:
 
-- `GET /api/tenant/settings`
-- `PUT /api/tenant/settings`
+- `auth_sessions`
+- `auth_token_revocations`
 
-Current key settings:
+Control-plane global:
 
-- `catalogMode`: `hybrid` | `woo_only` | `local_only`
-- `enabledModules`: `aiPro`, `catalog`, `cart`, `quickReplies`, `locations`
-- `wa.transportLock`: `auto` | `webjs` | `cloud`
+- `saas_access_catalog`
+- `saas_plan_limits`
+- `tenant_ai_usage`
 
-## Notes
+## 4) Validacion rapida
 
-- Runtime keeps `file` as default driver for backward compatibility.
-- `postgres` driver is wired for `catalog_manager`, `quick_replies_manager`, `tenant_settings_service`, `wa_module_service`, `customer_service` and `message_history_service`.
-- If `pg` dependency is missing, backend will show a clear error when `SAAS_STORAGE_DRIVER=postgres`.
+```sql
+\dt
+
+SELECT tenant_id, slug, plan, is_active FROM tenants ORDER BY tenant_id;
+SELECT user_id, email, is_active FROM users ORDER BY created_at DESC;
+SELECT tenant_id, user_id, role, is_active FROM memberships ORDER BY tenant_id, user_id;
+```
+
+## 5) Notas
+
+- `012_control_plane_hardening.sql` alinea el esquema real usado por el backend (catalogos multi-tenant, integraciones, RBAC catalog, limites y uso IA).
+- `catalog_items` queda con PK compuesta: `(tenant_id, item_id, module_id, catalog_id)`.
+- Si una instancia antigua falla por tabla faltante, reaplica migraciones hasta `012`.
+

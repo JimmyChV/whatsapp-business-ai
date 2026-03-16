@@ -137,6 +137,24 @@ function createUniqueAssistantId(items = []) {
     return `AIA-${fallback}`;
 }
 
+function createStableAssistantId(seed = '', usedIds = []) {
+    const blocked = new Set(
+        (Array.isArray(usedIds) ? usedIds : [])
+            .map((entry) => normalizeAiAssistantId(entry || ''))
+            .filter(Boolean)
+    );
+    const safeSeed = String(seed || '').trim() || 'assistant';
+
+    for (let i = 0; i < 256; i += 1) {
+        const digest = crypto.createHash('sha1').update(`${safeSeed}|${i}`).digest('hex').toUpperCase();
+        const suffix = String(digest || '').replace(/[^A-Z0-9]/g, '').slice(0, 6).padEnd(6, '0');
+        const candidate = `AIA-${suffix}`;
+        if (!blocked.has(candidate)) return candidate;
+    }
+
+    return createUniqueAssistantId(Array.from(blocked).map((assistantId) => ({ assistantId })));
+}
+
 function normalizeFloatInRange(value, fallback = 1, { min = 0, max = 1, decimals = 2 } = {}) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return fallback;
@@ -153,13 +171,10 @@ function normalizeAiAssistantRecord(input = {}, existing = {}, {
     const source = isPlainObject(input) ? input : {};
     const current = isPlainObject(existing) ? existing : {};
 
-    const assistantId = normalizeAiAssistantId(
-        source.assistantId
-        || source.id
-        || fallbackId
-        || current.assistantId
-        || current.id
-    );
+    const sourceAssistantId = normalizeAiAssistantId(source.assistantId || source.id || '');
+    const currentAssistantId = normalizeAiAssistantId(current.assistantId || current.id || '');
+    const fallbackAssistantId = normalizeAiAssistantId(fallbackId || '');
+    const assistantId = sourceAssistantId || currentAssistantId || fallbackAssistantId;
     if (!assistantId) return null;
 
     const hasSourceAiApiKey = Object.prototype.hasOwnProperty.call(source, 'openaiApiKey');
@@ -232,7 +247,14 @@ function normalizeAssistantListForStorage(sourceAi = {}, currentAi = {}, {
     (Array.isArray(working) ? working : []).forEach((entry) => {
         const cleanId = normalizeAiAssistantId(entry?.assistantId || entry?.id || '');
         const existing = cleanId ? (currentById.get(cleanId) || {}) : {};
-        const fallbackId = createUniqueAssistantId(normalized);
+        const stableSeed = [
+            String(entry?.assistantId || entry?.id || '').trim(),
+            String(entry?.name || '').trim(),
+            String(entry?.createdAt || '').trim(),
+            String(entry?.updatedAt || '').trim(),
+            String(normalized.length)
+        ].join('|');
+        const fallbackId = createStableAssistantId(stableSeed, [...currentById.keys(), ...seen]);
         const normalizedEntry = normalizeAiAssistantRecord(
             cleanId ? { ...entry, assistantId: cleanId } : entry,
             existing,
@@ -249,7 +271,16 @@ function normalizeAssistantListForStorage(sourceAi = {}, currentAi = {}, {
     });
 
     if (!normalized.length) {
-        const bootstrapId = createUniqueAssistantId([]);
+        const preferredBootstrapId = normalizeAiAssistantId(sourceAi?.defaultAssistantId || currentAi?.defaultAssistantId || '');
+        const bootstrapSeed = [
+            String(sourceAi?.provider ?? currentAi?.provider ?? fallbackProvider),
+            String(sourceAi?.model ?? currentAi?.model ?? fallbackModel),
+            String(sourceAi?.name || ''),
+            String(sourceAi?.description || ''),
+            String(sourceAi?.systemPrompt || ''),
+            String(sourceAi?.openaiApiKey ?? currentAi?.openaiApiKey ?? fallbackApiKey ?? '')
+        ].join('|');
+        const bootstrapId = preferredBootstrapId || createStableAssistantId(`bootstrap|${bootstrapSeed}`, []);
         const bootstrap = normalizeAiAssistantRecord({
             assistantId: bootstrapId,
             name: 'Asistente principal',
@@ -727,7 +758,7 @@ async function createTenantAiAssistant(tenantId = DEFAULT_TENANT_ID, payload = {
 
     const source = isPlainObject(payload) ? payload : {};
     const requestedId = normalizeAiAssistantId(source.assistantId || source.id || '');
-    if (requestedId && assistants.some((entry) => entry.assistantId === requestedId)) {
+    if (requestedId && assistants.some((entry) => normalizeAiAssistantId(entry?.assistantId || entry?.id || '') === requestedId)) {
         throw new Error('Ya existe un asistente IA con ese codigo.');
     }
 
@@ -785,7 +816,7 @@ async function updateTenantAiAssistant(tenantId = DEFAULT_TENANT_ID, assistantId
     const clean = normalizeIntegrationsForStorage(current, current);
     const aiCurrent = isPlainObject(clean.ai) ? clean.ai : {};
     const assistants = Array.isArray(aiCurrent.assistants) ? aiCurrent.assistants : [];
-    const index = assistants.findIndex((entry) => entry.assistantId === targetId);
+    const index = assistants.findIndex((entry) => normalizeAiAssistantId(entry?.assistantId || entry?.id || '') === targetId);
     if (index < 0) throw new Error('Asistente IA no encontrado.');
 
     const source = isPlainObject(patch) ? patch : {};
@@ -850,7 +881,7 @@ async function setDefaultTenantAiAssistant(tenantId = DEFAULT_TENANT_ID, assista
     const clean = normalizeIntegrationsForStorage(current, current);
     const aiCurrent = isPlainObject(clean.ai) ? clean.ai : {};
     const assistants = Array.isArray(aiCurrent.assistants) ? aiCurrent.assistants : [];
-    const target = assistants.find((entry) => entry.assistantId === targetId) || null;
+    const target = assistants.find((entry) => normalizeAiAssistantId(entry?.assistantId || entry?.id || '') === targetId) || null;
     if (!target) throw new Error('Asistente IA no encontrado.');
     if (target.isActive === false) throw new Error('No se puede establecer como principal un asistente inactivo.');
 

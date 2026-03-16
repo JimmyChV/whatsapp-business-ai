@@ -8,6 +8,7 @@ const {
 } = require('./persistence_runtime');
 const planLimitsService = require('./plan_limits_service');
 const accessPolicyService = require('./access_policy_service');
+const passwordHashService = require('./password_hash_service');
 
 const CONTROL_TENANT_ID = '_control';
 const CONTROL_FILE_NAME = 'saas_control_plane.json';
@@ -149,7 +150,7 @@ function roleWeight(role = '') {
 }
 
 function hashPassword(raw = '') {
-    return crypto.createHash('sha256').update(String(raw || ''), 'utf8').digest('hex');
+    return passwordHashService.hashPassword(raw);
 }
 
 function normalizeMembership(entry = {}, fallbackRole = 'seller') {
@@ -250,7 +251,7 @@ function normalizeUser(input = {}, fallbackIndex = 0) {
         ? builtMemberships
         : [{ tenantId: DEFAULT_TENANT_ID, role: fallbackRole, active: true }];
 
-    const passwordHashFromInput = String(input.passwordHash || input.password_hash || input.sha256 || '').trim().toLowerCase();
+    const passwordHashFromInput = passwordHashService.normalizeStoredHash(input.passwordHash || input.password_hash || input.sha256 || '');
     const plainPassword = String(input.password || '').trim();
     const passwordHash = passwordHashFromInput || (plainPassword ? hashPassword(plainPassword) : '');
 
@@ -1004,7 +1005,7 @@ async function updateUser(userId = '', patch = {}) {
             memberships: nextMemberships,
             passwordHash: patch.password
                 ? hashPassword(patch.password)
-                : (String(patch.passwordHash || '').trim().toLowerCase() || previous.passwordHash),
+                : (passwordHashService.normalizeStoredHash(patch.passwordHash || '') || previous.passwordHash),
             updatedAt: nowIso()
         };
         if (!updated.passwordHash) {
@@ -1056,7 +1057,7 @@ async function deleteUser(userId = '') {
 function toAuthUserRecord(user = {}) {
     const id = String(user?.id || user?.userId || user?.user_id || '').trim();
     const email = String(user?.email || user?.mail || '').trim().toLowerCase();
-    const passwordHash = String(user?.passwordHash || user?.password_hash || '').trim().toLowerCase();
+    const passwordHash = passwordHashService.normalizeStoredHash(user?.passwordHash || user?.password_hash || '');
     const password = String(user?.password || '').trim();
     const memberships = normalizeMemberships(user.memberships || [], user?.memberships?.[0]?.role || user?.role || 'seller');
     const activeMemberships = memberships.filter((membership) => membership.active !== false);
@@ -1112,14 +1113,32 @@ function parseSuperAdminsFromEnv() {
     }
 }
 
+function metadataSaysSuperAdmin(user = {}) {
+    if (!user || typeof user !== 'object') return false;
+    if (user.isSuperAdmin === true) return true;
+
+    const metadata = user.metadata && typeof user.metadata === 'object' && !Array.isArray(user.metadata)
+        ? user.metadata
+        : {};
+    const security = metadata.security && typeof metadata.security === 'object' && !Array.isArray(metadata.security)
+        ? metadata.security
+        : {};
+
+    return metadata.isSuperAdmin === true
+        || metadata.superAdmin === true
+        || security.isSuperAdmin === true
+        || security.superAdmin === true;
+}
+
 function isSuperAdminUser(user = {}) {
+    if (metadataSaysSuperAdmin(user)) return true;
+
     const email = String(user?.email || '').trim().toLowerCase();
     const id = String(user?.id || user?.userId || '').trim().toLowerCase();
     const superAdmins = parseSuperAdminsFromEnv();
     if (!superAdmins.length) return false;
     return superAdmins.includes(email) || superAdmins.includes(id);
 }
-
 async function getAdminOverview() {
     const snapshot = await ensureLoaded();
     const tenants = sortByName(snapshot.tenants.map(sanitizeTenantPublic));
@@ -1170,17 +1189,4 @@ module.exports = {
     CONTROL_FILE_NAME,
     CONTROL_TENANT_ID
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
 
