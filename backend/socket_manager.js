@@ -2876,6 +2876,8 @@ class SocketManager {
             if (customerPhone) {
                 await customerService.upsertFromInteraction(tenantId, {
                     moduleId: historyModuleId,
+                    channelType: moduleContext?.channelType || moduleAttributionMeta?.sentViaChannelType || 'whatsapp',
+                    messageId,
                     chatId,
                     phone: customerPhone,
                     contactName: senderMeta?.notifyName || senderMeta?.senderPushname || null,
@@ -2883,6 +2885,7 @@ class SocketManager {
                     messageType: msg?.type || null,
                     lastMessageAt: new Date().toISOString(),
                     metadata: {
+                        messageId,
                         senderId: senderMeta?.senderId || null,
                         senderPushname: senderMeta?.senderPushname || null,
                         waPhoneNumber: historyModulePhone,
@@ -4790,51 +4793,85 @@ class SocketManager {
                     socket.emit('chat_labels_error', 'No se pudo crear la etiqueta.');
                 }
             });
+
             socket.on('get_quick_replies', async () => {
                 try {
                     const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
                     if (!quickRepliesEnabled) {
-                        socket.emit('quick_replies', { items: [], source: 'disabled' });
+                        socket.emit('quick_replies', { items: [], source: 'disabled', enabled: false, writable: false });
                         return;
                     }
 
-                    const caps = this.getWaCapabilities();
-                    if (!caps.quickRepliesRead || typeof waClient.client?.getQuickReplies !== 'function') {
-                        socket.emit('quick_replies', { items: [], source: 'unsupported' });
-                        return;
-                    }
-                    const nativeItems = await waClient.client.getQuickReplies();
-                    socket.emit('quick_replies', { items: Array.isArray(nativeItems) ? nativeItems : [], source: 'native' });
+                    const items = await listQuickReplies({ tenantId });
+                    socket.emit('quick_replies', {
+                        items: Array.isArray(items) ? items : [],
+                        source: 'db',
+                        enabled: true,
+                        writable: true
+                    });
                 } catch (e) {
-                    socket.emit('quick_reply_error', 'No se pudieron cargar las respuestas rapidas nativas.');
+                    socket.emit('quick_reply_error', 'No se pudieron cargar las respuestas rapidas.');
                 }
             });
 
-            socket.on('add_quick_reply', async () => {
-                const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
-                if (!quickRepliesEnabled) {
-                    socket.emit('quick_reply_error', 'Respuestas rapidas deshabilitadas para esta empresa o plan.');
-                    return;
+            socket.on('add_quick_reply', async ({ label, text } = {}) => {
+                try {
+                    const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
+                    if (!quickRepliesEnabled) {
+                        socket.emit('quick_reply_error', 'Respuestas rapidas deshabilitadas para esta empresa o plan.');
+                        return;
+                    }
+                    await addQuickReply({ label, text }, { tenantId });
+                    const items = await listQuickReplies({ tenantId });
+                    this.emitToTenant(tenantId, 'quick_replies', {
+                        items: Array.isArray(items) ? items : [],
+                        source: 'db',
+                        enabled: true,
+                        writable: true
+                    });
+                } catch (error) {
+                    socket.emit('quick_reply_error', String(error?.message || 'No se pudo crear la respuesta rapida.'));
                 }
-                socket.emit('quick_reply_error', 'WhatsApp Web no expone crear respuestas rapidas por API en esta version.');
             });
 
-            socket.on('update_quick_reply', async () => {
-                const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
-                if (!quickRepliesEnabled) {
-                    socket.emit('quick_reply_error', 'Respuestas rapidas deshabilitadas para esta empresa o plan.');
-                    return;
+            socket.on('update_quick_reply', async ({ id, label, text } = {}) => {
+                try {
+                    const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
+                    if (!quickRepliesEnabled) {
+                        socket.emit('quick_reply_error', 'Respuestas rapidas deshabilitadas para esta empresa o plan.');
+                        return;
+                    }
+                    await updateQuickReply({ id, label, text }, { tenantId });
+                    const items = await listQuickReplies({ tenantId });
+                    this.emitToTenant(tenantId, 'quick_replies', {
+                        items: Array.isArray(items) ? items : [],
+                        source: 'db',
+                        enabled: true,
+                        writable: true
+                    });
+                } catch (error) {
+                    socket.emit('quick_reply_error', String(error?.message || 'No se pudo actualizar la respuesta rapida.'));
                 }
-                socket.emit('quick_reply_error', 'WhatsApp Web no expone editar respuestas rapidas por API en esta version.');
             });
 
-            socket.on('delete_quick_reply', async () => {
-                const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
-                if (!quickRepliesEnabled) {
-                    socket.emit('quick_reply_error', 'Respuestas rapidas deshabilitadas para esta empresa o plan.');
-                    return;
+            socket.on('delete_quick_reply', async ({ id } = {}) => {
+                try {
+                    const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
+                    if (!quickRepliesEnabled) {
+                        socket.emit('quick_reply_error', 'Respuestas rapidas deshabilitadas para esta empresa o plan.');
+                        return;
+                    }
+                    await deleteQuickReply(id, { tenantId });
+                    const items = await listQuickReplies({ tenantId });
+                    this.emitToTenant(tenantId, 'quick_replies', {
+                        items: Array.isArray(items) ? items : [],
+                        source: 'db',
+                        enabled: true,
+                        writable: true
+                    });
+                } catch (error) {
+                    socket.emit('quick_reply_error', String(error?.message || 'No se pudo eliminar la respuesta rapida.'));
                 }
-                socket.emit('quick_reply_error', 'WhatsApp Web no expone eliminar respuestas rapidas por API en esta version.');
             });
 
             // --- Messaging ---

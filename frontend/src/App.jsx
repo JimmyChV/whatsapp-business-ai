@@ -1375,7 +1375,6 @@ function App() {
     socket.on('my_profile', (profile) => {
       setMyProfile(normalizeProfilePayload(profile));
     });
-
     socket.on('wa_capabilities', (caps) => {
       const nextCaps = {
         messageEdit: Boolean(caps?.messageEdit),
@@ -1383,16 +1382,9 @@ function App() {
         messageForward: Boolean(caps?.messageForward),
         messageDelete: Boolean(caps?.messageDelete),
         messageReply: Boolean(caps?.messageReply),
-        quickReplies: Boolean(caps?.quickReplies),
-        quickRepliesRead: Boolean(caps?.quickRepliesRead),
-        quickRepliesWrite: Boolean(caps?.quickRepliesWrite),
       };
-      setWaCapabilities(nextCaps);
-      if (nextCaps.quickRepliesRead) {
-        socket.emit('get_quick_replies');
-      } else {
-        setQuickReplies([]);
-      }
+      setWaCapabilities((prev) => ({ ...prev, ...nextCaps }));
+      socket.emit('get_quick_replies');
     });
 
     socket.on('wa_runtime', (runtime) => {
@@ -1999,8 +1991,16 @@ function App() {
         setSelectedCatalogId(nextCatalogId);
       }
     });
-
     socket.on('quick_replies', (payload) => {
+      const enabled = payload?.enabled !== false;
+      const writable = payload?.writable !== false;
+      setWaCapabilities((prev) => ({
+        ...prev,
+        quickReplies: enabled,
+        quickRepliesRead: enabled,
+        quickRepliesWrite: enabled && writable
+      }));
+
       const items = Array.isArray(payload?.items) ? payload.items : [];
       const normalized = items
         .map((item, idx) => ({
@@ -3949,6 +3949,3 @@ function App() {
 }
 
 export default App;
-
-
-
