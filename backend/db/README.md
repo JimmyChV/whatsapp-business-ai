@@ -29,6 +29,7 @@ psql "$env:DATABASE_URL" -f db/migrations/009_multichannel_unified_inbox.sql
 psql "$env:DATABASE_URL" -f db/migrations/010_catalog_items_module_pk.sql
 psql "$env:DATABASE_URL" -f db/migrations/011_ai_chat_history.sql
 psql "$env:DATABASE_URL" -f db/migrations/012_control_plane_hardening.sql
+psql "$env:DATABASE_URL" -f db/migrations/013_customer_channels.sql
 ```
 
 ## 3) Tablas esperadas
@@ -80,5 +81,6 @@ SELECT tenant_id, user_id, role, is_active FROM memberships ORDER BY tenant_id, 
 
 - `012_control_plane_hardening.sql` alinea el esquema real usado por el backend (catalogos multi-tenant, integraciones, RBAC catalog, limites y uso IA).
 - `catalog_items` queda con PK compuesta: `(tenant_id, item_id, module_id, catalog_id)`.
-- Si una instancia antigua falla por tabla faltante, reaplica migraciones hasta `012`.
+- `013_customer_channels.sql` garantiza las tablas de identidades y eventos por canal usadas por operacion y trazabilidad multi-canal.
+- Si una instancia antigua falla por tabla faltante, reaplica migraciones hasta `013`.
 

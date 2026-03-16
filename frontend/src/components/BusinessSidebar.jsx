@@ -2424,7 +2424,7 @@ INSTRUCCIONES OBLIGATORIAS:
 
             {!quickRepliesEnabled && activeTab === 'ai' && (
                 <div style={{ padding: '2px 10px 0', fontSize: '0.66rem', color: '#6f8796', textAlign: 'right' }}>
-                    Modo compatibilidad activo (respuestas rapidas nativas no disponibles).
+                    Respuestas rapidas deshabilitadas para esta empresa o plan.
                 </div>
             )}
 
@@ -2859,13 +2859,3 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
-
-
-
-
-
-
-
-
-
-

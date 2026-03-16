@@ -2219,6 +2219,60 @@ app.get('/api/admin/saas/tenants/:tenantId/customers', async (req, res) => {
     }
 });
 
+
+app.get('/api/admin/saas/tenants/:tenantId/customers/:customerId/identities', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const customerId = String(req.params?.customerId || '').trim();
+    if (!tenantId || !customerId) return res.status(400).json({ ok: false, error: 'tenantId/customerId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_READ)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const moduleId = String(req.query?.moduleId || '').trim();
+        const channelType = String(req.query?.channelType || '').trim().toLowerCase();
+        const limit = Number(req.query?.limit || 50);
+        const offset = Number(req.query?.offset || 0);
+        const result = await customerService.listCustomerIdentities(tenantId, {
+            customerId,
+            moduleId,
+            channelType,
+            limit,
+            offset
+        });
+        return res.json({ ok: true, tenantId, customerId, ...result });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar identidades del cliente.') });
+    }
+});
+
+app.get('/api/admin/saas/tenants/:tenantId/customers/:customerId/channel-events', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const customerId = String(req.params?.customerId || '').trim();
+    if (!tenantId || !customerId) return res.status(400).json({ ok: false, error: 'tenantId/customerId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_READ)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const moduleId = String(req.query?.moduleId || '').trim();
+        const chatId = String(req.query?.chatId || '').trim();
+        const channelType = String(req.query?.channelType || '').trim().toLowerCase();
+        const limit = Number(req.query?.limit || 50);
+        const offset = Number(req.query?.offset || 0);
+        const result = await customerService.listChannelEvents(tenantId, {
+            customerId,
+            moduleId,
+            chatId,
+            channelType,
+            limit,
+            offset
+        });
+        return res.json({ ok: true, tenantId, customerId, ...result });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar eventos del cliente.') });
+    }
+});
 app.post('/api/admin/saas/tenants/:tenantId/customers', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
@@ -2294,6 +2348,64 @@ app.get('/api/tenant/customers', async (req, res) => {
         return res.json({ ok: true, tenantId, ...result });
     } catch (error) {
         return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar clientes.') });
+    }
+});
+
+app.get('/api/tenant/customers/:customerId/identities', async (req, res) => {
+    try {
+        if (authService.isAuthEnabled() && !req?.authContext?.isAuthenticated) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+        const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+        const customerId = String(req.params?.customerId || '').trim();
+        if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
+
+        const moduleId = String(req.query?.moduleId || '').trim();
+        const channelType = String(req.query?.channelType || '').trim().toLowerCase();
+        const limit = Number(req.query?.limit || 50);
+        const offset = Number(req.query?.offset || 0);
+
+        const result = await customerService.listCustomerIdentities(tenantId, {
+            customerId,
+            moduleId,
+            channelType,
+            limit,
+            offset
+        });
+
+        return res.json({ ok: true, tenantId, customerId, ...result });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar identidades del cliente.') });
+    }
+});
+
+app.get('/api/tenant/customers/:customerId/channel-events', async (req, res) => {
+    try {
+        if (authService.isAuthEnabled() && !req?.authContext?.isAuthenticated) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+        const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+        const customerId = String(req.params?.customerId || '').trim();
+        if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
+
+        const moduleId = String(req.query?.moduleId || '').trim();
+        const chatId = String(req.query?.chatId || '').trim();
+        const channelType = String(req.query?.channelType || '').trim().toLowerCase();
+        const limit = Number(req.query?.limit || 50);
+        const offset = Number(req.query?.offset || 0);
+
+        const result = await customerService.listChannelEvents(tenantId, {
+            customerId,
+            moduleId,
+            chatId,
+            channelType,
+            limit,
+            offset
+        });
+
+        return res.json({ ok: true, tenantId, customerId, ...result });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar eventos del cliente.') });
     }
 });
 app.get('/api/tenant/wa-modules', async (req, res) => {
@@ -3171,4 +3283,3 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
-

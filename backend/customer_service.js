@@ -1,4 +1,4 @@
-﻿const crypto = require('crypto');
+const crypto = require('crypto');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -158,6 +158,37 @@ function sanitizePublic(item = {}) {
     };
 }
 
+function sanitizeIdentityPublic(item = {}) {
+    const source = item && typeof item === 'object' ? item : {};
+    return {
+        tenantId: toText(source.tenantId || source.tenant_id) || null,
+        customerId: toText(source.customerId || source.customer_id) || null,
+        channelType: toText(source.channelType || source.channel_type) || null,
+        channelIdentity: toText(source.channelIdentity || source.channel_identity) || null,
+        normalizedPhone: toText(source.normalizedPhone || source.normalized_phone) || null,
+        moduleId: toText(source.moduleId || source.module_id) || null,
+        metadata: normalizeObject(source.metadata),
+        createdAt: toText(source.createdAt || source.created_at) || null,
+        updatedAt: toText(source.updatedAt || source.updated_at) || null
+    };
+}
+
+function sanitizeChannelEventPublic(item = {}) {
+    const source = item && typeof item === 'object' ? item : {};
+    return {
+        tenantId: toText(source.tenantId || source.tenant_id) || null,
+        eventId: toText(source.eventId || source.event_id) || null,
+        channelType: toText(source.channelType || source.channel_type) || null,
+        moduleId: toText(source.moduleId || source.module_id) || null,
+        customerId: toText(source.customerId || source.customer_id) || null,
+        chatId: toText(source.chatId || source.chat_id) || null,
+        messageId: toText(source.messageId || source.message_id) || null,
+        direction: toText(source.direction || 'inbound') || 'inbound',
+        status: toText(source.status || '') || null,
+        payload: normalizeObject(source.payload),
+        createdAt: toText(source.createdAt || source.created_at) || null
+    };
+}
 async function ensurePostgresSchema() {
     if (schemaPromise) return schemaPromise;
     schemaPromise = (async () => {
@@ -192,6 +223,56 @@ async function ensurePostgresSchema() {
         await queryPostgres(`
             CREATE INDEX IF NOT EXISTS idx_tenant_customers_updated
             ON tenant_customers(tenant_id, updated_at DESC)
+        `);
+        await queryPostgres(`
+            CREATE TABLE IF NOT EXISTS tenant_customer_identities (
+                tenant_id TEXT NOT NULL,
+                customer_id TEXT NOT NULL,
+                channel_type TEXT NOT NULL,
+                channel_identity TEXT NOT NULL,
+                normalized_phone TEXT NULL,
+                module_id TEXT NULL,
+                metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (tenant_id, channel_type, channel_identity),
+                FOREIGN KEY (tenant_id, customer_id)
+                    REFERENCES tenant_customers(tenant_id, customer_id)
+                    ON DELETE CASCADE
+            )
+        `);
+        await queryPostgres(`
+            CREATE INDEX IF NOT EXISTS idx_customer_identities_tenant_customer
+            ON tenant_customer_identities(tenant_id, customer_id, updated_at DESC)
+        `);
+        await queryPostgres(`
+            CREATE INDEX IF NOT EXISTS idx_customer_identities_tenant_phone
+            ON tenant_customer_identities(tenant_id, normalized_phone)
+            WHERE normalized_phone IS NOT NULL AND normalized_phone <> ''
+        `);
+        await queryPostgres(`
+            CREATE TABLE IF NOT EXISTS tenant_channel_events (
+                tenant_id TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                channel_type TEXT NOT NULL DEFAULT 'whatsapp',
+                module_id TEXT NULL,
+                customer_id TEXT NULL,
+                chat_id TEXT NULL,
+                message_id TEXT NULL,
+                direction TEXT NOT NULL DEFAULT 'inbound',
+                status TEXT NULL,
+                payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (tenant_id, event_id)
+            )
+        `);
+        await queryPostgres(`
+            CREATE INDEX IF NOT EXISTS idx_channel_events_tenant_created
+            ON tenant_channel_events(tenant_id, created_at DESC)
+        `);
+        await queryPostgres(`
+            CREATE INDEX IF NOT EXISTS idx_channel_events_tenant_module
+            ON tenant_channel_events(tenant_id, module_id, created_at DESC)
         `);
     })();
 
@@ -640,11 +721,211 @@ async function importCustomersCsv(tenantId = DEFAULT_TENANT_ID, csvText = '', op
     };
 }
 
+
+function createChannelEventId() {
+    return `evt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function listCustomerIdentities(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    if (getStorageDriver() !== 'postgres') {
+        return { items: [], total: 0, limit: Number(options.limit || 50) || 50, offset: Number(options.offset || 0) || 0 };
+    }
+    await ensurePostgresSchema();
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const customerId = normalizeCustomerIdCandidate(options?.customerId || options?.customer_id || '');
+    const moduleId = toText(options?.moduleId || options?.module_id || '');
+    const channelType = toText(options?.channelType || options?.channel_type || '').toLowerCase();
+    const limit = Math.max(1, Math.min(PAGE_LIMIT_MAX, Number(options.limit || 50) || 50));
+    const offset = Math.max(0, Number(options.offset || 0) || 0);
+
+    const params = [cleanTenantId];
+    const where = ['tenant_id = $1'];
+    let idx = 2;
+
+    if (customerId) {
+        where.push(`customer_id = $${idx}`);
+        params.push(customerId);
+        idx += 1;
+    }
+    if (moduleId) {
+        where.push(`module_id = $${idx}`);
+        params.push(moduleId);
+        idx += 1;
+    }
+    if (channelType) {
+        where.push(`channel_type = $${idx}`);
+        params.push(channelType);
+        idx += 1;
+    }
+
+    const whereSql = where.join(' AND ');
+    const totalRes = await queryPostgres(`SELECT COUNT(*)::int AS total FROM tenant_customer_identities WHERE ${whereSql}`, params);
+    const rowsRes = await queryPostgres(
+        `SELECT *
+         FROM tenant_customer_identities
+         WHERE ${whereSql}
+         ORDER BY updated_at DESC
+         LIMIT $${idx} OFFSET $${idx + 1}`,
+        [...params, limit, offset]
+    );
+
+    return {
+        items: (rowsRes?.rows || []).map(sanitizeIdentityPublic),
+        total: Number(totalRes?.rows?.[0]?.total || 0) || 0,
+        limit,
+        offset
+    };
+}
+
+async function upsertCustomerIdentity(tenantId = DEFAULT_TENANT_ID, payload = {}) {
+    if (getStorageDriver() !== 'postgres') return null;
+    await ensurePostgresSchema();
+
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const customerId = normalizeCustomerIdCandidate(payload?.customerId || payload?.customer_id || '');
+    const channelType = toText(payload?.channelType || payload?.channel_type || 'whatsapp').toLowerCase() || 'whatsapp';
+    const channelIdentity = toText(payload?.channelIdentity || payload?.channel_identity || payload?.chatId || payload?.chat_id || payload?.phoneE164 || payload?.phone || '');
+
+    if (!customerId) throw new Error('customerId invalido para identidad de cliente.');
+    if (!channelIdentity) throw new Error('channelIdentity invalido para identidad de cliente.');
+
+    const normalizedPhone = normalizePhone(payload?.normalizedPhone || payload?.normalized_phone || payload?.phoneE164 || payload?.phone || '');
+    const moduleId = toText(payload?.moduleId || payload?.module_id || '') || null;
+    const metadata = normalizeObject(payload?.metadata);
+
+    const result = await queryPostgres(
+        `INSERT INTO tenant_customer_identities (
+            tenant_id, customer_id, channel_type, channel_identity, normalized_phone, module_id, metadata, created_at, updated_at
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7::jsonb, NOW(), NOW()
+        )
+        ON CONFLICT (tenant_id, channel_type, channel_identity)
+        DO UPDATE SET
+            customer_id = EXCLUDED.customer_id,
+            normalized_phone = EXCLUDED.normalized_phone,
+            module_id = EXCLUDED.module_id,
+            metadata = EXCLUDED.metadata,
+            updated_at = NOW()
+        RETURNING *`,
+        [
+            cleanTenantId,
+            customerId,
+            channelType,
+            channelIdentity,
+            normalizedPhone || null,
+            moduleId,
+            JSON.stringify(metadata)
+        ]
+    );
+
+    return result?.rows?.[0] ? sanitizeIdentityPublic(result.rows[0]) : null;
+}
+
+async function appendChannelEvent(tenantId = DEFAULT_TENANT_ID, payload = {}) {
+    if (getStorageDriver() !== 'postgres') return null;
+    await ensurePostgresSchema();
+
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const eventId = toText(payload?.eventId || payload?.event_id || '') || createChannelEventId();
+    const channelType = toText(payload?.channelType || payload?.channel_type || 'whatsapp').toLowerCase() || 'whatsapp';
+    const moduleId = toText(payload?.moduleId || payload?.module_id || '') || null;
+    const customerId = normalizeCustomerIdCandidate(payload?.customerId || payload?.customer_id || '') || null;
+    const chatId = toText(payload?.chatId || payload?.chat_id || '') || null;
+    const messageId = toText(payload?.messageId || payload?.message_id || '') || null;
+    const direction = toText(payload?.direction || 'inbound').toLowerCase() || 'inbound';
+    const status = toText(payload?.status || '') || null;
+    const eventPayload = normalizeObject(payload?.payload);
+
+    const result = await queryPostgres(
+        `INSERT INTO tenant_channel_events (
+            tenant_id, event_id, channel_type, module_id, customer_id, chat_id, message_id, direction, status, payload, created_at
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, NOW()
+        )
+        ON CONFLICT (tenant_id, event_id)
+        DO UPDATE SET
+            status = EXCLUDED.status,
+            payload = EXCLUDED.payload
+        RETURNING *`,
+        [
+            cleanTenantId,
+            eventId,
+            channelType,
+            moduleId,
+            customerId,
+            chatId,
+            messageId,
+            direction,
+            status,
+            JSON.stringify(eventPayload)
+        ]
+    );
+
+    return result?.rows?.[0] ? sanitizeChannelEventPublic(result.rows[0]) : null;
+}
+
+async function listChannelEvents(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    if (getStorageDriver() !== 'postgres') {
+        return { items: [], total: 0, limit: Number(options.limit || 50) || 50, offset: Number(options.offset || 0) || 0 };
+    }
+    await ensurePostgresSchema();
+
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const customerId = normalizeCustomerIdCandidate(options?.customerId || options?.customer_id || '');
+    const moduleId = toText(options?.moduleId || options?.module_id || '');
+    const chatId = toText(options?.chatId || options?.chat_id || '');
+    const channelType = toText(options?.channelType || options?.channel_type || '').toLowerCase();
+    const limit = Math.max(1, Math.min(PAGE_LIMIT_MAX, Number(options.limit || 50) || 50));
+    const offset = Math.max(0, Number(options.offset || 0) || 0);
+
+    const params = [cleanTenantId];
+    const where = ['tenant_id = $1'];
+    let idx = 2;
+
+    if (customerId) {
+        where.push(`customer_id = $${idx}`);
+        params.push(customerId);
+        idx += 1;
+    }
+    if (moduleId) {
+        where.push(`module_id = $${idx}`);
+        params.push(moduleId);
+        idx += 1;
+    }
+    if (chatId) {
+        where.push(`chat_id = $${idx}`);
+        params.push(chatId);
+        idx += 1;
+    }
+    if (channelType) {
+        where.push(`channel_type = $${idx}`);
+        params.push(channelType);
+        idx += 1;
+    }
+
+    const whereSql = where.join(' AND ');
+    const totalRes = await queryPostgres(`SELECT COUNT(*)::int AS total FROM tenant_channel_events WHERE ${whereSql}`, params);
+    const rowsRes = await queryPostgres(
+        `SELECT *
+         FROM tenant_channel_events
+         WHERE ${whereSql}
+         ORDER BY created_at DESC
+         LIMIT $${idx} OFFSET $${idx + 1}`,
+        [...params, limit, offset]
+    );
+
+    return {
+        items: (rowsRes?.rows || []).map(sanitizeChannelEventPublic),
+        total: Number(totalRes?.rows?.[0]?.total || 0) || 0,
+        limit,
+        offset
+    };
+}
 async function upsertFromInteraction(tenantId = DEFAULT_TENANT_ID, payload = {}) {
     const phone = normalizePhone(payload?.phone || payload?.phoneE164 || '');
     if (!phone) return null;
 
-    return upsertCustomer(tenantId, {
+    const upsertResult = await upsertCustomer(tenantId, {
         moduleId: toText(payload?.moduleId || ''),
         phoneE164: phone,
         contactName: toText(payload?.contactName || payload?.name || payload?.pushname || ''),
@@ -660,6 +941,43 @@ async function upsertFromInteraction(tenantId = DEFAULT_TENANT_ID, payload = {})
         lastInteractionAt: nowIso(),
         isActive: true
     }, { allowPhoneMerge: true });
+
+    const customerId = toText(upsertResult?.item?.customerId || '');
+    if (customerId && getStorageDriver() === 'postgres') {
+        try {
+            await upsertCustomerIdentity(tenantId, {
+                customerId,
+                moduleId: toText(payload?.moduleId || ''),
+                channelType: toText(payload?.channelType || payload?.metadata?.channelType || 'whatsapp').toLowerCase() || 'whatsapp',
+                channelIdentity: toText(payload?.channelIdentity || payload?.chatId || payload?.metadata?.senderId || payload?.phone || ''),
+                normalizedPhone: phone,
+                metadata: {
+                    chatId: toText(payload?.chatId || ''),
+                    senderId: toText(payload?.metadata?.senderId || ''),
+                    senderPushname: toText(payload?.metadata?.senderPushname || ''),
+                    fromMe: Boolean(payload?.metadata?.fromMe)
+                }
+            });
+
+            await appendChannelEvent(tenantId, {
+                channelType: toText(payload?.channelType || payload?.metadata?.channelType || 'whatsapp').toLowerCase() || 'whatsapp',
+                moduleId: toText(payload?.moduleId || ''),
+                customerId,
+                chatId: toText(payload?.chatId || ''),
+                messageId: toText(payload?.metadata?.messageId || payload?.messageId || ''),
+                direction: toText(payload?.direction || 'inbound') || 'inbound',
+                status: toText(payload?.status || '') || null,
+                payload: {
+                    messageType: toText(payload?.messageType || ''),
+                    metadata: normalizeObject(payload?.metadata)
+                }
+            });
+        } catch (_) {
+            // No bloquea operacion principal si falla instrumentacion multicanal.
+        }
+    }
+
+    return upsertResult;
 }
 
 module.exports = {
@@ -669,5 +987,9 @@ module.exports = {
     updateCustomer,
     importCustomersCsv,
     upsertFromInteraction,
+    listCustomerIdentities,
+    listChannelEvents,
+    upsertCustomerIdentity,
+    appendChannelEvent,
     sanitizePublic
 };
