@@ -385,6 +385,37 @@ const ADMIN_NAV_ITEMS = [
 ];
 const AI_PROVIDER_OPTIONS = ['openai'];
 const AI_MODEL_OPTIONS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'];
+const LAVITAT_FIRST_ASSISTANT_SYSTEM_PROMPT = `Eres el copiloto comercial interno de Lavitat (Peru). Tu interlocutor es la vendedora, no el cliente final.
+
+Objetivo:
+- ayudar a vender mejor con criterio comercial
+- sugerir respuestas listas para WhatsApp
+- recomendar productos reales del catalogo activo
+- proponer upsell/cross-sell con naturalidad
+- generar cotizaciones claras cuando se solicite
+
+Reglas innegociables:
+- usa solo datos reales del sistema (tenant, modulo, catalogo, carrito, chat)
+- no inventes productos, precios, descuentos, stock, presentaciones o aromas
+- no mezcles informacion entre tenants
+- si falta un dato clave, dilo de forma ejecutiva y sugiere como validar antes de enviar
+
+Tono Lavitat:
+- amigable, claro, experto, seguro, calido y elegante
+- evita tono suplicante, vulgar, agresivo o improvisado
+- comunica valor (calidad, rendimiento, cuidado de tejidos/superficies, servicio)
+
+Cuando corresponda, resalta:
+- detergente concentrado: formula enzimatica y cuidado de tejidos
+- linea delicada: hipoalergenica, ideal para bebes/piel sensible/lenceria
+- limpiador desinfectante: limpia + desinfecta + aromatiza
+- quitasarro gel: mejor rendimiento por aplicacion
+
+Formato recomendado para copiloto:
+1) 3 respuestas sugeridas (listas para copiar)
+2) recomendacion comercial (producto principal + complemento + motivo)
+3) cierre sugerido
+4) 3 cotizaciones separadas si aplica`;
 const ROLE_PRIORITY = Object.freeze({
     seller: 1,
     admin: 2,
@@ -530,6 +561,23 @@ function buildAiAssistantFormFromItem(item = null) {
     };
 }
 
+function buildLavitatAssistantPreset(form = {}) {
+    const source = form && typeof form === 'object' ? form : {};
+    const modelCandidate = String(source.model || '').trim();
+    const safeModel = AI_MODEL_OPTIONS.includes(modelCandidate) ? modelCandidate : 'gpt-4o-mini';
+    return {
+        ...source,
+        name: String(source.name || '').trim() || 'Asistente Comercial Lavitat',
+        description: String(source.description || '').trim() || 'Copiloto interno de ventas para Lavitat. Sugiere respuestas, recomendaciones y cotizaciones desde contexto real del tenant.',
+        provider: 'openai',
+        model: safeModel,
+        systemPrompt: LAVITAT_FIRST_ASSISTANT_SYSTEM_PROMPT,
+        temperature: '0.45',
+        topP: '0.95',
+        maxTokens: '1200',
+        isActive: source.isActive !== false
+    };
+}
 function buildAiAssistantPayload(form = {}, { allowAssistantId = true } = {}) {
     const source = form && typeof form === 'object' ? form : {};
     const payload = {
@@ -2360,6 +2408,9 @@ export default function SaasAdminPanel({
         setAiAssistantPanelMode('create');
     };
 
+    const applyLavitatAssistantPreset = () => {
+        setAiAssistantForm((prev) => buildLavitatAssistantPreset(prev));
+    };
     const openAiAssistantView = (assistantId) => {
         const cleanAssistantId = sanitizeAiAssistantCode(assistantId || '');
         if (!cleanAssistantId) return;
@@ -4028,6 +4079,11 @@ export default function SaasAdminPanel({
                                             />
                                         </div>
 
+                                        <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                            <button type="button" disabled={busy} onClick={applyLavitatAssistantPreset}>
+                                                Cargar plantilla Lavitat
+                                            </button>
+                                        </div>
                                         <div className="saas-admin-form-row">
                                             <input
                                                 type="password"
@@ -4465,7 +4521,7 @@ export default function SaasAdminPanel({
                                                         <small>Selecciona uno o mas catalogos activos para este modulo.</small>
                                                         <div className="saas-admin-modules">
                                                             {activeCatalogOptions.length === 0 && (
-                                                                <div className="saas-admin-empty-inline">No hay catalogos activos. Crea uno en la pestaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±a Catalogos.</div>
+                                                                <div className="saas-admin-empty-inline">No hay catalogos activos. Crea uno en la pestana Catalogos.</div>
                                                             )}
                                                             {activeCatalogOptions.map((catalogItem) => {
                                                                 const catalogId = String(catalogItem?.catalogId || '').trim().toUpperCase();

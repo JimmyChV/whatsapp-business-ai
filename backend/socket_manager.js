@@ -5372,7 +5372,7 @@ class SocketManager {
             // --- AI ---
             socket.on('request_ai_suggestion', (payload) => {
                 if (!guardRateLimit(socket, 'request_ai_suggestion')) return;
-                const { contextText, customPrompt, businessContext, moduleId } = payload || {};
+                const { contextText, customPrompt, businessContext, moduleId, runtimeContext } = payload || {};
                 // Defer to avoid blocking the event loop (prevents 'click handler took Xms' violations)
                 setImmediate(async () => {
                     try {
@@ -5395,7 +5395,12 @@ class SocketManager {
 
                         const aiText = await getChatSuggestion(contextText, customPrompt, (chunk) => {
                             socket.emit('ai_suggestion_chunk', chunk);
-                        }, businessContext, { tenantId, moduleAssistantId });
+                        }, businessContext, {
+                            tenantId,
+                            moduleAssistantId,
+                            runtimeContext: runtimeContext && typeof runtimeContext === 'object' ? runtimeContext : null,
+                            moduleContext: aiModuleContext && typeof aiModuleContext === 'object' ? aiModuleContext : null
+                        });
                         if (typeof aiText === 'string' && aiText.startsWith('Error IA:')) {
                             socket.emit('ai_error', aiText);
                         }
@@ -5410,8 +5415,8 @@ class SocketManager {
 
             socket.on('internal_ai_query', (payload) => {
                 if (!guardRateLimit(socket, 'internal_ai_query')) return;
-                const { query, businessContext, moduleId } = typeof payload === 'string'
-                    ? { query: payload, businessContext: null, moduleId: '' }
+                const { query, businessContext, moduleId, runtimeContext } = typeof payload === 'string'
+                    ? { query: payload, businessContext: null, moduleId: '', runtimeContext: null }
                     : (payload || {});
                 // Defer to avoid blocking the event loop
                 setImmediate(async () => {
@@ -5435,7 +5440,12 @@ class SocketManager {
 
                         const copilotText = await askInternalCopilot(query, (chunk) => {
                             socket.emit('internal_ai_chunk', chunk);
-                        }, businessContext, { tenantId, moduleAssistantId });
+                        }, businessContext, {
+                            tenantId,
+                            moduleAssistantId,
+                            runtimeContext: runtimeContext && typeof runtimeContext === 'object' ? runtimeContext : null,
+                            moduleContext: aiModuleContext && typeof aiModuleContext === 'object' ? aiModuleContext : null
+                        });
                         if (typeof copilotText === 'string' && copilotText.startsWith('Error IA:')) {
                             socket.emit('internal_ai_error', copilotText);
                         }
@@ -6289,6 +6299,3 @@ class SocketManager {
 
 
 module.exports = SocketManager;
-
-
-

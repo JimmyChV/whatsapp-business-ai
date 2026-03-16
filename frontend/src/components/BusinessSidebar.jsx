@@ -545,7 +545,7 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout, p
 // =========================================================
 // CATALOG TAB
 // =========================================================
-const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null }) => {
+const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({
@@ -1315,13 +1315,13 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 
 // =========================================================
 
-const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, activeChatPhone = '', onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null }) => {
+const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null }) => {
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     const companyProfileRef = useRef(null);
     // AI Chat State
     const [aiMessages, setAiMessages] = useState([
-        { role: 'assistant', content: 'Hola, soy tu asistente de ventas de Lavitat con IA OpenAI. Estoy viendo la conversacion y te ayudare a cerrar mejor.\n\nPrueba: "Dame 3 opciones de respuesta" o "Como manejo una objecion de precio".' }
+        { role: 'assistant', content: 'Hola, soy tu copiloto comercial de Lavitat. Estoy viendo el contexto real del chat para ayudarte a vender mejor.\n\nPrueba: "Dame 3 respuestas sugeridas" o "Genera 3 cotizaciones con enfoque entrada, equilibrio y premium".' }
     ]);
     const [aiInput, setAiInput] = useState('');
     const [isAiLoading, setIsAiLoading] = useState(false);
@@ -1358,7 +1358,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setActiveTab('ai');
         setShowCompanyProfile(false);
         setAiMessages([
-            { role: 'assistant', content: 'Hola, soy tu asistente de ventas de Lavitat con IA OpenAI. Estoy viendo la conversacion y te ayudare a cerrar mejor.\n\nPrueba: "Dame 3 opciones de respuesta" o "Como manejo una objecion de precio".' }
+            { role: 'assistant', content: 'Hola, soy tu copiloto comercial de Lavitat. Estoy viendo el contexto real del chat para ayudarte a vender mejor.\n\nPrueba: "Dame 3 respuestas sugeridas" o "Genera 3 cotizaciones con enfoque entrada, equilibrio y premium".' }
         ]);
         setAiInput('');
         setCart([]);
@@ -1795,14 +1795,124 @@ CARRITO ACTUAL (si ya agregaste productos):
 ${cart.length > 0 ? cart.map((item, idx) => `- ${idx + 1}) ${item.title} | qty ${item.qty} | precio base S/ ${formatMoney(item.price)}${item.lineDiscountEnabled ? ` | desc ${item.lineDiscountType === 'amount' ? 'monto' : '%'} ${formatMoney(item.lineDiscountValue)}` : ''}`).join('\n') : '(carrito vacio)'}
 
 INSTRUCCIONES OBLIGATORIAS:
-- Si te piden opciones/cotizacion, da minimo 2 alternativas: base y optimizada.
+- Si te piden opciones/cotizacion, da 3 alternativas: entrada, equilibrio y premium.
 - NO inventes productos, presentaciones ni precios. Usa solo el catalogo listado.
-- Si hay carrito con productos, propone al menos 2 cotizaciones (base y optimizada) usando ese carrito como base.
+- Si hay carrito con productos, arma 3 cotizaciones separadas usando ese carrito como base.
 - Siempre que sea posible, incluye upsell complementario.
 - En objecion de precio: responder por formulacion/rendimiento, no por descuento defensivo.
 - Para mensajes listos para enviar al cliente, usa [MENSAJE: ...].
 - Se claro, breve y vendedor (tono WhatsApp profesional).
         `.trim();
+    };
+
+    const buildAiRuntimeContextPayload = () => {
+        const normalizeModuleId = (value = '') => String(value || '').trim().toLowerCase();
+        const normalizeCatalogId = (value = '') => String(value || '').trim().toUpperCase();
+        const activeModuleIdClean = normalizeModuleId(activeModuleId || selectedCatalogModuleId);
+        const modules = Array.isArray(waModules) ? waModules : [];
+        const activeModule = modules.find((entry) => normalizeModuleId(entry?.moduleId || entry?.id || '') === activeModuleIdClean) || null;
+        const scope = businessData?.catalogMeta?.scope && typeof businessData.catalogMeta.scope === 'object'
+            ? businessData.catalogMeta.scope
+            : {};
+
+        const selectedCatalog = normalizeCatalogId(selectedCatalogId || scope.catalogId || '');
+        const scopeCatalogIds = Array.isArray(scope.catalogIds)
+            ? scope.catalogIds.map((entry) => normalizeCatalogId(entry)).filter(Boolean)
+            : [];
+        const catalogIds = Array.from(new Set([
+            selectedCatalog,
+            ...scopeCatalogIds
+        ].filter(Boolean)));
+
+        const e164Phone = (() => {
+            const digits = String(activeChatPhone || activeChatDetails?.phone || '').replace(/\D/g, '');
+            if (!digits) return '';
+            return '+' + digits;
+        })();
+
+        const customerName = String(
+            activeChatDetails?.name
+            || activeChatDetails?.pushname
+            || activeChatDetails?.shortName
+            || ''
+        ).trim();
+
+        return {
+            tenant: {
+                id: String(tenantScopeRef.current || 'default').trim() || 'default',
+                name: String(profile?.name || profile?.pushname || '').trim() || null,
+                plan: null
+            },
+            module: {
+                moduleId: activeModuleIdClean || null,
+                name: String(activeModule?.name || '').trim() || null,
+                channelType: String(activeModule?.channelType || '').trim().toLowerCase() || 'whatsapp',
+                transportMode: 'cloud'
+            },
+            catalog: {
+                catalogId: selectedCatalog || null,
+                catalogIds,
+                source: String(businessData?.catalogMeta?.source || '').trim().toLowerCase() || 'local',
+                items: catalog.slice(0, 70).map((item) => ({
+                    id: item.id || null,
+                    title: item.title || null,
+                    price: item.price || null,
+                    regularPrice: item.regularPrice || null,
+                    salePrice: item.salePrice || null,
+                    discountPct: Number(item.discountPct || 0) || 0,
+                    description: item.description || '',
+                    category: item.category || item.categoryName || null,
+                    categories: Array.isArray(item.categories) ? item.categories : [],
+                    catalogId: item.catalogId || selectedCatalog || null,
+                    catalogName: item.catalogName || null,
+                    source: item.source || null,
+                    sku: item.sku || null,
+                    stockStatus: item.stockStatus || null,
+                    imageUrl: item.imageUrl || null,
+                    presentation: item.presentation || item?.metadata?.presentation || item?.metadata?.presentacion || null,
+                    aroma: item.aroma || item?.metadata?.aroma || item?.metadata?.scent || null,
+                    hypoallergenic: typeof item?.metadata?.hypoallergenic === 'boolean' ? item.metadata.hypoallergenic : null,
+                    petFriendly: typeof item?.metadata?.petFriendly === 'boolean' ? item.metadata.petFriendly : (typeof item?.metadata?.pet_friendly === 'boolean' ? item.metadata.pet_friendly : null)
+                }))
+            },
+            cart: {
+                items: lineBreakdowns.map(({ item, qty, unitPrice }) => ({
+                    id: item?.id || null,
+                    title: item?.title || null,
+                    qty,
+                    price: Number(unitPrice || 0),
+                    regularPrice: Number(parseMoney(item?.regularPrice, unitPrice) || 0),
+                    category: item?.category || item?.categoryName || null,
+                    lineDiscountEnabled: Boolean(item?.lineDiscountEnabled),
+                    lineDiscountType: item?.lineDiscountType === 'amount' ? 'amount' : 'percent',
+                    lineDiscountValue: Number(parseMoney(item?.lineDiscountValue, 0) || 0)
+                })),
+                subtotal: Number(subtotalProducts || 0),
+                discount: Number(totalDiscountForQuote || 0),
+                total: Number(cartTotal || 0),
+                delivery: Number(deliveryFee || 0),
+                currency: 'PEN',
+                notes: `delivery=${deliveryType}; globalDiscount=${globalDiscountEnabled ? `${globalDiscountType}:${normalizedGlobalDiscountValue}` : 'none'}`
+            },
+            chat: {
+                chatId: String(activeChatId || '').trim(),
+                phone: e164Phone || null,
+                recentMessages: (Array.isArray(messages) ? messages : []).slice(-18).map((entry) => ({
+                    fromMe: entry?.fromMe === true,
+                    body: String(entry?.body || '').trim(),
+                    type: String(entry?.type || '').trim().toLowerCase() || 'chat',
+                    timestamp: Number(entry?.timestamp || 0) || null
+                }))
+            },
+            customer: {
+                customerId: String(activeChatDetails?.customerId || '').trim() || null,
+                phoneE164: e164Phone || null,
+                name: customerName || null
+            },
+            ui: {
+                contextSource: 'business_sidebar'
+            }
+        };
     };
 
     const sendAiMessage = () => {
@@ -1812,10 +1922,14 @@ INSTRUCCIONES OBLIGATORIAS:
         setAiInput('');
         setIsAiLoading(true);
 
+        const runtimeContext = buildAiRuntimeContextPayload();
+        const moduleId = String(runtimeContext?.module?.moduleId || '').trim().toLowerCase();
+
         socket.emit('internal_ai_query', {
             query: aiInput.trim(),
             businessContext: buildBusinessContext(),
-            moduleId: String(activeModuleId || selectedCatalogModuleId || '').trim().toLowerCase() || undefined
+            moduleId: moduleId || undefined,
+            runtimeContext
         });
     };
 
@@ -1977,6 +2091,43 @@ INSTRUCCIONES OBLIGATORIAS:
     const safeDeliveryAmount = Math.max(0, parseMoney(deliveryAmount, 0));
     const deliveryFee = deliveryType === 'amount' ? safeDeliveryAmount : 0;
     const cartTotal = roundMoney(subtotalAfterGlobal + deliveryFee);
+
+    useEffect(() => {
+        if (typeof onCartSnapshotChange !== 'function') return;
+        const snapshot = {
+            chatId: String(activeChatId || '').trim() || null,
+            items: lineBreakdowns.map(({ item, qty, unitPrice, lineDiscountEnabled, lineDiscountType, lineDiscountValue }) => ({
+                id: item?.id || null,
+                title: item?.title || null,
+                qty,
+                price: Number(unitPrice || 0),
+                regularPrice: Number(parseMoney(item?.regularPrice, unitPrice) || 0),
+                category: item?.category || item?.categoryName || null,
+                lineDiscountEnabled: Boolean(lineDiscountEnabled),
+                lineDiscountType: lineDiscountType === 'amount' ? 'amount' : 'percent',
+                lineDiscountValue: Number(lineDiscountValue || 0)
+            })),
+            subtotal: Number(subtotalProducts || 0),
+            discount: Number(totalDiscountForQuote || 0),
+            total: Number(cartTotal || 0),
+            delivery: Number(deliveryFee || 0),
+            currency: 'PEN',
+            notes: `delivery=${deliveryType}; globalDiscount=${globalDiscountEnabled ? `${globalDiscountType}:${normalizedGlobalDiscountValue}` : 'none'}`
+        };
+        onCartSnapshotChange(snapshot);
+    }, [
+        onCartSnapshotChange,
+        activeChatId,
+        lineBreakdowns,
+        subtotalProducts,
+        totalDiscountForQuote,
+        cartTotal,
+        deliveryFee,
+        deliveryType,
+        globalDiscountEnabled,
+        globalDiscountType,
+        normalizedGlobalDiscountValue
+    ]);
 
     const sendQuoteToChat = () => {
         if (cart.length === 0) return;
@@ -2145,13 +2296,14 @@ INSTRUCCIONES OBLIGATORIAS:
                             Atajos IA
                         </div>
                         {[
-                            'Dame 3 opciones de respuesta',
-                            'Como cerrar esta venta',
-                            'Maneja la objecion de precio',
-                            'Recomienda un producto',
+                            'Dame 3 respuestas sugeridas para este cliente',
+                            'Genera 3 cotizaciones con enfoque: entrada, equilibrio y premium',
+                            'Recomienda upsell y cross sell segun este contexto',
+                            'Maneja objecion de precio enfocando valor y rendimiento',
+                            'Propone un cierre elegante para concretar hoy',
                         ].map((chip, i) => (
                             <button key={i} className="ai-prompt-chip ai-prompt-chip-pro"
-                                onClick={() => { setAiInput(chip.replace(/^[^\s]+ /, '')); }}
+                                onClick={() => { setAiInput(chip); }}
                                 style={{ background: '#202c33', border: '1px solid var(--border-color)', color: '#8696a0', padding: '4px 9px', borderRadius: '14px', fontSize: '0.72rem', cursor: 'pointer' }}
                                 onMouseEnter={e => e.currentTarget.style.borderColor = '#00a884'}
                                 onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
@@ -2513,6 +2665,5 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
-
 
 
