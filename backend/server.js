@@ -1133,6 +1133,12 @@ function sanitizeCatalogIdListPayload(value = []) {
     return out;
 }
 
+function sanitizeAiAssistantIdPayload(value = '') {
+    const clean = String(value || '').trim().toUpperCase();
+    if (!clean) return null;
+    return /^AIA-[A-Z0-9]{6}$/.test(clean) ? clean : null;
+}
+
 function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
     const source = sanitizeObjectPayload(payload);
     const sourceMetadata = sanitizeObjectPayload(source.metadata);
@@ -1147,6 +1153,11 @@ function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
         Array.isArray(source.catalogIds)
             ? source.catalogIds
             : (Array.isArray(metadataModuleSettings.catalogIds) ? metadataModuleSettings.catalogIds : [])
+    );
+    const incomingAiAssistantId = sanitizeAiAssistantIdPayload(
+        source.aiAssistantId
+        || source.moduleAiAssistantId
+        || metadataModuleSettings.aiAssistantId
     );
 
     const base = {
@@ -1164,7 +1175,8 @@ function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
             ...sourceMetadata,
             moduleSettings: {
                 ...metadataModuleSettings,
-                catalogIds: incomingCatalogIds
+                catalogIds: incomingCatalogIds,
+                aiAssistantId: incomingAiAssistantId
             },
             cloudConfig
         }
@@ -1173,6 +1185,32 @@ function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
     if (allowModuleId) {
         const moduleId = String(source.moduleId || source.id || '').trim();
         if (moduleId) base.moduleId = moduleId;
+    }
+
+    return base;
+}
+
+function sanitizeAiAssistantPayload(payload = {}, { allowAssistantId = true } = {}) {
+    const source = sanitizeObjectPayload(payload);
+    const base = {
+        name: String(source.name || '').trim(),
+        description: String(source.description || '').trim() || null,
+        provider: String(source.provider || 'openai').trim().toLowerCase() || 'openai',
+        model: String(source.model || 'gpt-4o-mini').trim() || 'gpt-4o-mini',
+        systemPrompt: String(source.systemPrompt || '').trim() || null,
+        temperature: Math.max(0, Math.min(2, Number(source.temperature ?? 0.7) || 0.7)),
+        topP: Math.max(0, Math.min(1, Number(source.topP ?? 1) || 1)),
+        maxTokens: Math.max(64, Math.min(4096, Number(source.maxTokens ?? 800) || 800)),
+        isActive: source.isActive !== false,
+        isDefault: source.isDefault === true
+    };
+
+    const openaiApiKey = String(source.openaiApiKey || source.apiKey || '').trim();
+    if (openaiApiKey) base.openaiApiKey = openaiApiKey;
+
+    if (allowAssistantId) {
+        const assistantId = sanitizeAiAssistantIdPayload(source.assistantId || source.id || '');
+        if (assistantId) base.assistantId = assistantId;
     }
 
     return base;
@@ -1738,6 +1776,94 @@ app.put('/api/admin/saas/tenants/:tenantId/integrations', async (req, res) => {
     }
 });
 
+app.get('/api/admin/saas/tenants/:tenantId/ai-assistants', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId)
+        || !hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ,
+            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE
+        ])) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const result = await tenantIntegrationsService.listTenantAiAssistants(tenantId);
+        return res.json({ ok: true, tenantId, defaultAssistantId: result?.defaultAssistantId || null, items: result?.items || [] });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar asistentes IA del tenant.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/ai-assistants', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const payload = sanitizeAiAssistantPayload(req.body, { allowAssistantId: true });
+        if (!payload.name) return res.status(400).json({ ok: false, error: 'Nombre de asistente requerido.' });
+
+        const result = await tenantIntegrationsService.createTenantAiAssistant(tenantId, payload);
+        return res.json({ ok: true, tenantId, defaultAssistantId: result?.defaultAssistantId || null, item: result?.item || null });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear asistente IA.') });
+    }
+});
+
+app.put('/api/admin/saas/tenants/:tenantId/ai-assistants/:assistantId', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const assistantId = sanitizeAiAssistantIdPayload(req.params?.assistantId || '');
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!assistantId) return res.status(400).json({ ok: false, error: 'assistantId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const payload = sanitizeAiAssistantPayload(req.body, { allowAssistantId: false });
+        const result = await tenantIntegrationsService.updateTenantAiAssistant(tenantId, assistantId, payload);
+        return res.json({ ok: true, tenantId, defaultAssistantId: result?.defaultAssistantId || null, item: result?.item || null });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar asistente IA.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/ai-assistants/:assistantId/default', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const assistantId = sanitizeAiAssistantIdPayload(req.params?.assistantId || '');
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!assistantId) return res.status(400).json({ ok: false, error: 'assistantId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const result = await tenantIntegrationsService.setDefaultTenantAiAssistant(tenantId, assistantId);
+        return res.json({ ok: true, tenantId, defaultAssistantId: result?.defaultAssistantId || null, item: result?.item || null });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo definir asistente principal.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/ai-assistants/:assistantId/deactivate', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const assistantId = sanitizeAiAssistantIdPayload(req.params?.assistantId || '');
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!assistantId) return res.status(400).json({ ok: false, error: 'assistantId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const result = await tenantIntegrationsService.deactivateTenantAiAssistant(tenantId, assistantId);
+        return res.json({ ok: true, tenantId, defaultAssistantId: result?.defaultAssistantId || null, item: result?.item || null });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar asistente IA.') });
+    }
+});
 app.get('/api/admin/saas/tenants/:tenantId/catalogs', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
