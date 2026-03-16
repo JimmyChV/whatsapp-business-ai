@@ -1,12 +1,19 @@
 const fs = require('fs');
 const path = require('path');
 const tenantIntegrationsService = require('./tenant_integrations_service');
+const { buildAiPromptPackage } = require('./ai_prompt_context_service');
 
 function sanitizeApiKey(value = '') {
     return String(value || '')
         .trim()
         .replace(/^["']|["']$/g, '')
         .replace(/\s+/g, '');
+}
+
+function clipText(value = '', maxLen = 600) {
+    const text = String(value || '');
+    if (text.length <= maxLen) return text;
+    return text.slice(0, maxLen) + '...';
 }
 
 function normalizeAssistantId(value = '') {
@@ -75,12 +82,10 @@ function mapAiError(error) {
     return 'Error IA: fallo al consultar OpenAI.';
 }
 
-async function requestOpenAI(prompt, { apiKey, model, temperature = 0.7, topP = 1, maxTokens = 800, systemPrompt = null }) {
-    const messages = [];
-    if (systemPrompt) {
-        messages.push({ role: 'system', content: systemPrompt });
-    }
-    messages.push({ role: 'user', content: prompt });
+async function requestOpenAI({ apiKey, model, temperature = 0.7, topP = 1, maxTokens = 800, messages = [] }) {
+    const payloadMessages = Array.isArray(messages) && messages.length
+        ? messages
+        : [{ role: 'user', content: 'Sin instrucciones.' }];
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -93,7 +98,7 @@ async function requestOpenAI(prompt, { apiKey, model, temperature = 0.7, topP = 
             temperature,
             top_p: topP,
             max_tokens: maxTokens,
-            messages,
+            messages: payloadMessages,
         }),
     });
 
@@ -107,8 +112,8 @@ async function requestOpenAI(prompt, { apiKey, model, temperature = 0.7, topP = 
     return payload?.choices?.[0]?.message?.content || '';
 }
 
-async function generateWithOpenAI(prompt, config, onChunk = null) {
-    const text = await requestOpenAI(prompt, config);
+async function generateWithOpenAI(messages, config, onChunk = null) {
+    const text = await requestOpenAI({ ...config, messages });
     if (onChunk && text) onChunk(text);
     return text;
 }
@@ -144,27 +149,45 @@ async function getChatSuggestion(context, customPrompt = '', onChunk = null, ext
             return 'IA no configurada. Falta OpenAI API Key para este tenant.';
         }
 
-        const businessContext = buildBusinessContext(externalBusinessContext);
+        const promptPackage = await buildAiPromptPackage({
+            mode: 'chat_suggestion',
+            tenantId: options?.tenantId || 'default',
+            query: customPrompt || '',
+            customPrompt: customPrompt || '',
+            contextText: context || '',
+            runtimeContext: options?.runtimeContext || null,
+            moduleContext: options?.moduleContext || null
+        });
 
-        const customInstructionText = customPrompt.trim() !== ''
-            ? `\n\nATENCION: EL VENDEDOR TE HA DADO UNA INSTRUCCION ESPECIFICA:\n"${customPrompt}"\nPOR FAVOR, PRIORIZA ESTA INSTRUCCION.`
+        const legacyBusinessContext = externalBusinessContext
+            ? `\n\nCONTEXTO LEGACY FRONTEND (usar solo como apoyo, sin sobreescribir contexto real):\n${clipText(String(externalBusinessContext || ''), 600)}`
+            : '';
+        const explicitUserInstruction = customPrompt.trim()
+            ? `\n\nInstruccion puntual de la vendedora: ${customPrompt.trim()}`
             : '';
 
-        const prompt = `${businessContext}
+        const fallbackLegacyContext = !options?.runtimeContext && externalBusinessContext
+            ? `\n\nCONTEXTO BASE LEGACY:\n${clipText(buildBusinessContext(externalBusinessContext), 900)}`
+            : '';
 
-CONVERSACION RECIENTE:
----
-${context}
----${customInstructionText}
+        const composedSystemPrompt = [
+            config.systemPrompt || '',
+            promptPackage.dynamicSystemPrompt || ''
+        ]
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean)
+            .join('\n\n');
 
-REGLAS CRITICAS DE PRECISION DE CATALOGO:
-- Nunca inventes productos, presentaciones, tamanos ni precios.
-- Solo usa productos y precios que aparezcan literalmente en el contexto.
-- Si falta un dato exacto, responde que lo confirmaras antes de cotizar.
+        const userPrompt = `${promptPackage.dynamicUserPrompt}${legacyBusinessContext}${fallbackLegacyContext}${explicitUserInstruction}
 
-Genera la respuesta sugerida que el negocio deberia enviar. Texto directo, sin comillas.`;
+OBJETIVO DE ESTA EJECUCION:
+- Generar una sola respuesta sugerida, lista para enviar al cliente por WhatsApp.
+- Prioriza cierre comercial elegante y claro, sin inventar datos.`;
 
-        return await generateWithOpenAI(prompt, config, onChunk);
+        return await generateWithOpenAI([
+            { role: 'system', content: composedSystemPrompt },
+            { role: 'user', content: userPrompt }
+        ], config, onChunk);
     } catch (error) {
         console.error('Error al obtener sugerencia de IA:', error?.message || error);
         return mapAiError(error);
@@ -184,19 +207,46 @@ async function askInternalCopilot(query, onChunk = null, externalBusinessContext
             return 'IA no configurada. Falta OpenAI API Key para este tenant.';
         }
 
-        const businessContext = buildBusinessContext(externalBusinessContext);
+        const promptPackage = await buildAiPromptPackage({
+            mode: 'internal_copilot',
+            tenantId: options?.tenantId || 'default',
+            query: query || '',
+            customPrompt: '',
+            contextText: '',
+            runtimeContext: options?.runtimeContext || null,
+            moduleContext: options?.moduleContext || null
+        });
 
-        const prompt = `${businessContext}
+        const legacyBusinessContext = externalBusinessContext
+            ? `\n\nCONTEXTO LEGACY FRONTEND (usar solo como apoyo):\n${clipText(String(externalBusinessContext || ''), 600)}`
+            : '';
 
-INSTRUCCION: Eres el copiloto interno. Ayuda al dueno con stock y opciones (sugiere 3 siempre).
-CONSULTA: "${query}"
+        const fallbackLegacyContext = !options?.runtimeContext && externalBusinessContext
+            ? `\n\nCONTEXTO BASE LEGACY:\n${clipText(buildBusinessContext(externalBusinessContext), 900)}`
+            : '';
 
-REGLAS CRITICAS:
-- No inventar nombres ni precios.
-- Cuando recomiendes, citar el nombre exacto del catalogo.
-- Si hay duda de presentacion/capacidad, pedir confirmacion antes de cotizar.`;
+        const composedSystemPrompt = [
+            config.systemPrompt || '',
+            promptPackage.dynamicSystemPrompt || ''
+        ]
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean)
+            .join('\n\n');
 
-        return await generateWithOpenAI(prompt, config, onChunk);
+        const userPrompt = `${promptPackage.dynamicUserPrompt}${legacyBusinessContext}${fallbackLegacyContext}
+
+CONSULTA INTERNA DE LA VENDEDORA:
+${String(query || '').trim() || '(sin consulta)'}
+
+OBJETIVO DE ESTA EJECUCION:
+- Resolver la consulta comercial de forma accionable.
+- Entregar SIEMPRE 3 sugerencias de respuesta.
+- Si aplica por contexto o carrito, entregar 3 cotizaciones separadas con formato limpio.`;
+
+        return await generateWithOpenAI([
+            { role: 'system', content: composedSystemPrompt },
+            { role: 'user', content: userPrompt }
+        ], config, onChunk);
     } catch (error) {
         console.error('Error en Copiloto Interno:', error?.message || error);
         return mapAiError(error);
