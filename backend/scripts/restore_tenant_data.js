@@ -166,7 +166,11 @@ function isTenantScopedTable(table) {
         'tenant_messages',
         'audit_logs',
         'auth_sessions',
-        'auth_token_revocations'
+        'auth_token_revocations',
+        'tenant_catalogs',
+        'tenant_integrations',
+        'tenant_ai_chat_history',
+        'tenant_ai_usage'
     ].includes(table);
 }
 
@@ -178,19 +182,25 @@ function getConflictColumns(table) {
     case 'wa_sessions': return ['tenant_id'];
     case 'wa_modules': return ['tenant_id', 'module_id'];
     case 'quick_replies': return ['tenant_id', 'reply_id'];
-    case 'catalog_items': return ['tenant_id', 'item_id'];
+    case 'catalog_items': return ['tenant_id', 'item_id', 'module_id', 'catalog_id'];
     case 'tenant_settings': return ['tenant_id'];
     case 'tenant_chats': return ['tenant_id', 'chat_id'];
     case 'tenant_messages': return ['tenant_id', 'message_id'];
     case 'auth_sessions': return ['session_id'];
     case 'auth_token_revocations': return ['token_hash'];
+    case 'tenant_catalogs': return ['tenant_id', 'catalog_id'];
+    case 'tenant_integrations': return ['tenant_id'];
+    case 'tenant_ai_chat_history': return ['tenant_id', 'entry_id'];
+    case 'tenant_ai_usage': return ['tenant_id', 'month_key'];
+    case 'saas_access_catalog': return ['scope'];
+    case 'saas_plan_limits': return ['scope'];
     default: return [];
     }
 }
 
 function shouldSkipTable(table, includeMessages = true) {
     if (includeMessages) return false;
-    return table === 'tenant_messages' || table === 'tenant_chats';
+    return table === 'tenant_messages' || table === 'tenant_chats' || table === 'tenant_ai_chat_history';
 }
 
 function pickRowsByTenant(table, rows = [], tenantIds = []) {
@@ -204,14 +214,19 @@ function pickRowsByTenant(table, rows = [], tenantIds = []) {
 
 async function deleteTenantScopedRowsForReplace(tenantIds = [], includeMessages = true) {
     const deleteOrder = [
+        'tenant_ai_chat_history',
         'tenant_messages',
         'tenant_chats',
         'auth_token_revocations',
         'auth_sessions',
         'audit_logs',
+        'tenant_ai_usage',
+        'tenant_integrations',
+        'tenant_catalogs',
         'tenant_settings',
         'catalog_items',
         'quick_replies',
+        'wa_modules',
         'wa_sessions',
         'memberships'
     ];
@@ -275,6 +290,8 @@ async function restorePostgresData(backup, tenantIds = [], mode = 'merge', inclu
     }
 
     const restoreOrder = [
+        'saas_access_catalog',
+        'saas_plan_limits',
         'tenants',
         'users',
         'memberships',
@@ -283,8 +300,12 @@ async function restorePostgresData(backup, tenantIds = [], mode = 'merge', inclu
         'quick_replies',
         'catalog_items',
         'tenant_settings',
+        'tenant_catalogs',
+        'tenant_integrations',
+        'tenant_ai_usage',
         'tenant_chats',
         'tenant_messages',
+        'tenant_ai_chat_history',
         'audit_logs',
         'auth_sessions',
         'auth_token_revocations'
@@ -347,5 +368,4 @@ main().catch((error) => {
     console.error('[Restore] ERROR:', String(error?.message || error));
     process.exit(1);
 });
-
 

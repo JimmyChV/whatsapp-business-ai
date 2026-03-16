@@ -1,125 +1,239 @@
-# WhatsApp Business Pro - AI Sales Assistant 🚀
+# WhatsApp Business AI - SaaS Multi-Tenant Control Plane
 
-Este proyecto es un clon avanzado de WhatsApp Business potenciado con **Inteligencia Artificial (OpenAI)** para optimizar el proceso de ventas. Permite a los negocios gestionar chats, catálogos y cotizaciones de forma profesional y eficiente.
+Plataforma SaaS para operacion comercial omnicanal con enfoque en WhatsApp Cloud API, control multi-tenant, catalogos por modulo, copilot IA y trazabilidad operativa.
 
-## ✨ Características Principales
+## Estado actual
 
-- **🤖 Asistente IA OpenAI**: Integración con OpenAI para sugerir respuestas persuasivas, manejar objeciones y recomendar productos basados en el contexto del chat.
-- **🛍️ Catálogo conectado**: Prioriza catálogo nativo de WhatsApp, luego WooCommerce y finalmente catálogo local (`catalogo.json`) como fallback.
-- **🛒 Sistema de Carrito y Cotización**: Agrega productos al carrito, aplica descuentos y calcula cotizaciones con redondeo comercial a 1 decimal.
-- **🎙️ Notas de Voz Nativas**: Grabación y envío de audios en formato `ogg/opus`, 100% compatibles con WhatsApp oficial.
-- **🖼️ Interfaz Premium**: Diseño moderno estilo "Glassmorphism" con animaciones fluidas y visualización de fotos de perfil reales.
-- **🏷️ Etiquetas de Chat**: Visualización de etiquetas de WhatsApp para organizar a los clientes por estado.
+- Multi-tenant activo con aislamiento por `tenant_id`.
+- Panel SaaS con RBAC (superadmin / owner / admin / seller).
+- Modulos WhatsApp por tenant con configuracion Cloud API por modulo.
+- Catalogos multiples por tenant, asignables por modulo.
+- Catalogo local editable desde panel y catalogo WooCommerce por catalogo.
+- Copiloto IA multi-asistente por tenant, asignable por modulo.
+- Historial de chat IA por scope de chat+modulo.
+- Persistencia principal en Postgres (`SAAS_STORAGE_DRIVER=postgres`).
 
-## 🛠️ Tecnologías Utilizadas
+## Capacidades principales
 
-- **Frontend**: React.js, Vite, Lucide React (iconos), Socket.io-client.
-- **Backend**: Node.js, Express, Socket.io, `whatsapp-web.js` (basado en Puppeteer).
-- **IA**: OpenAI API (GPT).
-- **Catálogo externo**: WooCommerce REST API.
+### 1) Control Plane SaaS
 
-## 🚀 Instalación y Configuración
+- Gestion de empresas (tenants): altas, edicion y desactivacion.
+- Gestion de usuarios y memberships por tenant.
+- Politicas RBAC con:
+  - perfiles de rol (required/optional/blocked)
+  - paquetes de permisos opcionales
+- Limites por plan (`starter/pro/enterprise`) con override global.
 
-### 1. Requisitos Previos
-- Node.js instalado.
-- Una cuenta de WhatsApp (se recomienda Business).
-- Una API Key de OpenAI (puedes obtenerla en [OpenAI Platform](https://platform.openai.com/api-keys)).
-- WooCommerce con API REST habilitada (opcional, pero recomendado).
+### 2) Modulos de canal
 
-### 2. Clonar y Configurar
-```bash
-git clone https://github.com/TU_USUARIO/TU_REPOSITORIO.git
-cd TU_REPOSITORIO
-```
+- Multiples modulos por tenant (ej. varias lineas de WhatsApp).
+- Atributos por modulo:
+  - identidad visual
+  - usuarios asignados
+  - catalogos asignados (1..N)
+  - asistente IA asignado
+  - configuracion Meta Cloud API (App/WABA/Phone/Token/Version/Signature)
+- Conversaciones separadas por modulo (mismo telefono, scopes distintos).
 
-### 3. Configurar Backend
-```bash
+### 3) Catalogos
+
+- Tenant puede tener varios catalogos (`CAT-XXXXXX`).
+- Tipos de catalogo:
+  - `local`: productos gestionados en panel
+  - `woocommerce`: lectura desde Woo API con credenciales por catalogo
+  - `meta`: reservado para integracion Meta catalog
+- Productos locales con campos comerciales y media URL.
+- En chat, el selector de catalogo se alinea por modulo activo.
+
+### 4) IA comercial
+
+- Multiples asistentes por tenant (`AIA-XXXXXX`).
+- Cada asistente soporta:
+  - provider/model
+  - prompt de sistema
+  - temperature/top_p/max_tokens
+  - API key propia (encriptada en storage)
+- Asistente default por tenant + override por modulo.
+- Contexto dinamico: tenant, modulo, chat, cliente, catalogo y carrito.
+- Persistencia de historico IA por chat scoped (`tenant_ai_chat_history`).
+
+### 5) Chat y operacion
+
+- Sidebar operativa de conversaciones con etiquetado visual de modulo/canal.
+- Envio de mensajes y productos desde catalogo.
+- Integracion con WhatsApp Cloud API.
+- Trazabilidad de respuesta (operador/modulo) y auditoria.
+
+### 6) Operacion y resiliencia
+
+- Backup/restore tenant-aware (file/postgres).
+- Smoke/load scripts para validacion operativa.
+- Pilot KPI y closeout fase operativa.
+
+## Arquitectura (resumen)
+
+### Backend (`/backend`)
+
+- `server.js`: API REST principal + middleware auth/tenant scope.
+- `socket_manager.js`: eventos en tiempo real, chat operativo y acciones IA/catalogo.
+- Servicios clave:
+  - `saas_control_plane_service.js`
+  - `access_policy_service.js` + `access_policy_store_service.js`
+  - `plan_limits_service.js` + `plan_limits_store_service.js`
+  - `wa_module_service.js`
+  - `tenant_catalog_service.js`
+  - `tenant_integrations_service.js`
+  - `catalog_manager.js`
+  - `auth_service.js` + `auth_session_service.js`
+  - `ai_usage_service.js`
+  - `ai_chat_history_service.js`
+  - `message_history_service.js`
+  - `customer_service.js`
+
+### Frontend (`/frontend`)
+
+- `App.jsx`: shell principal (login, panel, operacion).
+- `components/SaasAdminPanel.jsx`: control plane SaaS.
+- `components/BusinessSidebar.jsx`: inbox, catalogo, carrito y copiloto IA.
+
+## Modelo de datos (Postgres)
+
+Migraciones en `backend/db/migrations` (`001` a `012`).
+
+Tablas principales:
+
+- Control tenant/user:
+  - `tenants`, `users`, `memberships`
+- RBAC y planes:
+  - `saas_access_catalog`, `saas_plan_limits`
+- Modulos y runtime:
+  - `wa_modules`, `wa_sessions`, `tenant_settings`, `tenant_integrations`
+- Catalogos:
+  - `tenant_catalogs`, `catalog_items`
+- Conversaciones:
+  - `tenant_chats`, `tenant_messages`, `tenant_ai_chat_history`
+- Clientes:
+  - `tenant_customers`, `tenant_customer_identities`, `tenant_channel_events`
+- Seguridad/auth:
+  - `auth_sessions`, `auth_token_revocations`
+- Observabilidad:
+  - `audit_logs`, `tenant_ai_usage`
+
+## Instalacion local
+
+## 1) Requisitos
+
+- Node.js 20+
+- Postgres 14+
+- npm
+
+## 2) Dependencias
+
+```powershell
 cd backend
 npm install
-```
-Crea un archivo `.env` en la carpeta `backend` con:
-```env
-OPENAI_API_KEY=tu_clave_openai
-OPENAI_MODEL=gpt-4o-mini
-PORT=3001
 
-# Seguridad y hardening
-ALLOWED_ORIGINS=http://localhost:5173
-SOCKET_AUTH_TOKEN=define_un_token_seguro
-LINK_PREVIEW_TIMEOUT_MS=5000
-LINK_PREVIEW_MAX_BYTES=1048576
-LINK_PREVIEW_BLOCKED_HOSTS=localhost,metadata.google.internal
-
-# WooCommerce (opcional pero recomendado)
-WC_BASE_URL=https://lavitat.pe
-WC_CONSUMER_KEY=ck_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-WC_CONSUMER_SECRET=cs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-WC_PER_PAGE=100
-WC_MAX_PAGES=10
-WC_INCLUDE_OUT_OF_STOCK=true
-```
-
-> ⚠️ Si expusiste claves de WooCommerce en una captura o chat, **revócalas y genera unas nuevas** antes de usar producción.
-
-### 4. Configurar Frontend
-```bash
 cd ../frontend
 npm install
+```
+
+## 3) Configuracion backend (`backend/.env`)
+
+Minimo recomendado:
+
+```env
+PORT=3001
+NODE_ENV=development
+
+SAAS_STORAGE_DRIVER=postgres
+DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/wa_saas_prod
+
+SAAS_ENABLED=true
+SAAS_AUTH_ENABLED=true
+SAAS_AUTH_SECRET=define_un_secreto_largo
+
+OPENAI_MODEL=gpt-4o-mini
+
+ALLOWED_ORIGINS=http://localhost:5173
+TRUST_PROXY=true
+
+META_ENFORCE_SIGNATURE=true
+META_GRAPH_VERSION=v22.0
+```
+
+Notas:
+
+- Credenciales sensibles de Meta/Woo/OpenAI se gestionan desde panel (tenant/modulo/asistente/catalogo), no en texto plano operativo diario.
+- Para login legacy de superadmin, existe fallback por `SAAS_SUPERADMINS_JSON`; recomendado mover a metadata de usuario en DB.
+
+## 4) Migraciones
+
+```powershell
+cd backend
+psql "$env:DATABASE_URL" -f db/migrations/001_saas_foundation.sql
+psql "$env:DATABASE_URL" -f db/migrations/002_tenant_settings.sql
+psql "$env:DATABASE_URL" -f db/migrations/003_message_history.sql
+psql "$env:DATABASE_URL" -f db/migrations/004_auth_sessions.sql
+psql "$env:DATABASE_URL" -f db/migrations/005_wa_modules.sql
+psql "$env:DATABASE_URL" -f db/migrations/006_message_history_module_context.sql
+psql "$env:DATABASE_URL" -f db/migrations/007_admin_profiles_and_module_media.sql
+psql "$env:DATABASE_URL" -f db/migrations/008_customers.sql
+psql "$env:DATABASE_URL" -f db/migrations/009_multichannel_unified_inbox.sql
+psql "$env:DATABASE_URL" -f db/migrations/010_catalog_items_module_pk.sql
+psql "$env:DATABASE_URL" -f db/migrations/011_ai_chat_history.sql
+psql "$env:DATABASE_URL" -f db/migrations/012_control_plane_hardening.sql
+```
+
+## 5) Ejecucion
+
+```powershell
+cd backend
+npm start
+```
+
+```powershell
+cd frontend
 npm run dev
 ```
 
-### 5. Iniciar Servidor
-En una terminal aparte:
-```bash
-cd backend
-node server.js
+## 6) Verificacion rapida
+
+```powershell
+curl.exe -i "http://127.0.0.1:3001/api/saas/runtime"
+curl.exe -i "http://127.0.0.1:3001/socket.io/?EIO=4&transport=polling"
 ```
 
-### 6. Vincular WhatsApp
-Escanea el código QR que aparecerá en la aplicación web para iniciar la sesión.
+## Scripts operativos
 
-## 🧮 Regla de redondeo comercial
-- El precio final por ítem en cotización se calcula con descuento y se redondea a **1 decimal**.
-- El total también se muestra con **1 decimal** para mantener consistencia comercial.
+Backend:
 
-## 📦 Orden de prioridad del catálogo
-1. Catálogo nativo de WhatsApp Business.
-2. Productos de WooCommerce.
-3. Catálogo local (`backend/catalogo.json`).
+```powershell
+npm run test
+npm run ops:backup
+npm run ops:restore
+npm run ops:load-smoke
+npm run ops:kpi-pilot
+npm run ops:phase5-closeout
+```
 
+## Seguridad
 
-## 🧰 Solución rápida si no aparece catálogo
-Si en consola ves algo como `injecting env (3) from .env`, normalmente solo cargaste 3 variables (por ejemplo OpenAI + PORT) y faltan las de WooCommerce.
+- Tokens de acceso + refresh sessions en DB.
+- Revocacion de tokens (`auth_token_revocations`).
+- Password hashing robusto PBKDF2-SHA512 con compatibilidad legacy SHA-256.
+- Secrets de integraciones encriptados en storage (`meta_config_crypto`).
+- CORS, rate limiting HTTP/socket, validaciones de payload y scope tenant.
 
-Checklist:
-1. Verifica que tu `.env` esté en `backend/.env`.
-2. Agrega `WC_BASE_URL` (obligatorio para Woo, ejemplo `https://lavitat.pe`).
-3. Si usarás API privada, agrega también `WC_CONSUMER_KEY` y `WC_CONSUMER_SECRET`.
-4. Reinicia backend después de guardar `.env`.
+## Buenas practicas de despliegue
 
-Nota: aunque no pongas keys, el sistema intenta `wc/store/v1` (endpoint público). Si Woo o plugins bloquean ese endpoint, la app caerá al `catalogo.json` local.
+- Ejecutar migraciones en cada release antes de reiniciar backend.
+- Mantener backups regulares por tenant.
+- Validar `/api/ops/health` y `/api/ops/ready` post-deploy.
+- No exponer `.env`, llaves ni carpetas de sesiones/uploads.
 
-## 🔐 Seguridad recomendada para producción
-- Define `ALLOWED_ORIGINS` con tu dominio de frontend (evita `*`).
-- Usa `SOCKET_AUTH_TOKEN` y envíalo desde el cliente en `socket.auth.token`.
-- Mantén bloqueados hosts internos en `LINK_PREVIEW_BLOCKED_HOSTS` para reducir riesgo SSRF.
-- Configura límites de rate-limit (`SOCKET_RATE_LIMIT_*`) según tu volumen de operación.
+## Roadmap actual (en curso)
 
-## ⚠️ Notas de Seguridad
-- El archivo `.wwebjs_auth` contiene tu sesión de WhatsApp. **Nunca lo compartas.**
-- Tu `.env` está protegido por el `.gitignore` para no filtrar tus claves de API.
-
----
-Desarrollado con ❤️ para potenciar las ventas digitales.
-
-## Production hardening baseline
-- See docs/PRODUCTION_SECURITY_BASELINE.md for the secure production checklist.
-- Use `backend/.env.production.example` as your base production env template.
-
-
-## SaaS multiempresa roadmap
-- Plan y fases: docs/SAAS_MULTI_TENANT_ROADMAP.md.
-- Estado actual: Fase 1 cerrada y Fase 2 iniciada (persistencia tenant-aware con driver file/postgres).
-- Migraciones Postgres v1: backend/db/migrations/001_saas_foundation.sql (guia en backend/db/README.md).
-
+- Optimizacion UX operativa de chat (context switching por modulo).
+- Mayor observabilidad de KPIs por tenant/modulo/asistente.
+- Consolidacion final cloud-only para canales (sin dependencia operativa de webjs).
 

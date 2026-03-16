@@ -1283,7 +1283,7 @@ app.get('/api/admin/saas/overview', async (req, res) => {
 });
 
 app.get('/api/admin/saas/access-profiles', (req, res) => {
-    if (!hasSaasControlReadAccess(req, { requireSuperAdmin: true })) {
+    if (!hasSaasControlReadAccess(req)) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -3171,3 +3171,4 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
+

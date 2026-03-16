@@ -204,17 +204,31 @@ async function buildPostgresBackup(tenantIds = [], includeMessages = true) {
         'tenant_messages',
         'audit_logs',
         'auth_sessions',
-        'auth_token_revocations'
+        'auth_token_revocations',
+        'tenant_catalogs',
+        'tenant_integrations',
+        'tenant_ai_chat_history',
+        'tenant_ai_usage'
     ];
 
     for (const table of scopedTables) {
-        if (!includeMessages && (table === 'tenant_messages' || table === 'tenant_chats')) {
+        if (!includeMessages && (table === 'tenant_messages' || table === 'tenant_chats' || table === 'tenant_ai_chat_history')) {
             tables[table] = [];
             continue;
         }
 
         await safeLoad(table, async () => fetchTable(table, tenantIds));
     }
+
+    await safeLoad('saas_access_catalog', async () => {
+        const result = await queryPostgres('SELECT * FROM saas_access_catalog');
+        return result.rows || [];
+    });
+
+    await safeLoad('saas_plan_limits', async () => {
+        const result = await queryPostgres('SELECT * FROM saas_plan_limits');
+        return result.rows || [];
+    });
 
     return { tables, warnings };
 }
