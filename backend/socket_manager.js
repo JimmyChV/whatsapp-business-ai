@@ -5372,7 +5372,7 @@ class SocketManager {
             // --- AI ---
             socket.on('request_ai_suggestion', (payload) => {
                 if (!guardRateLimit(socket, 'request_ai_suggestion')) return;
-                const { contextText, customPrompt, businessContext } = payload || {};
+                const { contextText, customPrompt, businessContext, moduleId } = payload || {};
                 // Defer to avoid blocking the event loop (prevents 'click handler took Xms' violations)
                 setImmediate(async () => {
                     try {
@@ -5382,9 +5382,20 @@ class SocketManager {
                             return;
                         }
 
+                        const requestedModuleId = normalizeSocketModuleId(moduleId || '');
+                        let aiModuleContext = socket?.data?.waModule || null;
+                        const activeModuleId = normalizeSocketModuleId(aiModuleContext?.moduleId || socket?.data?.waModuleId || '');
+                        if (requestedModuleId && requestedModuleId !== activeModuleId) {
+                            const contextPayload = await resolveSocketModuleContext(tenantId, authContext, requestedModuleId).catch(() => null);
+                            if (contextPayload?.selected) {
+                                aiModuleContext = contextPayload.selected;
+                            }
+                        }
+                        const moduleAssistantId = String(aiModuleContext?.metadata?.moduleSettings?.aiAssistantId || '').trim().toUpperCase();
+
                         const aiText = await getChatSuggestion(contextText, customPrompt, (chunk) => {
                             socket.emit('ai_suggestion_chunk', chunk);
-                        }, businessContext, { tenantId });
+                        }, businessContext, { tenantId, moduleAssistantId });
                         if (typeof aiText === 'string' && aiText.startsWith('Error IA:')) {
                             socket.emit('ai_error', aiText);
                         }
@@ -5399,8 +5410,8 @@ class SocketManager {
 
             socket.on('internal_ai_query', (payload) => {
                 if (!guardRateLimit(socket, 'internal_ai_query')) return;
-                const { query, businessContext } = typeof payload === 'string'
-                    ? { query: payload, businessContext: null }
+                const { query, businessContext, moduleId } = typeof payload === 'string'
+                    ? { query: payload, businessContext: null, moduleId: '' }
                     : (payload || {});
                 // Defer to avoid blocking the event loop
                 setImmediate(async () => {
@@ -5411,9 +5422,20 @@ class SocketManager {
                             return;
                         }
 
+                        const requestedModuleId = normalizeSocketModuleId(moduleId || '');
+                        let aiModuleContext = socket?.data?.waModule || null;
+                        const activeModuleId = normalizeSocketModuleId(aiModuleContext?.moduleId || socket?.data?.waModuleId || '');
+                        if (requestedModuleId && requestedModuleId !== activeModuleId) {
+                            const contextPayload = await resolveSocketModuleContext(tenantId, authContext, requestedModuleId).catch(() => null);
+                            if (contextPayload?.selected) {
+                                aiModuleContext = contextPayload.selected;
+                            }
+                        }
+                        const moduleAssistantId = String(aiModuleContext?.metadata?.moduleSettings?.aiAssistantId || '').trim().toUpperCase();
+
                         const copilotText = await askInternalCopilot(query, (chunk) => {
                             socket.emit('internal_ai_chunk', chunk);
-                        }, businessContext, { tenantId });
+                        }, businessContext, { tenantId, moduleAssistantId });
                         if (typeof copilotText === 'string' && copilotText.startsWith('Error IA:')) {
                             socket.emit('internal_ai_error', copilotText);
                         }
@@ -6267,3 +6289,6 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
+
+

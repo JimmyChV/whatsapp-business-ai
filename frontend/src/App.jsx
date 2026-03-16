@@ -3151,10 +3151,13 @@ REGLA CRITICA:
       .map(m => `${m.fromMe ? 'VENDEDOR' : 'CLIENTE'}: ${m.body}`)
       .join('\n');
 
+    const aiModuleId = String(activeChatDetails?.scopeModuleId || selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
+
     socket.emit('request_ai_suggestion', {
       contextText: recentMessages,
       businessContext,
       customPrompt: customPrompt || aiPrompt,
+      moduleId: aiModuleId || undefined,
     });
   };
   const processFile = (file) => {
@@ -3772,6 +3775,7 @@ REGLA CRITICA:
             waModules={availableWaModules}
             selectedCatalogModuleId={activeCatalogModuleId}
             selectedCatalogId={activeCatalogId}
+            activeModuleId={String(activeChatDetails?.scopeModuleId || selectedWaModule?.moduleId || '').trim().toLowerCase()}
             onSelectCatalogModule={handleSelectCatalogModule}
             onSelectCatalog={handleSelectCatalog}
             onUploadCatalogImage={handleUploadCatalogImage}
@@ -3854,3 +3858,5 @@ REGLA CRITICA:
 }
 
 export default App;
+
+

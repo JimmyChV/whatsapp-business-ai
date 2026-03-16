@@ -326,6 +326,7 @@ const EMPTY_WA_MODULE_FORM = {
     imageUrl: '',
     assignedUserIds: [],
     catalogIds: [],
+    aiAssistantId: '',
     moduleCatalogMode: 'inherit',
     moduleAiEnabled: true,
     moduleCatalogEnabled: true,
@@ -345,6 +346,22 @@ const EMPTY_WA_MODULE_FORM = {
     cloudEnforceSignature: true
 };
 
+
+const EMPTY_AI_ASSISTANT_FORM = {
+    assistantId: '',
+    name: '',
+    description: '',
+    provider: 'openai',
+    model: 'gpt-4o-mini',
+    systemPrompt: '',
+    temperature: '0.7',
+    topP: '1',
+    maxTokens: '800',
+    openaiApiKey: '',
+    openAiApiKeyMasked: '',
+    isActive: true,
+    isDefault: false
+};
 const BASE_ROLE_OPTIONS = ['owner', 'admin', 'seller'];
 const PLAN_OPTIONS = ['starter', 'pro', 'enterprise'];
 const CATALOG_MODE_OPTIONS = ['hybrid', 'meta_only', 'woo_only', 'local_only'];
@@ -361,10 +378,13 @@ const ADMIN_NAV_ITEMS = [
     { id: 'saas_usuarios', label: 'Usuarios' },
     { id: 'saas_roles', label: 'Roles' },
     { id: 'saas_clientes', label: 'Clientes' },
+    { id: 'saas_ia', label: 'IA' },
     { id: 'saas_modulos', label: 'Modulos' },
     { id: 'saas_catalogos', label: 'Catalogos' },
     { id: 'saas_config', label: 'Configuracion' }
 ];
+const AI_PROVIDER_OPTIONS = ['openai'];
+const AI_MODEL_OPTIONS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'];
 const ROLE_PRIORITY = Object.freeze({
     seller: 1,
     admin: 2,
@@ -436,6 +456,7 @@ function normalizeWaModule(item = {}) {
         catalogIds: Array.isArray(moduleSettings.catalogIds)
             ? moduleSettings.catalogIds.map((entry) => String(entry || '').trim().toUpperCase()).filter((entry) => /^CAT-[A-Z0-9]{4,}$/.test(entry))
             : [],
+        moduleAiAssistantId: sanitizeAiAssistantCode(moduleSettings.aiAssistantId),
         moduleCatalogMode: CATALOG_MODE_OPTIONS.includes(String(moduleSettings.catalogMode || '').trim())
             ? String(moduleSettings.catalogMode || '').trim()
             : 'inherit',
@@ -461,6 +482,81 @@ function normalizeWaModule(item = {}) {
     };
 }
 
+
+function sanitizeAiAssistantCode(value = '') {
+    const clean = String(value || '').trim().toUpperCase();
+    return /^AIA-[A-Z0-9]{6}$/.test(clean) ? clean : '';
+}
+
+function normalizeTenantAiAssistantItem(item = {}) {
+    const source = item && typeof item === 'object' ? item : {};
+    const assistantId = sanitizeAiAssistantCode(source.assistantId || source.id || '');
+    if (!assistantId) return null;
+    return {
+        assistantId,
+        name: String(source.name || assistantId).trim() || assistantId,
+        description: String(source.description || '').trim(),
+        provider: String(source.provider || 'openai').trim().toLowerCase() || 'openai',
+        model: String(source.model || 'gpt-4o-mini').trim() || 'gpt-4o-mini',
+        systemPrompt: String(source.systemPrompt || '').trim(),
+        temperature: String(source.temperature ?? '0.7').trim() || '0.7',
+        topP: String(source.topP ?? '1').trim() || '1',
+        maxTokens: String(source.maxTokens ?? '800').trim() || '800',
+        hasOpenAiApiKey: source.hasOpenAiApiKey === true,
+        openAiApiKeyMasked: String(source.openAiApiKeyMasked || '').trim(),
+        isActive: source.isActive !== false,
+        isDefault: source.isDefault === true,
+        createdAt: String(source.createdAt || '').trim() || null,
+        updatedAt: String(source.updatedAt || '').trim() || null
+    };
+}
+
+function buildAiAssistantFormFromItem(item = null) {
+    if (!item || typeof item !== 'object') return { ...EMPTY_AI_ASSISTANT_FORM };
+    return {
+        assistantId: sanitizeAiAssistantCode(item.assistantId || item.id || ''),
+        name: String(item.name || '').trim(),
+        description: String(item.description || '').trim(),
+        provider: String(item.provider || 'openai').trim().toLowerCase() || 'openai',
+        model: String(item.model || 'gpt-4o-mini').trim() || 'gpt-4o-mini',
+        systemPrompt: String(item.systemPrompt || '').trim(),
+        temperature: String(item.temperature ?? '0.7').trim() || '0.7',
+        topP: String(item.topP ?? '1').trim() || '1',
+        maxTokens: String(item.maxTokens ?? '800').trim() || '800',
+        openaiApiKey: '',
+        openAiApiKeyMasked: String(item.openAiApiKeyMasked || '').trim(),
+        isActive: item.isActive !== false,
+        isDefault: item.isDefault === true
+    };
+}
+
+function buildAiAssistantPayload(form = {}, { allowAssistantId = true } = {}) {
+    const source = form && typeof form === 'object' ? form : {};
+    const payload = {
+        name: String(source.name || '').trim(),
+        description: String(source.description || '').trim() || null,
+        provider: AI_PROVIDER_OPTIONS.includes(String(source.provider || '').trim().toLowerCase())
+            ? String(source.provider || '').trim().toLowerCase()
+            : 'openai',
+        model: String(source.model || 'gpt-4o-mini').trim() || 'gpt-4o-mini',
+        systemPrompt: String(source.systemPrompt || '').trim() || null,
+        temperature: Math.max(0, Math.min(2, Number(source.temperature ?? 0.7) || 0.7)),
+        topP: Math.max(0, Math.min(1, Number(source.topP ?? 1) || 1)),
+        maxTokens: Math.max(64, Math.min(4096, Number(source.maxTokens ?? 800) || 800)),
+        isActive: source.isActive !== false,
+        isDefault: source.isDefault === true
+    };
+
+    const openaiApiKey = String(source.openaiApiKey || '').trim();
+    if (openaiApiKey) payload.openaiApiKey = openaiApiKey;
+
+    if (allowAssistantId) {
+        const cleanAssistantId = sanitizeAiAssistantCode(source.assistantId || source.id || '');
+        if (cleanAssistantId) payload.assistantId = cleanAssistantId;
+    }
+
+    return payload;
+}
 function normalizeIntegrationsPayload(integrations = {}) {
     const source = integrations && typeof integrations === 'object' ? integrations : {};
     const catalog = source.catalog && typeof source.catalog === 'object' ? source.catalog : {};
@@ -814,6 +910,11 @@ export default function SaasAdminPanel({
     const [loadingCatalogProducts, setLoadingCatalogProducts] = useState(false);
     const [catalogProductImageUploading, setCatalogProductImageUploading] = useState(false);
     const [catalogProductImageError, setCatalogProductImageError] = useState('');
+    const [tenantAiAssistants, setTenantAiAssistants] = useState([]);
+    const [selectedAiAssistantId, setSelectedAiAssistantId] = useState('');
+    const [aiAssistantForm, setAiAssistantForm] = useState(EMPTY_AI_ASSISTANT_FORM);
+    const [aiAssistantPanelMode, setAiAssistantPanelMode] = useState('view');
+    const [loadingAiAssistants, setLoadingAiAssistants] = useState(false);
     const [planMatrix, setPlanMatrix] = useState({});
     const [selectedPlanId, setSelectedPlanId] = useState('');
     const [planForm, setPlanForm] = useState(() => normalizePlanForm('starter', {}));
@@ -853,7 +954,7 @@ export default function SaasAdminPanel({
     const canEditCatalog = canManageCatalog;
     const requiresTenantSelection = Boolean(isSuperAdmin || normalizedRole === 'superadmin');
     const showPanelLoading = Boolean(
-        busy || loadingSettings || loadingIntegrations || loadingPlans || loadingAccessCatalog || pendingRequests > 0
+        busy || loadingSettings || loadingIntegrations || loadingPlans || loadingAccessCatalog || loadingAiAssistants || pendingRequests > 0
     );
     const defaultRoleOptions = useMemo(() => {
         if (isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext) return BASE_ROLE_OPTIONS;
@@ -1179,6 +1280,38 @@ export default function SaasAdminPanel({
         return map;
     }, [activeCatalogOptions]);
 
+    const tenantAiAssistantItems = useMemo(() => {
+        return [...(Array.isArray(tenantAiAssistants) ? tenantAiAssistants : [])]
+            .map((entry) => normalizeTenantAiAssistantItem(entry))
+            .filter(Boolean)
+            .sort((a, b) => String(a?.name || a?.assistantId || '').localeCompare(String(b?.name || b?.assistantId || ''), 'es', { sensitivity: 'base' }));
+    }, [tenantAiAssistants]);
+
+    const activeAiAssistantOptions = useMemo(
+        () => tenantAiAssistantItems.filter((entry) => entry?.isActive !== false),
+        [tenantAiAssistantItems]
+    );
+
+    const selectedAiAssistant = useMemo(
+        () => tenantAiAssistantItems.find((entry) => String(entry?.assistantId || '').trim().toUpperCase() === String(selectedAiAssistantId || '').trim().toUpperCase()) || null,
+        [tenantAiAssistantItems, selectedAiAssistantId]
+    );
+
+    const defaultAiAssistantId = useMemo(() => {
+        const explicit = tenantAiAssistantItems.find((entry) => entry.isDefault === true && entry.isActive !== false);
+        if (explicit?.assistantId) return explicit.assistantId;
+        return activeAiAssistantOptions[0]?.assistantId || '';
+    }, [tenantAiAssistantItems, activeAiAssistantOptions]);
+
+    const aiAssistantLabelMap = useMemo(() => {
+        const map = new Map();
+        tenantAiAssistantItems.forEach((entry) => {
+            const key = sanitizeAiAssistantCode(entry?.assistantId || '');
+            if (!key) return;
+            map.set(key, String(entry?.name || key).trim() || key);
+        });
+        return map;
+    }, [tenantAiAssistantItems]);
     const planIds = useMemo(() => {
         const keys = Object.keys(planMatrix || {}).map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean);
         const merged = Array.from(new Set([...PLAN_OPTIONS, ...keys]));
@@ -1245,6 +1378,7 @@ export default function SaasAdminPanel({
         if (cleanId === 'saas_empresas') return canManageTenants;
         if (cleanId === 'saas_usuarios') return canManageUsers;
         if (cleanId === 'saas_clientes') return canManageUsers;
+        if (cleanId === 'saas_ia') return canManageTenantSettings;
         if (cleanId === 'saas_modulos') return canManageTenantSettings;
         if (cleanId === 'saas_catalogos') return canManageCatalog;
         if (cleanId === 'saas_planes') return canViewSuperAdminSections;
@@ -1272,6 +1406,7 @@ export default function SaasAdminPanel({
     const isPlansSection = selectedSectionId === 'saas_planes';
     const isRolesSection = selectedSectionId === 'saas_roles';
     const isCustomersSection = selectedSectionId === 'saas_clientes';
+    const isAiSection = selectedSectionId === 'saas_ia';
     const isGeneralConfigSection = selectedSectionId === 'saas_config';
 
     const handleSectionChange = (sectionId) => {
@@ -1299,6 +1434,12 @@ export default function SaasAdminPanel({
         if (next === 'saas_clientes') {
             setSelectedCustomerId('');
             setCustomerPanelMode('view');
+        }
+
+        if (next === 'saas_ia') {
+            setSelectedAiAssistantId('');
+            setAiAssistantPanelMode('view');
+            setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
         }
 
         if (next === 'saas_config') {
@@ -1399,6 +1540,41 @@ export default function SaasAdminPanel({
             setLoadingIntegrations(false);
         }
     };
+
+    const loadTenantAiAssistants = async (tenantId) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        if (!cleanTenantId) {
+            setTenantAiAssistants([]);
+            setSelectedAiAssistantId('');
+            setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
+            setAiAssistantPanelMode('view');
+            return;
+        }
+
+        setLoadingAiAssistants(true);
+        try {
+            const payload = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/ai-assistants`);
+            const items = (Array.isArray(payload?.items) ? payload.items : [])
+                .map((entry) => normalizeTenantAiAssistantItem(entry))
+                .filter(Boolean);
+            const defaultAssistantId = sanitizeAiAssistantCode(payload?.defaultAssistantId || '');
+            const normalizedItems = items.map((entry) => {
+                if (!defaultAssistantId) return entry;
+                return {
+                    ...entry,
+                    isDefault: entry.assistantId === defaultAssistantId
+                };
+            });
+            setTenantAiAssistants(normalizedItems);
+            setSelectedAiAssistantId((prev) => {
+                const cleanPrev = sanitizeAiAssistantCode(prev || '');
+                if (cleanPrev && normalizedItems.some((entry) => entry.assistantId === cleanPrev)) return cleanPrev;
+                return '';
+            });
+        } finally {
+            setLoadingAiAssistants(false);
+        }
+    };
     const loadTenantCatalogs = async (tenantId) => {
         const cleanTenantId = String(tenantId || '').trim();
         if (!cleanTenantId) {
@@ -1486,7 +1662,7 @@ export default function SaasAdminPanel({
             setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
         }
         setCatalogProductPanelMode('view');
-        setCatalogProductImageError('');
+            setCatalogProductImageError('');
     };
 
     const saveCatalogProduct = async () => {
@@ -1664,7 +1840,7 @@ export default function SaasAdminPanel({
         setSelectedCatalogProductId('');
         setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
         setCatalogProductPanelMode('view');
-        setCatalogProductImageError('');
+            setCatalogProductImageError('');
             return;
         }
         const payload = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(cleanTenantId) + '/wa-modules');
@@ -1713,6 +1889,9 @@ export default function SaasAdminPanel({
         setCustomerForm(EMPTY_CUSTOMER_FORM);
         setCustomerSearch('');
         setCustomerCsvText('');
+        setSelectedAiAssistantId('');
+        setAiAssistantPanelMode('view');
+        setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
         setCustomerImportModuleId('');
     };
 
@@ -1732,6 +1911,7 @@ export default function SaasAdminPanel({
             imageUrl: item.imageUrl || '',
             assignedUserIds: [...(item.assignedUserIds || [])],
             catalogIds: [...(item.catalogIds || [])],
+            aiAssistantId: sanitizeAiAssistantCode(item.moduleAiAssistantId || ''),
             moduleCatalogMode: item.moduleCatalogMode || 'inherit',
             moduleAiEnabled: item?.moduleFeatureFlags?.aiPro !== false,
             moduleCatalogEnabled: item?.moduleFeatureFlags?.catalog !== false,
@@ -1762,6 +1942,7 @@ export default function SaasAdminPanel({
                 await loadTenantSettings(settingsTenantId);
                 await loadWaModules(settingsTenantId);
                 await loadTenantCatalogs(settingsTenantId);
+                await loadTenantAiAssistants(settingsTenantId);
             }
         } catch (err) {
             setError(String(err?.message || err || 'Error inesperado.'));
@@ -1860,6 +2041,9 @@ export default function SaasAdminPanel({
         setTenantCatalogProducts([]);
         setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
         setCatalogProductImageError('');
+        setSelectedAiAssistantId('');
+        setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
+        setAiAssistantPanelMode('view');
         setSelectedPlanId('');
         setPlanForm(normalizePlanForm('starter', {}));
         setRoleForm(EMPTY_ROLE_FORM);
@@ -1896,6 +2080,8 @@ export default function SaasAdminPanel({
                 || selectedPlanId
                 || selectedCustomerId
                 || customerPanelMode !== 'view'
+                || selectedAiAssistantId
+                || aiAssistantPanelMode !== 'view'
             );
 
             if (!hasSelection) return;
@@ -1923,7 +2109,9 @@ export default function SaasAdminPanel({
         rolePanelMode,
         selectedPlanId,
         selectedCustomerId,
-        customerPanelMode
+        customerPanelMode,
+        selectedAiAssistantId,
+        aiAssistantPanelMode
     ]);
 
     useEffect(() => {
@@ -1932,6 +2120,7 @@ export default function SaasAdminPanel({
             loadTenantSettings(tenantScopeId),
             loadWaModules(tenantScopeId),
             loadTenantCatalogs(tenantScopeId),
+            loadTenantAiAssistants(tenantScopeId),
             loadTenantIntegrations(tenantScopeId),
             loadCustomers(tenantScopeId)
         ]).catch((err) => {
@@ -1953,6 +2142,10 @@ export default function SaasAdminPanel({
         setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
         setCatalogProductPanelMode('view');
         setCatalogProductImageError('');
+        setTenantAiAssistants([]);
+        setSelectedAiAssistantId('');
+        setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
+        setAiAssistantPanelMode('view');
     }, [isOpen, tenantScopeId]);
 
     useEffect(() => {
@@ -1967,6 +2160,9 @@ export default function SaasAdminPanel({
         setCustomerPanelMode('view');
         setCustomerSearch('');
         setCustomerCsvText('');
+        setSelectedAiAssistantId('');
+        setAiAssistantPanelMode('view');
+        setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
     }, [tenantScopeId]);
 
     useEffect(() => {
@@ -2039,6 +2235,15 @@ export default function SaasAdminPanel({
         }
         setCustomerForm(normalizeCustomerFormFromItem(selectedCustomer));
     }, [selectedCustomer, customerPanelMode]);
+
+    useEffect(() => {
+        if (aiAssistantPanelMode === 'create') return;
+        if (!selectedAiAssistant) {
+            setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
+            return;
+        }
+        setAiAssistantForm(buildAiAssistantFormFromItem(selectedAiAssistant));
+    }, [selectedAiAssistant, aiAssistantPanelMode]);
     useEffect(() => {
         if (catalogPanelMode === 'create') return;
         if (!selectedTenantCatalog) {
@@ -2144,7 +2349,109 @@ export default function SaasAdminPanel({
         setUserPanelMode('view');
     };
 
+    const openAiAssistantCreate = () => {
+        if (!canManageTenantSettings || !settingsTenantId) return;
+        setSelectedAiAssistantId('');
+        setAiAssistantForm({
+            ...EMPTY_AI_ASSISTANT_FORM,
+            provider: 'openai',
+            model: String(tenantIntegrations?.aiModel || 'gpt-4o-mini').trim() || 'gpt-4o-mini'
+        });
+        setAiAssistantPanelMode('create');
+    };
 
+    const openAiAssistantView = (assistantId) => {
+        const cleanAssistantId = sanitizeAiAssistantCode(assistantId || '');
+        if (!cleanAssistantId) return;
+        setSelectedAiAssistantId(cleanAssistantId);
+        setAiAssistantPanelMode('view');
+    };
+
+    const openAiAssistantEdit = () => {
+        if (!selectedAiAssistant) return;
+        setAiAssistantForm(buildAiAssistantFormFromItem(selectedAiAssistant));
+        setAiAssistantPanelMode('edit');
+    };
+
+    const cancelAiAssistantEdit = () => {
+        if (selectedAiAssistant) {
+            setAiAssistantForm(buildAiAssistantFormFromItem(selectedAiAssistant));
+            setAiAssistantPanelMode('view');
+            return;
+        }
+        setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
+        setAiAssistantPanelMode('view');
+    };
+
+    const saveAiAssistant = () => {
+        if (!settingsTenantId || !canManageTenantSettings) return;
+
+        runAction(aiAssistantPanelMode === 'create' ? 'Asistente IA creado' : 'Asistente IA actualizado', async () => {
+            const payload = buildAiAssistantPayload(aiAssistantForm, { allowAssistantId: aiAssistantPanelMode === 'create' });
+            if (!String(payload.name || '').trim()) {
+                throw new Error('El nombre del asistente IA es obligatorio.');
+            }
+
+            let response = null;
+            if (aiAssistantPanelMode === 'create') {
+                response = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/ai-assistants`, {
+                    method: 'POST',
+                    body: payload
+                });
+            } else {
+                const cleanAssistantId = sanitizeAiAssistantCode(selectedAiAssistant?.assistantId || aiAssistantForm.assistantId || selectedAiAssistantId);
+                if (!cleanAssistantId) throw new Error('Asistente IA invalido para actualizar.');
+                response = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/ai-assistants/${encodeURIComponent(cleanAssistantId)}`, {
+                    method: 'PUT',
+                    body: payload
+                });
+            }
+
+            await loadTenantAiAssistants(settingsTenantId);
+            const returnedId = sanitizeAiAssistantCode(response?.item?.assistantId || '');
+            if (returnedId) {
+                setSelectedAiAssistantId(returnedId);
+            }
+            setAiAssistantPanelMode('view');
+            setAiAssistantForm((prev) => ({ ...prev, openaiApiKey: '' }));
+        });
+    };
+
+    const markAiAssistantAsDefault = (assistantId) => {
+        const cleanAssistantId = sanitizeAiAssistantCode(assistantId || '');
+        if (!settingsTenantId || !cleanAssistantId || !canManageTenantSettings) return;
+
+        runAction('Asistente IA principal actualizado', async () => {
+            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/ai-assistants/${encodeURIComponent(cleanAssistantId)}/default`, {
+                method: 'POST',
+                body: {}
+            });
+            await loadTenantAiAssistants(settingsTenantId);
+            setSelectedAiAssistantId(cleanAssistantId);
+        });
+    };
+
+    const toggleAiAssistantActive = (assistant) => {
+        const cleanAssistantId = sanitizeAiAssistantCode(assistant?.assistantId || '');
+        if (!settingsTenantId || !cleanAssistantId || !canManageTenantSettings) return;
+        const isActive = assistant?.isActive !== false;
+
+        runAction('Estado de asistente IA actualizado', async () => {
+            if (isActive) {
+                await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/ai-assistants/${encodeURIComponent(cleanAssistantId)}/deactivate`, {
+                    method: 'POST',
+                    body: {}
+                });
+            } else {
+                await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/ai-assistants/${encodeURIComponent(cleanAssistantId)}`, {
+                    method: 'PUT',
+                    body: { isActive: true }
+                });
+            }
+            await loadTenantAiAssistants(settingsTenantId);
+            setSelectedAiAssistantId(cleanAssistantId);
+        });
+    };
     const openRoleCreate = () => {
         if (!canManageRoles) return;
         setSelectedRoleKey('');
@@ -2338,7 +2645,8 @@ export default function SaasAdminPanel({
             ...prev,
             catalogIds: activeCatalogOptions.length > 0
                 ? [String(activeCatalogOptions[0]?.catalogId || '').trim().toUpperCase()].filter(Boolean)
-                : []
+                : [],
+            aiAssistantId: defaultAiAssistantId || ''
         }));
     };
 
@@ -3501,6 +3809,272 @@ export default function SaasAdminPanel({
                     </section>
                     )}
 
+                    {isAiSection && (
+                    <section id="saas_ia" className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <div>
+                                        <h3>Asistentes IA</h3>
+                                        <small>{settingsTenantId ? 'Define asistentes por empresa y asignalos por modulo.' : 'Selecciona una empresa para administrar asistentes IA.'}</small>
+                                    </div>
+                                </div>
+
+                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                    <button type="button" disabled={busy || !settingsTenantId || loadingAiAssistants} onClick={() => settingsTenantId && loadTenantAiAssistants(settingsTenantId)}>
+                                        Recargar
+                                    </button>
+                                    <button type="button" disabled={busy || !settingsTenantId || !canManageTenantSettings} onClick={openAiAssistantCreate}>
+                                        Nuevo asistente
+                                    </button>
+                                    <button type="button" disabled={busy} onClick={() => { setSelectedAiAssistantId(''); setAiAssistantPanelMode('view'); setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM }); }}>
+                                        Deseleccionar
+                                    </button>
+                                </div>
+
+                                <div className="saas-admin-list saas-admin-list--compact">
+                                    {!settingsTenantId && (
+                                        <div className="saas-admin-empty-state">
+                                            <h4>Sin empresa seleccionada</h4>
+                                            <p>Elige una empresa para administrar asistentes IA.</p>
+                                        </div>
+                                    )}
+
+                                    {settingsTenantId && tenantAiAssistantItems.length === 0 && (
+                                        <div className="saas-admin-empty-state">
+                                            <h4>Sin asistentes IA</h4>
+                                            <p>Crea el primer asistente para definir contexto por modulo.</p>
+                                        </div>
+                                    )}
+
+                                    {settingsTenantId && tenantAiAssistantItems.map((assistant) => (
+                                        <button
+                                            key={`assistant_${assistant.assistantId}`}
+                                            type="button"
+                                            className={`saas-admin-list-item saas-admin-list-item--button ${selectedAiAssistantId === assistant.assistantId && aiAssistantPanelMode !== 'create' ? 'active' : ''}`.trim()}
+                                            onClick={() => openAiAssistantView(assistant.assistantId)}
+                                        >
+                                            <strong>{assistant.name || assistant.assistantId}</strong>
+                                            <small>{assistant.assistantId} | {assistant.model}</small>
+                                            <small>{assistant.isActive ? 'Activo' : 'Inactivo'}{assistant.isDefault ? ' | Principal' : ''}</small>
+                                        </button>
+                                    ))}
+                                </div>
+                            </aside>
+
+                            <div className="saas-admin-detail-pane">
+                                {!settingsTenantId && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Asistentes por empresa</h4>
+                                        <p>Selecciona una empresa para ver detalle y configuracion IA.</p>
+                                    </div>
+                                )}
+
+                                {settingsTenantId && aiAssistantPanelMode === 'view' && !selectedAiAssistant && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Sin asistente seleccionado</h4>
+                                        <p>Selecciona un asistente de la lista o crea uno nuevo.</p>
+                                    </div>
+                                )}
+
+                                {settingsTenantId && aiAssistantPanelMode === 'view' && selectedAiAssistant && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>{selectedAiAssistant.name || selectedAiAssistant.assistantId}</h3>
+                                                <small>{selectedAiAssistant.assistantId}</small>
+                                            </div>
+                                            <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                <button type="button" disabled={busy || !canManageTenantSettings} onClick={openAiAssistantEdit}>Editar</button>
+                                                <button
+                                                    type="button"
+                                                    disabled={busy || !canManageTenantSettings || selectedAiAssistant.isDefault || selectedAiAssistant.isActive === false}
+                                                    onClick={() => markAiAssistantAsDefault(selectedAiAssistant.assistantId)}
+                                                >
+                                                    Marcar principal
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={busy || !canManageTenantSettings}
+                                                    onClick={() => toggleAiAssistantActive(selectedAiAssistant)}
+                                                >
+                                                    {selectedAiAssistant.isActive ? 'Desactivar' : 'Activar'}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-detail-grid">
+                                            <div className="saas-admin-detail-field"><span>Proveedor</span><strong>{selectedAiAssistant.provider}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Modelo</span><strong>{selectedAiAssistant.model}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Temperatura</span><strong>{selectedAiAssistant.temperature}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Top P</span><strong>{selectedAiAssistant.topP}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Max tokens</span><strong>{selectedAiAssistant.maxTokens}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>API key</span><strong>{selectedAiAssistant.openAiApiKeyMasked || 'No configurada'}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedAiAssistant.isActive ? 'Activo' : 'Inactivo'}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Principal</span><strong>{selectedAiAssistant.isDefault ? 'Si' : 'No'}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(selectedAiAssistant.updatedAt)}</strong></div>
+                                        </div>
+
+                                        <div className="saas-admin-related-block">
+                                            <h4>Descripcion</h4>
+                                            <div className="saas-admin-related-list">
+                                                <div className="saas-admin-related-row" role="status">
+                                                    <span>{selectedAiAssistant.description || 'Sin descripcion.'}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-related-block">
+                                            <h4>System prompt</h4>
+                                            <div className="saas-admin-detail-metadata">
+                                                <pre>{selectedAiAssistant.systemPrompt || 'Sin prompt configurado.'}</pre>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+
+                                {settingsTenantId && (aiAssistantPanelMode === 'create' || aiAssistantPanelMode === 'edit') && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>{aiAssistantPanelMode === 'create' ? 'Nuevo asistente IA' : 'Editar asistente IA'}</h3>
+                                                <small>{aiAssistantPanelMode === 'create' ? 'Define contexto y parametros de inferencia.' : 'Actualiza los campos necesarios y guarda.'}</small>
+                                            </div>
+                                        </div>
+
+                                        {aiAssistantPanelMode === 'edit' && (
+                                            <div className="saas-admin-detail-grid">
+                                                <div className="saas-admin-detail-field">
+                                                    <span>Codigo</span>
+                                                    <strong>{aiAssistantForm.assistantId || '-'}</strong>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="saas-admin-form-row">
+                                            <input
+                                                value={aiAssistantForm.name}
+                                                onChange={(event) => setAiAssistantForm((prev) => ({ ...prev, name: event.target.value }))}
+                                                placeholder="Nombre del asistente"
+                                                disabled={busy}
+                                            />
+                                            <select
+                                                value={aiAssistantForm.model}
+                                                onChange={(event) => setAiAssistantForm((prev) => ({ ...prev, model: event.target.value }))}
+                                                disabled={busy}
+                                            >
+                                                {AI_MODEL_OPTIONS.map((model) => (
+                                                    <option key={`ai_model_${model}`} value={model}>{model}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="saas-admin-form-row">
+                                            <div className="saas-admin-field">
+                                                <label>Temperatura (0-2)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="2"
+                                                    step="0.1"
+                                                    value={aiAssistantForm.temperature}
+                                                    onChange={(event) => setAiAssistantForm((prev) => ({ ...prev, temperature: event.target.value }))}
+                                                    disabled={busy}
+                                                />
+                                            </div>
+                                            <div className="saas-admin-field">
+                                                <label>Top P (0-1)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="1"
+                                                    step="0.05"
+                                                    value={aiAssistantForm.topP}
+                                                    onChange={(event) => setAiAssistantForm((prev) => ({ ...prev, topP: event.target.value }))}
+                                                    disabled={busy}
+                                                />
+                                            </div>
+                                            <div className="saas-admin-field">
+                                                <label>Max tokens</label>
+                                                <input
+                                                    type="number"
+                                                    min="64"
+                                                    max="4096"
+                                                    step="1"
+                                                    value={aiAssistantForm.maxTokens}
+                                                    onChange={(event) => setAiAssistantForm((prev) => ({ ...prev, maxTokens: event.target.value }))}
+                                                    disabled={busy}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-form-row">
+                                            <textarea
+                                                value={aiAssistantForm.description}
+                                                onChange={(event) => setAiAssistantForm((prev) => ({ ...prev, description: event.target.value }))}
+                                                placeholder="Descripcion del asistente"
+                                                rows={2}
+                                                disabled={busy}
+                                            />
+                                        </div>
+
+                                        <div className="saas-admin-form-row">
+                                            <textarea
+                                                value={aiAssistantForm.systemPrompt}
+                                                onChange={(event) => setAiAssistantForm((prev) => ({ ...prev, systemPrompt: event.target.value }))}
+                                                placeholder="Prompt base del asistente (contexto, tono, reglas, etc.)"
+                                                rows={8}
+                                                disabled={busy}
+                                            />
+                                        </div>
+
+                                        <div className="saas-admin-form-row">
+                                            <input
+                                                type="password"
+                                                value={aiAssistantForm.openaiApiKey}
+                                                onChange={(event) => setAiAssistantForm((prev) => ({ ...prev, openaiApiKey: event.target.value }))}
+                                                placeholder={aiAssistantForm.openAiApiKeyMasked || 'OpenAI API key (opcional si no se cambia)'}
+                                                disabled={busy}
+                                            />
+                                        </div>
+
+                                        <div className="saas-admin-modules">
+                                            <label className="saas-admin-module-toggle">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={aiAssistantForm.isActive !== false}
+                                                    onChange={(event) => setAiAssistantForm((prev) => ({ ...prev, isActive: event.target.checked }))}
+                                                    disabled={busy}
+                                                />
+                                                <span>Asistente activo</span>
+                                            </label>
+                                            <label className="saas-admin-module-toggle">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={aiAssistantForm.isDefault === true}
+                                                    onChange={(event) => setAiAssistantForm((prev) => ({ ...prev, isDefault: event.target.checked }))}
+                                                    disabled={busy}
+                                                />
+                                                <span>Asistente principal del tenant</span>
+                                            </label>
+                                        </div>
+
+                                        <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                            <button
+                                                type="button"
+                                                disabled={busy || !String(aiAssistantForm.name || '').trim()}
+                                                onClick={saveAiAssistant}
+                                            >
+                                                {aiAssistantPanelMode === 'create' ? 'Guardar asistente' : 'Actualizar asistente'}
+                                            </button>
+                                            <button type="button" disabled={busy} onClick={cancelAiAssistantEdit}>Cancelar</button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                    )}
                     {(isGeneralConfigSection || isModulesSection) && (
                     <section id={isModulesSection ? 'saas_modulos' : 'saas_config'} className="saas-admin-card saas-admin-card--full">
                         <div className="saas-admin-master-detail">
@@ -3708,6 +4282,10 @@ export default function SaasAdminPanel({
                                         : {};
                                     const moduleCatalogIds = normalizeCatalogIdsList(moduleInDetail?.catalogIds || []);
                                     const moduleCatalogLabels = moduleCatalogIds.map((catalogId) => activeCatalogLabelMap.get(catalogId) || catalogId);
+                                    const moduleAssistantId = sanitizeAiAssistantCode(moduleInDetail?.moduleAiAssistantId || '');
+                                    const moduleAssistantLabel = moduleAssistantId
+                                        ? (aiAssistantLabelMap.get(moduleAssistantId) || moduleAssistantId)
+                                        : 'Asistente principal del tenant';
 
                                     return (
                                         <>
@@ -3774,6 +4352,7 @@ export default function SaasAdminPanel({
                                                         <div className="saas-admin-detail-field"><span>Estado</span><strong>{moduleInDetail.isActive ? 'Activo' : 'Inactivo'}</strong></div>
                                                         <div className="saas-admin-detail-field"><span>Usuarios asignados</span><strong>{assignedLabels.length}</strong></div>
                                                         <div className="saas-admin-detail-field"><span>Catalogos asignados</span><strong>{moduleCatalogLabels.length}</strong></div>
+                                                        <div className="saas-admin-detail-field"><span>Asistente IA</span><strong>{moduleAssistantLabel}</strong></div>
                                                         <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(moduleInDetail.updatedAt)}</strong></div>
                                                     </div>
 
@@ -3862,7 +4441,26 @@ export default function SaasAdminPanel({
                                                         </select>
                                                     </div>
 
-                                                    <div className="saas-admin-related-block">
+                                                                                                        <div className="saas-admin-form-row">
+                                                        <div className="saas-admin-field">
+                                                            <label htmlFor="wa-module-ai-assistant">Asistente IA del modulo</label>
+                                                            <select
+                                                                id="wa-module-ai-assistant"
+                                                                value={waModuleForm.aiAssistantId}
+                                                                onChange={(event) => setWaModuleForm((prev) => ({ ...prev, aiAssistantId: sanitizeAiAssistantCode(event.target.value || '') }))}
+                                                                disabled={!settingsTenantId || busy}
+                                                            >
+                                                                <option value="">Usar asistente principal del tenant</option>
+                                                                {activeAiAssistantOptions.map((assistant) => (
+                                                                    <option key={`wa_module_ai_${assistant.assistantId}`} value={assistant.assistantId}>
+                                                                        {assistant.name || assistant.assistantId}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+
+<div className="saas-admin-related-block">
                                                         <h4>Catalogos asignados al modulo</h4>
                                                         <small>Selecciona uno o mas catalogos activos para este modulo.</small>
                                                         <div className="saas-admin-modules">
@@ -4142,6 +4740,7 @@ export default function SaasAdminPanel({
                                                                             catalogIds: (Array.isArray(waModuleForm.catalogIds) ? waModuleForm.catalogIds : [])
                                                                                 .map((entry) => String(entry || '').trim().toUpperCase())
                                                                                 .filter((entry) => /^CAT-[A-Z0-9]{4,}$/.test(entry)),
+                                                                            aiAssistantId: sanitizeAiAssistantCode(waModuleForm.aiAssistantId || '') || null,
                                                                             enabledModules: {
                                                                                 aiPro: waModuleForm.moduleAiEnabled !== false,
                                                                                 catalog: waModuleForm.moduleCatalogEnabled !== false,
@@ -5219,6 +5818,33 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
