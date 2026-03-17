@@ -14,6 +14,10 @@ const PERMISSIONS = Object.freeze({
     TENANT_INTEGRATIONS_MANAGE: 'tenant.integrations.manage',
     TENANT_MODULES_READ: 'tenant.modules.read',
     TENANT_MODULES_MANAGE: 'tenant.modules.manage',
+    TENANT_QUICK_REPLIES_READ: 'tenant.quick_replies.read',
+    TENANT_QUICK_REPLIES_MANAGE: 'tenant.quick_replies.manage',
+    TENANT_AI_READ: 'tenant.ai.read',
+    TENANT_AI_MANAGE: 'tenant.ai.manage',
     TENANT_CUSTOMERS_READ: 'tenant.customers.read',
     TENANT_CUSTOMERS_MANAGE: 'tenant.customers.manage',
     TENANT_CATALOGS_MANAGE: 'tenant.catalogs.manage',
@@ -36,6 +40,10 @@ const PERMISSION_LABELS = Object.freeze({
     [PERMISSIONS.TENANT_INTEGRATIONS_MANAGE]: 'Editar integraciones',
     [PERMISSIONS.TENANT_MODULES_READ]: 'Ver modulos WhatsApp',
     [PERMISSIONS.TENANT_MODULES_MANAGE]: 'Gestionar modulos WhatsApp',
+    [PERMISSIONS.TENANT_QUICK_REPLIES_READ]: 'Ver respuestas rapidas',
+    [PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE]: 'Gestionar respuestas rapidas',
+    [PERMISSIONS.TENANT_AI_READ]: 'Ver asistentes IA',
+    [PERMISSIONS.TENANT_AI_MANAGE]: 'Gestionar asistentes IA',
     [PERMISSIONS.TENANT_CUSTOMERS_READ]: 'Ver clientes',
     [PERMISSIONS.TENANT_CUSTOMERS_MANAGE]: 'Gestionar clientes',
     [PERMISSIONS.TENANT_CATALOGS_MANAGE]: 'Gestionar catalogos',
@@ -51,6 +59,151 @@ const ROLE_LABELS = Object.freeze({
     seller: 'Seller'
 });
 
+
+const SYSTEM_PERMISSION_PACKS = Object.freeze({
+    chat_operation: {
+        label: 'Operacion de chat',
+        permissions: [
+            PERMISSIONS.TENANT_CHAT_OPERATE,
+            PERMISSIONS.TENANT_RUNTIME_READ,
+            PERMISSIONS.TENANT_MODULES_READ
+        ],
+        active: true
+    },
+    customer_management: {
+        label: 'Gestion de clientes',
+        permissions: [
+            PERMISSIONS.TENANT_CUSTOMERS_READ,
+            PERMISSIONS.TENANT_CUSTOMERS_MANAGE
+        ],
+        active: true
+    },
+    catalog_management: {
+        label: 'Gestion de catalogos',
+        permissions: [
+            PERMISSIONS.TENANT_CATALOGS_MANAGE
+        ],
+        active: true
+    },
+    quick_replies_management: {
+        label: 'Gestion de respuestas rapidas',
+        permissions: [
+            PERMISSIONS.TENANT_QUICK_REPLIES_READ,
+            PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE
+        ],
+        active: true
+    },
+    ai_assistants_management: {
+        label: 'Gestion de asistentes IA',
+        permissions: [
+            PERMISSIONS.TENANT_AI_READ,
+            PERMISSIONS.TENANT_AI_MANAGE
+        ],
+        active: true
+    }
+});
+
+const SYSTEM_ROLE_PROFILES = Object.freeze({
+    owner: {
+        role: 'owner',
+        label: ROLE_LABELS.owner,
+        required: [
+            PERMISSIONS.TENANT_OVERVIEW_READ,
+            PERMISSIONS.TENANT_USERS_MANAGE,
+            PERMISSIONS.TENANT_SETTINGS_READ,
+            PERMISSIONS.TENANT_SETTINGS_MANAGE,
+            PERMISSIONS.TENANT_MODULES_READ,
+            PERMISSIONS.TENANT_MODULES_MANAGE,
+            PERMISSIONS.TENANT_CATALOGS_MANAGE,
+            PERMISSIONS.TENANT_CUSTOMERS_READ,
+            PERMISSIONS.TENANT_CUSTOMERS_MANAGE,
+            PERMISSIONS.TENANT_QUICK_REPLIES_READ,
+            PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE,
+            PERMISSIONS.TENANT_AI_READ,
+            PERMISSIONS.TENANT_AI_MANAGE,
+            PERMISSIONS.TENANT_RUNTIME_READ,
+            PERMISSIONS.TENANT_CHAT_OPERATE,
+            PERMISSIONS.TENANT_ASSETS_UPLOAD
+        ],
+        optional: [
+            PERMISSIONS.TENANT_INTEGRATIONS_READ,
+            PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
+            PERMISSIONS.TENANT_AUDIT_READ,
+            PERMISSIONS.TENANT_USERS_OWNER_ASSIGN
+        ],
+        blocked: [
+            PERMISSIONS.PLATFORM_OVERVIEW_READ,
+            PERMISSIONS.PLATFORM_TENANTS_MANAGE,
+            PERMISSIONS.PLATFORM_PLANS_MANAGE
+        ],
+        active: true
+    },
+    admin: {
+        role: 'admin',
+        label: ROLE_LABELS.admin,
+        required: [
+            PERMISSIONS.TENANT_OVERVIEW_READ,
+            PERMISSIONS.TENANT_USERS_MANAGE,
+            PERMISSIONS.TENANT_SETTINGS_READ,
+            PERMISSIONS.TENANT_MODULES_READ,
+            PERMISSIONS.TENANT_CATALOGS_MANAGE,
+            PERMISSIONS.TENANT_CUSTOMERS_READ,
+            PERMISSIONS.TENANT_CUSTOMERS_MANAGE,
+            PERMISSIONS.TENANT_QUICK_REPLIES_READ,
+            PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE,
+            PERMISSIONS.TENANT_AI_READ,
+            PERMISSIONS.TENANT_AI_MANAGE,
+            PERMISSIONS.TENANT_RUNTIME_READ,
+            PERMISSIONS.TENANT_CHAT_OPERATE,
+            PERMISSIONS.TENANT_ASSETS_UPLOAD
+        ],
+        optional: [
+            PERMISSIONS.TENANT_SETTINGS_MANAGE,
+            PERMISSIONS.TENANT_MODULES_MANAGE,
+            PERMISSIONS.TENANT_INTEGRATIONS_READ,
+            PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
+            PERMISSIONS.TENANT_AUDIT_READ
+        ],
+        blocked: [
+            PERMISSIONS.PLATFORM_OVERVIEW_READ,
+            PERMISSIONS.PLATFORM_TENANTS_MANAGE,
+            PERMISSIONS.PLATFORM_PLANS_MANAGE,
+            PERMISSIONS.TENANT_USERS_OWNER_ASSIGN
+        ],
+        active: true
+    },
+    seller: {
+        role: 'seller',
+        label: ROLE_LABELS.seller,
+        required: [
+            PERMISSIONS.TENANT_OVERVIEW_READ,
+            PERMISSIONS.TENANT_MODULES_READ,
+            PERMISSIONS.TENANT_CUSTOMERS_READ,
+            PERMISSIONS.TENANT_QUICK_REPLIES_READ,
+            PERMISSIONS.TENANT_AI_READ,
+            PERMISSIONS.TENANT_RUNTIME_READ,
+            PERMISSIONS.TENANT_CHAT_OPERATE
+        ],
+        optional: [
+            PERMISSIONS.TENANT_CUSTOMERS_MANAGE,
+            PERMISSIONS.TENANT_CATALOGS_MANAGE,
+            PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE,
+            PERMISSIONS.TENANT_AI_MANAGE
+        ],
+        blocked: [
+            PERMISSIONS.PLATFORM_OVERVIEW_READ,
+            PERMISSIONS.PLATFORM_TENANTS_MANAGE,
+            PERMISSIONS.PLATFORM_PLANS_MANAGE,
+            PERMISSIONS.TENANT_USERS_MANAGE,
+            PERMISSIONS.TENANT_USERS_OWNER_ASSIGN,
+            PERMISSIONS.TENANT_SETTINGS_MANAGE,
+            PERMISSIONS.TENANT_MODULES_MANAGE,
+            PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
+            PERMISSIONS.TENANT_AUDIT_READ
+        ],
+        active: true
+    }
+});
 const ALL_PERMISSION_KEYS = Object.freeze(Object.values(PERMISSIONS));
 const ALL_PERMISSION_SET = new Set(ALL_PERMISSION_KEYS);
 
@@ -113,11 +266,66 @@ function normalizeRuntimeRoleMap(input = {}) {
     return roles;
 }
 
+
+function mergePermissionSet(...lists) {
+    const bucket = new Set();
+    lists.forEach((list) => {
+        if (!Array.isArray(list)) return;
+        list.forEach((entry) => {
+            const key = String(entry || '').trim();
+            if (ALL_PERMISSION_SET.has(key)) bucket.add(key);
+        });
+    });
+    return Array.from(bucket).sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' }));
+}
+
+function ensureSystemPermissionPacks(input = {}) {
+    const source = input && typeof input === 'object' ? input : {};
+    const merged = { ...source };
+    Object.entries(SYSTEM_PERMISSION_PACKS).forEach(([packId, base]) => {
+        const current = source[packId] && typeof source[packId] === 'object' ? source[packId] : {};
+        merged[packId] = {
+            id: packId,
+            label: String(current.label || base.label || packId).trim() || packId,
+            permissions: mergePermissionSet(base.permissions || [], current.permissions || []),
+            active: current.active === undefined ? base.active !== false : current.active !== false,
+            isSystem: true
+        };
+    });
+    return merged;
+}
+
+function ensureSystemRoleProfiles(input = {}) {
+    const source = input && typeof input === 'object' ? input : {};
+    const merged = { ...source };
+    Object.entries(SYSTEM_ROLE_PROFILES).forEach(([role, base]) => {
+        const current = source[role] && typeof source[role] === 'object' ? source[role] : {};
+        const required = mergePermissionSet(base.required || [], current.required || []);
+        const optional = mergePermissionSet(base.optional || [], current.optional || [])
+            .filter((permission) => !required.includes(permission));
+        const blocked = mergePermissionSet(base.blocked || [], current.blocked || [])
+            .filter((permission) => !required.includes(permission) && !optional.includes(permission));
+        merged[role] = {
+            role,
+            label: String(current.label || base.label || ROLE_LABELS[role] || role).trim() || role,
+            required,
+            optional,
+            blocked,
+            active: current.active === undefined ? base.active !== false : current.active !== false,
+            isSystem: true
+        };
+    });
+    return merged;
+}
 function getRuntimeCatalog() {
     const overrides = accessPolicyStore.getOverridesSync();
     const labels = normalizeRuntimePermissionLabels(overrides?.permissionLabels || {});
-    const packs = normalizeRuntimePackMap(overrides?.permissionPacks || {});
-    const roles = normalizeRuntimeRoleMap(overrides?.roleProfiles || {});
+    const packs = ensureSystemPermissionPacks(
+        normalizeRuntimePackMap(overrides?.permissionPacks || {})
+    );
+    const roles = ensureSystemRoleProfiles(
+        normalizeRuntimeRoleMap(overrides?.roleProfiles || {})
+    );
     return { labels, packs, roles };
 }
 
@@ -437,3 +645,6 @@ module.exports = {
     persistRoleProfile,
     persistPermissionPack,
 };
+
+
+

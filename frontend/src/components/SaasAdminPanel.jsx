@@ -379,6 +379,7 @@ const ADMIN_NAV_ITEMS = [
     { id: 'saas_roles', label: 'Roles' },
     { id: 'saas_clientes', label: 'Clientes' },
     { id: 'saas_ia', label: 'IA' },
+    { id: 'saas_quick_replies', label: 'Respuestas rapidas' },
     { id: 'saas_modulos', label: 'Modulos' },
     { id: 'saas_catalogos', label: 'Catalogos' },
     { id: 'saas_config', label: 'Configuracion' }
@@ -423,6 +424,24 @@ const ROLE_PRIORITY = Object.freeze({
     superadmin: 4
 });
 const PERMISSION_OWNER_ASSIGN = 'tenant.users.owner.assign';
+const PERMISSION_PLATFORM_OVERVIEW_READ = 'platform.overview.read';
+const PERMISSION_PLATFORM_TENANTS_MANAGE = 'platform.tenants.manage';
+const PERMISSION_PLATFORM_PLANS_MANAGE = 'platform.plans.manage';
+const PERMISSION_TENANT_OVERVIEW_READ = 'tenant.overview.read';
+const PERMISSION_TENANT_USERS_MANAGE = 'tenant.users.manage';
+const PERMISSION_TENANT_SETTINGS_READ = 'tenant.settings.read';
+const PERMISSION_TENANT_SETTINGS_MANAGE = 'tenant.settings.manage';
+const PERMISSION_TENANT_INTEGRATIONS_READ = 'tenant.integrations.read';
+const PERMISSION_TENANT_INTEGRATIONS_MANAGE = 'tenant.integrations.manage';
+const PERMISSION_TENANT_MODULES_READ = 'tenant.modules.read';
+const PERMISSION_TENANT_MODULES_MANAGE = 'tenant.modules.manage';
+const PERMISSION_TENANT_QUICK_REPLIES_READ = 'tenant.quick_replies.read';
+const PERMISSION_TENANT_QUICK_REPLIES_MANAGE = 'tenant.quick_replies.manage';
+const PERMISSION_TENANT_AI_READ = 'tenant.ai.read';
+const PERMISSION_TENANT_AI_MANAGE = 'tenant.ai.manage';
+const PERMISSION_TENANT_CUSTOMERS_READ = 'tenant.customers.read';
+const PERMISSION_TENANT_CUSTOMERS_MANAGE = 'tenant.customers.manage';
+const PERMISSION_TENANT_CATALOGS_MANAGE = 'tenant.catalogs.manage';
 const ADMIN_IMAGE_MAX_BYTES = Math.max(200 * 1024, Number(import.meta.env.VITE_ADMIN_ASSET_MAX_BYTES || 2 * 1024 * 1024));
 const ADMIN_IMAGE_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL = '.jpg, .jpeg, .png, .webp';
@@ -1043,6 +1062,8 @@ export default function SaasAdminPanel({
     const [selectedTenantId, setSelectedTenantId] = useState('');
     const [selectedUserId, setSelectedUserId] = useState('');
     const [selectedWaModuleId, setSelectedWaModuleId] = useState('');
+    const [quickReplyModuleFilterId, setQuickReplyModuleFilterId] = useState('');
+    const [moduleQuickReplyLibraryDraft, setModuleQuickReplyLibraryDraft] = useState([]);
     const [selectedConfigKey, setSelectedConfigKey] = useState('');
     const [moduleUserPickerId, setModuleUserPickerId] = useState('');
     const [tenantPanelMode, setTenantPanelMode] = useState('view');
@@ -1084,6 +1105,8 @@ export default function SaasAdminPanel({
     const [quickReplyItemForm, setQuickReplyItemForm] = useState({ ...EMPTY_QUICK_REPLY_ITEM_FORM });
     const [quickReplyLibraryPanelMode, setQuickReplyLibraryPanelMode] = useState('view');
     const [quickReplyItemPanelMode, setQuickReplyItemPanelMode] = useState('view');
+    const [quickReplyLibrarySearch, setQuickReplyLibrarySearch] = useState('');
+    const [quickReplyItemSearch, setQuickReplyItemSearch] = useState('');
     const [loadingQuickReplies, setLoadingQuickReplies] = useState(false);
 
     const [customers, setCustomers] = useState([]);
@@ -1104,25 +1127,118 @@ export default function SaasAdminPanel({
 
     const normalizedRole = String(userRole || '').trim().toLowerCase();
     const noRoleContext = !normalizedRole;
-    const canManageTenants = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
-    const canManageUsers = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const canManageTenantSettings = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
-    const canManageCatalog = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const canManageRoles = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
-    const canViewSuperAdminSections = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
+    const roleBasedCanManageTenants = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
+    const roleBasedCanManageUsers = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageTenantSettings = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
+    const roleBasedCanManageCatalog = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageRoles = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
+    const roleBasedCanViewSuperAdminSections = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
+    const roleBasedCanEditModules = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageQuickReplies = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageCustomers = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanViewAi = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageAi = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+
+    const actorRoleForPolicy = isSuperAdmin || normalizedRole === 'superadmin' ? 'superadmin' : (normalizedRole || 'seller');
+    const actorRolePriority = getRolePriority(actorRoleForPolicy);
+    const currentUserId = String(currentUser?.userId || currentUser?.id || '').trim();
+    const actorPermissionSet = useMemo(() => new Set(
+        (Array.isArray(currentUser?.permissions) ? currentUser.permissions : [])
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean)
+    ), [currentUser?.permissions]);
+
+    const hasPermissionContext = Boolean(
+        isSuperAdmin
+        || normalizedRole === 'superadmin'
+        || actorPermissionSet.size > 0
+    );
+
+    const hasAnyActorPermission = useCallback((keys = []) => {
+        if (isSuperAdmin || normalizedRole === 'superadmin') return true;
+        const source = Array.isArray(keys) ? keys : [];
+        return source.some((key) => actorPermissionSet.has(String(key || '').trim()));
+    }, [actorPermissionSet, isSuperAdmin, normalizedRole]);
+
+    const canManageTenants = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_PLATFORM_TENANTS_MANAGE])
+        : roleBasedCanManageTenants;
+    const canManageUsers = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_USERS_MANAGE])
+        : roleBasedCanManageUsers;
+    const canManageTenantSettings = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_SETTINGS_MANAGE])
+        : roleBasedCanManageTenantSettings;
+    const canViewTenantSettings = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_SETTINGS_READ, PERMISSION_TENANT_SETTINGS_MANAGE])
+        : roleBasedCanManageTenantSettings;
+    const canManageCatalog = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_CATALOGS_MANAGE])
+        : roleBasedCanManageCatalog;
+    const canManageRoles = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_PLATFORM_TENANTS_MANAGE, PERMISSION_PLATFORM_PLANS_MANAGE])
+        : roleBasedCanManageRoles;
+    const canViewSuperAdminSections = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_PLATFORM_OVERVIEW_READ, PERMISSION_PLATFORM_TENANTS_MANAGE, PERMISSION_PLATFORM_PLANS_MANAGE])
+        : roleBasedCanViewSuperAdminSections;
     const canEditTenantSettings = canManageTenantSettings;
-    const canEditModules = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
+    const canEditModules = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_MODULES_MANAGE])
+        : roleBasedCanEditModules;
+    const canViewModules = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_MODULES_READ, PERMISSION_TENANT_MODULES_MANAGE])
+        : roleBasedCanEditModules;
+    const canManageQuickReplies = hasPermissionContext
+        ? hasAnyActorPermission([
+            PERMISSION_TENANT_QUICK_REPLIES_MANAGE,
+            PERMISSION_TENANT_MODULES_MANAGE
+        ])
+        : roleBasedCanManageQuickReplies;
+    const canViewQuickReplies = hasPermissionContext
+        ? hasAnyActorPermission([
+            PERMISSION_TENANT_QUICK_REPLIES_READ,
+            PERMISSION_TENANT_QUICK_REPLIES_MANAGE,
+            PERMISSION_TENANT_MODULES_READ,
+            PERMISSION_TENANT_MODULES_MANAGE
+        ])
+        : roleBasedCanManageQuickReplies;
+    const canViewAi = hasPermissionContext
+        ? hasAnyActorPermission([
+            PERMISSION_TENANT_AI_READ,
+            PERMISSION_TENANT_AI_MANAGE,
+            PERMISSION_TENANT_INTEGRATIONS_READ,
+            PERMISSION_TENANT_INTEGRATIONS_MANAGE
+        ])
+        : roleBasedCanViewAi;
+    const canManageAi = hasPermissionContext
+        ? hasAnyActorPermission([
+            PERMISSION_TENANT_AI_MANAGE,
+            PERMISSION_TENANT_INTEGRATIONS_MANAGE
+        ])
+        : roleBasedCanManageAi;
+    const canViewCustomers = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_CUSTOMERS_READ, PERMISSION_TENANT_CUSTOMERS_MANAGE])
+        : roleBasedCanManageCustomers;
+    const canManageCustomers = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_CUSTOMERS_MANAGE])
+        : roleBasedCanManageCustomers;
     const canEditCatalog = canManageCatalog;
     const requiresTenantSelection = Boolean(isSuperAdmin || normalizedRole === 'superadmin');
     const showPanelLoading = Boolean(
         busy || loadingSettings || loadingIntegrations || loadingPlans || loadingAccessCatalog || loadingAiAssistants || pendingRequests > 0
     );
+    const canActorManageRoleChanges = Boolean(
+        actorRoleForPolicy === 'superadmin'
+        || actorRoleForPolicy === 'owner'
+        || (actorRoleForPolicy === 'admin' && actorPermissionSet.has(PERMISSION_OWNER_ASSIGN))
+    );    
     const defaultRoleOptions = useMemo(() => {
         if (isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext) return BASE_ROLE_OPTIONS;
         if (normalizedRole === 'owner') return BASE_ROLE_OPTIONS.filter((role) => role !== 'owner');
         if (normalizedRole === 'admin') return ['seller'];
         return ['seller'];
     }, [isSuperAdmin, normalizedRole, noRoleContext]);
+
     const roleOptions = useMemo(() => {
         const fromCatalog = Array.isArray(accessCatalog?.actor?.assignableRoles)
             ? accessCatalog.actor.assignableRoles
@@ -1132,23 +1248,11 @@ export default function SaasAdminPanel({
         const merged = fromCatalog.length > 0 ? fromCatalog : defaultRoleOptions;
         return merged.length > 0 ? merged : ['seller'];
     }, [accessCatalog?.actor?.assignableRoles, defaultRoleOptions]);
+
     const canEditOptionalAccess = Boolean(
         accessCatalog?.actor?.canEditOptionalAccess
         || isSuperAdmin
         || normalizedRole === 'superadmin'
-    );
-    const actorRoleForPolicy = isSuperAdmin || normalizedRole === 'superadmin' ? 'superadmin' : (normalizedRole || 'seller');
-    const actorRolePriority = getRolePriority(actorRoleForPolicy);
-    const currentUserId = String(currentUser?.userId || currentUser?.id || '').trim();
-    const actorPermissionSet = useMemo(() => new Set(
-        (Array.isArray(currentUser?.permissions) ? currentUser.permissions : [])
-            .map((entry) => String(entry || '').trim())
-            .filter(Boolean)
-    ), [currentUser?.permissions]);
-    const canActorManageRoleChanges = Boolean(
-        actorRoleForPolicy === 'superadmin'
-        || actorRoleForPolicy === 'owner'
-        || (actorRoleForPolicy === 'admin' && actorPermissionSet.has(PERMISSION_OWNER_ASSIGN))
     );
     const accessPackOptions = useMemo(
         () => (Array.isArray(accessCatalog?.packs) ? accessCatalog.packs : []),
@@ -1322,7 +1426,7 @@ export default function SaasAdminPanel({
         if (canViewSuperAdminSections) capabilities.push('Planes y roles globales');
         if (canEditOptionalAccess) capabilities.push('Accesos opcionales');
         return capabilities;
-    }, [canManageTenants, canManageUsers, canManageCatalog, canManageTenantSettings, canEditModules, canViewSuperAdminSections, canEditOptionalAccess]);
+    }, [canManageTenants, canManageUsers, canManageCatalog, canManageQuickReplies, canManageAi, canManageTenantSettings, canEditModules, canViewSuperAdminSections, canEditOptionalAccess]);
 
     const scopedUsers = useMemo(() => {
         if (!tenantScopeId) return [];
@@ -1410,8 +1514,8 @@ export default function SaasAdminPanel({
     );
 
     const quickReplyScopeModuleId = useMemo(
-        () => String(selectedWaModuleId || '').trim().toLowerCase(),
-        [selectedWaModuleId]
+        () => String(quickReplyModuleFilterId || '').trim().toLowerCase(),
+        [quickReplyModuleFilterId]
     );
 
     const quickReplyLibrariesByScope = useMemo(() => {
@@ -1420,6 +1524,7 @@ export default function SaasAdminPanel({
             .filter((entry) => entry.isShared || (Array.isArray(entry.moduleIds) && entry.moduleIds.includes(quickReplyScopeModuleId)));
     }, [quickReplyLibraries, quickReplyScopeModuleId]);
 
+    
     const selectedQuickReplyLibrary = useMemo(
         () => quickReplyLibraries.find((entry) => String(entry?.libraryId || '').trim().toUpperCase() === String(selectedQuickReplyLibraryId || '').trim().toUpperCase()) || null,
         [quickReplyLibraries, selectedQuickReplyLibraryId]
@@ -1436,6 +1541,36 @@ export default function SaasAdminPanel({
     const selectedQuickReplyItem = useMemo(
         () => quickReplyItemsForSelectedLibrary.find((entry) => String(entry?.itemId || '').trim().toUpperCase() === String(selectedQuickReplyItemId || '').trim().toUpperCase()) || null,
         [quickReplyItemsForSelectedLibrary, selectedQuickReplyItemId]
+    );
+
+    const selectedConfigModule = useMemo(() => {
+        if (!String(selectedConfigKey || '').startsWith('wa_module:')) return null;
+        const moduleId = String(selectedConfigKey || '').slice('wa_module:'.length).trim();
+        if (!moduleId) return null;
+        return waModules.find((item) => String(item?.moduleId || '').trim() === moduleId) || null;
+    }, [selectedConfigKey, waModules]);
+    const activeQuickReplyLibraries = useMemo(() => {
+        return (Array.isArray(quickReplyLibraries) ? quickReplyLibraries : [])
+            .filter((entry) => entry?.isActive !== false)
+            .sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), 'es', { sensitivity: 'base' }));
+    }, [quickReplyLibraries]);
+
+    const moduleQuickReplySourceModuleId = useMemo(
+        () => String(waModuleForm?.moduleId || selectedConfigModule?.moduleId || '').trim().toLowerCase(),
+        [waModuleForm?.moduleId, selectedConfigModule?.moduleId]
+    );
+
+    const moduleQuickReplyAssignedLibraries = useMemo(() => {
+        if (!moduleQuickReplySourceModuleId) return [];
+        return activeQuickReplyLibraries.filter((library) => (
+            library.isShared === true
+            || (Array.isArray(library.moduleIds) && library.moduleIds.includes(moduleQuickReplySourceModuleId))
+        ));
+    }, [activeQuickReplyLibraries, moduleQuickReplySourceModuleId]);
+
+    const moduleQuickReplyAssignedLibraryIds = useMemo(
+        () => new Set(moduleQuickReplyAssignedLibraries.map((entry) => String(entry?.libraryId || '').trim().toUpperCase()).filter(Boolean)),
+        [moduleQuickReplyAssignedLibraries]
     );
 
     const tenantCatalogItems = useMemo(() => {
@@ -1543,13 +1678,6 @@ export default function SaasAdminPanel({
             .sort((left, right) => toUserDisplayName(left).localeCompare(toUserDisplayName(right), 'es', { sensitivity: 'base' }));
     }, [tenantScopeId, usersByTenant]);
 
-    const selectedConfigModule = useMemo(() => {
-        if (!String(selectedConfigKey || '').startsWith('wa_module:')) return null;
-        const moduleId = String(selectedConfigKey || '').slice('wa_module:'.length).trim();
-        if (!moduleId) return null;
-        return waModules.find((item) => String(item?.moduleId || '').trim() === moduleId) || null;
-    }, [selectedConfigKey, waModules]);
-
     const assignedModuleUsers = useMemo(() => {
         const assignedIds = new Set((Array.isArray(waModuleForm.assignedUserIds) ? waModuleForm.assignedUserIds : [])
             .map((entry) => String(entry || '').trim())
@@ -1567,15 +1695,26 @@ export default function SaasAdminPanel({
         const cleanId = String(sectionId || '').trim();
         if (cleanId === 'saas_empresas') return canManageTenants;
         if (cleanId === 'saas_usuarios') return canManageUsers;
-        if (cleanId === 'saas_clientes') return canManageUsers;
-        if (cleanId === 'saas_ia') return canManageTenantSettings;
-        if (cleanId === 'saas_modulos') return canManageTenantSettings;
+        if (cleanId === 'saas_clientes') return canViewCustomers;
+        if (cleanId === 'saas_ia') return canViewAi;
+        if (cleanId === 'saas_quick_replies') return canViewQuickReplies;
+        if (cleanId === 'saas_modulos') return canViewModules;
         if (cleanId === 'saas_catalogos') return canManageCatalog;
         if (cleanId === 'saas_planes') return canViewSuperAdminSections;
         if (cleanId === 'saas_roles') return canViewSuperAdminSections;
-        if (cleanId === 'saas_config') return canManageTenantSettings;
+        if (cleanId === 'saas_config') return canViewTenantSettings;
         return true;
-    }, [canManageTenants, canManageUsers, canManageTenantSettings, canManageCatalog, canManageRoles, canViewSuperAdminSections]);
+    }, [
+        canManageTenants,
+        canManageUsers,
+        canViewCustomers,
+        canViewAi,
+        canViewQuickReplies,
+        canViewModules,
+        canManageCatalog,
+        canViewSuperAdminSections,
+        canViewTenantSettings
+    ]);
 
     const adminNavItems = useMemo(() => {
         return ADMIN_NAV_ITEMS
@@ -1597,6 +1736,7 @@ export default function SaasAdminPanel({
     const isRolesSection = selectedSectionId === 'saas_roles';
     const isCustomersSection = selectedSectionId === 'saas_clientes';
     const isAiSection = selectedSectionId === 'saas_ia';
+    const isQuickRepliesSection = selectedSectionId === 'saas_quick_replies';
     const isGeneralConfigSection = selectedSectionId === 'saas_config';
 
     const handleSectionChange = (sectionId) => {
@@ -1630,6 +1770,16 @@ export default function SaasAdminPanel({
             setSelectedAiAssistantId('');
             setAiAssistantPanelMode('view');
             setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
+        }
+
+        if (next === 'saas_quick_replies') {
+            setSelectedQuickReplyLibraryId('');
+            setSelectedQuickReplyItemId('');
+            setQuickReplyModuleFilterId('');
+            setQuickReplyLibraryPanelMode('view');
+            setQuickReplyItemPanelMode('view');
+            setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM });
+            setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM });
         }
 
         if (next === 'saas_config') {
@@ -1772,6 +1922,7 @@ export default function SaasAdminPanel({
             setQuickReplyItems([]);
             setSelectedQuickReplyLibraryId('');
             setSelectedQuickReplyItemId('');
+            setQuickReplyModuleFilterId('');
             setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM });
             setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM });
             setQuickReplyLibraryPanelMode('view');
@@ -1797,6 +1948,12 @@ export default function SaasAdminPanel({
 
             setQuickReplyLibraries(libraries);
             setQuickReplyItems(items);
+            setQuickReplyModuleFilterId((prev) => {
+                const cleanPrev = String(prev || '').trim().toLowerCase();
+                if (!cleanPrev) return cleanPrev;
+                const exists = (waModules || []).some((entry) => String(entry?.moduleId || '').trim().toLowerCase() === cleanPrev);
+                return exists ? cleanPrev : '';
+            });
             setSelectedQuickReplyLibraryId((prev) => {
                 const cleanPrev = String(prev || '').trim().toUpperCase();
                 if (cleanPrev && libraries.some((entry) => entry.libraryId === cleanPrev)) return cleanPrev;
@@ -2324,6 +2481,7 @@ export default function SaasAdminPanel({
         setRoleForm(EMPTY_ROLE_FORM);
         setEditingWaModuleId('');
         setModuleUserPickerId('');
+        setModuleQuickReplyLibraryDraft([]);
         setSelectedCustomerId('');
         setCustomerPanelMode('view');
         setCustomerForm(EMPTY_CUSTOMER_FORM);
@@ -2371,6 +2529,7 @@ export default function SaasAdminPanel({
             cloudEnforceSignature: item?.cloudConfig?.enforceSignature !== false
         });
         setModuleUserPickerId('');
+        setModuleQuickReplyLibraryDraft(getQuickReplyLibraryIdsForModule(item.moduleId));
     };
     const runAction = async (label, action) => {
         setError('');
@@ -2487,6 +2646,7 @@ export default function SaasAdminPanel({
         setAiAssistantPanelMode('view');
         setSelectedQuickReplyLibraryId('');
         setSelectedQuickReplyItemId('');
+        setQuickReplyModuleFilterId('');
         setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM });
         setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM });
         setQuickReplyLibraryPanelMode('view');
@@ -2496,6 +2656,7 @@ export default function SaasAdminPanel({
         setRoleForm(EMPTY_ROLE_FORM);
         setEditingWaModuleId('');
         setModuleUserPickerId('');
+        setModuleQuickReplyLibraryDraft([]);
     }, []);
 
     useEffect(() => {
@@ -2598,6 +2759,7 @@ export default function SaasAdminPanel({
         setQuickReplyItems([]);
         setSelectedQuickReplyLibraryId('');
         setSelectedQuickReplyItemId('');
+        setQuickReplyModuleFilterId('');
         setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM });
         setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM });
         setQuickReplyLibraryPanelMode('view');
@@ -2621,6 +2783,7 @@ export default function SaasAdminPanel({
         setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
         setSelectedQuickReplyLibraryId('');
         setSelectedQuickReplyItemId('');
+        setQuickReplyModuleFilterId('');
         setQuickReplyLibraryPanelMode('view');
         setQuickReplyItemPanelMode('view');
     }, [tenantScopeId]);
@@ -2849,7 +3012,7 @@ export default function SaasAdminPanel({
     };
 
     const openAiAssistantCreate = () => {
-        if (!canManageTenantSettings || !settingsTenantId) return;
+        if (!canManageAi || !settingsTenantId) return;
         setSelectedAiAssistantId('');
         setAiAssistantForm({
             ...EMPTY_AI_ASSISTANT_FORM,
@@ -2886,7 +3049,7 @@ export default function SaasAdminPanel({
     };
 
     const saveAiAssistant = () => {
-        if (!settingsTenantId || !canManageTenantSettings) return;
+        if (!settingsTenantId || !canManageAi) return;
 
         runAction(aiAssistantPanelMode === 'create' ? 'Asistente IA creado' : 'Asistente IA actualizado', async () => {
             const payload = buildAiAssistantPayload(aiAssistantForm, { allowAssistantId: aiAssistantPanelMode === 'create' });
@@ -2921,7 +3084,7 @@ export default function SaasAdminPanel({
 
     const markAiAssistantAsDefault = (assistantId) => {
         const cleanAssistantId = sanitizeAiAssistantCode(assistantId || '');
-        if (!settingsTenantId || !cleanAssistantId || !canManageTenantSettings) return;
+        if (!settingsTenantId || !cleanAssistantId || !canManageAi) return;
 
         runAction('Asistente IA principal actualizado', async () => {
             await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/ai-assistants/${encodeURIComponent(cleanAssistantId)}/default`, {
@@ -2935,7 +3098,7 @@ export default function SaasAdminPanel({
 
     const toggleAiAssistantActive = (assistant) => {
         const cleanAssistantId = sanitizeAiAssistantCode(assistant?.assistantId || '');
-        if (!settingsTenantId || !cleanAssistantId || !canManageTenantSettings) return;
+        if (!settingsTenantId || !cleanAssistantId || !canManageAi) return;
         const isActive = assistant?.isActive !== false;
 
         runAction('Estado de asistente IA actualizado', async () => {
@@ -3142,6 +3305,7 @@ export default function SaasAdminPanel({
         setTenantSettingsPanelMode('view');
         setWaModulePanelMode('create');
         setModuleUserPickerId('');
+        setModuleQuickReplyLibraryDraft([]);
         resetWaModuleForm();
         setWaModuleForm((prev) => ({
             ...prev,
@@ -3189,6 +3353,9 @@ export default function SaasAdminPanel({
         setModuleUserPickerId('');
     };
 
+    
+
+
     const toggleCatalogForModule = (catalogId) => {
         const cleanCatalogId = String(catalogId || '').trim().toUpperCase();
         if (!/^CAT-[A-Z0-9]{4,}$/.test(cleanCatalogId)) return;
@@ -3203,6 +3370,65 @@ export default function SaasAdminPanel({
             };
         });
     };
+
+    const getQuickReplyLibraryIdsForModule = useCallback((moduleId = '') => {
+        const cleanModuleId = String(moduleId || '').trim().toLowerCase();
+        if (!cleanModuleId) return [];
+        return (Array.isArray(quickReplyLibraries) ? quickReplyLibraries : [])
+            .filter((library) => library?.isShared !== true)
+            .filter((library) => Array.isArray(library?.moduleIds) && library.moduleIds.includes(cleanModuleId))
+            .map((library) => String(library?.libraryId || '').trim().toUpperCase())
+            .filter(Boolean);
+    }, [quickReplyLibraries]);
+
+    const toggleQuickReplyLibraryForModuleDraft = (libraryId = '') => {
+        const cleanLibraryId = String(libraryId || '').trim().toUpperCase();
+        if (!cleanLibraryId) return;
+        setModuleQuickReplyLibraryDraft((prev) => {
+            const set = new Set((Array.isArray(prev) ? prev : []).map((entry) => String(entry || '').trim().toUpperCase()).filter(Boolean));
+            if (set.has(cleanLibraryId)) set.delete(cleanLibraryId);
+            else set.add(cleanLibraryId);
+            return Array.from(set);
+        });
+    };
+
+    const syncQuickReplyLibrariesForModule = useCallback(async (moduleId = '', selectedLibraryIds = []) => {
+        const cleanTenantId = String(settingsTenantId || '').trim();
+        const cleanModuleId = String(moduleId || '').trim().toLowerCase();
+        if (!cleanTenantId || !cleanModuleId) return;
+
+        const selectedSet = new Set((Array.isArray(selectedLibraryIds) ? selectedLibraryIds : [])
+            .map((entry) => String(entry || '').trim().toUpperCase())
+            .filter(Boolean));
+
+        const mutableLibraries = (Array.isArray(quickReplyLibraries) ? quickReplyLibraries : [])
+            .filter((library) => library?.isShared !== true);
+
+        for (const library of mutableLibraries) {
+            const libraryId = String(library?.libraryId || '').trim().toUpperCase();
+            if (!libraryId) continue;
+            const currentSet = new Set((Array.isArray(library?.moduleIds) ? library.moduleIds : [])
+                .map((entry) => String(entry || '').trim().toLowerCase())
+                .filter(Boolean));
+            const currentlyAssigned = currentSet.has(cleanModuleId);
+            const shouldAssign = selectedSet.has(libraryId);
+            if (currentlyAssigned === shouldAssign) continue;
+
+            if (shouldAssign) currentSet.add(cleanModuleId);
+            else currentSet.delete(cleanModuleId);
+
+            const payload = buildQuickReplyLibraryPayload({
+                ...library,
+                moduleIds: Array.from(currentSet),
+                isShared: false
+            });
+
+            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-libraries/${encodeURIComponent(libraryId)}`, {
+                method: 'PUT',
+                body: payload
+            });
+        }
+    }, [quickReplyLibraries, settingsTenantId]);
 
     if (!isOpen) return null;
 
@@ -3577,7 +3803,7 @@ export default function SaasAdminPanel({
 
                                         {tenantPanelMode !== 'view' && canManageTenants && (
                                             <>
-                                                <div className="saas-admin-form-row">
+                                                    <div className="saas-admin-form-row">
                                                     <input
                                                         value={tenantForm.slug}
                                                         onChange={(event) => setTenantForm((prev) => ({ ...prev, slug: event.target.value }))}
@@ -4326,7 +4552,7 @@ export default function SaasAdminPanel({
                                     <button type="button" disabled={busy || !settingsTenantId || loadingAiAssistants} onClick={() => settingsTenantId && loadTenantAiAssistants(settingsTenantId)}>
                                         Recargar
                                     </button>
-                                    <button type="button" disabled={busy || !settingsTenantId || !canManageTenantSettings} onClick={openAiAssistantCreate}>
+                                    <button type="button" disabled={busy || !settingsTenantId || !canManageAi} onClick={openAiAssistantCreate}>
                                         Nuevo asistente
                                     </button>
                                     <button type="button" disabled={busy} onClick={() => { setSelectedAiAssistantId(''); setAiAssistantPanelMode('view'); setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM }); }}>
@@ -4387,17 +4613,17 @@ export default function SaasAdminPanel({
                                                 <small>{selectedAiAssistant.assistantId}</small>
                                             </div>
                                             <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                                <button type="button" disabled={busy || !canManageTenantSettings} onClick={openAiAssistantEdit}>Editar</button>
+                                                <button type="button" disabled={busy || !canManageAi} onClick={openAiAssistantEdit}>Editar</button>
                                                 <button
                                                     type="button"
-                                                    disabled={busy || !canManageTenantSettings || selectedAiAssistant.isDefault || selectedAiAssistant.isActive === false}
+                                                    disabled={busy || !canManageAi || selectedAiAssistant.isDefault || selectedAiAssistant.isActive === false}
                                                     onClick={() => markAiAssistantAsDefault(selectedAiAssistant.assistantId)}
                                                 >
                                                     Marcar principal
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    disabled={busy || !canManageTenantSettings}
+                                                    disabled={busy || !canManageAi}
                                                     onClick={() => toggleAiAssistantActive(selectedAiAssistant)}
                                                 >
                                                     {selectedAiAssistant.isActive ? 'Desactivar' : 'Activar'}
@@ -4577,6 +4803,373 @@ export default function SaasAdminPanel({
                                             <button type="button" disabled={busy} onClick={cancelAiAssistantEdit}>Cancelar</button>
                                         </div>
                                     </>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                    )}
+                    {isQuickRepliesSection && (
+                    <section id="saas_quick_replies" className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <div>
+                                        <h3>Respuestas rapidas</h3>
+                                        <small>Gestiona bibliotecas y plantillas reutilizables por empresa/modulo.</small>
+                                    </div>
+                                    <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                        <button
+                                            type="button"
+                                            disabled={busy || loadingQuickReplies || !settingsTenantId}
+                                            onClick={() => settingsTenantId && loadQuickReplyData(settingsTenantId).catch((err) => setError(String(err?.message || err || 'No se pudo recargar respuestas rapidas.')))}
+                                        >
+                                            Recargar
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={busy || !canManageQuickReplies || !settingsTenantId}
+                                            onClick={openQuickReplyLibraryCreate}
+                                        >
+                                            Nueva biblioteca
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {!settingsTenantId && (
+                                    <div className="saas-admin-empty-state">
+                                        <h4>Selecciona una empresa</h4>
+                                        <p>Primero elige una empresa para gestionar respuestas rapidas.</p>
+                                    </div>
+                                )}
+
+                                {settingsTenantId && (
+                                    <>
+                                        <div className="saas-admin-form-row">
+                                            <select
+                                                value={quickReplyModuleFilterId}
+                                                onChange={(event) => {
+                                                    const nextModuleId = String(event.target.value || '').trim().toLowerCase();
+                                                    setQuickReplyModuleFilterId(nextModuleId);
+                                                    setSelectedQuickReplyLibraryId('');
+                                                    setSelectedQuickReplyItemId('');
+                                                    setQuickReplyLibraryPanelMode('view');
+                                                    setQuickReplyItemPanelMode('view');
+                                                }}
+                                                disabled={loadingQuickReplies}
+                                            >
+                                                <option value="">Todas las bibliotecas (sin filtro de modulo)</option>
+                                                {waModules.map((moduleItem) => {
+                                                    const moduleId = String(moduleItem?.moduleId || '').trim().toLowerCase();
+                                                    return (
+                                                        <option key={`qr_scope_${moduleId}`} value={moduleId}>
+                                                            {moduleItem?.name || moduleId}
+                                                        </option>
+                                                    );
+                                                })}
+                                            </select>
+                                        </div>
+                                        <div className="saas-admin-form-row">
+                                            <input
+                                                value={quickReplyLibrarySearch}
+                                                onChange={(event) => setQuickReplyLibrarySearch(event.target.value)}
+                                                placeholder="Filtrar bibliotecas por nombre, codigo o descripcion"
+                                                disabled={loadingQuickReplies}
+                                            />
+                                        </div>
+
+                                        <div className="saas-admin-list saas-admin-list--compact">
+                                            {visibleQuickReplyLibraries.length === 0 && (
+                                                <div className="saas-admin-empty-state">
+                                                    <h4>Sin bibliotecas</h4>
+                                                    <p>Crea una biblioteca para empezar.</p>
+                                                </div>
+                                            )}
+                                            {visibleQuickReplyLibraries.map((library) => (
+                                                <button
+                                                    key={`qr_library_list_${library.libraryId}`}
+                                                    type="button"
+                                                    className={`saas-admin-list-item saas-admin-list-item--button ${selectedQuickReplyLibrary?.libraryId === library.libraryId ? 'active' : ''}`.trim()}
+                                                    onClick={() => {
+                                                        setSelectedQuickReplyLibraryId(String(library.libraryId || '').trim().toUpperCase());
+                                                        setSelectedQuickReplyItemId('');
+                                                        setQuickReplyLibraryPanelMode('view');
+                                                        setQuickReplyItemPanelMode('view');
+                                                    }}
+                                                >
+                                                    <strong>{library.name || library.libraryId}</strong>
+                                                    <small>{library.libraryId}</small>
+                                                    <small>{library.isShared ? 'Compartida' : 'Asignada por modulo'} | {library.isActive === false ? 'inactiva' : 'activa'}</small>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </aside>
+
+                            <div className="saas-admin-detail-pane">
+                                {!settingsTenantId && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Bibliotecas por empresa</h4>
+                                        <p>Selecciona una empresa y crea bibliotecas para usar / en operacion.</p>
+                                    </div>
+                                )}
+
+                                {settingsTenantId && !selectedQuickReplyLibrary && quickReplyLibraryPanelMode === 'view' && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Selecciona una biblioteca</h4>
+                                        <p>Elige una biblioteca en la izquierda o crea una nueva.</p>
+                                    </div>
+                                )}
+
+                                {settingsTenantId && selectedQuickReplyLibrary && quickReplyLibraryPanelMode === 'view' && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>{selectedQuickReplyLibrary.name || selectedQuickReplyLibrary.libraryId}</h3>
+                                                <small>{selectedQuickReplyLibrary.libraryId}</small>
+                                            </div>
+                                            <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyLibraryEdit}>Editar biblioteca</button>
+                                                <button
+                                                    type="button"
+                                                    disabled={busy || !canManageQuickReplies}
+                                                    onClick={() => runAction('Biblioteca desactivada', async () => {
+                                                        await deactivateQuickReplyLibrary(selectedQuickReplyLibrary?.libraryId);
+                                                    })}
+                                                >
+                                                    {selectedQuickReplyLibrary.isActive === false ? 'Activar (editar y guardar)' : 'Desactivar'}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-detail-grid">
+                                            <div className="saas-admin-detail-field"><span>Nombre</span><strong>{selectedQuickReplyLibrary.name || '-'}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Tipo</span><strong>{selectedQuickReplyLibrary.isShared ? 'Compartida' : 'Por modulo'}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedQuickReplyLibrary.isActive === false ? 'Inactiva' : 'Activa'}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Modulos asignados</span><strong>{Array.isArray(selectedQuickReplyLibrary.moduleIds) ? selectedQuickReplyLibrary.moduleIds.length : 0}</strong></div>
+                                        </div>
+                                    </>
+                                )}
+
+                                {(quickReplyLibraryPanelMode === 'create' || quickReplyLibraryPanelMode === 'edit') && settingsTenantId && (
+                                    <div className="saas-admin-related-block">
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h4>{quickReplyLibraryPanelMode === 'create' ? 'Nueva biblioteca' : 'Editar biblioteca'}</h4>
+                                                <small>Define alcance y modulos aplicables.</small>
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-form-row">
+                                            <input
+                                                value={quickReplyLibraryForm.name}
+                                                onChange={(event) => setQuickReplyLibraryForm((prev) => ({ ...prev, name: event.target.value }))}
+                                                placeholder="Nombre biblioteca"
+                                                disabled={busy}
+                                            />
+                                            <input
+                                                value={quickReplyLibraryForm.description}
+                                                onChange={(event) => setQuickReplyLibraryForm((prev) => ({ ...prev, description: event.target.value }))}
+                                                placeholder="Descripcion"
+                                                disabled={busy}
+                                            />
+                                        </div>
+
+                                        <div className="saas-admin-modules">
+                                            <label className="saas-admin-module-toggle">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={quickReplyLibraryForm.isShared === true}
+                                                    onChange={(event) => setQuickReplyLibraryForm((prev) => ({ ...prev, isShared: event.target.checked }))}
+                                                    disabled={busy}
+                                                />
+                                                <span>Compartida para todos los modulos</span>
+                                            </label>
+                                            <label className="saas-admin-module-toggle">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={quickReplyLibraryForm.isActive !== false}
+                                                    onChange={(event) => setQuickReplyLibraryForm((prev) => ({ ...prev, isActive: event.target.checked }))}
+                                                    disabled={busy}
+                                                />
+                                                <span>Biblioteca activa</span>
+                                            </label>
+                                        </div>
+
+                                        {!quickReplyLibraryForm.isShared && (
+                                            <div className="saas-admin-modules">
+                                                {(waModules || []).map((moduleItem) => {
+                                                    const moduleId = String(moduleItem?.moduleId || '').trim().toLowerCase();
+                                                    const checked = (quickReplyLibraryForm.moduleIds || []).includes(moduleId);
+                                                    return (
+                                                        <label key={'qr_library_module_editor_' + moduleId} className="saas-admin-module-toggle">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={checked}
+                                                                onChange={() => toggleModuleInQuickReplyLibraryForm(moduleId)}
+                                                                disabled={busy || !moduleId}
+                                                            />
+                                                            <span>{moduleItem?.name || moduleId}</span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+
+                                        <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                            <button
+                                                type="button"
+                                                disabled={busy || !canManageQuickReplies || !String(quickReplyLibraryForm.name || '').trim()}
+                                                onClick={() => runAction(
+                                                    quickReplyLibraryPanelMode === 'create' ? 'Biblioteca creada' : 'Biblioteca actualizada',
+                                                    async () => { await saveQuickReplyLibrary(); }
+                                                )}
+                                            >
+                                                {quickReplyLibraryPanelMode === 'create' ? 'Guardar biblioteca' : 'Actualizar biblioteca'}
+                                            </button>
+                                            <button type="button" disabled={busy} onClick={cancelQuickReplyLibraryEdit}>Cancelar</button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {settingsTenantId && selectedQuickReplyLibrary && (
+                                    <div className="saas-admin-related-block" style={{ marginTop: '10px' }}>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h4>Plantillas</h4>
+                                                <small>Usa texto y/o adjuntos. Soporta {QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL}</small>
+                                            </div>
+                                            <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyItemCreate}>Nueva respuesta</button>
+                                            </div>
+                                        </div>
+
+                                        <div className="saas-admin-form-row">
+                                            <input
+                                                value={quickReplyItemSearch}
+                                                onChange={(event) => setQuickReplyItemSearch(event.target.value)}
+                                                placeholder="Filtrar respuestas por etiqueta o contenido"
+                                                disabled={loadingQuickReplies}
+                                            />
+                                        </div>
+
+                                        <div className="saas-admin-form-row">
+                                            <select
+                                                value={selectedQuickReplyItemId}
+                                                onChange={(event) => {
+                                                    setSelectedQuickReplyItemId(String(event.target.value || '').trim().toUpperCase());
+                                                    setQuickReplyItemPanelMode('view');
+                                                }}
+                                                disabled={visibleQuickReplyItemsForSelectedLibrary.length === 0}
+                                            >
+                                                {visibleQuickReplyItemsForSelectedLibrary.length === 0 && <option value="">Sin respuestas</option>}
+                                                {visibleQuickReplyItemsForSelectedLibrary.map((item) => (
+                                                    <option key={item.itemId} value={item.itemId}>{item.label}</option>
+                                                ))}
+                                            </select>
+                                            <button type="button" disabled={busy || !selectedQuickReplyItem || !canManageQuickReplies} onClick={openQuickReplyItemEdit}>Editar respuesta</button>
+                                            <button
+                                                type="button"
+                                                disabled={busy || !selectedQuickReplyItem || !canManageQuickReplies}
+                                                onClick={() => runAction('Respuesta rapida desactivada', async () => {
+                                                    await deactivateQuickReplyItem(selectedQuickReplyItem?.itemId);
+                                                })}
+                                            >
+                                                Desactivar
+                                            </button>
+                                        </div>
+
+                                        {(quickReplyItemPanelMode === 'create' || quickReplyItemPanelMode === 'edit') && (
+                                            <div className="saas-admin-related-block" style={{ marginTop: '10px' }}>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={quickReplyItemForm.label}
+                                                        onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, label: event.target.value }))}
+                                                        placeholder="Etiqueta de respuesta"
+                                                        disabled={busy}
+                                                    />
+                                                    <input
+                                                        value={quickReplyItemForm.mediaFileName}
+                                                        onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, mediaFileName: event.target.value }))}
+                                                        placeholder="Nombre archivo (opcional)"
+                                                        disabled={busy}
+                                                    />
+                                                </div>
+                                                <textarea
+                                                    value={quickReplyItemForm.text}
+                                                    onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, text: event.target.value }))}
+                                                    rows={4}
+                                                    placeholder="Texto rapido (puede quedar vacio si solo envias adjunto)"
+                                                    disabled={busy}
+                                                />
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={quickReplyItemForm.mediaUrl}
+                                                        onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, mediaUrl: event.target.value, mediaMimeType: prev.mediaMimeType || '' }))}
+                                                        placeholder="URL adjunto (auto al subir archivo)"
+                                                        disabled={busy}
+                                                    />
+                                                    <label className="saas-admin-dropzone" style={{ minHeight: 'auto', padding: '10px 12px' }}>
+                                                        <input
+                                                            type="file"
+                                                            accept={QUICK_REPLY_ALLOWED_MIME_TYPES.join(',')}
+                                                            disabled={busy}
+                                                            onChange={async (event) => {
+                                                                const file = event.target.files?.[0] || null;
+                                                                event.target.value = '';
+                                                                if (!file) return;
+                                                                try {
+                                                                    setBusy(true);
+                                                                    const uploaded = await uploadQuickReplyAsset({
+                                                                        file,
+                                                                        tenantId: settingsTenantId,
+                                                                        libraryId: selectedQuickReplyLibrary?.libraryId || ''
+                                                                    });
+                                                                    if (!uploaded?.url) throw new Error('No se pudo subir el adjunto.');
+                                                                    setQuickReplyItemForm((prev) => ({
+                                                                        ...prev,
+                                                                        mediaUrl: uploaded.url,
+                                                                        mediaMimeType: uploaded.mimeType || prev.mediaMimeType || '',
+                                                                        mediaFileName: uploaded.fileName || prev.mediaFileName || ''
+                                                                    }));
+                                                                } catch (uploadError) {
+                                                                    setError(String(uploadError?.message || uploadError || 'No se pudo subir adjunto de respuesta rapida.'));
+                                                                } finally {
+                                                                    setBusy(false);
+                                                                }
+                                                            }}
+                                                        />
+                                                        <strong>Subir adjunto</strong>
+                                                        <small>{QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL}</small>
+                                                    </label>
+                                                </div>
+                                                <div className="saas-admin-modules">
+                                                    <label className="saas-admin-module-toggle">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={quickReplyItemForm.isActive !== false}
+                                                            onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, isActive: event.target.checked }))}
+                                                            disabled={busy}
+                                                        />
+                                                        <span>Respuesta activa</span>
+                                                    </label>
+                                                </div>
+                                                <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                                    <button
+                                                        type="button"
+                                                        disabled={busy || !canManageQuickReplies || !String(quickReplyItemForm.label || '').trim() || (!String(quickReplyItemForm.text || '').trim() && !String(quickReplyItemForm.mediaUrl || '').trim())}
+                                                        onClick={() => runAction(
+                                                            quickReplyItemPanelMode === 'create' ? 'Respuesta rapida creada' : 'Respuesta rapida actualizada',
+                                                            async () => { await saveQuickReplyItem(); }
+                                                        )}
+                                                    >
+                                                        {quickReplyItemPanelMode === 'create' ? 'Guardar respuesta' : 'Actualizar respuesta'}
+                                                    </button>
+                                                    <button type="button" disabled={busy} onClick={cancelQuickReplyItemEdit}>Cancelar</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -4948,7 +5541,7 @@ export default function SaasAdminPanel({
                                                         </select>
                                                     </div>
 
-                                                                                                        <div className="saas-admin-form-row">
+                                                    <div className="saas-admin-form-row">
                                                         <div className="saas-admin-field">
                                                             <label htmlFor="wa-module-ai-assistant">Asistente IA del modulo</label>
                                                             <select
@@ -4967,7 +5560,7 @@ export default function SaasAdminPanel({
                                                         </div>
                                                     </div>
 
-<div className="saas-admin-related-block">
+                                                    <div className="saas-admin-related-block">
                                                         <h4>Catalogos asignados al modulo</h4>
                                                         <small>Selecciona uno o mas catalogos activos para este modulo.</small>
                                                         <div className="saas-admin-modules">
@@ -4986,6 +5579,36 @@ export default function SaasAdminPanel({
                                                                             disabled={!settingsTenantId || busy}
                                                                         />
                                                                         <span>{catalogItem?.name || catalogId}</span>
+                                                                    </label>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="saas-admin-related-block">
+                                                        <h4>Bibliotecas de respuestas rapidas</h4>
+                                                        <small>Selecciona las bibliotecas especificas para este modulo. Las compartidas aplican siempre.</small>
+                                                        <div className="saas-admin-modules">
+                                                            {activeQuickReplyLibraries.length === 0 && (
+                                                                <div className="saas-admin-empty-inline">No hay bibliotecas activas. Crea bibliotecas en la pestana Respuestas rapidas.</div>
+                                                            )}
+                                                            {activeQuickReplyLibraries.map((library) => {
+                                                                const libraryId = String(library?.libraryId || '').trim().toUpperCase();
+                                                                if (!libraryId) return null;
+                                                                const isShared = library?.isShared === true;
+                                                                const checked = isShared ? true : moduleQuickReplyLibraryDraft.includes(libraryId);
+                                                                return (
+                                                                    <label key={`wa_module_quick_reply_${libraryId}`} className="saas-admin-module-toggle">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={checked}
+                                                                            onChange={() => !isShared && toggleQuickReplyLibraryForModuleDraft(libraryId)}
+                                                                            disabled={!settingsTenantId || busy || isShared}
+                                                                        />
+                                                                        <span>
+                                                                            {library?.name || libraryId}
+                                                                            {isShared ? ' (compartida, aplica a todos)' : ''}
+                                                                        </span>
                                                                     </label>
                                                                 );
                                                             })}
@@ -5270,11 +5893,18 @@ export default function SaasAdminPanel({
                                                                         }
                                                                     }
                                                                 };
+                                                                const quickReplyLibraryIds = Array.from(new Set(
+                                                                    (Array.isArray(moduleQuickReplyLibraryDraft) ? moduleQuickReplyLibraryDraft : [])
+                                                                        .map((entry) => String(entry || '').trim().toUpperCase())
+                                                                        .filter(Boolean)
+                                                                ));
+
                                                                 if (waModulePanelMode === 'edit' && moduleInDetail?.moduleId) {
                                                                     await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/wa-modules/${encodeURIComponent(moduleInDetail.moduleId)}`, {
                                                                         method: 'PUT',
                                                                         body: payload
                                                                     });
+                                                                    await syncQuickReplyLibrariesForModule(moduleInDetail.moduleId, quickReplyLibraryIds);
                                                                     setWaModulePanelMode('view');
                                                                     setSelectedConfigKey(`wa_module:${moduleInDetail.moduleId}`);
                                                                     return;
@@ -5286,6 +5916,7 @@ export default function SaasAdminPanel({
                                                                 });
                                                                 const createdModuleId = String(createPayload?.item?.moduleId || '').trim();
                                                                 if (createdModuleId) {
+                                                                    await syncQuickReplyLibrariesForModule(createdModuleId, quickReplyLibraryIds);
                                                                     setSelectedWaModuleId(createdModuleId);
                                                                     setSelectedConfigKey(`wa_module:${createdModuleId}`);
                                                                 }
@@ -5315,278 +5946,6 @@ export default function SaasAdminPanel({
                                 })()}                            </div>
                         </div>
 
-                        {settingsTenantId && (
-                            <div className="saas-admin-related-block" style={{ marginTop: '14px' }}>
-                                <div className="saas-admin-pane-header">
-                                    <div>
-                                        <h4>Respuestas rapidas por modulo</h4>
-                                        <small>Gestion centralizada: crea bibliotecas y plantillas reutilizables (texto/imagen/PDF) para usar con / en operacion.</small>
-                                    </div>
-                                    <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                        <button
-                                            type="button"
-                                            disabled={busy || loadingQuickReplies || !settingsTenantId}
-                                            onClick={() => settingsTenantId && loadQuickReplyData(settingsTenantId).catch((err) => setError(String(err?.message || err || 'No se pudo recargar respuestas rapidas.')))}
-                                        >
-                                            Recargar
-                                        </button>
-                                        <button
-                                            type="button"
-                                            disabled={busy || !canEditModules || !settingsTenantId}
-                                            onClick={openQuickReplyLibraryCreate}
-                                        >
-                                            Nueva biblioteca
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {!selectedWaModuleId && (
-                                    <div className="saas-admin-empty-inline">Selecciona un modulo para asignar bibliotecas y respuestas rapidas.</div>
-                                )}
-
-                                {selectedWaModuleId && (
-                                    <>
-                                        <div className="saas-admin-form-row">
-                                            <select
-                                                value={selectedQuickReplyLibraryId}
-                                                onChange={(event) => {
-                                                    setSelectedQuickReplyLibraryId(String(event.target.value || '').trim().toUpperCase());
-                                                    setSelectedQuickReplyItemId('');
-                                                    setQuickReplyLibraryPanelMode('view');
-                                                    setQuickReplyItemPanelMode('view');
-                                                }}
-                                                disabled={loadingQuickReplies || quickReplyLibrariesByScope.length === 0}
-                                            >
-                                                {quickReplyLibrariesByScope.length === 0 && <option value="">Sin bibliotecas</option>}
-                                                {quickReplyLibrariesByScope.map((library) => (
-                                                    <option key={library.libraryId} value={library.libraryId}>
-                                                        {library.name} {library.isShared ? '(Compartida)' : '(Modulo)'}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <button type="button" disabled={busy || !selectedQuickReplyLibrary || !canEditModules} onClick={openQuickReplyLibraryEdit}>Editar biblioteca</button>
-                                            <button
-                                                type="button"
-                                                disabled={busy || !selectedQuickReplyLibrary || !canEditModules}
-                                                onClick={() => runAction('Biblioteca desactivada', async () => {
-                                                    await deactivateQuickReplyLibrary(selectedQuickReplyLibrary?.libraryId);
-                                                })}
-                                            >
-                                                Desactivar
-                                            </button>
-                                        </div>
-
-                                        {(quickReplyLibraryPanelMode === 'create' || quickReplyLibraryPanelMode === 'edit') && (
-                                            <div className="saas-admin-related-block" style={{ marginTop: '10px' }}>
-                                                <div className="saas-admin-form-row">
-                                                    <input
-                                                        value={quickReplyLibraryForm.name}
-                                                        onChange={(event) => setQuickReplyLibraryForm((prev) => ({ ...prev, name: event.target.value }))}
-                                                        placeholder="Nombre biblioteca"
-                                                        disabled={busy}
-                                                    />
-                                                    <input
-                                                        value={quickReplyLibraryForm.description}
-                                                        onChange={(event) => setQuickReplyLibraryForm((prev) => ({ ...prev, description: event.target.value }))}
-                                                        placeholder="Descripcion"
-                                                        disabled={busy}
-                                                    />
-                                                </div>
-                                                <div className="saas-admin-modules">
-                                                    <label className="saas-admin-module-toggle">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={quickReplyLibraryForm.isShared === true}
-                                                            onChange={(event) => setQuickReplyLibraryForm((prev) => ({ ...prev, isShared: event.target.checked }))}
-                                                            disabled={busy}
-                                                        />
-                                                        <span>Compartida para todos los modulos</span>
-                                                    </label>
-                                                    <label className="saas-admin-module-toggle">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={quickReplyLibraryForm.isActive !== false}
-                                                            onChange={(event) => setQuickReplyLibraryForm((prev) => ({ ...prev, isActive: event.target.checked }))}
-                                                            disabled={busy}
-                                                        />
-                                                        <span>Biblioteca activa</span>
-                                                    </label>
-                                                </div>
-                                                {!quickReplyLibraryForm.isShared && (
-                                                    <div className="saas-admin-modules">
-                                                        {(waModules || []).map((moduleItem) => {
-                                                            const moduleId = String(moduleItem?.moduleId || '').trim().toLowerCase();
-                                                            const checked = (quickReplyLibraryForm.moduleIds || []).includes(moduleId);
-                                                            return (
-                                                                <label key={'qr_library_module_' + moduleId} className="saas-admin-module-toggle">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={checked}
-                                                                        onChange={() => toggleModuleInQuickReplyLibraryForm(moduleId)}
-                                                                        disabled={busy || !moduleId}
-                                                                    />
-                                                                    <span>{moduleItem?.name || moduleId}</span>
-                                                                </label>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                )}
-                                                <div className="saas-admin-form-row saas-admin-form-row--actions">
-                                                    <button
-                                                        type="button"
-                                                        disabled={busy || !canEditModules || !String(quickReplyLibraryForm.name || '').trim()}
-                                                        onClick={() => runAction(
-                                                            quickReplyLibraryPanelMode === 'create' ? 'Biblioteca creada' : 'Biblioteca actualizada',
-                                                            async () => { await saveQuickReplyLibrary(); }
-                                                        )}
-                                                    >
-                                                        {quickReplyLibraryPanelMode === 'create' ? 'Guardar biblioteca' : 'Actualizar biblioteca'}
-                                                    </button>
-                                                    <button type="button" disabled={busy} onClick={cancelQuickReplyLibraryEdit}>Cancelar</button>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {selectedQuickReplyLibrary && (
-                                            <div className="saas-admin-related-block" style={{ marginTop: '10px' }}>
-                                                <div className="saas-admin-pane-header">
-                                                    <div>
-                                                        <h4>Plantillas de {selectedQuickReplyLibrary.name}</h4>
-                                                        <small>Usa texto y/o adjuntos. Soporta {QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL}</small>
-                                                    </div>
-                                                    <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                                        <button
-                                                            type="button"
-                                                            disabled={busy || !canEditModules}
-                                                            onClick={openQuickReplyItemCreate}
-                                                        >
-                                                            Nueva respuesta
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                <div className="saas-admin-form-row">
-                                                    <select
-                                                        value={selectedQuickReplyItemId}
-                                                        onChange={(event) => {
-                                                            setSelectedQuickReplyItemId(String(event.target.value || '').trim().toUpperCase());
-                                                            setQuickReplyItemPanelMode('view');
-                                                        }}
-                                                        disabled={quickReplyItemsForSelectedLibrary.length === 0}
-                                                    >
-                                                        {quickReplyItemsForSelectedLibrary.length === 0 && <option value="">Sin respuestas</option>}
-                                                        {quickReplyItemsForSelectedLibrary.map((item) => (
-                                                            <option key={item.itemId} value={item.itemId}>{item.label}</option>
-                                                        ))}
-                                                    </select>
-                                                    <button type="button" disabled={busy || !selectedQuickReplyItem || !canEditModules} onClick={openQuickReplyItemEdit}>Editar respuesta</button>
-                                                    <button
-                                                        type="button"
-                                                        disabled={busy || !selectedQuickReplyItem || !canEditModules}
-                                                        onClick={() => runAction('Respuesta rapida desactivada', async () => {
-                                                            await deactivateQuickReplyItem(selectedQuickReplyItem?.itemId);
-                                                        })}
-                                                    >
-                                                        Desactivar
-                                                    </button>
-                                                </div>
-
-                                                {(quickReplyItemPanelMode === 'create' || quickReplyItemPanelMode === 'edit') && (
-                                                    <div className="saas-admin-related-block" style={{ marginTop: '10px' }}>
-                                                        <div className="saas-admin-form-row">
-                                                            <input
-                                                                value={quickReplyItemForm.label}
-                                                                onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, label: event.target.value }))}
-                                                                placeholder="Etiqueta de respuesta"
-                                                                disabled={busy}
-                                                            />
-                                                            <input
-                                                                value={quickReplyItemForm.mediaFileName}
-                                                                onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, mediaFileName: event.target.value }))}
-                                                                placeholder="Nombre archivo (opcional)"
-                                                                disabled={busy}
-                                                            />
-                                                        </div>
-                                                        <textarea
-                                                            value={quickReplyItemForm.text}
-                                                            onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, text: event.target.value }))}
-                                                            rows={4}
-                                                            placeholder="Texto rapido (puede quedar vacio si solo envias adjunto)"
-                                                            disabled={busy}
-                                                        />
-                                                        <div className="saas-admin-form-row">
-                                                            <input
-                                                                value={quickReplyItemForm.mediaUrl}
-                                                                onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, mediaUrl: event.target.value, mediaMimeType: prev.mediaMimeType || '' }))}
-                                                                placeholder="URL adjunto (auto al subir archivo)"
-                                                                disabled={busy}
-                                                            />
-                                                            <label className="saas-admin-dropzone" style={{ minHeight: 'auto', padding: '10px 12px' }}>
-                                                                <input
-                                                                    type="file"
-                                                                    accept={QUICK_REPLY_ALLOWED_MIME_TYPES.join(',')}
-                                                                    disabled={busy}
-                                                                    onChange={async (event) => {
-                                                                        const file = event.target.files?.[0] || null;
-                                                                        event.target.value = '';
-                                                                        if (!file) return;
-                                                                        try {
-                                                                            setBusy(true);
-                                                                            const uploaded = await uploadQuickReplyAsset({
-                                                                                file,
-                                                                                tenantId: settingsTenantId,
-                                                                                libraryId: selectedQuickReplyLibrary?.libraryId || ''
-                                                                            });
-                                                                            if (!uploaded?.url) throw new Error('No se pudo subir el adjunto.');
-                                                                            setQuickReplyItemForm((prev) => ({
-                                                                                ...prev,
-                                                                                mediaUrl: uploaded.url,
-                                                                                mediaMimeType: uploaded.mimeType || prev.mediaMimeType || '',
-                                                                                mediaFileName: uploaded.fileName || prev.mediaFileName || ''
-                                                                            }));
-                                                                        } catch (uploadError) {
-                                                                            setError(String(uploadError?.message || uploadError || 'No se pudo subir adjunto de respuesta rapida.'));
-                                                                        } finally {
-                                                                            setBusy(false);
-                                                                        }
-                                                                    }}
-                                                                />
-                                                                <strong>Subir adjunto</strong>
-                                                                <small>{QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL}</small>
-                                                            </label>
-                                                        </div>
-                                                        <div className="saas-admin-modules">
-                                                            <label className="saas-admin-module-toggle">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={quickReplyItemForm.isActive !== false}
-                                                                    onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, isActive: event.target.checked }))}
-                                                                    disabled={busy}
-                                                                />
-                                                                <span>Respuesta activa</span>
-                                                            </label>
-                                                        </div>
-                                                        <div className="saas-admin-form-row saas-admin-form-row--actions">
-                                                            <button
-                                                                type="button"
-                                                                disabled={busy || !canEditModules || !String(quickReplyItemForm.label || '').trim() || (!String(quickReplyItemForm.text || '').trim() && !String(quickReplyItemForm.mediaUrl || '').trim())}
-                                                                onClick={() => runAction(
-                                                                    quickReplyItemPanelMode === 'create' ? 'Respuesta rapida creada' : 'Respuesta rapida actualizada',
-                                                                    async () => { await saveQuickReplyItem(); }
-                                                                )}
-                                                            >
-                                                                {quickReplyItemPanelMode === 'create' ? 'Guardar respuesta' : 'Actualizar respuesta'}
-                                                            </button>
-                                                            <button type="button" disabled={busy} onClick={cancelQuickReplyItemEdit}>Cancelar</button>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                        )}
                     </section>
                     )}
 
@@ -6597,6 +6956,48 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

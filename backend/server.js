@@ -1865,6 +1865,8 @@ app.get('/api/admin/saas/tenants/:tenantId/ai-assistants', async (req, res) => {
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
     if (!isTenantAllowedForUser(req, tenantId)
         || !hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_AI_READ,
+            accessPolicyService.PERMISSIONS.TENANT_AI_MANAGE,
             accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ,
             accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE
         ])) {
@@ -1882,7 +1884,7 @@ app.get('/api/admin/saas/tenants/:tenantId/ai-assistants', async (req, res) => {
 app.post('/api/admin/saas/tenants/:tenantId/ai-assistants', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE)) {
+    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_AI_MANAGE, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE])) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -1902,7 +1904,7 @@ app.put('/api/admin/saas/tenants/:tenantId/ai-assistants/:assistantId', async (r
     const assistantId = sanitizeAiAssistantIdPayload(req.params?.assistantId || '');
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
     if (!assistantId) return res.status(400).json({ ok: false, error: 'assistantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE)) {
+    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_AI_MANAGE, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE])) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -1920,7 +1922,7 @@ app.post('/api/admin/saas/tenants/:tenantId/ai-assistants/:assistantId/default',
     const assistantId = sanitizeAiAssistantIdPayload(req.params?.assistantId || '');
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
     if (!assistantId) return res.status(400).json({ ok: false, error: 'assistantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE)) {
+    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_AI_MANAGE, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE])) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -1937,7 +1939,7 @@ app.post('/api/admin/saas/tenants/:tenantId/ai-assistants/:assistantId/deactivat
     const assistantId = sanitizeAiAssistantIdPayload(req.params?.assistantId || '');
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
     if (!assistantId) return res.status(400).json({ ok: false, error: 'assistantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE)) {
+    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_AI_MANAGE, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE])) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -1953,6 +1955,8 @@ app.get('/api/admin/saas/tenants/:tenantId/quick-reply-libraries', async (req, r
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
     if (!isTenantAllowedForUser(req, tenantId)
         || !hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_READ,
+            accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE,
             accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
             accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
         ])) {
@@ -1976,7 +1980,7 @@ app.get('/api/admin/saas/tenants/:tenantId/quick-reply-libraries', async (req, r
 app.post('/api/admin/saas/tenants/:tenantId/quick-reply-libraries', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE)) {
+    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE])) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -1994,7 +1998,7 @@ app.put('/api/admin/saas/tenants/:tenantId/quick-reply-libraries/:libraryId', as
     const tenantId = String(req.params?.tenantId || '').trim();
     const libraryId = quickReplyLibrariesService.normalizeLibraryId(req.params?.libraryId || '');
     if (!tenantId || !libraryId) return res.status(400).json({ ok: false, error: 'tenantId/libraryId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE)) {
+    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE])) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -2012,7 +2016,7 @@ app.post('/api/admin/saas/tenants/:tenantId/quick-reply-libraries/:libraryId/dea
     const tenantId = String(req.params?.tenantId || '').trim();
     const libraryId = quickReplyLibrariesService.normalizeLibraryId(req.params?.libraryId || '');
     if (!tenantId || !libraryId) return res.status(400).json({ ok: false, error: 'tenantId/libraryId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE)) {
+    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE])) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -2029,6 +2033,8 @@ app.get('/api/admin/saas/tenants/:tenantId/quick-reply-items', async (req, res) 
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
     if (!isTenantAllowedForUser(req, tenantId)
         || !hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_READ,
+            accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE,
             accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
             accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
         ])) {
@@ -2054,7 +2060,7 @@ app.get('/api/admin/saas/tenants/:tenantId/quick-reply-items', async (req, res) 
 app.post('/api/admin/saas/tenants/:tenantId/quick-reply-items', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE)) {
+    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE])) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -2073,7 +2079,7 @@ app.put('/api/admin/saas/tenants/:tenantId/quick-reply-items/:itemId', async (re
     const tenantId = String(req.params?.tenantId || '').trim();
     const itemId = quickReplyLibrariesService.normalizeItemId(req.params?.itemId || '');
     if (!tenantId || !itemId) return res.status(400).json({ ok: false, error: 'tenantId/itemId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE)) {
+    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE])) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -2092,7 +2098,7 @@ app.post('/api/admin/saas/tenants/:tenantId/quick-reply-items/:itemId/deactivate
     const tenantId = String(req.params?.tenantId || '').trim();
     const itemId = quickReplyLibrariesService.normalizeItemId(req.params?.itemId || '');
     if (!tenantId || !itemId) return res.status(400).json({ ok: false, error: 'tenantId/itemId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE)) {
+    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE])) {
         return res.status(403).json({ ok: false, error: 'No autorizado.' });
     }
 
@@ -3523,5 +3529,7 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
+
+
 
 
