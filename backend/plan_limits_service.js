@@ -1,4 +1,4 @@
-const DEFAULT_PLAN = 'starter';
+﻿const DEFAULT_PLAN = 'starter';
 
 const DEFAULT_LIMITS = {
     starter: {
@@ -8,6 +8,8 @@ const DEFAULT_LIMITS = {
         maxActiveSessions: 1,
         maxWaModules: 2,
         maxCatalogs: 1,
+        quickReplyMaxUploadMb: 10,
+        quickReplyStorageQuotaMb: 500,
         features: {
             aiPro: true,
             catalog: true,
@@ -24,6 +26,8 @@ const DEFAULT_LIMITS = {
         maxActiveSessions: 3,
         maxWaModules: 8,
         maxCatalogs: 5,
+        quickReplyMaxUploadMb: 25,
+        quickReplyStorageQuotaMb: 2048,
         features: {
             aiPro: true,
             catalog: true,
@@ -40,6 +44,8 @@ const DEFAULT_LIMITS = {
         maxActiveSessions: 10,
         maxWaModules: 30,
         maxCatalogs: 20,
+        quickReplyMaxUploadMb: 50,
+        quickReplyStorageQuotaMb: 8192,
         features: {
             aiPro: true,
             catalog: true,
@@ -75,6 +81,8 @@ function normalizePlanLimits(raw = {}, fallback = {}) {
         maxActiveSessions: normalizePositiveInteger(source.maxActiveSessions, normalizePositiveInteger(fallback.maxActiveSessions, 1)),
         maxWaModules: normalizePositiveInteger(source.maxWaModules, normalizePositiveInteger(fallback.maxWaModules, 1)),
         maxCatalogs: normalizePositiveInteger(source.maxCatalogs, normalizePositiveInteger(fallback.maxCatalogs, 1)),
+        quickReplyMaxUploadMb: normalizePositiveInteger(source.quickReplyMaxUploadMb, normalizePositiveInteger(fallback.quickReplyMaxUploadMb, 10)),
+        quickReplyStorageQuotaMb: normalizePositiveInteger(source.quickReplyStorageQuotaMb, normalizePositiveInteger(fallback.quickReplyStorageQuotaMb, 500)),
         features: normalizeFeatures(source.features, fallback.features || {})
     };
 }
@@ -195,4 +203,3 @@ module.exports = {
     isFeatureEnabledForTenant,
     assertUsageWithinLimit
 };
-

@@ -68,7 +68,7 @@ app.disable('x-powered-by');
 
 const UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.join(__dirname, 'uploads')).trim() || path.join(__dirname, 'uploads'));
 const ADMIN_ASSET_UPLOAD_MAX_BYTES = Math.max(200 * 1024, Number(process.env.ADMIN_ASSET_UPLOAD_MAX_BYTES || 2 * 1024 * 1024));
-const ADMIN_ASSET_QUICK_REPLY_MAX_BYTES = Math.max(500 * 1024, Number(process.env.ADMIN_ASSET_QUICK_REPLY_MAX_BYTES || 8 * 1024 * 1024));
+const ADMIN_ASSET_QUICK_REPLY_MAX_BYTES = Math.max(500 * 1024, Number(process.env.ADMIN_ASSET_QUICK_REPLY_MAX_BYTES || 50 * 1024 * 1024));
 const ADMIN_ASSET_ALLOWED_MIME_TYPES_IMAGE = new Set((() => {
     const configured = parseCsvEnv(process.env.ADMIN_ASSET_ALLOWED_MIME_TYPES);
     const base = configured.length > 0 ? configured : ['image/jpeg', 'image/png', 'image/webp'];
@@ -84,10 +84,21 @@ const ADMIN_ASSET_ALLOWED_MIME_TYPES_QUICK_REPLY = new Set((() => {
             'image/jpeg',
             'image/png',
             'image/webp',
+            'image/gif',
             'application/pdf',
             'text/plain',
+            'text/csv',
             'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'application/zip',
+            'application/x-zip-compressed',
+            'audio/mpeg',
+            'audio/ogg',
+            'video/mp4'
         ];
     return base
         .map((entry) => String(entry || '').trim().toLowerCase())
@@ -120,7 +131,7 @@ function getRequestOrigin(req = {}) {
 function normalizeAssetExtension(fileName = '', mimeType = '') {
     const fromName = String(fileName || '').trim().split('.').pop();
     const cleanNameExt = String(fromName || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (cleanNameExt && ['png', 'jpg', 'jpeg', 'webp', 'pdf', 'txt', 'doc', 'docx'].includes(cleanNameExt)) {
+    if (cleanNameExt && ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf', 'txt', 'csv', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'mp3', 'ogg', 'mp4'].includes(cleanNameExt)) {
         return cleanNameExt === 'jpg' ? 'jpeg' : cleanNameExt;
     }
 
@@ -130,10 +141,21 @@ function normalizeAssetExtension(fileName = '', mimeType = '') {
         'image/jpeg': 'jpeg',
         'image/jpg': 'jpeg',
         'image/webp': 'webp',
+        'image/gif': 'gif',
         'application/pdf': 'pdf',
         'text/plain': 'txt',
+        'text/csv': 'csv',
         'application/msword': 'doc',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx'
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+        'application/vnd.ms-excel': 'xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+        'application/vnd.ms-powerpoint': 'ppt',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+        'application/zip': 'zip',
+        'application/x-zip-compressed': 'zip',
+        'audio/mpeg': 'mp3',
+        'audio/ogg': 'ogg',
+        'video/mp4': 'mp4'
     };
     return map[mime] || 'bin';
 }
@@ -144,7 +166,7 @@ function normalizeAssetUploadKind(value = '') {
     return 'image';
 }
 
-function parseAssetUploadPayload(body = {}) {
+function parseAssetUploadPayload(body = {}, options = {}) {
     const source = body && typeof body === 'object' ? body : {};
     const dataUrl = String(source.dataUrl || source.data || '').trim();
     const base64Raw = String(source.base64 || '').trim();
@@ -167,10 +189,12 @@ function parseAssetUploadPayload(body = {}) {
     }
 
     const allowedMimes = kind === 'quick_reply'
-        ? ADMIN_ASSET_ALLOWED_MIME_TYPES_QUICK_REPLY
+        ? (options.allowedQuickReplyMimes || ADMIN_ASSET_ALLOWED_MIME_TYPES_QUICK_REPLY)
         : ADMIN_ASSET_ALLOWED_MIME_TYPES_IMAGE;
+    const fallbackQuickReplyMaxBytes = Math.max(500 * 1024, Number(options.fallbackQuickReplyMaxBytes || ADMIN_ASSET_QUICK_REPLY_MAX_BYTES || 8 * 1024 * 1024));
+    const configuredQuickReplyMaxBytes = Math.max(500 * 1024, Number(options.maxQuickReplyBytes || fallbackQuickReplyMaxBytes || 8 * 1024 * 1024));
     const maxBytes = kind === 'quick_reply'
-        ? ADMIN_ASSET_QUICK_REPLY_MAX_BYTES
+        ? configuredQuickReplyMaxBytes
         : ADMIN_ASSET_UPLOAD_MAX_BYTES;
 
     if (!allowedMimes.has(mimeType)) {
@@ -227,6 +251,49 @@ async function saveAssetFile({ tenantId = 'default', scope = 'general', mimeType
         relativeUrl: '/uploads/' + relativePath,
         absolutePath
     };
+}
+
+function resolveTenantQuickReplyAssetLimits(tenantId = 'default') {
+    const tenant = tenantService.findTenantById(tenantId) || tenantService.DEFAULT_TENANT || { plan: 'starter' };
+    const limits = planLimitsService.getTenantPlanLimits(tenant) || {};
+    const fallbackUploadMb = Math.max(1, Math.floor((ADMIN_ASSET_QUICK_REPLY_MAX_BYTES || (8 * 1024 * 1024)) / (1024 * 1024)));
+    const maxUploadMb = Math.max(1, Math.min(1024, Number(limits.quickReplyMaxUploadMb || fallbackUploadMb) || fallbackUploadMb));
+    const storageQuotaMbRaw = Number(limits.quickReplyStorageQuotaMb || 0);
+    const storageQuotaMb = Number.isFinite(storageQuotaMbRaw) ? Math.max(0, Math.floor(storageQuotaMbRaw)) : 0;
+    return {
+        maxUploadMb,
+        maxUploadBytes: Math.max(500 * 1024, Math.floor(maxUploadMb * 1024 * 1024)),
+        storageQuotaMb,
+        storageQuotaBytes: storageQuotaMb > 0 ? Math.floor(storageQuotaMb * 1024 * 1024) : 0
+    };
+}
+
+async function estimateDirectorySizeBytes(dirPath = '') {
+    const cleanDirPath = String(dirPath || '').trim();
+    if (!cleanDirPath) return 0;
+    let entries = [];
+    try {
+        entries = await fs.promises.readdir(cleanDirPath, { withFileTypes: true });
+    } catch (_) {
+        return 0;
+    }
+    let total = 0;
+    for (const entry of entries) {
+        if (!entry) continue;
+        const absolute = path.join(cleanDirPath, entry.name);
+        if (entry.isDirectory()) {
+            total += await estimateDirectorySizeBytes(absolute);
+            continue;
+        }
+        if (!entry.isFile()) continue;
+        try {
+            const stats = await fs.promises.stat(absolute);
+            total += Number(stats?.size || 0) || 0;
+        } catch (_) {
+            // ignore unreadable file and continue
+        }
+    }
+    return total;
 }
 
 function resolveRequestId(req = {}) {
@@ -1276,21 +1343,65 @@ function sanitizeQuickReplyLibraryPayload(payload = {}, { allowLibraryId = true 
     return base;
 }
 
+function normalizeQuickReplyMediaAsset(input = {}) {
+    const source = input && typeof input === 'object' ? input : {};
+    const url = String(source.url || source.mediaUrl || source.media_url || '').trim();
+    if (!url) return null;
+    const mimeType = String(source.mimeType || source.mediaMimeType || source.media_mime_type || '').trim().toLowerCase() || null;
+    const fileName = String(source.fileName || source.mediaFileName || source.media_file_name || source.filename || '').trim() || null;
+    const sizeRaw = Number(source.sizeBytes ?? source.mediaSizeBytes ?? source.media_size_bytes);
+    const sizeBytes = Number.isFinite(sizeRaw) && sizeRaw > 0 ? Math.floor(sizeRaw) : null;
+    return {
+        url,
+        mimeType,
+        fileName,
+        sizeBytes
+    };
+}
+
+function normalizeQuickReplyMediaAssets(value = [], fallback = null) {
+    const source = Array.isArray(value) ? value : [];
+    const seen = new Set();
+    const assets = source
+        .map((entry) => normalizeQuickReplyMediaAsset(entry))
+        .filter(Boolean)
+        .filter((entry) => {
+            const dedupeKey = `${String(entry.url || '').trim()}|${String(entry.fileName || '').trim()}|${String(entry.mimeType || '').trim()}`;
+            if (!dedupeKey || seen.has(dedupeKey)) return false;
+            seen.add(dedupeKey);
+            return true;
+        });
+    if (assets.length > 0) return assets;
+    const fallbackAsset = normalizeQuickReplyMediaAsset(fallback);
+    return fallbackAsset ? [fallbackAsset] : [];
+}
+
 function sanitizeQuickReplyItemPayload(payload = {}, { allowItemId = true } = {}) {
     const source = sanitizeObjectPayload(payload);
     const cleanItemId = quickReplyLibrariesService.normalizeItemId(source.itemId || source.id || '');
     const cleanLibraryId = quickReplyLibrariesService.normalizeLibraryId(source.libraryId || source.library || quickReplyLibrariesService.DEFAULT_LIBRARY_ID || '');
     const parsedSortOrder = Number.parseInt(String(source.sortOrder ?? ''), 10);
     const sortOrder = Number.isFinite(parsedSortOrder) ? Math.max(1, parsedSortOrder) : 1000;
+    const metadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+        ? source.metadata
+        : {};
+    const mediaAssets = normalizeQuickReplyMediaAssets(source.mediaAssets || metadata.mediaAssets, {
+        url: source.mediaUrl || source.media_url || '',
+        mimeType: source.mediaMimeType || source.media_mime_type || '',
+        fileName: source.mediaFileName || source.media_file_name || '',
+        sizeBytes: source.mediaSizeBytes
+    });
+    const primaryMedia = mediaAssets[0] || null;
 
     const base = {
         libraryId: cleanLibraryId,
         label: String(source.label || '').trim(),
         text: String(source.text || source.bodyText || source.body || '').trim(),
-        mediaUrl: String(source.mediaUrl || source.media_url || '').trim() || null,
-        mediaMimeType: String(source.mediaMimeType || source.media_mime_type || '').trim().toLowerCase() || null,
-        mediaFileName: String(source.mediaFileName || source.media_file_name || '').trim() || null,
-        mediaSizeBytes: Number.isFinite(Number(source.mediaSizeBytes)) ? Number(source.mediaSizeBytes) : null,
+        mediaAssets,
+        mediaUrl: String(primaryMedia?.url || source.mediaUrl || source.media_url || '').trim() || null,
+        mediaMimeType: String(primaryMedia?.mimeType || source.mediaMimeType || source.media_mime_type || '').trim().toLowerCase() || null,
+        mediaFileName: String(primaryMedia?.fileName || source.mediaFileName || source.media_file_name || '').trim() || null,
+        mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes)) ? Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes) : null,
         isActive: source.isActive !== false,
         sortOrder
     };
@@ -1313,8 +1424,26 @@ app.post('/api/admin/saas/assets/upload', async (req, res) => {
             return res.status(403).json({ ok: false, error: 'No tienes acceso a ese tenant para subir archivos.' });
         }
 
+        const uploadKind = normalizeAssetUploadKind(body.kind || body.assetKind || body.scopeKind || '');
+        const quickReplyAssetLimits = uploadKind === 'quick_reply'
+            ? resolveTenantQuickReplyAssetLimits(requestedTenantId)
+            : null;
         const scope = sanitizeStorageSegment(body.scope || 'general', 'general');
-        const parsed = parseAssetUploadPayload(body);
+        const parsed = parseAssetUploadPayload(body, {
+            maxQuickReplyBytes: quickReplyAssetLimits?.maxUploadBytes,
+            fallbackQuickReplyMaxBytes: ADMIN_ASSET_QUICK_REPLY_MAX_BYTES
+        });
+
+        if (parsed.kind === 'quick_reply' && quickReplyAssetLimits?.storageQuotaBytes > 0) {
+            const tenantAssetsRoot = path.join(UPLOADS_ROOT, 'saas-assets', tenantId);
+            const usedBytes = await estimateDirectorySizeBytes(tenantAssetsRoot);
+            const incomingBytes = Number(parsed?.buffer?.length || 0) || 0;
+            if ((usedBytes + incomingBytes) > quickReplyAssetLimits.storageQuotaBytes) {
+                throw new Error('El tenant supero la cuota de almacenamiento para respuestas rapidas.' +
+                    ` (plan: ${quickReplyAssetLimits.storageQuotaMb} MB).`);
+            }
+        }
+
         const stored = await saveAssetFile({
             tenantId,
             scope,
@@ -1330,6 +1459,12 @@ app.post('/api/admin/saas/assets/upload', async (req, res) => {
             ok: true,
             tenantId,
             scope,
+            limits: parsed.kind === 'quick_reply' && quickReplyAssetLimits
+                ? {
+                    maxUploadMb: quickReplyAssetLimits.maxUploadMb,
+                    storageQuotaMb: quickReplyAssetLimits.storageQuotaMb
+                }
+                : undefined,
             file: {
                 url: publicUrl,
                 relativeUrl: stored.relativeUrl,
@@ -2067,7 +2202,7 @@ app.post('/api/admin/saas/tenants/:tenantId/quick-reply-items', async (req, res)
     try {
         const payload = sanitizeQuickReplyItemPayload(req.body, { allowItemId: true });
         if (!payload.label) return res.status(400).json({ ok: false, error: 'Etiqueta requerida.' });
-        if (!payload.text && !payload.mediaUrl) return res.status(400).json({ ok: false, error: 'Debes registrar texto o adjunto.' });
+        if (!payload.text && (!Array.isArray(payload.mediaAssets) || payload.mediaAssets.length === 0) && !payload.mediaUrl) return res.status(400).json({ ok: false, error: 'Debes registrar texto o adjunto.' });
         const item = await quickReplyLibrariesService.saveQuickReplyItem(payload, { tenantId });
         return res.status(201).json({ ok: true, tenantId, item });
     } catch (error) {
@@ -2086,7 +2221,7 @@ app.put('/api/admin/saas/tenants/:tenantId/quick-reply-items/:itemId', async (re
     try {
         const payload = sanitizeQuickReplyItemPayload(req.body, { allowItemId: false });
         if (!payload.label) return res.status(400).json({ ok: false, error: 'Etiqueta requerida.' });
-        if (!payload.text && !payload.mediaUrl) return res.status(400).json({ ok: false, error: 'Debes registrar texto o adjunto.' });
+        if (!payload.text && (!Array.isArray(payload.mediaAssets) || payload.mediaAssets.length === 0) && !payload.mediaUrl) return res.status(400).json({ ok: false, error: 'Debes registrar texto o adjunto.' });
         const item = await quickReplyLibrariesService.saveQuickReplyItem({ ...payload, itemId }, { tenantId });
         return res.json({ ok: true, tenantId, item });
     } catch (error) {

@@ -1,4 +1,4 @@
-const path = require('path');
+﻿const path = require('path');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -90,19 +90,32 @@ async function listFromPostgres(tenantId, moduleId = '') {
             includeInactive: false
         });
 
-        return scoped.map((entry) => ({
-            id: String(entry?.itemId || entry?.id || '').trim(),
-            label: String(entry?.label || '').trim(),
-            text: String(entry?.text || '').trim(),
-            mediaUrl: String(entry?.mediaUrl || '').trim() || null,
-            mediaMimeType: String(entry?.mediaMimeType || '').trim().toLowerCase() || null,
-            mediaFileName: String(entry?.mediaFileName || '').trim() || null,
-            mediaSizeBytes: Number.isFinite(Number(entry?.mediaSizeBytes)) ? Number(entry.mediaSizeBytes) : null,
-            libraryId: String(entry?.libraryId || '').trim() || null,
-            libraryName: String(entry?.libraryName || '').trim() || null,
-            isShared: entry?.isShared !== false,
-            moduleIds: Array.isArray(entry?.moduleIds) ? entry.moduleIds : []
-        })).filter((entry) => entry.id && (entry.text || entry.mediaUrl));
+        return scoped.map((entry) => {
+            const mediaAssets = Array.isArray(entry?.mediaAssets)
+                ? entry.mediaAssets
+                    .map((asset) => ({
+                        url: String(asset?.url || asset?.mediaUrl || '').trim() || null,
+                        mimeType: String(asset?.mimeType || asset?.mediaMimeType || '').trim().toLowerCase() || null,
+                        fileName: String(asset?.fileName || asset?.mediaFileName || '').trim() || null,
+                        sizeBytes: Number.isFinite(Number(asset?.sizeBytes ?? asset?.mediaSizeBytes)) ? Number(asset?.sizeBytes ?? asset?.mediaSizeBytes) : null
+                    }))
+                    .filter((asset) => Boolean(asset.url))
+                : [];
+            return {
+                id: String(entry?.itemId || entry?.id || '').trim(),
+                label: String(entry?.label || '').trim(),
+                text: String(entry?.text || '').trim(),
+                mediaAssets,
+                mediaUrl: String(entry?.mediaUrl || mediaAssets[0]?.url || '').trim() || null,
+                mediaMimeType: String(entry?.mediaMimeType || mediaAssets[0]?.mimeType || '').trim().toLowerCase() || null,
+                mediaFileName: String(entry?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null,
+                mediaSizeBytes: Number.isFinite(Number(entry?.mediaSizeBytes)) ? Number(entry.mediaSizeBytes) : (mediaAssets[0]?.sizeBytes || null),
+                libraryId: String(entry?.libraryId || '').trim() || null,
+                libraryName: String(entry?.libraryName || '').trim() || null,
+                isShared: entry?.isShared !== false,
+                moduleIds: Array.isArray(entry?.moduleIds) ? entry.moduleIds : []
+            };
+        }).filter((entry) => entry.id && (entry.text || entry.mediaUrl || (Array.isArray(entry.mediaAssets) && entry.mediaAssets.length > 0)));
     } catch (error) {
         if (missingRelation(error)) return [];
         throw error;

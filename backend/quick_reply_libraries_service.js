@@ -1,4 +1,4 @@
-
+﻿
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -75,30 +75,86 @@ function sanitizeLibrary(input = {}) {
     };
 }
 
+function normalizeMediaAsset(input = {}) {
+    const source = input && typeof input === 'object' ? input : {};
+    const url = String(source.url || source.mediaUrl || source.media_url || '').trim();
+    if (!url) return null;
+    const mimeType = String(source.mimeType || source.mediaMimeType || source.media_mime_type || '').trim().toLowerCase() || null;
+    const fileName = String(source.fileName || source.mediaFileName || source.media_file_name || source.filename || '').trim() || null;
+    const sizeBytesRaw = Number(source.sizeBytes ?? source.mediaSizeBytes ?? source.media_size_bytes);
+    const sizeBytes = Number.isFinite(sizeBytesRaw) && sizeBytesRaw > 0 ? Math.floor(sizeBytesRaw) : null;
+    const kind = String(source.kind || '').trim().toLowerCase() || null;
+    return {
+        url,
+        mimeType,
+        fileName,
+        sizeBytes,
+        kind
+    };
+}
+
+function normalizeMediaAssets(value = [], fallback = null) {
+    const source = Array.isArray(value) ? value : [];
+    const seen = new Set();
+    const assets = source
+        .map((entry) => normalizeMediaAsset(entry))
+        .filter(Boolean)
+        .filter((entry) => {
+            const key = `${String(entry.url || '').trim()}|${String(entry.fileName || '').trim()}|${String(entry.mimeType || '').trim()}`;
+            if (!key) return false;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+
+    if (assets.length > 0) return assets;
+    const fallbackAsset = normalizeMediaAsset(fallback);
+    return fallbackAsset ? [fallbackAsset] : [];
+}
 function sanitizeItem(input = {}) {
     const source = input && typeof input === 'object' ? input : {};
     const itemId = normalizeItemId(source.itemId || source.id || '');
     const libraryId = normalizeLibraryId(source.libraryId || source.library || DEFAULT_LIBRARY_ID);
     const label = String(source.label || '').trim();
     const text = String(source.text || source.bodyText || source.body || '').trim();
-    const mediaUrl = String(source.mediaUrl || source.media_url || '').trim() || null;
-    const mediaMimeType = String(source.mediaMimeType || source.media_mime_type || '').trim().toLowerCase() || null;
-    const mediaFileName = String(source.mediaFileName || source.media_file_name || '').trim() || null;
-    const mediaSizeBytes = Number.isFinite(Number(source.mediaSizeBytes)) ? Number(source.mediaSizeBytes) : null;
+    const sourceMetadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+        ? { ...source.metadata }
+        : {};
+    const mediaAssets = normalizeMediaAssets(
+        source.mediaAssets || sourceMetadata.mediaAssets,
+        {
+            url: source.mediaUrl || source.media_url || '',
+            mimeType: source.mediaMimeType || source.media_mime_type || '',
+            fileName: source.mediaFileName || source.media_file_name || '',
+            sizeBytes: source.mediaSizeBytes ?? source.media_size_bytes
+        }
+    );
+    const primaryMedia = mediaAssets[0] || null;
+    const mediaUrl = String(primaryMedia?.url || source.mediaUrl || source.media_url || '').trim() || null;
+    const mediaMimeType = String(primaryMedia?.mimeType || source.mediaMimeType || source.media_mime_type || '').trim().toLowerCase() || null;
+    const mediaFileName = String(primaryMedia?.fileName || source.mediaFileName || source.media_file_name || '').trim() || null;
+    const mediaSizeRaw = Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes ?? source.media_size_bytes);
+    const mediaSizeBytes = Number.isFinite(mediaSizeRaw) && mediaSizeRaw > 0 ? Math.floor(mediaSizeRaw) : null;
     const isActive = normalizeBool(source.isActive, true);
     const sortOrder = normalizeSortOrder(source.sortOrder, 1000);
+    const metadata = {
+        ...sourceMetadata,
+        mediaAssets
+    };
 
     return {
         itemId,
         libraryId,
         label,
         text,
+        mediaAssets,
         mediaUrl,
         mediaMimeType,
         mediaFileName,
         mediaSizeBytes,
         isActive,
-        sortOrder
+        sortOrder,
+        metadata
     };
 }
 
@@ -122,7 +178,7 @@ function normalizeFileStore(parsed = null) {
     const items = Array.isArray(source.items)
         ? source.items
             .map((entry) => sanitizeItem(entry))
-            .filter((entry) => entry.itemId && entry.libraryId && (entry.text || entry.mediaUrl))
+            .filter((entry) => entry.itemId && entry.libraryId && (entry.text || entry.mediaUrl || (Array.isArray(entry.mediaAssets) && entry.mediaAssets.length > 0)))
         : [];
 
     return { libraries, items };
@@ -385,7 +441,7 @@ async function listQuickReplyItems(options = {}) {
     if (!includeInactive) where += ' AND is_active = TRUE';
 
     const { rows } = await queryPostgres(
-        `SELECT item_id, library_id, label, body_text, media_url, media_mime_type, media_file_name, media_size_bytes, sort_order, is_active, created_at, updated_at
+        `SELECT item_id, library_id, label, body_text, media_url, media_mime_type, media_file_name, media_size_bytes, sort_order, is_active, metadata, created_at, updated_at
            FROM quick_reply_items
            ${where}
           ORDER BY sort_order ASC, created_at DESC`,
@@ -395,6 +451,16 @@ async function listQuickReplyItems(options = {}) {
     return (Array.isArray(rows) ? rows : []).map((row) => {
         const libraryId = normalizeLibraryId(row.library_id);
         const library = libraryMap.get(libraryId) || null;
+        const metadata = row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+            ? row.metadata
+            : {};
+        const mediaAssets = normalizeMediaAssets(metadata.mediaAssets, {
+            url: row.media_url,
+            mimeType: row.media_mime_type,
+            fileName: row.media_file_name,
+            sizeBytes: row.media_size_bytes
+        });
+        const primaryMedia = mediaAssets[0] || null;
         return {
             id: normalizeItemId(row.item_id),
             itemId: normalizeItemId(row.item_id),
@@ -403,14 +469,19 @@ async function listQuickReplyItems(options = {}) {
             label: String(row.label || '').trim() || 'Respuesta rapida',
             text: String(row.body_text || '').trim(),
             bodyText: String(row.body_text || '').trim(),
-            mediaUrl: String(row.media_url || '').trim() || null,
-            mediaMimeType: String(row.media_mime_type || '').trim().toLowerCase() || null,
-            mediaFileName: String(row.media_file_name || '').trim() || null,
-            mediaSizeBytes: Number.isFinite(Number(row.media_size_bytes)) ? Number(row.media_size_bytes) : null,
+            mediaAssets,
+            mediaUrl: String(primaryMedia?.url || row.media_url || '').trim() || null,
+            mediaMimeType: String(primaryMedia?.mimeType || row.media_mime_type || '').trim().toLowerCase() || null,
+            mediaFileName: String(primaryMedia?.fileName || row.media_file_name || '').trim() || null,
+            mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? row.media_size_bytes)) ? Number(primaryMedia?.sizeBytes ?? row.media_size_bytes) : null,
             sortOrder: normalizeSortOrder(row.sort_order, 1000),
             isActive: row.is_active !== false,
             isShared: library?.isShared !== false,
-            moduleIds: Array.isArray(library?.moduleIds) ? library.moduleIds : []
+            moduleIds: Array.isArray(library?.moduleIds) ? library.moduleIds : [],
+            metadata: {
+                ...metadata,
+                mediaAssets
+            }
         };
     });
 }
@@ -431,7 +502,7 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
     const clean = sanitizeItem(payload);
     if (!clean.libraryId) clean.libraryId = DEFAULT_LIBRARY_ID;
     if (!clean.label) throw new Error('Etiqueta de respuesta requerida.');
-    if (!clean.text && !clean.mediaUrl) throw new Error('La respuesta requiere texto o adjunto.');
+    if (!clean.text && (!Array.isArray(clean.mediaAssets) || clean.mediaAssets.length === 0) && !clean.mediaUrl) throw new Error('La respuesta requiere texto o adjunto.');
 
     if (getStorageDriver() !== 'postgres') {
         const store = normalizeFileStore(await readTenantJsonFile(QUICK_REPLIES_FILE, { tenantId, defaultValue: {} }));
@@ -447,7 +518,9 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
             mediaFileName: clean.mediaFileName || null,
             mediaSizeBytes: clean.mediaSizeBytes,
             sortOrder: clean.sortOrder,
-            isActive: clean.isActive
+            isActive: clean.isActive,
+            mediaAssets: Array.isArray(clean.mediaAssets) ? clean.mediaAssets : [],
+            metadata: clean.metadata && typeof clean.metadata === 'object' ? clean.metadata : {}
         };
         if (idx >= 0) store.items[idx] = nextItem;
         else store.items.push(nextItem);
@@ -462,7 +535,7 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
             tenant_id, item_id, library_id, label, body_text, media_url, media_mime_type,
             media_file_name, media_size_bytes, sort_order, is_active, metadata, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '{}'::jsonb, NOW(), NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, NOW(), NOW())
         ON CONFLICT (tenant_id, item_id)
         DO UPDATE SET
             library_id = EXCLUDED.library_id,
@@ -474,6 +547,7 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
             media_size_bytes = EXCLUDED.media_size_bytes,
             sort_order = EXCLUDED.sort_order,
             is_active = EXCLUDED.is_active,
+            metadata = EXCLUDED.metadata,
             updated_at = NOW()`,
         [
             tenantId,
@@ -486,7 +560,8 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
             clean.mediaFileName || null,
             clean.mediaSizeBytes,
             clean.sortOrder,
-            clean.isActive
+            clean.isActive,
+            JSON.stringify(clean.metadata && typeof clean.metadata === 'object' ? clean.metadata : {})
         ]
     );
 
@@ -534,3 +609,9 @@ module.exports = {
     normalizeModuleId,
     missingRelation
 };
+
+
+
+
+
+

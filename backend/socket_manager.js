@@ -1,4 +1,4 @@
-const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
+﻿const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
 const waClient = require('./wa_provider');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
@@ -4867,11 +4867,28 @@ class SocketManager {
                     }
 
                     const bodyText = String(replyPayload?.text || replyPayload?.bodyText || replyPayload?.body || '').trim();
-                    const mediaUrl = String(replyPayload?.mediaUrl || '').trim();
-                    const mediaMimeType = String(replyPayload?.mediaMimeType || '').trim().toLowerCase();
-                    const mediaFileName = String(replyPayload?.mediaFileName || replyPayload?.filename || '').trim();
+                    const rawMediaAssets = Array.isArray(replyPayload?.mediaAssets) ? replyPayload.mediaAssets : [];
+                    const mediaAssets = rawMediaAssets
+                        .map((entry) => ({
+                            url: String(entry?.url || entry?.mediaUrl || '').trim(),
+                            mimeType: String(entry?.mimeType || entry?.mediaMimeType || '').trim().toLowerCase() || '',
+                            fileName: String(entry?.fileName || entry?.mediaFileName || entry?.filename || '').trim() || '',
+                            sizeBytes: Number(entry?.sizeBytes ?? entry?.mediaSizeBytes) || null
+                        }))
+                        .filter((entry) => Boolean(entry.url));
+                    const legacyMediaUrl = String(replyPayload?.mediaUrl || '').trim();
+                    const legacyMediaMimeType = String(replyPayload?.mediaMimeType || '').trim().toLowerCase();
+                    const legacyMediaFileName = String(replyPayload?.mediaFileName || replyPayload?.filename || '').trim();
+                    if (legacyMediaUrl && !mediaAssets.some((entry) => entry.url === legacyMediaUrl)) {
+                        mediaAssets.push({
+                            url: legacyMediaUrl,
+                            mimeType: legacyMediaMimeType,
+                            fileName: legacyMediaFileName,
+                            sizeBytes: null
+                        });
+                    }
 
-                    if (!bodyText && !mediaUrl) {
+                    if (!bodyText && mediaAssets.length === 0) {
                         socket.emit('error', 'La respuesta rapida no tiene contenido para enviar.');
                         return;
                     }
@@ -4881,58 +4898,87 @@ class SocketManager {
 
                     let sentMessage = null;
                     let mediaPayload = null;
-                    if (mediaUrl) {
-                        const fetchedMedia = await fetchQuickReplyMedia(mediaUrl, {
-                            maxBytes: QUICK_REPLY_MEDIA_MAX_BYTES,
-                            timeoutMs: QUICK_REPLY_MEDIA_TIMEOUT_MS,
-                            mimeHint: mediaMimeType,
-                            fileNameHint: mediaFileName
-                        });
 
-                        if (!fetchedMedia || !fetchedMedia.mediaData) {
-                            socket.emit('error', 'No se pudo procesar el adjunto de la respuesta rapida.');
-                            return;
+                    if (mediaAssets.length > 0) {
+                        const sentMediaPayloads = [];
+                        for (let index = 0; index < mediaAssets.length; index += 1) {
+                            const mediaEntry = mediaAssets[index] || null;
+                            if (!mediaEntry?.url) continue;
+
+                            const fetchedMedia = await fetchQuickReplyMedia(mediaEntry.url, {
+                                maxBytes: QUICK_REPLY_MEDIA_MAX_BYTES,
+                                timeoutMs: QUICK_REPLY_MEDIA_TIMEOUT_MS,
+                                mimeHint: mediaEntry.mimeType || legacyMediaMimeType,
+                                fileNameHint: mediaEntry.fileName || legacyMediaFileName
+                            });
+
+                            if (!fetchedMedia || !fetchedMedia.mediaData) {
+                                socket.emit('error', 'No se pudo procesar el adjunto de la respuesta rapida.');
+                                return;
+                            }
+
+                            const fileNameBase = mediaEntry.fileName || legacyMediaFileName || path.basename(String(fetchedMedia.filename || '').trim() || '') || ('adjunto-' + Date.now());
+                            const safeFileName = String(fileNameBase || '').trim() || ('adjunto-' + Date.now());
+                            const captionText = index === 0 ? bodyText : '';
+                            const quotedMessageId = index === 0 ? (quoted || null) : null;
+                            const sentAssetMessage = await waClient.sendMedia(
+                                target.targetChatId,
+                                fetchedMedia.mediaData,
+                                fetchedMedia.mimetype || mediaEntry.mimeType || legacyMediaMimeType || 'application/octet-stream',
+                                safeFileName,
+                                captionText,
+                                false,
+                                quotedMessageId
+                            );
+
+                            if (!sentMessage) sentMessage = sentAssetMessage;
+                            const currentMediaPayload = {
+                                mimetype: fetchedMedia.mimetype || mediaEntry.mimeType || legacyMediaMimeType || null,
+                                filename: safeFileName,
+                                fileSizeBytes: Number(fetchedMedia?.fileSizeBytes || mediaEntry?.sizeBytes || 0) || null,
+                                mediaUrl: String(fetchedMedia?.publicUrl || fetchedMedia?.sourceUrl || mediaEntry.url || '').trim() || null,
+                                mediaPath: String(fetchedMedia?.relativePath || '').trim() || null
+                            };
+                            sentMediaPayloads.push(currentMediaPayload);
+
+                            const sentAssetMessageId = getSerializedMessageId(sentAssetMessage);
+                            if (sentAssetMessageId && agentMeta) rememberOutgoingAgentMeta(sentAssetMessageId, agentMeta);
+
+                            await emitRealtimeOutgoingMessage({
+                                sentMessage: sentAssetMessage,
+                                fallbackChatId: target.targetChatId,
+                                fallbackBody: captionText,
+                                quotedMessageId: quotedMessageId || '',
+                                moduleContext,
+                                agentMeta,
+                                mediaPayload: currentMediaPayload
+                            });
                         }
-
-                        const fileNameBase = mediaFileName || path.basename(String(fetchedMedia.filename || '').trim() || '') || ('adjunto-' + Date.now());
-                        const safeFileName = String(fileNameBase || '').trim() || ('adjunto-' + Date.now());
-                        sentMessage = await waClient.sendMedia(
-                            target.targetChatId,
-                            fetchedMedia.mediaData,
-                            fetchedMedia.mimetype || mediaMimeType || 'application/octet-stream',
-                            safeFileName,
-                            bodyText,
-                            false,
-                            quoted || null
-                        );
-
-                        mediaPayload = {
-                            mimetype: fetchedMedia.mimetype || mediaMimeType || null,
-                            filename: safeFileName,
-                            fileSizeBytes: Number(fetchedMedia?.fileSizeBytes || 0) || null,
-                            mediaUrl: String(fetchedMedia?.publicUrl || fetchedMedia?.sourceUrl || mediaUrl || '').trim() || null,
-                            mediaPath: String(fetchedMedia?.relativePath || '').trim() || null
-                        };
+                        if (sentMediaPayloads.length > 0) {
+                            mediaPayload = {
+                                ...sentMediaPayloads[0],
+                                mediaAssets: sentMediaPayloads
+                            };
+                        }
                     } else {
                         if (quoted) {
                             sentMessage = await waClient.sendMessage(target.targetChatId, bodyText, { quotedMessageId: quoted });
                         } else {
                             sentMessage = await waClient.sendMessage(target.targetChatId, bodyText);
                         }
+                        const sentMessageId = getSerializedMessageId(sentMessage);
+                        if (sentMessageId && agentMeta) rememberOutgoingAgentMeta(sentMessageId, agentMeta);
+
+                        await emitRealtimeOutgoingMessage({
+                            sentMessage,
+                            fallbackChatId: target.targetChatId,
+                            fallbackBody: bodyText,
+                            quotedMessageId: quoted,
+                            moduleContext,
+                            agentMeta,
+                            mediaPayload
+                        });
                     }
-
-                    const sentMessageId = getSerializedMessageId(sentMessage);
-                    if (sentMessageId && agentMeta) rememberOutgoingAgentMeta(sentMessageId, agentMeta);
-
-                    await emitRealtimeOutgoingMessage({
-                        sentMessage,
-                        fallbackChatId: target.targetChatId,
-                        fallbackBody: bodyText,
-                        quotedMessageId: quoted,
-                        moduleContext,
-                        agentMeta,
-                        mediaPayload
-                    });
 
                     socket.emit('quick_reply_sent', {
                         ok: true,
