@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Search, MoreVertical, Smile, Bot, Sparkles, X, Paperclip, Send, ShoppingCart, ChevronUp, ChevronDown, Tag, MapPin, Share2 } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import moment from 'moment';
@@ -194,15 +194,47 @@ const ChatInput = ({
     const normalizedSlashQuery = String(inputText || '').startsWith('/')
         ? String(inputText || '').slice(1).trim().toLowerCase()
         : '';
+    const slashTokens = normalizedSlashQuery
+        ? normalizedSlashQuery.split(/\s+/).map((entry) => entry.trim()).filter(Boolean)
+        : [];
 
     const filteredQuickReplies = (Array.isArray(quickReplies) ? quickReplies : [])
-        .filter((item) => {
+        .map((item) => {
             const label = String(item?.label || '').trim().toLowerCase();
             const text = String(item?.text || '').trim().toLowerCase();
-            if (!normalizedSlashQuery) return true;
-            return label.includes(normalizedSlashQuery) || text.includes(normalizedSlashQuery);
+            const libraryName = String(item?.libraryName || '').trim().toLowerCase();
+            const haystack = `${label} ${libraryName} ${text}`.trim();
+            if (!slashTokens.length) {
+                return {
+                    item,
+                    rank: Number(label.length > 0) * 100 + Number(libraryName.length > 0) * 10
+                };
+            }
+            const containsAll = slashTokens.every((token) => haystack.includes(token));
+            if (!containsAll) return null;
+
+            let rank = 0;
+            if (normalizedSlashQuery && label.startsWith(normalizedSlashQuery)) rank += 400;
+            if (normalizedSlashQuery && libraryName.startsWith(normalizedSlashQuery)) rank += 280;
+            if (normalizedSlashQuery && text.startsWith(normalizedSlashQuery)) rank += 220;
+            slashTokens.forEach((token) => {
+                if (label.includes(token)) rank += 80;
+                if (libraryName.includes(token)) rank += 50;
+                if (text.includes(token)) rank += 20;
+            });
+
+            return { item, rank };
         })
-        .slice(0, 10);
+        .filter(Boolean)
+        .sort((left, right) => {
+            const rankDelta = Number(right?.rank || 0) - Number(left?.rank || 0);
+            if (rankDelta !== 0) return rankDelta;
+            const leftLabel = String(left?.item?.label || '').trim();
+            const rightLabel = String(right?.item?.label || '').trim();
+            return leftLabel.localeCompare(rightLabel, 'es', { sensitivity: 'base' });
+        })
+        .slice(0, 10)
+        .map((entry) => entry.item);
 
     const selectQuickReply = (item = {}) => {
         const entry = item && typeof item === 'object' ? item : null;
@@ -1297,6 +1329,7 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
+
 
 
 
