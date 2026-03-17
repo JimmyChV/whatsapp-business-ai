@@ -615,6 +615,37 @@ const chatMatchesFilters = (chat = {}, filters = {}) => {
 
   return true;
 };
+const normalizeQuickReplyDraft = (value = null) => {
+  if (!value || typeof value !== 'object') return null;
+  const id = String(value?.id || '').trim();
+  const label = sanitizeDisplayText(value?.label || '');
+  const textBody = repairMojibake(value?.text || '').trim();
+  const mediaAssets = Array.isArray(value?.mediaAssets)
+    ? value.mediaAssets
+      .map((asset) => ({
+        url: String(asset?.url || asset?.mediaUrl || '').trim() || null,
+        mimeType: String(asset?.mimeType || asset?.mediaMimeType || '').trim().toLowerCase() || null,
+        fileName: String(asset?.fileName || asset?.mediaFileName || '').trim() || null,
+        sizeBytes: Number.isFinite(Number(asset?.sizeBytes ?? asset?.mediaSizeBytes)) ? Number(asset?.sizeBytes ?? asset?.mediaSizeBytes) : null
+      }))
+      .filter((asset) => Boolean(asset.url))
+    : [];
+  const mediaUrl = String(value?.mediaUrl || mediaAssets[0]?.url || '').trim() || null;
+  const mediaMimeType = String(value?.mediaMimeType || mediaAssets[0]?.mimeType || '').trim().toLowerCase() || null;
+  const mediaFileName = String(value?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null;
+  const hasPayload = Boolean(textBody || mediaUrl || mediaAssets.length > 0 || id);
+  if (!hasPayload) return null;
+  return {
+    id: id || null,
+    label: label || null,
+    text: textBody,
+    mediaAssets,
+    mediaUrl,
+    mediaMimeType,
+    mediaFileName
+  };
+};
+
 const isVisibleChatId = (chatId = '') => {
   const id = String(chatId || '');
   if (!id) return false;
@@ -742,6 +773,7 @@ function App() {
   const [activeCartSnapshot, setActiveCartSnapshot] = useState(null);
   const [labelDefinitions, setLabelDefinitions] = useState([]);
   const [quickReplies, setQuickReplies] = useState([]);
+  const [quickReplyDraft, setQuickReplyDraft] = useState(null);
   const [waModules, setWaModules] = useState([]);
   const [selectedWaModule, setSelectedWaModule] = useState(null);
   const [selectedCatalogModuleId, setSelectedCatalogModuleId] = useState('');
@@ -2681,6 +2713,7 @@ function App() {
     setReplyingMessage(null);
     setShowClientProfile(false);
     setClientContact(null);
+    setQuickReplyDraft(null);
     socket.emit('get_chat_history', resolvedChatId);
     socket.emit('mark_chat_read', resolvedChatId);
     socket.emit('get_contact_info', resolvedChatId);
@@ -2697,6 +2730,7 @@ function App() {
     setShowClientProfile(false);
     setClientContact(null);
     setPendingOrderCartLoad(null);
+    setQuickReplyDraft(null);
     setInputText('');
     removeAttachment();
   };
@@ -2731,7 +2765,7 @@ function App() {
       return;
     }
 
-    if (!text && !attachment) return;
+    if (!text && !attachment && !quickReplyDraft) return;
 
     // Command: /ayudar
     if (text === '/ayudar') {
@@ -2745,6 +2779,32 @@ function App() {
     const activeChatForSend = chatsRef.current.find((c) => String(c?.id || '') === String(activeChatId || ''));
     const activeChatPhone = normalizeDigits(activeChatForSend?.phone || '');
     const toPhone = activeChatPhone || null;
+
+
+    const draftQuickReply = normalizeQuickReplyDraft(quickReplyDraft);
+    if (draftQuickReply && !attachment) {
+      const outboundText = String(text || draftQuickReply.text || '').trim();
+      const draftMediaAssets = Array.isArray(draftQuickReply.mediaAssets) ? draftQuickReply.mediaAssets : [];
+      socket.emit('send_quick_reply', {
+        quickReplyId: draftQuickReply.id || undefined,
+        quickReply: {
+          id: draftQuickReply.id || undefined,
+          label: draftQuickReply.label || undefined,
+          text: outboundText,
+          mediaAssets: draftMediaAssets,
+          mediaUrl: String(draftQuickReply.mediaUrl || draftMediaAssets[0]?.url || '').trim() || null,
+          mediaMimeType: String(draftQuickReply.mediaMimeType || draftMediaAssets[0]?.mimeType || '').trim().toLowerCase() || null,
+          mediaFileName: String(draftQuickReply.mediaFileName || draftMediaAssets[0]?.fileName || '').trim() || null
+        },
+        to: activeChatId,
+        toPhone,
+        quotedMessageId
+      });
+      setQuickReplyDraft(null);
+      setInputText('');
+      setReplyingMessage(null);
+      return;
+    }
 
     if (attachment) {
       socket.emit('send_media_message', {
@@ -3117,6 +3177,7 @@ function App() {
       return;
     }
     removeAttachment();
+    setQuickReplyDraft(null);
     const cleanId = String(messageId || '').trim();
     if (!cleanId) return;
     const body = String(currentBody || '');
@@ -3187,37 +3248,14 @@ function App() {
     const activeId = String(activeChatIdRef.current || '').trim();
     if (!activeId) return;
 
-    const reply = quickReply && typeof quickReply === 'object' ? quickReply : null;
-    const quickReplyId = String(reply?.id || '').trim();
-    const mediaAssets = Array.isArray(reply?.mediaAssets)
-      ? reply.mediaAssets
-        .map((asset) => ({
-          url: String(asset?.url || asset?.mediaUrl || '').trim() || null,
-          mimeType: String(asset?.mimeType || asset?.mediaMimeType || '').trim().toLowerCase() || null,
-          fileName: String(asset?.fileName || asset?.mediaFileName || '').trim() || null,
-          sizeBytes: Number.isFinite(Number(asset?.sizeBytes ?? asset?.mediaSizeBytes)) ? Number(asset?.sizeBytes ?? asset?.mediaSizeBytes) : null
-        }))
-        .filter((asset) => Boolean(asset.url))
-      : [];
-    if (!quickReplyId && !String(reply?.text || '').trim() && !String(reply?.mediaUrl || '').trim() && mediaAssets.length === 0) return;
+    const draft = normalizeQuickReplyDraft(quickReply);
+    if (!draft) return;
 
-    const activeChat = (Array.isArray(chatsRef.current) ? chatsRef.current : [])
-      .find((chat) => String(chat?.id || '').trim() === activeId) || null;
-
-    socket.emit('send_quick_reply', {
-      quickReplyId: quickReplyId || undefined,
-      quickReply: {
-        id: quickReplyId || undefined,
-        label: String(reply?.label || '').trim() || undefined,
-        text: String(reply?.text || '').trim() || '',
-        mediaAssets,
-        mediaUrl: String(reply?.mediaUrl || mediaAssets[0]?.url || '').trim() || null,
-        mediaMimeType: String(reply?.mediaMimeType || mediaAssets[0]?.mimeType || '').trim().toLowerCase() || null,
-        mediaFileName: String(reply?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null
-      },
-      to: activeId,
-      toPhone: String(activeChat?.phone || '').trim() || undefined
-    });
+    setEditingMessage(null);
+    setAttachment(null);
+    setAttachmentPreview(null);
+    setQuickReplyDraft(draft);
+    setInputText(String(draft.text || '').trim());
   };
   useEffect(() => {
     const onGlobalKeyDown = (event) => {
@@ -3364,6 +3402,7 @@ function App() {
     const reader = new FileReader();
     reader.onload = (event) => {
       const base64Data = event.target.result.split(',')[1];
+      setQuickReplyDraft(null);
       setAttachment({ data: base64Data, mimetype: file.type, filename: file.name });
       setAttachmentPreview(file.type.startsWith('image/') ? event.target.result : 'document');
     };
@@ -3896,6 +3935,8 @@ function App() {
               forwardChatOptions={forwardChatOptions}
               quickReplies={quickReplies}
               onSendQuickReply={handleSendQuickReply}
+              quickReplyDraft={quickReplyDraft}
+              onClearQuickReplyDraft={() => setQuickReplyDraft(null)}
               onLoadOrderToCart={handleLoadOrderToCart}
               onStartNewChat={handleStartNewChat}
               onCancelEditMessage={handleCancelEditMessage}

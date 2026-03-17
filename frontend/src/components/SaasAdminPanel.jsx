@@ -467,7 +467,32 @@ const QUICK_REPLY_ALLOWED_MIME_TYPES = [
     'audio/ogg',
     'video/mp4'
 ];
+const QUICK_REPLY_ALLOWED_EXTENSIONS = [
+    '.jpg', '.jpeg', '.png', '.webp', '.gif', '.pdf', '.txt', '.csv', '.doc', '.docx',
+    '.xls', '.xlsx', '.ppt', '.pptx', '.zip', '.mp3', '.ogg', '.mp4'
+];
 const QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL = '.jpg, .jpeg, .png, .webp, .gif, .pdf, .txt, .csv, .doc, .docx, .xls, .xlsx, .ppt, .pptx, .zip, .mp3, .ogg, .mp4';
+const QUICK_REPLY_ACCEPT_VALUE = `${QUICK_REPLY_ALLOWED_MIME_TYPES.join(',')},${QUICK_REPLY_ALLOWED_EXTENSIONS.join(',')}`;
+const QUICK_REPLY_EXT_TO_MIME = Object.freeze({
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.pdf': 'application/pdf',
+    '.txt': 'text/plain',
+    '.csv': 'text/csv',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.zip': 'application/zip',
+    '.mp3': 'audio/mpeg',
+    '.ogg': 'audio/ogg',
+    '.mp4': 'video/mp4'
+});
 const QUICK_REPLY_DEFAULT_MAX_UPLOAD_MB = 50;
 const QUICK_REPLY_DEFAULT_STORAGE_MB = 500;
 const EMPTY_QUICK_REPLY_LIBRARY_FORM = {
@@ -1444,6 +1469,26 @@ export default function SaasAdminPanel({
         });
     };
 
+    const resolveQuickReplyMimeType = (file) => {
+        const fileType = String(file?.type || '').trim().toLowerCase();
+        if (fileType && QUICK_REPLY_ALLOWED_MIME_TYPES.includes(fileType)) return fileType;
+        const fileName = String(file?.name || '').trim().toLowerCase();
+        const extMatch = fileName.match(/\.[a-z0-9]+$/i);
+        const ext = String(extMatch?.[0] || '').trim().toLowerCase();
+        const mimeFromExt = QUICK_REPLY_EXT_TO_MIME[ext] || '';
+        if (mimeFromExt && QUICK_REPLY_ALLOWED_MIME_TYPES.includes(mimeFromExt)) return mimeFromExt;
+        return fileType || '';
+    };
+
+    const buildDataUrlWithMime = async (file, mimeType = '') => {
+        const rawDataUrl = await readFileAsDataUrl(file);
+        const base64Payload = String(rawDataUrl || '').split(',')[1] || '';
+        if (!base64Payload) throw new Error('No se pudo leer el adjunto seleccionado.');
+        const cleanMime = String(mimeType || '').trim().toLowerCase();
+        if (!cleanMime) throw new Error('No se pudo detectar el tipo de archivo.');
+        return `data:${cleanMime};base64,${base64Payload}`;
+    };
+
     const uploadImageAsset = async ({ file, tenantId, scope }) => {
         const dataUrl = await readFileAsDataUrl(file);
         const payload = await requestJson('/api/admin/saas/assets/upload', {
@@ -2126,13 +2171,19 @@ export default function SaasAdminPanel({
         const cleanTenantId = String(tenantId || '').trim();
         if (!cleanTenantId) throw new Error('Selecciona tenant antes de subir adjunto.');
 
-        const dataUrl = await readFileAsDataUrl(file);
+        const resolvedMimeType = resolveQuickReplyMimeType(file);
+        if (!resolvedMimeType || !QUICK_REPLY_ALLOWED_MIME_TYPES.includes(resolvedMimeType)) {
+            throw new Error(`Formato no permitido para ${String(file?.name || 'adjunto')}. Usa ${QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL}.`);
+        }
+
+        const dataUrl = await buildDataUrlWithMime(file, resolvedMimeType);
         const payload = await requestJson('/api/admin/saas/assets/upload', {
             method: 'POST',
             body: {
                 tenantId: cleanTenantId,
                 scope: String(libraryId || 'quick_reply').trim().toLowerCase(),
                 kind: 'quick_reply',
+                mimeType: resolvedMimeType,
                 fileName: String(file?.name || 'adjunto').trim() || 'adjunto',
                 dataUrl
             }
@@ -2141,7 +2192,7 @@ export default function SaasAdminPanel({
         const filePayload = payload?.file && typeof payload.file === 'object' ? payload.file : {};
         return {
             url: String(filePayload.url || filePayload.relativeUrl || '').trim(),
-            mimeType: String(filePayload.mimeType || file?.type || '').trim().toLowerCase(),
+            mimeType: String(filePayload.mimeType || resolvedMimeType).trim().toLowerCase(),
             fileName: String(filePayload.fileName || file?.name || '').trim(),
             sizeBytes: Number.isFinite(Number(filePayload.sizeBytes || file?.size || 0)) ? Number(filePayload.sizeBytes || file?.size || 0) : null
         };
@@ -2153,7 +2204,7 @@ export default function SaasAdminPanel({
         if (!settingsTenantId) throw new Error('Selecciona una empresa antes de subir adjuntos.');
 
         for (const file of files) {
-            const mimeType = String(file?.type || '').trim().toLowerCase();
+            const mimeType = resolveQuickReplyMimeType(file);
             if (!QUICK_REPLY_ALLOWED_MIME_TYPES.includes(mimeType)) {
                 throw new Error(`Formato no permitido para ${String(file?.name || 'adjunto')}. Usa ${QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL}.`);
             }
@@ -5415,7 +5466,7 @@ export default function SaasAdminPanel({
                                                                 <input
                                                                     type="file"
                                                                     multiple
-                                                                    accept={QUICK_REPLY_ALLOWED_MIME_TYPES.join(',')}
+                                                                    accept={QUICK_REPLY_ACCEPT_VALUE}
                                                                     disabled={busy || uploadingQuickReplyAssets}
                                                                     onChange={async (event) => {
                                                                         const files = event.target.files || null;
@@ -7161,19 +7212,22 @@ export default function SaasAdminPanel({
                                             </div>
                                         </div>
 
-                                                                                {chunkItems(PLAN_LIMIT_KEYS, 2).map((row, rowIndex) => (
+                                        {chunkItems(PLAN_LIMIT_KEYS, 2).map((row, rowIndex) => (
                                             <div key={`plan_limit_edit_row_${rowIndex}`} className="saas-admin-form-row">
                                                 {row.map((entry) => (
-                                                    <input
-                                                        key={`plan_limit_edit_${entry.key}`}
-                                                        type="number"
-                                                        min={entry.min}
-                                                        max={entry.max}
-                                                        value={planForm?.[entry.key]}
-                                                        onChange={(event) => setPlanForm((prev) => ({ ...prev, [entry.key]: event.target.value }))}
-                                                        placeholder={entry.label}
-                                                        disabled={busy}
-                                                    />
+                                                    <div key={`plan_limit_edit_${entry.key}`} className="saas-admin-field">
+                                                        <label htmlFor={`plan-limit-${entry.key}`}>{entry.label}</label>
+                                                        <input
+                                                            id={`plan-limit-${entry.key}`}
+                                                            type="number"
+                                                            min={entry.min}
+                                                            max={entry.max}
+                                                            value={planForm?.[entry.key]}
+                                                            onChange={(event) => setPlanForm((prev) => ({ ...prev, [entry.key]: event.target.value }))}
+                                                            placeholder={entry.label}
+                                                            disabled={busy}
+                                                        />
+                                                    </div>
                                                 ))}
                                             </div>
                                         ))}

@@ -21,6 +21,7 @@ const ChatInput = ({
     attachment, attachmentPreview, removeAttachment, isAiLoading,
 
     onRequestAiSuggestion, aiPrompt, setAiPrompt, quickReplies = [], onSendQuickReply = null,
+    quickReplyDraft = null, onClearQuickReplyDraft = null,
     editingMessage, onCancelEditMessage,
     replyingMessage, onCancelReplyMessage,
     onOpenMapPicker,
@@ -33,6 +34,12 @@ const ChatInput = ({
     const [selectionState, setSelectionState] = useState(null);
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
+    const draftQuickReplyLabel = String(quickReplyDraft?.label || '').trim();
+    const draftQuickReplyText = String(quickReplyDraft?.text || '').trim();
+    const draftQuickReplyAssets = Array.isArray(quickReplyDraft?.mediaAssets)
+        ? quickReplyDraft.mediaAssets.filter((asset) => asset && typeof asset === 'object' && String(asset?.url || '').trim())
+        : [];
+    const hasDraftQuickReply = Boolean(quickReplyDraft && (draftQuickReplyText || draftQuickReplyAssets.length > 0 || draftQuickReplyLabel));
 
     const handleInputChange = (e) => {
         const val = e.target.value;
@@ -390,6 +397,47 @@ const ChatInput = ({
                 </div>
             )}
 
+            {!editingMessage?.id && hasDraftQuickReply && (
+                <div style={{
+                    position: 'absolute',
+                    left: '12px',
+                    right: '12px',
+                    bottom: '100%',
+                    marginBottom: replyingMessage?.id ? '74px' : '8px',
+                    border: '1px solid rgba(0, 168, 132, 0.55)',
+                    background: '#173138',
+                    borderRadius: '10px',
+                    padding: '8px 10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    zIndex: 38
+                }}>
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '0.72rem', color: '#00d4aa', fontWeight: 700, marginBottom: '2px' }}>
+                            Respuesta rapida cargada{draftQuickReplyLabel ? `: ${draftQuickReplyLabel}` : ''}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: '#d4e2e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {draftQuickReplyText || `Adjuntos: ${draftQuickReplyAssets.length}`}
+                        </div>
+                        {draftQuickReplyAssets.length > 0 && (
+                            <div style={{ fontSize: '0.7rem', color: '#9fb6c1', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {draftQuickReplyAssets.slice(0, 2).map((asset) => String(asset?.fileName || 'adjunto').trim() || 'adjunto').join(', ')}
+                                {draftQuickReplyAssets.length > 2 ? ` +${draftQuickReplyAssets.length - 2}` : ''}
+                            </div>
+                        )}
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => onClearQuickReplyDraft && onClearQuickReplyDraft()}
+                        style={{ border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: '#d8e3e8', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
+                    >
+                        Limpiar
+                    </button>
+                </div>
+            )}
+
             {/* Commands popover */}
             {showCommands && (
                 <div className="floating-panel commands-panel">
@@ -541,6 +589,12 @@ const ChatInput = ({
                             onCancelReplyMessage && onCancelReplyMessage();
                             return;
                         }
+                        if (!editingMessage?.id && !replyingMessage?.id && hasDraftQuickReply && e.key === 'Escape') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onClearQuickReplyDraft && onClearQuickReplyDraft();
+                            return;
+                        }
                         if (e.key === 'Enter' && e.shiftKey && continueListOnShiftEnter()) {
                             e.preventDefault();
                             return;
@@ -576,8 +630,11 @@ const ChatInput = ({
                     onClick={onSendMessage}
 
                     title={editingMessage?.id ? 'Guardar edicion' : (replyingMessage?.id ? 'Enviar respuesta' : 'Enviar')}
-                    disabled={!inputText.trim() && !attachment}
-                    style={{ opacity: (!inputText.trim() && !attachment) ? 0.55 : 1, cursor: (!inputText.trim() && !attachment) ? 'not-allowed' : 'pointer' }}
+                    disabled={!inputText.trim() && !attachment && !hasDraftQuickReply}
+                    style={{
+                        opacity: (!inputText.trim() && !attachment && !hasDraftQuickReply) ? 0.55 : 1,
+                        cursor: (!inputText.trim() && !attachment && !hasDraftQuickReply) ? 'not-allowed' : 'pointer'
+                    }}
                 >
                     <Send size={26} />
                 </button>
