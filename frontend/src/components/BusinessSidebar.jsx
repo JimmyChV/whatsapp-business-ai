@@ -584,7 +584,7 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout, p
                         <span>Cerrar sesion de WhatsApp</span>
                         <ChevronRight size={14} />
                     </button>
-                </div>
+                                </div>
             </div>
         </aside>
     );
@@ -1002,7 +1002,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                 <span style={{ position: 'absolute', top: '-4px', right: '-4px', width: '8px', height: '8px', borderRadius: '50%', background: '#00d7ad', boxShadow: '0 0 0 2px #111b21' }} />
                             )}
                         </button>
-                    </div>
+                                </div>
 
                     {showCatalogFilters && (
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px' }}>
@@ -1241,7 +1241,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                             >
                                 Cancelar
                             </button>
-                        </div>
+                                </div>
                     </form>
                 ) : (
                     <>
@@ -1323,7 +1323,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                                         >
                                                             <Plus size={11} />
                                                         </button>
-                                                    </div>
+                                </div>
                                                 ) : (
                                                     <button
                                                         onClick={() => addToCart(item, 1)}
@@ -1342,7 +1342,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                                     <button onClick={() => handleDelete(item.id)} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#2e1f26', border: '1px solid rgba(220,74,95,0.45)', borderRadius: '8px', color: '#ffb8c7', cursor: 'pointer', fontSize: '0.71rem', padding: '6px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                         Eliminar
                                                     </button>
-                                                </div>
+                                </div>
                                             )}
                                         </div>
                                     </div>
@@ -1362,7 +1362,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 
 // =========================================================
 
-const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onCreateQuickReply, onUpdateQuickReply, onDeleteQuickReply, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null }) => {
+const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null }) => {
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     const companyProfileRef = useRef(null);
@@ -1387,8 +1387,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const [deliveryAmount, setDeliveryAmount] = useState(0);
     const [showCartTotalsBreakdown, setShowCartTotalsBreakdown] = useState(true);
     const [cartDraftsByChat, setCartDraftsByChat] = useState({});
-    const [quickForm, setQuickForm] = useState({ label: '', text: '' });
-    const [quickEditId, setQuickEditId] = useState('');
     const [quickSearch, setQuickSearch] = useState('');
     const [orderImportStatus, setOrderImportStatus] = useState(null);
     const lastImportedOrderRef = useRef('');
@@ -1439,8 +1437,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const labels = businessData.labels || [];
     const profile = businessData.profile || myProfile || null;
     const quickRepliesEnabled = Boolean(waCapabilities?.quickReplies || waCapabilities?.quickRepliesRead || waCapabilities?.quickRepliesWrite);
-    const quickRepliesWriteEnabled = Boolean(waCapabilities?.quickRepliesWrite);
-
     useEffect(() => {
         const nextScope = String(tenantScopeKey || 'default').trim() || 'default';
         if (tenantScopeRef.current === nextScope) return;
@@ -1465,8 +1461,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setDeliveryAmount(0);
         setShowCartTotalsBreakdown(true);
         setCartDraftsByChat({});
-        setQuickForm({ label: '', text: '' });
-        setQuickEditId('');
         setQuickSearch('');
         setOrderImportStatus(null);
         lastImportedOrderRef.current = '';
@@ -2153,7 +2147,7 @@ INSTRUCCIONES OBLIGATORIAS:
                         >
                             <Send size={13} /> Enviar al cliente
                         </button>
-                    </div>
+                                </div>
                 );
             }
             return <span key={i} style={{ whiteSpace: 'pre-wrap' }}>{part}</span>;
@@ -2367,35 +2361,6 @@ INSTRUCCIONES OBLIGATORIAS:
         const haystack = `${item?.label || ''} ${item?.text || ''}`.toLowerCase();
         return haystack.includes(q);
     });
-
-    const beginEditQuickReply = (item) => {
-        setQuickEditId(String(item?.id || ''));
-        setQuickForm({
-            label: String(item?.label || ''),
-            text: String(item?.text || '')
-        });
-    };
-
-    const resetQuickForm = () => {
-        setQuickEditId('');
-        setQuickForm({ label: '', text: '' });
-    };
-
-    const submitQuickReply = () => {
-
-        if (!quickRepliesWriteEnabled) return;
-        const label = String(quickForm.label || '').trim();
-        const text = String(quickForm.text || '').trim();
-        if (!label || !text) return;
-
-        if (quickEditId) {
-            onUpdateQuickReply && onUpdateQuickReply({ id: quickEditId, label, text });
-        } else {
-            onCreateQuickReply && onCreateQuickReply({ label, text });
-        }
-        resetQuickForm();
-    };
-
     const tabs = [
         { id: 'ai', icon: <Bot size={15} />, label: 'IA Pro' },
         { id: 'catalog', icon: <Package size={15} />, label: `Catalogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
@@ -2524,7 +2489,7 @@ INSTRUCCIONES OBLIGATORIAS:
                         >
                             <Send size={16} color="white" />
                         </button>
-                    </div>
+                                </div>
                 </div>
             )}
 
@@ -2580,7 +2545,7 @@ INSTRUCCIONES OBLIGATORIAS:
                                                 <button onClick={() => removeFromCart(item.id)} title="Eliminar" style={{ width: '21px', height: '21px', borderRadius: '50%', background: '#2a3942', border: '1px solid rgba(218,54,51,0.4)', cursor: 'pointer', color: '#da3633', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                     <Trash2 size={11} />
                                                 </button>
-                                            </div>
+                                </div>
 
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px', minWidth: 0 }}>
                                                 <select
@@ -2735,7 +2700,7 @@ INSTRUCCIONES OBLIGATORIAS:
                             >
                                 <Send size={15} /> Enviar cotizacion al cliente
                             </button>
-                        </div>
+                                </div>
                     )}
                 </div>
             )}
@@ -2756,49 +2721,11 @@ INSTRUCCIONES OBLIGATORIAS:
                     </div>
 
 
-                    {quickRepliesWriteEnabled ? (
-                        <div style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <div style={{ fontSize: '0.75rem', color: '#9db0ba' }}>
-                                {quickEditId ? 'Editar respuesta rapida' : 'Nueva respuesta rapida'}
-                            </div>
-                            <input
-                                type="text"
-                                value={quickForm.label}
-                                onChange={e => setQuickForm((prev) => ({ ...prev, label: e.target.value }))}
-                                placeholder="Titulo"
-                                style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none' }}
-                            />
-                            <textarea
-                                rows={3}
-                                value={quickForm.text}
-                                onChange={e => setQuickForm((prev) => ({ ...prev, text: e.target.value }))}
-                                placeholder="Texto de respuesta"
-                                style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none', resize: 'vertical' }}
-                            />
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                {quickEditId && (
-                                    <button
-                                        type="button"
-                                        onClick={resetQuickForm}
-                                        style={{ background: 'transparent', border: '1px solid var(--border-color)', color: '#9db0ba', borderRadius: '7px', padding: '6px 10px', cursor: 'pointer', fontSize: '0.75rem' }}
-                                    >
-                                        Cancelar
-                                    </button>
-                                )}
-                                <button
-                                    type="button"
-                                    onClick={submitQuickReply}
-                                    style={{ background: '#00a884', border: 'none', color: 'white', borderRadius: '7px', padding: '6px 10px', cursor: 'pointer', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                                >
-                                    <PlusCircle size={13} /> {quickEditId ? 'Guardar cambios' : 'Agregar respuesta'}
-                                </button>
-                            </div>
-                        </div>
-                    ) : (
-                        <div style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '10px', color: '#8696a0', fontSize: '0.78rem' }}>
-                            Esta cuenta permite ver respuestas rapidas sincronizadas, pero no editarlas desde esta API.
-                        </div>
-                    )}
+                    {
+                    <div style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '10px', color: '#8696a0', fontSize: '0.78rem' }}>
+                        Gestion centralizada: crea y edita respuestas rapidas solo desde Panel SaaS. En chat puedes buscarlas y usarlas.
+                    </div>
+                    }
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
                         {filteredQuickReplies.length === 0 ? (
@@ -2810,7 +2737,7 @@ INSTRUCCIONES OBLIGATORIAS:
                                 <div key={qr.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
                                     <button
                                         className="ai-prompt-chip"
-                                        onClick={() => setInputText(qr.text)}
+                                        onClick={() => { if (typeof onSendQuickReply === 'function') { onSendQuickReply(qr); } else { setInputText(qr.text || ''); } }}
                                         style={{
                                             width: '100%', padding: '10px 12px', borderRadius: '8px',
                                             background: '#202c33', border: '1px solid var(--border-color)',
@@ -2822,29 +2749,6 @@ INSTRUCCIONES OBLIGATORIAS:
                                         <div style={{ fontSize: '0.84rem', fontWeight: 500, marginBottom: '3px' }}>{qr.label}</div>
                                         <div style={{ fontSize: '0.72rem', color: '#8696a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(qr.text || '').split('\n')[0]}</div>
                                     </button>
-                                    <div style={{ display: 'flex', gap: '6px' }}>
-
-                                        {quickRepliesWriteEnabled && (
-                                            <>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => beginEditQuickReply(qr)}
-                                                    style={{ width: '30px', height: '30px', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#202c33', color: '#9db0ba', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                                                    title="Editar"
-                                                >
-                                                    <Edit2 size={14} />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => onDeleteQuickReply && onDeleteQuickReply(qr.id)}
-                                                    style={{ width: '30px', height: '30px', borderRadius: '8px', border: '1px solid rgba(218,54,51,0.45)', background: '#202c33', color: '#da3633', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                                                    title="Eliminar"
-                                                >
-                                                    <Trash2 size={14} />
-                                                </button>
-                                            </>
-                                        )}
-                                    </div>
                                 </div>
                             ))
                         )}
@@ -2859,3 +2763,4 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
+

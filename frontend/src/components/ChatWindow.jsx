@@ -20,7 +20,7 @@ const ChatInput = ({
     inputText, setInputText, onSendMessage, onKeyDown, onFileClick,
     attachment, attachmentPreview, removeAttachment, isAiLoading,
 
-    onRequestAiSuggestion, aiPrompt, setAiPrompt,
+    onRequestAiSuggestion, aiPrompt, setAiPrompt, quickReplies = [], onSendQuickReply = null,
     editingMessage, onCancelEditMessage,
     replyingMessage, onCancelReplyMessage,
     onOpenMapPicker,
@@ -191,9 +191,24 @@ const ChatInput = ({
         return true;
     };
 
-    const selectCommand = (cmd) => {
-        if (cmd === '/ayudar') onRequestAiSuggestion();
-        else setInputText(cmd + ' ');
+    const normalizedSlashQuery = String(inputText || '').startsWith('/')
+        ? String(inputText || '').slice(1).trim().toLowerCase()
+        : '';
+
+    const filteredQuickReplies = (Array.isArray(quickReplies) ? quickReplies : [])
+        .filter((item) => {
+            const label = String(item?.label || '').trim().toLowerCase();
+            const text = String(item?.text || '').trim().toLowerCase();
+            if (!normalizedSlashQuery) return true;
+            return label.includes(normalizedSlashQuery) || text.includes(normalizedSlashQuery);
+        })
+        .slice(0, 10);
+
+    const selectQuickReply = (item = {}) => {
+        const entry = item && typeof item === 'object' ? item : null;
+        if (!entry) return;
+        if (typeof onSendQuickReply === 'function') onSendQuickReply(entry);
+        else setInputText(String(entry?.text || '').trim());
         setShowCommands(false);
     };
 
@@ -346,20 +361,26 @@ const ChatInput = ({
             {/* Commands popover */}
             {showCommands && (
                 <div className="floating-panel commands-panel">
-                    <div style={{ padding: '6px 14px', color: '#00a884', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em' }}>COMANDOS IA</div>
-                    {[
-                        { cmd: '/ayudar', icon: <Sparkles size={15} color="#8a2be2" />, desc: 'Genera respuesta inteligente' },
-                        { cmd: '/vender', icon: <ShoppingCart size={15} color="#00a884" />, desc: 'Busca y cotiza producto' },
-                    ].map(({ cmd, icon, desc }) => (
-                        <div key={cmd} onClick={() => selectCommand(cmd)}
+                    <div style={{ padding: '6px 14px', color: '#00a884', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em' }}>RESPUESTAS RAPIDAS</div>
+                    {filteredQuickReplies.length === 0 && (
+                        <div style={{ padding: '10px 14px', color: '#9db0ba', fontSize: '0.78rem' }}>
+                            No hay respuestas rapidas para este modulo.
+                        </div>
+                    )}
+                    {filteredQuickReplies.map((item) => (
+                        <div key={String(item?.id || item?.label || Math.random())} onClick={() => selectQuickReply(item)}
                             style={{ padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
                             onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         >
-                            {icon}
-                            <div>
-                                <div style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>{cmd}</div>
-                                <div style={{ fontSize: '0.75rem', color: '#8696a0' }}>{desc}</div>
+                            <Sparkles size={15} color="#00a884" />
+                            <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: '0.9rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {String(item?.label || 'Respuesta rapida')}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: '#8696a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {String(item?.text || item?.mediaFileName || 'Adjunto').split('\n')[0]}
+                                </div>
                             </div>
                         </div>
                     ))}
@@ -643,7 +664,8 @@ const ChatWindow = ({
         : (headerPhone || 'Sin numero visible');
     const headerHint = activeChatDetails?.isGroup
         ? 'Grupo'
-        : (activeChatDetails?.pushname ? `Pushname: ${activeChatDetails.pushname}` : 'Haz clic para ver el perfil');    const normalizeModuleKey = (value = '') => String(value || '').trim().toLowerCase();
+        : (activeChatDetails?.pushname ? `Pushname: ${activeChatDetails.pushname}` : 'Haz clic para ver el perfil');
+    const normalizeModuleKey = (value = '') => String(value || '').trim().toLowerCase();
     const headerModuleId = String(activeChatDetails?.scopeModuleId || activeChatDetails?.lastMessageModuleId || '').trim().toUpperCase();
     const normalizedHeaderModuleId = normalizeModuleKey(activeChatDetails?.scopeModuleId || activeChatDetails?.lastMessageModuleId || '');
     const headerRawModuleName = String(activeChatDetails?.lastMessageModuleName || '').trim();
@@ -1275,5 +1297,6 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
+
 
 

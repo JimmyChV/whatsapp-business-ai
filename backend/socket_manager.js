@@ -3,7 +3,7 @@ const waClient = require('./wa_provider');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
 const { getWooCatalog, isWooConfigured } = require('./woocommerce_service');
-const { listQuickReplies, addQuickReply, updateQuickReply, deleteQuickReply } = require('./quick_replies_manager');
+const { listQuickReplies } = require('./quick_replies_manager');
 const tenantSettingsService = require('./tenant_settings_service');
 const tenantIntegrationsService = require('./tenant_integrations_service');
 const tenantService = require('./tenant_service');
@@ -2634,7 +2634,7 @@ class SocketManager {
             messageReply: Boolean(caps?.messageReply),
             quickReplies: Boolean(caps?.quickReplies),
             quickRepliesRead: Boolean(caps?.quickRepliesRead),
-            quickRepliesWrite: Boolean(caps?.quickRepliesWrite),
+            quickRepliesWrite: false,
             transport: runtime.activeTransport,
             requestedTransport: runtime.requestedTransport,
             cloudConfigured: runtime.cloudConfigured,
@@ -4793,8 +4793,7 @@ class SocketManager {
                     socket.emit('chat_labels_error', 'No se pudo crear la etiqueta.');
                 }
             });
-
-            socket.on('get_quick_replies', async () => {
+            socket.on('get_quick_replies', async (payload = {}) => {
                 try {
                     const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
                     if (!quickRepliesEnabled) {
@@ -4802,75 +4801,149 @@ class SocketManager {
                         return;
                     }
 
-                    const items = await listQuickReplies({ tenantId });
+                    const payloadModuleId = String(payload?.moduleId || '').trim().toLowerCase();
+                    const selectedModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                    const moduleId = payloadModuleId || selectedModuleId || '';
+                    const items = await listQuickReplies({ tenantId, moduleId });
                     socket.emit('quick_replies', {
                         items: Array.isArray(items) ? items : [],
                         source: 'db',
                         enabled: true,
-                        writable: true
+                        writable: false
                     });
-                } catch (e) {
+                } catch (_) {
                     socket.emit('quick_reply_error', 'No se pudieron cargar las respuestas rapidas.');
                 }
             });
 
-            socket.on('add_quick_reply', async ({ label, text } = {}) => {
-                try {
-                    const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
-                    if (!quickRepliesEnabled) {
-                        socket.emit('quick_reply_error', 'Respuestas rapidas deshabilitadas para esta empresa o plan.');
-                        return;
-                    }
-                    await addQuickReply({ label, text }, { tenantId });
-                    const items = await listQuickReplies({ tenantId });
-                    this.emitToTenant(tenantId, 'quick_replies', {
-                        items: Array.isArray(items) ? items : [],
-                        source: 'db',
-                        enabled: true,
-                        writable: true
-                    });
-                } catch (error) {
-                    socket.emit('quick_reply_error', String(error?.message || 'No se pudo crear la respuesta rapida.'));
-                }
+            socket.on('add_quick_reply', async () => {
+                socket.emit('quick_reply_error', 'Gestiona respuestas rapidas desde Panel SaaS.');
             });
 
-            socket.on('update_quick_reply', async ({ id, label, text } = {}) => {
-                try {
-                    const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
-                    if (!quickRepliesEnabled) {
-                        socket.emit('quick_reply_error', 'Respuestas rapidas deshabilitadas para esta empresa o plan.');
-                        return;
-                    }
-                    await updateQuickReply({ id, label, text }, { tenantId });
-                    const items = await listQuickReplies({ tenantId });
-                    this.emitToTenant(tenantId, 'quick_replies', {
-                        items: Array.isArray(items) ? items : [],
-                        source: 'db',
-                        enabled: true,
-                        writable: true
-                    });
-                } catch (error) {
-                    socket.emit('quick_reply_error', String(error?.message || 'No se pudo actualizar la respuesta rapida.'));
-                }
+            socket.on('update_quick_reply', async () => {
+                socket.emit('quick_reply_error', 'Gestiona respuestas rapidas desde Panel SaaS.');
             });
 
-            socket.on('delete_quick_reply', async ({ id } = {}) => {
+            socket.on('delete_quick_reply', async () => {
+                socket.emit('quick_reply_error', 'Gestiona respuestas rapidas desde Panel SaaS.');
+            });
+
+            socket.on('send_quick_reply', async (payload = {}) => {
+                if (!guardRateLimit(socket, 'send_quick_reply')) return;
+                if (!this.ensureTransportReady(socket, { action: 'enviar respuestas rapidas', errorEvent: 'error' })) return;
                 try {
                     const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
                     if (!quickRepliesEnabled) {
-                        socket.emit('quick_reply_error', 'Respuestas rapidas deshabilitadas para esta empresa o plan.');
+                        socket.emit('error', 'Respuestas rapidas deshabilitadas para esta empresa o plan.');
                         return;
                     }
-                    await deleteQuickReply(id, { tenantId });
-                    const items = await listQuickReplies({ tenantId });
-                    this.emitToTenant(tenantId, 'quick_replies', {
-                        items: Array.isArray(items) ? items : [],
-                        source: 'db',
-                        enabled: true,
-                        writable: true
+
+                    const quoted = String(payload?.quotedMessageId || '').trim();
+                    const target = await resolveScopedSendTarget({
+                        rawChatId: payload?.to,
+                        rawPhone: payload?.toPhone,
+                        errorEvent: 'error',
+                        action: 'enviar respuestas rapidas'
+                    });
+                    if (!target?.ok) return;
+
+                    const moduleId = normalizeScopedModuleId(target.scopeModuleId || socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                    const quickReplyId = String(payload?.quickReplyId || payload?.id || '').trim();
+
+                    let replyPayload = null;
+                    if (quickReplyId) {
+                        const scopedReplies = await listQuickReplies({ tenantId, moduleId });
+                        replyPayload = (Array.isArray(scopedReplies) ? scopedReplies : [])
+                            .find((entry) => String(entry?.id || '').trim() === quickReplyId) || null;
+                    }
+
+                    if (!replyPayload && payload?.quickReply && typeof payload.quickReply === 'object') {
+                        replyPayload = payload.quickReply;
+                    }
+
+                    if (!replyPayload) {
+                        socket.emit('error', 'Respuesta rapida no encontrada para este modulo.');
+                        return;
+                    }
+
+                    const bodyText = String(replyPayload?.text || replyPayload?.bodyText || replyPayload?.body || '').trim();
+                    const mediaUrl = String(replyPayload?.mediaUrl || '').trim();
+                    const mediaMimeType = String(replyPayload?.mediaMimeType || '').trim().toLowerCase();
+                    const mediaFileName = String(replyPayload?.mediaFileName || replyPayload?.filename || '').trim();
+
+                    if (!bodyText && !mediaUrl) {
+                        socket.emit('error', 'La respuesta rapida no tiene contenido para enviar.');
+                        return;
+                    }
+
+                    const moduleContext = target.moduleContext || socket?.data?.waModule || null;
+                    const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
+
+                    let sentMessage = null;
+                    let mediaPayload = null;
+                    if (mediaUrl) {
+                        const fetchedMedia = await fetchQuickReplyMedia(mediaUrl, {
+                            maxBytes: QUICK_REPLY_MEDIA_MAX_BYTES,
+                            timeoutMs: QUICK_REPLY_MEDIA_TIMEOUT_MS,
+                            mimeHint: mediaMimeType,
+                            fileNameHint: mediaFileName
+                        });
+
+                        if (!fetchedMedia || !fetchedMedia.mediaData) {
+                            socket.emit('error', 'No se pudo procesar el adjunto de la respuesta rapida.');
+                            return;
+                        }
+
+                        const fileNameBase = mediaFileName || path.basename(String(fetchedMedia.filename || '').trim() || '') || ('adjunto-' + Date.now());
+                        const safeFileName = String(fileNameBase || '').trim() || ('adjunto-' + Date.now());
+                        sentMessage = await waClient.sendMedia(
+                            target.targetChatId,
+                            fetchedMedia.mediaData,
+                            fetchedMedia.mimetype || mediaMimeType || 'application/octet-stream',
+                            safeFileName,
+                            bodyText,
+                            false,
+                            quoted || null
+                        );
+
+                        mediaPayload = {
+                            mimetype: fetchedMedia.mimetype || mediaMimeType || null,
+                            filename: safeFileName,
+                            fileSizeBytes: Number(fetchedMedia?.fileSizeBytes || 0) || null,
+                            mediaUrl: String(fetchedMedia?.publicUrl || fetchedMedia?.sourceUrl || mediaUrl || '').trim() || null,
+                            mediaPath: String(fetchedMedia?.relativePath || '').trim() || null
+                        };
+                    } else {
+                        if (quoted) {
+                            sentMessage = await waClient.sendMessage(target.targetChatId, bodyText, { quotedMessageId: quoted });
+                        } else {
+                            sentMessage = await waClient.sendMessage(target.targetChatId, bodyText);
+                        }
+                    }
+
+                    const sentMessageId = getSerializedMessageId(sentMessage);
+                    if (sentMessageId && agentMeta) rememberOutgoingAgentMeta(sentMessageId, agentMeta);
+
+                    await emitRealtimeOutgoingMessage({
+                        sentMessage,
+                        fallbackChatId: target.targetChatId,
+                        fallbackBody: bodyText,
+                        quotedMessageId: quoted,
+                        moduleContext,
+                        agentMeta,
+                        mediaPayload
+                    });
+
+                    socket.emit('quick_reply_sent', {
+                        ok: true,
+                        id: String(replyPayload?.id || quickReplyId || '').trim() || null,
+                        label: String(replyPayload?.label || '').trim() || null,
+                        to: target.scopedChatId || target.targetChatId,
+                        baseChatId: target.targetChatId,
+                        scopeModuleId: target.scopeModuleId || null
                     });
                 } catch (error) {
-                    socket.emit('quick_reply_error', String(error?.message || 'No se pudo eliminar la respuesta rapida.'));
+                    socket.emit('error', String(error?.message || 'No se pudo enviar la respuesta rapida.'));
                 }
             });
 
@@ -4958,39 +5031,46 @@ class SocketManager {
                     type: payload.type,
                     ack
                 };
-
-                await this.persistMessageHistory(tenantId, {
-                    msg: persistedMessage,
-                    senderMeta: null,
-                    fileMeta: {
-                        mimetype: payload.mimetype,
-                        filename: payload.filename,
-                        fileSizeBytes: payload.fileSizeBytes,
-                        mediaUrl: payload.mediaUrl,
-                        mediaPath: payload.mediaPath
-                    },
-                    order: null,
-                    location: null,
-                    quotedMessage: payload.quotedMessage,
-                    agentMeta,
-                    moduleContext
-                });
-
                 this.emitToRuntimeContext('message', payload);
 
-                try {
-                    this.invalidateChatListCache();
-                    const chat = await waClient.client.getChatById(targetChatId);
-                    const summary = await this.toChatSummary(chat, {
-                        includeHeavyMeta: false,
-                        scopeModuleId: String(moduleContext?.moduleId || '').trim().toLowerCase() || '',
-                        scopeModuleName: String(moduleContext?.name || '').trim() || null,
-                        scopeModuleImageUrl: String(moduleContext?.imageUrl || moduleContext?.logoUrl || '').trim() || null,
-                        scopeChannelType: String(moduleContext?.channelType || '').trim().toLowerCase() || null,
-                        scopeTransport: String(moduleContext?.transportMode || '').trim().toLowerCase() || null
-                    });
-                    if (summary) this.emitToRuntimeContext('chat_updated', summary);
-                } catch (_) { }
+                setImmediate(async () => {
+                    try {
+                        await this.persistMessageHistory(tenantId, {
+                            msg: persistedMessage,
+                            senderMeta: null,
+                            fileMeta: {
+                                mimetype: payload.mimetype,
+                                filename: payload.filename,
+                                fileSizeBytes: payload.fileSizeBytes,
+                                mediaUrl: payload.mediaUrl,
+                                mediaPath: payload.mediaPath
+                            },
+                            order: null,
+                            location: null,
+                            quotedMessage: payload.quotedMessage,
+                            agentMeta,
+                            moduleContext
+                        });
+                    } catch (persistError) {
+                        console.warn('[WA][PersistOutgoing] ' + String(persistError?.message || persistError || 'No se pudo persistir mensaje saliente.'));
+                    }
+                });
+
+                setImmediate(async () => {
+                    try {
+                        this.invalidateChatListCache();
+                        const chat = await waClient.client.getChatById(targetChatId);
+                        const summary = await this.toChatSummary(chat, {
+                            includeHeavyMeta: false,
+                            scopeModuleId: String(moduleContext?.moduleId || '').trim().toLowerCase() || '',
+                            scopeModuleName: String(moduleContext?.name || '').trim() || null,
+                            scopeModuleImageUrl: String(moduleContext?.imageUrl || moduleContext?.logoUrl || '').trim() || null,
+                            scopeChannelType: String(moduleContext?.channelType || '').trim().toLowerCase() || null,
+                            scopeTransport: String(moduleContext?.transportMode || '').trim().toLowerCase() || null
+                        });
+                        if (summary) this.emitToRuntimeContext('chat_updated', summary);
+                    } catch (_) { }
+                });
             };
             const resolveScopedSendTarget = async ({ rawChatId = '', rawPhone = '', errorEvent = 'error', action = 'enviar mensajes' } = {}) => {
                 const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
