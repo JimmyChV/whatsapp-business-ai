@@ -5469,9 +5469,9 @@ export default function SaasAdminPanel({
                                                                     accept={QUICK_REPLY_ACCEPT_VALUE}
                                                                     disabled={busy || uploadingQuickReplyAssets}
                                                                     onChange={async (event) => {
-                                                                        const files = event.target.files || null;
+                                                                        const files = Array.from(event.target.files || []);
                                                                         event.target.value = '';
-                                                                        if (!files || files.length === 0) return;
+                                                                        if (files.length === 0) return;
                                                                         try {
                                                                             await handleQuickReplyAssetSelection(files);
                                                                         } catch (uploadError) {

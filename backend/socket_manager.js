@@ -1,4 +1,4 @@
-﻿const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
+const { getChatSuggestion, askInternalCopilot } = require('./ai_service');
 const waClient = require('./wa_provider');
 const mediaManager = require('./media_manager');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('./catalog_manager');
@@ -42,6 +42,14 @@ const OUTGOING_AGENT_META_TTL_MS = Math.max(60 * 1000, Number(process.env.OUTGOI
 const SOCKET_RBAC_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAAS_AUTH_ENABLED || '').trim().toLowerCase());
 const WA_REQUIRE_SELECTED_MODULE = ['1', 'true', 'yes', 'on'].includes(String(process.env.WA_REQUIRE_SELECTED_MODULE || '').trim().toLowerCase());
 const WA_ENFORCE_WEBJS_PHONE_MATCH = ['1', 'true', 'yes', 'on'].includes(String(process.env.WA_ENFORCE_WEBJS_PHONE_MATCH || '').trim().toLowerCase());
+const QUICK_REPLY_MEDIA_MAX_BYTES = Math.max(
+    256 * 1024,
+    Number(process.env.QUICK_REPLY_MEDIA_MAX_BYTES || process.env.ADMIN_ASSET_QUICK_REPLY_MAX_BYTES || (50 * 1024 * 1024))
+);
+const QUICK_REPLY_MEDIA_TIMEOUT_MS = Math.max(
+    2000,
+    Number(process.env.QUICK_REPLY_MEDIA_TIMEOUT_MS || 15000)
+);
 let sharpImageProcessor = null;
 let sharpLoadAttempted = false;
 const SAAS_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.join(__dirname, 'uploads')).trim() || path.join(__dirname, 'uploads'));
@@ -1414,6 +1422,55 @@ function guessMimeFromPathOrUrl(input = '') {
     };
     return map[ext] || 'image/jpeg';
 }
+function guessMimeFromFilename(input = '') {
+    const ext = String(path.extname(String(input || '')).replace(/^\./, '') || '').trim().toLowerCase();
+    const map = {
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        webp: 'image/webp',
+        gif: 'image/gif',
+        avif: 'image/avif',
+        pdf: 'application/pdf',
+        txt: 'text/plain',
+        csv: 'text/csv',
+        json: 'application/json',
+        xml: 'application/xml',
+        doc: 'application/msword',
+        docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        xls: 'application/vnd.ms-excel',
+        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ppt: 'application/vnd.ms-powerpoint',
+        pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    };
+    return map[ext] || 'application/octet-stream';
+}
+
+function parseContentDispositionFilename(headerValue = '') {
+    const raw = String(headerValue || '').trim();
+    if (!raw) return null;
+    const utf8Match = raw.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match?.[1]) {
+        try {
+            return sanitizeFilenameCandidate(decodeURIComponent(String(utf8Match[1] || '').trim()));
+        } catch (e) {
+            return sanitizeFilenameCandidate(String(utf8Match[1] || '').trim());
+        }
+    }
+    const plainMatch = raw.match(/filename="?([^\";]+)"?/i);
+    if (plainMatch?.[1]) return sanitizeFilenameCandidate(String(plainMatch[1] || '').trim());
+    return null;
+}
+
+function buildQuickReplyFilename({ fileNameHint = '', sourceUrl = '', mimeType = '' } = {}) {
+    const safeHint = sanitizeFilenameCandidate(fileNameHint) || null;
+    const safeSource = sanitizeFilenameCandidate(sourceUrl) || null;
+    const fallback = safeHint || safeSource || `adjunto_${Date.now()}`;
+    const extension = getFilenameExtension(fallback);
+    if (extension) return fallback;
+    const mimeExt = guessFileExtensionFromMime(mimeType);
+    return mimeExt ? `${fallback}.${mimeExt}` : fallback;
+}
 
 function parseCatalogImageDataUrl(rawValue = '', { maxBytes = 4 * 1024 * 1024 } = {}) {
     const clean = String(rawValue || '').trim();
@@ -1471,6 +1528,125 @@ async function fetchCatalogProductImageFromLocalUpload(reference = null, { maxBy
     }
 }
 
+async function fetchQuickReplyMedia(rawUrl = '', { maxBytes = QUICK_REPLY_MEDIA_MAX_BYTES, timeoutMs = QUICK_REPLY_MEDIA_TIMEOUT_MS, mimeHint = '', fileNameHint = '' } = {}) {
+    const cleanUrl = String(rawUrl || '').trim();
+    const cleanMimeHint = String(mimeHint || '').trim().toLowerCase();
+    const safeMaxBytes = Math.max(256 * 1024, Number(maxBytes || QUICK_REPLY_MEDIA_MAX_BYTES || (50 * 1024 * 1024)));
+    const safeTimeoutMs = Math.max(2000, Number(timeoutMs || QUICK_REPLY_MEDIA_TIMEOUT_MS || 15000));
+    if (!cleanUrl) return null;
+
+    const dataUrlMatch = cleanUrl.match(/^data:([^;]+);base64,(.+)$/i);
+    if (dataUrlMatch) {
+        try {
+            const mimetype = String(dataUrlMatch[1] || cleanMimeHint || 'application/octet-stream').trim().toLowerCase();
+            const mediaBuffer = Buffer.from(String(dataUrlMatch[2] || '').trim(), 'base64');
+            if (!mediaBuffer?.length || mediaBuffer.length > safeMaxBytes) return null;
+            const filename = buildQuickReplyFilename({
+                fileNameHint,
+                sourceUrl: '',
+                mimeType: mimetype
+            });
+            return {
+                mediaData: mediaBuffer.toString('base64'),
+                mimetype,
+                filename,
+                fileSizeBytes: Number(mediaBuffer.length || 0) || null,
+                sourceUrl: null,
+                publicUrl: null,
+                relativePath: null
+            };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    const localReference = resolveLocalUploadReference(cleanUrl);
+    if (localReference?.absolutePath) {
+        try {
+            const stat = await fs.promises.stat(localReference.absolutePath);
+            if (!stat?.isFile()) return null;
+            const fileSizeBytes = Number(stat.size || 0);
+            if (!fileSizeBytes || fileSizeBytes > safeMaxBytes) return null;
+            const mediaBuffer = await fs.promises.readFile(localReference.absolutePath);
+            if (!mediaBuffer?.length || mediaBuffer.length > safeMaxBytes) return null;
+            const guessedMime = cleanMimeHint || guessMimeFromFilename(localReference.absolutePath) || 'application/octet-stream';
+            const filename = buildQuickReplyFilename({
+                fileNameHint: fileNameHint || path.basename(localReference.absolutePath || ''),
+                sourceUrl: localReference.sourceUrl || localReference.publicUrl || '',
+                mimeType: guessedMime
+            });
+            return {
+                mediaData: mediaBuffer.toString('base64'),
+                mimetype: guessedMime,
+                filename,
+                fileSizeBytes: Number(mediaBuffer.length || 0) || null,
+                sourceUrl: localReference.sourceUrl || localReference.publicUrl || null,
+                publicUrl: localReference.publicUrl || null,
+                relativePath: localReference.relativePath || null
+            };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    let parsed;
+    try {
+        parsed = new URL(cleanUrl);
+    } catch (e) {
+        return null;
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+
+    try {
+        await resolveAndValidatePublicHost(parsed.hostname);
+    } catch (e) {
+        return null;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), safeTimeoutMs);
+    let response;
+    try {
+        response = await fetch(parsed.toString(), {
+            redirect: 'follow',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Lavitat QuickReply Media Fetcher)',
+                'Accept': '*/*'
+            },
+            signal: controller.signal
+        });
+    } catch (e) {
+        return null;
+    } finally {
+        clearTimeout(timeout);
+    }
+
+    if (!response?.ok) return null;
+
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    if (contentLength && contentLength > safeMaxBytes) return null;
+
+    const mediaBuffer = Buffer.from(await response.arrayBuffer());
+    if (!mediaBuffer.length || mediaBuffer.length > safeMaxBytes) return null;
+
+    const responseMime = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    const mimetype = responseMime || cleanMimeHint || guessMimeFromFilename(parsed.pathname) || 'application/octet-stream';
+    const filename = buildQuickReplyFilename({
+        fileNameHint: fileNameHint || parseContentDispositionFilename(response.headers.get('content-disposition') || ''),
+        sourceUrl: parsed.pathname,
+        mimeType: mimetype
+    });
+
+    return {
+        mediaData: mediaBuffer.toString('base64'),
+        mimetype,
+        filename,
+        fileSizeBytes: Number(mediaBuffer.length || 0) || null,
+        sourceUrl: parsed.toString(),
+        publicUrl: parsed.toString(),
+        relativePath: null
+    };
+}
 async function fetchCatalogProductImageFromUrl(rawUrl, { maxBytes = 4 * 1024 * 1024, timeoutMs = 7000 } = {}) {
     const cleanUrl = String(rawUrl || '').trim();
     if (!cleanUrl || !/^https?:\/\//i.test(cleanUrl)) return null;

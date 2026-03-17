@@ -65,6 +65,7 @@ function isCorsOriginAllowed(origin) {
 
 const app = express();
 app.disable('x-powered-by');
+const JSON_BODY_LIMIT_MB = Math.max(12, Math.min(256, Number(process.env.API_JSON_BODY_LIMIT_MB || 80) || 80));
 
 const UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.join(__dirname, 'uploads')).trim() || path.join(__dirname, 'uploads'));
 const ADMIN_ASSET_UPLOAD_MAX_BYTES = Math.max(200 * 1024, Number(process.env.ADMIN_ASSET_UPLOAD_MAX_BYTES || 2 * 1024 * 1024));
@@ -369,12 +370,11 @@ if (securityHeadersEnabled) {
 }
 
 app.use(express.json({
-    limit: '12mb',
+    limit: String(JSON_BODY_LIMIT_MB) + 'mb',
     verify: (req, _res, buf) => {
         req.rawBody = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || '');
     }
 }));
-
 app.use(cors({
     origin(origin, callback) {
         if (isCorsOriginAllowed(origin)) {
@@ -1412,11 +1412,14 @@ function sanitizeQuickReplyItemPayload(payload = {}, { allowItemId = true } = {}
 
 app.post('/api/admin/saas/assets/upload', async (req, res) => {
     try {
-        if (!hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_ASSETS_UPLOAD)) {
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+        const uploadKind = normalizeAssetUploadKind(body.kind || body.assetKind || body.scopeKind || '');
+        const canUploadGenericAssets = hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_ASSETS_UPLOAD);
+        const canManageQuickReplies = hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE);
+        const canUploadQuickReplyAssets = uploadKind === 'quick_reply' && canManageQuickReplies;
+        if (!canUploadGenericAssets && !canUploadQuickReplyAssets) {
             return res.status(403).json({ ok: false, error: 'No autorizado para subir archivos.' });
         }
-
-        const body = req.body && typeof req.body === 'object' ? req.body : {};
         const requestedTenantId = String(body.tenantId || req?.tenantContext?.id || 'default').trim() || 'default';
         const tenantId = sanitizeStorageSegment(requestedTenantId, 'default');
 
@@ -1424,7 +1427,6 @@ app.post('/api/admin/saas/assets/upload', async (req, res) => {
             return res.status(403).json({ ok: false, error: 'No tienes acceso a ese tenant para subir archivos.' });
         }
 
-        const uploadKind = normalizeAssetUploadKind(body.kind || body.assetKind || body.scopeKind || '');
         const quickReplyAssetLimits = uploadKind === 'quick_reply'
             ? resolveTenantQuickReplyAssetLimits(requestedTenantId)
             : null;
