@@ -1543,6 +1543,38 @@ export default function SaasAdminPanel({
         [quickReplyItemsForSelectedLibrary, selectedQuickReplyItemId]
     );
 
+    const visibleQuickReplyLibraries = useMemo(() => {
+        const query = String(quickReplyLibrarySearch || '').trim().toLowerCase();
+        const source = Array.isArray(quickReplyLibrariesByScope) ? quickReplyLibrariesByScope : [];
+        const sorted = [...source].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), 'es', { sensitivity: 'base' }));
+        if (!query) return sorted;
+        return sorted.filter((entry) => {
+            const haystack = [
+                entry?.libraryId,
+                entry?.name,
+                entry?.description,
+                entry?.isShared ? 'compartida' : 'modulo'
+            ].map((value) => String(value || '').toLowerCase()).join(' ');
+            return haystack.includes(query);
+        });
+    }, [quickReplyLibrariesByScope, quickReplyLibrarySearch]);
+
+    const visibleQuickReplyItemsForSelectedLibrary = useMemo(() => {
+        const query = String(quickReplyItemSearch || '').trim().toLowerCase();
+        const source = Array.isArray(quickReplyItemsForSelectedLibrary) ? quickReplyItemsForSelectedLibrary : [];
+        if (!query) return source;
+        return source.filter((entry) => {
+            const haystack = [
+                entry?.itemId,
+                entry?.label,
+                entry?.text,
+                entry?.mediaFileName,
+                entry?.mediaMimeType
+            ].map((value) => String(value || '').toLowerCase()).join(' ');
+            return haystack.includes(query);
+        });
+    }, [quickReplyItemsForSelectedLibrary, quickReplyItemSearch]);
+
     const selectedConfigModule = useMemo(() => {
         if (!String(selectedConfigKey || '').startsWith('wa_module:')) return null;
         const moduleId = String(selectedConfigKey || '').slice('wa_module:'.length).trim();
@@ -6956,6 +6988,7 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
 
 
 
