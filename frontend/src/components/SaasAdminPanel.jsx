@@ -603,6 +603,41 @@ function normalizeQuickReplyMediaAssets(value = [], fallback = null) {
     return fallbackAsset ? [fallbackAsset] : [];
 }
 
+function resolveQuickReplyAssetPreviewUrl(rawUrl = '') {
+    const value = String(rawUrl || '').trim();
+    if (!value) return '';
+    if (value.startsWith('data:') || value.startsWith('blob:')) return value;
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.startsWith('/')) return `${API_BASE}${value}`;
+    return `${API_BASE}/${value.replace(/^\/+/, '')}`;
+}
+
+function isQuickReplyImageAsset(asset = {}) {
+    const mimeType = String(asset?.mimeType || '').trim().toLowerCase();
+    if (mimeType.startsWith('image/')) return true;
+    const fileName = String(asset?.fileName || '').trim().toLowerCase();
+    return /\.(png|jpe?g|webp|gif|avif|bmp|svg)$/i.test(fileName);
+}
+
+function getQuickReplyAssetTypeLabel(asset = {}) {
+    const mimeType = String(asset?.mimeType || '').trim().toLowerCase();
+    if (!mimeType) return 'archivo';
+    if (mimeType.startsWith('image/')) return 'imagen';
+    if (mimeType.includes('pdf')) return 'pdf';
+    if (mimeType.includes('word')) return 'doc';
+    if (mimeType.includes('spreadsheet') || mimeType.includes('excel')) return 'xls';
+    if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) return 'ppt';
+    if (mimeType.startsWith('text/')) return 'texto';
+    return mimeType;
+}
+
+function getQuickReplyAssetDisplayName(asset = {}, index = 0) {
+    const fileName = String(asset?.fileName || '').trim();
+    if (fileName) return fileName;
+    const typeLabel = getQuickReplyAssetTypeLabel(asset);
+    return `Adjunto ${index + 1}${typeLabel ? ` (${typeLabel})` : ''}`;
+}
+
 function buildQuickReplyLibraryPayload(form = {}) {
     const source = form && typeof form === 'object' ? form : {};
     return {
@@ -1146,6 +1181,8 @@ export default function SaasAdminPanel({
     onOpenWhatsAppOperation,
     buildApiHeaders,
     activeTenantId = '',
+    preferredTenantId = '',
+    launchSource = '',
     canManageSaas = false,
     initialSection = 'saas_resumen',
     userRole = 'seller',
@@ -1989,9 +2026,19 @@ export default function SaasAdminPanel({
         setCurrentSection(next);
     };
 
+    const operationTenantId = useMemo(() => {
+        if (requiresTenantSelection) return String(settingsTenantId || '').trim();
+        return String(tenantScopeId || settingsTenantId || activeTenantId || '').trim();
+    }, [requiresTenantSelection, settingsTenantId, tenantScopeId, activeTenantId]);
+    const hasActiveModuleForOperation = Boolean(
+        (Array.isArray(waModules) ? waModules : []).some((moduleItem) =>
+            String(moduleItem?.moduleId || '').trim() && moduleItem?.isActive !== false
+        )
+    );
     const canOpenOperation = Boolean(
         typeof onOpenWhatsAppOperation === 'function'
-        && String(tenantScopeId || settingsTenantId || activeTenantId || '').trim()
+        && operationTenantId
+        && hasActiveModuleForOperation
     );
     const scrollToSection = (sectionId, behavior = 'smooth') => {
         const cleanSection = String(sectionId || '').trim();
@@ -2881,7 +2928,6 @@ export default function SaasAdminPanel({
             { tenantId: fallbackTenant, role: 'seller', active: true }
         ]);
     };
-
     useEffect(() => {
         if (!isOpen || !canManageSaas) return;
         runAction('Carga inicial', async () => {
@@ -2942,12 +2988,10 @@ export default function SaasAdminPanel({
         setModuleUserPickerId('');
         setModuleQuickReplyLibraryDraft([]);
     }, []);
-
     useEffect(() => {
         if (!isOpen) return;
         clearPanelSelection();
     }, [isOpen, clearPanelSelection]);
-
     useEffect(() => {
         if (!isOpen) return;
         const onKeyDown = (event) => {
@@ -3005,7 +3049,6 @@ export default function SaasAdminPanel({
         selectedAiAssistantId,
         aiAssistantPanelMode
     ]);
-
     useEffect(() => {
         if (!isOpen || !canManageSaas || !tenantScopeId) return;
         Promise.all([
@@ -3021,7 +3064,6 @@ export default function SaasAdminPanel({
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, canManageSaas, tenantScopeId]);
-
     useEffect(() => {
         if (!isOpen) return;
         if (String(tenantScopeId || '').trim()) return;
@@ -3049,7 +3091,6 @@ export default function SaasAdminPanel({
         setQuickReplyLibraryPanelMode('view');
         setQuickReplyItemPanelMode('view');
     }, [isOpen, tenantScopeId]);
-
     useEffect(() => {
         setSelectedConfigKey('');
         setSelectedRoleKey('');
@@ -3071,7 +3112,6 @@ export default function SaasAdminPanel({
         setQuickReplyLibraryPanelMode('view');
         setQuickReplyItemPanelMode('view');
     }, [tenantScopeId]);
-
     useEffect(() => {
         if (!isOpen) return;
         if (requiresTenantSelection || settingsTenantId) return;
@@ -3079,13 +3119,26 @@ export default function SaasAdminPanel({
         if (!fallbackTenantId) return;
         setSettingsTenantId(fallbackTenantId);
     }, [isOpen, requiresTenantSelection, settingsTenantId, activeTenantId, tenantOptions]);
+    useEffect(() => {
+        if (!isOpen) return;
+        if (!requiresTenantSelection) return;
+        if (String(settingsTenantId || '').trim()) return;
+        if (String(launchSource || '').trim().toLowerCase() !== 'chat') return;
 
+        const requestedTenantId = String(preferredTenantId || '').trim();
+        if (!requestedTenantId) return;
+
+        const exists = tenantOptions.some((tenant) => String(tenant?.id || '').trim() === requestedTenantId);
+        if (!exists) return;
+
+        setSettingsTenantId(requestedTenantId);
+        setSelectedTenantId(requestedTenantId);
+    }, [isOpen, requiresTenantSelection, settingsTenantId, launchSource, preferredTenantId, tenantOptions]);
     useEffect(() => {
         if (!isOpen) return;
         if (!requiresTenantSelection || tenantScopeId) return;
         setCurrentSection('saas_empresas');
     }, [isOpen, requiresTenantSelection, tenantScopeId]);
-
     useEffect(() => {
         const cleanPlanId = String(selectedPlanId || '').trim().toLowerCase();
         if (!cleanPlanId) return;
@@ -3101,21 +3154,17 @@ export default function SaasAdminPanel({
         setWaModulePanelMode('view');
         resetWaModuleForm();
     }, [selectedConfigKey, selectedConfigModule]);
-
-
     useEffect(() => {
         if (!isOpen || !canManageSaas) return;
         const sectionId = String(initialSection || '').trim();
         if (!sectionId) return;
         setCurrentSection(sectionId);
     }, [isOpen, canManageSaas, initialSection]);
-
     useEffect(() => {
         const next = String(activeSection || '').trim();
         if (!next) return;
         setCurrentSection(next);
     }, [activeSection]);
-
     useEffect(() => {
         if (tenantPanelMode === 'create') return;
         if (!selectedTenant) {
@@ -3124,7 +3173,6 @@ export default function SaasAdminPanel({
         }
         setTenantForm(buildTenantFormFromItem(selectedTenant));
     }, [selectedTenant, tenantPanelMode]);
-
     useEffect(() => {
         if (userPanelMode === 'create') return;
         if (!selectedUser) {
@@ -3133,7 +3181,6 @@ export default function SaasAdminPanel({
         }
         setUserForm(buildUserFormFromItem(selectedUser));
     }, [selectedUser, userPanelMode]);
-
     useEffect(() => {
         if (customerPanelMode === 'create') return;
         if (!selectedCustomer) {
@@ -3142,7 +3189,6 @@ export default function SaasAdminPanel({
         }
         setCustomerForm(normalizeCustomerFormFromItem(selectedCustomer));
     }, [selectedCustomer, customerPanelMode]);
-
     useEffect(() => {
         if (aiAssistantPanelMode === 'create') return;
         if (!selectedAiAssistant) {
@@ -3178,7 +3224,6 @@ export default function SaasAdminPanel({
         }
         openWaModuleEditor(selectedWaModule);
     }, [selectedWaModule]);
-
     useEffect(() => {
         if (!selectedQuickReplyLibrary) {
             setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM, moduleIds: quickReplyScopeModuleId ? [quickReplyScopeModuleId] : [] });
@@ -3195,7 +3240,6 @@ export default function SaasAdminPanel({
             moduleIds: Array.isArray(selectedQuickReplyLibrary.moduleIds) ? [...selectedQuickReplyLibrary.moduleIds] : []
         });
     }, [selectedQuickReplyLibrary, quickReplyLibraryPanelMode, quickReplyScopeModuleId]);
-
     useEffect(() => {
         if (!selectedQuickReplyItem) {
             setQuickReplyItemForm((prev) => ({
@@ -3736,7 +3780,7 @@ export default function SaasAdminPanel({
                                         type="button"
                                         className="saas-admin-header-open-operation"
                                         disabled={busy || !canOpenOperation}
-                                        onClick={() => onOpenWhatsAppOperation('', { tenantId: tenantScopeId || settingsTenantId || activeTenantId || undefined })}
+                                        onClick={() => onOpenWhatsAppOperation('', { tenantId: operationTenantId || undefined })}
                                     >
                                         Ir al chat
                                     </button>
@@ -3785,7 +3829,7 @@ export default function SaasAdminPanel({
                                         type="button"
                                         className="saas-admin-header-open-operation"
                                         disabled={busy || !canOpenOperation}
-                                        onClick={() => onOpenWhatsAppOperation('', { tenantId: tenantScopeId || settingsTenantId || activeTenantId || undefined })}
+                                        onClick={() => onOpenWhatsAppOperation('', { tenantId: operationTenantId || undefined })}
                                     >
                                         Ir al chat
                                     </button>
@@ -5414,16 +5458,32 @@ export default function SaasAdminPanel({
                                                             <div className="saas-admin-related-block">
                                                                 <h4>Adjuntos</h4>
                                                                 <div className="saas-admin-related-list">
-                                                                    {selectedQuickReplyItemMediaAssets.map((asset, assetIdx) => (
-                                                                        <div key={`qr_item_asset_view_${assetIdx}`} className="saas-admin-related-row" role="status">
-                                                                            <span>{asset.fileName || `Adjunto ${assetIdx + 1}`}</span>
-                                                                            <small>
-                                                                                <a href={asset.url} target="_blank" rel="noreferrer">Abrir</a>
-                                                                                {' • '}{asset.mimeType || 'archivo'}
-                                                                                {asset.sizeBytes ? ` • ${formatBytes(asset.sizeBytes)}` : ''}
-                                                                            </small>
-                                                                        </div>
-                                                                    ))}
+                                                                    {selectedQuickReplyItemMediaAssets.map((asset, assetIdx) => {
+                                                                        const previewUrl = resolveQuickReplyAssetPreviewUrl(asset?.url || '');
+                                                                        const fileLabel = getQuickReplyAssetDisplayName(asset, assetIdx);
+                                                                        const isImage = isQuickReplyImageAsset(asset);
+                                                                        return (
+                                                                            <div key={`qr_item_asset_view_${assetIdx}`} className="saas-admin-related-row" role="status" style={{ alignItems: 'flex-start' }}>
+                                                                                {isImage ? (
+                                                                                    <a href={previewUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', width: '68px', height: '68px', borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.14)', marginRight: '10px', flexShrink: 0 }}>
+                                                                                        <img src={previewUrl} alt={fileLabel} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                                                    </a>
+                                                                                ) : (
+                                                                                    <div style={{ width: '68px', height: '68px', borderRadius: '10px', border: '1px dashed rgba(255,255,255,0.22)', marginRight: '10px', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#8fb6c9', fontWeight: 700, fontSize: '0.78rem' }}>
+                                                                                        {String(getQuickReplyAssetTypeLabel(asset) || 'file').toUpperCase()}
+                                                                                    </div>
+                                                                                )}
+                                                                                <div style={{ minWidth: 0, display: 'grid', gap: '2px' }}>
+                                                                                    <span>{fileLabel}</span>
+                                                                                    <small>
+                                                                                        <a href={previewUrl || '#'} target="_blank" rel="noreferrer">Abrir</a>
+                                                                                        {' | '}{asset.mimeType || 'archivo'}
+                                                                                        {asset.sizeBytes ? ` | ${formatBytes(asset.sizeBytes)}` : ''}
+                                                                                    </small>
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
                                                                 </div>
                                                             </div>
                                                         )}
@@ -5488,26 +5548,43 @@ export default function SaasAdminPanel({
                                                             <div className="saas-admin-related-block">
                                                                 <h4>Adjuntos de esta respuesta ({quickReplyItemFormAssets.length})</h4>
                                                                 <div className="saas-admin-related-list">
-                                                                    {quickReplyItemFormAssets.map((asset, assetIdx) => (
-                                                                        <div key={`qr_item_asset_edit_${assetIdx}`} className="saas-admin-related-row" role="status">
-                                                                            <span>{asset.fileName || `Adjunto ${assetIdx + 1}`}</span>
-                                                                            <small>
-                                                                                {(asset.mimeType || 'archivo')}{asset.sizeBytes ? ` • ${formatBytes(asset.sizeBytes)}` : ''}
-                                                                                <button
-                                                                                    type="button"
-                                                                                    style={{ marginLeft: '8px' }}
-                                                                                    disabled={busy || uploadingQuickReplyAssets}
-                                                                                    onClick={() => removeQuickReplyAssetAt(assetIdx)}
-                                                                                >
-                                                                                    Quitar
-                                                                                </button>
-                                                                            </small>
-                                                                        </div>
-                                                                    ))}
+                                                                    {quickReplyItemFormAssets.map((asset, assetIdx) => {
+                                                                        const previewUrl = resolveQuickReplyAssetPreviewUrl(asset?.url || '');
+                                                                        const fileLabel = getQuickReplyAssetDisplayName(asset, assetIdx);
+                                                                        const isImage = isQuickReplyImageAsset(asset);
+                                                                        return (
+                                                                            <div key={`qr_item_asset_edit_${assetIdx}`} className="saas-admin-related-row" role="status" style={{ alignItems: 'flex-start' }}>
+                                                                                {isImage ? (
+                                                                                    <a href={previewUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', width: '64px', height: '64px', borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.14)', marginRight: '10px', flexShrink: 0 }}>
+                                                                                        <img src={previewUrl} alt={fileLabel} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                                                    </a>
+                                                                                ) : (
+                                                                                    <div style={{ width: '64px', height: '64px', borderRadius: '10px', border: '1px dashed rgba(255,255,255,0.22)', marginRight: '10px', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#8fb6c9', fontWeight: 700, fontSize: '0.75rem' }}>
+                                                                                        {String(getQuickReplyAssetTypeLabel(asset) || 'file').toUpperCase()}
+                                                                                    </div>
+                                                                                )}
+                                                                                <div style={{ minWidth: 0, display: 'grid', gap: '2px', flex: 1 }}>
+                                                                                    <span>{fileLabel}</span>
+                                                                                    <small>
+                                                                                        {asset.mimeType || 'archivo'}
+                                                                                        {asset.sizeBytes ? ` | ${formatBytes(asset.sizeBytes)}` : ''}
+                                                                                    </small>
+                                                                                    <div>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            disabled={busy || uploadingQuickReplyAssets}
+                                                                                            onClick={() => removeQuickReplyAssetAt(assetIdx)}
+                                                                                        >
+                                                                                            Quitar
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
                                                                 </div>
                                                             </div>
                                                         )}
-
                                                         <div className="saas-admin-modules">
                                                             <label className="saas-admin-module-toggle">
                                                                 <input
@@ -7301,102 +7378,3 @@ export default function SaasAdminPanel({
         </div>
     );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

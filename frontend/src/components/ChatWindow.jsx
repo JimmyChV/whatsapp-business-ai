@@ -16,6 +16,30 @@ const normalizeModuleImageUrl = (rawUrl = '') => {
     return `${API_URL}/${value}`;
 };
 
+const normalizeQuickReplyAssetPreviewUrl = (rawUrl = '') => {
+    const value = String(rawUrl || '').trim();
+    if (!value) return '';
+    if (value.startsWith('data:') || value.startsWith('blob:')) return value;
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.startsWith('/')) return `${API_URL}${value}`;
+    return `${API_URL}/${value.replace(/^\/+/, '')}`;
+};
+
+const isImageQuickReplyAsset = (asset = {}) => {
+    const mimeType = String(asset?.mimeType || '').trim().toLowerCase();
+    if (mimeType.startsWith('image/')) return true;
+    const fileName = String(asset?.fileName || '').trim().toLowerCase();
+    return /\.(png|jpe?g|webp|gif|avif|bmp|svg)$/i.test(fileName);
+};
+
+const formatAssetBytes = (value) => {
+    const size = Number(value || 0);
+    if (!Number.isFinite(size) || size <= 0) return '';
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 const ChatInput = ({
     inputText, setInputText, onSendMessage, onKeyDown, onFileClick,
     attachment, attachmentPreview, removeAttachment, isAiLoading,
@@ -39,6 +63,15 @@ const ChatInput = ({
     const draftQuickReplyAssets = Array.isArray(quickReplyDraft?.mediaAssets)
         ? quickReplyDraft.mediaAssets.filter((asset) => asset && typeof asset === 'object' && String(asset?.url || '').trim())
         : [];
+    const draftQuickReplyPreviewAssets = draftQuickReplyAssets.map((asset, index) => {
+        const previewUrl = normalizeQuickReplyAssetPreviewUrl(asset?.url || '');
+        return {
+            ...asset,
+            previewUrl,
+            isImage: isImageQuickReplyAsset(asset),
+            name: String(asset?.fileName || `adjunto_${index + 1}`).trim() || `adjunto_${index + 1}`
+        };
+    });
     const hasDraftQuickReply = Boolean(quickReplyDraft && (draftQuickReplyText || draftQuickReplyAssets.length > 0 || draftQuickReplyLabel));
 
     const handleInputChange = (e) => {
@@ -421,10 +454,31 @@ const ChatInput = ({
                         <div style={{ fontSize: '0.78rem', color: '#d4e2e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {draftQuickReplyText || `Adjuntos: ${draftQuickReplyAssets.length}`}
                         </div>
-                        {draftQuickReplyAssets.length > 0 && (
-                            <div style={{ fontSize: '0.7rem', color: '#9fb6c1', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {draftQuickReplyAssets.slice(0, 2).map((asset) => String(asset?.fileName || 'adjunto').trim() || 'adjunto').join(', ')}
-                                {draftQuickReplyAssets.length > 2 ? ` +${draftQuickReplyAssets.length - 2}` : ''}
+                        {draftQuickReplyPreviewAssets.length > 0 && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+                                {draftQuickReplyPreviewAssets.slice(0, 3).map((asset, assetIdx) => (
+                                    <div key={`draft_qr_preview_${assetIdx}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(0,0,0,0.18)', maxWidth: '230px' }}>
+                                        {asset.isImage ? (
+                                            <img src={asset.previewUrl} alt={asset.name} style={{ width: '28px', height: '28px', borderRadius: '6px', objectFit: 'cover', flexShrink: 0 }} />
+                                        ) : (
+                                            <span style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px dashed rgba(255,255,255,0.3)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', color: '#b8ccd8', flexShrink: 0 }}>
+                                                {String(asset?.mimeType || 'file').split('/')[1] || 'file'}
+                                            </span>
+                                        )}
+                                        <div style={{ minWidth: 0 }}>
+                                            <div style={{ fontSize: '0.72rem', color: '#d4e2e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {asset.name}
+                                            </div>
+                                            <div style={{ fontSize: '0.66rem', color: '#9fb6c1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {(asset.mimeType || 'archivo').replace('application/', '')}
+                                                {asset.sizeBytes ? ` | ${formatAssetBytes(asset.sizeBytes)}` : ''}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                {draftQuickReplyPreviewAssets.length > 3 && (
+                                    <div style={{ fontSize: '0.68rem', color: '#9fb6c1' }}>+{draftQuickReplyPreviewAssets.length - 3} adjuntos</div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -1386,7 +1440,3 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
-
-
-
-
