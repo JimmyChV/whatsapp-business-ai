@@ -25,6 +25,7 @@ const waModuleService = require('./wa_module_service');
 const customerService = require('./customer_service');
 const tenantIntegrationsService = require('./tenant_integrations_service');
 const tenantCatalogService = require('./tenant_catalog_service');
+const quickReplyLibrariesService = require('./quick_reply_libraries_service');
 const { loadCatalog, addProduct, updateProduct } = require('./catalog_manager');
 const opsTelemetry = require('./ops_telemetry');
 
@@ -67,9 +68,27 @@ app.disable('x-powered-by');
 
 const UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.join(__dirname, 'uploads')).trim() || path.join(__dirname, 'uploads'));
 const ADMIN_ASSET_UPLOAD_MAX_BYTES = Math.max(200 * 1024, Number(process.env.ADMIN_ASSET_UPLOAD_MAX_BYTES || 2 * 1024 * 1024));
-const ADMIN_ASSET_ALLOWED_MIME_TYPES = new Set((() => {
+const ADMIN_ASSET_QUICK_REPLY_MAX_BYTES = Math.max(500 * 1024, Number(process.env.ADMIN_ASSET_QUICK_REPLY_MAX_BYTES || 8 * 1024 * 1024));
+const ADMIN_ASSET_ALLOWED_MIME_TYPES_IMAGE = new Set((() => {
     const configured = parseCsvEnv(process.env.ADMIN_ASSET_ALLOWED_MIME_TYPES);
     const base = configured.length > 0 ? configured : ['image/jpeg', 'image/png', 'image/webp'];
+    return base
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter(Boolean);
+})());
+const ADMIN_ASSET_ALLOWED_MIME_TYPES_QUICK_REPLY = new Set((() => {
+    const configured = parseCsvEnv(process.env.ADMIN_ASSET_QUICK_REPLY_ALLOWED_MIME_TYPES);
+    const base = configured.length > 0
+        ? configured
+        : [
+            'image/jpeg',
+            'image/png',
+            'image/webp',
+            'application/pdf',
+            'text/plain',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        ];
     return base
         .map((entry) => String(entry || '').trim().toLowerCase())
         .filter(Boolean);
@@ -98,10 +117,10 @@ function getRequestOrigin(req = {}) {
     return proto + '://' + hostRaw;
 }
 
-function normalizeImageExtension(fileName = '', mimeType = '') {
+function normalizeAssetExtension(fileName = '', mimeType = '') {
     const fromName = String(fileName || '').trim().split('.').pop();
     const cleanNameExt = String(fromName || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (cleanNameExt && ['png', 'jpg', 'jpeg', 'webp'].includes(cleanNameExt)) {
+    if (cleanNameExt && ['png', 'jpg', 'jpeg', 'webp', 'pdf', 'txt', 'doc', 'docx'].includes(cleanNameExt)) {
         return cleanNameExt === 'jpg' ? 'jpeg' : cleanNameExt;
     }
 
@@ -111,21 +130,31 @@ function normalizeImageExtension(fileName = '', mimeType = '') {
         'image/jpeg': 'jpeg',
         'image/jpg': 'jpeg',
         'image/webp': 'webp',
-        
+        'application/pdf': 'pdf',
+        'text/plain': 'txt',
+        'application/msword': 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx'
     };
-    return map[mime] || 'png';
+    return map[mime] || 'bin';
 }
 
-function parseImageUploadPayload(body = {}) {
+function normalizeAssetUploadKind(value = '') {
+    const clean = String(value || '').trim().toLowerCase();
+    if (clean === 'quick_reply' || clean === 'quickreply' || clean === 'quick-reply') return 'quick_reply';
+    return 'image';
+}
+
+function parseAssetUploadPayload(body = {}) {
     const source = body && typeof body === 'object' ? body : {};
     const dataUrl = String(source.dataUrl || source.data || '').trim();
     const base64Raw = String(source.base64 || '').trim();
 
     if (!dataUrl && !base64Raw) {
-        throw new Error('No se recibio imagen para subir.');
+        throw new Error('No se recibio archivo para subir.');
     }
 
     let mimeType = String(source.mimeType || source.contentType || '').trim().toLowerCase();
+    const kind = normalizeAssetUploadKind(source.kind || source.assetKind || source.scopeKind || '');
     let base64Data = base64Raw;
 
     if (dataUrl) {
@@ -137,11 +166,17 @@ function parseImageUploadPayload(body = {}) {
         base64Data = String(match[2] || '').trim();
     }
 
-    if (!mimeType.startsWith('image/')) {
-        throw new Error('Solo se permiten imagenes.');
-    }
+    const allowedMimes = kind === 'quick_reply'
+        ? ADMIN_ASSET_ALLOWED_MIME_TYPES_QUICK_REPLY
+        : ADMIN_ASSET_ALLOWED_MIME_TYPES_IMAGE;
+    const maxBytes = kind === 'quick_reply'
+        ? ADMIN_ASSET_QUICK_REPLY_MAX_BYTES
+        : ADMIN_ASSET_UPLOAD_MAX_BYTES;
 
-    if (!ADMIN_ASSET_ALLOWED_MIME_TYPES.has(mimeType)) {
+    if (!allowedMimes.has(mimeType)) {
+        if (kind === 'quick_reply') {
+            throw new Error('Formato no permitido para respuestas rapidas.');
+        }
         throw new Error('Formato de imagen no permitido. Usa JPG, PNG o WEBP.');
     }
 
@@ -149,33 +184,34 @@ function parseImageUploadPayload(body = {}) {
     try {
         buffer = Buffer.from(base64Data, 'base64');
     } catch (_) {
-        throw new Error('La imagen no es base64 valido.');
+        throw new Error('El archivo no es base64 valido.');
     }
 
     if (!buffer || !buffer.length) {
-        throw new Error('La imagen esta vacia.');
+        throw new Error('El archivo esta vacio.');
     }
 
-    if (buffer.length > ADMIN_ASSET_UPLOAD_MAX_BYTES) {
-        throw new Error('La imagen supera el tamano permitido.');
+    if (buffer.length > maxBytes) {
+        throw new Error('El archivo supera el tamano permitido.');
     }
 
     return {
+        kind,
         mimeType,
         buffer,
-        fileName: String(source.fileName || source.filename || '').trim() || 'imagen'
+        fileName: String(source.fileName || source.filename || '').trim() || 'archivo'
     };
 }
 
-async function saveImageAssetFile({ tenantId = 'default', scope = 'general', mimeType = 'image/png', fileName = 'imagen', buffer = Buffer.alloc(0) } = {}) {
+async function saveAssetFile({ tenantId = 'default', scope = 'general', mimeType = 'image/png', fileName = 'archivo', buffer = Buffer.alloc(0) } = {}) {
     const cleanTenant = sanitizeStorageSegment(tenantId, 'default');
     const cleanScope = sanitizeStorageSegment(scope, 'general');
-    const ext = normalizeImageExtension(fileName, mimeType);
+    const ext = normalizeAssetExtension(fileName, mimeType);
     const now = new Date();
     const yyyy = String(now.getUTCFullYear());
     const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
     const dd = String(now.getUTCDate()).padStart(2, '0');
-    const baseName = sanitizeStorageSegment(path.parse(fileName).name || 'imagen', 'imagen').slice(0, 32);
+    const baseName = sanitizeStorageSegment(path.parse(fileName).name || 'archivo', 'archivo').slice(0, 32);
     const suffix = crypto.randomBytes(5).toString('hex');
     const outName = baseName + '_' + suffix + '.' + ext;
 
@@ -1216,6 +1252,53 @@ function sanitizeAiAssistantPayload(payload = {}, { allowAssistantId = true } = 
     return base;
 }
 
+function sanitizeQuickReplyLibraryPayload(payload = {}, { allowLibraryId = true } = {}) {
+    const source = sanitizeObjectPayload(payload);
+    const cleanLibraryId = quickReplyLibrariesService.normalizeLibraryId(source.libraryId || source.id || '');
+    const moduleIds = Array.isArray(source.moduleIds)
+        ? Array.from(new Set(source.moduleIds.map((entry) => quickReplyLibrariesService.normalizeModuleId(entry)).filter(Boolean)))
+        : [];
+
+    const parsedSortOrder = Number.parseInt(String(source.sortOrder ?? ''), 10);
+    const sortOrder = Number.isFinite(parsedSortOrder) ? Math.max(1, parsedSortOrder) : 1000;
+    const isShared = source.isShared !== false;
+
+    const base = {
+        name: String(source.name || source.libraryName || '').trim(),
+        description: String(source.description || '').trim() || '',
+        isShared,
+        isActive: source.isActive !== false,
+        sortOrder,
+        moduleIds: isShared ? [] : moduleIds
+    };
+
+    if (allowLibraryId && cleanLibraryId) base.libraryId = cleanLibraryId;
+    return base;
+}
+
+function sanitizeQuickReplyItemPayload(payload = {}, { allowItemId = true } = {}) {
+    const source = sanitizeObjectPayload(payload);
+    const cleanItemId = quickReplyLibrariesService.normalizeItemId(source.itemId || source.id || '');
+    const cleanLibraryId = quickReplyLibrariesService.normalizeLibraryId(source.libraryId || source.library || quickReplyLibrariesService.DEFAULT_LIBRARY_ID || '');
+    const parsedSortOrder = Number.parseInt(String(source.sortOrder ?? ''), 10);
+    const sortOrder = Number.isFinite(parsedSortOrder) ? Math.max(1, parsedSortOrder) : 1000;
+
+    const base = {
+        libraryId: cleanLibraryId,
+        label: String(source.label || '').trim(),
+        text: String(source.text || source.bodyText || source.body || '').trim(),
+        mediaUrl: String(source.mediaUrl || source.media_url || '').trim() || null,
+        mediaMimeType: String(source.mediaMimeType || source.media_mime_type || '').trim().toLowerCase() || null,
+        mediaFileName: String(source.mediaFileName || source.media_file_name || '').trim() || null,
+        mediaSizeBytes: Number.isFinite(Number(source.mediaSizeBytes)) ? Number(source.mediaSizeBytes) : null,
+        isActive: source.isActive !== false,
+        sortOrder
+    };
+
+    if (allowItemId && cleanItemId) base.itemId = cleanItemId;
+    return base;
+}
+
 app.post('/api/admin/saas/assets/upload', async (req, res) => {
     try {
         if (!hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_ASSETS_UPLOAD)) {
@@ -1231,8 +1314,8 @@ app.post('/api/admin/saas/assets/upload', async (req, res) => {
         }
 
         const scope = sanitizeStorageSegment(body.scope || 'general', 'general');
-        const parsed = parseImageUploadPayload(body);
-        const stored = await saveImageAssetFile({
+        const parsed = parseAssetUploadPayload(body);
+        const stored = await saveAssetFile({
             tenantId,
             scope,
             mimeType: parsed.mimeType,
@@ -1253,12 +1336,13 @@ app.post('/api/admin/saas/assets/upload', async (req, res) => {
                 relativePath: stored.relativePath,
                 mimeType: parsed.mimeType,
                 sizeBytes: Number(parsed.buffer?.length || 0) || 0,
-                fileName: path.basename(stored.absolutePath)
+                fileName: path.basename(stored.absolutePath),
+                kind: parsed.kind
             }
         });
     } catch (error) {
         const message = String(error?.message || 'No se pudo subir el archivo.');
-        const status = /tamano|base64|imagen|formato/i.test(message) ? 400 : 500;
+        const status = /tamano|base64|imagen|archivo|formato/i.test(message) ? 400 : 500;
         return res.status(status).json({ ok: false, error: message });
     }
 });
@@ -1864,6 +1948,162 @@ app.post('/api/admin/saas/tenants/:tenantId/ai-assistants/:assistantId/deactivat
         return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar asistente IA.') });
     }
 });
+app.get('/api/admin/saas/tenants/:tenantId/quick-reply-libraries', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId)
+        || !hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
+            accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
+        ])) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() === 'true';
+        const moduleId = String(req.query?.moduleId || '').trim().toLowerCase();
+        const items = await quickReplyLibrariesService.listQuickReplyLibraries({
+            tenantId,
+            includeInactive,
+            moduleId
+        });
+        return res.json({ ok: true, tenantId, items: Array.isArray(items) ? items : [] });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar bibliotecas de respuestas rapidas.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/quick-reply-libraries', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const payload = sanitizeQuickReplyLibraryPayload(req.body, { allowLibraryId: true });
+        if (!payload.name) return res.status(400).json({ ok: false, error: 'Nombre de biblioteca requerido.' });
+        const item = await quickReplyLibrariesService.saveQuickReplyLibrary(payload, { tenantId });
+        return res.status(201).json({ ok: true, tenantId, item });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear biblioteca de respuestas rapidas.') });
+    }
+});
+
+app.put('/api/admin/saas/tenants/:tenantId/quick-reply-libraries/:libraryId', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const libraryId = quickReplyLibrariesService.normalizeLibraryId(req.params?.libraryId || '');
+    if (!tenantId || !libraryId) return res.status(400).json({ ok: false, error: 'tenantId/libraryId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const payload = sanitizeQuickReplyLibraryPayload(req.body, { allowLibraryId: false });
+        if (!payload.name) return res.status(400).json({ ok: false, error: 'Nombre de biblioteca requerido.' });
+        const item = await quickReplyLibrariesService.saveQuickReplyLibrary({ ...payload, libraryId }, { tenantId });
+        return res.json({ ok: true, tenantId, item });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar biblioteca de respuestas rapidas.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/quick-reply-libraries/:libraryId/deactivate', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const libraryId = quickReplyLibrariesService.normalizeLibraryId(req.params?.libraryId || '');
+    if (!tenantId || !libraryId) return res.status(400).json({ ok: false, error: 'tenantId/libraryId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        await quickReplyLibrariesService.deactivateQuickReplyLibrary(libraryId, { tenantId });
+        return res.json({ ok: true, tenantId, libraryId });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar biblioteca de respuestas rapidas.') });
+    }
+});
+
+app.get('/api/admin/saas/tenants/:tenantId/quick-reply-items', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId)
+        || !hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
+            accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
+        ])) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() === 'true';
+        const moduleId = String(req.query?.moduleId || '').trim().toLowerCase();
+        const libraryId = quickReplyLibrariesService.normalizeLibraryId(req.query?.libraryId || '');
+        const items = await quickReplyLibrariesService.listQuickReplyItems({
+            tenantId,
+            includeInactive,
+            moduleId,
+            libraryId
+        });
+        return res.json({ ok: true, tenantId, items: Array.isArray(items) ? items : [] });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar respuestas rapidas.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/quick-reply-items', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const payload = sanitizeQuickReplyItemPayload(req.body, { allowItemId: true });
+        if (!payload.label) return res.status(400).json({ ok: false, error: 'Etiqueta requerida.' });
+        if (!payload.text && !payload.mediaUrl) return res.status(400).json({ ok: false, error: 'Debes registrar texto o adjunto.' });
+        const item = await quickReplyLibrariesService.saveQuickReplyItem(payload, { tenantId });
+        return res.status(201).json({ ok: true, tenantId, item });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear respuesta rapida.') });
+    }
+});
+
+app.put('/api/admin/saas/tenants/:tenantId/quick-reply-items/:itemId', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const itemId = quickReplyLibrariesService.normalizeItemId(req.params?.itemId || '');
+    if (!tenantId || !itemId) return res.status(400).json({ ok: false, error: 'tenantId/itemId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const payload = sanitizeQuickReplyItemPayload(req.body, { allowItemId: false });
+        if (!payload.label) return res.status(400).json({ ok: false, error: 'Etiqueta requerida.' });
+        if (!payload.text && !payload.mediaUrl) return res.status(400).json({ ok: false, error: 'Debes registrar texto o adjunto.' });
+        const item = await quickReplyLibrariesService.saveQuickReplyItem({ ...payload, itemId }, { tenantId });
+        return res.json({ ok: true, tenantId, item });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar respuesta rapida.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/quick-reply-items/:itemId/deactivate', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const itemId = quickReplyLibrariesService.normalizeItemId(req.params?.itemId || '');
+    if (!tenantId || !itemId) return res.status(400).json({ ok: false, error: 'tenantId/itemId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE)) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        await quickReplyLibrariesService.deactivateQuickReplyItem(itemId, { tenantId });
+        return res.json({ ok: true, tenantId, itemId });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar respuesta rapida.') });
+    }
+});
+
 app.get('/api/admin/saas/tenants/:tenantId/catalogs', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
@@ -3283,4 +3523,5 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
+
 

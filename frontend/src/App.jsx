@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+﻿import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { io } from 'socket.io-client';
 
 import Sidebar from './components/Sidebar';
@@ -788,6 +788,9 @@ function App() {
   const tenantScopeRef = useRef(tenantScopeId);
   const businessDataRequestSeqRef = useRef(0);
   const businessDataResponseSeqRef = useRef(0);
+  const businessDataScopeCacheRef = useRef(new Map());
+  const businessDataRequestDebounceRef = useRef({ key: '', at: 0 });
+  const quickRepliesRequestRef = useRef({ key: '', at: 0 });
 
   // --------------------------------------------------------------
   // Notifications
@@ -861,6 +864,21 @@ function App() {
     };
   }, []);
 
+  const requestQuickRepliesForModule = useCallback((moduleId = '') => {
+    if (!socket.connected) return;
+    const cleanModuleId = String(
+      moduleId
+      || selectedCatalogModuleIdRef.current
+      || selectedWaModuleRef.current?.moduleId
+      || ''
+    ).trim().toLowerCase();
+    const now = Date.now();
+    const cache = quickRepliesRequestRef.current || { key: '', at: 0 };
+    if (cache.key === cleanModuleId && (now - cache.at) < 250) return;
+    quickRepliesRequestRef.current = { key: cleanModuleId, at: now };
+    socket.emit('get_quick_replies', cleanModuleId ? { moduleId: cleanModuleId } : {});
+  }, []);
+
   const emitScopedBusinessDataRequest = useCallback((scope = {}) => {
     if (!socket.connected) return;
     const requestedModuleId = String(
@@ -874,6 +892,20 @@ function App() {
       || selectedCatalogIdRef.current
       || ''
     ).trim().toUpperCase();
+    const dedupeKey = `${requestedModuleId}|${requestedCatalogId}`;
+    const now = Date.now();
+    const dedupe = businessDataRequestDebounceRef.current || { key: '', at: 0 };
+    if (dedupe.key === dedupeKey && (now - dedupe.at) < 220) return;
+    businessDataRequestDebounceRef.current = { key: dedupeKey, at: now };
+
+    const cachedScope = businessDataScopeCacheRef.current.get(dedupeKey);
+    if (cachedScope && Array.isArray(cachedScope.catalog)) {
+      setBusinessData((prev) => ({
+        ...prev,
+        catalog: cachedScope.catalog,
+        catalogMeta: cachedScope.catalogMeta || prev?.catalogMeta || { source: 'local', nativeAvailable: false }
+      }));
+    }
 
     const payload = {};
     if (requestedModuleId) payload.moduleId = requestedModuleId;
@@ -1300,6 +1332,7 @@ function App() {
       }
 
       if (selectedModuleId && selectedModuleId !== previousModuleId) {
+        requestQuickRepliesForModule(selectedModuleId);
         emitScopedBusinessDataRequest({ moduleId: selectedModuleId || selectedCatalogModuleIdRef.current, catalogId: selectedCatalogIdRef.current || '' });
       }
     });
@@ -1343,6 +1376,7 @@ function App() {
       }
 
       if (selectedModuleId && selectedModuleId !== previousModuleId) {
+        requestQuickRepliesForModule(selectedModuleId);
         emitScopedBusinessDataRequest({ moduleId: selectedModuleId || selectedCatalogModuleIdRef.current, catalogId: selectedCatalogIdRef.current || '' });
       }
     });
@@ -1384,7 +1418,7 @@ function App() {
         messageReply: Boolean(caps?.messageReply),
       };
       setWaCapabilities((prev) => ({ ...prev, ...nextCaps }));
-      socket.emit('get_quick_replies');
+      requestQuickRepliesForModule(selectedCatalogModuleIdRef.current || selectedWaModuleRef.current?.moduleId || '');
     });
 
     socket.on('wa_runtime', (runtime) => {
@@ -1891,10 +1925,20 @@ function App() {
         return;
       }
 
-      setBusinessData({
+      const normalizedBusinessData = {
         ...normalized,
         catalogMeta: normalized?.catalogMeta || { source: 'local', nativeAvailable: false }
-      });
+      };
+      setBusinessData(normalizedBusinessData);
+
+      const cacheModuleId = String(scopeModuleId || currentCatalogModuleId || '').trim().toLowerCase();
+      const cacheCatalogId = String(scopeCatalogId || currentCatalogId || '').trim().toUpperCase();
+      if (cacheModuleId || cacheCatalogId) {
+        businessDataScopeCacheRef.current.set(`${cacheModuleId}|${cacheCatalogId}`, {
+          catalog: Array.isArray(normalizedBusinessData.catalog) ? normalizedBusinessData.catalog : [],
+          catalogMeta: normalizedBusinessData.catalogMeta
+        });
+      }
 
       setLabelDefinitions(normalizeChatLabels(normalized.labels));
 
@@ -1959,16 +2003,32 @@ function App() {
           .filter(Boolean)
       )).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
 
+      const nextCatalogMeta = {
+        ...(businessData?.catalogMeta || { source: 'local', nativeAvailable: false }),
+        source: String(scopedPayload?.source || 'local').trim().toLowerCase() || 'local',
+        categories: normalizedCategories,
+        scope: scope || businessData?.catalogMeta?.scope || null
+      };
+
       setBusinessData(prev => ({
         ...prev,
         catalog: normalizedCatalog,
         catalogMeta: {
           ...(prev?.catalogMeta || { source: 'local', nativeAvailable: false }),
-          source: String(scopedPayload?.source || 'local').trim().toLowerCase() || 'local',
+          source: nextCatalogMeta.source,
           categories: normalizedCategories,
           scope: scope || prev?.catalogMeta?.scope || null
         }
       }));
+
+      const cacheModuleId = String(scopeModuleId || activeCatalogModuleId || '').trim().toLowerCase();
+      const cacheCatalogId = String(scopeCatalogId || activeCatalogId || '').trim().toUpperCase();
+      if (cacheModuleId || cacheCatalogId) {
+        businessDataScopeCacheRef.current.set(`${cacheModuleId}|${cacheCatalogId}`, {
+          catalog: normalizedCatalog,
+          catalogMeta: nextCatalogMeta
+        });
+      }
 
       if (scopeModuleId && !activeCatalogModuleId) {
         setSelectedCatalogModuleId(scopeModuleId);
@@ -2006,9 +2066,16 @@ function App() {
         .map((item, idx) => ({
           id: String(item?.id || ('qr_' + (idx + 1))),
           label: sanitizeDisplayText(item?.label || 'Respuesta rapida'),
-          text: repairMojibake(item?.text || '')
+          text: repairMojibake(item?.text || ''),
+          mediaUrl: String(item?.mediaUrl || '').trim() || null,
+          mediaMimeType: String(item?.mediaMimeType || '').trim().toLowerCase() || null,
+          mediaFileName: String(item?.mediaFileName || '').trim() || null,
+          mediaSizeBytes: Number.isFinite(Number(item?.mediaSizeBytes)) ? Number(item.mediaSizeBytes) : null,
+          libraryId: String(item?.libraryId || '').trim() || null,
+          libraryName: String(item?.libraryName || '').trim() || null,
+          isShared: item?.isShared !== false
         }))
-        .filter((item) => item.id && item.text);
+        .filter((item) => item.id && (item.text || item.mediaUrl));
       setQuickReplies(normalized);
     });
 
@@ -2575,6 +2642,7 @@ function App() {
       }
 
       if (isConnected) {
+        requestQuickRepliesForModule(resolvedScopeModuleId);
         if (resolvedScopeModuleId !== currentWaModuleId) {
           socket.emit('set_wa_module', { moduleId: resolvedScopeModuleId });
         } else {
@@ -2701,6 +2769,7 @@ function App() {
     setWaModuleError('');
 
     if (isConnected) {
+      requestQuickRepliesForModule(nextModule.moduleId);
       socket.emit('set_wa_module', { moduleId: nextModule.moduleId });
       return;
     }
@@ -2736,6 +2805,7 @@ function App() {
       }
     }));
     if (isConnected) {
+      requestQuickRepliesForModule(safeModuleId);
       emitScopedBusinessDataRequest({ moduleId: safeModuleId, catalogId: '' });
     }
   };
@@ -3092,21 +3162,31 @@ function App() {
     });
   };
 
-  const handleCreateQuickReply = ({ label, text }) => {
-    if (!waCapabilities.quickRepliesWrite) return;
-    socket.emit('add_quick_reply', { label, text });
-  };
+  const handleSendQuickReply = (quickReply = null) => {
+    if (!waCapabilities.quickRepliesRead) return;
+    const activeId = String(activeChatIdRef.current || '').trim();
+    if (!activeId) return;
 
-  const handleUpdateQuickReply = ({ id, label, text }) => {
+    const reply = quickReply && typeof quickReply === 'object' ? quickReply : null;
+    const quickReplyId = String(reply?.id || '').trim();
+    if (!quickReplyId && !String(reply?.text || '').trim() && !String(reply?.mediaUrl || '').trim()) return;
 
-    if (!waCapabilities.quickRepliesWrite) return;
-    socket.emit('update_quick_reply', { id, label, text });
-  };
+    const activeChat = (Array.isArray(chatsRef.current) ? chatsRef.current : [])
+      .find((chat) => String(chat?.id || '').trim() === activeId) || null;
 
-  const handleDeleteQuickReply = (id) => {
-
-    if (!waCapabilities.quickRepliesWrite) return;
-    socket.emit('delete_quick_reply', { id });
+    socket.emit('send_quick_reply', {
+      quickReplyId: quickReplyId || undefined,
+      quickReply: {
+        id: quickReplyId || undefined,
+        label: String(reply?.label || '').trim() || undefined,
+        text: String(reply?.text || '').trim() || '',
+        mediaUrl: String(reply?.mediaUrl || '').trim() || null,
+        mediaMimeType: String(reply?.mediaMimeType || '').trim().toLowerCase() || null,
+        mediaFileName: String(reply?.mediaFileName || '').trim() || null
+      },
+      to: activeId,
+      toPhone: String(activeChat?.phone || '').trim() || undefined
+    });
   };
   useEffect(() => {
     const onGlobalKeyDown = (event) => {
@@ -3783,6 +3863,8 @@ function App() {
               onForwardMessage={waCapabilities.messageForward ? handleForwardMessage : null}
               onDeleteMessage={waCapabilities.messageDelete ? handleDeleteMessage : null}
               forwardChatOptions={forwardChatOptions}
+              quickReplies={quickReplies}
+              onSendQuickReply={handleSendQuickReply}
               onLoadOrderToCart={handleLoadOrderToCart}
               onStartNewChat={handleStartNewChat}
               onCancelEditMessage={handleCancelEditMessage}
@@ -3856,9 +3938,7 @@ function App() {
             myProfile={myProfile || businessData?.profile}
             onLogout={handleLogoutWhatsapp}
             quickReplies={quickReplies}
-            onCreateQuickReply={handleCreateQuickReply}
-            onUpdateQuickReply={handleUpdateQuickReply}
-            onDeleteQuickReply={handleDeleteQuickReply}
+            onSendQuickReply={handleSendQuickReply}
             pendingOrderCartLoad={pendingOrderCartLoad}
             waCapabilities={waCapabilities}
             openCompanyProfileToken={openCompanyProfileToken}
@@ -3949,3 +4029,4 @@ function App() {
 }
 
 export default App;
+

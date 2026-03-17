@@ -7,6 +7,7 @@ const {
     writeTenantJsonFile,
     queryPostgres
 } = require('./persistence_runtime');
+const quickReplyLibrariesService = require('./quick_reply_libraries_service');
 
 const QUICK_REPLIES_FILE = 'quick_replies.json';
 const LEGACY_QUICK_REPLIES_PATH = path.join(__dirname, 'quick_replies.json');
@@ -81,21 +82,27 @@ async function writeStoreToFile(items = [], tenantId = DEFAULT_TENANT_ID) {
     return normalized;
 }
 
-async function listFromPostgres(tenantId) {
+async function listFromPostgres(tenantId, moduleId = '') {
     try {
-        const { rows } = await queryPostgres(
-            `SELECT reply_id, label, body_text
-               FROM quick_replies
-              WHERE tenant_id = $1
-              ORDER BY sort_order ASC, created_at DESC`,
-            [tenantId]
-        );
+        const scoped = await quickReplyLibrariesService.listQuickReplyItems({
+            tenantId,
+            moduleId: String(moduleId || '').trim().toLowerCase(),
+            includeInactive: false
+        });
 
-        return normalizeStore(rows.map((row) => ({
-            id: String(row.reply_id || '').trim(),
-            label: String(row.label || '').trim(),
-            text: String(row.body_text || '').trim()
-        })));
+        return scoped.map((entry) => ({
+            id: String(entry?.itemId || entry?.id || '').trim(),
+            label: String(entry?.label || '').trim(),
+            text: String(entry?.text || '').trim(),
+            mediaUrl: String(entry?.mediaUrl || '').trim() || null,
+            mediaMimeType: String(entry?.mediaMimeType || '').trim().toLowerCase() || null,
+            mediaFileName: String(entry?.mediaFileName || '').trim() || null,
+            mediaSizeBytes: Number.isFinite(Number(entry?.mediaSizeBytes)) ? Number(entry.mediaSizeBytes) : null,
+            libraryId: String(entry?.libraryId || '').trim() || null,
+            libraryName: String(entry?.libraryName || '').trim() || null,
+            isShared: entry?.isShared !== false,
+            moduleIds: Array.isArray(entry?.moduleIds) ? entry.moduleIds : []
+        })).filter((entry) => entry.id && (entry.text || entry.mediaUrl));
     } catch (error) {
         if (missingRelation(error)) return [];
         throw error;
@@ -103,32 +110,25 @@ async function listFromPostgres(tenantId) {
 }
 
 async function upsertPostgres(item, tenantId, sortOrder = 1000) {
-    await queryPostgres(
-        `INSERT INTO quick_replies (tenant_id, reply_id, label, body_text, sort_order, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-         ON CONFLICT (tenant_id, reply_id)
-         DO UPDATE SET
-            label = EXCLUDED.label,
-            body_text = EXCLUDED.body_text,
-            sort_order = EXCLUDED.sort_order,
-            updated_at = NOW()`,
-        [tenantId, item.id, item.label, item.text, sortOrder]
-    );
+    await quickReplyLibrariesService.saveQuickReplyItem({
+        itemId: item.id,
+        libraryId: quickReplyLibrariesService.DEFAULT_LIBRARY_ID,
+        label: item.label,
+        text: item.text,
+        sortOrder,
+        isActive: true
+    }, { tenantId });
 }
 
 async function deletePostgres(id, tenantId) {
-    await queryPostgres(
-        `DELETE FROM quick_replies
-          WHERE tenant_id = $1
-            AND reply_id = $2`,
-        [tenantId, id]
-    );
+    await quickReplyLibrariesService.deactivateQuickReplyItem(id, { tenantId });
 }
 
 async function listQuickReplies(options = null) {
     const tenantId = resolveTenantId(options);
+    const moduleId = String(options?.moduleId || '').trim().toLowerCase();
     if (getStorageDriver() === 'postgres') {
-        return listFromPostgres(tenantId);
+        return listFromPostgres(tenantId, moduleId);
     }
     return readStoreFromFile(tenantId);
 }
@@ -139,7 +139,7 @@ async function addQuickReply({ label, text }, options = null) {
     if (!clean) throw new Error('Datos invalidos para respuesta rapida.');
 
     if (getStorageDriver() === 'postgres') {
-        const current = await listFromPostgres(tenantId);
+        const current = await listFromPostgres(tenantId, String(options?.moduleId || '').trim().toLowerCase());
         await upsertPostgres(clean, tenantId, Math.max(1, current.length + 1));
         return clean;
     }
@@ -159,7 +159,7 @@ async function updateQuickReply({ id, label, text }, options = null) {
     const cleanText = String(text || '').trim();
     if (!cleanLabel || !cleanText) throw new Error('La respuesta rapida requiere titulo y texto.');
 
-    const current = await listQuickReplies({ tenantId });
+    const current = await listQuickReplies({ tenantId, moduleId: String(options?.moduleId || '').trim().toLowerCase() });
     const target = current.find((item) => item.id === cleanId);
     if (!target) throw new Error('Respuesta rapida no encontrada.');
 

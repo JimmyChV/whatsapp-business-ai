@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -426,6 +426,110 @@ const PERMISSION_OWNER_ASSIGN = 'tenant.users.owner.assign';
 const ADMIN_IMAGE_MAX_BYTES = Math.max(200 * 1024, Number(import.meta.env.VITE_ADMIN_ASSET_MAX_BYTES || 2 * 1024 * 1024));
 const ADMIN_IMAGE_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL = '.jpg, .jpeg, .png, .webp';
+const QUICK_REPLY_ALLOWED_MIME_TYPES = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'application/pdf',
+    'text/plain',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+];
+const QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL = '.jpg, .jpeg, .png, .webp, .pdf, .txt, .doc, .docx';
+const EMPTY_QUICK_REPLY_LIBRARY_FORM = {
+    libraryId: '',
+    name: '',
+    description: '',
+    isShared: false,
+    isActive: true,
+    sortOrder: '100',
+    moduleIds: []
+};
+const EMPTY_QUICK_REPLY_ITEM_FORM = {
+    itemId: '',
+    libraryId: '',
+    label: '',
+    text: '',
+    mediaUrl: '',
+    mediaMimeType: '',
+    mediaFileName: '',
+    isActive: true,
+    sortOrder: '100'
+};
+
+function normalizeQuickReplyLibraryItem(item = {}) {
+    const source = item && typeof item === 'object' ? item : {};
+    const libraryId = String(source.libraryId || source.id || '').trim().toUpperCase();
+    if (!libraryId) return null;
+    const moduleIds = Array.isArray(source.moduleIds)
+        ? source.moduleIds
+            .map((entry) => String(entry || '').trim().toLowerCase())
+            .filter(Boolean)
+        : [];
+    return {
+        libraryId,
+        name: String(source.libraryName || source.name || libraryId).trim() || libraryId,
+        description: String(source.description || '').trim(),
+        isShared: source.isShared === true,
+        isActive: source.isActive !== false,
+        sortOrder: Number.isFinite(Number(source.sortOrder)) ? Number(source.sortOrder) : 100,
+        moduleIds,
+        metadata: source.metadata && typeof source.metadata === 'object' ? source.metadata : {},
+        createdAt: String(source.createdAt || '').trim() || null,
+        updatedAt: String(source.updatedAt || '').trim() || null
+    };
+}
+
+function normalizeQuickReplyItem(item = {}) {
+    const source = item && typeof item === 'object' ? item : {};
+    const itemId = String(source.itemId || source.id || '').trim().toUpperCase();
+    if (!itemId) return null;
+    return {
+        itemId,
+        libraryId: String(source.libraryId || '').trim().toUpperCase(),
+        label: String(source.label || itemId).trim() || itemId,
+        text: String(source.text || '').trim(),
+        mediaUrl: String(source.mediaUrl || '').trim(),
+        mediaMimeType: String(source.mediaMimeType || '').trim().toLowerCase(),
+        mediaFileName: String(source.mediaFileName || '').trim(),
+        mediaSizeBytes: Number.isFinite(Number(source.mediaSizeBytes)) ? Number(source.mediaSizeBytes) : null,
+        isActive: source.isActive !== false,
+        sortOrder: Number.isFinite(Number(source.sortOrder)) ? Number(source.sortOrder) : 100,
+        metadata: source.metadata && typeof source.metadata === 'object' ? source.metadata : {},
+        createdAt: String(source.createdAt || '').trim() || null,
+        updatedAt: String(source.updatedAt || '').trim() || null
+    };
+}
+
+function buildQuickReplyLibraryPayload(form = {}) {
+    const source = form && typeof form === 'object' ? form : {};
+    return {
+        libraryId: String(source.libraryId || '').trim().toUpperCase() || undefined,
+        name: String(source.name || '').trim(),
+        description: String(source.description || '').trim() || null,
+        isShared: source.isShared === true,
+        isActive: source.isActive !== false,
+        sortOrder: Math.max(0, Math.min(9999, Number(source.sortOrder || 100) || 100)),
+        moduleIds: Array.isArray(source.moduleIds)
+            ? source.moduleIds.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean)
+            : []
+    };
+}
+
+function buildQuickReplyItemPayload(form = {}, { libraryId = '' } = {}) {
+    const source = form && typeof form === 'object' ? form : {};
+    return {
+        itemId: String(source.itemId || '').trim().toUpperCase() || undefined,
+        libraryId: String(source.libraryId || libraryId || '').trim().toUpperCase(),
+        label: String(source.label || '').trim(),
+        text: String(source.text || '').trim(),
+        mediaUrl: String(source.mediaUrl || '').trim() || null,
+        mediaMimeType: String(source.mediaMimeType || '').trim().toLowerCase() || null,
+        mediaFileName: String(source.mediaFileName || '').trim() || null,
+        isActive: source.isActive !== false,
+        sortOrder: Math.max(0, Math.min(9999, Number(source.sortOrder || 100) || 100))
+    };
+}
 
 function normalizeOverview(payload = {}) {
     return {
@@ -972,6 +1076,15 @@ export default function SaasAdminPanel({
     const [selectedRoleKey, setSelectedRoleKey] = useState('');
     const [roleForm, setRoleForm] = useState(EMPTY_ROLE_FORM);
     const [rolePanelMode, setRolePanelMode] = useState('view');
+    const [quickReplyLibraries, setQuickReplyLibraries] = useState([]);
+    const [quickReplyItems, setQuickReplyItems] = useState([]);
+    const [selectedQuickReplyLibraryId, setSelectedQuickReplyLibraryId] = useState('');
+    const [selectedQuickReplyItemId, setSelectedQuickReplyItemId] = useState('');
+    const [quickReplyLibraryForm, setQuickReplyLibraryForm] = useState({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM });
+    const [quickReplyItemForm, setQuickReplyItemForm] = useState({ ...EMPTY_QUICK_REPLY_ITEM_FORM });
+    const [quickReplyLibraryPanelMode, setQuickReplyLibraryPanelMode] = useState('view');
+    const [quickReplyItemPanelMode, setQuickReplyItemPanelMode] = useState('view');
+    const [loadingQuickReplies, setLoadingQuickReplies] = useState(false);
 
     const [customers, setCustomers] = useState([]);
     const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -1294,6 +1407,35 @@ export default function SaasAdminPanel({
     const selectedWaModule = useMemo(
         () => (waModules || []).find((item) => String(item?.moduleId || '') === String(selectedWaModuleId || '')) || null,
         [waModules, selectedWaModuleId]
+    );
+
+    const quickReplyScopeModuleId = useMemo(
+        () => String(selectedWaModuleId || '').trim().toLowerCase(),
+        [selectedWaModuleId]
+    );
+
+    const quickReplyLibrariesByScope = useMemo(() => {
+        if (!quickReplyScopeModuleId) return Array.isArray(quickReplyLibraries) ? quickReplyLibraries : [];
+        return (Array.isArray(quickReplyLibraries) ? quickReplyLibraries : [])
+            .filter((entry) => entry.isShared || (Array.isArray(entry.moduleIds) && entry.moduleIds.includes(quickReplyScopeModuleId)));
+    }, [quickReplyLibraries, quickReplyScopeModuleId]);
+
+    const selectedQuickReplyLibrary = useMemo(
+        () => quickReplyLibraries.find((entry) => String(entry?.libraryId || '').trim().toUpperCase() === String(selectedQuickReplyLibraryId || '').trim().toUpperCase()) || null,
+        [quickReplyLibraries, selectedQuickReplyLibraryId]
+    );
+
+    const quickReplyItemsForSelectedLibrary = useMemo(() => {
+        const cleanLibraryId = String(selectedQuickReplyLibrary?.libraryId || '').trim().toUpperCase();
+        if (!cleanLibraryId) return [];
+        return (Array.isArray(quickReplyItems) ? quickReplyItems : [])
+            .filter((entry) => String(entry?.libraryId || '').trim().toUpperCase() === cleanLibraryId)
+            .sort((left, right) => String(left?.label || '').localeCompare(String(right?.label || ''), 'es', { sensitivity: 'base' }));
+    }, [quickReplyItems, selectedQuickReplyLibrary]);
+
+    const selectedQuickReplyItem = useMemo(
+        () => quickReplyItemsForSelectedLibrary.find((entry) => String(entry?.itemId || '').trim().toUpperCase() === String(selectedQuickReplyItemId || '').trim().toUpperCase()) || null,
+        [quickReplyItemsForSelectedLibrary, selectedQuickReplyItemId]
     );
 
     const tenantCatalogItems = useMemo(() => {
@@ -1623,6 +1765,256 @@ export default function SaasAdminPanel({
             setLoadingAiAssistants(false);
         }
     };
+    const loadQuickReplyData = async (tenantId) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        if (!cleanTenantId) {
+            setQuickReplyLibraries([]);
+            setQuickReplyItems([]);
+            setSelectedQuickReplyLibraryId('');
+            setSelectedQuickReplyItemId('');
+            setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM });
+            setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM });
+            setQuickReplyLibraryPanelMode('view');
+            setQuickReplyItemPanelMode('view');
+            return;
+        }
+
+        setLoadingQuickReplies(true);
+        try {
+            const [librariesPayload, itemsPayload] = await Promise.all([
+                requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-libraries?includeInactive=true`),
+                requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-items?includeInactive=true`)
+            ]);
+
+            const libraries = (Array.isArray(librariesPayload?.items) ? librariesPayload.items : [])
+                .map((entry) => normalizeQuickReplyLibraryItem(entry))
+                .filter(Boolean)
+                .sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), 'es', { sensitivity: 'base' }));
+
+            const items = (Array.isArray(itemsPayload?.items) ? itemsPayload.items : [])
+                .map((entry) => normalizeQuickReplyItem(entry))
+                .filter(Boolean);
+
+            setQuickReplyLibraries(libraries);
+            setQuickReplyItems(items);
+            setSelectedQuickReplyLibraryId((prev) => {
+                const cleanPrev = String(prev || '').trim().toUpperCase();
+                if (cleanPrev && libraries.some((entry) => entry.libraryId === cleanPrev)) return cleanPrev;
+                return String(libraries[0]?.libraryId || '').trim().toUpperCase();
+            });
+            setSelectedQuickReplyItemId((prev) => {
+                const cleanPrev = String(prev || '').trim().toUpperCase();
+                if (!cleanPrev) return '';
+                return items.some((entry) => entry.itemId === cleanPrev) ? cleanPrev : '';
+            });
+        } finally {
+            setLoadingQuickReplies(false);
+        }
+    };
+
+    const uploadQuickReplyAsset = async ({ file, tenantId, libraryId = '' } = {}) => {
+        if (!file) throw new Error('Selecciona un archivo para subir.');
+        const cleanTenantId = String(tenantId || '').trim();
+        if (!cleanTenantId) throw new Error('Selecciona tenant antes de subir adjunto.');
+
+        const dataUrl = await readFileAsDataUrl(file);
+        const payload = await requestJson('/api/admin/saas/assets/upload', {
+            method: 'POST',
+            body: {
+                tenantId: cleanTenantId,
+                scope: String(libraryId || 'quick_reply').trim().toLowerCase(),
+                kind: 'quick_reply',
+                fileName: String(file?.name || 'adjunto').trim() || 'adjunto',
+                dataUrl
+            }
+        });
+
+        const filePayload = payload?.file && typeof payload.file === 'object' ? payload.file : {};
+        return {
+            url: String(filePayload.url || filePayload.relativeUrl || '').trim(),
+            mimeType: String(filePayload.mimeType || file?.type || '').trim().toLowerCase(),
+            fileName: String(filePayload.fileName || file?.name || '').trim(),
+            sizeBytes: Number.isFinite(Number(filePayload.sizeBytes || file?.size || 0)) ? Number(filePayload.sizeBytes || file?.size || 0) : null
+        };
+    };
+
+    const openQuickReplyLibraryCreate = () => {
+        const moduleIds = quickReplyScopeModuleId ? [quickReplyScopeModuleId] : [];
+        setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM, moduleIds });
+        setQuickReplyLibraryPanelMode('create');
+    };
+
+    const openQuickReplyLibraryEdit = () => {
+        if (!selectedQuickReplyLibrary) return;
+        setQuickReplyLibraryForm({
+            libraryId: selectedQuickReplyLibrary.libraryId,
+            name: selectedQuickReplyLibrary.name || '',
+            description: selectedQuickReplyLibrary.description || '',
+            isShared: selectedQuickReplyLibrary.isShared === true,
+            isActive: selectedQuickReplyLibrary.isActive !== false,
+            sortOrder: String(selectedQuickReplyLibrary.sortOrder || 100),
+            moduleIds: Array.isArray(selectedQuickReplyLibrary.moduleIds) ? [...selectedQuickReplyLibrary.moduleIds] : []
+        });
+        setQuickReplyLibraryPanelMode('edit');
+    };
+
+    const cancelQuickReplyLibraryEdit = () => {
+        if (selectedQuickReplyLibrary) {
+            setQuickReplyLibraryForm({
+                libraryId: selectedQuickReplyLibrary.libraryId,
+                name: selectedQuickReplyLibrary.name || '',
+                description: selectedQuickReplyLibrary.description || '',
+                isShared: selectedQuickReplyLibrary.isShared === true,
+                isActive: selectedQuickReplyLibrary.isActive !== false,
+                sortOrder: String(selectedQuickReplyLibrary.sortOrder || 100),
+                moduleIds: Array.isArray(selectedQuickReplyLibrary.moduleIds) ? [...selectedQuickReplyLibrary.moduleIds] : []
+            });
+        } else {
+            setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM });
+        }
+        setQuickReplyLibraryPanelMode('view');
+    };
+
+    const toggleModuleInQuickReplyLibraryForm = (moduleId) => {
+        const clean = String(moduleId || '').trim().toLowerCase();
+        if (!clean) return;
+        setQuickReplyLibraryForm((prev) => {
+            const current = Array.isArray(prev?.moduleIds) ? prev.moduleIds : [];
+            const exists = current.includes(clean);
+            return {
+                ...prev,
+                moduleIds: exists ? current.filter((entry) => entry !== clean) : [...current, clean]
+            };
+        });
+    };
+
+    const saveQuickReplyLibrary = async () => {
+        const cleanTenantId = String(settingsTenantId || '').trim();
+        if (!cleanTenantId) throw new Error('Selecciona una empresa para gestionar bibliotecas.');
+        const payload = buildQuickReplyLibraryPayload(quickReplyLibraryForm);
+        if (!String(payload.name || '').trim()) throw new Error('Nombre de biblioteca requerido.');
+
+        if (quickReplyLibraryPanelMode === 'create') {
+            const created = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-libraries`, {
+                method: 'POST',
+                body: payload
+            });
+            const createdId = String(created?.item?.libraryId || '').trim().toUpperCase();
+            await loadQuickReplyData(cleanTenantId);
+            if (createdId) setSelectedQuickReplyLibraryId(createdId);
+            setQuickReplyLibraryPanelMode('view');
+            return;
+        }
+
+        const cleanLibraryId = String(payload.libraryId || selectedQuickReplyLibraryId || '').trim().toUpperCase();
+        if (!cleanLibraryId) throw new Error('Selecciona una biblioteca para actualizar.');
+        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-libraries/${encodeURIComponent(cleanLibraryId)}`, {
+            method: 'PUT',
+            body: payload
+        });
+        await loadQuickReplyData(cleanTenantId);
+        setSelectedQuickReplyLibraryId(cleanLibraryId);
+        setQuickReplyLibraryPanelMode('view');
+    };
+
+    const deactivateQuickReplyLibrary = async (libraryId) => {
+        const cleanTenantId = String(settingsTenantId || '').trim();
+        const cleanLibraryId = String(libraryId || '').trim().toUpperCase();
+        if (!cleanTenantId || !cleanLibraryId) return;
+        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-libraries/${encodeURIComponent(cleanLibraryId)}/deactivate`, {
+            method: 'POST',
+            body: {}
+        });
+        await loadQuickReplyData(cleanTenantId);
+        setQuickReplyLibraryPanelMode('view');
+    };
+
+    const openQuickReplyItemCreate = () => {
+        if (!selectedQuickReplyLibrary) return;
+        setSelectedQuickReplyItemId('');
+        setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM, libraryId: selectedQuickReplyLibrary.libraryId, isActive: true, sortOrder: '100' });
+        setQuickReplyItemPanelMode('create');
+    };
+
+    const openQuickReplyItemEdit = () => {
+        if (!selectedQuickReplyItem) return;
+        setQuickReplyItemForm({
+            itemId: selectedQuickReplyItem.itemId,
+            libraryId: selectedQuickReplyItem.libraryId,
+            label: selectedQuickReplyItem.label || '',
+            text: selectedQuickReplyItem.text || '',
+            mediaUrl: selectedQuickReplyItem.mediaUrl || '',
+            mediaMimeType: selectedQuickReplyItem.mediaMimeType || '',
+            mediaFileName: selectedQuickReplyItem.mediaFileName || '',
+            isActive: selectedQuickReplyItem.isActive !== false,
+            sortOrder: String(selectedQuickReplyItem.sortOrder || 100)
+        });
+        setQuickReplyItemPanelMode('edit');
+    };
+
+    const cancelQuickReplyItemEdit = () => {
+        if (selectedQuickReplyItem) {
+            setQuickReplyItemForm({
+                itemId: selectedQuickReplyItem.itemId,
+                libraryId: selectedQuickReplyItem.libraryId,
+                label: selectedQuickReplyItem.label || '',
+                text: selectedQuickReplyItem.text || '',
+                mediaUrl: selectedQuickReplyItem.mediaUrl || '',
+                mediaMimeType: selectedQuickReplyItem.mediaMimeType || '',
+                mediaFileName: selectedQuickReplyItem.mediaFileName || '',
+                isActive: selectedQuickReplyItem.isActive !== false,
+                sortOrder: String(selectedQuickReplyItem.sortOrder || 100)
+            });
+        } else {
+            setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM, libraryId: String(selectedQuickReplyLibrary?.libraryId || '').trim().toUpperCase() });
+        }
+        setQuickReplyItemPanelMode('view');
+    };
+
+    const saveQuickReplyItem = async () => {
+        const cleanTenantId = String(settingsTenantId || '').trim();
+        const libraryId = String(quickReplyItemForm.libraryId || selectedQuickReplyLibrary?.libraryId || '').trim().toUpperCase();
+        if (!cleanTenantId || !libraryId) throw new Error('Selecciona biblioteca antes de guardar respuesta rapida.');
+
+        const payload = buildQuickReplyItemPayload(quickReplyItemForm, { libraryId });
+        if (!payload.label) throw new Error('Etiqueta requerida.');
+        if (!payload.text && !payload.mediaUrl) throw new Error('Debes registrar texto o adjunto.');
+
+        if (quickReplyItemPanelMode === 'create') {
+            const created = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-items`, {
+                method: 'POST',
+                body: payload
+            });
+            const createdId = String(created?.item?.itemId || '').trim().toUpperCase();
+            await loadQuickReplyData(cleanTenantId);
+            if (createdId) setSelectedQuickReplyItemId(createdId);
+            setQuickReplyItemPanelMode('view');
+            return;
+        }
+
+        const cleanItemId = String(payload.itemId || selectedQuickReplyItemId || '').trim().toUpperCase();
+        if (!cleanItemId) throw new Error('Selecciona una respuesta para actualizar.');
+        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-items/${encodeURIComponent(cleanItemId)}`, {
+            method: 'PUT',
+            body: payload
+        });
+        await loadQuickReplyData(cleanTenantId);
+        setSelectedQuickReplyItemId(cleanItemId);
+        setQuickReplyItemPanelMode('view');
+    };
+
+    const deactivateQuickReplyItem = async (itemId) => {
+        const cleanTenantId = String(settingsTenantId || '').trim();
+        const cleanItemId = String(itemId || '').trim().toUpperCase();
+        if (!cleanTenantId || !cleanItemId) return;
+        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-items/${encodeURIComponent(cleanItemId)}/deactivate`, {
+            method: 'POST',
+            body: {}
+        });
+        await loadQuickReplyData(cleanTenantId);
+        setQuickReplyItemPanelMode('view');
+    };
+
     const loadTenantCatalogs = async (tenantId) => {
         const cleanTenantId = String(tenantId || '').trim();
         if (!cleanTenantId) {
@@ -1991,6 +2383,7 @@ export default function SaasAdminPanel({
                 await loadWaModules(settingsTenantId);
                 await loadTenantCatalogs(settingsTenantId);
                 await loadTenantAiAssistants(settingsTenantId);
+                await loadQuickReplyData(settingsTenantId);
             }
         } catch (err) {
             setError(String(err?.message || err || 'Error inesperado.'));
@@ -2092,6 +2485,12 @@ export default function SaasAdminPanel({
         setSelectedAiAssistantId('');
         setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
         setAiAssistantPanelMode('view');
+        setSelectedQuickReplyLibraryId('');
+        setSelectedQuickReplyItemId('');
+        setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM });
+        setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM });
+        setQuickReplyLibraryPanelMode('view');
+        setQuickReplyItemPanelMode('view');
         setSelectedPlanId('');
         setPlanForm(normalizePlanForm('starter', {}));
         setRoleForm(EMPTY_ROLE_FORM);
@@ -2170,7 +2569,8 @@ export default function SaasAdminPanel({
             loadTenantCatalogs(tenantScopeId),
             loadTenantAiAssistants(tenantScopeId),
             loadTenantIntegrations(tenantScopeId),
-            loadCustomers(tenantScopeId)
+            loadCustomers(tenantScopeId),
+            loadQuickReplyData(tenantScopeId)
         ]).catch((err) => {
             setError(String(err?.message || err || 'No se pudo cargar configuracion del tenant.'));
         });
@@ -2194,6 +2594,14 @@ export default function SaasAdminPanel({
         setSelectedAiAssistantId('');
         setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
         setAiAssistantPanelMode('view');
+        setQuickReplyLibraries([]);
+        setQuickReplyItems([]);
+        setSelectedQuickReplyLibraryId('');
+        setSelectedQuickReplyItemId('');
+        setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM });
+        setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM });
+        setQuickReplyLibraryPanelMode('view');
+        setQuickReplyItemPanelMode('view');
     }, [isOpen, tenantScopeId]);
 
     useEffect(() => {
@@ -2211,6 +2619,10 @@ export default function SaasAdminPanel({
         setSelectedAiAssistantId('');
         setAiAssistantPanelMode('view');
         setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
+        setSelectedQuickReplyLibraryId('');
+        setSelectedQuickReplyItemId('');
+        setQuickReplyLibraryPanelMode('view');
+        setQuickReplyItemPanelMode('view');
     }, [tenantScopeId]);
 
     useEffect(() => {
@@ -2319,6 +2731,45 @@ export default function SaasAdminPanel({
         }
         openWaModuleEditor(selectedWaModule);
     }, [selectedWaModule]);
+
+    useEffect(() => {
+        if (!selectedQuickReplyLibrary) {
+            setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM, moduleIds: quickReplyScopeModuleId ? [quickReplyScopeModuleId] : [] });
+            return;
+        }
+        if (quickReplyLibraryPanelMode === 'create') return;
+        setQuickReplyLibraryForm({
+            libraryId: selectedQuickReplyLibrary.libraryId,
+            name: selectedQuickReplyLibrary.name || '',
+            description: selectedQuickReplyLibrary.description || '',
+            isShared: selectedQuickReplyLibrary.isShared === true,
+            isActive: selectedQuickReplyLibrary.isActive !== false,
+            sortOrder: String(selectedQuickReplyLibrary.sortOrder || 100),
+            moduleIds: Array.isArray(selectedQuickReplyLibrary.moduleIds) ? [...selectedQuickReplyLibrary.moduleIds] : []
+        });
+    }, [selectedQuickReplyLibrary, quickReplyLibraryPanelMode, quickReplyScopeModuleId]);
+
+    useEffect(() => {
+        if (!selectedQuickReplyItem) {
+            setQuickReplyItemForm((prev) => ({
+                ...EMPTY_QUICK_REPLY_ITEM_FORM,
+                libraryId: String(selectedQuickReplyLibrary?.libraryId || prev?.libraryId || '').trim().toUpperCase()
+            }));
+            return;
+        }
+        if (quickReplyItemPanelMode === 'create') return;
+        setQuickReplyItemForm({
+            itemId: selectedQuickReplyItem.itemId,
+            libraryId: selectedQuickReplyItem.libraryId,
+            label: selectedQuickReplyItem.label || '',
+            text: selectedQuickReplyItem.text || '',
+            mediaUrl: selectedQuickReplyItem.mediaUrl || '',
+            mediaMimeType: selectedQuickReplyItem.mediaMimeType || '',
+            mediaFileName: selectedQuickReplyItem.mediaFileName || '',
+            isActive: selectedQuickReplyItem.isActive !== false,
+            sortOrder: String(selectedQuickReplyItem.sortOrder || 100)
+        });
+    }, [selectedQuickReplyItem, selectedQuickReplyLibrary, quickReplyItemPanelMode]);
 
     const openTenantCreate = () => {
         setTenantPanelMode('create');
@@ -4861,9 +5312,281 @@ export default function SaasAdminPanel({
                                             )}
                                         </>
                                     );
-                                })()}
-                            </div>
+                                })()}                            </div>
                         </div>
+
+                        {settingsTenantId && (
+                            <div className="saas-admin-related-block" style={{ marginTop: '14px' }}>
+                                <div className="saas-admin-pane-header">
+                                    <div>
+                                        <h4>Respuestas rapidas por modulo</h4>
+                                        <small>Gestion centralizada: crea bibliotecas y plantillas reutilizables (texto/imagen/PDF) para usar con / en operacion.</small>
+                                    </div>
+                                    <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                        <button
+                                            type="button"
+                                            disabled={busy || loadingQuickReplies || !settingsTenantId}
+                                            onClick={() => settingsTenantId && loadQuickReplyData(settingsTenantId).catch((err) => setError(String(err?.message || err || 'No se pudo recargar respuestas rapidas.')))}
+                                        >
+                                            Recargar
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={busy || !canEditModules || !settingsTenantId}
+                                            onClick={openQuickReplyLibraryCreate}
+                                        >
+                                            Nueva biblioteca
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {!selectedWaModuleId && (
+                                    <div className="saas-admin-empty-inline">Selecciona un modulo para asignar bibliotecas y respuestas rapidas.</div>
+                                )}
+
+                                {selectedWaModuleId && (
+                                    <>
+                                        <div className="saas-admin-form-row">
+                                            <select
+                                                value={selectedQuickReplyLibraryId}
+                                                onChange={(event) => {
+                                                    setSelectedQuickReplyLibraryId(String(event.target.value || '').trim().toUpperCase());
+                                                    setSelectedQuickReplyItemId('');
+                                                    setQuickReplyLibraryPanelMode('view');
+                                                    setQuickReplyItemPanelMode('view');
+                                                }}
+                                                disabled={loadingQuickReplies || quickReplyLibrariesByScope.length === 0}
+                                            >
+                                                {quickReplyLibrariesByScope.length === 0 && <option value="">Sin bibliotecas</option>}
+                                                {quickReplyLibrariesByScope.map((library) => (
+                                                    <option key={library.libraryId} value={library.libraryId}>
+                                                        {library.name} {library.isShared ? '(Compartida)' : '(Modulo)'}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <button type="button" disabled={busy || !selectedQuickReplyLibrary || !canEditModules} onClick={openQuickReplyLibraryEdit}>Editar biblioteca</button>
+                                            <button
+                                                type="button"
+                                                disabled={busy || !selectedQuickReplyLibrary || !canEditModules}
+                                                onClick={() => runAction('Biblioteca desactivada', async () => {
+                                                    await deactivateQuickReplyLibrary(selectedQuickReplyLibrary?.libraryId);
+                                                })}
+                                            >
+                                                Desactivar
+                                            </button>
+                                        </div>
+
+                                        {(quickReplyLibraryPanelMode === 'create' || quickReplyLibraryPanelMode === 'edit') && (
+                                            <div className="saas-admin-related-block" style={{ marginTop: '10px' }}>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={quickReplyLibraryForm.name}
+                                                        onChange={(event) => setQuickReplyLibraryForm((prev) => ({ ...prev, name: event.target.value }))}
+                                                        placeholder="Nombre biblioteca"
+                                                        disabled={busy}
+                                                    />
+                                                    <input
+                                                        value={quickReplyLibraryForm.description}
+                                                        onChange={(event) => setQuickReplyLibraryForm((prev) => ({ ...prev, description: event.target.value }))}
+                                                        placeholder="Descripcion"
+                                                        disabled={busy}
+                                                    />
+                                                </div>
+                                                <div className="saas-admin-modules">
+                                                    <label className="saas-admin-module-toggle">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={quickReplyLibraryForm.isShared === true}
+                                                            onChange={(event) => setQuickReplyLibraryForm((prev) => ({ ...prev, isShared: event.target.checked }))}
+                                                            disabled={busy}
+                                                        />
+                                                        <span>Compartida para todos los modulos</span>
+                                                    </label>
+                                                    <label className="saas-admin-module-toggle">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={quickReplyLibraryForm.isActive !== false}
+                                                            onChange={(event) => setQuickReplyLibraryForm((prev) => ({ ...prev, isActive: event.target.checked }))}
+                                                            disabled={busy}
+                                                        />
+                                                        <span>Biblioteca activa</span>
+                                                    </label>
+                                                </div>
+                                                {!quickReplyLibraryForm.isShared && (
+                                                    <div className="saas-admin-modules">
+                                                        {(waModules || []).map((moduleItem) => {
+                                                            const moduleId = String(moduleItem?.moduleId || '').trim().toLowerCase();
+                                                            const checked = (quickReplyLibraryForm.moduleIds || []).includes(moduleId);
+                                                            return (
+                                                                <label key={'qr_library_module_' + moduleId} className="saas-admin-module-toggle">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={checked}
+                                                                        onChange={() => toggleModuleInQuickReplyLibraryForm(moduleId)}
+                                                                        disabled={busy || !moduleId}
+                                                                    />
+                                                                    <span>{moduleItem?.name || moduleId}</span>
+                                                                </label>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                                <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                                    <button
+                                                        type="button"
+                                                        disabled={busy || !canEditModules || !String(quickReplyLibraryForm.name || '').trim()}
+                                                        onClick={() => runAction(
+                                                            quickReplyLibraryPanelMode === 'create' ? 'Biblioteca creada' : 'Biblioteca actualizada',
+                                                            async () => { await saveQuickReplyLibrary(); }
+                                                        )}
+                                                    >
+                                                        {quickReplyLibraryPanelMode === 'create' ? 'Guardar biblioteca' : 'Actualizar biblioteca'}
+                                                    </button>
+                                                    <button type="button" disabled={busy} onClick={cancelQuickReplyLibraryEdit}>Cancelar</button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {selectedQuickReplyLibrary && (
+                                            <div className="saas-admin-related-block" style={{ marginTop: '10px' }}>
+                                                <div className="saas-admin-pane-header">
+                                                    <div>
+                                                        <h4>Plantillas de {selectedQuickReplyLibrary.name}</h4>
+                                                        <small>Usa texto y/o adjuntos. Soporta {QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL}</small>
+                                                    </div>
+                                                    <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                        <button
+                                                            type="button"
+                                                            disabled={busy || !canEditModules}
+                                                            onClick={openQuickReplyItemCreate}
+                                                        >
+                                                            Nueva respuesta
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                <div className="saas-admin-form-row">
+                                                    <select
+                                                        value={selectedQuickReplyItemId}
+                                                        onChange={(event) => {
+                                                            setSelectedQuickReplyItemId(String(event.target.value || '').trim().toUpperCase());
+                                                            setQuickReplyItemPanelMode('view');
+                                                        }}
+                                                        disabled={quickReplyItemsForSelectedLibrary.length === 0}
+                                                    >
+                                                        {quickReplyItemsForSelectedLibrary.length === 0 && <option value="">Sin respuestas</option>}
+                                                        {quickReplyItemsForSelectedLibrary.map((item) => (
+                                                            <option key={item.itemId} value={item.itemId}>{item.label}</option>
+                                                        ))}
+                                                    </select>
+                                                    <button type="button" disabled={busy || !selectedQuickReplyItem || !canEditModules} onClick={openQuickReplyItemEdit}>Editar respuesta</button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={busy || !selectedQuickReplyItem || !canEditModules}
+                                                        onClick={() => runAction('Respuesta rapida desactivada', async () => {
+                                                            await deactivateQuickReplyItem(selectedQuickReplyItem?.itemId);
+                                                        })}
+                                                    >
+                                                        Desactivar
+                                                    </button>
+                                                </div>
+
+                                                {(quickReplyItemPanelMode === 'create' || quickReplyItemPanelMode === 'edit') && (
+                                                    <div className="saas-admin-related-block" style={{ marginTop: '10px' }}>
+                                                        <div className="saas-admin-form-row">
+                                                            <input
+                                                                value={quickReplyItemForm.label}
+                                                                onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, label: event.target.value }))}
+                                                                placeholder="Etiqueta de respuesta"
+                                                                disabled={busy}
+                                                            />
+                                                            <input
+                                                                value={quickReplyItemForm.mediaFileName}
+                                                                onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, mediaFileName: event.target.value }))}
+                                                                placeholder="Nombre archivo (opcional)"
+                                                                disabled={busy}
+                                                            />
+                                                        </div>
+                                                        <textarea
+                                                            value={quickReplyItemForm.text}
+                                                            onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, text: event.target.value }))}
+                                                            rows={4}
+                                                            placeholder="Texto rapido (puede quedar vacio si solo envias adjunto)"
+                                                            disabled={busy}
+                                                        />
+                                                        <div className="saas-admin-form-row">
+                                                            <input
+                                                                value={quickReplyItemForm.mediaUrl}
+                                                                onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, mediaUrl: event.target.value, mediaMimeType: prev.mediaMimeType || '' }))}
+                                                                placeholder="URL adjunto (auto al subir archivo)"
+                                                                disabled={busy}
+                                                            />
+                                                            <label className="saas-admin-dropzone" style={{ minHeight: 'auto', padding: '10px 12px' }}>
+                                                                <input
+                                                                    type="file"
+                                                                    accept={QUICK_REPLY_ALLOWED_MIME_TYPES.join(',')}
+                                                                    disabled={busy}
+                                                                    onChange={async (event) => {
+                                                                        const file = event.target.files?.[0] || null;
+                                                                        event.target.value = '';
+                                                                        if (!file) return;
+                                                                        try {
+                                                                            setBusy(true);
+                                                                            const uploaded = await uploadQuickReplyAsset({
+                                                                                file,
+                                                                                tenantId: settingsTenantId,
+                                                                                libraryId: selectedQuickReplyLibrary?.libraryId || ''
+                                                                            });
+                                                                            if (!uploaded?.url) throw new Error('No se pudo subir el adjunto.');
+                                                                            setQuickReplyItemForm((prev) => ({
+                                                                                ...prev,
+                                                                                mediaUrl: uploaded.url,
+                                                                                mediaMimeType: uploaded.mimeType || prev.mediaMimeType || '',
+                                                                                mediaFileName: uploaded.fileName || prev.mediaFileName || ''
+                                                                            }));
+                                                                        } catch (uploadError) {
+                                                                            setError(String(uploadError?.message || uploadError || 'No se pudo subir adjunto de respuesta rapida.'));
+                                                                        } finally {
+                                                                            setBusy(false);
+                                                                        }
+                                                                    }}
+                                                                />
+                                                                <strong>Subir adjunto</strong>
+                                                                <small>{QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL}</small>
+                                                            </label>
+                                                        </div>
+                                                        <div className="saas-admin-modules">
+                                                            <label className="saas-admin-module-toggle">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={quickReplyItemForm.isActive !== false}
+                                                                    onChange={(event) => setQuickReplyItemForm((prev) => ({ ...prev, isActive: event.target.checked }))}
+                                                                    disabled={busy}
+                                                                />
+                                                                <span>Respuesta activa</span>
+                                                            </label>
+                                                        </div>
+                                                        <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                                            <button
+                                                                type="button"
+                                                                disabled={busy || !canEditModules || !String(quickReplyItemForm.label || '').trim() || (!String(quickReplyItemForm.text || '').trim() && !String(quickReplyItemForm.mediaUrl || '').trim())}
+                                                                onClick={() => runAction(
+                                                                    quickReplyItemPanelMode === 'create' ? 'Respuesta rapida creada' : 'Respuesta rapida actualizada',
+                                                                    async () => { await saveQuickReplyItem(); }
+                                                                )}
+                                                            >
+                                                                {quickReplyItemPanelMode === 'create' ? 'Guardar respuesta' : 'Actualizar respuesta'}
+                                                            </button>
+                                                            <button type="button" disabled={busy} onClick={cancelQuickReplyItemEdit}>Cancelar</button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        )}
                     </section>
                     )}
 
@@ -5874,6 +6597,8 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
 
 
 
