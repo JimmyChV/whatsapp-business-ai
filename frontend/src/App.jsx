@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { io } from 'socket.io-client';
 
 import Sidebar from './components/Sidebar';
@@ -733,6 +733,7 @@ function App() {
   const forceOperationLaunch = waLaunchParams.forceOperationLaunch && !forceOperationLaunchBypass;
   const requestedWaModuleFromUrl = waLaunchParams.requestedWaModuleId;
   const requestedWaTenantFromUrl = waLaunchParams.requestedWaTenantId;
+  const requestedLaunchSource = waLaunchParams.requestedLaunchSource;
   const tenantScopeId = String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || 'default').trim() || 'default';
   const labelDefsStorageKey = buildScopedStorageKey(LABEL_DEFS_STORAGE_PREFIX, tenantScopeId);
 
@@ -2949,24 +2950,114 @@ function App() {
       sizeBytes: Number(payload?.file?.sizeBytes || 0) || 0
     };
   };
+  const sanitizeWorkspaceKey = (value = '') => String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '_') || 'default';
+
+  const buildWorkspaceUrl = ({ mode = 'operation', tenantId = '', moduleId = '', source = '' } = {}) => {
+    const nextUrl = new URL(window.location.href);
+    const cleanTenantId = String(tenantId || '').trim();
+    const cleanModuleId = String(moduleId || '').trim().toLowerCase();
+    const cleanMode = String(mode || '').trim().toLowerCase();
+    const cleanSource = String(source || '').trim().toLowerCase();
+
+    if (cleanMode === 'operation') {
+      nextUrl.searchParams.set('wa_launch', 'operation');
+      if (cleanModuleId) nextUrl.searchParams.set('wa_module', cleanModuleId);
+      else nextUrl.searchParams.delete('wa_module');
+    } else {
+      nextUrl.searchParams.delete('wa_launch');
+      nextUrl.searchParams.delete('wa_module');
+    }
+
+    if (cleanTenantId) nextUrl.searchParams.set('wa_tenant', cleanTenantId);
+    else nextUrl.searchParams.delete('wa_tenant');
+
+    if (cleanSource) nextUrl.searchParams.set('wa_from', cleanSource);
+    else nextUrl.searchParams.delete('wa_from');
+
+    return nextUrl;
+  };
+
+  const isWorkspaceTabAligned = (rawHref = '', { mode = 'operation', tenantId = '' } = {}) => {
+    try {
+      const current = new URL(String(rawHref || ''));
+      const currentMode = String(current.searchParams.get('wa_launch') || '').trim().toLowerCase() === 'operation'
+        ? 'operation'
+        : 'panel';
+      const currentTenant = String(current.searchParams.get('wa_tenant') || '').trim();
+      const expectedMode = String(mode || '').trim().toLowerCase() === 'operation' ? 'operation' : 'panel';
+      const expectedTenant = String(tenantId || '').trim();
+      if (currentMode !== expectedMode) return false;
+      return currentTenant === expectedTenant;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const openOrFocusWorkspaceTab = ({ mode = 'operation', tenantId = '', moduleId = '', source = '' } = {}) => {
+    const cleanTenantId = String(tenantId || '').trim();
+    const cleanMode = String(mode || '').trim().toLowerCase() === 'operation' ? 'operation' : 'panel';
+    const targetUrl = buildWorkspaceUrl({ mode: cleanMode, tenantId: cleanTenantId, moduleId, source });
+    const targetName = cleanMode === 'operation'
+      ? `lavitat_chat_${sanitizeWorkspaceKey(cleanTenantId)}`
+      : `lavitat_panel_${sanitizeWorkspaceKey(cleanTenantId)}`;
+
+    let targetWindow = null;
+    try {
+      targetWindow = window.open('', targetName);
+    } catch (_) {
+      targetWindow = null;
+    }
+
+    if (!targetWindow) {
+      window.location.assign(targetUrl.toString());
+      return;
+    }
+
+    let mustNavigate = true;
+    try {
+      const currentHref = String(targetWindow.location?.href || '').trim();
+      if (currentHref && currentHref !== 'about:blank') {
+        mustNavigate = !isWorkspaceTabAligned(currentHref, { mode: cleanMode, tenantId: cleanTenantId });
+      }
+    } catch (_) {
+      mustNavigate = true;
+    }
+
+    if (mustNavigate) {
+      targetWindow.location.href = targetUrl.toString();
+    }
+    targetWindow.focus();
+  };
+
   const handleOpenWhatsAppOperation = (moduleId = '', options = {}) => {
     const preferredModuleId = String(moduleId || '').trim();
     const targetTenantId = String(options?.tenantId || tenantScopeId || '').trim();
+    if (!targetTenantId) return;
 
-    try {
-      const nextUrl = new URL(window.location.href);
-      nextUrl.searchParams.set('wa_launch', 'operation');
-      if (preferredModuleId) nextUrl.searchParams.set('wa_module', preferredModuleId);
-      else nextUrl.searchParams.delete('wa_module');
-      if (targetTenantId) nextUrl.searchParams.set('wa_tenant', targetTenantId);
-      else nextUrl.searchParams.delete('wa_tenant');
-
-      setShowSaasAdminPanel(false);
-      window.location.assign(nextUrl.toString());
-    } catch (_) {
-      // no-op
-    }
+    setShowSaasAdminPanel(false);
+    openOrFocusWorkspaceTab({
+      mode: 'operation',
+      tenantId: targetTenantId,
+      moduleId: preferredModuleId,
+      source: 'panel'
+    });
   };
+
+  const handleOpenSaasAdminWorkspace = (options = {}) => {
+    const targetTenantId = String(options?.tenantId || tenantScopeId || '').trim();
+    if (!targetTenantId) return;
+
+    setShowSaasAdminPanel(false);
+    openOrFocusWorkspaceTab({
+      mode: 'panel',
+      tenantId: targetTenantId,
+      source: 'chat'
+    });
+  };
+
   const handleSelectTransport = (mode) => {
     const safeMode = String(mode || '').trim().toLowerCase();
     if (safeMode !== 'cloud') return;
@@ -3775,6 +3866,8 @@ function App() {
           userRole={saasUserRole}
           isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
           currentUser={saasSession?.user || null}
+          preferredTenantId={requestedWaTenantFromUrl || ''}
+          launchSource={requestedLaunchSource || ''}
         />
       );
     }
@@ -3893,7 +3986,7 @@ function App() {
         tenantSwitchError={tenantSwitchError}
         onSaasLogout={handleSaasLogout}
         canManageSaas={canManageSaas}
-        onOpenSaasAdmin={() => setShowSaasAdminPanel(true)}
+        onOpenSaasAdmin={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
         waModules={availableWaModules}
       />
 
@@ -4095,10 +4188,11 @@ function App() {
         userRole={saasUserRole}
         isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
         currentUser={saasSession?.user || null}
+          preferredTenantId={requestedWaTenantFromUrl || ''}
+          launchSource={requestedLaunchSource || ''}
           />
     </div>
   );
 }
 
 export default App;
-
