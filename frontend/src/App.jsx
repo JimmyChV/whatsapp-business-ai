@@ -2063,19 +2063,39 @@ function App() {
 
       const items = Array.isArray(payload?.items) ? payload.items : [];
       const normalized = items
-        .map((item, idx) => ({
-          id: String(item?.id || ('qr_' + (idx + 1))),
-          label: sanitizeDisplayText(item?.label || 'Respuesta rapida'),
-          text: repairMojibake(item?.text || ''),
-          mediaUrl: String(item?.mediaUrl || '').trim() || null,
-          mediaMimeType: String(item?.mediaMimeType || '').trim().toLowerCase() || null,
-          mediaFileName: String(item?.mediaFileName || '').trim() || null,
-          mediaSizeBytes: Number.isFinite(Number(item?.mediaSizeBytes)) ? Number(item.mediaSizeBytes) : null,
-          libraryId: String(item?.libraryId || '').trim() || null,
-          libraryName: String(item?.libraryName || '').trim() || null,
-          isShared: item?.isShared !== false
-        }))
-        .filter((item) => item.id && (item.text || item.mediaUrl));
+        .map((item, idx) => {
+          const mediaAssets = Array.isArray(item?.mediaAssets)
+            ? item.mediaAssets
+              .map((asset) => ({
+                url: String(asset?.url || asset?.mediaUrl || '').trim() || null,
+                mimeType: String(asset?.mimeType || asset?.mediaMimeType || '').trim().toLowerCase() || null,
+                fileName: String(asset?.fileName || asset?.mediaFileName || '').trim() || null,
+                sizeBytes: Number.isFinite(Number(asset?.sizeBytes ?? asset?.mediaSizeBytes)) ? Number(asset?.sizeBytes ?? asset?.mediaSizeBytes) : null
+              }))
+              .filter((asset) => Boolean(asset.url))
+            : [];
+          const mediaUrl = String(item?.mediaUrl || mediaAssets[0]?.url || '').trim() || null;
+          const mediaMimeType = String(item?.mediaMimeType || mediaAssets[0]?.mimeType || '').trim().toLowerCase() || null;
+          const mediaFileName = String(item?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null;
+          const mediaSizeBytes = Number.isFinite(Number(item?.mediaSizeBytes))
+            ? Number(item.mediaSizeBytes)
+            : (Number.isFinite(Number(mediaAssets[0]?.sizeBytes)) ? Number(mediaAssets[0].sizeBytes) : null);
+
+          return {
+            id: String(item?.id || ('qr_' + (idx + 1))),
+            label: sanitizeDisplayText(item?.label || 'Respuesta rapida'),
+            text: repairMojibake(item?.text || ''),
+            mediaAssets,
+            mediaUrl,
+            mediaMimeType,
+            mediaFileName,
+            mediaSizeBytes,
+            libraryId: String(item?.libraryId || '').trim() || null,
+            libraryName: String(item?.libraryName || '').trim() || null,
+            isShared: item?.isShared !== false
+          };
+        })
+        .filter((item) => item.id && (item.text || item.mediaUrl || (Array.isArray(item.mediaAssets) && item.mediaAssets.length > 0)));
       setQuickReplies(normalized);
     });
 
@@ -3169,7 +3189,17 @@ function App() {
 
     const reply = quickReply && typeof quickReply === 'object' ? quickReply : null;
     const quickReplyId = String(reply?.id || '').trim();
-    if (!quickReplyId && !String(reply?.text || '').trim() && !String(reply?.mediaUrl || '').trim()) return;
+    const mediaAssets = Array.isArray(reply?.mediaAssets)
+      ? reply.mediaAssets
+        .map((asset) => ({
+          url: String(asset?.url || asset?.mediaUrl || '').trim() || null,
+          mimeType: String(asset?.mimeType || asset?.mediaMimeType || '').trim().toLowerCase() || null,
+          fileName: String(asset?.fileName || asset?.mediaFileName || '').trim() || null,
+          sizeBytes: Number.isFinite(Number(asset?.sizeBytes ?? asset?.mediaSizeBytes)) ? Number(asset?.sizeBytes ?? asset?.mediaSizeBytes) : null
+        }))
+        .filter((asset) => Boolean(asset.url))
+      : [];
+    if (!quickReplyId && !String(reply?.text || '').trim() && !String(reply?.mediaUrl || '').trim() && mediaAssets.length === 0) return;
 
     const activeChat = (Array.isArray(chatsRef.current) ? chatsRef.current : [])
       .find((chat) => String(chat?.id || '').trim() === activeId) || null;
@@ -3180,9 +3210,10 @@ function App() {
         id: quickReplyId || undefined,
         label: String(reply?.label || '').trim() || undefined,
         text: String(reply?.text || '').trim() || '',
-        mediaUrl: String(reply?.mediaUrl || '').trim() || null,
-        mediaMimeType: String(reply?.mediaMimeType || '').trim().toLowerCase() || null,
-        mediaFileName: String(reply?.mediaFileName || '').trim() || null
+        mediaAssets,
+        mediaUrl: String(reply?.mediaUrl || mediaAssets[0]?.url || '').trim() || null,
+        mediaMimeType: String(reply?.mediaMimeType || mediaAssets[0]?.mimeType || '').trim().toLowerCase() || null,
+        mediaFileName: String(reply?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null
       },
       to: activeId,
       toPhone: String(activeChat?.phone || '').trim() || undefined
