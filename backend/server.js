@@ -28,6 +28,9 @@ const tenantCatalogService = require('./tenant_catalog_service');
 const quickReplyLibrariesService = require('./quick_reply_libraries_service');
 const tenantLabelService = require('./tenant_label_service');
 const conversationOpsService = require('./conversation_ops_service');
+const assignmentRulesService = require('./assignment_rules_service');
+const chatAssignmentRouterService = require('./chat_assignment_router_service');
+const operationsKpiService = require('./operations_kpi_service');
 const { loadCatalog, addProduct, updateProduct } = require('./catalog_manager');
 const opsTelemetry = require('./ops_telemetry');
 
@@ -1074,6 +1077,38 @@ function hasChatAssignmentsWriteAccess(req = {}, tenantId = '') {
     return hasAnyPermission(req, [
         accessPolicyService.PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_MANAGE,
         accessPolicyService.PERMISSIONS.TENANT_USERS_MANAGE
+    ]);
+}
+
+function hasAssignmentRulesReadAccess(req = {}, tenantId = '') {
+    if (!tenantId) return false;
+    if (!isTenantAllowedForUser(req, tenantId)) return false;
+    return hasAnyPermission(req, [
+        accessPolicyService.PERMISSIONS.TENANT_ASSIGNMENT_RULES_READ,
+        accessPolicyService.PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_READ,
+        accessPolicyService.PERMISSIONS.TENANT_CHAT_OPERATE,
+        accessPolicyService.PERMISSIONS.TENANT_RUNTIME_READ
+    ]);
+}
+
+function hasAssignmentRulesWriteAccess(req = {}, tenantId = '') {
+    if (!tenantId) return false;
+    if (!isTenantAllowedForUser(req, tenantId)) return false;
+    return hasAnyPermission(req, [
+        accessPolicyService.PERMISSIONS.TENANT_ASSIGNMENT_RULES_MANAGE,
+        accessPolicyService.PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_MANAGE,
+        accessPolicyService.PERMISSIONS.TENANT_USERS_MANAGE
+    ]);
+}
+
+function hasOperationsKpiReadAccess(req = {}, tenantId = '') {
+    if (!tenantId) return false;
+    if (!isTenantAllowedForUser(req, tenantId)) return false;
+    return hasAnyPermission(req, [
+        accessPolicyService.PERMISSIONS.TENANT_KPIS_READ,
+        accessPolicyService.PERMISSIONS.TENANT_CONVERSATION_EVENTS_READ,
+        accessPolicyService.PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_READ,
+        accessPolicyService.PERMISSIONS.TENANT_RUNTIME_READ
     ]);
 }
 
@@ -3184,6 +3219,242 @@ app.get('/api/tenant/assignment-events', async (req, res) => {
     }
 });
 
+app.get('/api/admin/saas/tenants/:tenantId/assignment-rules', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasAssignmentRulesReadAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const scopeModuleId = normalizeScopeModuleId(req.query?.scopeModuleId || '');
+        const items = await assignmentRulesService.listRules(tenantId);
+        const effective = await assignmentRulesService.getEffectiveRule(tenantId, scopeModuleId || '');
+        return res.json({ ok: true, tenantId, scopeModuleId, items, effective });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar reglas de asignacion.') });
+    }
+});
+
+app.put('/api/admin/saas/tenants/:tenantId/assignment-rules', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasAssignmentRulesWriteAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const actorUserId = String(req?.authContext?.user?.userId || req?.authContext?.user?.id || '').trim() || null;
+        const payload = req.body && typeof req.body === 'object' ? req.body : {};
+        const saved = await assignmentRulesService.upsertRule(tenantId, {
+            scopeModuleId: normalizeScopeModuleId(payload.scopeModuleId || ''),
+            enabled: payload.enabled === true,
+            mode: payload.mode,
+            allowedRoles: Array.isArray(payload.allowedRoles) ? payload.allowedRoles : [],
+            maxOpenChatsPerUser: payload.maxOpenChatsPerUser,
+            metadata: payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {},
+            updatedByUserId: actorUserId
+        });
+
+        await auditLogService.writeAuditLog(tenantId, {
+            userId: actorUserId,
+            userEmail: req?.authContext?.user?.email || null,
+            role: req?.authContext?.user?.role || null,
+            action: 'chat.assignment.rule.updated',
+            resourceType: 'assignment_rule',
+            resourceId: String(saved?.scopeModuleId || ''),
+            source: 'http',
+            payload: {
+                scopeModuleId: saved?.scopeModuleId || '',
+                enabled: saved?.enabled === true,
+                mode: saved?.mode || 'least_load',
+                maxOpenChatsPerUser: saved?.maxOpenChatsPerUser || null,
+                allowedRoles: Array.isArray(saved?.allowedRoles) ? saved.allowedRoles : []
+            }
+        });
+
+        return res.json({ ok: true, tenantId, rule: saved });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar la regla de asignacion.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/chats/:chatId/auto-assign', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const chatId = String(req.params?.chatId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!chatId) return res.status(400).json({ ok: false, error: 'chatId invalido.' });
+    if (!hasAssignmentRulesWriteAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const actorUserId = String(req?.authContext?.user?.userId || req?.authContext?.user?.id || '').trim() || null;
+        const scopeModuleId = normalizeScopeModuleId(req.body?.scopeModuleId || req.query?.scopeModuleId || '');
+        const trigger = String(req.body?.trigger || 'manual').trim().toLowerCase() || 'manual';
+        const assignmentReason = String(req.body?.assignmentReason || '').trim();
+
+        const result = await chatAssignmentRouterService.autoAssignChat(tenantId, {
+            chatId,
+            scopeModuleId,
+            actorUserId,
+            trigger,
+            assignmentReason
+        });
+
+        await auditLogService.writeAuditLog(tenantId, {
+            userId: actorUserId,
+            userEmail: req?.authContext?.user?.email || null,
+            role: req?.authContext?.user?.role || null,
+            action: 'chat.assignment.auto.assign',
+            resourceType: 'chat',
+            resourceId: chatId,
+            source: 'http',
+            payload: {
+                scopeModuleId,
+                trigger,
+                resultMode: result?.mode || null,
+                reused: Boolean(result?.reused),
+                selectedCandidate: result?.selectedCandidate || null,
+                reason: result?.reason || null
+            }
+        });
+
+        return res.json({ ok: Boolean(result?.ok), tenantId, chatId, scopeModuleId, ...result });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo autoasignar el chat.') });
+    }
+});
+
+app.get('/api/admin/saas/tenants/:tenantId/kpis/operations', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!hasOperationsKpiReadAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+    try {
+        const scopeModuleId = normalizeScopeModuleId(req.query?.scopeModuleId || '');
+        const from = req.query?.from || req.query?.fromUnix || null;
+        const to = req.query?.to || req.query?.toUnix || null;
+        const assigneeUserId = String(req.query?.assigneeUserId || '').trim();
+
+        const kpis = await operationsKpiService.getOperationsKpis(tenantId, {
+            from,
+            to,
+            scopeModuleId,
+            assigneeUserId
+        });
+
+        return res.json({ ok: true, tenantId, scopeModuleId, assigneeUserId: assigneeUserId || null, ...kpis });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar KPIs operativos.') });
+    }
+});
+
+app.get('/api/tenant/assignment-rules', async (req, res) => {
+    try {
+        if (authService.isAuthEnabled() && !req?.authContext?.isAuthenticated) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+        if (!hasAssignmentRulesReadAccess(req, tenantId)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        const scopeModuleId = normalizeScopeModuleId(req.query?.scopeModuleId || '');
+        const items = await assignmentRulesService.listRules(tenantId);
+        const effective = await assignmentRulesService.getEffectiveRule(tenantId, scopeModuleId || '');
+        return res.json({ ok: true, tenantId, scopeModuleId, items, effective });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar reglas de asignacion.') });
+    }
+});
+
+app.put('/api/tenant/assignment-rules', async (req, res) => {
+    try {
+        if (authService.isAuthEnabled() && !req?.authContext?.isAuthenticated) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+        if (!hasAssignmentRulesWriteAccess(req, tenantId)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        const actorUserId = String(req?.authContext?.user?.userId || req?.authContext?.user?.id || '').trim() || null;
+        const payload = req.body && typeof req.body === 'object' ? req.body : {};
+        const saved = await assignmentRulesService.upsertRule(tenantId, {
+            scopeModuleId: normalizeScopeModuleId(payload.scopeModuleId || ''),
+            enabled: payload.enabled === true,
+            mode: payload.mode,
+            allowedRoles: Array.isArray(payload.allowedRoles) ? payload.allowedRoles : [],
+            maxOpenChatsPerUser: payload.maxOpenChatsPerUser,
+            metadata: payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {},
+            updatedByUserId: actorUserId
+        });
+
+        return res.json({ ok: true, tenantId, rule: saved });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar la regla de asignacion.') });
+    }
+});
+
+app.post('/api/tenant/chats/:chatId/auto-assign', async (req, res) => {
+    try {
+        if (authService.isAuthEnabled() && !req?.authContext?.isAuthenticated) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+        if (!hasAssignmentRulesWriteAccess(req, tenantId)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        const chatId = String(req.params?.chatId || '').trim();
+        if (!chatId) return res.status(400).json({ ok: false, error: 'chatId invalido.' });
+
+        const actorUserId = String(req?.authContext?.user?.userId || req?.authContext?.user?.id || '').trim() || null;
+        const scopeModuleId = normalizeScopeModuleId(req.body?.scopeModuleId || req.query?.scopeModuleId || '');
+        const trigger = String(req.body?.trigger || 'manual').trim().toLowerCase() || 'manual';
+        const assignmentReason = String(req.body?.assignmentReason || '').trim();
+
+        const result = await chatAssignmentRouterService.autoAssignChat(tenantId, {
+            chatId,
+            scopeModuleId,
+            actorUserId,
+            trigger,
+            assignmentReason
+        });
+
+        return res.json({ ok: Boolean(result?.ok), tenantId, chatId, scopeModuleId, ...result });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo autoasignar el chat.') });
+    }
+});
+
+app.get('/api/tenant/kpis/operations', async (req, res) => {
+    try {
+        if (authService.isAuthEnabled() && !req?.authContext?.isAuthenticated) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+        if (!hasOperationsKpiReadAccess(req, tenantId)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        const scopeModuleId = normalizeScopeModuleId(req.query?.scopeModuleId || '');
+        const from = req.query?.from || req.query?.fromUnix || null;
+        const to = req.query?.to || req.query?.toUnix || null;
+        const assigneeUserId = String(req.query?.assigneeUserId || '').trim();
+
+        const kpis = await operationsKpiService.getOperationsKpis(tenantId, {
+            from,
+            to,
+            scopeModuleId,
+            assigneeUserId
+        });
+
+        return res.json({ ok: true, tenantId, scopeModuleId, assigneeUserId: assigneeUserId || null, ...kpis });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar KPIs operativos.') });
+    }
+});
+
 app.get('/api/admin/saas/tenants/:tenantId/runtime', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
@@ -4044,6 +4315,9 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
+
+
+
 
 
 
