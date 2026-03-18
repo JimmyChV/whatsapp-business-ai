@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { MoreVertical, Search, Check, CheckCheck, X, SlidersHorizontal, Tags, Users, UserRoundX, Archive, Pin } from 'lucide-react';
+import { MoreVertical, Search, Check, CheckCheck, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin } from 'lucide-react';
 import moment from 'moment';
 import ChannelBrandIcon from './ChannelBrandIcon';
 
@@ -134,6 +134,8 @@ const Sidebar = ({
     canManageSaas = false,
     onOpenSaasAdmin,
     waModules = [],
+    showBackToPanel = false,
+    onBackToPanel = null,
 }) => {
     const [showMenu, setShowMenu] = useState(false);
     const [showLabelPanel, setShowLabelPanel] = useState(false);
@@ -216,6 +218,7 @@ const Sidebar = ({
     const selectedLabelCount = filters.labelTokens.length;
     const hasActiveQuickFilters = filters.unreadOnly || filters.unlabeledOnly || filters.contactMode !== 'all' || filters.archivedMode !== 'all' || filters.pinnedMode !== 'all';
     const hasAnyFilter = hasActiveQuickFilters || selectedLabelCount > 0;
+    const hasPanelAccess = Boolean(saasAuthEnabled && canManageSaas);
 
     const quickStats = useMemo(() => {
         const unread = chats.filter((c) => Number(c?.unreadCount || 0) > 0).length;
@@ -226,6 +229,18 @@ const Sidebar = ({
         const pinned = chats.filter((c) => Boolean(c?.pinned)).length;
         return { unread, unlabeled, myContacts, unknown, archived, pinned };
     }, [chats]);
+    const activeFilterChips = useMemo(() => {
+        const chips = [];
+        if (!hasAnyFilter) return chips;
+        if (filters.unreadOnly) chips.push('No leidos');
+        if (filters.unlabeledOnly) chips.push('Sin etiqueta');
+        if (filters.archivedMode === 'archived') chips.push('Archivados');
+        if (filters.pinnedMode === 'pinned') chips.push('Fijados');
+        if (filters.contactMode === 'my') chips.push('Guardados');
+        if (filters.contactMode === 'unknown') chips.push('No guardados');
+        if (filters.labelTokens.length > 0) chips.push(`Etiquetas (${filters.labelTokens.length})`);
+        return chips;
+    }, [filters, hasAnyFilter]);
 
     const filteredChats = chats.filter((chat) => {
         const labelTokenSet = getChatLabelTokenSet(chat);
@@ -443,9 +458,20 @@ const Sidebar = ({
                                     )}
                                 </div>
                             )}
-                            {saasAuthEnabled && canManageSaas && (
-                                <button type="button" className="sidebar-menu-item" onClick={() => { onOpenSaasAdmin?.(); setShowMenu(false); }}>
-                                    Panel SaaS (empresas/usuarios)
+                            {hasPanelAccess && (
+                                <button
+                                    type="button"
+                                    className="sidebar-menu-item"
+                                    onClick={() => {
+                                        if (showBackToPanel && typeof onBackToPanel === 'function') {
+                                            onBackToPanel();
+                                        } else {
+                                            onOpenSaasAdmin?.();
+                                        }
+                                        setShowMenu(false);
+                                    }}
+                                >
+                                    {showBackToPanel ? 'Volver al panel SaaS' : 'Panel SaaS (empresas/usuarios)'}
                                 </button>
                             )}
                             <button type="button" className="sidebar-menu-item" onClick={() => { onStartNewChat?.(); setShowMenu(false); }}>
@@ -508,154 +534,144 @@ const Sidebar = ({
                         Abrir chat con +{normalizedPhone}
                     </button>
                 )}
-
-                <div className="sidebar-quick-rail" aria-label="Accesos rapidos de filtros">
-                    <button
-                        type="button"
-                        className={`sidebar-quick-rail-btn ${!hasAnyFilter ? 'active' : ''}`}
-                        onClick={resetFilters}
-                        title="Todos"
-                    >
-                        Todo
-                    </button>
-                    <button
-                        type="button"
-                        className={`sidebar-quick-rail-btn ${filters.unreadOnly ? 'active' : ''}`}
-                        onClick={() => updateFilters({ unreadOnly: !filters.unreadOnly })}
-                        title="No leidos"
-                    >
-                        NL
-                    </button>
-                    <button
-                        type="button"
-                        className={`sidebar-quick-rail-btn ${filters.unlabeledOnly ? 'active' : ''}`}
-                        onClick={() => updateFilters({ unlabeledOnly: !filters.unlabeledOnly, labelTokens: [] })}
-                        title="Sin etiqueta"
-                    >
-                        SE
-                    </button>
-                    <button
-                        type="button"
-                        className={`sidebar-quick-rail-btn ${filters.archivedMode === 'archived' ? 'active' : ''}`}
-                        onClick={() => updateFilters({ archivedMode: filters.archivedMode === 'archived' ? 'all' : 'archived' })}
-                        title="Archivados"
-                    >
-                        AR
-                    </button>
-                    <button
-                        type="button"
-                        className={`sidebar-quick-rail-btn ${filters.pinnedMode === 'pinned' ? 'active' : ''}`}
-                        onClick={() => updateFilters({ pinnedMode: filters.pinnedMode === 'pinned' ? 'all' : 'pinned' })}
-                        title="Fijados"
-                    >
-                        FI
-                    </button>
-                </div>
-                <div className="sidebar-filter-toolbar">
-                    <button
-                        type="button"
-                        className={`sidebar-filter-pill ${!hasAnyFilter ? 'active' : ''}`}
-                        onClick={resetFilters}
-                    >
-                        <SlidersHorizontal size={13} /> Todos
-                    </button>
-                    <button
-                        type="button"
-                        className={`sidebar-filter-pill ${filters.unreadOnly ? 'active' : ''}`}
-                        onClick={() => updateFilters({ unreadOnly: !filters.unreadOnly })}
-                    >
-                        No leidos {quickStats.unread > 0 ? `(${quickStats.unread})` : ''}
-                    </button>
-                    <button
-                        type="button"
-                        className={`sidebar-filter-pill ${filters.unlabeledOnly ? 'active' : ''}`}
-                        onClick={() => updateFilters({ unlabeledOnly: !filters.unlabeledOnly, labelTokens: [] })}
-                    >
-                        Sin etiqueta {quickStats.unlabeled > 0 ? `(${quickStats.unlabeled})` : ''}
-                    </button>
-                    <button
-                        type="button"
-                        className={`sidebar-filter-pill ${filters.contactMode === 'my' ? 'active' : ''}`}
-                        onClick={() => updateFilters({ contactMode: filters.contactMode === 'my' ? 'all' : 'my' })}
-                    >
-                        <Users size={13} /> Guardados {quickStats.myContacts > 0 ? `(${quickStats.myContacts})` : ''}
-                    </button>
-                    <button
-                        type="button"
-                        className={`sidebar-filter-pill ${filters.contactMode === 'unknown' ? 'active' : ''}`}
-                        onClick={() => updateFilters({ contactMode: filters.contactMode === 'unknown' ? 'all' : 'unknown' })}
-                    >
-                        <UserRoundX size={13} /> No guardados {quickStats.unknown > 0 ? `(${quickStats.unknown})` : ''}
-                    </button>
-                    <button
-                        type="button"
-                        className={`sidebar-filter-pill ${filters.archivedMode === 'archived' ? 'active' : ''}`}
-                        onClick={() => updateFilters({ archivedMode: filters.archivedMode === 'archived' ? 'all' : 'archived' })}
-                    >
-                        <Archive size={13} /> Archivados {quickStats.archived > 0 ? `(${quickStats.archived})` : ''}
-                    </button>
-                    <button
-                        type="button"
-                        className={`sidebar-filter-pill ${filters.pinnedMode === 'pinned' ? 'active' : ''}`}
-                        onClick={() => updateFilters({ pinnedMode: filters.pinnedMode === 'pinned' ? 'all' : 'pinned' })}
-                    >
-                        <Pin size={13} /> Fijados {quickStats.pinned > 0 ? `(${quickStats.pinned})` : ''}
-                    </button>
-                </div>
-
-                <div className="sidebar-label-filter-head">
-                    <button
-                        type="button"
-                        className={`sidebar-label-toggle ${showLabelPanel ? 'open' : ''}`}
-                        onClick={() => setShowLabelPanel((v) => !v)}
-                    >
-                        <Tags size={14} />
-                        Etiquetas
-                        {selectedLabelCount > 0 ? <span className="sidebar-label-selected-count">{selectedLabelCount}</span> : null}
-                    </button>
-                    {hasAnyFilter && (
-                        <button type="button" className="sidebar-filter-clear" onClick={resetFilters}>Limpiar</button>
-                    )}
-                </div>
-
-                {showLabelPanel && (
-                    <div className="sidebar-label-panel">
-                        <div className="sidebar-label-search-row">
-                            <Search size={14} />
-                            <input
-                                type="text"
-                                value={labelSearch}
-                                onChange={(e) => setLabelSearch(e.target.value)}
-                                placeholder="Buscar etiqueta"
-                                className="sidebar-label-search-input"
-                            />
-                        </div>
-                        <div className="sidebar-label-list">
-                            {visibleLabels.length === 0 ? (
-                                <div className="sidebar-label-empty">No hay etiquetas para mostrar</div>
-                            ) : (
-                                visibleLabels.map((label) => {
-                                    const isSelected = filters.labelTokens.includes(label.token);
-                                    return (
-                                        <button
-                                            key={label.token}
-                                            type="button"
-                                            className={`sidebar-label-item ${isSelected ? 'active' : ''}`}
-                                            onClick={() => toggleLabel(label.token)}
-                                        >
-                                            <span className="sidebar-label-color" style={{ background: label.color || '#7D8D95' }} />
-                                            <span className="sidebar-label-name">{label.name}</span>
-                                            <span className="sidebar-label-count">{label.count}</span>
-                                        </button>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </div>
-                )}
             </div>
 
-            <div className="chat-list" onClick={() => showMenu && setShowMenu(false)} onScroll={handleChatListScroll}>
+            <div className="sidebar-main-content">
+                    <div className="sidebar-left-ribbon" aria-label="Filtros de chat">
+                        <button
+                            type="button"
+                            className={`sidebar-ribbon-btn ${!hasAnyFilter ? 'active' : ''}`}
+                            onClick={resetFilters}
+                            title="Todos"
+                            data-label="Todos"
+                        >
+                            <SlidersHorizontal size={18} />
+                        </button>
+                        <button
+                            type="button"
+                            className={`sidebar-ribbon-btn ${filters.unreadOnly ? 'active' : ''}`}
+                            onClick={() => updateFilters({ unreadOnly: !filters.unreadOnly })}
+                            title="No leidos"
+                            data-label="No leidos"
+                        >
+                            <CheckCheck size={18} />
+                            {quickStats.unread > 0 && <span className="sidebar-ribbon-badge">{quickStats.unread > 9 ? '9+' : quickStats.unread}</span>}
+                        </button>
+                        <button
+                            type="button"
+                            className={`sidebar-ribbon-btn ${filters.unlabeledOnly ? 'active' : ''}`}
+                            onClick={() => updateFilters({ unlabeledOnly: !filters.unlabeledOnly, labelTokens: [] })}
+                            title="Sin etiqueta"
+                            data-label="Sin etiqueta"
+                        >
+                            <Tags size={18} />
+                        </button>
+                        <button
+                            type="button"
+                            className={`sidebar-ribbon-btn ${filters.archivedMode === 'archived' ? 'active' : ''}`}
+                            onClick={() => updateFilters({ archivedMode: filters.archivedMode === 'archived' ? 'all' : 'archived' })}
+                            title="Archivados"
+                            data-label="Archivados"
+                        >
+                            <Archive size={18} />
+                        </button>
+                        <button
+                            type="button"
+                            className={`sidebar-ribbon-btn ${filters.pinnedMode === 'pinned' ? 'active' : ''}`}
+                            onClick={() => updateFilters({ pinnedMode: filters.pinnedMode === 'pinned' ? 'all' : 'pinned' })}
+                            title="Fijados"
+                            data-label="Fijados"
+                        >
+                            <Pin size={18} />
+                            {quickStats.pinned > 0 && <span className="sidebar-ribbon-badge">{quickStats.pinned > 9 ? '9+' : quickStats.pinned}</span>}
+                        </button>
+                        <button
+                            type="button"
+                            className={`sidebar-ribbon-btn ${filters.contactMode === 'my' ? 'active' : ''}`}
+                            onClick={() => updateFilters({ contactMode: filters.contactMode === 'my' ? 'all' : 'my' })}
+                            title="Guardados"
+                            data-label="Guardados"
+                        >
+                            <Users size={18} />
+                        </button>
+                        <button
+                            type="button"
+                            className={`sidebar-ribbon-btn ${filters.contactMode === 'unknown' ? 'active' : ''}`}
+                            onClick={() => updateFilters({ contactMode: filters.contactMode === 'unknown' ? 'all' : 'unknown' })}
+                            title="No guardados"
+                            data-label="No guardados"
+                        >
+                            <UserRoundX size={18} />
+                            {quickStats.unknown > 0 && <span className="sidebar-ribbon-badge">{quickStats.unknown > 9 ? '9+' : quickStats.unknown}</span>}
+                        </button>
+                        <button
+                            type="button"
+                            className={`sidebar-ribbon-btn ${showLabelPanel || selectedLabelCount > 0 ? 'active' : ''}`}
+                            onClick={() => setShowLabelPanel((v) => !v)}
+                            title="Etiquetas"
+                            data-label="Etiquetas"
+                        >
+                            <Tag size={18} />
+                            {selectedLabelCount > 0 && <span className="sidebar-ribbon-badge">{selectedLabelCount > 9 ? '9+' : selectedLabelCount}</span>}
+                        </button>
+                    </div>
+                    <div className="sidebar-main-column">
+                        <div className="sidebar-filter-content">
+                        <div className="sidebar-filter-content-top">
+                            <div className="sidebar-active-filters-row">
+                                {!hasAnyFilter ? (
+                                    <span className="sidebar-active-filter-empty">Filtro activo: Todos</span>
+                                ) : (
+                                    activeFilterChips.map((chip, index) => (
+                                        <span key={`${chip}_${index}`} className="sidebar-active-filter-chip">
+                                            {chip}
+                                        </span>
+                                    ))
+                                )}
+                            </div>
+                            {hasAnyFilter && (
+                                <button type="button" className="sidebar-filter-clear" onClick={resetFilters}>Limpiar</button>
+                            )}
+                        </div>
+
+                        {showLabelPanel && (
+                            <div className="sidebar-label-dropdown" role="dialog" aria-label="Filtrar por etiquetas">
+                                <div className="sidebar-label-dropdown-header">Filtro de etiquetas (seleccion multiple)</div>
+                                <div className="sidebar-label-search-row">
+                                    <Search size={14} />
+                                    <input
+                                        type="text"
+                                        value={labelSearch}
+                                        onChange={(e) => setLabelSearch(e.target.value)}
+                                        placeholder="Buscar etiqueta"
+                                        className="sidebar-label-search-input"
+                                    />
+                                </div>
+                                <div className="sidebar-label-list">
+                                    {visibleLabels.length === 0 ? (
+                                        <div className="sidebar-label-empty">No hay etiquetas para mostrar</div>
+                                    ) : (
+                                        visibleLabels.map((label) => {
+                                            const isSelected = filters.labelTokens.includes(label.token);
+                                            return (
+                                                <button
+                                                    key={label.token}
+                                                    type="button"
+                                                    className={`sidebar-label-item ${isSelected ? 'active' : ''}`}
+                                                    onClick={() => toggleLabel(label.token)}
+                                                >
+                                                    <span className="sidebar-label-color" style={{ background: label.color || '#7D8D95' }} />
+                                                    <span className="sidebar-label-name">{label.name}</span>
+                                                    <span className="sidebar-label-count">{label.count}</span>
+                                                </button>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+            <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); }} onScroll={handleChatListScroll}>
                 {filteredChats.length === 0 && chats.length === 0 ? (
                     [1, 2, 3, 4, 5].map((i) => (
                         <div key={i} className="chat-item chat-item-modern">
@@ -717,7 +733,7 @@ const Sidebar = ({
                                     {subtitle && <p className="chat-subtitle-modern">{subtitle}</p>}
 
                                     {moduleBadge?.label && (
-                                        <p className="chat-module-badge">
+                                        <p className="chat-module-badge chat-module-badge--compact">
                                             <span className="chat-module-badge-media">
                                                 {moduleBadge.imageUrl
                                                     ? <img src={moduleBadge.imageUrl} alt={moduleBadge.label} className="chat-module-badge-avatar" />
@@ -741,13 +757,18 @@ const Sidebar = ({
                                     )}
 
                                     {labels.length > 0 && (
-                                        <div className="chat-inline-labels">
-                                            {labels.slice(0, 2).map((label, idx) => (
-                                                <span key={`${label?.id || label?.name || 'l'}_${idx}`} className="chat-inline-label" style={{ '--label-color': label?.color || '#7D8D95' }}>
-                                                    {label?.name || 'Etiqueta'}
-                                                </span>
+                                        <div
+                                            className="chat-inline-labels chat-inline-labels--dots"
+                                            title={labels.map((label) => String(label?.name || '').trim()).filter(Boolean).join(', ')}
+                                        >
+                                            {labels.slice(0, 4).map((label, idx) => (
+                                                <span
+                                                    key={`${label?.id || label?.name || 'l'}_${idx}`}
+                                                    className="chat-inline-label-dot"
+                                                    style={{ '--label-color': label?.color || '#7D8D95' }}
+                                                />
                                             ))}
-                                            {labels.length > 2 && <span className="chat-inline-label-more">+{labels.length - 2}</span>}
+                                            {labels.length > 4 && <span className="chat-inline-label-more">+{labels.length - 4}</span>}
                                         </div>
                                     )}
 
@@ -774,11 +795,25 @@ const Sidebar = ({
                     </div>
                 )}
             </div>
+                </div>
+            </div>
         </div>
     );
 };
 
 export default Sidebar;
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
