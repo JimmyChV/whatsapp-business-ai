@@ -15,6 +15,7 @@ const waModuleService = require('./wa_module_service');
 const tenantCatalogService = require('./tenant_catalog_service');
 const customerService = require('./customer_service');
 const tenantLabelService = require('./tenant_label_service');
+const conversationOpsService = require('./conversation_ops_service');
 const auditLogService = require('./audit_log_service');
 const RateLimiter = require('./rate_limiter');
 const { URL } = require('url');
@@ -3816,6 +3817,29 @@ class SocketManager {
                 } catch (_) { }
             };
 
+            const recordConversationEvent = async ({
+                chatId = '',
+                scopeModuleId = '',
+                eventType = '',
+                eventSource = 'socket',
+                payload = {},
+                customerId = null
+            } = {}) => {
+                try {
+                    const cleanChatId = String(chatId || '').trim();
+                    if (!cleanChatId) return;
+                    await conversationOpsService.recordConversationEvent(tenantId, {
+                        chatId: cleanChatId,
+                        scopeModuleId: String(scopeModuleId || '').trim().toLowerCase(),
+                        customerId: String(customerId || '').trim() || null,
+                        actorUserId: authContext?.userId || null,
+                        actorRole: userRole || null,
+                        eventType: String(eventType || '').trim() || 'chat.event',
+                        eventSource: String(eventSource || 'socket').trim() || 'socket',
+                        payload: payload && typeof payload === 'object' ? payload : {}
+                    });
+                } catch (_) { }
+            };
             const normalizeSocketModuleId = (value = '') => String(value || '').trim().toLowerCase();
             const normalizeSocketCatalogId = (value = '') => String(value || '').trim().toUpperCase();
             const normalizeSocketCatalogIdList = (value = []) => {
@@ -4890,11 +4914,25 @@ class SocketManager {
                         }
                         await emitRealtimeOutgoingMessage({
                             sentMessage: firstSentMessage,
-                            fallbackChatId: directChatId,
+                            fallbackChatId: canonicalChatId || directChatId,
                             fallbackBody: firstText,
+                            quotedMessageId: '',
                             moduleContext: activeModuleContext,
                             agentMeta: firstAgentMeta,
                             mediaPayload: null
+                        });
+
+                        await recordConversationEvent({
+                            chatId: canonicalChatId || directChatId,
+                            scopeModuleId: activeScopeModuleId || '',
+                            eventType: 'chat.message.outgoing.text',
+                            eventSource: 'socket',
+                            payload: {
+                                messageId: firstSentMessageId || null,
+                                quotedMessageId: null,
+                                length: firstText.length,
+                                hasQuote: false
+                            }
                         });
                     }
 
@@ -5025,6 +5063,17 @@ class SocketManager {
                             archived: hasArchived ? patch.archived : undefined
                         }
                     });
+
+                    await recordConversationEvent({
+                        chatId: safeChatId,
+                        scopeModuleId,
+                        eventType: 'chat.state.updated',
+                        eventSource: 'socket',
+                        payload: {
+                            pinned: hasPinned ? patch.pinned : undefined,
+                            archived: hasArchived ? patch.archived : undefined
+                        }
+                    });
                 } catch (e) {
                     console.error('set_chat_state error:', e.message);
                     socket.emit('error', String(e?.message || 'No se pudo actualizar el estado del chat.'));
@@ -5078,6 +5127,17 @@ class SocketManager {
                         resourceType: 'chat',
                         resourceId: safeChatId,
                         payload: { labelIds: ids, labels: payload.labels }
+                    });
+
+                    await recordConversationEvent({
+                        chatId: safeChatId,
+                        scopeModuleId,
+                        eventType: 'chat.labels.updated',
+                        eventSource: 'socket',
+                        payload: {
+                            labelIds: ids,
+                            labels: payload.labels
+                        }
                     });
                 } catch (e) {
                     console.error('set_chat_labels error:', e.message);
@@ -5550,6 +5610,19 @@ class SocketManager {
                         agentMeta,
                         mediaPayload: null
                     });
+
+                    await recordConversationEvent({
+                        chatId: target.targetChatId,
+                        scopeModuleId: target.scopeModuleId,
+                        eventType: 'chat.message.outgoing.text',
+                        eventSource: 'socket',
+                        payload: {
+                            messageId: sentMessageId || null,
+                            quotedMessageId: quoted || null,
+                            length: text.length,
+                            hasQuote: Boolean(quoted)
+                        }
+                    });
                 } catch (e) {
                     const detail = String(e?.message || e || 'Failed to send message.');
                     console.warn('[WA][SendMessage] ' + detail);
@@ -5666,6 +5739,19 @@ class SocketManager {
                             mimetype: String(mimetype || '').trim() || null,
                             filename: String(filename || '').trim() || null,
                             fileSizeBytes: null
+                        }
+                    });
+                    await recordConversationEvent({
+                        chatId: target.targetChatId,
+                        scopeModuleId: target.scopeModuleId,
+                        eventType: 'chat.message.outgoing.media',
+                        eventSource: 'socket',
+                        payload: {
+                            messageId: sentMessageId || null,
+                            quotedMessageId: quoted || null,
+                            mimetype: String(mimetype || '').trim() || null,
+                            filename: String(filename || '').trim() || null,
+                            hasCaption: Boolean(caption.trim())
                         }
                     });
                 } catch (e) {
@@ -5860,6 +5946,21 @@ class SocketManager {
                         agentMeta,
                         mediaPayload: catalogMediaPayload
                     });
+                    await recordConversationEvent({
+                        chatId: target.targetChatId,
+                        scopeModuleId: target.scopeModuleId,
+                        eventType: 'chat.message.outgoing.catalog_product',
+                        eventSource: 'socket',
+                        payload: {
+                            messageId: sentMessageId || null,
+                            productId: String(product?.id || product?.productId || '').trim() || null,
+                            productTitle: String(product?.title || product?.name || '').trim() || null,
+                            withImage: sentWithImage,
+                            mediaUrl: String(catalogMediaPayload?.mediaUrl || '').trim() || null,
+                            catalogId: String(product?.catalogId || '').trim() || null
+                        }
+                    });
+
                     socket.emit('catalog_product_sent', {
                         to: target.scopedChatId || target.targetChatId,
                         baseChatId: target.targetChatId,
@@ -6925,3 +7026,8 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
+
+
+
+

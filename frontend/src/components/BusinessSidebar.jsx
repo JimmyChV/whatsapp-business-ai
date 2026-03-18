@@ -1433,9 +1433,12 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         }));
     };
 
-    const catalog = (businessData.catalog || []).map((item, idx) => normalizeCatalogItem(item, idx));
-    const labels = businessData.labels || [];
-    const profile = businessData.profile || myProfile || null;
+    const catalog = useMemo(
+        () => (businessData.catalog || []).map((item, idx) => normalizeCatalogItem(item, idx)),
+        [businessData.catalog]
+    );
+    const labels = useMemo(() => (Array.isArray(businessData.labels) ? businessData.labels : []), [businessData.labels]);
+    const profile = useMemo(() => (businessData.profile || myProfile || null), [businessData.profile, myProfile]);
     const quickRepliesEnabled = Boolean(waCapabilities?.quickReplies || waCapabilities?.quickRepliesRead || waCapabilities?.quickRepliesWrite);
     useEffect(() => {
         const nextScope = String(tenantScopeKey || 'default').trim() || 'default';
@@ -2308,6 +2311,7 @@ INSTRUCCIONES OBLIGATORIAS:
     const deliveryFee = deliveryType === 'amount' ? safeDeliveryAmount : 0;
     const cartTotal = roundMoney(subtotalAfterGlobal + deliveryFee);
     const lastCartSnapshotSignatureRef = useRef('');
+    const onCartSnapshotChangeRef = useRef(onCartSnapshotChange);
 
     const cartSnapshot = useMemo(() => ({
         chatId: String(activeChatId || '').trim() || null,
@@ -2342,12 +2346,16 @@ INSTRUCCIONES OBLIGATORIAS:
     ]);
 
     useEffect(() => {
-        if (typeof onCartSnapshotChange !== 'function') return;
+        onCartSnapshotChangeRef.current = onCartSnapshotChange;
+    }, [onCartSnapshotChange]);
+
+    useEffect(() => {
+        if (typeof onCartSnapshotChangeRef.current !== 'function') return;
         const signature = JSON.stringify(cartSnapshot);
         if (lastCartSnapshotSignatureRef.current === signature) return;
         lastCartSnapshotSignatureRef.current = signature;
-        onCartSnapshotChange(cartSnapshot);
-    }, [onCartSnapshotChange, cartSnapshot]);
+        onCartSnapshotChangeRef.current(cartSnapshot);
+    }, [cartSnapshot]);
 
     const sendQuoteToChat = () => {
         if (cart.length === 0) return;
