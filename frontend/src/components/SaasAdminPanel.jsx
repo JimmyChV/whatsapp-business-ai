@@ -381,6 +381,7 @@ const ADMIN_NAV_ITEMS = [
     { id: 'saas_roles', label: 'Roles' },
     { id: 'saas_clientes', label: 'Clientes' },
     { id: 'saas_ia', label: 'IA' },
+    { id: 'saas_etiquetas', label: 'Etiquetas' },
     { id: 'saas_quick_replies', label: 'Respuestas rapidas' },
     { id: 'saas_modulos', label: 'Modulos' },
     { id: 'saas_catalogos', label: 'Catalogos' },
@@ -439,6 +440,8 @@ const PERMISSION_TENANT_MODULES_READ = 'tenant.modules.read';
 const PERMISSION_TENANT_MODULES_MANAGE = 'tenant.modules.manage';
 const PERMISSION_TENANT_QUICK_REPLIES_READ = 'tenant.quick_replies.read';
 const PERMISSION_TENANT_QUICK_REPLIES_MANAGE = 'tenant.quick_replies.manage';
+const PERMISSION_TENANT_LABELS_READ = 'tenant.labels.read';
+const PERMISSION_TENANT_LABELS_MANAGE = 'tenant.labels.manage';
 const PERMISSION_TENANT_AI_READ = 'tenant.ai.read';
 const PERMISSION_TENANT_AI_MANAGE = 'tenant.ai.manage';
 const PERMISSION_TENANT_CUSTOMERS_READ = 'tenant.customers.read';
@@ -515,6 +518,16 @@ const EMPTY_QUICK_REPLY_ITEM_FORM = {
     mediaAssets: [],
     isActive: true,
     sortOrder: '100'
+};
+const DEFAULT_LABEL_COLORS = ['#00A884', '#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#7D8D95'];
+const EMPTY_LABEL_FORM = {
+    labelId: '',
+    name: '',
+    description: '',
+    color: '#00A884',
+    sortOrder: '100',
+    isActive: true,
+    moduleIds: []
 };
 
 function normalizeQuickReplyLibraryItem(item = {}) {
@@ -675,6 +688,83 @@ function buildQuickReplyItemPayload(form = {}, { libraryId = '' } = {}) {
         isActive: source.isActive !== false,
         sortOrder: Math.max(0, Math.min(9999, Number(source.sortOrder || 100) || 100))
     };
+}
+
+function normalizeTenantLabelColor(value = '', fallback = '#00A884') {
+    const raw = String(value || '').trim().toUpperCase();
+    if (/^#([0-9A-F]{6})$/.test(raw)) return raw;
+    if (/^[0-9A-F]{6}$/.test(raw)) return `#${raw}`;
+    const fallbackRaw = String(fallback || '#00A884').trim().toUpperCase();
+    if (/^#([0-9A-F]{6})$/.test(fallbackRaw)) return fallbackRaw;
+    return '#00A884';
+}
+
+function normalizeTenantLabelItem(item = {}) {
+    const source = item && typeof item === 'object' ? item : {};
+    const labelId = String(source.labelId || source.id || '').trim().toUpperCase();
+    if (!labelId) return null;
+    const metadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+        ? source.metadata
+        : {};
+    const moduleIds = Array.isArray(source.moduleIds)
+        ? source.moduleIds
+        : (Array.isArray(metadata.moduleIds) ? metadata.moduleIds : []);
+    const normalizedModuleIds = Array.from(new Set(moduleIds
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter(Boolean)));
+
+    return {
+        labelId,
+        name: String(source.name || labelId).trim() || labelId,
+        description: String(source.description || '').trim(),
+        color: normalizeTenantLabelColor(source.color || source.hex || '', DEFAULT_LABEL_COLORS[0]),
+        sortOrder: Number.isFinite(Number(source.sortOrder)) ? Number(source.sortOrder) : 100,
+        isActive: source.isActive !== false,
+        moduleIds: normalizedModuleIds,
+        metadata,
+        createdAt: String(source.createdAt || '').trim() || null,
+        updatedAt: String(source.updatedAt || '').trim() || null
+    };
+}
+
+function buildLabelFormFromItem(item = null) {
+    if (!item || typeof item !== 'object') return { ...EMPTY_LABEL_FORM };
+    const normalized = normalizeTenantLabelItem(item);
+    if (!normalized) return { ...EMPTY_LABEL_FORM };
+    return {
+        labelId: normalized.labelId,
+        name: normalized.name || '',
+        description: normalized.description || '',
+        color: normalizeTenantLabelColor(normalized.color || '', DEFAULT_LABEL_COLORS[0]),
+        sortOrder: String(normalized.sortOrder || 100),
+        isActive: normalized.isActive !== false,
+        moduleIds: Array.isArray(normalized.moduleIds) ? [...normalized.moduleIds] : []
+    };
+}
+
+function buildTenantLabelPayload(form = {}, { allowLabelId = true } = {}) {
+    const source = form && typeof form === 'object' ? form : {};
+    const payload = {
+        name: String(source.name || '').trim(),
+        description: String(source.description || '').trim() || null,
+        color: normalizeTenantLabelColor(source.color || '', DEFAULT_LABEL_COLORS[0]),
+        sortOrder: Math.max(1, Math.min(9999, Number(source.sortOrder || 100) || 100)),
+        isActive: source.isActive !== false,
+        metadata: {
+            moduleIds: Array.isArray(source.moduleIds)
+                ? Array.from(new Set(source.moduleIds
+                    .map((entry) => String(entry || '').trim().toLowerCase())
+                    .filter(Boolean)))
+                : []
+        }
+    };
+
+    if (allowLabelId) {
+        const labelId = String(source.labelId || source.id || '').trim().toUpperCase();
+        if (labelId) payload.labelId = labelId;
+    }
+
+    return payload;
 }
 
 function normalizeOverview(payload = {}) {
@@ -1253,6 +1343,12 @@ export default function SaasAdminPanel({
     const [quickReplyItemSearch, setQuickReplyItemSearch] = useState('');
     const [loadingQuickReplies, setLoadingQuickReplies] = useState(false);
     const [uploadingQuickReplyAssets, setUploadingQuickReplyAssets] = useState(false);
+    const [tenantLabels, setTenantLabels] = useState([]);
+    const [selectedLabelId, setSelectedLabelId] = useState('');
+    const [labelForm, setLabelForm] = useState({ ...EMPTY_LABEL_FORM });
+    const [labelPanelMode, setLabelPanelMode] = useState('view');
+    const [labelSearch, setLabelSearch] = useState('');
+    const [loadingLabels, setLoadingLabels] = useState(false);
 
     const [customers, setCustomers] = useState([]);
     const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -1280,6 +1376,7 @@ export default function SaasAdminPanel({
     const roleBasedCanViewSuperAdminSections = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
     const roleBasedCanEditModules = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanManageQuickReplies = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageLabels = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanManageCustomers = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanViewAi = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanManageAi = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
@@ -1347,6 +1444,20 @@ export default function SaasAdminPanel({
             PERMISSION_TENANT_MODULES_MANAGE
         ])
         : roleBasedCanManageQuickReplies;
+    const canManageLabels = hasPermissionContext
+        ? hasAnyActorPermission([
+            PERMISSION_TENANT_LABELS_MANAGE,
+            PERMISSION_TENANT_MODULES_MANAGE
+        ])
+        : roleBasedCanManageLabels;
+    const canViewLabels = hasPermissionContext
+        ? hasAnyActorPermission([
+            PERMISSION_TENANT_LABELS_READ,
+            PERMISSION_TENANT_LABELS_MANAGE,
+            PERMISSION_TENANT_MODULES_READ,
+            PERMISSION_TENANT_MODULES_MANAGE
+        ])
+        : roleBasedCanManageLabels;
     const canViewAi = hasPermissionContext
         ? hasAnyActorPermission([
             PERMISSION_TENANT_AI_READ,
@@ -1586,12 +1697,13 @@ export default function SaasAdminPanel({
         if (canManageTenants) capabilities.push('Gestion de empresas');
         if (canManageUsers) capabilities.push('Gestion de usuarios');
         if (canManageCatalog) capabilities.push('Gestion de catalogos');
+        if (canManageLabels) capabilities.push('Etiquetas de chat');
         if (canManageTenantSettings) capabilities.push('Configuracion de empresa');
         if (canEditModules) capabilities.push('Modulos WhatsApp');
         if (canViewSuperAdminSections) capabilities.push('Planes y roles globales');
         if (canEditOptionalAccess) capabilities.push('Accesos opcionales');
         return capabilities;
-    }, [canManageTenants, canManageUsers, canManageCatalog, canManageQuickReplies, canManageAi, canManageTenantSettings, canEditModules, canViewSuperAdminSections, canEditOptionalAccess]);
+    }, [canManageTenants, canManageUsers, canManageCatalog, canManageLabels, canManageQuickReplies, canManageAi, canManageTenantSettings, canEditModules, canViewSuperAdminSections, canEditOptionalAccess]);
 
     const scopedUsers = useMemo(() => {
         if (!tenantScopeId) return [];
@@ -1757,6 +1869,33 @@ export default function SaasAdminPanel({
             return haystack.includes(query);
         });
     }, [quickReplyItemsForSelectedLibrary, quickReplyItemSearch]);
+        const tenantLabelItems = useMemo(() => {
+        return [...(Array.isArray(tenantLabels) ? tenantLabels : [])]
+            .map((entry) => normalizeTenantLabelItem(entry))
+            .filter(Boolean)
+            .sort((left, right) => {
+                const delta = Number(left?.sortOrder || 100) - Number(right?.sortOrder || 100);
+                if (delta !== 0) return delta;
+                return String(left?.name || '').localeCompare(String(right?.name || ''), 'es', { sensitivity: 'base' });
+            });
+    }, [tenantLabels]);
+
+    const selectedTenantLabel = useMemo(
+        () => tenantLabelItems.find((entry) => String(entry?.labelId || '').trim().toUpperCase() === String(selectedLabelId || '').trim().toUpperCase()) || null,
+        [tenantLabelItems, selectedLabelId]
+    );
+
+    const visibleTenantLabels = useMemo(() => {
+        const query = String(labelSearch || '').trim().toLowerCase();
+        if (!query) return tenantLabelItems;
+        return tenantLabelItems.filter((entry) => {
+            const haystack = [entry?.labelId, entry?.name, entry?.description]
+                .map((value) => String(value || '').toLowerCase())
+                .join(' ');
+            return haystack.includes(query);
+        });
+    }, [tenantLabelItems, labelSearch]);
+
     const selectedSettingsTenant = useMemo(
         () => tenantOptions.find((tenant) => String(tenant?.id || '').trim() === String(settingsTenantId || '').trim()) || null,
         [tenantOptions, settingsTenantId]
@@ -1931,6 +2070,7 @@ export default function SaasAdminPanel({
         if (cleanId === 'saas_usuarios') return canManageUsers;
         if (cleanId === 'saas_clientes') return canViewCustomers;
         if (cleanId === 'saas_ia') return canViewAi;
+        if (cleanId === 'saas_etiquetas') return canViewLabels;
         if (cleanId === 'saas_quick_replies') return canViewQuickReplies;
         if (cleanId === 'saas_modulos') return canViewModules;
         if (cleanId === 'saas_catalogos') return canManageCatalog;
@@ -1943,6 +2083,7 @@ export default function SaasAdminPanel({
         canManageUsers,
         canViewCustomers,
         canViewAi,
+        canViewLabels,
         canViewQuickReplies,
         canViewModules,
         canManageCatalog,
@@ -1970,6 +2111,7 @@ export default function SaasAdminPanel({
     const isRolesSection = selectedSectionId === 'saas_roles';
     const isCustomersSection = selectedSectionId === 'saas_clientes';
     const isAiSection = selectedSectionId === 'saas_ia';
+    const isLabelsSection = selectedSectionId === 'saas_etiquetas';
     const isQuickRepliesSection = selectedSectionId === 'saas_quick_replies';
     const isGeneralConfigSection = selectedSectionId === 'saas_config';
 
@@ -2004,6 +2146,12 @@ export default function SaasAdminPanel({
             setSelectedAiAssistantId('');
             setAiAssistantPanelMode('view');
             setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
+        }
+
+        if (next === 'saas_etiquetas') {
+            setSelectedLabelId('');
+            setLabelPanelMode('view');
+            setLabelForm({ ...EMPTY_LABEL_FORM });
         }
 
         if (next === 'saas_quick_replies') {
@@ -2211,6 +2359,114 @@ export default function SaasAdminPanel({
         } finally {
             setLoadingQuickReplies(false);
         }
+    };
+
+        const loadTenantLabels = async (tenantId) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        if (!cleanTenantId) {
+            setTenantLabels([]);
+            setSelectedLabelId('');
+            setLabelForm({ ...EMPTY_LABEL_FORM });
+            setLabelPanelMode('view');
+            return;
+        }
+
+        setLoadingLabels(true);
+        try {
+            const payload = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/labels?includeInactive=true`);
+            const items = (Array.isArray(payload?.items) ? payload.items : [])
+                .map((entry) => normalizeTenantLabelItem(entry))
+                .filter(Boolean)
+                .sort((left, right) => {
+                    const delta = Number(left?.sortOrder || 100) - Number(right?.sortOrder || 100);
+                    if (delta !== 0) return delta;
+                    return String(left?.name || '').localeCompare(String(right?.name || ''), 'es', { sensitivity: 'base' });
+                });
+
+            setTenantLabels(items);
+            setSelectedLabelId((prev) => {
+                const cleanPrev = String(prev || '').trim().toUpperCase();
+                if (cleanPrev && items.some((entry) => entry.labelId === cleanPrev)) return cleanPrev;
+                return String(items[0]?.labelId || '').trim().toUpperCase();
+            });
+        } finally {
+            setLoadingLabels(false);
+        }
+    };
+
+    const openTenantLabelCreate = () => {
+        setLabelForm({ ...EMPTY_LABEL_FORM, color: DEFAULT_LABEL_COLORS[0], sortOrder: '100', isActive: true });
+        setLabelPanelMode('create');
+    };
+
+    const openTenantLabelEdit = () => {
+        if (!selectedTenantLabel) return;
+        setLabelForm(buildLabelFormFromItem(selectedTenantLabel));
+        setLabelPanelMode('edit');
+    };
+
+    const cancelTenantLabelEdit = () => {
+        if (selectedTenantLabel) {
+            setLabelForm(buildLabelFormFromItem(selectedTenantLabel));
+        } else {
+            setLabelForm({ ...EMPTY_LABEL_FORM });
+        }
+        setLabelPanelMode('view');
+    };
+
+    const toggleModuleInLabelForm = (moduleId) => {
+        const cleanModuleId = String(moduleId || '').trim().toLowerCase();
+        if (!cleanModuleId) return;
+        setLabelForm((prev) => {
+            const current = Array.isArray(prev?.moduleIds) ? prev.moduleIds : [];
+            const exists = current.includes(cleanModuleId);
+            return {
+                ...prev,
+                moduleIds: exists
+                    ? current.filter((entry) => entry !== cleanModuleId)
+                    : [...current, cleanModuleId]
+            };
+        });
+    };
+
+    const saveTenantLabel = async () => {
+        const cleanTenantId = String(settingsTenantId || '').trim();
+        if (!cleanTenantId) throw new Error('Selecciona una empresa para gestionar etiquetas.');
+        const payload = buildTenantLabelPayload(labelForm, { allowLabelId: labelPanelMode === 'create' });
+        if (!String(payload.name || '').trim()) throw new Error('Nombre de etiqueta requerido.');
+
+        if (labelPanelMode === 'create') {
+            const created = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/labels`, {
+                method: 'POST',
+                body: payload
+            });
+            const createdId = String(created?.item?.labelId || '').trim().toUpperCase();
+            await loadTenantLabels(cleanTenantId);
+            if (createdId) setSelectedLabelId(createdId);
+            setLabelPanelMode('view');
+            return;
+        }
+
+        const cleanLabelId = String(labelForm?.labelId || selectedLabelId || '').trim().toUpperCase();
+        if (!cleanLabelId) throw new Error('Selecciona una etiqueta para actualizar.');
+
+        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/labels/${encodeURIComponent(cleanLabelId)}`, {
+            method: 'PUT',
+            body: payload
+        });
+        await loadTenantLabels(cleanTenantId);
+        setSelectedLabelId(cleanLabelId);
+        setLabelPanelMode('view');
+    };
+
+    const deactivateTenantLabel = async (labelId) => {
+        const cleanTenantId = String(settingsTenantId || '').trim();
+        const cleanLabelId = String(labelId || '').trim().toUpperCase();
+        if (!cleanTenantId || !cleanLabelId) return;
+        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/labels/${encodeURIComponent(cleanLabelId)}/deactivate`, {
+            method: 'POST'
+        });
+        await loadTenantLabels(cleanTenantId);
     };
 
     const uploadQuickReplyAsset = async ({ file, tenantId, libraryId = '' } = {}) => {
@@ -2874,6 +3130,7 @@ export default function SaasAdminPanel({
                 await loadTenantCatalogs(settingsTenantId);
                 await loadTenantAiAssistants(settingsTenantId);
                 await loadQuickReplyData(settingsTenantId);
+                await loadTenantLabels(settingsTenantId);
             }
         } catch (err) {
             setError(String(err?.message || err || 'Error inesperado.'));
@@ -2981,6 +3238,10 @@ export default function SaasAdminPanel({
         setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM });
         setQuickReplyLibraryPanelMode('view');
         setQuickReplyItemPanelMode('view');
+        setSelectedLabelId('');
+        setLabelForm({ ...EMPTY_LABEL_FORM });
+        setLabelPanelMode('view');
+        setLabelSearch('');
         setSelectedPlanId('');
         setPlanForm(normalizePlanForm('starter', {}));
         setRoleForm(EMPTY_ROLE_FORM);
@@ -3018,6 +3279,8 @@ export default function SaasAdminPanel({
                 || customerPanelMode !== 'view'
                 || selectedAiAssistantId
                 || aiAssistantPanelMode !== 'view'
+                || selectedLabelId
+                || labelPanelMode !== 'view'
             );
 
             if (!hasSelection) return;
@@ -3047,7 +3310,9 @@ export default function SaasAdminPanel({
         selectedCustomerId,
         customerPanelMode,
         selectedAiAssistantId,
-        aiAssistantPanelMode
+        aiAssistantPanelMode,
+        selectedLabelId,
+        labelPanelMode
     ]);
     useEffect(() => {
         if (!isOpen || !canManageSaas || !tenantScopeId) return;
@@ -3058,7 +3323,8 @@ export default function SaasAdminPanel({
             loadTenantAiAssistants(tenantScopeId),
             loadTenantIntegrations(tenantScopeId),
             loadCustomers(tenantScopeId),
-            loadQuickReplyData(tenantScopeId)
+            loadQuickReplyData(tenantScopeId),
+            loadTenantLabels(tenantScopeId)
         ]).catch((err) => {
             setError(String(err?.message || err || 'No se pudo cargar configuracion del tenant.'));
         });
@@ -3090,6 +3356,10 @@ export default function SaasAdminPanel({
         setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM });
         setQuickReplyLibraryPanelMode('view');
         setQuickReplyItemPanelMode('view');
+        setTenantLabels([]);
+        setSelectedLabelId('');
+        setLabelForm({ ...EMPTY_LABEL_FORM });
+        setLabelPanelMode('view');
     }, [isOpen, tenantScopeId]);
     useEffect(() => {
         setSelectedConfigKey('');
@@ -3111,6 +3381,10 @@ export default function SaasAdminPanel({
         setQuickReplyModuleFilterId('');
         setQuickReplyLibraryPanelMode('view');
         setQuickReplyItemPanelMode('view');
+        setSelectedLabelId('');
+        setLabelPanelMode('view');
+        setLabelForm({ ...EMPTY_LABEL_FORM });
+        setLabelSearch('');
     }, [tenantScopeId]);
     useEffect(() => {
         if (!isOpen) return;
@@ -5136,6 +5410,297 @@ export default function SaasAdminPanel({
                                             </button>
                                             <button type="button" disabled={busy} onClick={cancelAiAssistantEdit}>Cancelar</button>
                                         </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                    )}
+                    {isLabelsSection && (
+                    <section id="saas_etiquetas" className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <div>
+                                        <h3>Etiquetas de chat</h3>
+                                        <small>Define etiquetas visuales por empresa, color y alcance por modulo.</small>
+                                    </div>
+                                    <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                        <button
+                                            type="button"
+                                            disabled={busy || loadingLabels || !settingsTenantId}
+                                            onClick={() => settingsTenantId && loadTenantLabels(settingsTenantId).catch((err) => setError(String(err?.message || err || 'No se pudieron recargar etiquetas.')))}
+                                        >
+                                            Recargar
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={busy || !canManageLabels || !settingsTenantId}
+                                            onClick={openTenantLabelCreate}
+                                        >
+                                            Nueva etiqueta
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {!settingsTenantId && (
+                                    <div className="saas-admin-empty-state">
+                                        <h4>Selecciona una empresa</h4>
+                                        <p>Primero elige una empresa para administrar etiquetas.</p>
+                                    </div>
+                                )}
+
+                                {settingsTenantId && (
+                                    <>
+                                        <div className="saas-admin-form-row">
+                                            <input
+                                                value={labelSearch}
+                                                onChange={(event) => setLabelSearch(event.target.value)}
+                                                placeholder="Filtrar etiquetas por nombre o codigo"
+                                                disabled={loadingLabels}
+                                            />
+                                        </div>
+
+                                        <div className="saas-admin-list saas-admin-list--compact">
+                                            {visibleTenantLabels.length === 0 && (
+                                                <div className="saas-admin-empty-state">
+                                                    <h4>Sin etiquetas</h4>
+                                                    <p>Crea tu primera etiqueta para clasificar chats.</p>
+                                                </div>
+                                            )}
+                                            {visibleTenantLabels.map((label) => (
+                                                <button
+                                                    key={`tenant_label_${label.labelId}`}
+                                                    type="button"
+                                                    className={`saas-admin-list-item saas-admin-list-item--button ${(selectedTenantLabel?.labelId === label.labelId && labelPanelMode !== 'create') ? 'active' : ''}`.trim()}
+                                                    onClick={() => {
+                                                        setSelectedLabelId(String(label.labelId || '').trim().toUpperCase());
+                                                        setLabelPanelMode('view');
+                                                    }}
+                                                >
+                                                    <strong>{label.name || label.labelId}</strong>
+                                                    <small>{label.labelId}</small>
+                                                    <small>{label.moduleIds.length > 0 ? `Modulos: ${label.moduleIds.length}` : 'Compartida (todos los modulos)'} | {label.isActive === false ? 'inactiva' : 'activa'}</small>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </aside>
+
+                            <div className="saas-admin-detail-pane">
+                                {!settingsTenantId && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Sin empresa seleccionada</h4>
+                                        <p>Selecciona una empresa para ver y gestionar sus etiquetas.</p>
+                                    </div>
+                                )}
+
+                                {settingsTenantId && !selectedTenantLabel && labelPanelMode === 'view' && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Selecciona una etiqueta</h4>
+                                        <p>El detalle de la etiqueta se muestra en este panel derecho.</p>
+                                    </div>
+                                )}
+
+                                {settingsTenantId && (selectedTenantLabel || labelPanelMode === 'create') && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>{labelPanelMode === 'create' ? 'Nueva etiqueta' : (labelPanelMode === 'edit' ? 'Editando etiqueta' : (selectedTenantLabel?.name || selectedTenantLabel?.labelId || 'Etiqueta'))}</h3>
+                                                <small>{labelPanelMode === 'view' ? 'Vista bloqueada' : 'Edicion activa'}</small>
+                                            </div>
+                                            {labelPanelMode === 'view' && selectedTenantLabel && canManageLabels && (
+                                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                    <button type="button" disabled={busy} onClick={openTenantLabelEdit}>Editar</button>
+                                                    {selectedTenantLabel?.isActive !== false ? (
+                                                        <button
+                                                            type="button"
+                                                            disabled={busy}
+                                                            onClick={() => runAction('Etiqueta desactivada', async () => {
+                                                                await deactivateTenantLabel(selectedTenantLabel?.labelId);
+                                                            })}
+                                                        >
+                                                            Desactivar
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            disabled={busy}
+                                                            onClick={() => runAction('Etiqueta reactivada', async () => {
+                                                                const cleanLabelId = String(selectedTenantLabel?.labelId || '').trim().toUpperCase();
+                                                                if (!cleanLabelId) return;
+                                                                await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/labels/${encodeURIComponent(cleanLabelId)}`, {
+                                                                    method: 'PUT',
+                                                                    body: {
+                                                                        ...buildTenantLabelPayload(selectedTenantLabel, { allowLabelId: false }),
+                                                                        isActive: true
+                                                                    }
+                                                                });
+                                                                await loadTenantLabels(settingsTenantId);
+                                                            })}
+                                                        >
+                                                            Reactivar
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {labelPanelMode === 'view' && selectedTenantLabel && (
+                                            <>
+                                                <div className="saas-admin-detail-grid">
+                                                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedTenantLabel.labelId || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Nombre</span><strong>{selectedTenantLabel.name || '-'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedTenantLabel.isActive === false ? 'Inactiva' : 'Activa'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Orden</span><strong>{selectedTenantLabel.sortOrder || 100}</strong></div>
+                                                </div>
+                                                <div className="saas-admin-related-block">
+                                                    <h4>Color visual</h4>
+                                                    <div className="saas-admin-related-list">
+                                                        <div className="saas-admin-related-row" role="status">
+                                                            <span>Hex</span>
+                                                            <small>{selectedTenantLabel.color || '#00A884'}</small>
+                                                        </div>
+                                                        <div className="saas-admin-related-row" role="status">
+                                                            <span>Muestra</span>
+                                                            <small>
+                                                                <span className="chat-header-label-chip" style={{ '--label-color': selectedTenantLabel.color || '#00A884' }}>{selectedTenantLabel.name || 'Etiqueta'}</span>
+                                                            </small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="saas-admin-related-block">
+                                                    <h4>Alcance por modulo</h4>
+                                                    <div className="saas-admin-related-list">
+                                                        {selectedTenantLabel.moduleIds.length === 0 && (
+                                                            <div className="saas-admin-related-row" role="status"><span>Alcance</span><small>Compartida para todos los modulos</small></div>
+                                                        )}
+                                                        {selectedTenantLabel.moduleIds.map((moduleId) => {
+                                                            const moduleMatch = waModules.find((entry) => String(entry?.moduleId || '').trim().toLowerCase() === moduleId);
+                                                            return (
+                                                                <div key={`label_view_module_${moduleId}`} className="saas-admin-related-row" role="status">
+                                                                    <span>{moduleMatch?.name || moduleId}</span>
+                                                                    <small>{moduleId}</small>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        {(labelPanelMode === 'create' || labelPanelMode === 'edit') && (
+                                            <>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={labelForm.name}
+                                                        onChange={(event) => setLabelForm((prev) => ({ ...prev, name: event.target.value }))}
+                                                        placeholder="Nombre de etiqueta"
+                                                        disabled={busy}
+                                                    />
+                                                    <input
+                                                        value={labelForm.labelId}
+                                                        onChange={(event) => setLabelForm((prev) => ({ ...prev, labelId: String(event.target.value || '').trim().toUpperCase() }))}
+                                                        placeholder="Codigo (opcional, auto si vacio)"
+                                                        disabled={busy || labelPanelMode === 'edit'}
+                                                    />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        value={labelForm.description}
+                                                        onChange={(event) => setLabelForm((prev) => ({ ...prev, description: event.target.value }))}
+                                                        placeholder="Descripcion (opcional)"
+                                                        disabled={busy}
+                                                    />
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        max="9999"
+                                                        value={labelForm.sortOrder}
+                                                        onChange={(event) => setLabelForm((prev) => ({ ...prev, sortOrder: event.target.value }))}
+                                                        placeholder="Orden"
+                                                        disabled={busy}
+                                                    />
+                                                </div>
+                                                <div className="saas-admin-form-row">
+                                                    <input
+                                                        type="color"
+                                                        value={normalizeTenantLabelColor(labelForm.color || '', DEFAULT_LABEL_COLORS[0])}
+                                                        onChange={(event) => setLabelForm((prev) => ({ ...prev, color: event.target.value }))}
+                                                        disabled={busy}
+                                                    />
+                                                    <input
+                                                        value={normalizeTenantLabelColor(labelForm.color || '', DEFAULT_LABEL_COLORS[0])}
+                                                        onChange={(event) => setLabelForm((prev) => ({ ...prev, color: event.target.value }))}
+                                                        placeholder="#00A884"
+                                                        disabled={busy}
+                                                    />
+                                                </div>
+                                                <div className="saas-admin-modules">
+                                                    {DEFAULT_LABEL_COLORS.map((colorValue) => (
+                                                        <button
+                                                            key={`label_color_${colorValue}`}
+                                                            type="button"
+                                                            className="saas-admin-color-chip"
+                                                            style={{ background: colorValue, borderColor: colorValue }}
+                                                            title={colorValue}
+                                                            disabled={busy}
+                                                            onClick={() => setLabelForm((prev) => ({ ...prev, color: colorValue }))}
+                                                        >
+                                                            {normalizeTenantLabelColor(labelForm.color || '', DEFAULT_LABEL_COLORS[0]) === colorValue ? 'ok' : ''}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <div className="saas-admin-modules">
+                                                    <label className="saas-admin-module-toggle">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={labelForm.isActive !== false}
+                                                            onChange={(event) => setLabelForm((prev) => ({ ...prev, isActive: event.target.checked }))}
+                                                            disabled={busy}
+                                                        />
+                                                        <span>Etiqueta activa</span>
+                                                    </label>
+                                                </div>
+                                                <div className="saas-admin-related-block">
+                                                    <h4>Asignacion por modulo</h4>
+                                                    <small>Si no marcas modulos, la etiqueta queda compartida para todos.</small>
+                                                    <div className="saas-admin-modules" style={{ marginTop: '8px' }}>
+                                                        {waModules.length === 0 && (
+                                                            <div className="saas-admin-empty-inline">No hay modulos configurados para esta empresa.</div>
+                                                        )}
+                                                        {waModules.map((moduleItem) => {
+                                                            const moduleId = String(moduleItem?.moduleId || '').trim().toLowerCase();
+                                                            const checked = Array.isArray(labelForm.moduleIds) && labelForm.moduleIds.includes(moduleId);
+                                                            return (
+                                                                <label key={`label_form_module_${moduleId}`} className="saas-admin-module-toggle">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={checked}
+                                                                        onChange={() => toggleModuleInLabelForm(moduleId)}
+                                                                        disabled={busy}
+                                                                    />
+                                                                    <span>{moduleItem?.name || moduleId}</span>
+                                                                </label>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                                <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                                    <button
+                                                        type="button"
+                                                        disabled={busy || !canManageLabels || !String(labelForm.name || '').trim()}
+                                                        onClick={() => runAction(labelPanelMode === 'create' ? 'Etiqueta creada' : 'Etiqueta actualizada', async () => {
+                                                            await saveTenantLabel();
+                                                        })}
+                                                    >
+                                                        {labelPanelMode === 'create' ? 'Guardar etiqueta' : 'Actualizar etiqueta'}
+                                                    </button>
+                                                    <button type="button" disabled={busy} onClick={cancelTenantLabelEdit}>Cancelar</button>
+                                                </div>
+                                            </>
+                                        )}
                                     </>
                                 )}
                             </div>
@@ -7378,3 +7943,4 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+

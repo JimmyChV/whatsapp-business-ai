@@ -550,6 +550,9 @@ const normalizeChatFilters = (filters = {}) => {
   const archivedMode = ['all', 'archived', 'active'].includes(String(filters?.archivedMode || 'all'))
     ? String(filters?.archivedMode || 'all')
     : 'all';
+  const pinnedMode = ['all', 'pinned', 'unpinned'].includes(String(filters?.pinnedMode || 'all'))
+    ? String(filters?.pinnedMode || 'all')
+    : 'all';
 
   return {
     labelTokens,
@@ -557,6 +560,7 @@ const normalizeChatFilters = (filters = {}) => {
     unlabeledOnly: Boolean(filters?.unlabeledOnly),
     contactMode,
     archivedMode,
+    pinnedMode,
   };
 };
 
@@ -591,6 +595,9 @@ const chatMatchesFilters = (chat = {}, filters = {}) => {
   const isArchived = Boolean(chat?.archived);
   if (normalized.archivedMode === 'archived' && !isArchived) return false;
   if (normalized.archivedMode === 'active' && isArchived) return false;
+  const isPinned = Boolean(chat?.pinned);
+  if (normalized.pinnedMode === 'pinned' && !isPinned) return false;
+  if (normalized.pinnedMode === 'unpinned' && isPinned) return false;
 
   const labelSet = chatLabelTokenSet(chat);
   if (normalized.unlabeledOnly && labelSet.size > 0) return false;
@@ -664,14 +671,6 @@ const upsertAndSortChat = (list = [], incoming = null) => {
 
 const CHAT_PAGE_SIZE = 80;
 const TRANSPORT_STORAGE_KEY = 'wa_transport_mode';
-const LABEL_DEFS_STORAGE_PREFIX = 'wa_custom_label_defs';
-
-const buildScopedStorageKey = (prefix = '', scope = 'default') => {
-  const cleanPrefix = String(prefix || '').trim();
-  const cleanScope = String(scope || 'default').trim().toLowerCase() || 'default';
-  return `${cleanPrefix}:${cleanScope}`;
-};
-
 function App() {
   // --------------------------------------------------------------
   const [isConnected, setIsConnected] = useState(false);
@@ -717,25 +716,28 @@ function App() {
       const launch = String(params.get('wa_launch') || '').trim().toLowerCase() === 'operation';
       const moduleId = String(params.get('wa_module') || '').trim().toLowerCase();
       const tenantId = String(params.get('wa_tenant') || '').trim();
+      const sectionId = String(params.get('wa_section') || '').trim().toLowerCase();
       return {
         forceOperationLaunch: launch,
         requestedWaModuleId: moduleId || '',
-        requestedWaTenantId: tenantId || ''
+        requestedWaTenantId: tenantId || '',
+        requestedWaSectionId: sectionId || ''
       };
     } catch (_) {
       return {
         forceOperationLaunch: false,
         requestedWaModuleId: '',
-        requestedWaTenantId: ''
+        requestedWaTenantId: '',
+        requestedWaSectionId: ''
       };
     }
   }, []);
   const forceOperationLaunch = waLaunchParams.forceOperationLaunch && !forceOperationLaunchBypass;
   const requestedWaModuleFromUrl = waLaunchParams.requestedWaModuleId;
   const requestedWaTenantFromUrl = waLaunchParams.requestedWaTenantId;
+  const requestedWaSectionFromUrl = waLaunchParams.requestedWaSectionId;
   const requestedLaunchSource = waLaunchParams.requestedLaunchSource;
   const tenantScopeId = String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || 'default').trim() || 'default';
-  const labelDefsStorageKey = buildScopedStorageKey(LABEL_DEFS_STORAGE_PREFIX, tenantScopeId);
 
   // --------------------------------------------------------------
   const [chats, setChats] = useState([]);
@@ -743,7 +745,7 @@ function App() {
   const [chatsHasMore, setChatsHasMore] = useState(true);
   const [isLoadingMoreChats, setIsLoadingMoreChats] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
-  const [chatFilters, setChatFilters] = useState({ labelTokens: [], unreadOnly: false, unlabeledOnly: false, contactMode: 'all', archivedMode: 'all' });
+  const [chatFilters, setChatFilters] = useState({ labelTokens: [], unreadOnly: false, unlabeledOnly: false, contactMode: 'all', archivedMode: 'all', pinnedMode: 'all' });
   const [activeChatId, setActiveChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -799,7 +801,7 @@ function App() {
   const activeChatIdRef = useRef(null);
   const chatsRef = useRef([]);
   const chatSearchRef = useRef('');
-  const chatFiltersRef = useRef(normalizeChatFilters({ labelTokens: [], unreadOnly: false, unlabeledOnly: false, contactMode: 'all', archivedMode: 'all' }));
+  const chatFiltersRef = useRef(normalizeChatFilters({ labelTokens: [], unreadOnly: false, unlabeledOnly: false, contactMode: 'all', archivedMode: 'all', pinnedMode: 'all' }));
   const chatPagingRef = useRef({ offset: 0, hasMore: true, loading: false });
   const shouldInstantScrollRef = useRef(false);
   const prevMessagesMetaRef = useRef({ count: 0, lastId: '' });
@@ -817,7 +819,6 @@ function App() {
   const requestedWaTenantFromUrlRef = useRef(requestedWaTenantFromUrl);
   const launchTenantAppliedRef = useRef('');
   const saasAdminAutoOpenRef = useRef('');
-  const labelDefsPersistenceStateRef = useRef({ key: '', loaded: false });
   const tenantScopeRef = useRef(tenantScopeId);
   const businessDataRequestSeqRef = useRef(0);
   const businessDataResponseSeqRef = useRef(0);
@@ -834,30 +835,6 @@ function App() {
     }
   }, []);
 
-  useEffect(() => {
-    try {
-      const scopedRaw = localStorage.getItem(labelDefsStorageKey);
-      const legacyRaw = localStorage.getItem(LABEL_DEFS_STORAGE_PREFIX);
-      const rawToUse = scopedRaw ?? legacyRaw ?? '[]';
-      const parsed = JSON.parse(rawToUse);
-      labelDefsPersistenceStateRef.current = { key: labelDefsStorageKey, loaded: true };
-      setLabelDefinitions(Array.isArray(parsed) ? parsed : []);
-    } catch (error) {
-      labelDefsPersistenceStateRef.current = { key: labelDefsStorageKey, loaded: true };
-      setLabelDefinitions([]);
-      console.warn('No se pudieron leer etiquetas locales', error?.message || error);
-    }
-  }, [labelDefsStorageKey]);
-
-  useEffect(() => {
-    const persistence = labelDefsPersistenceStateRef.current;
-    if (!persistence?.loaded || persistence.key !== labelDefsStorageKey) return;
-    try {
-      localStorage.setItem(labelDefsStorageKey, JSON.stringify(Array.isArray(labelDefinitions) ? labelDefinitions : []));
-    } catch (error) {
-      console.warn('No se pudieron guardar etiquetas locales', error?.message || error);
-    }
-  }, [labelDefinitions, labelDefsStorageKey]);
 
   const buildApiHeaders = useCallback((options = {}) => {
     const includeJson = Boolean(options?.includeJson);
@@ -1524,6 +1501,7 @@ function App() {
             profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
             isMyContact: chat?.isMyContact === true,
             archived: Boolean(chat?.archived),
+            pinned: Boolean(chat?.pinned),
             lastMessageModuleId: String(chat?.lastMessageModuleId || chat?.sentViaModuleId || scopeModuleId || previous?.lastMessageModuleId || '').trim().toLowerCase() || null,
             lastMessageModuleName: String(chat?.lastMessageModuleName || chat?.sentViaModuleName || previous?.lastMessageModuleName || '').trim() || null,
             lastMessageModuleImageUrl: normalizeModuleImageUrl(chat?.lastMessageModuleImageUrl || chat?.sentViaModuleImageUrl || previous?.lastMessageModuleImageUrl || '') || null,
@@ -1581,6 +1559,7 @@ function App() {
         profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
         isMyContact: chat?.isMyContact === true,
         archived: Boolean(chat?.archived),
+        pinned: Boolean(chat?.pinned),
         lastMessageModuleId: String(chat?.lastMessageModuleId || chat?.sentViaModuleId || scopeModuleId || previous?.lastMessageModuleId || '').trim().toLowerCase() || null,
         lastMessageModuleName: String(chat?.lastMessageModuleName || chat?.sentViaModuleName || previous?.lastMessageModuleName || '').trim() || null,
         lastMessageModuleImageUrl: normalizeModuleImageUrl(chat?.lastMessageModuleImageUrl || chat?.sentViaModuleImageUrl || previous?.lastMessageModuleImageUrl || '') || null,
@@ -1630,6 +1609,7 @@ function App() {
           ack: 0,
           labels: [],
           archived: false,
+          pinned: false,
           isMyContact: false,
           lastMessageModuleId: scopeModuleId,
           lastMessageModuleName: String(moduleConfig?.name || '').trim() || (scopeModuleId ? String(scopeModuleId || '').toUpperCase() : null),
@@ -1648,12 +1628,28 @@ function App() {
       if (msg) alert(msg);
     });
 
-    socket.on('chat_labels_updated', ({ chatId, labels }) => {
+    socket.on('chat_labels_updated', ({ chatId, baseChatId, scopeModuleId, labels }) => {
+      const incomingScopedId = normalizeChatScopedId(chatId || baseChatId || '', scopeModuleId || '');
+      const normalizedLabels = normalizeChatLabels(labels);
+
       setChats((prev) => {
-        const next = prev.map((chat) => chat.id === chatId ? { ...chat, labels: normalizeChatLabels(labels) } : chat);
+        const next = prev.map((chat) => {
+          const sameScope = chatIdsReferSameScope(String(chat?.id || ''), incomingScopedId);
+          if (!sameScope) return chat;
+          return { ...chat, labels: normalizedLabels };
+        });
         return next.filter((chat) => chatMatchesQuery(chat, chatSearchRef.current) && chatMatchesFilters(chat, chatFiltersRef.current));
       });
-      if (chatId === activeChatIdRef.current) socket.emit('get_contact_info', chatId);
+
+      const active = String(activeChatIdRef.current || '');
+      if (active && chatIdsReferSameScope(active, incomingScopedId)) {
+        socket.emit('get_contact_info', active);
+      }
+    });
+
+    socket.on('business_data_labels', (payload = {}) => {
+      const labels = Array.isArray(payload?.labels) ? payload.labels : [];
+      setLabelDefinitions(normalizeChatLabels(labels));
     });
 
     socket.on('chat_labels_error', (msg) => {
@@ -2279,7 +2275,7 @@ function App() {
     return () => {
       ['connect', 'connect_error', 'tenant_context', 'wa_module_context', 'wa_module_selected', 'wa_module_error', 'disconnect', 'qr', 'ready', 'my_profile', 'wa_capabilities', 'wa_runtime', 'transport_mode_set', 'transport_mode_error', 'chats', 'chat_updated', 'chat_history', 'chat_media',
         'chat_opened', 'start_new_chat_error', 'chat_labels_updated', 'chat_labels_error', 'chat_labels_saved',
-        'contact_info', 'message', 'business_data', 'error', 'business_data_catalog', 'quick_replies', 'quick_reply_error',
+        'contact_info', 'message', 'business_data', 'business_data_labels', 'error', 'business_data_catalog', 'quick_replies', 'quick_reply_error',
         'ai_suggestion_chunk',
 
         'ai_suggestion_complete', 'ai_error', 'message_ack', 'message_editability', 'message_edited', 'edit_message_error', 'message_forwarded', 'forward_message_error', 'message_deleted', 'delete_message_error', 'authenticated', 'auth_failure', 'disconnected', 'logout_done'
@@ -2955,7 +2951,7 @@ function App() {
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, '_') || 'default';
 
-  const buildWorkspaceUrl = ({ mode = 'operation', tenantId = '', moduleId = '', source = '' } = {}) => {
+  const buildWorkspaceUrl = ({ mode = 'operation', tenantId = '', moduleId = '', source = '', section = '' } = {}) => {
     const nextUrl = new URL(window.location.href);
     const cleanTenantId = String(tenantId || '').trim();
     const cleanModuleId = String(moduleId || '').trim().toLowerCase();
@@ -2966,9 +2962,13 @@ function App() {
       nextUrl.searchParams.set('wa_launch', 'operation');
       if (cleanModuleId) nextUrl.searchParams.set('wa_module', cleanModuleId);
       else nextUrl.searchParams.delete('wa_module');
+      nextUrl.searchParams.delete('wa_section');
     } else {
       nextUrl.searchParams.delete('wa_launch');
       nextUrl.searchParams.delete('wa_module');
+      const cleanSection = String(section || '').trim().toLowerCase();
+      if (cleanSection) nextUrl.searchParams.set('wa_section', cleanSection);
+      else nextUrl.searchParams.delete('wa_section');
     }
 
     if (cleanTenantId) nextUrl.searchParams.set('wa_tenant', cleanTenantId);
@@ -2980,26 +2980,30 @@ function App() {
     return nextUrl;
   };
 
-  const isWorkspaceTabAligned = (rawHref = '', { mode = 'operation', tenantId = '' } = {}) => {
+  const isWorkspaceTabAligned = (rawHref = '', { mode = 'operation', tenantId = '', section = '' } = {}) => {
     try {
       const current = new URL(String(rawHref || ''));
       const currentMode = String(current.searchParams.get('wa_launch') || '').trim().toLowerCase() === 'operation'
         ? 'operation'
         : 'panel';
       const currentTenant = String(current.searchParams.get('wa_tenant') || '').trim();
+      const currentSection = String(current.searchParams.get('wa_section') || '').trim().toLowerCase();
       const expectedMode = String(mode || '').trim().toLowerCase() === 'operation' ? 'operation' : 'panel';
       const expectedTenant = String(tenantId || '').trim();
+      const expectedSection = String(section || '').trim().toLowerCase();
       if (currentMode !== expectedMode) return false;
-      return currentTenant === expectedTenant;
+      if (currentTenant !== expectedTenant) return false;
+      if (expectedMode === 'panel' && expectedSection) return currentSection === expectedSection;
+      return true;
     } catch (_) {
       return false;
     }
   };
 
-  const openOrFocusWorkspaceTab = ({ mode = 'operation', tenantId = '', moduleId = '', source = '' } = {}) => {
+  const openOrFocusWorkspaceTab = ({ mode = 'operation', tenantId = '', moduleId = '', source = '', section = '' } = {}) => {
     const cleanTenantId = String(tenantId || '').trim();
     const cleanMode = String(mode || '').trim().toLowerCase() === 'operation' ? 'operation' : 'panel';
-    const targetUrl = buildWorkspaceUrl({ mode: cleanMode, tenantId: cleanTenantId, moduleId, source });
+    const targetUrl = buildWorkspaceUrl({ mode: cleanMode, tenantId: cleanTenantId, moduleId, source, section });
     const targetName = cleanMode === 'operation'
       ? `lavitat_chat_${sanitizeWorkspaceKey(cleanTenantId)}`
       : `lavitat_panel_${sanitizeWorkspaceKey(cleanTenantId)}`;
@@ -3020,7 +3024,7 @@ function App() {
     try {
       const currentHref = String(targetWindow.location?.href || '').trim();
       if (currentHref && currentHref !== 'about:blank') {
-        mustNavigate = !isWorkspaceTabAligned(currentHref, { mode: cleanMode, tenantId: cleanTenantId });
+        mustNavigate = !isWorkspaceTabAligned(currentHref, { mode: cleanMode, tenantId: cleanTenantId, section });
       }
     } catch (_) {
       mustNavigate = true;
@@ -3048,13 +3052,15 @@ function App() {
 
   const handleOpenSaasAdminWorkspace = (options = {}) => {
     const targetTenantId = String(options?.tenantId || tenantScopeId || '').trim();
+    const targetSectionId = String(options?.section || '').trim().toLowerCase();
     if (!targetTenantId) return;
 
     setShowSaasAdminPanel(false);
     openOrFocusWorkspaceTab({
       mode: 'panel',
       tenantId: targetTenantId,
-      source: 'chat'
+      source: 'chat',
+      section: targetSectionId
     });
   };
 
@@ -3125,9 +3131,11 @@ function App() {
   };
 
   const handleCreateLabel = () => {
-    const name = window.prompt('Nombre de etiqueta para WhatsApp Business:');
-    if (!name?.trim()) return;
-    socket.emit('create_label', { name: name.trim() });
+    if (!canManageSaas) {
+      alert('No tienes permisos para gestionar etiquetas.');
+      return;
+    }
+    handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId, section: 'saas_etiquetas' });
   };
 
   const handleOpenCompanyProfile = () => {
@@ -3146,6 +3154,11 @@ function App() {
       : [...current.map((l) => l.id).filter(Boolean), labelId];
 
     socket.emit('set_chat_labels', { chatId, labelIds: nextIds });
+  };
+
+  const handleToggleChatPinned = (chatId, nextPinned) => {
+    if (!chatId || typeof nextPinned !== 'boolean') return;
+    socket.emit('set_chat_state', { chatId, pinned: nextPinned });
   };
 
   const resolveNewChatAvailableModules = useCallback(() => (
@@ -4021,6 +4034,7 @@ function App() {
               setIsCopilotMode={setIsCopilotMode}
               labelDefinitions={labelDefinitions}
               onToggleChatLabel={handleToggleChatLabel}
+              onToggleChatPinned={handleToggleChatPinned}
               onEditMessage={handleEditMessage}
               onReplyMessage={waCapabilities.messageReply ? handleReplyMessage : null}
               onForwardMessage={waCapabilities.messageForward ? handleForwardMessage : null}
@@ -4190,9 +4204,13 @@ function App() {
         currentUser={saasSession?.user || null}
           preferredTenantId={requestedWaTenantFromUrl || ''}
           launchSource={requestedLaunchSource || ''}
+        initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
           />
     </div>
   );
 }
 
 export default App;
+
+
+

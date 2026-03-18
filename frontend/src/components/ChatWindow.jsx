@@ -714,6 +714,7 @@ const ChatWindow = ({
     setShowClientProfile,
     labelDefinitions = [],
     onToggleChatLabel,
+    onToggleChatPinned,
     onEditMessage,
     onReplyMessage,
     onForwardMessage,
@@ -1223,7 +1224,7 @@ const ChatWindow = ({
                         </button>
                         {showLabelMenu && (
                             <div className="chat-header-popover chat-header-label-popover">
-                                <div className="chat-header-popover-title">Etiquetas sincronizadas con WhatsApp</div>
+                                <div className="chat-header-popover-title">Etiquetas del tenant (CRM)</div>
                                 {labelDefinitions.length === 0 && <div className="chat-header-popover-empty">No hay etiquetas disponibles.</div>}
                                 {labelDefinitions.map((label) => {
                                     const isActive = (activeChatDetails?.labels || []).some((l) => String(l.id) === String(label.id));
@@ -1248,6 +1249,10 @@ const ChatWindow = ({
                                 {[
                                     { label: 'Ver perfil del contacto', action: () => setShowClientProfile(true) },
                                     { label: 'Buscar mensajes', action: () => setSearchVisible(true) },
+                                    {
+                                        label: activeChatDetails?.pinned ? 'Desfijar chat' : 'Fijar chat',
+                                        action: () => onToggleChatPinned?.(activeChatDetails?.id, !Boolean(activeChatDetails?.pinned))
+                                    },
                                     { label: 'Modo Copiloto IA', action: () => setIsCopilotMode(v => !v) },
                                 ].map((item, i) => (
                                     <div key={i}
@@ -1440,3 +1445,4 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
+

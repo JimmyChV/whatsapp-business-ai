@@ -26,6 +26,7 @@ const customerService = require('./customer_service');
 const tenantIntegrationsService = require('./tenant_integrations_service');
 const tenantCatalogService = require('./tenant_catalog_service');
 const quickReplyLibrariesService = require('./quick_reply_libraries_service');
+const tenantLabelService = require('./tenant_label_service');
 const { loadCatalog, addProduct, updateProduct } = require('./catalog_manager');
 const opsTelemetry = require('./ops_telemetry');
 
@@ -1410,6 +1411,28 @@ function sanitizeQuickReplyItemPayload(payload = {}, { allowItemId = true } = {}
     return base;
 }
 
+function sanitizeTenantLabelPayload(payload = {}, { allowLabelId = true } = {}) {
+    const source = sanitizeObjectPayload(payload);
+    const cleanLabelId = tenantLabelService.normalizeLabelId(source.labelId || source.id || '');
+    const parsedSortOrder = Number.parseInt(String(source.sortOrder ?? ''), 10);
+    const sortOrder = Number.isFinite(parsedSortOrder) ? Math.max(1, parsedSortOrder) : 1000;
+    const metadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+        ? source.metadata
+        : {};
+
+    const base = {
+        name: String(source.name || source.label || '').trim(),
+        description: String(source.description || '').trim(),
+        color: tenantLabelService.normalizeColor(source.color || source.hex || ''),
+        isActive: source.isActive !== false,
+        sortOrder,
+        metadata
+    };
+
+    if (allowLabelId && cleanLabelId) base.labelId = cleanLabelId;
+    return base;
+}
+
 app.post('/api/admin/saas/assets/upload', async (req, res) => {
     try {
         const body = req.body && typeof req.body === 'object' ? req.body : {};
@@ -2087,6 +2110,91 @@ app.post('/api/admin/saas/tenants/:tenantId/ai-assistants/:assistantId/deactivat
         return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar asistente IA.') });
     }
 });
+app.get('/api/admin/saas/tenants/:tenantId/labels', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId)
+        || !hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_LABELS_READ,
+            accessPolicyService.PERMISSIONS.TENANT_LABELS_MANAGE,
+            accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
+            accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
+        ])) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() === 'true';
+        const items = await tenantLabelService.listLabels({ tenantId, includeInactive });
+        return res.json({ ok: true, tenantId, items: Array.isArray(items) ? items : [] });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar etiquetas.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/labels', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId)
+        || !hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_LABELS_MANAGE,
+            accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
+        ])) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const payload = sanitizeTenantLabelPayload(req.body, { allowLabelId: true });
+        if (!String(payload.name || '').trim()) return res.status(400).json({ ok: false, error: 'Nombre de etiqueta requerido.' });
+        const item = await tenantLabelService.saveLabel(payload, { tenantId });
+        return res.status(201).json({ ok: true, tenantId, item });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear etiqueta.') });
+    }
+});
+
+app.put('/api/admin/saas/tenants/:tenantId/labels/:labelId', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const labelId = tenantLabelService.normalizeLabelId(req.params?.labelId || '');
+    if (!tenantId || !labelId) return res.status(400).json({ ok: false, error: 'tenantId/labelId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId)
+        || !hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_LABELS_MANAGE,
+            accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
+        ])) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        const payload = sanitizeTenantLabelPayload(req.body, { allowLabelId: false });
+        if (!String(payload.name || '').trim()) return res.status(400).json({ ok: false, error: 'Nombre de etiqueta requerido.' });
+        const item = await tenantLabelService.saveLabel({ ...payload, labelId }, { tenantId });
+        return res.json({ ok: true, tenantId, item });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar etiqueta.') });
+    }
+});
+
+app.post('/api/admin/saas/tenants/:tenantId/labels/:labelId/deactivate', async (req, res) => {
+    const tenantId = String(req.params?.tenantId || '').trim();
+    const labelId = tenantLabelService.normalizeLabelId(req.params?.labelId || '');
+    if (!tenantId || !labelId) return res.status(400).json({ ok: false, error: 'tenantId/labelId invalido.' });
+    if (!isTenantAllowedForUser(req, tenantId)
+        || !hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_LABELS_MANAGE,
+            accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
+        ])) {
+        return res.status(403).json({ ok: false, error: 'No autorizado.' });
+    }
+
+    try {
+        await tenantLabelService.deactivateLabel(labelId, { tenantId });
+        return res.json({ ok: true, tenantId, labelId });
+    } catch (error) {
+        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar etiqueta.') });
+    }
+});
+
 app.get('/api/admin/saas/tenants/:tenantId/quick-reply-libraries', async (req, res) => {
     const tenantId = String(req.params?.tenantId || '').trim();
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });

@@ -376,6 +376,97 @@ async function upsertMessage(tenantId = DEFAULT_TENANT_ID, input = {}) {
     return { ok: true, driver: 'file', messageId: record.messageId };
 }
 
+
+async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
+    chatId,
+    archived,
+    pinned,
+    metadata = null
+} = {}) {
+    if (!isHistoryEnabled()) return { ok: false, skipped: 'disabled' };
+
+    const cleanTenant = resolveTenantId(tenantId);
+    const safeChatId = toSafeString(chatId);
+    if (!safeChatId) return { ok: false, skipped: 'invalid_chat_id' };
+
+    const hasArchived = typeof archived === 'boolean';
+    const hasPinned = typeof pinned === 'boolean';
+    const hasMetadata = metadata && typeof metadata === 'object';
+    if (!hasArchived && !hasPinned && !hasMetadata) {
+        return { ok: false, skipped: 'empty_patch' };
+    }
+
+    if (getStorageDriver() === 'postgres') {
+        try {
+            await ensurePostgresMessageColumns();
+            const setClauses = ['updated_at = NOW()'];
+            const params = [cleanTenant, safeChatId];
+            let idx = 2;
+            if (hasArchived) {
+                idx += 1;
+                setClauses.push(`archived = $${idx}`);
+                params.push(Boolean(archived));
+            }
+            if (hasPinned) {
+                idx += 1;
+                setClauses.push(`pinned = $${idx}`);
+                params.push(Boolean(pinned));
+            }
+            if (hasMetadata) {
+                idx += 1;
+                setClauses.push(`metadata = COALESCE(metadata, '{}'::jsonb) || $${idx}::jsonb`);
+                params.push(JSON.stringify(metadata || {}));
+            }
+
+            const sql = `UPDATE tenant_chats
+                            SET ${setClauses.join(', ')}
+                          WHERE tenant_id = $1
+                            AND chat_id = $2
+                        RETURNING chat_id, archived, pinned, metadata`;
+            const { rows } = await queryPostgres(sql, params);
+            if (!rows.length) return { ok: false, skipped: 'not_found' };
+
+            const row = rows[0] || {};
+            return {
+                ok: true,
+                driver: 'postgres',
+                chatId: String(row.chat_id || safeChatId),
+                archived: Boolean(row.archived),
+                pinned: Boolean(row.pinned),
+                metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+            };
+        } catch (error) {
+            if (missingRelation(error)) return { ok: false, skipped: 'schema_missing' };
+            throw error;
+        }
+    }
+
+    const store = await loadStore(cleanTenant);
+    const currentChat = store.chats[safeChatId];
+    if (!currentChat) return { ok: false, skipped: 'not_found' };
+
+    store.chats[safeChatId] = {
+        ...currentChat,
+        archived: hasArchived ? Boolean(archived) : Boolean(currentChat.archived),
+        pinned: hasPinned ? Boolean(pinned) : Boolean(currentChat.pinned),
+        metadata: {
+            ...(currentChat.metadata && typeof currentChat.metadata === 'object' ? currentChat.metadata : {}),
+            ...(hasMetadata ? metadata : {})
+        },
+        updatedAt: new Date().toISOString()
+    };
+    await saveStore(cleanTenant, store);
+    return {
+        ok: true,
+        driver: 'file',
+        chatId: safeChatId,
+        archived: Boolean(store.chats[safeChatId]?.archived),
+        pinned: Boolean(store.chats[safeChatId]?.pinned),
+        metadata: store.chats[safeChatId]?.metadata && typeof store.chats[safeChatId].metadata === 'object'
+            ? store.chats[safeChatId].metadata
+            : {}
+    };
+}
 async function updateMessageAck(tenantId = DEFAULT_TENANT_ID, { messageId, chatId, ack } = {}) {
     if (!isHistoryEnabled()) return { ok: false, skipped: 'disabled' };
 
@@ -725,8 +816,8 @@ async function listMessages(tenantId = DEFAULT_TENANT_ID, {
 module.exports = {
     isHistoryEnabled,
     normalizeMessageRecord,
-    upsertMessage,
-    updateMessageAck,
+        updateChatState,
+updateMessageAck,
     updateMessageEdit,
     listChats,
     listMessages

@@ -16,6 +16,8 @@ const PERMISSIONS = Object.freeze({
     TENANT_MODULES_MANAGE: 'tenant.modules.manage',
     TENANT_QUICK_REPLIES_READ: 'tenant.quick_replies.read',
     TENANT_QUICK_REPLIES_MANAGE: 'tenant.quick_replies.manage',
+    TENANT_LABELS_READ: 'tenant.labels.read',
+    TENANT_LABELS_MANAGE: 'tenant.labels.manage',
     TENANT_AI_READ: 'tenant.ai.read',
     TENANT_AI_MANAGE: 'tenant.ai.manage',
     TENANT_CUSTOMERS_READ: 'tenant.customers.read',
@@ -42,6 +44,8 @@ const PERMISSION_LABELS = Object.freeze({
     [PERMISSIONS.TENANT_MODULES_MANAGE]: 'Gestionar modulos WhatsApp',
     [PERMISSIONS.TENANT_QUICK_REPLIES_READ]: 'Ver respuestas rapidas',
     [PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE]: 'Gestionar respuestas rapidas',
+    [PERMISSIONS.TENANT_LABELS_READ]: 'Ver etiquetas de chats',
+    [PERMISSIONS.TENANT_LABELS_MANAGE]: 'Gestionar etiquetas de chats',
     [PERMISSIONS.TENANT_AI_READ]: 'Ver asistentes IA',
     [PERMISSIONS.TENANT_AI_MANAGE]: 'Gestionar asistentes IA',
     [PERMISSIONS.TENANT_CUSTOMERS_READ]: 'Ver clientes',
@@ -93,6 +97,14 @@ const SYSTEM_PERMISSION_PACKS = Object.freeze({
         ],
         active: true
     },
+    labels_management: {
+        label: 'Gestion de etiquetas',
+        permissions: [
+            PERMISSIONS.TENANT_LABELS_READ,
+            PERMISSIONS.TENANT_LABELS_MANAGE
+        ],
+        active: true
+    },
     ai_assistants_management: {
         label: 'Gestion de asistentes IA',
         permissions: [
@@ -119,6 +131,8 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_CUSTOMERS_MANAGE,
             PERMISSIONS.TENANT_QUICK_REPLIES_READ,
             PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE,
+            PERMISSIONS.TENANT_LABELS_READ,
+            PERMISSIONS.TENANT_LABELS_MANAGE,
             PERMISSIONS.TENANT_AI_READ,
             PERMISSIONS.TENANT_AI_MANAGE,
             PERMISSIONS.TENANT_RUNTIME_READ,
@@ -151,6 +165,7 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_CUSTOMERS_MANAGE,
             PERMISSIONS.TENANT_QUICK_REPLIES_READ,
             PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE,
+            PERMISSIONS.TENANT_LABELS_READ,
             PERMISSIONS.TENANT_AI_READ,
             PERMISSIONS.TENANT_AI_MANAGE,
             PERMISSIONS.TENANT_RUNTIME_READ,
@@ -160,6 +175,7 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
         optional: [
             PERMISSIONS.TENANT_SETTINGS_MANAGE,
             PERMISSIONS.TENANT_MODULES_MANAGE,
+            PERMISSIONS.TENANT_LABELS_MANAGE,
             PERMISSIONS.TENANT_INTEGRATIONS_READ,
             PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
             PERMISSIONS.TENANT_AUDIT_READ
@@ -180,6 +196,7 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_MODULES_READ,
             PERMISSIONS.TENANT_CUSTOMERS_READ,
             PERMISSIONS.TENANT_QUICK_REPLIES_READ,
+            PERMISSIONS.TENANT_LABELS_READ,
             PERMISSIONS.TENANT_AI_READ,
             PERMISSIONS.TENANT_RUNTIME_READ,
             PERMISSIONS.TENANT_CHAT_OPERATE
@@ -188,6 +205,7 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_CUSTOMERS_MANAGE,
             PERMISSIONS.TENANT_CATALOGS_MANAGE,
             PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE,
+            PERMISSIONS.TENANT_LABELS_MANAGE,
             PERMISSIONS.TENANT_AI_MANAGE
         ],
         blocked: [
@@ -645,6 +663,10 @@ module.exports = {
     persistRoleProfile,
     persistPermissionPack,
 };
+
+
+
+
 
 
 

@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --app-background: #111b21;
   --panel-background: #202c33;
   --sidebar-background: #111b21;
@@ -5222,3 +5222,57 @@ body {
     max-height: 280px;
   }
 }
+
+.saas-admin-color-chip {
+  min-width: 38px;
+  height: 34px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.24);
+}
+
+.saas-admin-color-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+
+.sidebar-quick-rail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.sidebar-quick-rail-btn {
+  border: 1px solid rgba(71, 108, 125, 0.45);
+  background: rgba(14, 28, 37, 0.9);
+  color: #a8bcc8;
+  border-radius: 10px;
+  padding: 6px 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.sidebar-quick-rail-btn:hover {
+  color: #e7f8ff;
+  border-color: rgba(51, 201, 187, 0.55);
+}
+
+.sidebar-quick-rail-btn.active {
+  background: linear-gradient(135deg, rgba(0, 168, 132, 0.34), rgba(20, 116, 184, 0.35));
+  color: #f3fffb;
+  border-color: rgba(0, 168, 132, 0.7);
+}
+

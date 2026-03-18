@@ -14,6 +14,7 @@ const messageHistoryService = require('./message_history_service');
 const waModuleService = require('./wa_module_service');
 const tenantCatalogService = require('./tenant_catalog_service');
 const customerService = require('./customer_service');
+const tenantLabelService = require('./tenant_label_service');
 const auditLogService = require('./audit_log_service');
 const RateLimiter = require('./rate_limiter');
 const { URL } = require('url');
@@ -3210,7 +3211,8 @@ class SocketManager {
             lastMessageModuleImageUrl,
             lastMessageTransport,
             lastMessageChannelType,
-            archived: Boolean(entry?.archived)
+            archived: Boolean(entry?.archived),
+            pinned: Boolean(entry?.pinned)
         };
     }
 
@@ -3241,6 +3243,9 @@ class SocketManager {
         const archivedMode = ['all', 'archived', 'active'].includes(String(filters?.archivedMode || 'all'))
             ? String(filters?.archivedMode || 'all')
             : 'all';
+        const pinnedMode = ['all', 'pinned', 'unpinned'].includes(String(filters?.pinnedMode || 'all'))
+            ? String(filters?.pinnedMode || 'all')
+            : 'all';
         const labelTokens = normalizeFilterTokens(filters?.labelTokens);
 
         if (unreadOnly && Number(summary?.unreadCount || 0) <= 0) return false;
@@ -3248,6 +3253,8 @@ class SocketManager {
         if (contactMode === 'unknown' && summary?.isMyContact) return false;
         if (archivedMode === 'archived' && !summary?.archived) return false;
         if (archivedMode === 'active' && summary?.archived) return false;
+        if (pinnedMode === 'pinned' && !summary?.pinned) return false;
+        if (pinnedMode === 'unpinned' && summary?.pinned) return false;
 
         const labels = Array.isArray(summary?.labels) ? summary.labels : [];
         if (unlabeledOnly && labels.length > 0) return false;
@@ -3528,15 +3535,13 @@ class SocketManager {
         if (!chatId || !isVisibleChatId(chatId)) return { labels: [], profilePicUrl: null };
 
         const cached = this.getCachedChatMeta(chatId);
-        if (cached) return { labels: cached.labels, profilePicUrl: cached.profilePicUrl };
+        if (cached) return { labels: Array.isArray(cached.labels) ? cached.labels : [], profilePicUrl: cached.profilePicUrl };
 
-        let labels = [];
         let profilePicUrl = null;
-        try { labels = await chat.getLabels(); } catch (e) { }
         try { profilePicUrl = await resolveProfilePic(waClient.client, chatId); } catch (e) { }
 
         const normalized = {
-            labels: (labels || []).map((l) => ({ id: l.id, name: l.name, color: l.color })),
+            labels: [],
             profilePicUrl,
             updatedAt: Date.now()
         };
@@ -3607,20 +3612,24 @@ class SocketManager {
         };
         return deduped;
     }
-    async getChatLabelTokenSet(chat) {
+    async getChatLabelTokenSet(chat, { tenantId = 'default', scopeModuleId = '' } = {}) {
         const chatId = String(chat?.id?._serialized || '');
         if (!chatId || !isVisibleChatId(chatId)) return new Set();
 
-        let labels = this.getCachedChatMeta(chatId)?.labels;
-        if (!Array.isArray(labels)) {
-            const hydrated = await this.hydrateChatMeta(chat);
-            labels = hydrated?.labels || [];
+        try {
+            const labels = await tenantLabelService.listChatLabels({
+                tenantId,
+                chatId,
+                scopeModuleId: normalizeScopedModuleId(scopeModuleId || ''),
+                includeInactive: false
+            });
+            return toLabelTokenSet(labels);
+        } catch (error) {
+            return new Set();
         }
-
-        return toLabelTokenSet(labels);
     }
 
-    async applyAdvancedChatFilters(chats = [], filters = {}) {
+    async applyAdvancedChatFilters(chats = [], filters = {}, { tenantId = 'default', scopeModuleId = '' } = {}) {
         if (!Array.isArray(chats) || chats.length === 0) return [];
 
         const selectedTokens = normalizeFilterTokens(filters?.labelTokens);
@@ -3632,9 +3641,15 @@ class SocketManager {
         const archivedMode = ['all', 'archived', 'active'].includes(String(filters?.archivedMode || 'all'))
             ? String(filters?.archivedMode || 'all')
             : 'all';
+        const pinnedMode = ['all', 'pinned', 'unpinned'].includes(String(filters?.pinnedMode || 'all'))
+            ? String(filters?.pinnedMode || 'all')
+            : 'all';
 
         const needsLabelFiltering = unlabeledOnly || selectedTokens.length > 0;
-        if (!unreadOnly && !needsLabelFiltering && contactMode === 'all' && archivedMode === 'all') return chats;
+        if (!unreadOnly && !needsLabelFiltering && contactMode === 'all' && archivedMode === 'all' && pinnedMode === 'all') return chats;
+
+        const safeTenantId = String(tenantId || 'default').trim() || 'default';
+        const safeScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
 
         const included = new Array(chats.length).fill(false);
         const labelConcurrency = Math.max(2, Number(process.env.LABEL_FILTER_CONCURRENCY || 10));
@@ -3649,9 +3664,12 @@ class SocketManager {
             const isArchived = Boolean(chat?.archived);
             if (archivedMode === 'archived' && !isArchived) return;
             if (archivedMode === 'active' && isArchived) return;
+            const isPinned = Boolean(chat?.pinned);
+            if (pinnedMode === 'pinned' && !isPinned) return;
+            if (pinnedMode === 'unpinned' && isPinned) return;
 
             if (needsLabelFiltering) {
-                const labelTokenSet = await this.getChatLabelTokenSet(chat);
+                const labelTokenSet = await this.getChatLabelTokenSet(chat, { tenantId: safeTenantId, scopeModuleId: safeScopeModuleId });
                 const hasAnyLabel = labelTokenSet.size > 0;
                 if (unlabeledOnly && hasAnyLabel) return;
                 if (!unlabeledOnly && selectedTokens.length > 0 && !matchesTokenSet(labelTokenSet, selectedTokens)) {
@@ -3670,18 +3688,17 @@ class SocketManager {
         scopeModuleName = null,
         scopeModuleImageUrl = null,
         scopeChannelType = null,
-        scopeTransport = null
+        scopeTransport = null,
+        tenantId = 'default'
     } = {}) {
         const chatId = chat?.id?._serialized;
         if (!isVisibleChatId(chatId)) return null;
 
         const cached = this.getCachedChatMeta(chatId);
-        let labels = cached?.labels || [];
         let profilePicUrl = cached?.profilePicUrl || null;
 
         if (includeHeavyMeta || !cached) {
             const hydrated = await this.hydrateChatMeta(chat);
-            labels = hydrated.labels;
             profilePicUrl = hydrated.profilePicUrl;
         }
 
@@ -3705,6 +3722,18 @@ class SocketManager {
         const subtitle = contact?.pushname || contact?.shortName || contact?.name || null;
         const normalizedScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
         const scopedSummaryId = buildScopedChatId(chatId, normalizedScopeModuleId);
+        const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
+        let labels = [];
+        try {
+            labels = await tenantLabelService.listChatLabels({
+                tenantId: resolvedTenantId,
+                chatId,
+                scopeModuleId: normalizedScopeModuleId,
+                includeInactive: false
+            });
+        } catch (error) {
+            labels = [];
+        }
 
         return {
             id: scopedSummaryId || chatId,
@@ -4264,12 +4293,22 @@ class SocketManager {
                             : 'all',
                         archivedMode: ['all', 'archived', 'active'].includes(String(incomingFilters?.archivedMode || 'all'))
                             ? String(incomingFilters?.archivedMode || 'all')
+                            : 'all',
+                        pinnedMode: ['all', 'pinned', 'unpinned'].includes(String(incomingFilters?.pinnedMode || 'all'))
+                            ? String(incomingFilters?.pinnedMode || 'all')
                             : 'all'
                     };
 
                     const selectedModuleContext = socket?.data?.waModule || null;
                     const activeScopeModuleId = normalizeScopedModuleId(selectedModuleContext?.moduleId || socket?.data?.waModuleId || '');
-                    const summaryScopeOptions = {};
+                    const summaryScopeOptions = {
+                        tenantId,
+                        scopeModuleId: activeScopeModuleId || '',
+                        scopeModuleName: String(selectedModuleContext?.name || '').trim() || null,
+                        scopeModuleImageUrl: String(selectedModuleContext?.imageUrl || selectedModuleContext?.logoUrl || '').trim() || null,
+                        scopeChannelType: String(selectedModuleContext?.channelType || '').trim().toLowerCase() || null,
+                        scopeTransport: String(selectedModuleContext?.transportMode || '').trim().toLowerCase() || null
+                    };
 
                     const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.floor(rawOffset)) : 0;
                     const limit = Number.isFinite(rawLimit)
@@ -4290,7 +4329,7 @@ class SocketManager {
                     }
 
 
-                    const hasActiveFilters = activeFilters.unreadOnly || activeFilters.unlabeledOnly || activeFilters.contactMode !== 'all' || activeFilters.archivedMode !== 'all' || activeFilters.labelTokens.length > 0;
+                    const hasActiveFilters = activeFilters.unreadOnly || activeFilters.unlabeledOnly || activeFilters.contactMode !== 'all' || activeFilters.archivedMode !== 'all' || activeFilters.pinnedMode !== 'all' || activeFilters.labelTokens.length > 0;
                     let sortedChats = await this.getSortedVisibleChats({ forceRefresh: reset || Boolean(query) || hasActiveFilters });
                     if (!queryLower && !reset && offset >= sortedChats.length) {
                         sortedChats = await this.getSortedVisibleChats({ forceRefresh: true });
@@ -4312,7 +4351,7 @@ class SocketManager {
                         });
                     }
 
-                    filtered = await this.applyAdvancedChatFilters(filtered, activeFilters);
+                    filtered = await this.applyAdvancedChatFilters(filtered, activeFilters, { tenantId, scopeModuleId: activeScopeModuleId });
 
                     const page = filtered.slice(offset, offset + limit);
                     const scannedCount = page.length;
@@ -4890,12 +4929,110 @@ class SocketManager {
                 }
             });
 
+            socket.on('set_chat_state', async ({ chatId, pinned, archived }) => {
+                if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'error', action: 'actualizar estado de chat' })) return;
+                try {
+                    const requestedChatId = String(chatId || '').trim();
+                    if (!requestedChatId) {
+                        socket.emit('error', 'Chat invalido para actualizar estado.');
+                        return;
+                    }
+
+                    const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                    const scopedTarget = resolveScopedChatTarget(requestedChatId, selectedScopeModuleId);
+                    const safeChatId = String(scopedTarget.baseChatId || '').trim();
+                    const scopeModuleId = normalizeScopedModuleId(scopedTarget.moduleId || selectedScopeModuleId || '');
+                    const scopedChatId = scopedTarget.scopedChatId || buildScopedChatId(safeChatId, scopeModuleId || '');
+                    if (!safeChatId) {
+                        socket.emit('error', 'Chat invalido para actualizar estado.');
+                        return;
+                    }
+
+                    const hasPinned = typeof pinned === 'boolean';
+                    const hasArchived = typeof archived === 'boolean';
+                    if (!hasPinned && !hasArchived) {
+                        socket.emit('error', 'No se detectaron cambios para el chat.');
+                        return;
+                    }
+
+                    const patch = {};
+                    if (hasPinned) patch.pinned = Boolean(pinned);
+                    if (hasArchived) patch.archived = Boolean(archived);
+
+                    const persisted = await messageHistoryService.updateChatState(tenantId, {
+                        chatId: safeChatId,
+                        pinned: hasPinned ? patch.pinned : undefined,
+                        archived: hasArchived ? patch.archived : undefined
+                    });
+
+                    const selectedModuleContext = socket?.data?.waModule || null;
+                    const summaryScopeOptions = {
+                        tenantId,
+                        scopeModuleId: scopeModuleId || '',
+                        scopeModuleName: String(selectedModuleContext?.name || '').trim() || null,
+                        scopeModuleImageUrl: String(selectedModuleContext?.imageUrl || selectedModuleContext?.logoUrl || '').trim() || null,
+                        scopeChannelType: String(selectedModuleContext?.channelType || '').trim().toLowerCase() || null,
+                        scopeTransport: String(selectedModuleContext?.transportMode || '').trim().toLowerCase() || null
+                    };
+
+                    let summary = null;
+                    try {
+                        const visibleChats = await this.getSortedVisibleChats({ forceRefresh: false });
+                        const waChat = (visibleChats || []).find((entry) => String(entry?.id?._serialized || '').trim() === safeChatId);
+                        if (waChat) {
+                            summary = await this.toChatSummary(waChat, { includeHeavyMeta: false, ...summaryScopeOptions });
+                        }
+                    } catch (_) { }
+
+                    if (!summary) {
+                        try {
+                            const rows = await messageHistoryService.listChats(tenantId, { limit: 5000, offset: 0 });
+                            const row = Array.isArray(rows)
+                                ? rows.find((entry) => String(entry?.chatId || '').trim() === safeChatId)
+                                : null;
+                            if (row) {
+                                summary = this.toHistoryChatSummary({ ...row, scopeModuleId: scopeModuleId || row?.scopeModuleId || null });
+                            }
+                        } catch (_) { }
+                    }
+
+                    if (summary) {
+                        const nextSummary = {
+                            ...summary,
+                            id: scopedChatId || summary.id || safeChatId,
+                            baseChatId: safeChatId,
+                            scopeModuleId: scopeModuleId || summary.scopeModuleId || null,
+                            archived: hasArchived ? patch.archived : Boolean(summary.archived),
+                            pinned: hasPinned ? patch.pinned : Boolean(summary.pinned)
+                        };
+                        this.emitToTenant(tenantId, 'chat_updated', nextSummary);
+                    }
+
+                    socket.emit('chat_state_saved', {
+                        ok: true,
+                        chatId: scopedChatId || safeChatId,
+                        baseChatId: safeChatId,
+                        scopeModuleId: scopeModuleId || null,
+                        pinned: hasPinned ? patch.pinned : Boolean(persisted?.pinned),
+                        archived: hasArchived ? patch.archived : Boolean(persisted?.archived)
+                    });
+
+                    await auditSocketAction('chat.state.updated', {
+                        resourceType: 'chat',
+                        resourceId: safeChatId,
+                        payload: {
+                            pinned: hasPinned ? patch.pinned : undefined,
+                            archived: hasArchived ? patch.archived : undefined
+                        }
+                    });
+                } catch (e) {
+                    console.error('set_chat_state error:', e.message);
+                    socket.emit('error', String(e?.message || 'No se pudo actualizar el estado del chat.'));
+                }
+            });
             socket.on('set_chat_labels', async ({ chatId, labelIds }) => {
                 if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'chat_labels_error', action: 'gestionar etiquetas' })) return;
                 try {
-                    if (!this.ensureTransportReady(socket, { action: 'gestionar etiquetas', errorEvent: 'chat_labels_error' })) {
-                        return;
-                    }
                     const requestedChatId = String(chatId || '').trim();
                     if (!requestedChatId) {
                         socket.emit('chat_labels_error', 'Chat invalido para etiquetar.');
@@ -4913,37 +5050,30 @@ class SocketManager {
                     }
 
                     const ids = Array.isArray(labelIds)
-                        ? labelIds.filter((v) => v !== null && v !== undefined && String(v).trim() !== '').map((v) => Number.isNaN(Number(v)) ? String(v) : Number(v))
+                        ? labelIds.map((value) => tenantLabelService.normalizeLabelId(value)).filter(Boolean)
                         : [];
 
-                    const chat = await waClient.client.getChatById(safeChatId);
-                    if (chat?.changeLabels) {
-                        await chat.changeLabels(ids);
-                    } else if (waClient.client?.addOrRemoveLabels) {
-                        await waClient.client.addOrRemoveLabels(ids, [safeChatId]);
-                    }
-
-                    let updatedLabels = [];
-                    try {
-                        updatedLabels = await chat.getLabels();
-                    } catch (e) { }
+                    const updatedLabels = await tenantLabelService.setChatLabels({
+                        tenantId,
+                        chatId: safeChatId,
+                        scopeModuleId,
+                        labelIds: ids
+                    });
 
                     const payload = {
                         chatId: scopedChatId || safeChatId,
                         baseChatId: safeChatId,
                         scopeModuleId: scopeModuleId || null,
-                        labels: (updatedLabels || []).map((l) => ({ id: l.id, name: l.name, color: l.color }))
+                        labels: Array.isArray(updatedLabels) ? updatedLabels : []
                     };
-                    const cachedMeta = this.getCachedChatMeta(safeChatId) || this.getCachedChatMeta(requestedChatId) || {};
-                    const cacheEntry = {
-                        labels: payload.labels,
-                        profilePicUrl: cachedMeta.profilePicUrl || null,
-                        updatedAt: Date.now()
-                    };
-                    this.chatMetaCache.set(String(safeChatId), cacheEntry);
-                    if (scopedChatId) this.chatMetaCache.set(String(scopedChatId), cacheEntry);
+
                     this.emitToTenant(tenantId, 'chat_labels_updated', payload);
-                    socket.emit('chat_labels_saved', { chatId: payload.chatId || safeChatId, baseChatId: safeChatId, scopeModuleId: payload.scopeModuleId || null, ok: true });
+                    socket.emit('chat_labels_saved', {
+                        chatId: payload.chatId || safeChatId,
+                        baseChatId: safeChatId,
+                        scopeModuleId: payload.scopeModuleId || null,
+                        ok: true
+                    });
                     await auditSocketAction('chat.labels.updated', {
                         resourceType: 'chat',
                         resourceId: safeChatId,
@@ -4951,22 +5081,33 @@ class SocketManager {
                     });
                 } catch (e) {
                     console.error('set_chat_labels error:', e.message);
-                    socket.emit('chat_labels_error', 'No se pudieron actualizar las etiquetas en WhatsApp.');
+                    socket.emit('chat_labels_error', String(e?.message || 'No se pudieron actualizar las etiquetas del chat.'));
                 }
             });
 
-            socket.on('create_label', async ({ name }) => {
+            socket.on('create_label', async ({ name, color = '', description = '' }) => {
                 if (!requireRole(['owner', 'admin'], { errorEvent: 'chat_labels_error', action: 'crear etiquetas' })) return;
                 try {
-                    const clean = String(name || '').trim();
-                    if (!clean) {
+                    const cleanName = String(name || '').trim();
+                    if (!cleanName) {
                         socket.emit('chat_labels_error', 'Nombre de etiqueta invalido.');
                         return;
                     }
-                    socket.emit('chat_labels_error', 'WhatsApp Web no permite crear etiquetas por API en esta version. Creala en WhatsApp y aqui se sincronizara al recargar.');
+                    const item = await tenantLabelService.saveLabel({
+                        name: cleanName,
+                        color: String(color || '').trim(),
+                        description: String(description || '').trim(),
+                        isActive: true
+                    }, { tenantId });
+                    socket.emit('chat_label_created', { ok: true, item });
+                    const labels = await tenantLabelService.listLabels({ tenantId, includeInactive: false });
+                    this.emitToTenant(tenantId, 'business_data_labels', {
+                        labels,
+                        source: 'tenant_db'
+                    });
                 } catch (e) {
                     console.error('create_label error:', e.message);
-                    socket.emit('chat_labels_error', 'No se pudo crear la etiqueta.');
+                    socket.emit('chat_labels_error', String(e?.message || 'No se pudo crear la etiqueta.'));
                 }
             });
             socket.on('get_quick_replies', async (payload = {}) => {
@@ -5284,6 +5425,7 @@ class SocketManager {
                         const chat = await waClient.client.getChatById(targetChatId);
                         const summary = await this.toChatSummary(chat, {
                             includeHeavyMeta: false,
+                            tenantId,
                             scopeModuleId: String(moduleContext?.moduleId || '').trim().toLowerCase() || '',
                             scopeModuleName: String(moduleContext?.name || '').trim() || null,
                             scopeModuleImageUrl: String(moduleContext?.imageUrl || moduleContext?.logoUrl || '').trim() || null,
@@ -6051,13 +6193,14 @@ class SocketManager {
                         contactSnapshot
                     };
 
-                    // Real labels from WA
+                    // Labels desde store tenant (Postgres/file), no desde WhatsApp Web.
                     let labels = [];
                     try {
-                        const raw = await waClient.getLabels();
-                        labels = raw.map(l => ({ id: l.id, name: l.name, color: l.color }));
-                        profile.labelsCount = labels.length;
-                    } catch (e) { console.log('Labels:', e.message); }
+                        labels = await tenantLabelService.listLabels({ tenantId, includeInactive: false });
+                        profile.labelsCount = Array.isArray(labels) ? labels.length : 0;
+                    } catch (e) {
+                        labels = [];
+                    }
 
                     const tenantSettings = await tenantSettingsService.getTenantSettings(tenantId);
                     const tenantIntegrations = await tenantIntegrationsService.getTenantIntegrations(tenantId, { runtime: true });
@@ -6390,9 +6533,12 @@ class SocketManager {
 
                     let labels = [];
                     try {
-                        const chatRef = chat || await waClient.client.getChatById(safeContactId);
-                        const chatLabels = await chatRef.getLabels();
-                        labels = chatLabels.map((l) => ({ id: l.id, name: l.name, color: l.color }));
+                        labels = await tenantLabelService.listChatLabels({
+                            tenantId,
+                            chatId: safeContactId,
+                            scopeModuleId: String(scopedContactTarget?.moduleId || '').trim().toLowerCase(),
+                            includeInactive: false
+                        });
                     } catch (e) { }
 
                     const isGroupChat = safeContactId.includes('@g.us') || Boolean(contact?.isGroup) || Boolean(chat?.isGroup);
@@ -6580,6 +6726,7 @@ class SocketManager {
                     const chat = await waClient.client.getChatById(relatedChatIdBase);
                     const summary = await this.toChatSummary(chat, {
                         includeHeavyMeta: false,
+                        tenantId: historyTenantId,
                         scopeModuleId: String(effectiveModuleContext?.moduleId || '').trim().toLowerCase() || '',
                         scopeModuleName: String(effectiveModuleContext?.name || '').trim() || null,
                         scopeModuleImageUrl: String(effectiveModuleContext?.imageUrl || effectiveModuleContext?.logoUrl || '').trim() || null,
@@ -6677,6 +6824,7 @@ class SocketManager {
                     const chat = await waClient.client.getChatById(relatedChatIdBase);
                     const summary = await this.toChatSummary(chat, {
                         includeHeavyMeta: false,
+                        tenantId: historyTenantId,
                         scopeModuleId: String(effectiveModuleContext?.moduleId || '').trim().toLowerCase() || '',
                         scopeModuleName: String(effectiveModuleContext?.name || '').trim() || null,
                         scopeModuleImageUrl: String(effectiveModuleContext?.imageUrl || effectiveModuleContext?.logoUrl || '').trim() || null,
@@ -6728,6 +6876,7 @@ class SocketManager {
                 const runtimeModuleContext = this.resolveHistoryModuleContext();
                 const summary = await this.toChatSummary(refreshedChat, {
                     includeHeavyMeta: false,
+                    tenantId: this.resolveHistoryTenantId(),
                     scopeModuleId: String(runtimeModuleContext?.moduleId || '').trim().toLowerCase() || '',
                     scopeModuleName: String(runtimeModuleContext?.name || '').trim() || null,
                     scopeModuleImageUrl: String(runtimeModuleContext?.imageUrl || runtimeModuleContext?.logoUrl || '').trim() || null,
