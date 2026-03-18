@@ -820,16 +820,20 @@ const ChatWindow = ({
         : (rawHeaderName || headerPhone || rawHeaderPushname || 'Sin nombre');
     const headerMetaItems = [];
     if (activeChatDetails?.isGroup) {
-        headerMetaItems.push(`${headerParticipantsCount} participantes`);
-        headerMetaItems.push('Grupo');
+        if (headerParticipantsCount > 0) {
+            headerMetaItems.push(`${headerParticipantsCount} participantes`);
+        }
     } else {
         if (headerPhone && !sameHeaderIdentity(headerPhone, headerDisplayName)) {
             headerMetaItems.push(headerPhone);
         }
-        if (rawHeaderPushname && !sameHeaderIdentity(rawHeaderPushname, headerDisplayName) && !sameHeaderIdentity(rawHeaderPushname, headerPhone)) {
-            headerMetaItems.push(`Pushname: ${rawHeaderPushname}`);
+        const cleanHeaderAlias = String(cleanHeaderPushname || '').trim();
+        if (cleanHeaderAlias && !sameHeaderIdentity(cleanHeaderAlias, headerDisplayName) && !sameHeaderIdentity(cleanHeaderAlias, headerPhone)) {
+            headerMetaItems.push(`Alias: ${cleanHeaderAlias}`);
         }
-        if (headerMetaItems.length === 0) headerMetaItems.push('Perfil del contacto');
+    }
+    if (headerMetaItems.length === 0) {
+        headerMetaItems.push(activeChatDetails?.isGroup ? 'Grupo' : 'Perfil del contacto');
     }
     const normalizeModuleKey = (value = '') => String(value || '').trim().toLowerCase();
     const headerModuleId = String(activeChatDetails?.scopeModuleId || activeChatDetails?.lastMessageModuleId || '').trim().toUpperCase();
@@ -1187,7 +1191,7 @@ const ChatWindow = ({
                     </span>
                 </div>
                 <div className="chat-header-meta">
-                    <div className="chat-header-title-row">
+                    <div className="chat-header-title-row chat-header-title-row--clean">
                         <h3 className="chat-header-name">{headerDisplayName}</h3>
                         {activeChatDetails?.isBusiness && <span className="chat-header-pill">Business</span>}
                         {showHeaderModule && (
@@ -1470,6 +1474,9 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
+
+
+
 
 
 

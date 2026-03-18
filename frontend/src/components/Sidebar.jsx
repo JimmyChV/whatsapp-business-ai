@@ -331,6 +331,16 @@ const Sidebar = ({
         if (phone && phone !== displayName) return phone;
         return '';
     };
+    const getContactHint = (chat, displayName = '') => {
+        const phone = formatPhone(chat?.phone || chat?.id || '');
+        if (phone && phone !== displayName) return phone;
+        const subtitle = getSubtitle(chat);
+        if (!subtitle || subtitle === displayName) return '';
+        const normalized = subtitle.includes(' - ')
+            ? String(subtitle).split(' - ')[0].trim()
+            : subtitle;
+        return normalized !== displayName ? normalized : '';
+    };
 
     const getChannelBadge = (chat) => {
         const parsed = parseScopedChatId(chat?.id || '');
@@ -620,7 +630,7 @@ const Sidebar = ({
                         <div className="sidebar-filter-content-top">
                             <div className="sidebar-active-filters-row">
                                 {!hasAnyFilter ? (
-                                    <span className="sidebar-active-filter-empty">Filtro activo: Todos</span>
+                                    <span className="sidebar-active-filter-empty">Sin filtros activos</span>
                                 ) : (
                                     activeFilterChips.map((chip, index) => (
                                         <span key={`${chip}_${index}`} className="sidebar-active-filter-chip">
@@ -689,7 +699,7 @@ const Sidebar = ({
                 ) : (
                     filteredChats.map((chat) => {
                         const displayName = getDisplayName(chat);
-                        const subtitle = getSubtitle(chat);
+                        const contactHint = getContactHint(chat, displayName);
                         const moduleBadge = getChannelBadge(chat);
                         const channelMarker = getChannelMarker(moduleBadge?.channelType || '');
                         const moduleAvatarImage = moduleBadge?.imageUrl || null;
@@ -724,53 +734,56 @@ const Sidebar = ({
 
                                 <div className="chat-info chat-info-modern">
                                     <div className="chat-row-top">
-                                        <span className="chat-display-name">{displayName}</span>
+                                        <div className="chat-name-stack">
+                                            <span className="chat-display-name">{displayName}</span>
+                                            {contactHint && <span className="chat-contact-hint">{contactHint}</span>}
+                                        </div>
                                         <span className={`chat-time ${chat.unreadCount > 0 ? 'chat-time-unread' : ''}`}>
                                             {formatTime(chat.timestamp)}
                                         </span>
                                     </div>
 
-                                    {subtitle && <p className="chat-subtitle-modern">{subtitle}</p>}
-
-                                    {moduleBadge?.label && (
-                                        <p className="chat-module-badge chat-module-badge--compact">
-                                            <span className="chat-module-badge-media">
-                                                {moduleBadge.imageUrl
-                                                    ? <img src={moduleBadge.imageUrl} alt={moduleBadge.label} className="chat-module-badge-avatar" />
-                                                    : <span className="chat-module-badge-dot" aria-hidden="true" />}
-                                                {moduleBadge?.channelType && (
-                                                    <span
-                                                        className={`chat-module-badge-channel chat-module-badge-channel--${channelMarker.key}`}
-                                                        title={channelMarker.label}
-                                                    >
-                                                        <ChannelBrandIcon
-                                                            channelType={channelMarker.key}
-                                                            className="chat-module-badge-channel-icon"
-                                                            size={8}
+                                    <div className="chat-row-meta">
+                                        {moduleBadge?.label && (
+                                            <p className="chat-module-badge chat-module-badge--compact">
+                                                <span className="chat-module-badge-media">
+                                                    {moduleBadge.imageUrl
+                                                        ? <img src={moduleBadge.imageUrl} alt={moduleBadge.label} className="chat-module-badge-avatar" />
+                                                        : <span className="chat-module-badge-dot" aria-hidden="true" />}
+                                                    {moduleBadge?.channelType && (
+                                                        <span
+                                                            className={`chat-module-badge-channel chat-module-badge-channel--${channelMarker.key}`}
                                                             title={channelMarker.label}
-                                                        />
-                                                    </span>
-                                                )}
-                                            </span>
-                                            <span className="chat-module-badge-label">{moduleBadge.label}</span>
-                                        </p>
-                                    )}
+                                                        >
+                                                            <ChannelBrandIcon
+                                                                channelType={channelMarker.key}
+                                                                className="chat-module-badge-channel-icon"
+                                                                size={8}
+                                                                title={channelMarker.label}
+                                                            />
+                                                        </span>
+                                                    )}
+                                                </span>
+                                                <span className="chat-module-badge-label">{moduleBadge.label}</span>
+                                            </p>
+                                        )}
 
-                                    {labels.length > 0 && (
-                                        <div
-                                            className="chat-inline-labels chat-inline-labels--dots"
-                                            title={labels.map((label) => String(label?.name || '').trim()).filter(Boolean).join(', ')}
-                                        >
-                                            {labels.slice(0, 4).map((label, idx) => (
-                                                <span
-                                                    key={`${label?.id || label?.name || 'l'}_${idx}`}
-                                                    className="chat-inline-label-dot"
-                                                    style={{ '--label-color': label?.color || '#7D8D95' }}
-                                                />
-                                            ))}
-                                            {labels.length > 4 && <span className="chat-inline-label-more">+{labels.length - 4}</span>}
-                                        </div>
-                                    )}
+                                        {labels.length > 0 && (
+                                            <div
+                                                className="chat-inline-labels chat-inline-labels--dots"
+                                                title={labels.map((label) => String(label?.name || '').trim()).filter(Boolean).join(', ')}
+                                            >
+                                                {labels.slice(0, 4).map((label, idx) => (
+                                                    <span
+                                                        key={`${label?.id || label?.name || 'l'}_${idx}`}
+                                                        className="chat-inline-label-dot"
+                                                        style={{ '--label-color': label?.color || '#7D8D95' }}
+                                                    />
+                                                ))}
+                                                {labels.length > 4 && <span className="chat-inline-label-more">+{labels.length - 4}</span>}
+                                            </div>
+                                        )}
+                                    </div>
 
                                     <div className="chat-row-bottom">
                                         <p className="chat-last-message">
@@ -802,6 +815,10 @@ const Sidebar = ({
 };
 
 export default Sidebar;
+
+
+
+
 
 
 
