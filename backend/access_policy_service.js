@@ -26,7 +26,10 @@ const PERMISSIONS = Object.freeze({
     TENANT_AUDIT_READ: 'tenant.audit.read',
     TENANT_RUNTIME_READ: 'tenant.runtime.read',
     TENANT_ASSETS_UPLOAD: 'tenant.assets.upload',
-    TENANT_CHAT_OPERATE: 'tenant.chat.operate'
+    TENANT_CHAT_OPERATE: 'tenant.chat.operate',
+    TENANT_CONVERSATION_EVENTS_READ: 'tenant.conversation_events.read',
+    TENANT_CHAT_ASSIGNMENTS_READ: 'tenant.chat_assignments.read',
+    TENANT_CHAT_ASSIGNMENTS_MANAGE: 'tenant.chat_assignments.manage'
 });
 
 const PERMISSION_LABELS = Object.freeze({
@@ -54,7 +57,10 @@ const PERMISSION_LABELS = Object.freeze({
     [PERMISSIONS.TENANT_AUDIT_READ]: 'Ver auditoria tenant',
     [PERMISSIONS.TENANT_RUNTIME_READ]: 'Ver runtime tenant',
     [PERMISSIONS.TENANT_ASSETS_UPLOAD]: 'Subir archivos/imagenes',
-    [PERMISSIONS.TENANT_CHAT_OPERATE]: 'Operar chat'
+    [PERMISSIONS.TENANT_CHAT_OPERATE]: 'Operar chat',
+    [PERMISSIONS.TENANT_CONVERSATION_EVENTS_READ]: 'Ver eventos de conversacion',
+    [PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_READ]: 'Ver asignaciones de chat',
+    [PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_MANAGE]: 'Gestionar asignaciones de chat'
 });
 
 const ROLE_LABELS = Object.freeze({
@@ -70,7 +76,10 @@ const SYSTEM_PERMISSION_PACKS = Object.freeze({
         permissions: [
             PERMISSIONS.TENANT_CHAT_OPERATE,
             PERMISSIONS.TENANT_RUNTIME_READ,
-            PERMISSIONS.TENANT_MODULES_READ
+            PERMISSIONS.TENANT_MODULES_READ,
+            PERMISSIONS.TENANT_CONVERSATION_EVENTS_READ,
+            PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_READ,
+            PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_MANAGE
         ],
         active: true
     },
@@ -137,6 +146,8 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_AI_MANAGE,
             PERMISSIONS.TENANT_RUNTIME_READ,
             PERMISSIONS.TENANT_CHAT_OPERATE,
+            PERMISSIONS.TENANT_CONVERSATION_EVENTS_READ,
+            PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_READ,
             PERMISSIONS.TENANT_ASSETS_UPLOAD
         ],
         optional: [
@@ -170,6 +181,8 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_AI_MANAGE,
             PERMISSIONS.TENANT_RUNTIME_READ,
             PERMISSIONS.TENANT_CHAT_OPERATE,
+            PERMISSIONS.TENANT_CONVERSATION_EVENTS_READ,
+            PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_READ,
             PERMISSIONS.TENANT_ASSETS_UPLOAD
         ],
         optional: [
@@ -178,7 +191,8 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_LABELS_MANAGE,
             PERMISSIONS.TENANT_INTEGRATIONS_READ,
             PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
-            PERMISSIONS.TENANT_AUDIT_READ
+            PERMISSIONS.TENANT_AUDIT_READ,
+            PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_MANAGE
         ],
         blocked: [
             PERMISSIONS.PLATFORM_OVERVIEW_READ,
@@ -199,7 +213,9 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_LABELS_READ,
             PERMISSIONS.TENANT_AI_READ,
             PERMISSIONS.TENANT_RUNTIME_READ,
-            PERMISSIONS.TENANT_CHAT_OPERATE
+            PERMISSIONS.TENANT_CHAT_OPERATE,
+            PERMISSIONS.TENANT_CONVERSATION_EVENTS_READ,
+            PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_READ
         ],
         optional: [
             PERMISSIONS.TENANT_CUSTOMERS_MANAGE,
@@ -217,7 +233,8 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_SETTINGS_MANAGE,
             PERMISSIONS.TENANT_MODULES_MANAGE,
             PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
-            PERMISSIONS.TENANT_AUDIT_READ
+            PERMISSIONS.TENANT_AUDIT_READ,
+            PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_MANAGE
         ],
         active: true
     }
@@ -663,6 +680,8 @@ module.exports = {
     persistRoleProfile,
     persistPermissionPack,
 };
+
+
 
 
 
