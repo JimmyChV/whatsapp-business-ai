@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Bot, Send, X, ShoppingCart, Clock, Sparkles, Trash2, Plus, Minus, ChevronRight, ChevronDown, ChevronUp, Package, MessageSquare, PlusCircle, Edit2, Check, Search, SlidersHorizontal } from 'lucide-react';
 import moment from 'moment';
 
@@ -1539,19 +1539,27 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 
     useEffect(() => {
         if (!activeChatId) return;
-        setCartDraftsByChat(prev => ({
-            ...prev,
-            [activeChatId]: {
-                cart,
-                showOrderAdjustments,
-                globalDiscountEnabled,
-                globalDiscountType,
-                globalDiscountValue,
-                deliveryType,
-                deliveryAmount,
-                showCartTotalsBreakdown
-            }
-        }));
+        const nextDraft = {
+            cart,
+            showOrderAdjustments,
+            globalDiscountEnabled,
+            globalDiscountType,
+            globalDiscountValue,
+            deliveryType,
+            deliveryAmount,
+            showCartTotalsBreakdown
+        };
+
+        setCartDraftsByChat(prev => {
+            const previousDraft = prev?.[activeChatId] || null;
+            const previousSignature = previousDraft ? JSON.stringify(previousDraft) : '';
+            const nextSignature = JSON.stringify(nextDraft);
+            if (previousSignature === nextSignature) return prev;
+            return {
+                ...prev,
+                [activeChatId]: nextDraft
+            };
+        });
     }, [activeChatId, cart, showOrderAdjustments, globalDiscountEnabled, globalDiscountType, globalDiscountValue, deliveryType, deliveryAmount, showCartTotalsBreakdown]);
 
     useEffect(() => {
@@ -2255,56 +2263,72 @@ INSTRUCCIONES OBLIGATORIAS:
         }));
     };
 
-    const lineBreakdowns = cart.map((item) => ({ item, ...getLineBreakdown(item) }));
-    const regularSubtotalTotal = roundMoney(lineBreakdowns.reduce((sum, line) => sum + line.regularSubtotal, 0));
-    const subtotalProducts = roundMoney(lineBreakdowns.reduce((sum, line) => sum + line.lineFinal, 0));
+    const lineBreakdowns = useMemo(
+        () => cart.map((item) => ({ item, ...getLineBreakdown(item) })),
+        [cart]
+    );
+    const regularSubtotalTotal = useMemo(
+        () => roundMoney(lineBreakdowns.reduce((sum, line) => sum + line.regularSubtotal, 0)),
+        [lineBreakdowns]
+    );
+    const subtotalProducts = useMemo(
+        () => roundMoney(lineBreakdowns.reduce((sum, line) => sum + line.lineFinal, 0)),
+        [lineBreakdowns]
+    );
 
     const rawGlobalDiscountValue = Math.max(0, parseMoney(globalDiscountValue, 0));
     const normalizedGlobalDiscountValue = globalDiscountType === 'amount'
         ? rawGlobalDiscountValue
         : clampNumber(rawGlobalDiscountValue, 0, 100);
 
-    const globalDiscountApplied = globalDiscountEnabled
-        ? roundMoney(Math.min(
-            subtotalProducts,
-            globalDiscountType === 'amount'
-                ? normalizedGlobalDiscountValue
-                : subtotalProducts * (normalizedGlobalDiscountValue / 100)
-        ))
-        : 0;
+    const globalDiscountApplied = useMemo(
+        () => (
+            globalDiscountEnabled
+                ? roundMoney(Math.min(
+                    subtotalProducts,
+                    globalDiscountType === 'amount'
+                        ? normalizedGlobalDiscountValue
+                        : subtotalProducts * (normalizedGlobalDiscountValue / 100)
+                ))
+                : 0
+        ),
+        [globalDiscountEnabled, subtotalProducts, globalDiscountType, normalizedGlobalDiscountValue]
+    );
 
-    const subtotalAfterGlobal = roundMoney(subtotalProducts - globalDiscountApplied);
-    const totalDiscountForQuote = roundMoney(Math.max(0, regularSubtotalTotal - subtotalAfterGlobal));
+    const subtotalAfterGlobal = useMemo(
+        () => roundMoney(subtotalProducts - globalDiscountApplied),
+        [subtotalProducts, globalDiscountApplied]
+    );
+    const totalDiscountForQuote = useMemo(
+        () => roundMoney(Math.max(0, regularSubtotalTotal - subtotalAfterGlobal)),
+        [regularSubtotalTotal, subtotalAfterGlobal]
+    );
 
     const safeDeliveryAmount = Math.max(0, parseMoney(deliveryAmount, 0));
     const deliveryFee = deliveryType === 'amount' ? safeDeliveryAmount : 0;
     const cartTotal = roundMoney(subtotalAfterGlobal + deliveryFee);
+    const lastCartSnapshotSignatureRef = useRef('');
 
-    useEffect(() => {
-        if (typeof onCartSnapshotChange !== 'function') return;
-        const snapshot = {
-            chatId: String(activeChatId || '').trim() || null,
-            items: lineBreakdowns.map(({ item, qty, unitPrice, lineDiscountEnabled, lineDiscountType, lineDiscountValue }) => ({
-                id: item?.id || null,
-                title: item?.title || null,
-                qty,
-                price: Number(unitPrice || 0),
-                regularPrice: Number(parseMoney(item?.regularPrice, unitPrice) || 0),
-                category: item?.category || item?.categoryName || null,
-                lineDiscountEnabled: Boolean(lineDiscountEnabled),
-                lineDiscountType: lineDiscountType === 'amount' ? 'amount' : 'percent',
-                lineDiscountValue: Number(lineDiscountValue || 0)
-            })),
-            subtotal: Number(subtotalProducts || 0),
-            discount: Number(totalDiscountForQuote || 0),
-            total: Number(cartTotal || 0),
-            delivery: Number(deliveryFee || 0),
-            currency: 'PEN',
-            notes: `delivery=${deliveryType}; globalDiscount=${globalDiscountEnabled ? `${globalDiscountType}:${normalizedGlobalDiscountValue}` : 'none'}`
-        };
-        onCartSnapshotChange(snapshot);
-    }, [
-        onCartSnapshotChange,
+    const cartSnapshot = useMemo(() => ({
+        chatId: String(activeChatId || '').trim() || null,
+        items: lineBreakdowns.map(({ item, qty, unitPrice, lineDiscountEnabled, lineDiscountType, lineDiscountValue }) => ({
+            id: item?.id || null,
+            title: item?.title || null,
+            qty,
+            price: Number(unitPrice || 0),
+            regularPrice: Number(parseMoney(item?.regularPrice, unitPrice) || 0),
+            category: item?.category || item?.categoryName || null,
+            lineDiscountEnabled: Boolean(lineDiscountEnabled),
+            lineDiscountType: lineDiscountType === 'amount' ? 'amount' : 'percent',
+            lineDiscountValue: Number(lineDiscountValue || 0)
+        })),
+        subtotal: Number(subtotalProducts || 0),
+        discount: Number(totalDiscountForQuote || 0),
+        total: Number(cartTotal || 0),
+        delivery: Number(deliveryFee || 0),
+        currency: 'PEN',
+        notes: `delivery=${deliveryType}; globalDiscount=${globalDiscountEnabled ? `${globalDiscountType}:${normalizedGlobalDiscountValue}` : 'none'}`
+    }), [
         activeChatId,
         lineBreakdowns,
         subtotalProducts,
@@ -2316,6 +2340,14 @@ INSTRUCCIONES OBLIGATORIAS:
         globalDiscountType,
         normalizedGlobalDiscountValue
     ]);
+
+    useEffect(() => {
+        if (typeof onCartSnapshotChange !== 'function') return;
+        const signature = JSON.stringify(cartSnapshot);
+        if (lastCartSnapshotSignatureRef.current === signature) return;
+        lastCartSnapshotSignatureRef.current = signature;
+        onCartSnapshotChange(cartSnapshot);
+    }, [onCartSnapshotChange, cartSnapshot]);
 
     const sendQuoteToChat = () => {
         if (cart.length === 0) return;
@@ -2763,4 +2795,7 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
+
+
+
 
