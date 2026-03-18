@@ -803,12 +803,34 @@ const ChatWindow = ({
         || (Array.isArray(activeChatDetails?.participantsList) ? activeChatDetails.participantsList.length : 0)
         || 0
     ) || 0;
-    const headerSubline = activeChatDetails?.isGroup
-        ? `${headerParticipantsCount} participantes`
-        : (headerPhone || 'Sin numero visible');
-    const headerHint = activeChatDetails?.isGroup
-        ? 'Grupo'
-        : (activeChatDetails?.pushname ? `Pushname: ${activeChatDetails.pushname}` : 'Haz clic para ver el perfil');
+    const normalizeHeaderText = (value = '') => String(value || '').trim().toLowerCase();
+    const normalizeHeaderDigits = (value = '') => String(value || '').replace(/\D/g, '');
+    const isPhoneLikeHeaderValue = (value = '') => /^\+?\d{8,15}$/.test(String(value || '').replace(/[^\d+]/g, ''));
+    const sameHeaderIdentity = (left = '', right = '') => {
+        const leftDigits = normalizeHeaderDigits(left);
+        const rightDigits = normalizeHeaderDigits(right);
+        if (leftDigits && rightDigits) return leftDigits === rightDigits;
+        return normalizeHeaderText(left) === normalizeHeaderText(right);
+    };
+    const rawHeaderName = String(activeChatDetails?.name || '').trim();
+    const rawHeaderPushname = String(activeChatDetails?.pushname || '').trim();
+    const cleanHeaderPushname = isPhoneLikeHeaderValue(rawHeaderPushname) ? '' : rawHeaderPushname;
+    const headerDisplayName = (!activeChatDetails?.isGroup && cleanHeaderPushname && (isPhoneLikeHeaderValue(rawHeaderName) || !rawHeaderName))
+        ? cleanHeaderPushname
+        : (rawHeaderName || headerPhone || rawHeaderPushname || 'Sin nombre');
+    const headerMetaItems = [];
+    if (activeChatDetails?.isGroup) {
+        headerMetaItems.push(`${headerParticipantsCount} participantes`);
+        headerMetaItems.push('Grupo');
+    } else {
+        if (headerPhone && !sameHeaderIdentity(headerPhone, headerDisplayName)) {
+            headerMetaItems.push(headerPhone);
+        }
+        if (rawHeaderPushname && !sameHeaderIdentity(rawHeaderPushname, headerDisplayName) && !sameHeaderIdentity(rawHeaderPushname, headerPhone)) {
+            headerMetaItems.push(`Pushname: ${rawHeaderPushname}`);
+        }
+        if (headerMetaItems.length === 0) headerMetaItems.push('Perfil del contacto');
+    }
     const normalizeModuleKey = (value = '') => String(value || '').trim().toLowerCase();
     const headerModuleId = String(activeChatDetails?.scopeModuleId || activeChatDetails?.lastMessageModuleId || '').trim().toUpperCase();
     const normalizedHeaderModuleId = normalizeModuleKey(activeChatDetails?.scopeModuleId || activeChatDetails?.lastMessageModuleId || '');
@@ -1166,7 +1188,7 @@ const ChatWindow = ({
                 </div>
                 <div className="chat-header-meta">
                     <div className="chat-header-title-row">
-                        <h3 className="chat-header-name">{activeChatDetails?.name || 'Sin nombre'}</h3>
+                        <h3 className="chat-header-name">{headerDisplayName}</h3>
                         {activeChatDetails?.isBusiness && <span className="chat-header-pill">Business</span>}
                         {showHeaderModule && (
                             <span className="chat-header-module-pill" title={headerModuleName || 'Modulo'}>
@@ -1175,23 +1197,25 @@ const ChatWindow = ({
                                     : <span className="chat-header-module-dot" aria-hidden="true" />}
                                 <span className="chat-header-module-name">{headerModuleName || 'MODULO'}</span>
                                 {headerModuleChannel && (
-                                    <span className="chat-header-module-channel">
+                                    <span className="chat-header-module-channel" title={headerModuleChannel}>
                                         <ChannelBrandIcon
                                             channelType={headerModuleChannelType}
                                             className="chat-header-module-channel-icon"
                                             size={10}
                                             title={headerModuleChannel}
                                         />
-                                        {headerModuleChannel}
                                     </span>
                                 )}
                             </span>
                         )}
                     </div>
                     <div className="chat-header-subline">
-                        <span className="chat-header-primary">{headerSubline}</span>
-                        <span className="chat-header-dot">|</span>
-                        <span className="chat-header-secondary">{headerHint}</span>
+                        {headerMetaItems.map((item, idx) => (
+                            <React.Fragment key={`${item}_${idx}`}>
+                                <span className={idx === 0 ? 'chat-header-primary' : 'chat-header-secondary'}>{item}</span>
+                                {idx < headerMetaItems.length - 1 && <span className="chat-header-dot">|</span>}
+                            </React.Fragment>
+                        ))}
                     </div>
                     {!!activeChatDetails?.labels?.length && (
                         <div className="chat-header-labels">
@@ -1227,10 +1251,11 @@ const ChatWindow = ({
                                 <div className="chat-header-popover-title">Etiquetas del tenant (CRM)</div>
                                 {labelDefinitions.length === 0 && <div className="chat-header-popover-empty">No hay etiquetas disponibles.</div>}
                                 {labelDefinitions.map((label) => {
-                                    const isActive = (activeChatDetails?.labels || []).some((l) => String(l.id) === String(label.id));
+                                    const labelId = String(label?.id || label?.labelId || '').trim();
+                                    const isActive = (activeChatDetails?.labels || []).some((l) => String(l?.id || l?.labelId || '').trim() === labelId);
                                     return (
-                                        <label key={label.id || label.name} className="chat-header-label-option">
-                                            <input type="checkbox" checked={isActive} onChange={() => onToggleChatLabel?.(activeChatDetails?.id, label.id)} />
+                                        <label key={labelId || label.name} className="chat-header-label-option">
+                                            <input type="checkbox" checked={isActive} onChange={() => onToggleChatLabel?.(activeChatDetails?.id, labelId)} />
                                             <span className="chat-header-label-color" style={{ background: label.color || '#8696a0' }} />
                                             <span className="chat-header-label-name">{label.name}</span>
                                         </label>
@@ -1445,4 +1470,7 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
+
+
+
 

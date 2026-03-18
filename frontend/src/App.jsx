@@ -191,7 +191,22 @@ const resolveSelectedWaModule = (items = [], preferred = null) => {
   }
   return modules.find((module) => module.isSelected) || modules.find((module) => module.isDefault) || modules[0];
 };
-const normalizeChatLabels = (labels = []) => (Array.isArray(labels) ? labels.map((l) => ({ id: l?.id, name: l?.name || '', color: l?.color || null })) : []);
+const normalizeChatLabels = (labels = []) => (
+  Array.isArray(labels)
+    ? labels
+      .map((l) => {
+        const id = String(l?.id || l?.labelId || '').trim();
+        if (!id) return null;
+        return {
+          id,
+          labelId: id,
+          name: l?.name || '',
+          color: l?.color || null,
+        };
+      })
+      .filter(Boolean)
+    : []
+);
 
 const cleanLooseText = (value = '') => String(value || '')
   .replace(/\uFFFD/g, '')
@@ -717,18 +732,21 @@ function App() {
       const moduleId = String(params.get('wa_module') || '').trim().toLowerCase();
       const tenantId = String(params.get('wa_tenant') || '').trim();
       const sectionId = String(params.get('wa_section') || '').trim().toLowerCase();
+      const source = String(params.get('wa_from') || '').trim().toLowerCase();
       return {
         forceOperationLaunch: launch,
         requestedWaModuleId: moduleId || '',
         requestedWaTenantId: tenantId || '',
-        requestedWaSectionId: sectionId || ''
+        requestedWaSectionId: sectionId || '',
+        requestedLaunchSource: source || ''
       };
     } catch (_) {
       return {
         forceOperationLaunch: false,
         requestedWaModuleId: '',
         requestedWaTenantId: '',
-        requestedWaSectionId: ''
+        requestedWaSectionId: '',
+        requestedLaunchSource: ''
       };
     }
   }, []);
@@ -3148,10 +3166,18 @@ function App() {
     const current = Array.isArray(chat?.labels) ? chat.labels : [];
 
     const idStr = String(labelId);
-    const has = current.some((l) => String(l.id) === idStr);
+    const has = current.some((l) => String(l?.id || l?.labelId || '') === idStr);
     const nextIds = has
-      ? current.filter((l) => String(l.id) !== idStr).map((l) => l.id).filter(Boolean)
-      : [...current.map((l) => l.id).filter(Boolean), labelId];
+      ? current
+        .filter((l) => String(l?.id || l?.labelId || '') !== idStr)
+        .map((l) => String(l?.id || l?.labelId || '').trim())
+        .filter(Boolean)
+      : [
+        ...current
+          .map((l) => String(l?.id || l?.labelId || '').trim())
+          .filter(Boolean),
+        idStr
+      ];
 
     socket.emit('set_chat_labels', { chatId, labelIds: nextIds });
   };
@@ -3961,9 +3987,10 @@ function App() {
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
   const newChatAvailableModules = resolveNewChatAvailableModules();
+  const appContainerClassName = forceOperationLaunch ? 'app-container app-container--operation' : 'app-container';
 
   return (
-    <div className="app-container">
+    <div className={appContainerClassName}>
       {/* Hidden file input */}
       <input
         type="file"
@@ -4001,6 +4028,8 @@ function App() {
         canManageSaas={canManageSaas}
         onOpenSaasAdmin={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
         waModules={availableWaModules}
+        showBackToPanel={Boolean(forceOperationLaunch && canManageSaas)}
+        onBackToPanel={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
       />
 
       {/* Main Content Area */}
