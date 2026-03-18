@@ -1,5 +1,5 @@
-﻿import React, { useMemo, useState } from 'react';
-import { MoreVertical, Search, Check, CheckCheck, X, SlidersHorizontal, Tags, Users, UserRoundX, Archive } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { MoreVertical, Search, Check, CheckCheck, X, SlidersHorizontal, Tags, Users, UserRoundX, Archive, Pin } from 'lucide-react';
 import moment from 'moment';
 import ChannelBrandIcon from './ChannelBrandIcon';
 
@@ -49,6 +49,9 @@ const normalizeFilters = (filters = {}) => {
     const archivedMode = ['all', 'archived', 'active'].includes(String(filters?.archivedMode || 'all'))
         ? String(filters?.archivedMode || 'all')
         : 'all';
+    const pinnedMode = ['all', 'pinned', 'unpinned'].includes(String(filters?.pinnedMode || 'all'))
+        ? String(filters?.pinnedMode || 'all')
+        : 'all';
 
     return {
         labelTokens,
@@ -56,6 +59,7 @@ const normalizeFilters = (filters = {}) => {
         unlabeledOnly: Boolean(filters?.unlabeledOnly),
         contactMode,
         archivedMode,
+        pinnedMode,
     };
 };
 
@@ -210,7 +214,7 @@ const Sidebar = ({
         : allLabels;
 
     const selectedLabelCount = filters.labelTokens.length;
-    const hasActiveQuickFilters = filters.unreadOnly || filters.unlabeledOnly || filters.contactMode !== 'all' || filters.archivedMode !== 'all';
+    const hasActiveQuickFilters = filters.unreadOnly || filters.unlabeledOnly || filters.contactMode !== 'all' || filters.archivedMode !== 'all' || filters.pinnedMode !== 'all';
     const hasAnyFilter = hasActiveQuickFilters || selectedLabelCount > 0;
 
     const quickStats = useMemo(() => {
@@ -219,7 +223,8 @@ const Sidebar = ({
         const myContacts = chats.filter((c) => c?.isMyContact === true).length;
         const unknown = chats.filter((c) => c?.isMyContact !== true).length;
         const archived = chats.filter((c) => Boolean(c?.archived)).length;
-        return { unread, unlabeled, myContacts, unknown, archived };
+        const pinned = chats.filter((c) => Boolean(c?.pinned)).length;
+        return { unread, unlabeled, myContacts, unknown, archived, pinned };
     }, [chats]);
 
     const filteredChats = chats.filter((chat) => {
@@ -230,6 +235,8 @@ const Sidebar = ({
         if (filters.contactMode === 'unknown' && chat?.isMyContact) return false;
         if (filters.archivedMode === 'archived' && !chat?.archived) return false;
         if (filters.archivedMode === 'active' && chat?.archived) return false;
+        if (filters.pinnedMode === 'pinned' && !chat?.pinned) return false;
+        if (filters.pinnedMode === 'unpinned' && chat?.pinned) return false;
         if (filters.unlabeledOnly && labelTokenSet.size > 0) return false;
 
         if (!filters.unlabeledOnly && filters.labelTokens.length > 0) {
@@ -370,6 +377,7 @@ const Sidebar = ({
             unlabeledOnly: false,
             contactMode: 'all',
             archivedMode: 'all',
+            pinnedMode: 'all',
         }));
     };
 
@@ -446,9 +454,11 @@ const Sidebar = ({
                             <button type="button" className="sidebar-menu-item" onClick={() => { onRefreshChats?.(); setShowMenu(false); }}>
                                 Recargar chats
                             </button>
-                            <button type="button" className="sidebar-menu-item" onClick={() => { onCreateLabel?.(); setShowMenu(false); }}>
-                                Crear etiqueta
-                            </button>
+                            {canManageSaas && (
+                                <button type="button" className="sidebar-menu-item" onClick={() => { onCreateLabel?.(); setShowMenu(false); }}>
+                                    Gestionar etiquetas
+                                </button>
+                            )}
                             <button type="button" className="sidebar-menu-item sidebar-menu-item-danger" onClick={() => { onLogout?.(); setShowMenu(false); }}>
                                 Cerrar sesion WhatsApp
                             </button>
@@ -499,6 +509,48 @@ const Sidebar = ({
                     </button>
                 )}
 
+                <div className="sidebar-quick-rail" aria-label="Accesos rapidos de filtros">
+                    <button
+                        type="button"
+                        className={`sidebar-quick-rail-btn ${!hasAnyFilter ? 'active' : ''}`}
+                        onClick={resetFilters}
+                        title="Todos"
+                    >
+                        Todo
+                    </button>
+                    <button
+                        type="button"
+                        className={`sidebar-quick-rail-btn ${filters.unreadOnly ? 'active' : ''}`}
+                        onClick={() => updateFilters({ unreadOnly: !filters.unreadOnly })}
+                        title="No leidos"
+                    >
+                        NL
+                    </button>
+                    <button
+                        type="button"
+                        className={`sidebar-quick-rail-btn ${filters.unlabeledOnly ? 'active' : ''}`}
+                        onClick={() => updateFilters({ unlabeledOnly: !filters.unlabeledOnly, labelTokens: [] })}
+                        title="Sin etiqueta"
+                    >
+                        SE
+                    </button>
+                    <button
+                        type="button"
+                        className={`sidebar-quick-rail-btn ${filters.archivedMode === 'archived' ? 'active' : ''}`}
+                        onClick={() => updateFilters({ archivedMode: filters.archivedMode === 'archived' ? 'all' : 'archived' })}
+                        title="Archivados"
+                    >
+                        AR
+                    </button>
+                    <button
+                        type="button"
+                        className={`sidebar-quick-rail-btn ${filters.pinnedMode === 'pinned' ? 'active' : ''}`}
+                        onClick={() => updateFilters({ pinnedMode: filters.pinnedMode === 'pinned' ? 'all' : 'pinned' })}
+                        title="Fijados"
+                    >
+                        FI
+                    </button>
+                </div>
                 <div className="sidebar-filter-toolbar">
                     <button
                         type="button"
@@ -541,6 +593,13 @@ const Sidebar = ({
                         onClick={() => updateFilters({ archivedMode: filters.archivedMode === 'archived' ? 'all' : 'archived' })}
                     >
                         <Archive size={13} /> Archivados {quickStats.archived > 0 ? `(${quickStats.archived})` : ''}
+                    </button>
+                    <button
+                        type="button"
+                        className={`sidebar-filter-pill ${filters.pinnedMode === 'pinned' ? 'active' : ''}`}
+                        onClick={() => updateFilters({ pinnedMode: filters.pinnedMode === 'pinned' ? 'all' : 'pinned' })}
+                    >
+                        <Pin size={13} /> Fijados {quickStats.pinned > 0 ? `(${quickStats.pinned})` : ''}
                     </button>
                 </div>
 
@@ -720,3 +779,9 @@ const Sidebar = ({
 };
 
 export default Sidebar;
+
+
+
+
+
+
