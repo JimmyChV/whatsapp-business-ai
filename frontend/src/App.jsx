@@ -811,7 +811,14 @@ function App() {
   const [waCapabilities, setWaCapabilities] = useState({ messageEdit: true, messageEditSync: true, messageForward: true, messageDelete: true, messageReply: true, quickReplies: false, quickRepliesRead: false, quickRepliesWrite: false });
   const [toasts, setToasts] = useState([]);
   const [pendingOrderCartLoad, setPendingOrderCartLoad] = useState(null);
-
+  const activeCartSnapshotSignatureRef = useRef('');
+  const handleCartSnapshotChange = useCallback((snapshot) => {
+    const normalized = snapshot && typeof snapshot === 'object' ? snapshot : null;
+    const signature = normalized ? JSON.stringify(normalized) : '';
+    if (activeCartSnapshotSignatureRef.current === signature) return;
+    activeCartSnapshotSignatureRef.current = signature;
+    setActiveCartSnapshot(normalized);
+  }, []);
   // --------------------------------------------------------------
   const [isDragOver, setIsDragOver] = useState(false);
   const messagesEndRef = useRef(null);
@@ -4157,7 +4164,7 @@ function App() {
             onSelectCatalogModule={handleSelectCatalogModule}
             onSelectCatalog={handleSelectCatalog}
             onUploadCatalogImage={handleUploadCatalogImage}
-            onCartSnapshotChange={setActiveCartSnapshot}
+            onCartSnapshotChange={handleCartSnapshotChange}
           />
         )}
       </div>
@@ -4240,6 +4247,7 @@ function App() {
 }
 
 export default App;
+
 
 
 
