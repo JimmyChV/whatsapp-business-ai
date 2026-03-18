@@ -5813,3 +5813,285 @@ body {
   flex: 1;
   min-height: 0;
 }
+
+/* --- Chat visual refresh: list + header (2026-03-18) --- */
+.chat-item-modern {
+  min-height: 78px;
+  padding: 9px 12px;
+  border-radius: 12px;
+}
+
+.chat-item-modern.active {
+  background: linear-gradient(120deg, rgba(47, 83, 104, 0.34), rgba(28, 55, 71, 0.42));
+}
+
+.chat-info-modern {
+  gap: 5px;
+}
+
+.chat-name-stack {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.chat-display-name {
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.chat-contact-hint {
+  font-size: 0.7rem;
+  color: #7ea1b0;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-row-top {
+  align-items: flex-start;
+}
+
+.chat-time {
+  margin-top: 1px;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.chat-row-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.chat-module-badge--compact {
+  max-width: calc(100% - 8px);
+  padding: 2px 9px 2px 6px;
+  border-color: rgba(56, 220, 185, 0.5);
+}
+
+.chat-module-badge--compact .chat-module-badge-label {
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.chat-inline-labels--dots {
+  margin-left: auto;
+  margin-bottom: 0;
+}
+
+.chat-inline-label-dot {
+  width: 9px;
+  height: 9px;
+}
+
+.chat-row-bottom {
+  align-items: center;
+}
+
+.chat-last-message {
+  font-size: 0.9rem;
+  color: #d0dde3;
+}
+
+.chat-last-status-icon {
+  opacity: 0.88;
+}
+
+.chat-header-pro {
+  min-height: 74px;
+  padding: 9px 14px;
+  align-items: center;
+}
+
+.chat-header-avatar--module {
+  width: 50px;
+  height: 50px;
+}
+
+.chat-header-meta {
+  gap: 4px;
+  margin-left: 12px;
+}
+
+.chat-header-title-row--clean {
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-header-name {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.chat-header-module-pill {
+  max-width: min(320px, 48vw);
+  padding: 3px 10px 3px 7px;
+  border-radius: 999px;
+}
+
+.chat-header-module-name {
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+
+.chat-header-subline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 18px;
+}
+
+.chat-header-primary,
+.chat-header-secondary {
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.chat-header-dot {
+  opacity: 0.42;
+  font-size: 0.72rem;
+  margin: 0 1px;
+}
+
+.chat-header-labels {
+  margin-top: 1px;
+  gap: 5px;
+}
+
+.chat-header-label-chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.chat-header-actions {
+  margin-left: 10px;
+  gap: 6px;
+}
+
+/* --- Final header polish override (2026-03-18 b) --- */
+.chat-window .chat-header.chat-header-pro {
+  min-height: 88px;
+  padding: 12px 14px 11px;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-window .chat-header-avatar.chat-header-avatar--module {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  overflow: visible;
+  flex-shrink: 0;
+}
+
+.chat-window .chat-header-avatar-channel {
+  right: -3px;
+  bottom: -3px;
+  width: 19px;
+  height: 19px;
+  border: 2px solid #1a2b35;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  z-index: 3;
+}
+
+.chat-window .chat-header-avatar-channel--whatsapp {
+  background: #25d366;
+  color: #ffffff;
+}
+
+.chat-window .chat-header-avatar-channel-icon {
+  width: 11px;
+  height: 11px;
+  display: block;
+}
+
+.chat-window .chat-header-meta {
+  min-width: 0;
+  gap: 5px;
+  margin-left: 12px;
+  padding-top: 1px;
+}
+
+.chat-window .chat-header-title-row,
+.chat-window .chat-header-title-row.chat-header-title-row--clean {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+  row-gap: 5px;
+}
+
+.chat-window .chat-header-name {
+  margin: 0;
+  font-size: 1.08rem;
+  line-height: 1.15;
+}
+
+.chat-window .chat-header-module-pill {
+  max-width: min(290px, 44vw);
+  min-width: 0;
+  flex-shrink: 1;
+  padding: 3px 10px 3px 7px;
+}
+
+.chat-window .chat-header-module-name {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-window .chat-header-subline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 18px;
+}
+
+.chat-window .chat-header-labels {
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  max-width: min(520px, 58vw);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.chat-window .chat-header-labels::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-window .chat-header-label-chip {
+  flex: 0 0 auto;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.chat-window .chat-header-actions {
+  margin-left: auto;
+  align-self: center;
+  gap: 6px;
+  padding-top: 0;
+}
