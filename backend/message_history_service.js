@@ -816,9 +816,11 @@ async function listMessages(tenantId = DEFAULT_TENANT_ID, {
 module.exports = {
     isHistoryEnabled,
     normalizeMessageRecord,
-        updateChatState,
-updateMessageAck,
+    upsertMessage,
+    updateChatState,
+    updateMessageAck,
     updateMessageEdit,
     listChats,
     listMessages
 };
+
