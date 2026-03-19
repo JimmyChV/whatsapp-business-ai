@@ -26,6 +26,7 @@ import {
 } from './business/businessSidebar.helpers';
 import { useAiScopeState } from './business/hooks/useAiScopeState';
 import { attachAiSocketListeners, emitAiHistoryRequest, emitAiQuery } from './business/services/aiSocket.service';
+import { buildAiRuntimeContext, buildBusinessContextPrompt } from './business/businessSidebarAiContext.helpers';
 // =========================================================
 // CLIENT PROFILE PANEL
 // =========================================================
@@ -1707,149 +1708,40 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         });
         return detachAiListeners;
     }, [socket, currentAiScopeKey]);
+    const buildBusinessContext = () => buildBusinessContextPrompt({
+        catalog,
+        profile,
+        messages,
+        cart,
+        formatMoney
+    });
 
-    const buildBusinessContext = () => {
-        const catalogText = catalog.length > 0
-            ? catalog.map((p, idx) => `${idx + 1}. ${p.title} | Precio: S/ ${p.price || 'consultar'}${p.description ? ' | ' + p.description : ''}`).join('\n')
-            : '(sin productos en catalogo)';
-        const convText = messages.slice(-15).map(m => `${m.fromMe ? 'VENDEDOR' : 'CLIENTE'}: ${m.body || '[media]'}`).join('\n');
-        return `
-Eres el copiloto comercial experto de Lavitat en Peru.
-Habla con seguridad, sin justificar precio, resaltando formulacion, rendimiento y beneficio tecnico.
-
-NEGOCIO: ${profile?.name || profile?.pushname || 'Lavitat'}
-${profile?.description ? 'Descripcion: ' + profile.description : ''}
-
-CATALOGO DISPONIBLE:
-${catalogText}
-
-CONVERSACION ACTUAL CON EL CLIENTE:
-${convText || '(sin mensajes aun)'}
-
-CARRITO ACTUAL (si ya agregaste productos):
-${cart.length > 0 ? cart.map((item, idx) => `- ${idx + 1}) ${item.title} | qty ${item.qty} | precio base S/ ${formatMoney(item.price)}${item.lineDiscountEnabled ? ` | desc ${item.lineDiscountType === 'amount' ? 'monto' : '%'} ${formatMoney(item.lineDiscountValue)}` : ''}`).join('\n') : '(carrito vacio)'}
-
-INSTRUCCIONES OBLIGATORIAS:
-- Si te piden opciones/cotizacion, da 3 alternativas: entrada, equilibrio y premium.
-- NO inventes productos, presentaciones ni precios. Usa solo el catalogo listado.
-- Si hay carrito con productos, arma 3 cotizaciones separadas usando ese carrito como base.
-- Siempre que sea posible, incluye upsell complementario.
-- En objecion de precio: responder por formulacion/rendimiento, no por descuento defensivo.
-- Para mensajes listos para enviar al cliente, usa [MENSAJE: ...].
-- Se claro, breve y vendedor (tono WhatsApp profesional).
-        `.trim();
-    };
-
-    const buildAiRuntimeContextPayload = () => {
-        const normalizeModuleId = (value = '') => String(value || '').trim().toLowerCase();
-        const normalizeCatalogId = (value = '') => String(value || '').trim().toUpperCase();
-        const activeModuleIdClean = normalizeModuleId(activeModuleId || selectedCatalogModuleId);
-        const modules = Array.isArray(waModules) ? waModules : [];
-        const activeModule = modules.find((entry) => normalizeModuleId(entry?.moduleId || entry?.id || '') === activeModuleIdClean) || null;
-        const scope = businessData?.catalogMeta?.scope && typeof businessData.catalogMeta.scope === 'object'
-            ? businessData.catalogMeta.scope
-            : {};
-
-        const selectedCatalog = normalizeCatalogId(selectedCatalogId || scope.catalogId || '');
-        const scopeCatalogIds = Array.isArray(scope.catalogIds)
-            ? scope.catalogIds.map((entry) => normalizeCatalogId(entry)).filter(Boolean)
-            : [];
-        const catalogIds = Array.from(new Set([
-            selectedCatalog,
-            ...scopeCatalogIds
-        ].filter(Boolean)));
-
-        const e164Phone = (() => {
-            const digits = String(activeChatPhone || activeChatDetails?.phone || '').replace(/\D/g, '');
-            if (!digits) return '';
-            return '+' + digits;
-        })();
-
-        const customerName = String(
-            activeChatDetails?.name
-            || activeChatDetails?.pushname
-            || activeChatDetails?.shortName
-            || ''
-        ).trim();
-
-        return {
-            tenant: {
-                id: String(activeTenantScopeId || 'default').trim() || 'default',
-                name: String(profile?.name || profile?.pushname || '').trim() || null,
-                plan: null
-            },
-            module: {
-                moduleId: activeModuleIdClean || null,
-                name: String(activeModule?.name || '').trim() || null,
-                channelType: String(activeModule?.channelType || '').trim().toLowerCase() || 'whatsapp',
-                transportMode: 'cloud'
-            },
-            catalog: {
-                catalogId: selectedCatalog || null,
-                catalogIds,
-                source: String(businessData?.catalogMeta?.source || '').trim().toLowerCase() || 'local',
-                items: catalog.slice(0, 70).map((item) => ({
-                    id: item.id || null,
-                    title: item.title || null,
-                    price: item.price || null,
-                    regularPrice: item.regularPrice || null,
-                    salePrice: item.salePrice || null,
-                    discountPct: Number(item.discountPct || 0) || 0,
-                    description: item.description || '',
-                    category: item.category || item.categoryName || null,
-                    categories: Array.isArray(item.categories) ? item.categories : [],
-                    catalogId: item.catalogId || selectedCatalog || null,
-                    catalogName: item.catalogName || null,
-                    source: item.source || null,
-                    sku: item.sku || null,
-                    stockStatus: item.stockStatus || null,
-                    imageUrl: item.imageUrl || null,
-                    presentation: item.presentation || item?.metadata?.presentation || item?.metadata?.presentacion || null,
-                    aroma: item.aroma || item?.metadata?.aroma || item?.metadata?.scent || null,
-                    hypoallergenic: typeof item?.metadata?.hypoallergenic === 'boolean' ? item.metadata.hypoallergenic : null,
-                    petFriendly: typeof item?.metadata?.petFriendly === 'boolean' ? item.metadata.petFriendly : (typeof item?.metadata?.pet_friendly === 'boolean' ? item.metadata.pet_friendly : null)
-                }))
-            },
-            cart: {
-                items: lineBreakdowns.map(({ item, qty, unitPrice }) => ({
-                    id: item?.id || null,
-                    title: item?.title || null,
-                    qty,
-                    price: Number(unitPrice || 0),
-                    regularPrice: Number(parseMoney(item?.regularPrice, unitPrice) || 0),
-                    category: item?.category || item?.categoryName || null,
-                    lineDiscountEnabled: Boolean(item?.lineDiscountEnabled),
-                    lineDiscountType: item?.lineDiscountType === 'amount' ? 'amount' : 'percent',
-                    lineDiscountValue: Number(parseMoney(item?.lineDiscountValue, 0) || 0)
-                })),
-                subtotal: Number(subtotalProducts || 0),
-                discount: Number(totalDiscountForQuote || 0),
-                total: Number(cartTotal || 0),
-                delivery: Number(deliveryFee || 0),
-                currency: 'PEN',
-                notes: `delivery=${deliveryType}; globalDiscount=${globalDiscountEnabled ? `${globalDiscountType}:${normalizedGlobalDiscountValue}` : 'none'}`
-            },
-            chat: {
-                chatId: String(currentAiScopeChatId || activeChatId || '').trim(),
-                scopeModuleId: activeAiScope.scopeModuleId || null,
-                phone: e164Phone || null,
-                recentMessages: (Array.isArray(messages) ? messages : []).slice(-18).map((entry) => ({
-                    fromMe: entry?.fromMe === true,
-                    body: String(entry?.body || '').trim(),
-                    type: String(entry?.type || '').trim().toLowerCase() || 'chat',
-                    timestamp: Number(entry?.timestamp || 0) || null
-                }))
-            },
-            customer: {
-                customerId: String(activeChatDetails?.customerId || '').trim() || null,
-                phoneE164: e164Phone || null,
-                name: customerName || null
-            },
-            ui: {
-                contextSource: 'business_sidebar'
-            }
-        };
-    };
+    const buildAiRuntimeContextPayload = () => buildAiRuntimeContext({
+        activeModuleId,
+        selectedCatalogModuleId,
+        waModules,
+        businessData,
+        selectedCatalogId,
+        activeChatPhone,
+        activeChatDetails,
+        activeTenantScopeId,
+        profile,
+        catalog,
+        lineBreakdowns,
+        parseMoney,
+        subtotalProducts,
+        totalDiscountForQuote,
+        cartTotal,
+        deliveryFee,
+        deliveryType,
+        globalDiscountEnabled,
+        globalDiscountType,
+        normalizedGlobalDiscountValue,
+        messages,
+        currentAiScopeChatId,
+        activeChatId,
+        activeAiScope
+    });
 
     const sendAiMessage = () => {
         if (!aiInput.trim() || isAiLoading || !socket) return;
@@ -2549,6 +2441,7 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
+
 
 
 
