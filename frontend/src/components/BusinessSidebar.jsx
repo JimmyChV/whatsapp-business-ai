@@ -1,248 +1,31 @@
-﻿import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Bot, Send, X, ShoppingCart, Clock, Sparkles, Trash2, Plus, Minus, ChevronRight, ChevronDown, ChevronUp, Package, MessageSquare, PlusCircle, Edit2, Check, Search, SlidersHorizontal } from 'lucide-react';
-import moment from 'moment';
-
-const repairMojibake = (value = '') => {
-    let text = String(value || '');
-    if (!text) return '';
-    try {
-        const decoded = decodeURIComponent(escape(text));
-        const cleanDecoded = decoded.replace(/\uFFFD/g, '');
-        const cleanOriginal = text.replace(/\uFFFD/g, '');
-        if (decoded && decoded !== text && cleanDecoded.length >= Math.floor(cleanOriginal.length * 0.8)) {
-            text = decoded;
-        }
-    } catch (e) { }
-    return text.replace(/\uFFFD/g, '');
-};
-
-
-const formatMoney = (value) => Number(value || 0).toFixed(2);
-const formatMoneyCompact = (value) => {
-    const fixed = Number(value || 0).toFixed(2);
-    return fixed.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
-};
-const parseMoney = (value, fallback = 0) => {
-    const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
-    if (Number.isFinite(parsed)) return parsed;
-    return Number.isFinite(fallback) ? fallback : 0;
-};
-const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
-const clampNumber = (value, min = 0, max = 100) => Math.min(max, Math.max(min, Number(value) || 0));
-const normalizeSkuKey = (value = '') => String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-const normalizeTextKey = (value = '') => String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/(\d+(?:[.,]\d+)?)\s*(?:litros?|lts?|lt|l)\b/g, '$1l')
-    .replace(/(\d+(?:[.,]\d+)?)\s*(?:mililitros?|ml|cc|cm3)\b/g, '$1ml')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-const toSentenceCase = (value = '') => {
-    const clean = String(value || '').trim().replace(/\s+/g, ' ');
-    if (!clean) return '';
-    return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
-};
-const formatQuoteProductTitle = (value = '') => {
-    const sentence = toSentenceCase(value);
-    return sentence
-        .replace(/(\d+(?:[.,]\d+)?)\s*l\b/gi, (_, qty) => `${String(qty).replace(',', '.')} Litros`)
-        .replace(/(\d+(?:[.,]\d+)?)\s*ml\b/gi, (_, qty) => `${String(qty).replace(',', '.')} mL`) || 'Producto';
-};
-
-
-const parseOrderTitleItems = (value = '') => {
-    const text = String(value || '').trim();
-    if (!text) return [];
-
-    return text
-        .replace(/[\r\n]+/g, ',')
-        .replace(/[|;]/g, ',')
-        .split(',')
-        .map((chunk) => String(chunk || '').trim())
-        .filter(Boolean)
-        .map((chunk, idx) => {
-            let name = chunk.replace(/^[-\u2022*]+\s*/, '').trim();
-            if (!name) return null;
-
-            let quantity = 1;
-            const qtyMatch = name.match(/^(\d+(?:[.,]\d+)?)\s*(?:x|X)\s+(.+)$/);
-            if (qtyMatch) {
-                const parsedQty = parseMoney(qtyMatch[1], 1);
-                quantity = Math.max(1, Math.round((Number.isFinite(parsedQty) ? parsedQty : 1) * 1000) / 1000);
-                name = String(qtyMatch[2] || '').trim();
-            }
-
-            name = name.replace(/^["'`]+|["'`]+$/g, '').trim();
-            if (!name) return null;
-
-            return {
-                name,
-                quantity,
-                price: null,
-                lineTotal: null,
-                sku: null,
-                source: 'order_title',
-                index: idx + 1
-            };
-        })
-        .filter(Boolean);
-};
-const normalizeCatalogItem = (item = {}, index = 0) => {
-    const safeItem = item && typeof item === 'object' ? item : {};
-    const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
-
-    const parsePrice = (value, fallback = 0) => {
-        const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
-        if (Number.isFinite(parsed)) return parsed;
-        return Number.isFinite(fallback) ? fallback : 0;
-    };
-
-    const priceNum = parsePrice(safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio, 0);
-    const regularNum = parsePrice(safeItem.regularPrice ?? safeItem.regular_price ?? safeItem.price ?? safeItem.amount ?? safeItem.precio, priceNum);
-    const saleNum = parsePrice(safeItem.salePrice ?? safeItem.sale_price, priceNum);
-    const baseFinal = saleNum > 0 && saleNum < regularNum ? saleNum : priceNum;
-    const finalNum = baseFinal > 0 ? baseFinal : regularNum;
-    const computedDiscount = regularNum > 0 && finalNum > 0 && finalNum < regularNum
-        ? Number((((regularNum - finalNum) / regularNum) * 100).toFixed(1))
-        : 0;
-    const rawDiscount = Number.parseFloat(String(safeItem.discountPct ?? safeItem.discount_pct ?? computedDiscount).replace(',', '.'));
-    const discountPct = Number.isFinite(rawDiscount) ? Math.max(0, rawDiscount) : 0;
-    const rawCategories = Array.isArray(safeItem.categories)
-        ? safeItem.categories
-        : (typeof safeItem.categories === 'string'
-            ? safeItem.categories.split(',')
-            : (safeItem.category
-                ? [safeItem.category]
-                : (safeItem.categoryName
-                    ? [safeItem.categoryName]
-                    : (safeItem.category_slug ? [safeItem.category_slug] : []))));
-    const categories = rawCategories
-        .map((entry) => (typeof entry === 'string' ? entry : (entry?.name || entry?.slug || entry?.title || '')))
-        .map((entry) => String(entry || '').trim())
-        .filter(Boolean);
-
-    return {
-        id: safeItem.id || safeItem.product_id || `catalog_${index}`,
-        title: String(rawTitle || `Producto ${index + 1}`).trim(),
-        price: Number.isFinite(finalNum) ? finalNum.toFixed(2) : '0.00',
-        regularPrice: Number.isFinite(regularNum) ? regularNum.toFixed(2) : (Number.isFinite(finalNum) ? finalNum.toFixed(2) : '0.00'),
-        salePrice: Number.isFinite(saleNum) && saleNum > 0 ? saleNum.toFixed(2) : null,
-        discountPct,
-        description: safeItem.description || safeItem.short_description || safeItem.descripcion || '',
-        imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
-        source: safeItem.source || 'unknown',
-        sku: safeItem.sku || null,
-        stockStatus: safeItem.stockStatus || safeItem.stock_status || null,
-        moduleId: String(safeItem.moduleId || safeItem.module_id || '').trim().toLowerCase() || null,
-        catalogId: String(safeItem.catalogId || safeItem.catalog_id || '').trim().toUpperCase() || null,
-        catalogName: String(safeItem.catalogName || safeItem.catalog_name || safeItem.catalogId || safeItem.catalog_id || '').trim() || null,
-        channelType: String(safeItem.channelType || safeItem.channel_type || '').trim().toLowerCase() || null,
-        categories
-    };
-};
-const sanitizeProfileText = (value = '') => repairMojibake(String(value || ''))
-    .replace(/[\u0000-\u001F]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const firstValue = (...values) => {
-    for (const value of values) {
-        if (value === null || value === undefined) continue;
-        if (typeof value === 'string') {
-            const clean = sanitizeProfileText(value);
-            if (clean) return clean;
-            continue;
-        }
-        if (typeof value === 'number' || typeof value === 'boolean') return value;
-        if (Array.isArray(value) && value.length > 0) return value;
-        if (typeof value === 'object' && Object.keys(value).length > 0) return value;
-    }
-    return '';
-};
-
-const formatPhoneForDisplay = (value = '') => {
-    const raw = String(value || '').trim();
-    if (!raw) return 'Sin numero visible';
-    const normalized = raw.replace(/[^\d+]/g, '');
-    if (!normalized) return 'Sin numero visible';
-    return normalized.startsWith('+') ? normalized : `+${normalized}`;
-};
-
-const normalizeDigits = (value = '') => String(value || '').replace(/\D/g, '');
-const isLikelyPhoneDigits = (value = '') => {
-    const digits = normalizeDigits(value);
-    return digits.length >= 8 && digits.length <= 15;
-};
-const looksLikeInternalId = (value = '') => {
-    const text = String(value || '').trim();
-    if (!text) return false;
-    return text.includes('@') || /^\d{14,}$/.test(text);
-};
-
-const formatBoolValue = (value) => (value ? 'Si' : 'No');
-
-const formatTimestampValue = (value) => {
-    const unixValue = Number(value || 0);
-    if (!Number.isFinite(unixValue) || unixValue <= 0) return '--';
-    const m = moment.unix(unixValue);
-    return m.isValid() ? m.format('YYYY-MM-DD HH:mm:ss') : '--';
-};
-
-
-const avatarColorForName = (name) => {
-    const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
-    if (!name) return colors[0];
-    return colors[name.charCodeAt(0) % colors.length];
-};
-
-const AI_CHAT_SCOPE_SEPARATOR = '::mod::';
-const AI_DEFAULT_GREETING = 'Hola, soy tu copiloto comercial de Lavitat. Estoy viendo el contexto real del chat para ayudarte a vender mejor.\n\nPrueba: "Dame 3 respuestas sugeridas" o "Genera 3 cotizaciones con enfoque entrada, equilibrio y premium".';
-
-const buildDefaultAiThread = () => ([
-    { role: 'assistant', content: AI_DEFAULT_GREETING }
-]);
-
-const normalizeAiScopeModuleId = (value = '') => String(value || '').trim().toLowerCase();
-
-const parseAiScopedChatId = (value = '') => {
-    const raw = String(value || '').trim();
-    if (!raw) return { baseChatId: '', scopeModuleId: '' };
-    const idx = raw.lastIndexOf(AI_CHAT_SCOPE_SEPARATOR);
-    if (idx < 0) return { baseChatId: raw, scopeModuleId: '' };
-    const baseChatId = String(raw.slice(0, idx) || '').trim();
-    const scopeModuleId = normalizeAiScopeModuleId(raw.slice(idx + AI_CHAT_SCOPE_SEPARATOR.length));
-    if (!baseChatId || !scopeModuleId) return { baseChatId: raw, scopeModuleId: '' };
-    return { baseChatId, scopeModuleId };
-};
-
-const buildAiScopedChatId = (baseChatId = '', scopeModuleId = '') => {
-    const safeBase = String(baseChatId || '').trim();
-    const safeScope = normalizeAiScopeModuleId(scopeModuleId);
-    if (!safeBase) return '';
-    if (!safeScope) return safeBase;
-    return `${safeBase}${AI_CHAT_SCOPE_SEPARATOR}${safeScope}`;
-};
-
-const buildAiScopeInfo = (tenantId = 'default', chatId = '', fallbackModuleId = '') => {
-    const safeTenant = String(tenantId || 'default').trim() || 'default';
-    const parsed = parseAiScopedChatId(chatId);
-    const scopeModuleId = normalizeAiScopeModuleId(parsed.scopeModuleId || fallbackModuleId || '');
-    const baseChatId = String(parsed.baseChatId || chatId || '').trim();
-    const scopeChatId = buildAiScopedChatId(baseChatId, scopeModuleId) || baseChatId;
-    const scopeKey = scopeChatId
-        ? `${safeTenant}::chat::${scopeChatId}`
-        : `${safeTenant}::chat::__tenant__`;
-    return {
-        tenantId: safeTenant,
-        baseChatId,
-        scopeModuleId: scopeModuleId || null,
-        scopeChatId: scopeChatId || '',
-        scopeKey
-    };
-};
-
+import {
+    avatarColorForName,
+    buildAiScopeInfo,
+    buildDefaultAiThread,
+    clampNumber,
+    firstValue,
+    formatBoolValue,
+    formatMoney,
+    formatMoneyCompact,
+    formatPhoneForDisplay,
+    formatQuoteProductTitle,
+    formatTimestampValue,
+    isLikelyPhoneDigits,
+    looksLikeInternalId,
+    normalizeCatalogItem,
+    normalizeDigits,
+    normalizeSkuKey,
+    normalizeTextKey,
+    parseMoney,
+    parseOrderTitleItems,
+    repairMojibake,
+    roundMoney,
+    sanitizeProfileText
+} from './business/businessSidebar.helpers';
+import { useAiScopeState } from './business/hooks/useAiScopeState';
+import { attachAiSocketListeners, emitAiHistoryRequest, emitAiQuery } from './business/services/aiSocket.service';
 // =========================================================
 // CLIENT PROFILE PANEL
 // =========================================================
@@ -1366,18 +1149,37 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     const companyProfileRef = useRef(null);
-    // AI Chat State
-    const [aiThreadsByScope, setAiThreadsByScope] = useState({});
-    const [aiInput, setAiInput] = useState('');
-    const [aiLoadingByScope, setAiLoadingByScope] = useState({});
-    const aiEndRef = useRef(null);
-    const aiRequestScopeRef = useRef('');
-    const aiScopeKeyRef = useRef('');
-    const aiHistoryLoadedRef = useRef(new Set());
-    const aiHistoryRequestSeqRef = useRef(0);
-    const aiHistoryScopeBySeqRef = useRef(new Map());
 
-        // Cart State
+    // AI Chat State
+    const [aiInput, setAiInput] = useState('');
+    const aiEndRef = useRef(null);
+
+    const normalizedTenantScopeKey = useMemo(() => String(tenantScopeKey || 'default').trim() || 'default', [tenantScopeKey]);
+    const {
+        activeAiScope,
+        activeTenantScopeId,
+        aiHistoryLoadedRef,
+        aiHistoryRequestSeqRef,
+        aiHistoryScopeBySeqRef,
+        aiMessages,
+        aiRequestScopeRef,
+        aiScopeKeyRef,
+        currentAiScopeChatId,
+        currentAiScopeKey,
+        isAiLoading,
+        resetAiScopeState,
+        setAiScopeLoading,
+        setAiThreadMessages,
+        setAiThreadsByScope
+    } = useAiScopeState({
+        tenantScopeKey: normalizedTenantScopeKey,
+        activeChatId,
+        activeChatDetails,
+        activeModuleId,
+        selectedCatalogModuleId
+    });
+
+    // Cart State
     const [cart, setCart] = useState([]);
     const [showOrderAdjustments, setShowOrderAdjustments] = useState(false);
     const [globalDiscountEnabled, setGlobalDiscountEnabled] = useState(false);
@@ -1393,48 +1195,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const tenantScopeRef = useRef(String(tenantScopeKey || 'default').trim() || 'default');
     const cartDraftSignaturesRef = useRef({});
 
-    const normalizedTenantScopeKey = useMemo(() => String(tenantScopeKey || 'default').trim() || 'default', [tenantScopeKey]);
-    const activeTenantScopeId = normalizedTenantScopeKey;
-    const activeScopeModuleCandidate = normalizeAiScopeModuleId(activeChatDetails?.scopeModuleId || activeModuleId || selectedCatalogModuleId || '');
-    const activeAiScope = buildAiScopeInfo(activeTenantScopeId, activeChatId, activeScopeModuleCandidate);
-    const currentAiScopeKey = activeAiScope.scopeKey;
-    const currentAiScopeChatId = activeAiScope.scopeChatId;
-
-    const aiMessages = Array.isArray(aiThreadsByScope[currentAiScopeKey]) && aiThreadsByScope[currentAiScopeKey].length > 0
-        ? aiThreadsByScope[currentAiScopeKey]
-        : buildDefaultAiThread();
-    const isAiLoading = Boolean(aiLoadingByScope[currentAiScopeKey]);
-
-    const setAiThreadMessages = (scopeKey = '', updater = null) => {
-        const safeScopeKey = String(scopeKey || '').trim();
-        if (!safeScopeKey) return;
-        setAiThreadsByScope((previous) => {
-            const baseThread = Array.isArray(previous?.[safeScopeKey]) && previous[safeScopeKey].length > 0
-                ? previous[safeScopeKey]
-                : buildDefaultAiThread();
-            const nextThread = typeof updater === 'function' ? updater(baseThread) : updater;
-            if (!Array.isArray(nextThread) || nextThread.length === 0) {
-                return {
-                    ...previous,
-                    [safeScopeKey]: buildDefaultAiThread()
-                };
-            }
-            return {
-                ...previous,
-                [safeScopeKey]: nextThread
-            };
-        });
-    };
-
-    const setAiScopeLoading = (scopeKey = '', nextValue = false) => {
-        const safeScopeKey = String(scopeKey || '').trim();
-        if (!safeScopeKey) return;
-        setAiLoadingByScope((previous) => ({
-            ...previous,
-            [safeScopeKey]: Boolean(nextValue)
-        }));
-    };
-
     const catalog = useMemo(
         () => (businessData.catalog || []).map((item, idx) => normalizeCatalogItem(item, idx)),
         [businessData.catalog]
@@ -1449,13 +1209,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 
         setActiveTab('ai');
         setShowCompanyProfile(false);
-        setAiThreadsByScope({});
-        setAiLoadingByScope({});
-        aiRequestScopeRef.current = '';
-        aiScopeKeyRef.current = '';
-        aiHistoryLoadedRef.current = new Set();
-        aiHistoryRequestSeqRef.current = 0;
-        aiHistoryScopeBySeqRef.current = new Map();
+        resetAiScopeState();
         setAiInput('');
         setCart([]);
         setShowOrderAdjustments(false);
@@ -1470,19 +1224,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setQuickSearch('');
         setOrderImportStatus(null);
         lastImportedOrderRef.current = '';
-    }, [normalizedTenantScopeKey]);
-
-    useEffect(() => {
-        aiScopeKeyRef.current = currentAiScopeKey;
-        setAiThreadsByScope((previous) => {
-            const existing = previous?.[currentAiScopeKey];
-            if (Array.isArray(existing) && existing.length > 0) return previous;
-            return {
-                ...previous,
-                [currentAiScopeKey]: buildDefaultAiThread()
-            };
-        });
-    }, [currentAiScopeKey]);
+    }, [normalizedTenantScopeKey, resetAiScopeState]);
 
     useEffect(() => {
         if (!socket) return;
@@ -1494,7 +1236,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         aiHistoryRequestSeqRef.current = requestSeq;
         aiHistoryScopeBySeqRef.current.set(requestSeq, currentAiScopeKey);
 
-        socket.emit('get_ai_chat_history', {
+        emitAiHistoryRequest(socket, {
             requestSeq,
             chatId: currentAiScopeChatId,
             scopeModuleId: activeAiScope.scopeModuleId || null,
@@ -1957,16 +1699,13 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             aiRequestScopeRef.current = '';
         };
 
-        socket.on('ai_chat_history', onHistory);
-        socket.on('internal_ai_chunk', onChunk);
-        socket.on('internal_ai_complete', onComplete);
-        socket.on('internal_ai_error', onError);
-        return () => {
-            socket.off('ai_chat_history', onHistory);
-            socket.off('internal_ai_chunk', onChunk);
-            socket.off('internal_ai_complete', onComplete);
-            socket.off('internal_ai_error', onError);
-        };
+        const detachAiListeners = attachAiSocketListeners(socket, {
+            onHistory,
+            onChunk,
+            onComplete,
+            onError
+        });
+        return detachAiListeners;
     }, [socket, currentAiScopeKey]);
 
     const buildBusinessContext = () => {
@@ -2131,7 +1870,7 @@ INSTRUCCIONES OBLIGATORIAS:
         const runtimeContext = buildAiRuntimeContextPayload();
         const moduleId = String(runtimeContext?.module?.moduleId || '').trim().toLowerCase();
 
-        socket.emit('internal_ai_query', {
+        emitAiQuery(socket, {
             query: cleanPrompt,
             businessContext: buildBusinessContext(),
             moduleId: moduleId || undefined,
@@ -2810,6 +2549,15 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
+
+
+
+
+
+
+
+
+
 
 
 
