@@ -1,4 +1,4 @@
-﻿
+
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -14,6 +14,75 @@ const DEFAULT_LIBRARY_NAME = 'Compartidas';
 
 let schemaReady = false;
 let schemaReadyPromise = null;
+const QUICK_REPLY_CACHE_TTL_MS = Number.parseInt(String(process.env.QUICK_REPLY_CACHE_TTL_MS || '5000'), 10);
+const QUICK_REPLY_CACHE_SAFE_TTL_MS = Number.isFinite(QUICK_REPLY_CACHE_TTL_MS) && QUICK_REPLY_CACHE_TTL_MS > 0
+    ? QUICK_REPLY_CACHE_TTL_MS
+    : 5000;
+const quickReplyLibrariesCache = new Map();
+const quickReplyItemsCache = new Map();
+const quickReplyInFlightReads = new Map();
+
+function cloneSerializable(value) {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    try {
+        return JSON.parse(JSON.stringify(value));
+    } catch (_error) {
+        return value;
+    }
+}
+
+function buildLibrariesCacheKey({ tenantId = '', includeInactive = false, moduleId = '' } = {}) {
+    return `${String(tenantId || '').trim()}|${includeInactive === true ? 'all' : 'active'}|${String(moduleId || '').trim().toLowerCase() || '*'}`;
+}
+
+function buildItemsCacheKey({ tenantId = '', includeInactive = false, moduleId = '', libraryId = '' } = {}) {
+    return `${String(tenantId || '').trim()}|${includeInactive === true ? 'all' : 'active'}|${String(moduleId || '').trim().toLowerCase() || '*'}|${String(libraryId || '').trim().toUpperCase() || '*'}`;
+}
+
+function readCachedValue(cacheMap, key) {
+    const hit = cacheMap.get(key);
+    if (!hit) return null;
+    if (Number(hit?.expiresAt || 0) <= Date.now()) {
+        cacheMap.delete(key);
+        return null;
+    }
+    return cloneSerializable(hit.value);
+}
+
+function writeCachedValue(cacheMap, key, value) {
+    cacheMap.set(key, {
+        value: cloneSerializable(value),
+        expiresAt: Date.now() + QUICK_REPLY_CACHE_SAFE_TTL_MS
+    });
+}
+
+function clearQuickReplyTenantCache(tenantId = '') {
+    const cleanTenantId = String(tenantId || '').trim();
+    if (!cleanTenantId) return;
+    for (const key of quickReplyLibrariesCache.keys()) {
+        if (key.startsWith(`${cleanTenantId}|`)) quickReplyLibrariesCache.delete(key);
+    }
+    for (const key of quickReplyItemsCache.keys()) {
+        if (key.startsWith(`${cleanTenantId}|`)) quickReplyItemsCache.delete(key);
+    }
+    for (const key of quickReplyInFlightReads.keys()) {
+        if (key.startsWith(`${cleanTenantId}|`)) quickReplyInFlightReads.delete(key);
+    }
+}
+
+async function resolveInFlightRead(key, loader) {
+    if (quickReplyInFlightReads.has(key)) return quickReplyInFlightReads.get(key);
+    const pending = (async () => {
+        try {
+            return await loader();
+        } finally {
+            quickReplyInFlightReads.delete(key);
+        }
+    })();
+    quickReplyInFlightReads.set(key, pending);
+    return pending;
+}
 
 function missingRelation(error) {
     return String(error?.code || '').trim() === '42P01';
@@ -259,66 +328,75 @@ async function listQuickReplyLibraries(options = {}) {
     const tenantId = resolveTenantId(options);
     const includeInactive = options?.includeInactive === true;
     const moduleId = normalizeModuleId(options?.moduleId || '');
+    const librariesCacheKey = buildLibrariesCacheKey({ tenantId, includeInactive, moduleId });
+    const cachedLibraries = readCachedValue(quickReplyLibrariesCache, librariesCacheKey);
+    if (cachedLibraries) return cachedLibraries;
 
-    if (getStorageDriver() !== 'postgres') {
-        const store = normalizeFileStore(await readTenantJsonFile(QUICK_REPLIES_FILE, { tenantId, defaultValue: {} }));
-        let libraries = (Array.isArray(store.libraries) ? store.libraries : []).filter((entry) => includeInactive || entry.isActive !== false);
-        if (moduleId) {
-            libraries = libraries.filter((entry) => entry.isShared || (Array.isArray(entry.moduleIds) && entry.moduleIds.includes(moduleId)));
-        }
-        return libraries;
-    }
-
-    try {
-        await ensureDefaultLibraryPostgres(tenantId);
-        const params = [tenantId];
-        let where = 'WHERE l.tenant_id = $1';
-        if (!includeInactive) where += ' AND l.is_active = TRUE';
-
-        if (moduleId) {
-            params.push(moduleId);
-            where += ` AND (
-                l.is_shared = TRUE
-                OR EXISTS (
-                    SELECT 1
-                      FROM quick_reply_library_modules lm2
-                     WHERE lm2.tenant_id = l.tenant_id
-                       AND lm2.library_id = l.library_id
-                       AND lm2.module_id = $${params.length}
-                )
-            )`;
+    const inFlightReadKey = `${tenantId}|libraries|${includeInactive === true ? 'all' : 'active'}|${moduleId || '*'}`;
+    const result = await resolveInFlightRead(inFlightReadKey, async () => {
+        if (getStorageDriver() !== 'postgres') {
+            const store = normalizeFileStore(await readTenantJsonFile(QUICK_REPLIES_FILE, { tenantId, defaultValue: {} }));
+            let libraries = (Array.isArray(store.libraries) ? store.libraries : []).filter((entry) => includeInactive || entry.isActive !== false);
+            if (moduleId) {
+                libraries = libraries.filter((entry) => entry.isShared || (Array.isArray(entry.moduleIds) && entry.moduleIds.includes(moduleId)));
+            }
+            return libraries;
         }
 
-        const { rows } = await queryPostgres(
-            `SELECT l.library_id, l.library_name, l.description, l.is_shared, l.is_active, l.sort_order, l.created_at, l.updated_at,
-                    COALESCE(array_remove(array_agg(DISTINCT lm.module_id), NULL), '{}') AS module_ids
-               FROM quick_reply_libraries l
-               LEFT JOIN quick_reply_library_modules lm
-                 ON lm.tenant_id = l.tenant_id
-                AND lm.library_id = l.library_id
-               ${where}
-              GROUP BY l.library_id, l.library_name, l.description, l.is_shared, l.is_active, l.sort_order, l.created_at, l.updated_at
-              ORDER BY l.sort_order ASC, l.created_at DESC`,
-            params
-        );
+        try {
+            await ensureDefaultLibraryPostgres(tenantId);
+            const params = [tenantId];
+            let where = 'WHERE l.tenant_id = $1';
+            if (!includeInactive) where += ' AND l.is_active = TRUE';
 
-        return (Array.isArray(rows) ? rows : []).map((row) => ({
-            libraryId: normalizeLibraryId(row.library_id),
-            name: String(row.library_name || '').trim() || normalizeLibraryId(row.library_id),
-            description: String(row.description || '').trim() || '',
-            isShared: row.is_shared === true,
-            isActive: row.is_active !== false,
-            sortOrder: normalizeSortOrder(row.sort_order, 1000),
-            moduleIds: Array.isArray(row.module_ids)
-                ? Array.from(new Set(row.module_ids.map((entry) => normalizeModuleId(entry)).filter(Boolean)))
-                : [],
-            createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
-            updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null
-        }));
-    } catch (error) {
-        if (missingRelation(error)) return [];
-        throw error;
-    }
+            if (moduleId) {
+                params.push(moduleId);
+                where += ` AND (
+                    l.is_shared = TRUE
+                    OR EXISTS (
+                        SELECT 1
+                          FROM quick_reply_library_modules lm2
+                         WHERE lm2.tenant_id = l.tenant_id
+                           AND lm2.library_id = l.library_id
+                           AND lm2.module_id = $${params.length}
+                    )
+                )`;
+            }
+
+            const { rows } = await queryPostgres(
+                `SELECT l.library_id, l.library_name, l.description, l.is_shared, l.is_active, l.sort_order, l.created_at, l.updated_at,
+                        COALESCE(array_remove(array_agg(DISTINCT lm.module_id), NULL), '{}') AS module_ids
+                   FROM quick_reply_libraries l
+                   LEFT JOIN quick_reply_library_modules lm
+                     ON lm.tenant_id = l.tenant_id
+                    AND lm.library_id = l.library_id
+                   ${where}
+                  GROUP BY l.library_id, l.library_name, l.description, l.is_shared, l.is_active, l.sort_order, l.created_at, l.updated_at
+                  ORDER BY l.sort_order ASC, l.created_at DESC`,
+                params
+            );
+
+            return (Array.isArray(rows) ? rows : []).map((row) => ({
+                libraryId: normalizeLibraryId(row.library_id),
+                name: String(row.library_name || '').trim() || normalizeLibraryId(row.library_id),
+                description: String(row.description || '').trim() || '',
+                isShared: row.is_shared === true,
+                isActive: row.is_active !== false,
+                sortOrder: normalizeSortOrder(row.sort_order, 1000),
+                moduleIds: Array.isArray(row.module_ids)
+                    ? Array.from(new Set(row.module_ids.map((entry) => normalizeModuleId(entry)).filter(Boolean)))
+                    : [],
+                createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+                updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null
+            }));
+        } catch (error) {
+            if (missingRelation(error)) return [];
+            throw error;
+        }
+    });
+
+    writeCachedValue(quickReplyLibrariesCache, librariesCacheKey, result);
+    return cloneSerializable(result);
 }
 
 async function saveQuickReplyLibrary(payload = {}, options = {}) {
@@ -334,6 +412,7 @@ async function saveQuickReplyLibrary(payload = {}, options = {}) {
         if (idx >= 0) store.libraries[idx] = nextEntry;
         else store.libraries.push(nextEntry);
         await writeTenantJsonFile(QUICK_REPLIES_FILE, store, { tenantId });
+        clearQuickReplyTenantCache(tenantId);
         return nextEntry;
     }
 
@@ -361,16 +440,16 @@ async function saveQuickReplyLibrary(payload = {}, options = {}) {
     );
 
     if (!clean.isShared && clean.moduleIds.length > 0) {
-        for (const moduleId of clean.moduleIds) {
-            await queryPostgres(
-                `INSERT INTO quick_reply_library_modules (tenant_id, library_id, module_id, created_at)
-                 VALUES ($1, $2, $3, NOW())
-                 ON CONFLICT (tenant_id, library_id, module_id) DO NOTHING`,
-                [tenantId, libraryId, moduleId]
-            );
-        }
+        await queryPostgres(
+            `INSERT INTO quick_reply_library_modules (tenant_id, library_id, module_id, created_at)
+             SELECT $1::text, $2::text, module_id, NOW()
+               FROM unnest($3::text[]) AS module_id
+             ON CONFLICT (tenant_id, library_id, module_id) DO NOTHING`,
+            [tenantId, libraryId, clean.moduleIds]
+        );
     }
 
+    clearQuickReplyTenantCache(tenantId);
     const all = await listQuickReplyLibraries({ tenantId, includeInactive: true });
     return all.find((entry) => normalizeLibraryId(entry.libraryId) === normalizeLibraryId(libraryId)) || null;
 }
@@ -386,6 +465,7 @@ async function deactivateQuickReplyLibrary(libraryId = '', options = {}) {
         if (idx < 0) throw new Error('Biblioteca no encontrada.');
         store.libraries[idx] = { ...store.libraries[idx], isActive: false };
         await writeTenantJsonFile(QUICK_REPLIES_FILE, store, { tenantId });
+        clearQuickReplyTenantCache(tenantId);
         return { libraryId: cleanLibraryId };
     }
 
@@ -399,6 +479,7 @@ async function deactivateQuickReplyLibrary(libraryId = '', options = {}) {
         [tenantId, cleanLibraryId]
     );
 
+    clearQuickReplyTenantCache(tenantId);
     return { libraryId: cleanLibraryId };
 }
 
@@ -408,82 +489,97 @@ async function listQuickReplyItems(options = {}) {
     const moduleId = normalizeModuleId(options?.moduleId || '');
     const requestedLibraryId = normalizeLibraryId(options?.libraryId || '');
 
-    const libraries = await listQuickReplyLibraries({ tenantId, includeInactive, moduleId });
-    const libraryIds = libraries.map((entry) => normalizeLibraryId(entry.libraryId)).filter(Boolean);
-    const scopedLibraryIds = requestedLibraryId
-        ? (libraryIds.includes(requestedLibraryId) ? [requestedLibraryId] : [])
-        : libraryIds;
-
-    if (!scopedLibraryIds.length) return [];
-
-    const libraryMap = new Map();
-    libraries.forEach((entry) => libraryMap.set(normalizeLibraryId(entry.libraryId), entry));
-
-    if (getStorageDriver() !== 'postgres') {
-        const store = normalizeFileStore(await readTenantJsonFile(QUICK_REPLIES_FILE, { tenantId, defaultValue: {} }));
-        return (Array.isArray(store.items) ? store.items : [])
-            .map((entry) => sanitizeItem(entry))
-            .filter((entry) => entry.itemId && scopedLibraryIds.includes(entry.libraryId))
-            .filter((entry) => includeInactive || entry.isActive !== false)
-            .map((entry) => ({
-                ...entry,
-                id: entry.itemId,
-                bodyText: entry.text,
-                libraryName: libraryMap.get(entry.libraryId)?.name || entry.libraryId,
-                isShared: libraryMap.get(entry.libraryId)?.isShared !== false,
-                moduleIds: libraryMap.get(entry.libraryId)?.moduleIds || []
-            }));
-    }
-
-    await ensureDefaultLibraryPostgres(tenantId);
-    const params = [tenantId, scopedLibraryIds];
-    let where = 'WHERE tenant_id = $1 AND library_id = ANY($2)';
-    if (!includeInactive) where += ' AND is_active = TRUE';
-
-    const { rows } = await queryPostgres(
-        `SELECT item_id, library_id, label, body_text, media_url, media_mime_type, media_file_name, media_size_bytes, sort_order, is_active, metadata, created_at, updated_at
-           FROM quick_reply_items
-           ${where}
-          ORDER BY sort_order ASC, created_at DESC`,
-        params
-    );
-
-    return (Array.isArray(rows) ? rows : []).map((row) => {
-        const libraryId = normalizeLibraryId(row.library_id);
-        const library = libraryMap.get(libraryId) || null;
-        const metadata = row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
-            ? row.metadata
-            : {};
-        const mediaAssets = normalizeMediaAssets(metadata.mediaAssets, {
-            url: row.media_url,
-            mimeType: row.media_mime_type,
-            fileName: row.media_file_name,
-            sizeBytes: row.media_size_bytes
-        });
-        const primaryMedia = mediaAssets[0] || null;
-        return {
-            id: normalizeItemId(row.item_id),
-            itemId: normalizeItemId(row.item_id),
-            libraryId,
-            libraryName: String(library?.name || libraryId).trim() || libraryId,
-            label: String(row.label || '').trim() || 'Respuesta rapida',
-            text: String(row.body_text || '').trim(),
-            bodyText: String(row.body_text || '').trim(),
-            mediaAssets,
-            mediaUrl: String(primaryMedia?.url || row.media_url || '').trim() || null,
-            mediaMimeType: String(primaryMedia?.mimeType || row.media_mime_type || '').trim().toLowerCase() || null,
-            mediaFileName: String(primaryMedia?.fileName || row.media_file_name || '').trim() || null,
-            mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? row.media_size_bytes)) ? Number(primaryMedia?.sizeBytes ?? row.media_size_bytes) : null,
-            sortOrder: normalizeSortOrder(row.sort_order, 1000),
-            isActive: row.is_active !== false,
-            isShared: library?.isShared !== false,
-            moduleIds: Array.isArray(library?.moduleIds) ? library.moduleIds : [],
-            metadata: {
-                ...metadata,
-                mediaAssets
-            }
-        };
+    const itemsCacheKey = buildItemsCacheKey({
+        tenantId,
+        includeInactive,
+        moduleId,
+        libraryId: requestedLibraryId
     });
+    const cachedItems = readCachedValue(quickReplyItemsCache, itemsCacheKey);
+    if (cachedItems) return cachedItems;
+
+    const inFlightReadKey = `${tenantId}|items|${includeInactive === true ? 'all' : 'active'}|${moduleId || '*'}|${requestedLibraryId || '*'}`;
+    const result = await resolveInFlightRead(inFlightReadKey, async () => {
+        const libraries = await listQuickReplyLibraries({ tenantId, includeInactive, moduleId });
+        const libraryIds = libraries.map((entry) => normalizeLibraryId(entry.libraryId)).filter(Boolean);
+        const scopedLibraryIds = requestedLibraryId
+            ? (libraryIds.includes(requestedLibraryId) ? [requestedLibraryId] : [])
+            : libraryIds;
+
+        if (!scopedLibraryIds.length) return [];
+
+        const libraryMap = new Map();
+        libraries.forEach((entry) => libraryMap.set(normalizeLibraryId(entry.libraryId), entry));
+
+        if (getStorageDriver() !== 'postgres') {
+            const store = normalizeFileStore(await readTenantJsonFile(QUICK_REPLIES_FILE, { tenantId, defaultValue: {} }));
+            return (Array.isArray(store.items) ? store.items : [])
+                .map((entry) => sanitizeItem(entry))
+                .filter((entry) => entry.itemId && scopedLibraryIds.includes(entry.libraryId))
+                .filter((entry) => includeInactive || entry.isActive !== false)
+                .map((entry) => ({
+                    ...entry,
+                    id: entry.itemId,
+                    bodyText: entry.text,
+                    libraryName: libraryMap.get(entry.libraryId)?.name || entry.libraryId,
+                    isShared: libraryMap.get(entry.libraryId)?.isShared !== false,
+                    moduleIds: libraryMap.get(entry.libraryId)?.moduleIds || []
+                }));
+        }
+
+        await ensureDefaultLibraryPostgres(tenantId);
+        const params = [tenantId, scopedLibraryIds];
+        let where = 'WHERE tenant_id = $1 AND library_id = ANY($2)';
+        if (!includeInactive) where += ' AND is_active = TRUE';
+
+        const { rows } = await queryPostgres(
+            `SELECT item_id, library_id, label, body_text, media_url, media_mime_type, media_file_name, media_size_bytes, sort_order, is_active, metadata, created_at, updated_at
+               FROM quick_reply_items
+               ${where}
+              ORDER BY sort_order ASC, created_at DESC`,
+            params
+        );
+
+        return (Array.isArray(rows) ? rows : []).map((row) => {
+            const libraryId = normalizeLibraryId(row.library_id);
+            const library = libraryMap.get(libraryId) || null;
+            const metadata = row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+                ? row.metadata
+                : {};
+            const mediaAssets = normalizeMediaAssets(metadata.mediaAssets, {
+                url: row.media_url,
+                mimeType: row.media_mime_type,
+                fileName: row.media_file_name,
+                sizeBytes: row.media_size_bytes
+            });
+            const primaryMedia = mediaAssets[0] || null;
+            return {
+                id: normalizeItemId(row.item_id),
+                itemId: normalizeItemId(row.item_id),
+                libraryId,
+                libraryName: String(library?.name || libraryId).trim() || libraryId,
+                label: String(row.label || '').trim() || 'Respuesta rapida',
+                text: String(row.body_text || '').trim(),
+                bodyText: String(row.body_text || '').trim(),
+                mediaAssets,
+                mediaUrl: String(primaryMedia?.url || row.media_url || '').trim() || null,
+                mediaMimeType: String(primaryMedia?.mimeType || row.media_mime_type || '').trim().toLowerCase() || null,
+                mediaFileName: String(primaryMedia?.fileName || row.media_file_name || '').trim() || null,
+                mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? row.media_size_bytes)) ? Number(primaryMedia?.sizeBytes ?? row.media_size_bytes) : null,
+                sortOrder: normalizeSortOrder(row.sort_order, 1000),
+                isActive: row.is_active !== false,
+                isShared: library?.isShared !== false,
+                moduleIds: Array.isArray(library?.moduleIds) ? library.moduleIds : [],
+                metadata: {
+                    ...metadata,
+                    mediaAssets
+                }
+            };
+        });
+    });
+
+    writeCachedValue(quickReplyItemsCache, itemsCacheKey, result);
+    return cloneSerializable(result);
 }
 async function getQuickReplyItemById(itemId = '', options = {}) {
     const cleanItemId = normalizeItemId(itemId);
@@ -525,6 +621,7 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
         if (idx >= 0) store.items[idx] = nextItem;
         else store.items.push(nextItem);
         await writeTenantJsonFile(QUICK_REPLIES_FILE, store, { tenantId });
+        clearQuickReplyTenantCache(tenantId);
         return { ...nextItem, id: nextItem.itemId };
     }
 
@@ -565,6 +662,7 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
         ]
     );
 
+    clearQuickReplyTenantCache(tenantId);
     return await getQuickReplyItemById(itemId, { tenantId, includeInactive: true, moduleId: options?.moduleId || '' });
 }
 
@@ -579,6 +677,7 @@ async function deactivateQuickReplyItem(itemId = '', options = {}) {
         if (idx < 0) throw new Error('Respuesta rapida no encontrada.');
         store.items[idx] = { ...store.items[idx], isActive: false };
         await writeTenantJsonFile(QUICK_REPLIES_FILE, store, { tenantId });
+        clearQuickReplyTenantCache(tenantId);
         return { itemId: cleanItemId };
     }
 
@@ -591,6 +690,7 @@ async function deactivateQuickReplyItem(itemId = '', options = {}) {
             AND item_id = $2`,
         [tenantId, cleanItemId]
     );
+    clearQuickReplyTenantCache(tenantId);
     return { itemId: cleanItemId };
 }
 
