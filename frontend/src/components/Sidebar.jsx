@@ -141,7 +141,7 @@ const Sidebar = ({
     const [showLabelPanel, setShowLabelPanel] = useState(false);
     const [labelSearch, setLabelSearch] = useState('');
 
-    const filters = normalizeFilters(activeFilters);
+    const filters = useMemo(() => normalizeFilters(activeFilters), [activeFilters]);
 
     const updateFilters = (patch = {}) => {
         const next = normalizeFilters({ ...filters, ...patch });
@@ -211,9 +211,11 @@ const Sidebar = ({
     }, [chats, labelDefinitions]);
 
     const normalizedLabelSearch = String(labelSearch || '').trim().toLowerCase();
-    const visibleLabels = normalizedLabelSearch
-        ? allLabels.filter((label) => `${label.name}`.toLowerCase().includes(normalizedLabelSearch))
-        : allLabels;
+    const visibleLabels = useMemo(() => (
+        normalizedLabelSearch
+            ? allLabels.filter((label) => `${label.name}`.toLowerCase().includes(normalizedLabelSearch))
+            : allLabels
+    ), [allLabels, normalizedLabelSearch]);
 
     const selectedLabelCount = filters.labelTokens.length;
     const hasActiveQuickFilters = filters.unreadOnly || filters.unlabeledOnly || filters.contactMode !== 'all' || filters.archivedMode !== 'all' || filters.pinnedMode !== 'all';
@@ -242,7 +244,7 @@ const Sidebar = ({
         return chips;
     }, [filters, hasAnyFilter]);
 
-    const filteredChats = chats.filter((chat) => {
+    const filteredChats = useMemo(() => chats.filter((chat) => {
         const labelTokenSet = getChatLabelTokenSet(chat);
 
         if (filters.unreadOnly && Number(chat?.unreadCount || 0) <= 0) return false;
@@ -274,7 +276,7 @@ const Sidebar = ({
         }
 
         return name.includes(q) || subtitle.includes(q) || status.includes(q) || lastMessage.includes(q);
-    });
+    }), [chats, filters, localQuery]);
 
     const handleChatListScroll = (e) => {
         if (!onLoadMoreChats || !chatsHasMore || chatsLoadingMore) return;
@@ -815,6 +817,10 @@ const Sidebar = ({
 };
 
 export default Sidebar;
+
+
+
+
 
 
 

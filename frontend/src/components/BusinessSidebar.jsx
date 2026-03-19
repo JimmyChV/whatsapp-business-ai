@@ -1391,6 +1391,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const [orderImportStatus, setOrderImportStatus] = useState(null);
     const lastImportedOrderRef = useRef('');
     const tenantScopeRef = useRef(String(tenantScopeKey || 'default').trim() || 'default');
+    const cartDraftSignaturesRef = useRef({});
 
     const activeTenantScopeId = String(tenantScopeKey || tenantScopeRef.current || 'default').trim() || 'default';
     const activeScopeModuleCandidate = normalizeAiScopeModuleId(activeChatDetails?.scopeModuleId || activeModuleId || selectedCatalogModuleId || '');
@@ -1464,6 +1465,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setDeliveryAmount(0);
         setShowCartTotalsBreakdown(true);
         setCartDraftsByChat({});
+        cartDraftSignaturesRef.current = {};
         setQuickSearch('');
         setOrderImportStatus(null);
         lastImportedOrderRef.current = '';
@@ -1502,6 +1504,8 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     useEffect(() => {
         setOrderImportStatus(null);
         if (!activeChatId) return;
+        cartDraftSignaturesRef.current[activeChatId] = '';
+
         const draft = cartDraftsByChat[activeChatId];
         if (draft) {
             const legacyPct = parseMoney(draft.globalDiscountPct ?? draft.discount ?? 0, 0);
@@ -1553,11 +1557,13 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             showCartTotalsBreakdown
         };
 
-        setCartDraftsByChat(prev => {
+        const nextSignature = JSON.stringify(nextDraft);
+        if (cartDraftSignaturesRef.current[activeChatId] === nextSignature) return;
+
+        cartDraftSignaturesRef.current[activeChatId] = nextSignature;
+        setCartDraftsByChat((prev) => {
             const previousDraft = prev?.[activeChatId] || null;
-            const previousSignature = previousDraft ? JSON.stringify(previousDraft) : '';
-            const nextSignature = JSON.stringify(nextDraft);
-            if (previousSignature === nextSignature) return prev;
+            if (previousDraft && JSON.stringify(previousDraft) === nextSignature) return prev;
             return {
                 ...prev,
                 [activeChatId]: nextDraft
@@ -2803,6 +2809,10 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
+
+
+
+
 
 
 
