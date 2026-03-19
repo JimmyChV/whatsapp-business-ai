@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import * as saasAdminPanelHelpers from './saas/SaasAdminPanel.helpers';
 
@@ -11,6 +11,9 @@ import RoleProfilesSection from './saas/sections/RoleProfilesSection';
 import PlansSection from './saas/sections/PlansSection';
 import CustomersSection from './saas/sections/CustomersSection';
 import AiAssistantsSection from './saas/sections/AiAssistantsSection';
+import SummarySection from './saas/sections/SummarySection';
+import CompaniesSection from './saas/sections/CompaniesSection';
+import UsersSection from './saas/sections/UsersSection';
 import useOperationsPanelState from './saas/hooks/useOperationsPanelState';
 
 const {
@@ -3135,727 +3138,110 @@ export default function SaasAdminPanel({
                     </div>
                 )}
 
-                {selectedSectionId === 'saas_resumen' && (
-                    <section id="saas_resumen" className="saas-admin-card saas-admin-card--full saas-admin-flow-card">
-                        <div className="saas-admin-summary-top">
-                            <section className="saas-admin-profile-summary" aria-label="Resumen del usuario actual">
-                                <div className="saas-admin-profile-summary__head">
-                                    <div className="saas-admin-profile-summary__avatar">
-                                        {currentUserAvatarUrl
-                                            ? <img src={currentUserAvatarUrl} alt={currentUserDisplayName} className="saas-admin-inline-avatar" />
-                                            : buildInitials(currentUserDisplayName)}
-                                    </div>
-                                    <div className="saas-admin-profile-summary__meta">
-                                        <strong>{currentUserDisplayName}</strong>
-                                        <span>{currentUserEmail}</span>
-                                    </div>
-                                </div>
-                                <div className="saas-admin-profile-summary__stats">
-                                    <div><small>Rol</small><strong>{currentUserRoleLabel}</strong></div>
-                                    <div><small>Empresas</small><strong>{currentUserTenantCount}</strong></div>
-                                    <div><small>Empresa activa</small><strong>{activeTenantLabel}</strong></div>
-                                </div>
-                                <div className="saas-admin-profile-summary__caps">
-                                    {currentUserCapabilities.length === 0 && <span className="saas-admin-profile-chip">Vista basica</span>}
-                                    {currentUserCapabilities.map((capability) => (
-                                        <span key={`user_cap_${capability}`} className="saas-admin-profile-chip">{capability}</span>
-                                    ))}
-                                </div>
-                            </section>
-
-                            <section className="saas-admin-summary-focus" aria-label="Estado operativo">
-                                <h3>Contexto operativo</h3>
-                                <div className="saas-admin-summary-focus-grid">
-                                    <div className="saas-admin-detail-field">
-                                        <span>Alcance actual</span>
-                                        <strong>{tenantScopeLocked ? 'Seleccion pendiente' : activeTenantLabel}</strong>
-                                    </div>
-                                    <div className="saas-admin-detail-field">
-                                        <span>Plan</span>
-                                        <strong>{tenantOptions.find((tenant) => String(tenant?.id || '').trim() === tenantScopeId)?.plan || '-'}</strong>
-                                    </div>
-                                    <div className="saas-admin-detail-field">
-                                        <span>Estado del panel</span>
-                                        <strong>{tenantScopeLocked ? 'Bloqueado por tenant' : 'Listo para operar'}</strong>
-                                    </div>
-                                </div>
-                            </section>
-                        </div>
-
-                        <div className="saas-admin-kpis saas-admin-kpis--embedded">
-                            <div className="saas-admin-kpi">
-                                <small>Empresas activas</small>
-                                <strong>{(overview.tenants || []).filter((tenant) => tenant.active !== false).length}</strong>
-                            </div>
-                            <div className="saas-admin-kpi">
-                                <small>Usuarios activos (alcance)</small>
-                                <strong>{(scopedUsers || []).filter((user) => user.active !== false).length}</strong>
-                            </div>
-                            <div className="saas-admin-kpi">
-                                <small>Modulos WhatsApp</small>
-                                <strong>{waModules.length}</strong>
-                            </div>
-                            <div className="saas-admin-kpi">
-                                <small>Bandeja multicanal</small>
-                                <strong>Todos los modulos</strong>
-                            </div>
-                        </div>
-
-                        <div className="saas-admin-related-block">
-                            <h4>Acciones rapidas</h4>
-                            <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                <button type="button" disabled={busy || !isSectionEnabled('saas_empresas')} onClick={() => handleSectionChange('saas_empresas')}>Gestionar empresas</button>
-                                <button type="button" disabled={busy || !isSectionEnabled('saas_usuarios')} onClick={() => handleSectionChange('saas_usuarios')}>Gestionar usuarios</button>
-                                <button type="button" disabled={busy || !isSectionEnabled('saas_modulos')} onClick={() => handleSectionChange('saas_modulos')}>Gestionar modulos</button>
-                                <button type="button" disabled={busy || !isSectionEnabled('saas_config')} onClick={() => handleSectionChange('saas_config')}>Configuracion general</button>
-                            </div>
-                        </div>
-                    </section>
-                )}
-
+                <SummarySection
+                    selectedSectionId={selectedSectionId}
+                    currentUserAvatarUrl={currentUserAvatarUrl}
+                    buildInitials={buildInitials}
+                    currentUserDisplayName={currentUserDisplayName}
+                    currentUserRoleLabel={currentUserRoleLabel}
+                    currentUserEmail={currentUserEmail}
+                    activeTenantLabel={activeTenantLabel}
+                    currentUserTenantCount={currentUserTenantCount}
+                    currentUserCapabilities={currentUserCapabilities}
+                    tenantScopeLocked={tenantScopeLocked}
+                    tenantScopeId={tenantScopeId}
+                    tenantOptions={tenantOptions}
+                    overview={overview}
+                    scopedUsers={scopedUsers}
+                    waModules={waModules}
+                    busy={busy}
+                    isSectionEnabled={isSectionEnabled}
+                    handleSectionChange={handleSectionChange}
+                />
                 {selectedSectionId !== 'saas_resumen' && (
                 <div className="saas-admin-grid">
-                    {selectedSectionId === 'saas_empresas' && (
-                    <section id="saas_empresas" className="saas-admin-card saas-admin-card--full">
-                        <div className="saas-admin-master-detail">
-                            <aside className="saas-admin-master-pane">
-                                <div className="saas-admin-pane-header">
-                                    <div>
-                                        <h3>Empresas ({tenantOptions.length})</h3>
-                                        <small>Listado operativo. Selecciona una empresa para ver detalle.</small>
-                                    </div>
-                                    {canManageTenants && (
-                                        <button type="button" disabled={busy} onClick={openTenantCreate}>Agregar empresa</button>
-                                    )}
-                                </div>
-                                <div className="saas-admin-list saas-admin-list--compact">
-                                    {tenantOptions.length === 0 && (
-                                        <div className="saas-admin-empty-state">
-                                            <p>No hay empresas registradas.</p>
-                                            {canManageTenants && (
-                                                <button type="button" disabled={busy} onClick={openTenantCreate}>Crear primera empresa</button>
-                                            )}
-                                        </div>
-                                    )}
-                                    {tenantOptions.map((tenant) => {
-                                        const activeUsers = (overview.metrics || []).find((metric) => metric.tenantId === tenant.id)?.activeUsers || 0;
-                                        const usage = aiUsageByTenant.get(tenant.id) || 0;
-                                        return (
-                                            <button
-                                                key={tenant.id}
-                                                type="button"
-                                                className={`saas-admin-list-item saas-admin-list-item--button ${selectedTenantId === tenant.id && tenantPanelMode !== 'create' ? 'active' : ''}`.trim()}
-                                                onClick={() => openTenantView(tenant.id)}
-                                            >
-                                                <strong>{toTenantDisplayName(tenant)}</strong>
-                                                <small>{tenant.plan} | {tenant.active === false ? 'inactiva' : 'activa'}</small>
-                                                <small>Usuarios activos: {activeUsers} | IA mes: {usage}</small>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </aside>
-
-                            <div className="saas-admin-detail-pane">
-                                {!selectedTenant && tenantPanelMode !== 'create' && (
-                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
-                                        <h4>Selecciona una empresa</h4>
-                                        <p>El detalle se mostrara aqui en solo lectura. Editar se habilita solo por accion explicita.</p>
-                                    </div>
-                                )}
-
-                                {(selectedTenant || tenantPanelMode === 'create') && (
-                                    <>
-                                        <div className="saas-admin-pane-header">
-                                            <div>
-                                                <h3>
-                                                    {tenantPanelMode === 'create'
-                                                        ? 'Nueva empresa'
-                                                        : tenantPanelMode === 'edit'
-                                                            ? `Editando: ${toTenantDisplayName(selectedTenant || {})}`
-                                                            : toTenantDisplayName(selectedTenant || {})}
-                                                </h3>
-                                                <small>
-                                                    {tenantPanelMode === 'view'
-                                                        ? 'Campos bloqueados. Usa Editar para modificar.'
-                                                        : 'ID fijo despues de crear. Ajusta solo campos permitidos.'}
-                                                </small>
-                                            </div>
-                                            {tenantPanelMode === 'view' && selectedTenant && canManageTenants && (
-                                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                                    <button type="button" disabled={busy} onClick={openTenantEdit}>Editar</button>
-                                                    <button
-                                                        type="button"
-                                                        disabled={busy}
-                                                        onClick={() => runAction('Estado de empresa actualizado', async () => {
-                                                            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(selectedTenant.id)}`, {
-                                                                method: 'PUT',
-                                                                body: {
-                                                                    slug: selectedTenant.slug || undefined,
-                                                                    name: selectedTenant.name,
-                                                                    plan: selectedTenant.plan,
-                                                                    active: selectedTenant.active === false,
-                                                                    logoUrl: selectedTenant.logoUrl || null,
-                                                                    coverImageUrl: selectedTenant.coverImageUrl || null
-                                                                }
-                                                            });
-                                                        })}
-                                                    >
-                                                        {selectedTenant.active === false ? 'Activar' : 'Desactivar'}
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {tenantPanelMode === 'view' && selectedTenant && (
-                                            <>
-                                                <div className="saas-admin-hero">
-                                                    <div className="saas-admin-hero-media">
-                                                        {(selectedTenant.coverImageUrl || selectedTenant.logoUrl)
-                                                            ? <img src={selectedTenant.coverImageUrl || selectedTenant.logoUrl} alt={toTenantDisplayName(selectedTenant)} className="saas-admin-hero-image" />
-                                                            : <div className="saas-admin-hero-placeholder">{buildInitials(toTenantDisplayName(selectedTenant || {}))}</div>}
-                                                    </div>
-                                                    <div className="saas-admin-hero-content">
-                                                        <h4>{toTenantDisplayName(selectedTenant)}</h4>
-                                                        <p>{selectedTenant.slug ? `slug: ${selectedTenant.slug}` : 'Sin slug configurado'}</p>
-                                                    </div>
-                                                </div>
-                                                <div className="saas-admin-detail-grid">
-                                                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedTenant?.id || '-'}</strong></div>
-                                                    <div className="saas-admin-detail-field"><span>Slug</span><strong>{selectedTenant.slug || '-'}</strong></div>
-                                                    <div className="saas-admin-detail-field"><span>Plan</span><strong>{selectedTenant.plan || '-'}</strong></div>
-                                                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedTenant.active === false ? 'Inactiva' : 'Activa'}</strong></div>
-                                                    <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(selectedTenant.updatedAt)}</strong></div>
-                                                    <div className="saas-admin-detail-field"><span>Logo</span><strong>{selectedTenant.logoUrl ? 'Configurado' : 'Sin logo'}</strong></div>
-                                                </div>
-                                                {(selectedTenant.logoUrl || selectedTenant.coverImageUrl) && (
-                                                    <div className="saas-admin-preview-strip">
-                                                        {selectedTenant.logoUrl && <img src={selectedTenant.logoUrl} alt="Logo empresa" className="saas-admin-preview-thumb" />}
-                                                        {selectedTenant.coverImageUrl && <img src={selectedTenant.coverImageUrl} alt="Portada empresa" className="saas-admin-preview-thumb saas-admin-preview-thumb--wide" />}
-                                                    </div>
-                                                )}
-                                                <div className="saas-admin-related-block">
-                                                    <h4>Usuarios de esta empresa</h4>
-                                                    <div className="saas-admin-related-list">
-                                                        {((usersByTenant.get(selectedTenant.id) || []).length === 0) && (
-                                                            <div className="saas-admin-empty-inline">Sin usuarios vinculados.</div>
-                                                        )}
-                                                        {(usersByTenant.get(selectedTenant.id) || []).map((user) => (
-                                                            <button key={`${selectedTenant.id}_${user.id}`} type="button" className="saas-admin-related-row" onClick={() => openUserFromTenant(user.id)}>
-                                                                <span>{toUserDisplayName(user)}</span>
-                                                                <small>{user.membershipRole || 'seller'}{user.membershipActive ? '' : ' (inactivo)'}</small>
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                                </>
-                                        )}
-
-                                        {tenantPanelMode !== 'view' && canManageTenants && (
-                                            <>
-                                                    <div className="saas-admin-form-row">
-                                                    <input
-                                                        value={tenantForm.slug}
-                                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, slug: event.target.value }))}
-                                                        placeholder="slug"
-                                                        disabled={busy}
-                                                    />
-                                                </div>
-                                                <div className="saas-admin-form-row">
-                                                    <input
-                                                        value={tenantForm.name}
-                                                        onChange={(event) => setTenantForm((prev) => ({ ...prev, name: event.target.value }))}
-                                                        placeholder="Nombre"
-                                                        disabled={busy}
-                                                    />
-                                                    <select value={tenantForm.plan} onChange={(event) => setTenantForm((prev) => ({ ...prev, plan: event.target.value }))} disabled={busy}>
-                                                        {PLAN_OPTIONS.map((plan) => (
-                                                            <option key={plan} value={plan}>{plan}</option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-                                                <div className="saas-admin-form-row">
-                                                    <ImageDropInput
-                                                        label="Reemplazar logo"
-                                                        disabled={busy}
-                                                        onFile={(file) => handleFormImageUpload({
-                                                            file,
-                                                            scope: 'tenant_logo',
-                                                            tenantId: selectedTenant?.id || settingsTenantId || activeTenantId || 'default',
-                                                            onUploaded: (url) => setTenantForm((prev) => ({ ...prev, logoUrl: url }))
-                                                        })}
-                                                    />
-                                                    <ImageDropInput
-                                                        label="Reemplazar portada"
-                                                        disabled={busy}
-                                                        onFile={(file) => handleFormImageUpload({
-                                                            file,
-                                                            scope: 'tenant_cover',
-                                                            tenantId: selectedTenant?.id || settingsTenantId || activeTenantId || 'default',
-                                                            onUploaded: (url) => setTenantForm((prev) => ({ ...prev, coverImageUrl: url }))
-                                                        })}
-                                                    />
-                                                </div>
-                                                {(tenantForm.logoUrl || tenantForm.coverImageUrl) && (
-                                                    <div className="saas-admin-preview-strip">
-                                                        {tenantForm.logoUrl && <img src={tenantForm.logoUrl} alt="Logo empresa" className="saas-admin-preview-thumb" />}
-                                                        {tenantForm.coverImageUrl && <img src={tenantForm.coverImageUrl} alt="Portada empresa" className="saas-admin-preview-thumb saas-admin-preview-thumb--wide" />}
-                                                    </div>
-                                                )}
-                                                <div className="saas-admin-form-row">
-                                                    <label className="saas-admin-module-toggle">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={tenantForm.active !== false}
-                                                            onChange={(event) => setTenantForm((prev) => ({ ...prev, active: event.target.checked }))}
-                                                            disabled={busy}
-                                                        />
-                                                        <span>Empresa activa</span>
-                                                    </label>
-                                                </div>
-                                                <div className="saas-admin-form-row saas-admin-form-row--actions">
-                                                    <button
-                                                        type="button"
-                                                        disabled={busy || !tenantForm.name.trim()}
-                                                        onClick={() => runAction(tenantPanelMode === 'create' ? 'Empresa creada' : 'Empresa actualizada', async () => {
-                                                            const payload = {
-                                                                slug: tenantForm.slug || undefined,
-                                                                name: tenantForm.name,
-                                                                plan: tenantForm.plan,
-                                                                active: tenantForm.active !== false,
-                                                                logoUrl: tenantForm.logoUrl || null,
-                                                                coverImageUrl: tenantForm.coverImageUrl || null
-                                                            };
-
-                                                            if (tenantPanelMode === 'create' || !selectedTenant?.id) {
-                                                                const createdPayload = await requestJson('/api/admin/saas/tenants', {
-                                                                    method: 'POST',
-                                                                    body: payload
-                                                                });
-                                                                const createdId = String(createdPayload?.tenant?.id || '').trim();
-                                                                if (createdId) {
-                                                                    setSelectedTenantId(createdId);
-                                                                    setSettingsTenantId(createdId);
-                                                                }
-                                                                setTenantPanelMode('view');
-                                                                return;
-                                                            }
-
-                                                            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(selectedTenant.id)}`, {
-                                                                method: 'PUT',
-                                                                body: payload
-                                                            });
-                                                            setTenantPanelMode('view');
-                                                        })}
-                                                    >
-                                                        {tenantPanelMode === 'create' ? 'Guardar empresa' : 'Actualizar empresa'}
-                                                    </button>
-                                                    <button type="button" disabled={busy} onClick={cancelTenantEdit}>Cancelar</button>
-                                                </div>
-                                            </>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    </section>
-                    )}
-                    {selectedSectionId === 'saas_usuarios' && (
-                    <section id="saas_usuarios" className="saas-admin-card saas-admin-card--full">
-                        <div className="saas-admin-master-detail">
-                            <aside className="saas-admin-master-pane">
-                                <div className="saas-admin-pane-header">
-                                    <div>
-                                        <h3>Usuarios ({scopedUsers.length})</h3>
-                                        <small>Listado minimo. El detalle se administra en el panel derecho.</small>
-                                    </div>
-                                    {canManageUsers && (
-                                        <button type="button" disabled={busy || tenantScopeLocked} onClick={openUserCreate}>Agregar usuario</button>
-                                    )}
-                                </div>
-                                <div className="saas-admin-list saas-admin-list--compact">
-                                    {scopedUsers.length === 0 && (
-                                        <div className="saas-admin-empty-state">
-                                            <p>{tenantScopeLocked ? 'Selecciona una empresa para habilitar usuarios.' : 'No hay usuarios registrados.'}</p>
-                                            {canManageUsers && (
-                                                <button type="button" disabled={busy || tenantScopeLocked} onClick={openUserCreate}>Crear primer usuario</button>
-                                            )}
-                                        </div>
-                                    )}
-                                    {scopedUsers.map((user) => {
-                                        const userMemberships = sanitizeMemberships(user?.memberships || []);
-                                        return (
-                                            <button
-                                                key={user.id}
-                                                type="button"
-                                                className={`saas-admin-list-item saas-admin-list-item--button ${selectedUserId === user.id && userPanelMode !== 'create' ? 'active' : ''}`.trim()}
-                                                onClick={() => openUserView(user.id)}
-                                            >
-                                                <strong>{toUserDisplayName(user)}</strong>
-                                                <small>{user.email || '-'} | {user.active === false ? 'inactivo' : 'activo'}</small>
-                                                <small>Membresias: {userMemberships.length}</small>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </aside>
-
-                            <div className="saas-admin-detail-pane">
-                                {!selectedUser && userPanelMode !== 'create' && (
-                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
-                                        <h4>Selecciona un usuario</h4>
-                                        <p>El detalle se mostrara bloqueado aqui. Editar se activa solo por boton.</p>
-                                    </div>
-                                )}
-
-                                {(selectedUser || userPanelMode === 'create') && (
-                                    <>
-                                        <div className="saas-admin-pane-header">
-                                            <div>
-                                                <h3>
-                                                    {userPanelMode === 'create'
-                                                        ? 'Nuevo usuario'
-                                                        : userPanelMode === 'edit'
-                                                            ? `Editando: ${toUserDisplayName(selectedUser || {})}`
-                                                            : toUserDisplayName(selectedUser || {})}
-                                                </h3>
-                                                <small>
-                                                    {userPanelMode === 'view'
-                                                        ? 'Campos bloqueados. Usa Editar para modificar.'
-                                                        : 'ID y correo bloqueados durante edicion para mantener consistencia.'}
-                                                </small>
-                                            </div>
-                                            {userPanelMode === 'view' && selectedUser && !canEditSelectedUser && (
-                                                <div className="saas-admin-empty-inline">
-                                                    No puedes editar este usuario porque tiene el mismo nivel o uno superior al tuyo.
-                                                </div>
-                                            )}
-                                            {userPanelMode === 'view' && selectedUser && canManageUsers && (
-                                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                                    <button type="button" disabled={busy || !canEditSelectedUser} onClick={openUserEdit}>Editar</button>
-                                                    <button
-                                                        type="button"
-                                                        disabled={busy || !canToggleSelectedUserStatus}
-                                                        onClick={() => runAction('Estado de usuario actualizado', async () => {
-                                                            await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, {
-                                                                method: 'PUT',
-                                                                body: {
-                                                                    active: selectedUser.active === false,
-                                                                    avatarUrl: selectedUser.avatarUrl || null
-                                                                }
-                                                            });
-                                                        })}
-                                                    >
-                                                        {selectedUser.active === false ? 'Activar' : 'Desactivar'}
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {userPanelMode === 'view' && selectedUser && (
-                                            <>
-                                                <div className="saas-admin-hero">
-                                                    <div className="saas-admin-hero-media">
-                                                        {selectedUser.avatarUrl
-                                                            ? <img src={selectedUser.avatarUrl} alt={toUserDisplayName(selectedUser)} className="saas-admin-hero-image" />
-                                                            : <div className="saas-admin-hero-placeholder">{buildInitials(toUserDisplayName(selectedUser || {}))}</div>}
-                                                    </div>
-                                                    <div className="saas-admin-hero-content">
-                                                        <h4>{toUserDisplayName(selectedUser)}</h4>
-                                                        <p>{selectedUser.email || 'Sin correo'}</p>
-                                                    </div>
-                                                </div>
-                                                <div className="saas-admin-detail-grid">
-                                                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedUser?.id || '-'}</strong></div>
-                                                    <div className="saas-admin-detail-field"><span>Correo</span><strong>{selectedUser.email || '-'}</strong></div>
-                                                    <div className="saas-admin-detail-field"><span>Rol</span><strong>{selectedUser.roleLabel || selectedUser.role || '-'}</strong></div>
-                                                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedUser.active === false ? 'Inactivo' : 'Activo'}</strong></div>
-                                                    <div className="saas-admin-detail-field"><span>Packs de acceso</span><strong>{Array.isArray(selectedUser.permissionPacks) ? selectedUser.permissionPacks.length : 0}</strong></div>
-                                                    <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(selectedUser.updatedAt)}</strong></div>
-                                                </div>
-
-                                                <div className="saas-admin-related-block">
-                                                    <h4>Empresas vinculadas</h4>
-                                                    <div className="saas-admin-related-list">
-                                                        {sanitizeMemberships(selectedUser.memberships || []).length === 0 && (
-                                                            <div className="saas-admin-empty-inline">Sin membresias activas.</div>
-                                                        )}
-                                                        {sanitizeMemberships(selectedUser.memberships || []).map((membership, index) => {
-                                                            const tenantLabel = toTenantDisplayName(tenantOptions.find((tenant) => tenant.id === membership.tenantId) || {});
-                                                            return (
-                                                                <button
-                                                                    key={`${selectedUser.id}_membership_view_${index}`}
-                                                                    type="button"
-                                                                    className="saas-admin-related-row"
-                                                                    onClick={() => openTenantFromUserMembership(membership.tenantId)}
-                                                                >
-                                                                    <span>{tenantLabel}</span>
-                                                                    <small>{membership.role}{membership.active ? '' : ' (inactivo)'}</small>
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-
-                                                <div className="saas-admin-related-block">
-                                                    <h4>Accesos opcionales</h4>
-                                                    <div className="saas-admin-related-list">
-                                                        {(Array.isArray(selectedUser.permissionPacks) ? selectedUser.permissionPacks : []).length === 0 && (
-                                                            <div className="saas-admin-empty-inline">Sin paquetes opcionales asignados.</div>
-                                                        )}
-                                                        {(Array.isArray(selectedUser.permissionPacks) ? selectedUser.permissionPacks : []).map((packId, index) => (
-                                                            <div key={`${selectedUser.id}_pack_${index}`} className="saas-admin-related-row" role="status">
-                                                                <span>{accessPackLabelMap.get(String(packId || '').trim()) || packId}</span>
-                                                                <small>{packId}</small>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-
-                                                </>
-                                        )}
-
-                                        {userPanelMode !== 'view' && canManageUsers && (userPanelMode === 'create' || canEditSelectedUser) && (
-                                            <>
-                                                <div className="saas-admin-form-row">
-                                                    <input
-                                                        value={userForm.email}
-                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, email: event.target.value }))}
-                                                        placeholder="email"
-                                                        disabled={userPanelMode !== 'create' || busy}
-                                                    />
-                                                </div>
-                                                <div className="saas-admin-form-row">
-                                                    <input
-                                                        value={userForm.name}
-                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, name: event.target.value }))}
-                                                        placeholder="Nombre"
-                                                        disabled={busy}
-                                                    />
-                                                    <input
-                                                        value={userForm.password}
-                                                        onChange={(event) => setUserForm((prev) => ({ ...prev, password: event.target.value }))}
-                                                        type="password"
-                                                        placeholder={userPanelMode === 'create' ? 'password inicial' : 'nueva password (opcional)'}
-                                                        disabled={busy}
-                                                    />
-                                                </div>
-                                                <div className="saas-admin-form-row">
-                                                    <label className="saas-admin-module-toggle">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={userForm.active !== false}
-                                                            onChange={(event) => setUserForm((prev) => ({ ...prev, active: event.target.checked }))}
-                                                            disabled={busy || (userPanelMode === 'edit' && !canToggleSelectedUserStatus)}
-                                                        />
-                                                        <span>Usuario activo</span>
-                                                    </label>
-                                                </div>
-                                                <div className="saas-admin-form-row">
-                                                    <ImageDropInput
-                                                        label="Reemplazar avatar"
-                                                        disabled={busy}
-                                                        onFile={(file) => handleFormImageUpload({
-                                                            file,
-                                                            scope: 'user_avatar',
-                                                            tenantId: userForm.tenantId || settingsTenantId || selectedTenantId || activeTenantId || 'default',
-                                                            onUploaded: (url) => setUserForm((prev) => ({ ...prev, avatarUrl: url }))
-                                                        })}
-                                                    />
-                                                </div>
-
-                                                {userForm.avatarUrl && (
-                                                    <div className="saas-admin-preview-strip">
-                                                        <img src={userForm.avatarUrl} alt="Avatar usuario" className="saas-admin-preview-thumb" />
-                                                    </div>
-                                                )}
-
-                                                {userPanelMode !== 'view' && (
-                                                    <div className="saas-admin-form-row">
-                                                        <select value={userForm.tenantId} onChange={(event) => setUserForm((prev) => ({ ...prev, tenantId: event.target.value }))} disabled={busy || !canEditScopeInUserForm}>
-                                                            <option value="">Tenant inicial</option>
-                                                            {tenantOptions.map((tenant) => (
-                                                                <option key={tenant.id} value={tenant.id}>{toTenantDisplayName(tenant)}</option>
-                                                            ))}
-                                                        </select>
-                                                        <select value={userForm.role} onChange={(event) => {
-                                                            const nextRole = event.target.value;
-                                                            setUserForm((prev) => {
-                                                                const allowedPacks = getAllowedPackIdsForRole(nextRole);
-                                                                const allowedPermissions = getOptionalPermissionKeysForRole(nextRole);
-                                                                const nextPacks = (Array.isArray(prev.permissionPacks) ? prev.permissionPacks : [])
-                                                                    .filter((packId) => allowedPacks.has(String(packId || '').trim()));
-                                                                const nextGrants = (Array.isArray(prev.permissionGrants) ? prev.permissionGrants : [])
-                                                                    .map((entry) => String(entry || '').trim())
-                                                                    .filter((permission) => allowedPermissions.has(permission));
-                                                                return {
-                                                                    ...prev,
-                                                                    role: nextRole,
-                                                                    permissionPacks: nextPacks,
-                                                                    permissionGrants: Array.from(new Set(nextGrants))
-                                                                };
-                                                            });
-                                                        }} disabled={busy || !canEditRoleInUserForm}>
-                                                            {roleOptions.map((role) => (
-                                                                <option key={role} value={role}>{roleLabelMap.get(String(role || '').trim().toLowerCase()) || role}</option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                )}
-                                                {canConfigureOptionalAccessInUserForm && (
-                                                    <div className="saas-admin-related-block">
-                                                        <h4>Accesos opcionales</h4>
-                                                        {loadingAccessCatalog && (
-                                                            <div className="saas-admin-empty-inline">Cargando catalogo de accesos...</div>
-                                                        )}
-                                                        {!loadingAccessCatalog && !hasAccessCatalogData && (
-                                                            <div className="saas-admin-empty-inline">No se pudo cargar el catalogo de accesos. Reabre el editor de usuario para reintentar.</div>
-                                                        )}
-                                                        <div className="saas-admin-optional-access-grid">
-                                                            <div className="saas-admin-optional-access-column">
-                                                                <small className="saas-admin-optional-access-title">Paquetes</small>
-                                                                <div className="saas-admin-modules">
-                                                                    {accessPackOptions.length === 0 && (
-                                                                        <div className="saas-admin-empty-inline">Sin paquetes configurados. Puedes trabajar con permisos directos.</div>
-                                                                    )}
-                                                                    {accessPackOptions.map((pack) => {
-                                                                        const packId = String(pack?.id || '').trim();
-                                                                        if (!packId) return null;
-                                                                        const packAllowed = allowedPackIdsForUserFormRole.has(packId);
-                                                                        const checked = Array.isArray(userForm.permissionPacks) && userForm.permissionPacks.includes(packId);
-                                                                        return (
-                                                                            <label key={`assignment_pack_${packId}`} className="saas-admin-module-toggle">
-                                                                                <input
-                                                                                    type="checkbox"
-                                                                                    checked={checked}
-                                                                                    disabled={busy || loadingAccessCatalog || !packAllowed}
-                                                                                    onChange={(event) => setUserForm((prev) => {
-                                                                                        const current = Array.isArray(prev.permissionPacks) ? prev.permissionPacks : [];
-                                                                                        const nextSet = new Set(current.map((entry) => String(entry || '').trim()).filter(Boolean));
-                                                                                        if (event.target.checked) {
-                                                                                            nextSet.add(packId);
-                                                                                        } else {
-                                                                                            nextSet.delete(packId);
-                                                                                        }
-                                                                                        return { ...prev, permissionPacks: Array.from(nextSet) };
-                                                                                    })}
-                                                                                />
-                                                                                <span>{String(pack?.label || packId)}{packAllowed ? '' : ' (no aplica al rol)'}</span>
-                                                                            </label>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            </div>
-                                                            <div className="saas-admin-optional-access-column">
-                                                                <small className="saas-admin-optional-access-title">Permisos directos por rol</small>
-                                                                <div className="saas-admin-modules">
-                                                                    {allowedOptionalPermissionsForUserFormRole.length === 0 && (
-                                                                        <div className="saas-admin-empty-inline">El rol actual no tiene permisos opcionales habilitados.</div>
-                                                                    )}
-                                                                    {allowedOptionalPermissionsForUserFormRole.map((permissionKey) => {
-                                                                        const checked = Array.isArray(userForm.permissionGrants) && userForm.permissionGrants.includes(permissionKey);
-                                                                        const permissionLabel = permissionLabelMap.get(permissionKey) || permissionKey;
-                                                                        return (
-                                                                            <label key={`assignment_pack_${packId}`} className="saas-admin-module-toggle">
-                                                                                <input
-                                                                                    type="checkbox"
-                                                                                    checked={checked}
-                                                                                    disabled={busy || loadingAccessCatalog}
-                                                                                    onChange={(event) => setUserForm((prev) => {
-                                                                                        const current = Array.isArray(prev.permissionGrants) ? prev.permissionGrants : [];
-                                                                                        const nextSet = new Set(current.map((entry) => String(entry || '').trim()).filter(Boolean));
-                                                                                        if (event.target.checked) {
-                                                                                            nextSet.add(permissionKey);
-                                                                                        } else {
-                                                                                            nextSet.delete(permissionKey);
-                                                                                        }
-                                                                                        return { ...prev, permissionGrants: Array.from(nextSet) };
-                                                                                    })}
-                                                                                />
-                                                                                <span>{permissionLabel}</span>
-                                                                            </label>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                <div className="saas-admin-form-row saas-admin-form-row--actions">
-                                                    <button
-                                                        type="button"
-                                                        disabled={
-                                                            busy
-                                                            || !userForm.email.trim()
-                                                            || !userForm.tenantId.trim()
-                                                            || (userPanelMode === 'create' && !userForm.password)
-                                                        }
-                                                        onClick={() => runAction(userPanelMode === 'create' ? 'Usuario creado' : 'Usuario actualizado', async () => {
-                                                            const membershipsPayload = sanitizeMemberships([
-                                                                { tenantId: userForm.tenantId, role: userForm.role, active: true }
-                                                            ]);
-                                                            const isCreateMode = userPanelMode === 'create' || !selectedUser?.id;
-
-                                                            if (isCreateMode && membershipsPayload.length === 0) {
-                                                                throw new Error('Debes asignar al menos una empresa/membresia.');
-                                                            }
-
-                                                            const payload = {
-                                                                email: userForm.email,
-                                                                name: userForm.name,
-                                                                active: userForm.active !== false,
-                                                                avatarUrl: userForm.avatarUrl || null
-                                                            };
-
-                                                            if (isCreateMode || canEditScopeInUserForm) {
-                                                                payload.memberships = membershipsPayload;
-                                                            }
-
-                                                            if ((isCreateMode && canEditOptionalAccess) || (!isCreateMode && canConfigureOptionalAccessInUserForm)) {
-                                                                payload.permissionPacks = Array.isArray(userForm.permissionPacks)
-                                                                    ? userForm.permissionPacks.map((entry) => String(entry || '').trim()).filter(Boolean)
-                                                                    : [];
-                                                                payload.permissionGrants = Array.isArray(userForm.permissionGrants)
-                                                                    ? userForm.permissionGrants.map((entry) => String(entry || '').trim()).filter(Boolean)
-                                                                    : [];
-                                                            }
-
-                                                            if (userForm.password) {
-                                                                payload.password = userForm.password;
-                                                            }
-
-                                                            if (userPanelMode === 'create' || !selectedUser?.id) {
-                                                                const createdPayload = await requestJson('/api/admin/saas/users', {
-                                                                    method: 'POST',
-                                                                    body: payload
-                                                                });
-                                                                const createdId = String(createdPayload?.user?.id || '').trim();
-                                                                if (createdId) {
-                                                                    setSelectedUserId(createdId);
-                                                                }
-                                                                setUserPanelMode('view');
-                                                                return;
-                                                            }
-
-                                                            await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, {
-                                                                method: 'PUT',
-                                                                body: payload
-                                                            });
-                                                            setUserPanelMode('view');
-                                                        })}
-                                                    >
-                                                        {userPanelMode === 'create' ? 'Guardar usuario' : 'Actualizar usuario'}
-                                                    </button>
-                                                    <button type="button" disabled={busy} onClick={cancelUserEdit}>Cancelar</button>
-                                                </div>
-                                            </>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    </section>
-                    )}
+                    <CompaniesSection
+                        selectedSectionId={selectedSectionId}
+                        tenantOptions={tenantOptions}
+                        busy={busy}
+                        canManageTenants={canManageTenants}
+                        openTenantCreate={openTenantCreate}
+                        selectedTenantId={selectedTenantId}
+                        openTenantView={openTenantView}
+                        selectedTenant={selectedTenant}
+                        tenantPanelMode={tenantPanelMode}
+                        openTenantEdit={openTenantEdit}
+                        runAction={runAction}
+                        requestJson={requestJson}
+                        activeTenantId={activeTenantId}
+                        setSettingsTenantId={setSettingsTenantId}
+                        setSelectedTenantId={setSelectedTenantId}
+                        setTenantPanelMode={setTenantPanelMode}
+                        setTenantForm={setTenantForm}
+                        cancelTenantEdit={cancelTenantEdit}
+                        PLAN_OPTIONS={PLAN_OPTIONS}
+                        tenantForm={tenantForm}
+                        handleFormImageUpload={handleFormImageUpload}
+                        ImageDropInput={ImageDropInput}
+                        buildInitials={buildInitials}
+                        toTenantDisplayName={toTenantDisplayName}
+                        formatDateTimeLabel={formatDateTimeLabel}
+                        usersByTenant={usersByTenant}
+                        toUserDisplayName={toUserDisplayName}
+                        openUserFromTenant={openUserFromTenant}
+                        overview={overview}
+                        aiUsageByTenant={aiUsageByTenant}
+                        settingsTenantId={settingsTenantId}
+                    />
+                    <UsersSection
+                        selectedSectionId={selectedSectionId}
+                        tenantScopeLocked={tenantScopeLocked}
+                        busy={busy}
+                        canManageUsers={canManageUsers}
+                        openUserCreate={openUserCreate}
+                        selectedTenantId={selectedTenantId}
+                        tenantOptions={tenantOptions}
+                        hasAccessCatalogData={hasAccessCatalogData}
+                        loadingAccessCatalog={loadingAccessCatalog}
+                        scopedUsers={scopedUsers}
+                        selectedUserId={selectedUserId}
+                        userPanelMode={userPanelMode}
+                        openUserView={openUserView}
+                        selectedUser={selectedUser}
+                        canEditSelectedUser={canEditSelectedUser}
+                        canToggleSelectedUserStatus={canToggleSelectedUserStatus}
+                        toUserDisplayName={toUserDisplayName}
+                        openUserEdit={openUserEdit}
+                        runAction={runAction}
+                        requestJson={requestJson}
+                        canEditScopeInUserForm={canEditScopeInUserForm}
+                        settingsTenantId={settingsTenantId}
+                        openTenantFromUserMembership={openTenantFromUserMembership}
+                        toTenantDisplayName={toTenantDisplayName}
+                        formatDateTimeLabel={formatDateTimeLabel}
+                        userForm={userForm}
+                        setUserForm={setUserForm}
+                        roleOptions={roleOptions}
+                        canEditRoleInUserForm={canEditRoleInUserForm}
+                        canEditOptionalAccess={canEditOptionalAccess}
+                        allowedOptionalPermissionsForUserFormRole={allowedOptionalPermissionsForUserFormRole}
+                        permissionLabelMap={permissionLabelMap}
+                        getOptionalPermissionKeysForRole={getOptionalPermissionKeysForRole}
+                        accessPackOptions={accessPackOptions}
+                        accessPackLabelMap={accessPackLabelMap}
+                        getAllowedPackIdsForRole={getAllowedPackIdsForRole}
+                        allowedPackIdsForUserFormRole={allowedPackIdsForUserFormRole}
+                        canConfigureOptionalAccessInUserForm={canConfigureOptionalAccessInUserForm}
+                        roleLabelMap={roleLabelMap}
+                        sanitizeMemberships={sanitizeMemberships}
+                        setSelectedUserId={setSelectedUserId}
+                        setUserPanelMode={setUserPanelMode}
+                        cancelUserEdit={cancelUserEdit}
+                        handleFormImageUpload={handleFormImageUpload}
+                        ImageDropInput={ImageDropInput}
+                        buildInitials={buildInitials}
+                        activeTenantId={activeTenantId}
+                    />
                     <CustomersSection
                         isCustomersSection={isCustomersSection}
                         filteredCustomers={filteredCustomers}
