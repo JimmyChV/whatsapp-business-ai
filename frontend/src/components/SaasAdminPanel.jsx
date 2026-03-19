@@ -72,9 +72,6 @@ const {
     PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ,
     PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE,
     PERMISSION_TENANT_KPIS_READ,
-    ADMIN_IMAGE_MAX_BYTES,
-    ADMIN_IMAGE_ALLOWED_MIME_TYPES,
-    ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL,
     QUICK_REPLY_ALLOWED_MIME_TYPES,
     QUICK_REPLY_ALLOWED_EXTENSIONS,
     QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL,
@@ -125,61 +122,9 @@ const {
     toUserDisplayName,
     buildInitials,
     formatBytes,
-    chunkItems,
-    validateImageFile
+    chunkItems
 } = saasAdminPanelHelpers;
 
-function ImageDropInput({
-    label = 'Subir imagen',
-    disabled = false,
-    onFile,
-    helpText = `Arrastra una imagen o haz clic para seleccionar (${ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL}, max ${formatBytes(ADMIN_IMAGE_MAX_BYTES)}).`
-}) {
-    const [dragging, setDragging] = useState(false);
-    const [localError, setLocalError] = useState('');
-
-    const handleFiles = (fileList) => {
-        const file = fileList && fileList[0] ? fileList[0] : null;
-        const validationError = validateImageFile(file);
-        if (validationError) {
-            setLocalError(validationError);
-            return;
-        }
-        setLocalError('');
-        if (typeof onFile !== 'function') return;
-        onFile(file);
-    };
-
-    return (
-        <label
-            className={`saas-admin-dropzone ${dragging ? 'is-dragging' : ''} ${disabled ? 'is-disabled' : ''}`.trim()}
-            onDragOver={(event) => {
-                if (disabled) return;
-                event.preventDefault();
-                setDragging(true);
-            }}
-            onDragLeave={(event) => {
-                event.preventDefault();
-                setDragging(false);
-            }}
-            onDrop={(event) => {
-                if (disabled) return;
-                event.preventDefault();
-                setDragging(false);
-                handleFiles(event.dataTransfer?.files || null);
-            }}
-        >
-            <input
-                type="file"
-                accept={ADMIN_IMAGE_ALLOWED_MIME_TYPES.join(',')}
-                disabled={disabled}
-                onChange={(event) => handleFiles(event.target.files || null)}
-            />
-            <strong>{label}</strong>
-            <small className={localError ? 'saas-admin-dropzone-error' : ''}>{localError || helpText}</small>
-        </label>
-    );
-}
 export default function SaasAdminPanel({
     isOpen = false,
     onClose,
@@ -3182,7 +3127,6 @@ export default function SaasAdminPanel({
                         PLAN_OPTIONS={PLAN_OPTIONS}
                         tenantForm={tenantForm}
                         handleFormImageUpload={handleFormImageUpload}
-                        ImageDropInput={ImageDropInput}
                         buildInitials={buildInitials}
                         toTenantDisplayName={toTenantDisplayName}
                         formatDateTimeLabel={formatDateTimeLabel}
@@ -3238,7 +3182,6 @@ export default function SaasAdminPanel({
                         setUserPanelMode={setUserPanelMode}
                         cancelUserEdit={cancelUserEdit}
                         handleFormImageUpload={handleFormImageUpload}
-                        ImageDropInput={ImageDropInput}
                         buildInitials={buildInitials}
                         activeTenantId={activeTenantId}
                     />
@@ -3464,7 +3407,6 @@ export default function SaasAdminPanel({
                         setModuleUserPickerId={setModuleUserPickerId}
                         syncQuickReplyLibrariesForModule={syncQuickReplyLibrariesForModule}
                         handleFormImageUpload={handleFormImageUpload}
-                        ImageDropInput={ImageDropInput}
                         canEditTenantSettings={canEditTenantSettings}
                         setWaModulePanelMode={setWaModulePanelMode}
                         setSelectedWaModuleId={setSelectedWaModuleId}
@@ -3509,7 +3451,6 @@ export default function SaasAdminPanel({
                         setCatalogProductImageError={setCatalogProductImageError}
                         handleCatalogProductImageUpload={handleCatalogProductImageUpload}
                         catalogProductImageUploading={catalogProductImageUploading}
-                        ImageDropInput={ImageDropInput}
                         catalogProductImageError={catalogProductImageError}
                         saveCatalogProduct={saveCatalogProduct}
                         cancelCatalogProductEdit={cancelCatalogProductEdit}
@@ -3565,3 +3506,6 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+

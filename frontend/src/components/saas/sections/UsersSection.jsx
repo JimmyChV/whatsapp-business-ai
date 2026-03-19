@@ -1,4 +1,5 @@
-import React from 'react';
+﻿import React from 'react';
+import ImageDropInput from '../shared/ImageDropInput';
 
 function UsersSection({
     selectedSectionId,
@@ -45,7 +46,6 @@ function UsersSection({
     setUserPanelMode,
     cancelUserEdit,
     handleFormImageUpload,
-    ImageDropInput,
     buildInitials,
     activeTenantId,
     packId = ''
@@ -453,3 +453,4 @@ function UsersSection({
 }
 
 export default React.memo(UsersSection);
+

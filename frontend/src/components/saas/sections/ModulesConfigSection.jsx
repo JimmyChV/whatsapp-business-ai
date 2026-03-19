@@ -1,4 +1,5 @@
-import React from 'react';
+﻿import React from 'react';
+import ImageDropInput from '../shared/ImageDropInput';
 
 function ModulesConfigSection({
     isGeneralConfigSection,
@@ -53,7 +54,6 @@ function ModulesConfigSection({
     setModuleUserPickerId,
     syncQuickReplyLibrariesForModule,
     handleFormImageUpload,
-    ImageDropInput,
     canEditTenantSettings,
     setWaModulePanelMode,
     setSelectedWaModuleId,
@@ -839,3 +839,4 @@ function ModulesConfigSection({
 }
 
 export default React.memo(ModulesConfigSection);
+

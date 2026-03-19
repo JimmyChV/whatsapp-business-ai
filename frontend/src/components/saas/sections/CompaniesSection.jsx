@@ -1,4 +1,5 @@
-import React from 'react';
+﻿import React from 'react';
+import ImageDropInput from '../shared/ImageDropInput';
 
 function CompaniesSection({
     selectedSectionId,
@@ -22,7 +23,6 @@ function CompaniesSection({
     PLAN_OPTIONS,
     tenantForm,
     handleFormImageUpload,
-    ImageDropInput,
     buildInitials,
     toTenantDisplayName,
     formatDateTimeLabel,
@@ -285,3 +285,4 @@ function CompaniesSection({
 }
 
 export default React.memo(CompaniesSection);
+

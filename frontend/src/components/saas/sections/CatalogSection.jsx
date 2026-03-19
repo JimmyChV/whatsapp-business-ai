@@ -1,4 +1,5 @@
-import React from 'react';
+﻿import React from 'react';
+import ImageDropInput from '../shared/ImageDropInput';
 
 function CatalogSection({
     isCatalogSection,
@@ -38,7 +39,6 @@ function CatalogSection({
     setCatalogProductImageError,
     handleCatalogProductImageUpload,
     catalogProductImageUploading,
-    ImageDropInput,
     catalogProductImageError,
     saveCatalogProduct,
     cancelCatalogProductEdit,
@@ -648,3 +648,4 @@ function CatalogSection({
 }
 
 export default React.memo(CatalogSection);
+
