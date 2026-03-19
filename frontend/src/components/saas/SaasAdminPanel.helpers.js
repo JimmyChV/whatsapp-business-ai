@@ -380,6 +380,7 @@ export const ADMIN_NAV_ITEMS = [
     { id: 'saas_usuarios', label: 'Usuarios' },
     { id: 'saas_roles', label: 'Roles' },
     { id: 'saas_clientes', label: 'Clientes' },
+    { id: 'saas_operacion', label: 'Operacion' },
     { id: 'saas_ia', label: 'IA' },
     { id: 'saas_etiquetas', label: 'Etiquetas' },
     { id: 'saas_quick_replies', label: 'Respuestas rapidas' },
@@ -447,6 +448,9 @@ export const PERMISSION_TENANT_AI_MANAGE = 'tenant.ai.manage';
 export const PERMISSION_TENANT_CUSTOMERS_READ = 'tenant.customers.read';
 export const PERMISSION_TENANT_CUSTOMERS_MANAGE = 'tenant.customers.manage';
 export const PERMISSION_TENANT_CATALOGS_MANAGE = 'tenant.catalogs.manage';
+export const PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ = 'tenant.chat_assignments.read';
+export const PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE = 'tenant.chat_assignments.manage';
+export const PERMISSION_TENANT_KPIS_READ = 'tenant.kpis.read';
 export const ADMIN_IMAGE_MAX_BYTES = Math.max(200 * 1024, Number(import.meta.env.VITE_ADMIN_ASSET_MAX_BYTES || 2 * 1024 * 1024));
 export const ADMIN_IMAGE_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 export const ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL = '.jpg, .jpeg, .png, .webp';

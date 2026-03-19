@@ -2,6 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import * as saasAdminPanelHelpers from './saas/SaasAdminPanel.helpers';
 
+import {
+    getAdminTenantAssignmentRules,
+    updateAdminTenantAssignmentRules,
+    triggerAdminAutoAssign,
+    getAdminTenantOperationsKpis
+} from '../services/operationsService';
+
 const {
     API_BASE,
     EMPTY_TENANT_FORM,
@@ -55,6 +62,9 @@ const {
     PERMISSION_TENANT_CUSTOMERS_READ,
     PERMISSION_TENANT_CUSTOMERS_MANAGE,
     PERMISSION_TENANT_CATALOGS_MANAGE,
+    PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ,
+    PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE,
+    PERMISSION_TENANT_KPIS_READ,
     ADMIN_IMAGE_MAX_BYTES,
     ADMIN_IMAGE_ALLOWED_MIME_TYPES,
     ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL,
@@ -248,6 +258,16 @@ export default function SaasAdminPanel({
     const [labelPanelMode, setLabelPanelMode] = useState('view');
     const [labelSearch, setLabelSearch] = useState('');
     const [loadingLabels, setLoadingLabels] = useState(false);
+    const [assignmentRules, setAssignmentRules] = useState({
+        enabled: false,
+        mode: 'least_load',
+        allowedRoles: ['seller'],
+        maxOpenChatsPerUser: 0,
+        metadata: {}
+    });
+    const [loadingAssignmentRules, setLoadingAssignmentRules] = useState(false);
+    const [operationsKpis, setOperationsKpis] = useState(null);
+    const [loadingOperationsKpis, setLoadingOperationsKpis] = useState(false);
 
     const [customers, setCustomers] = useState([]);
     const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -377,10 +397,16 @@ export default function SaasAdminPanel({
     const canManageCustomers = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_CUSTOMERS_MANAGE])
         : roleBasedCanManageCustomers;
+    const canViewOperations = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_KPIS_READ, PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ, PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE])
+        : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
+    const canManageAssignments = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE])
+        : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
     const canEditCatalog = canManageCatalog;
     const requiresTenantSelection = Boolean(isSuperAdmin || normalizedRole === 'superadmin');
     const showPanelLoading = Boolean(
-        busy || loadingSettings || loadingIntegrations || loadingPlans || loadingAccessCatalog || loadingAiAssistants || pendingRequests > 0
+        busy || loadingSettings || loadingIntegrations || loadingPlans || loadingAccessCatalog || loadingAiAssistants || loadingAssignmentRules || loadingOperationsKpis || pendingRequests > 0
     );
     const canActorManageRoleChanges = Boolean(
         actorRoleForPolicy === 'superadmin'
@@ -968,6 +994,7 @@ export default function SaasAdminPanel({
         if (cleanId === 'saas_empresas') return canManageTenants;
         if (cleanId === 'saas_usuarios') return canManageUsers;
         if (cleanId === 'saas_clientes') return canViewCustomers;
+        if (cleanId === 'saas_operacion') return canViewOperations;
         if (cleanId === 'saas_ia') return canViewAi;
         if (cleanId === 'saas_etiquetas') return canViewLabels;
         if (cleanId === 'saas_quick_replies') return canViewQuickReplies;
@@ -981,6 +1008,7 @@ export default function SaasAdminPanel({
         canManageTenants,
         canManageUsers,
         canViewCustomers,
+        canViewOperations,
         canViewAi,
         canViewLabels,
         canViewQuickReplies,
@@ -1009,6 +1037,7 @@ export default function SaasAdminPanel({
     const isPlansSection = selectedSectionId === 'saas_planes';
     const isRolesSection = selectedSectionId === 'saas_roles';
     const isCustomersSection = selectedSectionId === 'saas_clientes';
+    const isOperationsSection = selectedSectionId === 'saas_operacion';
     const isAiSection = selectedSectionId === 'saas_ia';
     const isLabelsSection = selectedSectionId === 'saas_etiquetas';
     const isQuickRepliesSection = selectedSectionId === 'saas_quick_replies';
@@ -1073,6 +1102,19 @@ export default function SaasAdminPanel({
         setCurrentSection(next);
     };
 
+    const activeTenantChatCandidates = useMemo(() => (
+        Array.isArray(operationsKpis?.topUnassigned) ? operationsKpis.topUnassigned : []
+    ), [operationsKpis]);
+    const assignmentRoleOptions = ['seller', 'admin', 'owner'];
+    const operationsSnapshot = useMemo(() => ({
+        incomingCount: Number(operationsKpis?.incomingCount || 0),
+        outgoingCount: Number(operationsKpis?.outgoingCount || 0),
+        avgFirstResponseSec: Number(operationsKpis?.avgFirstResponseSec || 0),
+        respondedChats: Number(operationsKpis?.respondedChats || 0),
+        activeAssignments: Number(operationsKpis?.activeAssignments || 0),
+        reassignedChats: Number(operationsKpis?.reassignedChats || 0),
+        unassignedChats: Number(operationsKpis?.unassignedChats || 0),
+    }), [operationsKpis]);
     const operationTenantId = useMemo(() => {
         if (requiresTenantSelection) return String(settingsTenantId || '').trim();
         return String(tenantScopeId || settingsTenantId || activeTenantId || '').trim();
@@ -1293,6 +1335,98 @@ export default function SaasAdminPanel({
         }
     };
 
+
+    const normalizeAssignmentRulesState = (rules = {}) => ({
+        enabled: rules?.enabled === true,
+        mode: String(rules?.mode || 'least_load').trim().toLowerCase() === 'round_robin' ? 'round_robin' : 'least_load',
+        allowedRoles: Array.isArray(rules?.allowedRoles)
+            ? rules.allowedRoles.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean)
+            : ['seller'],
+        maxOpenChatsPerUser: Number.isFinite(Number(rules?.maxOpenChatsPerUser))
+            ? Math.max(0, Number(rules.maxOpenChatsPerUser))
+            : 0,
+        metadata: rules?.metadata && typeof rules.metadata === 'object' ? rules.metadata : {}
+    });
+
+    const loadTenantAssignmentRules = async (tenantId) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        if (!cleanTenantId || !canViewOperations) {
+            setAssignmentRules(normalizeAssignmentRulesState({}));
+            return;
+        }
+        setLoadingAssignmentRules(true);
+        try {
+            const payload = await getAdminTenantAssignmentRules({
+                tenantId: cleanTenantId,
+                headers: buildApiHeaders()
+            });
+            setAssignmentRules(normalizeAssignmentRulesState(payload?.rules || {}));
+        } catch (loadError) {
+            setAssignmentRules(normalizeAssignmentRulesState({}));
+            throw loadError;
+        } finally {
+            setLoadingAssignmentRules(false);
+        }
+    };
+
+    const loadTenantOperationsKpis = async (tenantId) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        if (!cleanTenantId || !canViewOperations) {
+            setOperationsKpis(null);
+            return;
+        }
+        setLoadingOperationsKpis(true);
+        try {
+            const payload = await getAdminTenantOperationsKpis({
+                tenantId: cleanTenantId,
+                headers: buildApiHeaders()
+            });
+            setOperationsKpis(payload?.kpis && typeof payload.kpis === 'object' ? payload.kpis : null);
+        } catch (loadError) {
+            setOperationsKpis(null);
+            throw loadError;
+        } finally {
+            setLoadingOperationsKpis(false);
+        }
+    };
+
+    const saveAssignmentRules = async (tenantId) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        if (!cleanTenantId) throw new Error('Selecciona una empresa para guardar reglas.');
+        const payload = {
+            enabled: assignmentRules.enabled === true,
+            mode: assignmentRules.mode === 'round_robin' ? 'round_robin' : 'least_load',
+            allowedRoles: Array.isArray(assignmentRules.allowedRoles)
+                ? assignmentRules.allowedRoles.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean)
+                : ['seller'],
+            maxOpenChatsPerUser: Number.isFinite(Number(assignmentRules.maxOpenChatsPerUser))
+                ? Math.max(0, Number(assignmentRules.maxOpenChatsPerUser))
+                : 0,
+            metadata: assignmentRules.metadata && typeof assignmentRules.metadata === 'object' ? assignmentRules.metadata : {}
+        };
+        const response = await updateAdminTenantAssignmentRules({
+            tenantId: cleanTenantId,
+            body: payload,
+            headers: buildApiHeaders()
+        });
+        setAssignmentRules(normalizeAssignmentRulesState(response?.rules || payload));
+    };
+
+    const triggerAutoAssignPreview = async (tenantId) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        const targetChatId = String(activeTenantChatCandidates[0]?.chatId || '').trim();
+        if (!cleanTenantId) throw new Error('Selecciona una empresa para ejecutar auto-asignacion.');
+        if (!targetChatId) throw new Error('No hay chats candidatos para auto-asignar.');
+        const scopeModuleId = String(activeTenantChatCandidates[0]?.scopeModuleId || '').trim().toLowerCase();
+        await triggerAdminAutoAssign({
+            tenantId: cleanTenantId,
+            chatId: targetChatId,
+            scopeModuleId,
+            reason: 'manual_preview_from_panel',
+            headers: buildApiHeaders()
+        });
+        await loadTenantOperationsKpis(cleanTenantId);
+    };
     const openTenantLabelCreate = () => {
         setLabelForm({ ...EMPTY_LABEL_FORM, color: DEFAULT_LABEL_COLORS[0], sortOrder: '100', isActive: true });
         setLabelPanelMode('create');
@@ -2223,7 +2357,9 @@ export default function SaasAdminPanel({
             loadTenantIntegrations(tenantScopeId),
             loadCustomers(tenantScopeId),
             loadQuickReplyData(tenantScopeId),
-            loadTenantLabels(tenantScopeId)
+            loadTenantLabels(tenantScopeId),
+            loadTenantAssignmentRules(tenantScopeId),
+            loadTenantOperationsKpis(tenantScopeId)
         ]).catch((err) => {
             setError(String(err?.message || err || 'No se pudo cargar configuracion del tenant.'));
         });
@@ -2259,6 +2395,8 @@ export default function SaasAdminPanel({
         setSelectedLabelId('');
         setLabelForm({ ...EMPTY_LABEL_FORM });
         setLabelPanelMode('view');
+        setAssignmentRules(normalizeAssignmentRulesState({}));
+        setOperationsKpis(null);
     }, [isOpen, tenantScopeId]);
     useEffect(() => {
         setSelectedConfigKey('');
@@ -3083,7 +3221,7 @@ export default function SaasAdminPanel({
                                 key={item.id}
                                 type="button"
                                 className={`saas-admin-nav-btn ${selectedSectionId === item.id ? "active" : ""}`.trim()}
-                                disabled={busy || !item.enabled || (tenantScopeLocked && !['saas_resumen', 'saas_empresas', 'saas_planes', 'saas_roles'].includes(item.id))}
+                                disabled={busy || !item.enabled || (tenantScopeLocked && !['saas_resumen', 'saas_empresas', 'saas_planes', 'saas_roles', 'saas_operacion'].includes(item.id))}
                                 onClick={() => handleSectionChange(item.id)}
                             >
                                 {item.label}
@@ -3681,7 +3819,7 @@ export default function SaasAdminPanel({
                                                                         const packAllowed = allowedPackIdsForUserFormRole.has(packId);
                                                                         const checked = Array.isArray(userForm.permissionPacks) && userForm.permissionPacks.includes(packId);
                                                                         return (
-                                                                            <label key={`user_pack_${packId}`} className="saas-admin-module-toggle">
+                                                                            <label key={`assignment_role_${role}`} className="saas-admin-module-toggle">
                                                                                 <input
                                                                                     type="checkbox"
                                                                                     checked={checked}
@@ -3713,7 +3851,7 @@ export default function SaasAdminPanel({
                                                                         const checked = Array.isArray(userForm.permissionGrants) && userForm.permissionGrants.includes(permissionKey);
                                                                         const permissionLabel = permissionLabelMap.get(permissionKey) || permissionKey;
                                                                         return (
-                                                                            <label key={`user_permission_${permissionKey}`} className="saas-admin-module-toggle">
+                                                                            <label key={`assignment_role_${role}`} className="saas-admin-module-toggle">
                                                                                 <input
                                                                                     type="checkbox"
                                                                                     checked={checked}
@@ -4044,6 +4182,163 @@ export default function SaasAdminPanel({
                     </section>
                     )}
 
+                    {isOperationsSection && (
+                    <section id="saas_operacion" className="saas-admin-card saas-admin-card--full">
+                        <div className="saas-admin-master-detail">
+                            <aside className="saas-admin-master-pane">
+                                <div className="saas-admin-pane-header">
+                                    <div>
+                                        <h3>Operacion (asignacion y rendimiento)</h3>
+                                        <small>Reglas de enrutamiento y KPI operativo por empresa.</small>
+                                    </div>
+                                </div>
+
+                                {tenantScopeLocked && (
+                                    <div className="saas-admin-empty-state">
+                                        <p>Selecciona una empresa para configurar operacion.</p>
+                                    </div>
+                                )}
+
+                                {!tenantScopeLocked && (
+                                    <>
+                                        <div className="saas-admin-form-row saas-admin-form-row--single">
+                                            <label className="saas-admin-checkbox-inline">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={assignmentRules.enabled === true}
+                                                    disabled={busy || loadingAssignmentRules || !canManageAssignments}
+                                                    onChange={(event) => setAssignmentRules((prev) => ({ ...prev, enabled: event.target.checked }))}
+                                                />
+                                                <span>Auto-asignacion habilitada</span>
+                                            </label>
+                                        </div>
+                                        <div className="saas-admin-form-row">
+                                            <div>
+                                                <small>Modo de asignacion</small>
+                                                <select
+                                                    value={assignmentRules.mode || 'least_load'}
+                                                    disabled={busy || loadingAssignmentRules || !canManageAssignments}
+                                                    onChange={(event) => setAssignmentRules((prev) => ({ ...prev, mode: event.target.value === 'round_robin' ? 'round_robin' : 'least_load' }))}
+                                                >
+                                                    <option value="least_load">Menor carga</option>
+                                                    <option value="round_robin">Round robin</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <small>Max chats abiertos por usuaria (0 = sin limite)</small>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    max={500}
+                                                    value={String(assignmentRules.maxOpenChatsPerUser ?? 0)}
+                                                    disabled={busy || loadingAssignmentRules || !canManageAssignments}
+                                                    onChange={(event) => setAssignmentRules((prev) => ({ ...prev, maxOpenChatsPerUser: Number(event.target.value || 0) }))}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="saas-admin-related-block">
+                                            <h4>Roles habilitados para recibir chats</h4>
+                                            <div className="saas-admin-modules">
+                                                {assignmentRoleOptions.map((role) => {
+                                                    const checked = Array.isArray(assignmentRules.allowedRoles) && assignmentRules.allowedRoles.includes(role);
+                                                    return (
+                                                        <label key={`assignment_role_${role}`} className="saas-admin-module-toggle">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={checked}
+                                                                disabled={busy || loadingAssignmentRules || !canManageAssignments}
+                                                                onChange={(event) => setAssignmentRules((prev) => {
+                                                                    const current = new Set((Array.isArray(prev.allowedRoles) ? prev.allowedRoles : []).map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean));
+                                                                    if (event.target.checked) current.add(role);
+                                                                    else current.delete(role);
+                                                                    return { ...prev, allowedRoles: Array.from(current) };
+                                                                })}
+                                                            />
+                                                            <span>{role}</span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                        <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                            <button
+                                                type="button"
+                                                disabled={busy || loadingAssignmentRules || !canManageAssignments}
+                                                onClick={() => runAction('Reglas de asignacion actualizadas', async () => {
+                                                    await saveAssignmentRules(tenantScopeId);
+                                                    await loadTenantOperationsKpis(tenantScopeId);
+                                                })}
+                                            >
+                                                Guardar reglas
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={busy || loadingOperationsKpis || !canManageAssignments || activeTenantChatCandidates.length === 0}
+                                                onClick={() => runAction('Auto-asignacion ejecutada', async () => {
+                                                    await triggerAutoAssignPreview(tenantScopeId);
+                                                })}
+                                            >
+                                                Auto-asignar siguiente chat
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </aside>
+
+                            <div className="saas-admin-detail-pane">
+                                {tenantScopeLocked && (
+                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                                        <h4>Sin empresa activa</h4>
+                                        <p>Selecciona una empresa para ver metricas operativas.</p>
+                                    </div>
+                                )}
+
+                                {!tenantScopeLocked && (
+                                    <>
+                                        <div className="saas-admin-pane-header">
+                                            <div>
+                                                <h3>KPI operativos (ventana actual)</h3>
+                                                <small>{loadingOperationsKpis ? 'Actualizando...' : 'Datos listos para monitoreo operativo.'}</small>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                disabled={busy || loadingOperationsKpis || !canViewOperations}
+                                                onClick={() => runAction('KPI operativos actualizados', async () => {
+                                                    await loadTenantOperationsKpis(tenantScopeId);
+                                                })}
+                                            >
+                                                Recargar KPI
+                                            </button>
+                                        </div>
+                                        <div className="saas-admin-detail-grid">
+                                            <div className="saas-admin-detail-field"><span>Mensajes entrantes</span><strong>{operationsSnapshot.incomingCount}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Mensajes salientes</span><strong>{operationsSnapshot.outgoingCount}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>1ra respuesta promedio</span><strong>{Math.round(operationsSnapshot.avgFirstResponseSec || 0)} s</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Chats respondidos</span><strong>{operationsSnapshot.respondedChats}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Asignaciones activas</span><strong>{operationsSnapshot.activeAssignments}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Reasignaciones</span><strong>{operationsSnapshot.reassignedChats}</strong></div>
+                                            <div className="saas-admin-detail-field"><span>Sin asignar</span><strong>{operationsSnapshot.unassignedChats}</strong></div>
+                                        </div>
+                                        <div className="saas-admin-related-block">
+                                            <h4>Chats sin asignar (top)</h4>
+                                            <div className="saas-admin-related-list">
+                                                {activeTenantChatCandidates.length === 0 && (
+                                                    <div className="saas-admin-empty-inline">No hay chats sin asignar en este momento.</div>
+                                                )}
+                                                {activeTenantChatCandidates.slice(0, 8).map((entry) => (
+                                                    <div key={op_unassigned__} className="saas-admin-related-row" role="status">
+                                                        <span>{entry.chatId || 'chat'}</span>
+                                                        <small>{entry.scopeModuleId ? Modulo  : 'Sin modulo'} | {entry.lastIncomingAt ? formatDateTimeLabel(entry.lastIncomingAt) : 'sin fecha'}</small>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                    )}
                     {isAiSection && (
                     <section id="saas_ia" className="saas-admin-card saas-admin-card--full">
                         <div className="saas-admin-master-detail">
@@ -4573,7 +4868,7 @@ export default function SaasAdminPanel({
                                                             const moduleId = String(moduleItem?.moduleId || '').trim().toLowerCase();
                                                             const checked = Array.isArray(labelForm.moduleIds) && labelForm.moduleIds.includes(moduleId);
                                                             return (
-                                                                <label key={`label_form_module_${moduleId}`} className="saas-admin-module-toggle">
+                                                                <label key={`assignment_role_${role}`} className="saas-admin-module-toggle">
                                                                     <input
                                                                         type="checkbox"
                                                                         checked={checked}
@@ -5255,7 +5550,7 @@ export default function SaasAdminPanel({
                                                 </div>
                                                 <div className="saas-admin-modules">
                                                     {MODULE_KEYS.map((moduleEntry) => (
-                                                        <label key={moduleEntry.key} className="saas-admin-module-toggle">
+                                                        <label key={`assignment_role_${role}`} className="saas-admin-module-toggle">
                                                             <input
                                                                 type="checkbox"
                                                                 checked={tenantSettings?.enabledModules?.[moduleEntry.key] !== false}
@@ -5480,7 +5775,7 @@ export default function SaasAdminPanel({
                                                                 const catalogId = String(catalogItem?.catalogId || '').trim().toUpperCase();
                                                                 const checked = normalizeCatalogIdsList(waModuleForm.catalogIds || []).includes(catalogId);
                                                                 return (
-                                                                    <label key={`wa_module_catalog_${catalogId}`} className="saas-admin-module-toggle">
+                                                                    <label key={`assignment_role_${role}`} className="saas-admin-module-toggle">
                                                                         <input
                                                                             type="checkbox"
                                                                             checked={checked}
@@ -5507,7 +5802,7 @@ export default function SaasAdminPanel({
                                                                 const isShared = library?.isShared === true;
                                                                 const checked = isShared ? true : moduleQuickReplyLibraryDraft.includes(libraryId);
                                                                 return (
-                                                                    <label key={`wa_module_quick_reply_${libraryId}`} className="saas-admin-module-toggle">
+                                                                    <label key={`assignment_role_${role}`} className="saas-admin-module-toggle">
                                                                         <input
                                                                             type="checkbox"
                                                                             checked={checked}
@@ -6777,7 +7072,7 @@ export default function SaasAdminPanel({
                                             <h4>Features del plan</h4>
                                             <div className="saas-admin-modules">
                                                 {PLAN_FEATURE_KEYS.map((entry) => (
-                                                    <label key={`plan_feature_edit_${entry.key}`} className="saas-admin-module-toggle">
+                                                    <label key={`assignment_role_${role}`} className="saas-admin-module-toggle">
                                                         <input
                                                             type="checkbox"
                                                             checked={planForm?.features?.[entry.key] !== false}
