@@ -1,5 +1,6 @@
 // Helpers extraidos desde SaasAdminPanel para reducir tamano del modulo principal.
 import { sanitizeMemberships } from './helpers/rbac.helpers';
+import { sanitizeAiAssistantCode } from './helpers/ai.helpers';
 
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -52,24 +53,7 @@ export const EMPTY_SETTINGS = {
         quickReplies: true
     }
 };
-export const EMPTY_INTEGRATIONS_FORM = {
-    catalogMode: 'hybrid',
-    metaEnabled: true,
-    wooEnabled: true,
-    wooBaseUrl: '',
-    wooPerPage: 100,
-    wooMaxPages: 10,
-    wooIncludeOutOfStock: true,
-    wooConsumerKey: '',
-    wooConsumerSecret: '',
-    wooConsumerKeyMasked: '',
-    wooConsumerSecretMasked: '',
-    localEnabled: true,
-    aiProvider: 'openai',
-    aiModel: 'gpt-4o-mini',
-    openaiApiKey: '',
-    openaiApiKeyMasked: ''
-};
+export { EMPTY_INTEGRATIONS_FORM } from './helpers/integrations.helpers';
 
 export {
     EMPTY_TENANT_CATALOG_FORM,
@@ -151,21 +135,13 @@ export const EMPTY_WA_MODULE_FORM = {
 };
 
 
-export const EMPTY_AI_ASSISTANT_FORM = {
-    assistantId: '',
-    name: '',
-    description: '',
-    provider: 'openai',
-    model: 'gpt-4o-mini',
-    systemPrompt: '',
-    temperature: '0.7',
-    topP: '1',
-    maxTokens: '800',
-    openaiApiKey: '',
-    openAiApiKeyMasked: '',
-    isActive: true,
-    isDefault: false
-};
+export {
+    EMPTY_AI_ASSISTANT_FORM,
+    AI_PROVIDER_OPTIONS,
+    AI_MODEL_OPTIONS,
+    LAVITAT_FIRST_ASSISTANT_SYSTEM_PROMPT
+} from './helpers/ai.helpers';
+
 export const BASE_ROLE_OPTIONS = ['owner', 'admin', 'seller'];
 export const PLAN_OPTIONS = ['starter', 'pro', 'enterprise'];
 export const CATALOG_MODE_OPTIONS = ['hybrid', 'meta_only', 'woo_only', 'local_only'];
@@ -190,39 +166,6 @@ export const ADMIN_NAV_ITEMS = [
     { id: 'saas_catalogos', label: 'Catalogos' },
     { id: 'saas_config', label: 'Configuracion' }
 ];
-export const AI_PROVIDER_OPTIONS = ['openai'];
-export const AI_MODEL_OPTIONS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'];
-export const LAVITAT_FIRST_ASSISTANT_SYSTEM_PROMPT = `Eres el copiloto comercial interno de Lavitat (Peru). Tu interlocutor es la vendedora, no el cliente final.
-
-Objetivo:
-- ayudar a vender mejor con criterio comercial
-- sugerir respuestas listas para WhatsApp
-- recomendar productos reales del catalogo activo
-- proponer upsell/cross-sell con naturalidad
-- generar cotizaciones claras cuando se solicite
-
-Reglas innegociables:
-- usa solo datos reales del sistema (tenant, modulo, catalogo, carrito, chat)
-- no inventes productos, precios, descuentos, stock, presentaciones o aromas
-- no mezcles informacion entre tenants
-- si falta un dato clave, dilo de forma ejecutiva y sugiere como validar antes de enviar
-
-Tono Lavitat:
-- amigable, claro, experto, seguro, calido y elegante
-- evita tono suplicante, vulgar, agresivo o improvisado
-- comunica valor (calidad, rendimiento, cuidado de tejidos/superficies, servicio)
-
-Cuando corresponda, resalta:
-- detergente concentrado: formula enzimatica y cuidado de tejidos
-- linea delicada: hipoalergenica, ideal para bebes/piel sensible/lenceria
-- limpiador desinfectante: limpia + desinfecta + aromatiza
-- quitasarro gel: mejor rendimiento por aplicacion
-
-Formato recomendado para copiloto:
-1) 3 respuestas sugeridas (listas para copiar)
-2) recomendacion comercial (producto principal + complemento + motivo)
-3) cierre sugerido
-4) 3 cotizaciones separadas si aplica`;
 export const ADMIN_IMAGE_MAX_BYTES = Math.max(200 * 1024, Number(import.meta.env.VITE_ADMIN_ASSET_MAX_BYTES || 2 * 1024 * 1024));
 export const ADMIN_IMAGE_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 export const ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL = '.jpg, .jpeg, .png, .webp';
@@ -321,165 +264,16 @@ export function normalizeWaModule(item = {}) {
 }
 
 
-export function sanitizeAiAssistantCode(value = '') {
-    const clean = String(value || '').trim().toUpperCase();
-    return /^AIA-[A-Z0-9]{6}$/.test(clean) ? clean : '';
-}
-
-export function normalizeTenantAiAssistantItem(item = {}) {
-    const source = item && typeof item === 'object' ? item : {};
-    const assistantId = sanitizeAiAssistantCode(source.assistantId || source.id || '');
-    if (!assistantId) return null;
-    return {
-        assistantId,
-        name: String(source.name || assistantId).trim() || assistantId,
-        description: String(source.description || '').trim(),
-        provider: String(source.provider || 'openai').trim().toLowerCase() || 'openai',
-        model: String(source.model || 'gpt-4o-mini').trim() || 'gpt-4o-mini',
-        systemPrompt: String(source.systemPrompt || '').trim(),
-        temperature: String(source.temperature ?? '0.7').trim() || '0.7',
-        topP: String(source.topP ?? '1').trim() || '1',
-        maxTokens: String(source.maxTokens ?? '800').trim() || '800',
-        hasOpenAiApiKey: source.hasOpenAiApiKey === true,
-        openAiApiKeyMasked: String(source.openAiApiKeyMasked || '').trim(),
-        isActive: source.isActive !== false,
-        isDefault: source.isDefault === true,
-        createdAt: String(source.createdAt || '').trim() || null,
-        updatedAt: String(source.updatedAt || '').trim() || null
-    };
-}
-
-export function buildAiAssistantFormFromItem(item = null) {
-    if (!item || typeof item !== 'object') return { ...EMPTY_AI_ASSISTANT_FORM };
-    return {
-        assistantId: sanitizeAiAssistantCode(item.assistantId || item.id || ''),
-        name: String(item.name || '').trim(),
-        description: String(item.description || '').trim(),
-        provider: String(item.provider || 'openai').trim().toLowerCase() || 'openai',
-        model: String(item.model || 'gpt-4o-mini').trim() || 'gpt-4o-mini',
-        systemPrompt: String(item.systemPrompt || '').trim(),
-        temperature: String(item.temperature ?? '0.7').trim() || '0.7',
-        topP: String(item.topP ?? '1').trim() || '1',
-        maxTokens: String(item.maxTokens ?? '800').trim() || '800',
-        openaiApiKey: '',
-        openAiApiKeyMasked: String(item.openAiApiKeyMasked || '').trim(),
-        isActive: item.isActive !== false,
-        isDefault: item.isDefault === true
-    };
-}
-
-export function buildLavitatAssistantPreset(form = {}) {
-    const source = form && typeof form === 'object' ? form : {};
-    const modelCandidate = String(source.model || '').trim();
-    const safeModel = AI_MODEL_OPTIONS.includes(modelCandidate) ? modelCandidate : 'gpt-4o-mini';
-    return {
-        ...source,
-        name: String(source.name || '').trim() || 'Asistente Comercial Lavitat',
-        description: String(source.description || '').trim() || 'Copiloto interno de ventas para Lavitat. Sugiere respuestas, recomendaciones y cotizaciones desde contexto real del tenant.',
-        provider: 'openai',
-        model: safeModel,
-        systemPrompt: LAVITAT_FIRST_ASSISTANT_SYSTEM_PROMPT,
-        temperature: '0.45',
-        topP: '0.95',
-        maxTokens: '1200',
-        isActive: source.isActive !== false
-    };
-}
-export function buildAiAssistantPayload(form = {}, { allowAssistantId = true } = {}) {
-    const source = form && typeof form === 'object' ? form : {};
-    const payload = {
-        name: String(source.name || '').trim(),
-        description: String(source.description || '').trim() || null,
-        provider: AI_PROVIDER_OPTIONS.includes(String(source.provider || '').trim().toLowerCase())
-            ? String(source.provider || '').trim().toLowerCase()
-            : 'openai',
-        model: String(source.model || 'gpt-4o-mini').trim() || 'gpt-4o-mini',
-        systemPrompt: String(source.systemPrompt || '').trim() || null,
-        temperature: Math.max(0, Math.min(2, Number(source.temperature ?? 0.7) || 0.7)),
-        topP: Math.max(0, Math.min(1, Number(source.topP ?? 1) || 1)),
-        maxTokens: Math.max(64, Math.min(4096, Number(source.maxTokens ?? 800) || 800)),
-        isActive: source.isActive !== false,
-        isDefault: source.isDefault === true
-    };
-
-    const openaiApiKey = String(source.openaiApiKey || '').trim();
-    if (openaiApiKey) payload.openaiApiKey = openaiApiKey;
-
-    if (allowAssistantId) {
-        const cleanAssistantId = sanitizeAiAssistantCode(source.assistantId || source.id || '');
-        if (cleanAssistantId) payload.assistantId = cleanAssistantId;
-    }
-
-    return payload;
-}
-export function normalizeIntegrationsPayload(integrations = {}) {
-    const source = integrations && typeof integrations === 'object' ? integrations : {};
-    const catalog = source.catalog && typeof source.catalog === 'object' ? source.catalog : {};
-    const providers = catalog.providers && typeof catalog.providers === 'object' ? catalog.providers : {};
-    const woo = providers.woocommerce && typeof providers.woocommerce === 'object' ? providers.woocommerce : {};
-    const ai = source.ai && typeof source.ai === 'object' ? source.ai : {};
-
-    return {
-        catalogMode: CATALOG_MODE_OPTIONS.includes(String(catalog.mode || '').trim())
-            ? String(catalog.mode || '').trim()
-            : 'hybrid',
-        metaEnabled: providers?.meta?.enabled !== false,
-        wooEnabled: woo.enabled !== false,
-        wooBaseUrl: String(woo.baseUrl || '').trim(),
-        wooPerPage: Number(woo.perPage || 100) || 100,
-        wooMaxPages: Number(woo.maxPages || 10) || 10,
-        wooIncludeOutOfStock: woo.includeOutOfStock !== false,
-        wooConsumerKey: '',
-        wooConsumerSecret: '',
-        wooConsumerKeyMasked: String(woo.consumerKeyMasked || '').trim(),
-        wooConsumerSecretMasked: String(woo.consumerSecretMasked || '').trim(),
-        localEnabled: providers?.local?.enabled !== false,
-        aiProvider: String(ai.provider || 'openai').trim() || 'openai',
-        aiModel: String(ai.model || 'gpt-4o-mini').trim() || 'gpt-4o-mini',
-        openaiApiKey: '',
-        openaiApiKeyMasked: String(ai.openAiApiKeyMasked || '').trim()
-    };
-}
-
-export function buildIntegrationsUpdatePayload(form = {}) {
-    const source = form && typeof form === 'object' ? form : {};
-    const payload = {
-        catalog: {
-            mode: CATALOG_MODE_OPTIONS.includes(String(source.catalogMode || '').trim())
-                ? String(source.catalogMode || '').trim()
-                : 'hybrid',
-            providers: {
-                meta: {
-                    enabled: source.metaEnabled !== false
-                },
-                woocommerce: {
-                    enabled: source.wooEnabled !== false,
-                    baseUrl: String(source.wooBaseUrl || '').trim() || null,
-                    perPage: Math.max(10, Math.min(500, Number(source.wooPerPage || 100) || 100)),
-                    maxPages: Math.max(1, Math.min(200, Number(source.wooMaxPages || 10) || 10)),
-                    includeOutOfStock: source.wooIncludeOutOfStock !== false
-                },
-                local: {
-                    enabled: source.localEnabled !== false
-                }
-            }
-        },
-        ai: {
-            provider: String(source.aiProvider || 'openai').trim() || 'openai',
-            model: String(source.aiModel || 'gpt-4o-mini').trim() || 'gpt-4o-mini'
-        }
-    };
-
-    const wooConsumerKey = String(source.wooConsumerKey || '').trim();
-    const wooConsumerSecret = String(source.wooConsumerSecret || '').trim();
-    const openaiApiKey = String(source.openaiApiKey || '').trim();
-
-    if (wooConsumerKey) payload.catalog.providers.woocommerce.consumerKey = wooConsumerKey;
-    if (wooConsumerSecret) payload.catalog.providers.woocommerce.consumerSecret = wooConsumerSecret;
-    if (openaiApiKey) payload.ai.openaiApiKey = openaiApiKey;
-
-    return payload;
-}
+export {
+    normalizeTenantAiAssistantItem,
+    buildAiAssistantFormFromItem,
+    buildLavitatAssistantPreset,
+    buildAiAssistantPayload
+} from './helpers/ai.helpers';
+export {
+    normalizeIntegrationsPayload,
+    buildIntegrationsUpdatePayload
+} from './helpers/integrations.helpers';
 
 export function buildTenantFormFromItem(item = null) {
     if (!item || typeof item !== 'object') return EMPTY_TENANT_FORM;
