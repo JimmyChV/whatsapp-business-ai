@@ -2,13 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import * as saasAdminPanelHelpers from './saas/SaasAdminPanel.helpers';
 
-import {
-    getAdminTenantAssignmentRules,
-    updateAdminTenantAssignmentRules,
-    triggerAdminAutoAssign,
-    getAdminTenantOperationsKpis
-} from '../services/operationsService';
 import OperationsSection from './saas/sections/OperationsSection';
+import useOperationsPanelState from './saas/hooks/useOperationsPanelState';
 
 const {
     API_BASE,
@@ -259,16 +254,6 @@ export default function SaasAdminPanel({
     const [labelPanelMode, setLabelPanelMode] = useState('view');
     const [labelSearch, setLabelSearch] = useState('');
     const [loadingLabels, setLoadingLabels] = useState(false);
-    const [assignmentRules, setAssignmentRules] = useState({
-        enabled: false,
-        mode: 'least_load',
-        allowedRoles: ['seller'],
-        maxOpenChatsPerUser: 0,
-        metadata: {}
-    });
-    const [loadingAssignmentRules, setLoadingAssignmentRules] = useState(false);
-    const [operationsKpis, setOperationsKpis] = useState(null);
-    const [loadingOperationsKpis, setLoadingOperationsKpis] = useState(false);
 
     const [customers, setCustomers] = useState([]);
     const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -404,6 +389,23 @@ export default function SaasAdminPanel({
     const canManageAssignments = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE])
         : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
+    const {
+        assignmentRules,
+        setAssignmentRules,
+        loadingAssignmentRules,
+        operationsKpis,
+        loadingOperationsKpis,
+        unassignedCandidates: activeTenantChatCandidates,
+        operationsSnapshot,
+        loadTenantAssignmentRules,
+        loadTenantOperationsKpis,
+        saveAssignmentRules,
+        triggerAutoAssignPreview,
+        resetOperationsState
+    } = useOperationsPanelState({
+        canViewOperations,
+        buildApiHeaders
+    });
     const canEditCatalog = canManageCatalog;
     const requiresTenantSelection = Boolean(isSuperAdmin || normalizedRole === 'superadmin');
     const showPanelLoading = Boolean(
@@ -1102,20 +1104,8 @@ export default function SaasAdminPanel({
 
         setCurrentSection(next);
     };
-
-    const activeTenantChatCandidates = useMemo(() => (
-        Array.isArray(operationsKpis?.topUnassigned) ? operationsKpis.topUnassigned : []
-    ), [operationsKpis]);
     const assignmentRoleOptions = ['seller', 'admin', 'owner'];
-    const operationsSnapshot = useMemo(() => ({
-        incomingCount: Number(operationsKpis?.incomingCount || 0),
-        outgoingCount: Number(operationsKpis?.outgoingCount || 0),
-        avgFirstResponseSec: Number(operationsKpis?.avgFirstResponseSec || 0),
-        respondedChats: Number(operationsKpis?.respondedChats || 0),
-        activeAssignments: Number(operationsKpis?.activeAssignments || 0),
-        reassignedChats: Number(operationsKpis?.reassignedChats || 0),
-        unassignedChats: Number(operationsKpis?.unassignedChats || 0),
-    }), [operationsKpis]);
+
     const operationTenantId = useMemo(() => {
         if (requiresTenantSelection) return String(settingsTenantId || '').trim();
         return String(tenantScopeId || settingsTenantId || activeTenantId || '').trim();
@@ -1334,99 +1324,6 @@ export default function SaasAdminPanel({
         } finally {
             setLoadingLabels(false);
         }
-    };
-
-
-    const normalizeAssignmentRulesState = (rules = {}) => ({
-        enabled: rules?.enabled === true,
-        mode: String(rules?.mode || 'least_load').trim().toLowerCase() === 'round_robin' ? 'round_robin' : 'least_load',
-        allowedRoles: Array.isArray(rules?.allowedRoles)
-            ? rules.allowedRoles.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean)
-            : ['seller'],
-        maxOpenChatsPerUser: Number.isFinite(Number(rules?.maxOpenChatsPerUser))
-            ? Math.max(0, Number(rules.maxOpenChatsPerUser))
-            : 0,
-        metadata: rules?.metadata && typeof rules.metadata === 'object' ? rules.metadata : {}
-    });
-
-    const loadTenantAssignmentRules = async (tenantId) => {
-        const cleanTenantId = String(tenantId || '').trim();
-        if (!cleanTenantId || !canViewOperations) {
-            setAssignmentRules(normalizeAssignmentRulesState({}));
-            return;
-        }
-        setLoadingAssignmentRules(true);
-        try {
-            const payload = await getAdminTenantAssignmentRules({
-                tenantId: cleanTenantId,
-                headers: buildApiHeaders()
-            });
-            setAssignmentRules(normalizeAssignmentRulesState(payload?.rules || {}));
-        } catch (loadError) {
-            setAssignmentRules(normalizeAssignmentRulesState({}));
-            throw loadError;
-        } finally {
-            setLoadingAssignmentRules(false);
-        }
-    };
-
-    const loadTenantOperationsKpis = async (tenantId) => {
-        const cleanTenantId = String(tenantId || '').trim();
-        if (!cleanTenantId || !canViewOperations) {
-            setOperationsKpis(null);
-            return;
-        }
-        setLoadingOperationsKpis(true);
-        try {
-            const payload = await getAdminTenantOperationsKpis({
-                tenantId: cleanTenantId,
-                headers: buildApiHeaders()
-            });
-            setOperationsKpis(payload?.kpis && typeof payload.kpis === 'object' ? payload.kpis : null);
-        } catch (loadError) {
-            setOperationsKpis(null);
-            throw loadError;
-        } finally {
-            setLoadingOperationsKpis(false);
-        }
-    };
-
-    const saveAssignmentRules = async (tenantId) => {
-        const cleanTenantId = String(tenantId || '').trim();
-        if (!cleanTenantId) throw new Error('Selecciona una empresa para guardar reglas.');
-        const payload = {
-            enabled: assignmentRules.enabled === true,
-            mode: assignmentRules.mode === 'round_robin' ? 'round_robin' : 'least_load',
-            allowedRoles: Array.isArray(assignmentRules.allowedRoles)
-                ? assignmentRules.allowedRoles.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean)
-                : ['seller'],
-            maxOpenChatsPerUser: Number.isFinite(Number(assignmentRules.maxOpenChatsPerUser))
-                ? Math.max(0, Number(assignmentRules.maxOpenChatsPerUser))
-                : 0,
-            metadata: assignmentRules.metadata && typeof assignmentRules.metadata === 'object' ? assignmentRules.metadata : {}
-        };
-        const response = await updateAdminTenantAssignmentRules({
-            tenantId: cleanTenantId,
-            body: payload,
-            headers: buildApiHeaders()
-        });
-        setAssignmentRules(normalizeAssignmentRulesState(response?.rules || payload));
-    };
-
-    const triggerAutoAssignPreview = async (tenantId) => {
-        const cleanTenantId = String(tenantId || '').trim();
-        const targetChatId = String(activeTenantChatCandidates[0]?.chatId || '').trim();
-        if (!cleanTenantId) throw new Error('Selecciona una empresa para ejecutar auto-asignacion.');
-        if (!targetChatId) throw new Error('No hay chats candidatos para auto-asignar.');
-        const scopeModuleId = String(activeTenantChatCandidates[0]?.scopeModuleId || '').trim().toLowerCase();
-        await triggerAdminAutoAssign({
-            tenantId: cleanTenantId,
-            chatId: targetChatId,
-            scopeModuleId,
-            reason: 'manual_preview_from_panel',
-            headers: buildApiHeaders()
-        });
-        await loadTenantOperationsKpis(cleanTenantId);
     };
     const openTenantLabelCreate = () => {
         setLabelForm({ ...EMPTY_LABEL_FORM, color: DEFAULT_LABEL_COLORS[0], sortOrder: '100', isActive: true });
@@ -2396,8 +2293,7 @@ export default function SaasAdminPanel({
         setSelectedLabelId('');
         setLabelForm({ ...EMPTY_LABEL_FORM });
         setLabelPanelMode('view');
-        setAssignmentRules(normalizeAssignmentRulesState({}));
-        setOperationsKpis(null);
+        resetOperationsState();
     }, [isOpen, tenantScopeId]);
     useEffect(() => {
         setSelectedConfigKey('');
@@ -7003,6 +6899,13 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
+
+
+
+
 
 
 
