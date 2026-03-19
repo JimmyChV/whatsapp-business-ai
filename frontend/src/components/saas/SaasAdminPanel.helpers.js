@@ -1,6 +1,8 @@
-// Helpers extraidos desde SaasAdminPanel para reducir tamano del modulo principal.
+﻿// Helpers extraidos desde SaasAdminPanel para reducir tamano del modulo principal.
 import { sanitizeMemberships } from './helpers/rbac.helpers';
 import { sanitizeAiAssistantCode } from './helpers/ai.helpers';
+
+export { sanitizeAiAssistantCode };
 
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -98,6 +100,7 @@ export {
     PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ,
     PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE,
     PERMISSION_TENANT_KPIS_READ,
+    sanitizeMemberships,
     resolvePrimaryRoleFromMemberships,
     getRolePriority,
     normalizePlanForm,
@@ -415,4 +418,6 @@ export function validateImageFile(file = null) {
     }
     return '';
 }
+
+
 
