@@ -29,6 +29,7 @@ export default function TenantLabelsSection({
     saveTenantLabel,
     cancelTenantLabelEdit
 }) {
+    return (
                     <section id="saas_etiquetas" className="saas-admin-card saas-admin-card--full">
                         <div className="saas-admin-master-detail">
                             <aside className="saas-admin-master-pane">
@@ -317,5 +318,6 @@ export default function TenantLabelsSection({
                                 )}
                             </div>
                         </div>
-                    </section>
+        </section>
+    );
 }

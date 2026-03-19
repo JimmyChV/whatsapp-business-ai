@@ -57,6 +57,7 @@ export default function QuickRepliesSection({
     cancelQuickReplyItemEdit,
     openQuickReplyItemCreate
 }) {
+    return (
                     <section id="saas_quick_replies" className="saas-admin-card saas-admin-card--full">
                         <div className="saas-admin-master-detail">
                             <aside className="saas-admin-master-pane">
@@ -532,5 +533,6 @@ export default function QuickRepliesSection({
                                 )}
                             </div>
                         </div>
-                    </section>
+        </section>
+    );
 }
