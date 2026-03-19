@@ -16,6 +16,8 @@ import CompaniesSection from './saas/sections/CompaniesSection';
 import UsersSection from './saas/sections/UsersSection';
 import useOperationsPanelState from './saas/hooks/useOperationsPanelState';
 import useSaasAccessControl from './saas/hooks/useSaasAccessControl';
+import useSaasApiClient from './saas/hooks/useSaasApiClient';
+import { buildDataUrlWithMime, resolveQuickReplyMimeType, uploadImageAsset } from './saas/helpers/assets.helpers';
 
 const {
     API_BASE,
@@ -224,7 +226,6 @@ export default function SaasAdminPanel({
     const [loadingSettings, setLoadingSettings] = useState(false);
     const [loadingIntegrations, setLoadingIntegrations] = useState(false);
     const [loadingPlans, setLoadingPlans] = useState(false);
-    const [pendingRequests, setPendingRequests] = useState(0);
     const [error, setError] = useState('');
     const [currentSection, setCurrentSection] = useState(String(activeSection || initialSection || 'saas_resumen'));
 
@@ -302,69 +303,10 @@ export default function SaasAdminPanel({
             PERMISSION_TENANT_INTEGRATIONS_MANAGE
         }
     });
-    const requestJson = async (path, { method = 'GET', body = null } = {}) => {
-        setPendingRequests((prev) => prev + 1);
-        try {
-            const response = await fetch(`${API_BASE}${path}`, {
-                method,
-                headers: buildApiHeaders?.({ includeJson: body !== null }) || (body !== null ? { 'Content-Type': 'application/json' } : {}),
-                body: body !== null ? JSON.stringify(body) : undefined
-            });
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload?.ok === false) {
-                throw new Error(String(payload?.error || 'Operacion fallida.'));
-            }
-            return payload;
-        } finally {
-            setPendingRequests((prev) => Math.max(0, prev - 1));
-        }
-    };
-    const readFileAsDataUrl = (file) => {
-        return new Promise((resolve, reject) => {
-            if (!file) {
-                reject(new Error('No se encontro el archivo para subir.'));
-                return;
-            }
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result || ''));
-            reader.onerror = () => reject(new Error('No se pudo leer el archivo seleccionado.'));
-            reader.readAsDataURL(file);
-        });
-    };
-
-    const resolveQuickReplyMimeType = (file) => {
-        const fileType = String(file?.type || '').trim().toLowerCase();
-        if (fileType && QUICK_REPLY_ALLOWED_MIME_TYPES.includes(fileType)) return fileType;
-        const fileName = String(file?.name || '').trim().toLowerCase();
-        const extMatch = fileName.match(/\.[a-z0-9]+$/i);
-        const ext = String(extMatch?.[0] || '').trim().toLowerCase();
-        const mimeFromExt = QUICK_REPLY_EXT_TO_MIME[ext] || '';
-        if (mimeFromExt && QUICK_REPLY_ALLOWED_MIME_TYPES.includes(mimeFromExt)) return mimeFromExt;
-        return fileType || '';
-    };
-
-    const buildDataUrlWithMime = async (file, mimeType = '') => {
-        const rawDataUrl = await readFileAsDataUrl(file);
-        const base64Payload = String(rawDataUrl || '').split(',')[1] || '';
-        if (!base64Payload) throw new Error('No se pudo leer el adjunto seleccionado.');
-        const cleanMime = String(mimeType || '').trim().toLowerCase();
-        if (!cleanMime) throw new Error('No se pudo detectar el tipo de archivo.');
-        return `data:${cleanMime};base64,${base64Payload}`;
-    };
-
-    const uploadImageAsset = async ({ file, tenantId, scope }) => {
-        const dataUrl = await readFileAsDataUrl(file);
-        const payload = await requestJson('/api/admin/saas/assets/upload', {
-            method: 'POST',
-            body: {
-                tenantId,
-                scope,
-                fileName: String(file?.name || 'imagen').trim() || 'imagen',
-                dataUrl
-            }
-        });
-        return String(payload?.file?.url || payload?.file?.relativeUrl || '').trim();
-    };
+    const { pendingRequests, requestJson } = useSaasApiClient({
+        apiBase: API_BASE,
+        buildApiHeaders
+    });
     const aiUsageByTenant = useMemo(() => {
         const map = new Map();
         (overview.aiUsage || []).forEach((entry) => {
@@ -1192,7 +1134,10 @@ export default function SaasAdminPanel({
         const cleanTenantId = String(tenantId || '').trim();
         if (!cleanTenantId) throw new Error('Selecciona tenant antes de subir adjunto.');
 
-        const resolvedMimeType = resolveQuickReplyMimeType(file);
+        const resolvedMimeType = resolveQuickReplyMimeType(file, {
+            allowedMimeTypes: QUICK_REPLY_ALLOWED_MIME_TYPES,
+            extToMime: QUICK_REPLY_EXT_TO_MIME
+        });
         if (!resolvedMimeType || !QUICK_REPLY_ALLOWED_MIME_TYPES.includes(resolvedMimeType)) {
             throw new Error(`Formato no permitido para ${String(file?.name || 'adjunto')}. Usa ${QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL}.`);
         }
@@ -1225,7 +1170,10 @@ export default function SaasAdminPanel({
         if (!settingsTenantId) throw new Error('Selecciona una empresa antes de subir adjuntos.');
 
         for (const file of files) {
-            const mimeType = resolveQuickReplyMimeType(file);
+            const mimeType = resolveQuickReplyMimeType(file, {
+                allowedMimeTypes: QUICK_REPLY_ALLOWED_MIME_TYPES,
+                extToMime: QUICK_REPLY_EXT_TO_MIME
+            });
             if (!QUICK_REPLY_ALLOWED_MIME_TYPES.includes(mimeType)) {
                 throw new Error(`Formato no permitido para ${String(file?.name || 'adjunto')}. Usa ${QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL}.`);
             }
@@ -1868,7 +1816,7 @@ export default function SaasAdminPanel({
         setError('');
         setBusy(true);
         try {
-            const publicUrl = await uploadImageAsset({ file, tenantId: cleanTenantId, scope });
+            const publicUrl = await uploadImageAsset({ file, tenantId: cleanTenantId, scope, requestJson });
             if (!publicUrl) {
                 throw new Error('No se pudo obtener URL publica del archivo subido.');
             }
