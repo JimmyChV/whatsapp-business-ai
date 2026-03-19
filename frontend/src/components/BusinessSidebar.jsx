@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+﻿import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Bot, Send, X, ShoppingCart, Clock, Sparkles, Trash2, Plus, Minus, ChevronRight, ChevronDown, ChevronUp, Package, MessageSquare, PlusCircle, Edit2, Check, Search, SlidersHorizontal } from 'lucide-react';
 import moment from 'moment';
 
@@ -1393,7 +1393,8 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const tenantScopeRef = useRef(String(tenantScopeKey || 'default').trim() || 'default');
     const cartDraftSignaturesRef = useRef({});
 
-    const activeTenantScopeId = String(tenantScopeKey || tenantScopeRef.current || 'default').trim() || 'default';
+    const normalizedTenantScopeKey = useMemo(() => String(tenantScopeKey || 'default').trim() || 'default', [tenantScopeKey]);
+    const activeTenantScopeId = normalizedTenantScopeKey;
     const activeScopeModuleCandidate = normalizeAiScopeModuleId(activeChatDetails?.scopeModuleId || activeModuleId || selectedCatalogModuleId || '');
     const activeAiScope = buildAiScopeInfo(activeTenantScopeId, activeChatId, activeScopeModuleCandidate);
     const currentAiScopeKey = activeAiScope.scopeKey;
@@ -1442,7 +1443,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const profile = useMemo(() => (businessData.profile || myProfile || null), [businessData.profile, myProfile]);
     const quickRepliesEnabled = Boolean(waCapabilities?.quickReplies || waCapabilities?.quickRepliesRead || waCapabilities?.quickRepliesWrite);
     useEffect(() => {
-        const nextScope = String(tenantScopeKey || 'default').trim() || 'default';
+        const nextScope = normalizedTenantScopeKey;
         if (tenantScopeRef.current === nextScope) return;
         tenantScopeRef.current = nextScope;
 
@@ -1469,7 +1470,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setQuickSearch('');
         setOrderImportStatus(null);
         lastImportedOrderRef.current = '';
-    }, [tenantScopeKey]);
+    }, [normalizedTenantScopeKey]);
 
     useEffect(() => {
         aiScopeKeyRef.current = currentAiScopeKey;
@@ -2034,7 +2035,7 @@ INSTRUCCIONES OBLIGATORIAS:
 
         return {
             tenant: {
-                id: String(activeTenantScopeId || tenantScopeRef.current || 'default').trim() || 'default',
+                id: String(activeTenantScopeId || 'default').trim() || 'default',
                 name: String(profile?.name || profile?.pushname || '').trim() || null,
                 plan: null
             },
@@ -2809,6 +2810,8 @@ INSTRUCCIONES OBLIGATORIAS:
 };
 
 export default BusinessSidebar;
+
+
 
 
 
