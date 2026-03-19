@@ -1,12 +1,21 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import { Suspense, lazy, useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { io } from 'socket.io-client';
 
 import Sidebar from './components/Sidebar';
 import BusinessSidebar, { ClientProfilePanel } from './components/BusinessSidebar';
 import ChatWindow from './components/ChatWindow';
-import SaasAdminPanel from './components/SaasAdminPanel';
 
 import './index.css';
+
+const SaasAdminPanel = lazy(() => import('./components/SaasAdminPanel'));
+const PanelChunkFallback = () => (
+  <div className='login-screen'>
+    <div style={{ textAlign: 'center' }}>
+      <div className='loader' style={{ margin: '0 auto 12px' }} />
+      <p style={{ color: '#9eb2bf', fontSize: '0.86rem', margin: 0 }}>Cargando panel...</p>
+    </div>
+  </div>
+);
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const SOCKET_AUTH_TOKEN = import.meta.env.VITE_SOCKET_AUTH_TOKEN || '';
@@ -3900,21 +3909,23 @@ function App() {
   if (!selectedTransport) {
     if (canManageSaas && !forceOperationLaunch) {
       return (
-        <SaasAdminPanel
-          isOpen
-          onClose={handleSaasLogout}
-          onLogout={handleSaasLogout}
-          closeLabel='Cerrar sesion'
-          onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
-          buildApiHeaders={buildApiHeaders}
-          activeTenantId={tenantScopeId}
-          canManageSaas={canManageSaas}
-          userRole={saasUserRole}
-          isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
-          currentUser={saasSession?.user || null}
-          preferredTenantId={requestedWaTenantFromUrl || ''}
-          launchSource={requestedLaunchSource || ''}
-        />
+        <Suspense fallback={<PanelChunkFallback />}>
+          <SaasAdminPanel
+            isOpen
+            onClose={handleSaasLogout}
+            onLogout={handleSaasLogout}
+            closeLabel='Cerrar sesion'
+            onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
+            buildApiHeaders={buildApiHeaders}
+            activeTenantId={tenantScopeId}
+            canManageSaas={canManageSaas}
+            userRole={saasUserRole}
+            isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+            currentUser={saasSession?.user || null}
+            preferredTenantId={requestedWaTenantFromUrl || ''}
+            launchSource={requestedLaunchSource || ''}
+          />
+        </Suspense>
       );
     }
 
@@ -4225,23 +4236,24 @@ function App() {
           </div>
         </div>
       )}
-
-      <SaasAdminPanel
-        isOpen={showSaasAdminPanel}
-        onClose={() => setShowSaasAdminPanel(false)}
-        onLogout={handleSaasLogout}
-        closeLabel='Cerrar sesion'
-        onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
-        buildApiHeaders={buildApiHeaders}
-        activeTenantId={tenantScopeId}
-        canManageSaas={canManageSaas}
-        userRole={saasUserRole}
-        isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
-        currentUser={saasSession?.user || null}
+      <Suspense fallback={null}>
+        <SaasAdminPanel
+          isOpen={showSaasAdminPanel}
+          onClose={() => setShowSaasAdminPanel(false)}
+          onLogout={handleSaasLogout}
+          closeLabel='Cerrar sesion'
+          onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
+          buildApiHeaders={buildApiHeaders}
+          activeTenantId={tenantScopeId}
+          canManageSaas={canManageSaas}
+          userRole={saasUserRole}
+          isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+          currentUser={saasSession?.user || null}
           preferredTenantId={requestedWaTenantFromUrl || ''}
           launchSource={requestedLaunchSource || ''}
-        initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
-          />
+          initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
+        />
+      </Suspense>
     </div>
   );
 }
