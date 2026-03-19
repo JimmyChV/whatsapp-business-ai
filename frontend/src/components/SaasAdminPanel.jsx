@@ -308,6 +308,30 @@ export default function SaasAdminPanel({
         apiBase: API_BASE,
         buildApiHeaders
     });
+
+    const {
+        assignmentRules,
+        setAssignmentRules,
+        loadingAssignmentRules,
+        operationsKpis,
+        loadingOperationsKpis,
+        unassignedCandidates,
+        operationsSnapshot,
+        loadTenantAssignmentRules,
+        loadTenantOperationsKpis,
+        saveAssignmentRules,
+        triggerAutoAssignPreview,
+        resetOperationsState
+    } = useOperationsPanelState({
+        canViewOperations,
+        buildApiHeaders
+    });
+
+    const showPanelLoading = useMemo(() => {
+        const hasOverviewData = (Array.isArray(overview?.tenants) && overview.tenants.length > 0)
+            || (Array.isArray(overview?.users) && overview.users.length > 0);
+        return Boolean(busy || (!error && !hasOverviewData && pendingRequests > 0));
+    }, [busy, error, overview, pendingRequests]);
     const aiUsageByTenant = useMemo(() => {
         const map = new Map();
         (overview.aiUsage || []).forEach((entry) => {
@@ -2997,7 +3021,7 @@ export default function SaasAdminPanel({
                             assignmentRules={assignmentRules}
                             assignmentRoleOptions={assignmentRoleOptions}
                             operationsSnapshot={operationsSnapshot}
-                            activeTenantChatCandidates={activeTenantChatCandidates}
+                            activeTenantChatCandidates={unassignedCandidates}
                             tenantScopeId={tenantScopeId}
                             setAssignmentRules={setAssignmentRules}
                             runAction={runAction}
@@ -3276,3 +3300,6 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
