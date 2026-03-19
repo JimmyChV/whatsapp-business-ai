@@ -1,9 +1,10 @@
-import { Suspense, lazy, useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+﻿import { Suspense, lazy, useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { io } from 'socket.io-client';
 
 import Sidebar from './components/Sidebar';
 import BusinessSidebar, { ClientProfilePanel } from './components/BusinessSidebar';
 import ChatWindow from './components/ChatWindow';
+import AppErrorBoundary from './components/shared/AppErrorBoundary';
 
 import './index.css';
 
@@ -3910,21 +3911,30 @@ function App() {
     if (canManageSaas && !forceOperationLaunch) {
       return (
         <Suspense fallback={<PanelChunkFallback />}>
-          <SaasAdminPanel
-            isOpen
-            onClose={handleSaasLogout}
-            onLogout={handleSaasLogout}
-            closeLabel='Cerrar sesion'
-            onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
-            buildApiHeaders={buildApiHeaders}
-            activeTenantId={tenantScopeId}
-            canManageSaas={canManageSaas}
-            userRole={saasUserRole}
-            isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
-            currentUser={saasSession?.user || null}
-            preferredTenantId={requestedWaTenantFromUrl || ''}
-            launchSource={requestedLaunchSource || ''}
-          />
+          <AppErrorBoundary
+            fallbackTitle='Error en Panel SaaS'
+            fallbackMessage='Se detecto un error al cargar el panel. Puedes reintentar sin salir de sesion.'
+            resetKeys={[tenantScopeId, saasSession?.user?.userId, requestedWaTenantFromUrl, requestedLaunchSource]}
+            onError={(error) => {
+              console.error('[SaaSPanelBoundary]', error);
+            }}
+          >
+            <SaasAdminPanel
+              isOpen
+              onClose={handleSaasLogout}
+              onLogout={handleSaasLogout}
+              closeLabel='Cerrar sesion'
+              onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
+              buildApiHeaders={buildApiHeaders}
+              activeTenantId={tenantScopeId}
+              canManageSaas={canManageSaas}
+              userRole={saasUserRole}
+              isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+              currentUser={saasSession?.user || null}
+              preferredTenantId={requestedWaTenantFromUrl || ''}
+              launchSource={requestedLaunchSource || ''}
+            />
+          </AppErrorBoundary>
         </Suspense>
       );
     }
@@ -4237,28 +4247,40 @@ function App() {
         </div>
       )}
       <Suspense fallback={null}>
-        <SaasAdminPanel
-          isOpen={showSaasAdminPanel}
-          onClose={() => setShowSaasAdminPanel(false)}
-          onLogout={handleSaasLogout}
-          closeLabel='Cerrar sesion'
-          onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
-          buildApiHeaders={buildApiHeaders}
-          activeTenantId={tenantScopeId}
-          canManageSaas={canManageSaas}
-          userRole={saasUserRole}
-          isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
-          currentUser={saasSession?.user || null}
-          preferredTenantId={requestedWaTenantFromUrl || ''}
-          launchSource={requestedLaunchSource || ''}
-          initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
-        />
+        <AppErrorBoundary
+          fallbackTitle='Error en Panel SaaS'
+          fallbackMessage='El panel tuvo un error inesperado. Puedes reintentar sin perder la sesion activa.'
+          resetKeys={[showSaasAdminPanel, tenantScopeId, saasSession?.user?.userId, requestedWaSectionFromUrl]}
+          onError={(error) => {
+            console.error('[SaaSPanelModalBoundary]', error);
+          }}
+        >
+          <SaasAdminPanel
+            isOpen={showSaasAdminPanel}
+            onClose={() => setShowSaasAdminPanel(false)}
+            onLogout={handleSaasLogout}
+            closeLabel='Cerrar sesion'
+            onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
+            buildApiHeaders={buildApiHeaders}
+            activeTenantId={tenantScopeId}
+            canManageSaas={canManageSaas}
+            userRole={saasUserRole}
+            isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+            currentUser={saasSession?.user || null}
+            preferredTenantId={requestedWaTenantFromUrl || ''}
+            launchSource={requestedLaunchSource || ''}
+            initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
+          />
+        </AppErrorBoundary>
       </Suspense>
     </div>
   );
 }
 
 export default App;
+
+
+
 
 
 
