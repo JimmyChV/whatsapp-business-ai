@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
@@ -10,29 +10,35 @@ require('dotenv').config({ quiet: true });
 const logger = require('./logger');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./security_utils');
 const RateLimiter = require('./rate_limiter');
-const authService = require('./auth_service');
-const authRecoveryService = require('./auth_recovery_service');
-const auditLogService = require('./audit_log_service');
-const tenantService = require('./tenant_service');
-const tenantSettingsService = require('./tenant_settings_service');
-const saasControlService = require('./saas_control_plane_service');
-const accessPolicyService = require('./access_policy_service');
-const planLimitsService = require('./plan_limits_service');
-const planLimitsStoreService = require('./plan_limits_store_service');
-const aiUsageService = require('./ai_usage_service');
-const messageHistoryService = require('./message_history_service');
-const waModuleService = require('./wa_module_service');
-const customerService = require('./customer_service');
-const tenantIntegrationsService = require('./tenant_integrations_service');
-const tenantCatalogService = require('./tenant_catalog_service');
-const quickReplyLibrariesService = require('./quick_reply_libraries_service');
-const tenantLabelService = require('./tenant_label_service');
-const conversationOpsService = require('./conversation_ops_service');
-const assignmentRulesService = require('./assignment_rules_service');
-const chatAssignmentRouterService = require('./chat_assignment_router_service');
-const operationsKpiService = require('./operations_kpi_service');
+const {
+    authService,
+    authRecoveryService,
+    accessPolicyService,
+    planLimitsService,
+    planLimitsStoreService,
+    auditLogService
+} = require('./domains/security');
+const {
+    tenantService,
+    tenantSettingsService,
+    saasControlService,
+    tenantIntegrationsService,
+    tenantCatalogService,
+    tenantLabelService,
+    waModuleService,
+    customerService,
+    quickReplyLibrariesService,
+    aiUsageService
+} = require('./domains/tenant');
+const {
+    messageHistoryService,
+    conversationOpsService,
+    assignmentRulesService,
+    chatAssignmentRouterService,
+    operationsKpiService,
+    opsTelemetry
+} = require('./domains/operations');
 const { loadCatalog, addProduct, updateProduct } = require('./catalog_manager');
-const opsTelemetry = require('./ops_telemetry');
 
 const waClient = require('./wa_provider');
 const SocketManager = require('./socket_manager');
@@ -4315,13 +4321,3 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
-
-
-
-
-
-
-
-
-
-
