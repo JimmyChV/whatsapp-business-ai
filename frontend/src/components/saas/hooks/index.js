@@ -13,3 +13,6 @@ export { default as useTenantLabelsActions } from './useTenantLabelsActions';
 
 export { default as useTenantsUsersAdminActions } from './useTenantsUsersAdminActions';
 
+
+export { default as useCustomersAdminActions } from './useCustomersAdminActions';
+

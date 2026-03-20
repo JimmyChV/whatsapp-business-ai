@@ -19,6 +19,7 @@ import {
 import {
     useAiAssistantsAdminActions,
     useCatalogAdminActions,
+    useCustomersAdminActions,
     useOperationsPanelState,
     usePlansRolesAdminActions,
     useQuickReplyAdminActions,
@@ -718,6 +719,19 @@ export default function SaasAdminPanel({
         setMembershipDraft,
         setUserForm,
         loadAccessCatalog
+    });
+    const {
+        openCustomerCreate,
+        openCustomerView,
+        openCustomerEdit,
+        cancelCustomerEdit
+    } = useCustomersAdminActions({
+        selectedCustomer,
+        customerImportModuleId,
+        emptyCustomerForm: EMPTY_CUSTOMER_FORM,
+        setSelectedCustomerId,
+        setCustomerPanelMode,
+        setCustomerForm
     });
     const isSectionEnabled = useCallback((sectionId) => {
         const cleanId = String(sectionId || '').trim();
@@ -1451,38 +1465,6 @@ export default function SaasAdminPanel({
         setCurrentSection('saas_usuarios');
         scrollToSection('saas_usuarios');
     };
-    const openCustomerCreate = () => {
-        setSelectedCustomerId('');
-        setCustomerPanelMode('create');
-        setCustomerForm({
-            ...EMPTY_CUSTOMER_FORM,
-            moduleId: String(customerImportModuleId || '').trim()
-        });
-    };
-
-    const openCustomerView = (customerId) => {
-        const cleanCustomerId = String(customerId || '').trim();
-        if (!cleanCustomerId) return;
-        setSelectedCustomerId(cleanCustomerId);
-        setCustomerPanelMode('view');
-    };
-
-    const openCustomerEdit = () => {
-        if (!selectedCustomer) return;
-        setCustomerForm(normalizeCustomerFormFromItem(selectedCustomer));
-        setCustomerPanelMode('edit');
-    };
-
-    const cancelCustomerEdit = () => {
-        if (selectedCustomer) {
-            setCustomerForm(normalizeCustomerFormFromItem(selectedCustomer));
-            setCustomerPanelMode('view');
-            return;
-        }
-        setCustomerForm(EMPTY_CUSTOMER_FORM);
-        setCustomerPanelMode('view');
-    };
-
     const openConfigSettingsView = () => {
         setSelectedConfigKey('tenant_settings');
         setTenantSettingsPanelMode('view');
@@ -2220,6 +2202,10 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
+
 
 
 
