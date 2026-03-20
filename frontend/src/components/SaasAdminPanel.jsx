@@ -38,6 +38,7 @@ import {
     useSaasPanelSelectionHotkeys,
     useSaasPanelSelectionState,
     useSaasPanelSectionSyncEffects,
+    useSaasPanelSectionChange,
     useSaasPanelCrossNavigation,
     useSaasPanelTenantScopeEffects,
     useSaasPanelUserScopeState,
@@ -779,64 +780,39 @@ export default function SaasAdminPanel({
     });
 
 
-    const handleSectionChange = (sectionId) => {
-        const next = String(sectionId || '').trim();
-        if (!next) return;
-        if (!isSectionEnabled(next)) return;
-
-        if (next === 'saas_empresas') {
-            setSelectedTenantId('');
-            setTenantPanelMode('view');
-        }
-
-        if (next === 'saas_usuarios') {
-            setSelectedUserId('');
-            setUserPanelMode('view');
-            setMembershipDraft([]);
-        }
-
-        if (next === 'saas_roles') {
-            setSelectedRoleKey('');
-            setRolePanelMode('view');
-            setRoleForm(EMPTY_ROLE_FORM);
-        }
-
-        if (next === 'saas_clientes') {
-            setSelectedCustomerId('');
-            setCustomerPanelMode('view');
-        }
-
-        if (next === 'saas_ia') {
-            setSelectedAiAssistantId('');
-            setAiAssistantPanelMode('view');
-            setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
-        }
-
-        if (next === 'saas_etiquetas') {
-            setSelectedLabelId('');
-            setLabelPanelMode('view');
-            setLabelForm({ ...EMPTY_LABEL_FORM });
-        }
-
-        if (next === 'saas_quick_replies') {
-            setSelectedQuickReplyLibraryId('');
-            setSelectedQuickReplyItemId('');
-            setQuickReplyModuleFilterId('');
-            setQuickReplyLibraryPanelMode('view');
-            setQuickReplyItemPanelMode('view');
-            setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM });
-            setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM });
-        }
-
-        if (next === 'saas_config') {
-            clearConfigSelection();
-        }
-        if (next === 'saas_modulos') {
-            clearConfigSelection();
-        }
-
-        setCurrentSection(next);
-    };
+    const handleSectionChange = useSaasPanelSectionChange({
+        isSectionEnabled,
+        setSelectedTenantId,
+        setTenantPanelMode,
+        setSelectedUserId,
+        setUserPanelMode,
+        setMembershipDraft,
+        setSelectedRoleKey,
+        setRolePanelMode,
+        setRoleForm,
+        emptyRoleForm: EMPTY_ROLE_FORM,
+        setSelectedCustomerId,
+        setCustomerPanelMode,
+        setSelectedAiAssistantId,
+        setAiAssistantPanelMode,
+        setAiAssistantForm,
+        emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
+        setSelectedLabelId,
+        setLabelPanelMode,
+        setLabelForm,
+        emptyLabelForm: EMPTY_LABEL_FORM,
+        setSelectedQuickReplyLibraryId,
+        setSelectedQuickReplyItemId,
+        setQuickReplyModuleFilterId,
+        setQuickReplyLibraryPanelMode,
+        setQuickReplyItemPanelMode,
+        setQuickReplyLibraryForm,
+        emptyQuickReplyLibraryForm: EMPTY_QUICK_REPLY_LIBRARY_FORM,
+        setQuickReplyItemForm,
+        emptyQuickReplyItemForm: EMPTY_QUICK_REPLY_ITEM_FORM,
+        clearConfigSelection,
+        setCurrentSection
+    });
     const assignmentRoleOptions = ['seller', 'admin', 'owner'];
 
     const operationTenantId = useMemo(() => {
@@ -1736,4 +1712,5 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
 

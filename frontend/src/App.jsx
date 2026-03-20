@@ -13,10 +13,13 @@ import { useMessagesAutoScroll } from './features/chat/hooks/useMessagesAutoScro
 import { useChatRuntimeSyncEffects } from './features/chat/hooks/useChatRuntimeSyncEffects';
 import useScopedBusinessRequests from './features/chat/hooks/useScopedBusinessRequests';
 import { useSocketConnectionAuthEffect } from './features/chat/hooks/useSocketConnectionAuthEffect';
+import useChatPaginationRequester from './features/chat/hooks/useChatPaginationRequester';
 import { readWaLaunchParams } from './features/chat/helpers/waLaunchParams';
 import StatusScreen from './features/chat/components/StatusScreen';
 import TransportBootstrapScreen from './features/chat/components/TransportBootstrapScreen';
 import { useSaasRecoveryFlow } from './features/auth/hooks/useSaasRecoveryFlow';
+import useSaasRuntimeBootstrap from './features/auth/hooks/useSaasRuntimeBootstrap';
+import useSaasSessionAutoRefresh from './features/auth/hooks/useSaasSessionAutoRefresh';
 import { useSaasSessionActions } from './features/auth/hooks/useSaasSessionActions';
 import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHelpers';
 import SaasLoginScreen from './features/auth/components/SaasLoginScreen';
@@ -269,134 +272,33 @@ function App() {
     businessDataRequestSeqRef,
     setBusinessData
   });
+  useSaasRuntimeBootstrap({
+    apiUrl: API_URL,
+    buildApiHeaders,
+    refreshSaasSession,
+    saasSessionRef,
+    normalizeWaModules,
+    resolveSelectedWaModule,
+    setSaasSession,
+    setWaModules,
+    setSelectedWaModule,
+    setWaModuleError,
+    setSaasRuntime,
+    setLoginEmail,
+    setSaasAuthBusy,
+    setSaasAuthError
+  });
 
+  useSaasSessionAutoRefresh({
+    authEnabled: Boolean(saasRuntime?.authEnabled),
+    refreshToken: String(saasSession?.refreshToken || ''),
+    accessExpiresAtUnix: Number(saasSession?.accessExpiresAtUnix || 0),
+    saasSessionRef,
+    refreshSaasSession,
+    setSaasSession,
+    setSaasAuthError
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchRuntime = async (tokenOverride = '') => {
-      try {
-        const response = await fetch(`${API_URL}/api/saas/runtime`, {
-          headers: buildApiHeaders({ tokenOverride })
-        });
-        const payload = await response.json().catch(() => ({}));
-        return {
-          ok: response.ok,
-          payload: payload && typeof payload === 'object' ? payload : {},
-          error: String(payload?.error || '')
-        };
-      } catch (error) {
-        return {
-          ok: false,
-          payload: {},
-          error: String(error?.message || 'No se pudo cargar runtime SaaS.')
-        };
-      }
-    };
-
-    (async () => {
-      setSaasAuthBusy(true);
-      setSaasAuthError('');
-
-      const existing = saasSessionRef.current;
-      let nextSession = existing;
-
-      let runtimeResult = await fetchRuntime(String(existing?.accessToken || ''));
-      let runtimePayload = runtimeResult.payload || {};
-      const authEnabled = Boolean(runtimePayload?.authEnabled);
-      const runtimeAuthed = Boolean(runtimePayload?.authContext?.isAuthenticated && runtimePayload?.authContext?.user);
-
-      if (authEnabled) {
-        if (runtimeAuthed && existing?.accessToken) {
-          nextSession = { ...existing, user: runtimePayload.authContext.user };
-        } else if (existing?.refreshToken) {
-          try {
-            const refreshed = await refreshSaasSession(existing.refreshToken);
-            nextSession = refreshed;
-            runtimeResult = await fetchRuntime(String(refreshed?.accessToken || ''));
-            runtimePayload = runtimeResult.payload || runtimePayload;
-            if (runtimePayload?.authContext?.isAuthenticated && runtimePayload?.authContext?.user) {
-              nextSession = { ...refreshed, user: runtimePayload.authContext.user };
-            }
-          } catch (_error) {
-            nextSession = null;
-          }
-        } else {
-          nextSession = null;
-        }
-      }
-
-      if (cancelled) return;
-
-      const runtimeTenant = runtimePayload?.tenant || null;
-      const runtimeUser = runtimePayload?.authContext?.user || nextSession?.user || null;
-      const runtimeModules = normalizeWaModules(runtimePayload?.waModules || []);
-      const runtimeSelectedModule = resolveSelectedWaModule(runtimeModules, runtimePayload?.selectedWaModule || null);
-
-      setSaasSession(nextSession);
-      setWaModules(runtimeModules);
-      setSelectedWaModule(runtimeSelectedModule);
-      setWaModuleError('');
-      setSaasRuntime({
-        loaded: true,
-        authEnabled,
-        tenant: runtimeTenant,
-        tenants: Array.isArray(runtimePayload?.tenants) ? runtimePayload.tenants : [],
-        authContext: {
-          enabled: authEnabled,
-          isAuthenticated: Boolean(runtimePayload?.authContext?.isAuthenticated),
-          user: runtimeUser
-        }
-      });
-      const suggestedEmail = String(runtimeUser?.email || '').trim();
-      if (suggestedEmail) setLoginEmail((prev) => prev || suggestedEmail);
-
-      if (!runtimeResult.ok) {
-        setSaasAuthError(runtimeResult.error || 'No se pudo cargar runtime SaaS.');
-      }
-      setSaasAuthBusy(false);
-    })().catch((error) => {
-      if (cancelled) return;
-      setSaasRuntime((prev) => ({ ...prev, loaded: true }));
-      setWaModules([]);
-      setSelectedWaModule(null);
-      setSaasAuthBusy(false);
-      setSaasAuthError(String(error?.message || 'No se pudo inicializar SaaS.'));
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [buildApiHeaders, refreshSaasSession]);
-
-  useEffect(() => {
-    if (!saasRuntime?.authEnabled) return;
-    if (!saasSession?.refreshToken) return;
-    if (!Number.isFinite(Number(saasSession?.accessExpiresAtUnix)) || Number(saasSession.accessExpiresAtUnix) <= 0) return;
-
-    let cancelled = false;
-    const tick = async () => {
-      if (cancelled) return;
-      const expiresAt = Number(saasSessionRef.current?.accessExpiresAtUnix || 0);
-      const now = Math.floor(Date.now() / 1000);
-      if (!expiresAt || (expiresAt - now) > 120) return;
-
-      try {
-        await refreshSaasSession();
-      } catch (_error) {
-        if (cancelled) return;
-        setSaasSession(null);
-        setSaasAuthError('Sesion expirada. Inicia sesion nuevamente.');
-      }
-    };
-
-    const interval = setInterval(tick, 30000);
-    tick();
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [saasRuntime?.authEnabled, saasSession?.refreshToken, saasSession?.accessExpiresAtUnix, refreshSaasSession]);
 
   useSocketConnectionAuthEffect({
     socket,
@@ -461,122 +363,21 @@ function App() {
     return () => clearTimeout(timer);
   }, [chatSearchQuery, chatFilters, isClientReady]);
 
-  // --------------------------------------------------------------
-  const requestChatsPage = ({ reset = false } = {}) => {
-    if (chatPagingRef.current.loading && !reset) return;
-    if (!reset && !chatPagingRef.current.hasMore) return;
-
-    const offset = reset ? 0 : chatPagingRef.current.offset;
-    const query = chatSearchRef.current;
-    const filters = chatFiltersRef.current;
-    chatPagingRef.current.loading = true;
-    if (reset) {
-      chatPagingRef.current.offset = 0;
-      chatPagingRef.current.hasMore = true;
-      setChatsHasMore(true);
-      setChatsTotal(0);
-    }
-    setIsLoadingMoreChats(true);
-    socket.emit('get_chats', { offset, limit: CHAT_PAGE_SIZE, reset, query, filters, filterKey: buildFiltersKey(filters) });
-  };
+  const { requestChatsPage } = useChatPaginationRequester({
+    socket,
+    chatPagingRef,
+    chatSearchRef,
+    chatFiltersRef,
+    chatPageSize: CHAT_PAGE_SIZE,
+    buildFiltersKey,
+    setChatsHasMore,
+    setChatsTotal,
+    setIsLoadingMoreChats
+  });
 
   // Socket Events
   // --------------------------------------------------------------
   useEffect(() => {
-    socket.on('connect', () => {
-      setIsConnected(true);
-      setTransportError('');
-      const mode = selectedTransportRef.current;
-      setIsSwitchingTransport(true);
-      socket.emit('set_transport_mode', { mode: mode || 'idle' });
-      socket.emit('get_wa_capabilities');
-      socket.emit('get_wa_modules');
-    });
-    socket.on('connect_error', (error) => {
-      setIsConnected(false);
-      const message = String(error?.message || '').trim();
-      if (saasRuntimeRef.current?.authEnabled && /unauthorized/i.test(message)) {
-        setSaasSession(null);
-        setSaasAuthError('Sesion SaaS expirada o invalida. Inicia sesion nuevamente.');
-      }
-    });
-
-    socket.on('tenant_context', (ctx) => {
-      if (!ctx || typeof ctx !== 'object') return;
-      const tenantId = String(ctx?.tenantId || '').trim();
-      const authUser = (ctx?.auth?.user && typeof ctx.auth.user === 'object')
-        ? ctx.auth.user
-        : (ctx?.user && typeof ctx.user === 'object' ? ctx.user : null);
-
-      if (tenantId) {
-        setSaasRuntime((prev) => ({
-          ...prev,
-          tenant: {
-            ...(prev?.tenant || {}),
-            id: tenantId,
-            slug: prev?.tenant?.slug || tenantId,
-            name: prev?.tenant?.name || tenantId,
-            active: prev?.tenant?.active !== false,
-            plan: prev?.tenant?.plan || 'starter'
-          }
-        }));
-      }
-
-      if (authUser && saasSessionRef.current?.accessToken) {
-        setSaasSession((prev) => prev ? ({ ...prev, user: { ...(prev?.user || {}), ...authUser } }) : prev);
-      }
-    });
-
-    socket.on('wa_module_context', (payload) => {
-      const items = normalizeWaModules(payload?.items || []);
-      const previousModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
-      const selected = resolveSelectedWaModule(items, payload?.selected || selectedWaModuleRef.current);
-      const selectedModuleId = String(selected?.moduleId || '').trim().toLowerCase();
-      setWaModules(items);
-      setSelectedWaModule(selected);
-      setWaModuleError('');
-
-      const previousCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
-      const selectedCatalogExists = previousCatalogModuleId
-        ? items.some((item) => String(item?.moduleId || '').trim().toLowerCase() === previousCatalogModuleId)
-        : false;
-      const nextCatalogModuleId = selectedCatalogExists
-        ? previousCatalogModuleId
-        : (selectedModuleId || String(items[0]?.moduleId || '').trim().toLowerCase());
-      setSelectedCatalogModuleId(nextCatalogModuleId || '');
-      if (nextCatalogModuleId !== previousCatalogModuleId) {
-        selectedCatalogIdRef.current = '';
-        setSelectedCatalogId('');
-      }
-      if (nextCatalogModuleId && socket.connected) {
-        const nextCatalogId = nextCatalogModuleId === previousCatalogModuleId
-          ? (selectedCatalogIdRef.current || '')
-          : '';
-        emitScopedBusinessDataRequest({ moduleId: nextCatalogModuleId, catalogId: nextCatalogId });
-      }
-
-      const requestedModuleId = String(requestedWaModuleFromUrlRef.current || '').trim().toLowerCase();
-      if (requestedModuleId) {
-        const requestedMatch = items.find((item) => String(item?.moduleId || '').trim().toLowerCase() === requestedModuleId);
-        if (requestedMatch && String(selected?.moduleId || '').trim().toLowerCase() !== requestedModuleId) {
-          socket.emit('set_wa_module', { moduleId: requestedMatch.moduleId });
-          return;
-        }
-        requestedWaModuleFromUrlRef.current = '';
-      }
-
-      const selectedMode = String(selected?.transportMode || '').trim().toLowerCase();
-      const shouldAutoSelectTransport = forceOperationLaunchRef.current || !canManageSaasRef.current;
-      if (shouldAutoSelectTransport && selectedMode === 'cloud' && selectedMode !== selectedTransportRef.current) {
-        setSelectedTransport(selectedMode);
-      }
-
-      if (selectedModuleId && selectedModuleId !== previousModuleId) {
-        requestQuickRepliesForModule(selectedModuleId);
-        emitScopedBusinessDataRequest({ moduleId: selectedModuleId || selectedCatalogModuleIdRef.current, catalogId: selectedCatalogIdRef.current || '' });
-      }
-    });
-
     socket.on('wa_module_selected', (payload) => {
       const selected = normalizeWaModuleItem(payload?.selected || payload?.item || payload || null);
       if (!selected?.moduleId) return;
@@ -2844,6 +2645,9 @@ function App() {
 }
 
 export default App;
+
+
+
 
 
 
