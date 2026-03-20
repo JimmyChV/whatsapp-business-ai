@@ -41,15 +41,19 @@ export const useAiScopeState = ({
 
     const isAiLoading = Boolean(aiLoadingByScope[currentAiScopeKey]);
 
-    const resetAiScopeState = useCallback(() => {
-        setAiThreadsByScope({});
-        setAiLoadingByScope({});
+    const resetAiRuntimeRefs = useCallback(() => {
         aiRequestScopeRef.current = '';
         aiScopeKeyRef.current = '';
         aiHistoryLoadedRef.current = new Set();
         aiHistoryRequestSeqRef.current = 0;
         aiHistoryScopeBySeqRef.current = new Map();
     }, []);
+
+    const resetAiScopeState = useCallback(() => {
+        setAiThreadsByScope({});
+        setAiLoadingByScope({});
+        resetAiRuntimeRefs();
+    }, [resetAiRuntimeRefs]);
 
     const setAiThreadMessages = useCallback((scopeKey = '', updater = null) => {
         const safeScopeKey = String(scopeKey || '').trim();
@@ -85,19 +89,11 @@ export const useAiScopeState = ({
         const nextScope = normalizedTenantScopeKey;
         if (tenantScopeRef.current === nextScope) return;
         tenantScopeRef.current = nextScope;
-        resetAiScopeState();
-    }, [normalizedTenantScopeKey, resetAiScopeState]);
+        resetAiRuntimeRefs();
+    }, [normalizedTenantScopeKey, resetAiRuntimeRefs]);
 
     useEffect(() => {
         aiScopeKeyRef.current = currentAiScopeKey;
-        setAiThreadsByScope((previous) => {
-            const existing = previous?.[currentAiScopeKey];
-            if (Array.isArray(existing) && existing.length > 0) return previous;
-            return {
-                ...previous,
-                [currentAiScopeKey]: buildDefaultAiThread()
-            };
-        });
     }, [currentAiScopeKey]);
 
     return {

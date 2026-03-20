@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
-import { Check, ChevronDown, Edit2, PlusCircle, Search, SlidersHorizontal } from 'lucide-react';
-import { normalizeCatalogItem, normalizeTextKey, parseMoney, roundMoney } from '../helpers';
+import React, { useState } from 'react';
+import { Check, Minus, Package, Plus, PlusCircle, Search, Send, ShoppingCart, SlidersHorizontal } from 'lucide-react';
+import { formatMoney, normalizeTextKey } from '../helpers';
 
-const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null }) => {
+const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({
@@ -767,6 +767,9 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 };
 
 export default CatalogTab;
+
+
+
 
 
 
