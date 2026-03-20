@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { buildAiScopeInfo, buildDefaultAiThread, normalizeAiScopeModuleId } from '../businessSidebar.helpers';
+import { buildAiScopeInfo, buildDefaultAiThread, normalizeAiScopeModuleId } from '../helpers';
 
 export const useAiScopeState = ({
     tenantScopeKey = 'default',
@@ -119,3 +119,4 @@ export const useAiScopeState = ({
         setAiThreadsByScope
     };
 };
+

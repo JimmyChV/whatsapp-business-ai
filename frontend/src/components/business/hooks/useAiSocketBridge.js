@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { buildAiScopeInfo, buildDefaultAiThread, repairMojibake } from '../businessSidebar.helpers';
+import { buildAiScopeInfo, buildDefaultAiThread, repairMojibake } from '../helpers';
 import { attachAiSocketListeners, emitAiHistoryRequest } from '../services/aiSocket.service';
 
 export const useAiSocketBridge = ({
@@ -141,3 +141,4 @@ export const useAiSocketBridge = ({
         setAiThreadMessages
     ]);
 };
+

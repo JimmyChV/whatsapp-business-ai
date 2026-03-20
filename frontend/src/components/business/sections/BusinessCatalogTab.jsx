@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Check, ChevronDown, Edit2, PlusCircle, Search, SlidersHorizontal } from 'lucide-react';
-import { normalizeCatalogItem, parseMoney, roundMoney } from './businessSidebar.helpers';
+import { normalizeCatalogItem, parseMoney, roundMoney } from '../helpers';
 
 const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null }) => {
     const [showForm, setShowForm] = useState(false);
@@ -767,3 +767,5 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 };
 
 export default CatalogTab;
+
+

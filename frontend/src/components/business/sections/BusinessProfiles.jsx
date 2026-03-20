@@ -10,7 +10,7 @@ import {
     looksLikeInternalId,
     normalizeDigits,
     sanitizeProfileText
-} from './businessSidebar.helpers';
+} from '../helpers';
 
 export const ClientProfilePanel = ({ contact, chats = [], onClose, onQuickAiAction, panelRef }) => {
     if (!contact) return null;
@@ -355,3 +355,5 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout, p
         </aside>
     );
 };
+
+

@@ -1,44 +1,41 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Bot, Send, ShoppingCart, Clock, Sparkles, Trash2, Plus, Minus, ChevronDown, ChevronUp, Package, MessageSquare } from 'lucide-react';
 import {
+    addItemToCartState,
+    buildAiRuntimeContext,
+    buildBusinessContextPrompt,
+    buildCartSnapshotPayload,
     buildDefaultAiThread,
+    buildQuoteMessageFromCart,
+    calculateCartPricing,
     clampNumber,
     formatMoney,
     formatMoneyCompact,
     formatQuoteProductTitle,
+    getCartLineBreakdown,
     normalizeCatalogItem,
     parseMoney,
     repairMojibake,
-    roundMoney
-} from './business/businessSidebar.helpers';
-import { useAiScopeState } from './business/hooks/useAiScopeState';
-import { useAiSocketBridge } from './business/hooks/useAiSocketBridge';
-import { usePendingOrderCartImport } from './business/hooks/usePendingOrderCartImport';
-import { useCartDraftSync } from './business/hooks/useCartDraftSync';
-import { useTenantScopeReset } from './business/hooks/useTenantScopeReset';
-import { useCompanyProfileOverlay } from './business/hooks/useCompanyProfileOverlay';
-import { useBusinessSidebarUiSync } from './business/hooks/useBusinessSidebarUiSync';
-import { emitAiQuery } from './business/services/aiSocket.service';
-import { buildAiRuntimeContext, buildBusinessContextPrompt } from './business/businessSidebarAiContext.helpers';
-import {
-    buildCartSnapshotPayload,
-    buildQuoteMessageFromCart,
-    calculateCartPricing,
-    getCartLineBreakdown
-} from './business/businessSidebarCart.helpers';
-import {
-    addItemToCartState,
     removeItemFromCartState,
+    roundMoney,
     setCartItemDiscountEnabledState,
     setCartItemDiscountTypeState,
     setCartItemDiscountValueState,
     updateCartItemQtyState
-} from './business/businessSidebarCartMutations.helpers';
-import { ClientProfilePanel, CompanyProfilePanel } from './business/BusinessProfiles';
-import BusinessCatalogTab from './business/BusinessCatalogTab';
+} from './business/helpers';
+import {
+    useAiScopeState,
+    useAiSocketBridge,
+    useBusinessSidebarUiSync,
+    useCartDraftSync,
+    useCompanyProfileOverlay,
+    usePendingOrderCartImport,
+    useTenantScopeReset
+} from './business/hooks';
+import { emitAiQuery } from './business/services';
+import { BusinessCatalogTab, ClientProfilePanel, CompanyProfilePanel } from './business/sections';
 
 export { ClientProfilePanel };
-
 // =========================================================
 // BUSINESS SIDEBAR - Main right panel
 
@@ -815,6 +812,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 };
 
 export default BusinessSidebar;
+
+
+
 
 
 
