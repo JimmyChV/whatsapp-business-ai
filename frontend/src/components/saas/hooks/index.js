@@ -1,3 +1,4 @@
+export { default as usePlansRolesAdminActions } from './usePlansRolesAdminActions';
 export { default as useAiAssistantsAdminActions } from './useAiAssistantsAdminActions';
 export { default as useCatalogAdminActions } from './useCatalogAdminActions';
 export { default as useOperationsPanelState } from './useOperationsPanelState';
@@ -9,3 +10,6 @@ export { default as useSaasPanelDerivedData } from './useSaasPanelDerivedData';
 export { default as useSaasTenantScope } from './useSaasTenantScope';
 export { default as useSaasTenantUsers } from './useSaasTenantUsers';
 export { default as useTenantLabelsActions } from './useTenantLabelsActions';
+
+export { default as useTenantsUsersAdminActions } from './useTenantsUsersAdminActions';
+

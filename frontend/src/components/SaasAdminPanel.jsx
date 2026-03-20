@@ -20,6 +20,7 @@ import {
     useAiAssistantsAdminActions,
     useCatalogAdminActions,
     useOperationsPanelState,
+    usePlansRolesAdminActions,
     useQuickReplyAdminActions,
     useQuickReplyAssetsUpload,
     useSaasAccessControl,
@@ -27,8 +28,16 @@ import {
     useSaasPanelDerivedData,
     useSaasTenantScope,
     useSaasTenantUsers,
-    useTenantLabelsActions
+    useTenantLabelsActions,
+    useTenantsUsersAdminActions
 } from './saas/hooks';
+import {
+    fetchSaasOverview,
+    fetchTenantCustomers,
+    fetchTenantIntegrations,
+    fetchTenantSettings,
+    fetchTenantWaModules
+} from './saas/services';
 
 import { uploadImageAsset } from './saas/helpers';
 
@@ -46,7 +55,6 @@ const {
     buildTenantCatalogFormFromItem,
     buildTenantCatalogPayload,
     EMPTY_ACCESS_CATALOG,
-    normalizeAccessCatalogPayload,
     EMPTY_ROLE_FORM,
     PLAN_LIMIT_KEYS,
     PLAN_FEATURE_KEYS,
@@ -112,8 +120,6 @@ const {
     normalizeIntegrationsPayload,
     buildIntegrationsUpdatePayload,
     normalizePlanForm,
-    normalizeRoleProfileItem,
-    buildRoleFormFromItem,
     sanitizeRoleCode,
     buildTenantFormFromItem,
     buildUserFormFromItem,
@@ -644,6 +650,75 @@ export default function SaasAdminPanel({
         setAiAssistantPanelMode,
         runAction
     });
+    const {
+        loadPlanMatrix,
+        loadAccessCatalog,
+        openPlanView,
+        openPlanEdit,
+        cancelPlanEdit,
+        openRoleCreate,
+        openRoleView,
+        openRoleEdit,
+        cancelRoleEdit,
+        toggleRolePermission,
+        saveRoleProfile
+    } = usePlansRolesAdminActions({
+        requestJson,
+        canManageRoles,
+        selectedRoleProfile,
+        selectedRoleKey,
+        roleForm,
+        rolePanelMode,
+        selectedPlanId,
+        planMatrix,
+        planOptions: PLAN_OPTIONS,
+        emptyRoleForm: EMPTY_ROLE_FORM,
+        setLoadingPlans,
+        setPlanMatrix,
+        setSelectedPlanId,
+        setPlanForm,
+        setPlanPanelMode,
+        setRolePanelMode,
+        setLoadingAccessCatalog,
+        setAccessCatalog,
+        setSelectedRoleKey,
+        setRoleForm,
+        runAction
+    });
+    const {
+        openTenantCreate,
+        openTenantView,
+        openTenantEdit,
+        cancelTenantEdit,
+        openUserCreate,
+        openUserView,
+        openUserEdit,
+        cancelUserEdit,
+        updateMembershipDraft,
+        removeMembershipDraft,
+        addMembershipDraft
+    } = useTenantsUsersAdminActions({
+        loadingAccessCatalog,
+        accessCatalog,
+        canEditSelectedUser,
+        selectedTenant,
+        selectedUser,
+        tenantScopeId,
+        selectedTenantId,
+        tenantOptions,
+        roleOptions,
+        emptyTenantForm: EMPTY_TENANT_FORM,
+        emptyUserForm: EMPTY_USER_FORM,
+        setTenantPanelMode,
+        setSelectedTenantId,
+        setSettingsTenantId,
+        setTenantForm,
+        setUserPanelMode,
+        setSelectedUserId,
+        setMembershipDraft,
+        setUserForm,
+        loadAccessCatalog
+    });
     const isSectionEnabled = useCallback((sectionId) => {
         const cleanId = String(sectionId || '').trim();
         if (cleanId === 'saas_empresas') return canManageTenants;
@@ -782,7 +857,7 @@ export default function SaasAdminPanel({
     };
 
     const refreshOverview = async () => {
-        const payload = await requestJson('/api/admin/saas/overview');
+        const payload = await fetchSaasOverview(requestJson);
         const next = normalizeOverview(payload);
         setOverview(next);
 
@@ -820,7 +895,7 @@ export default function SaasAdminPanel({
         }
         setLoadingSettings(true);
         try {
-            const payload = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/settings`);
+            const payload = await fetchTenantSettings(requestJson, cleanTenantId);
             const settings = payload?.settings && typeof payload.settings === 'object' ? payload.settings : {};
             setTenantSettings({
                 catalogMode: CATALOG_MODE_OPTIONS.includes(String(settings.catalogMode || '').trim())
@@ -850,37 +925,11 @@ export default function SaasAdminPanel({
         }
         setLoadingIntegrations(true);
         try {
-            const payload = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/integrations`);
+            const payload = await fetchTenantIntegrations(requestJson, cleanTenantId);
             setTenantIntegrations(normalizeIntegrationsPayload(payload?.integrations || {}));
         } finally {
             setLoadingIntegrations(false);
         }
-    };
-
-    const openPlanView = (planId) => {
-        const cleanPlanId = String(planId || '').trim().toLowerCase();
-        if (!cleanPlanId) return;
-        const limits = planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object' ? planMatrix[cleanPlanId] : {};
-        setSelectedPlanId(cleanPlanId);
-        setPlanForm(normalizePlanForm(cleanPlanId, limits));
-        setPlanPanelMode('view');
-        setRolePanelMode('view');
-    };
-
-    const openPlanEdit = () => {
-        const cleanPlanId = String(selectedPlanId || '').trim().toLowerCase();
-        if (!cleanPlanId) return;
-        const limits = planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object' ? planMatrix[cleanPlanId] : {};
-        setPlanForm(normalizePlanForm(cleanPlanId, limits));
-        setPlanPanelMode('edit');
-    };
-
-    const cancelPlanEdit = () => {
-        const cleanPlanId = String(selectedPlanId || '').trim().toLowerCase();
-        const limits = planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object' ? planMatrix[cleanPlanId] : {};
-        setPlanForm(normalizePlanForm(cleanPlanId, limits));
-        setPlanPanelMode('view');
-        setRolePanelMode('view');
     };
     const loadWaModules = async (tenantId) => {
         const cleanTenantId = String(tenantId || '').trim();
@@ -897,7 +946,7 @@ export default function SaasAdminPanel({
             setCatalogProductImageError('');
             return;
         }
-        const payload = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(cleanTenantId) + '/wa-modules');
+        const payload = await fetchTenantWaModules(requestJson, cleanTenantId);
         const items = (Array.isArray(payload?.items) ? payload.items : [])
             .map(normalizeWaModule)
             .filter(Boolean)
@@ -918,7 +967,7 @@ export default function SaasAdminPanel({
             setSelectedCustomerId('');
             return;
         }
-        const payload = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(cleanTenantId) + '/customers?limit=300&includeInactive=true');
+        const payload = await fetchTenantCustomers(requestJson, cleanTenantId, { limit: 300, includeInactive: true });
         const items = Array.isArray(payload?.items) ? payload.items : [];
         setCustomers(items);
         setSelectedCustomerId((prev) => {
@@ -988,7 +1037,7 @@ export default function SaasAdminPanel({
         setModuleUserPickerId('');
         setModuleQuickReplyLibraryDraft(getQuickReplyLibraryIdsForModule(item.moduleId));
     };
-    const runAction = async (label, action) => {
+    async function runAction(label, action) {
         setError('');
         setBusy(true);
         try {
@@ -1007,8 +1056,7 @@ export default function SaasAdminPanel({
         } finally {
             setBusy(false);
         }
-    };
-
+    }
     const handleOpenOperation = () => {
         if (typeof onOpenWhatsAppOperation !== 'function') return;
         const cleanTenantId = String(tenantScopeId || activeTenantId || '').trim();
@@ -1032,28 +1080,6 @@ export default function SaasAdminPanel({
         } finally {
             setBusy(false);
         }
-    };
-    const updateMembershipDraft = (index, patch = {}) => {
-        setMembershipDraft((prev) => prev.map((entry, entryIndex) => {
-            if (entryIndex !== index) return entry;
-            return {
-                ...entry,
-                ...patch,
-                role: String(patch?.role || entry.role || '').trim().toLowerCase() || 'seller'
-            };
-        }));
-    };
-
-    const removeMembershipDraft = (index) => {
-        setMembershipDraft((prev) => prev.filter((_, entryIndex) => entryIndex !== index));
-    };
-
-    const addMembershipDraft = () => {
-        const fallbackTenant = String(settingsTenantId || tenantOptions[0]?.id || '').trim();
-        setMembershipDraft((prev) => [
-            ...prev,
-            { tenantId: fallbackTenant, role: 'seller', active: true }
-        ]);
     };
     useEffect(() => {
         if (!isOpen || !canManageSaas) return;
@@ -1414,195 +1440,6 @@ export default function SaasAdminPanel({
             sortOrder: String(selectedQuickReplyItem.sortOrder || 100)
         });
     }, [selectedQuickReplyItem, selectedQuickReplyLibrary, quickReplyItemPanelMode]);
-
-    const openTenantCreate = () => {
-        setTenantPanelMode('create');
-        setSelectedTenantId('');
-        setTenantForm(EMPTY_TENANT_FORM);
-    };
-
-    const openTenantView = (tenantId) => {
-        const cleanTenantId = String(tenantId || '').trim();
-        if (!cleanTenantId) return;
-        setSelectedTenantId(cleanTenantId);
-        setSettingsTenantId(cleanTenantId);
-        setTenantPanelMode('view');
-    };
-
-    const openTenantEdit = () => {
-        if (!selectedTenant) return;
-        setTenantForm(buildTenantFormFromItem(selectedTenant));
-        setTenantPanelMode('edit');
-    };
-
-    const cancelTenantEdit = () => {
-        if (selectedTenant) {
-            setTenantForm(buildTenantFormFromItem(selectedTenant));
-            setTenantPanelMode('view');
-            return;
-        }
-        setTenantForm(EMPTY_TENANT_FORM);
-        setTenantPanelMode('view');
-    };
-
-    const openUserCreate = () => {
-        if (!loadingAccessCatalog && (!Array.isArray(accessCatalog?.roleProfiles) || accessCatalog.roleProfiles.length === 0)) {
-            loadAccessCatalog().catch(() => undefined);
-        }
-        const fallbackTenantId = String(tenantScopeId || selectedTenantId || tenantOptions[0]?.id || '').trim();
-        setUserPanelMode('create');
-        setSelectedUserId('');
-        setMembershipDraft([]);
-        setUserForm({
-            ...EMPTY_USER_FORM,
-            tenantId: fallbackTenantId,
-            role: roleOptions[0] || 'seller',
-            permissionGrants: [],
-            permissionPacks: []
-        });
-    };
-
-    const openUserView = (userId) => {
-        const cleanUserId = String(userId || '').trim();
-        if (!cleanUserId) return;
-        setSelectedUserId(cleanUserId);
-        setMembershipDraft([]);
-        setUserPanelMode('view');
-    };
-
-    const openUserEdit = () => {
-        if (!selectedUser || !canEditSelectedUser) return;
-        if (!loadingAccessCatalog && (!Array.isArray(accessCatalog?.roleProfiles) || accessCatalog.roleProfiles.length === 0)) {
-            loadAccessCatalog().catch(() => undefined);
-        }
-        setUserForm(buildUserFormFromItem(selectedUser));
-        setMembershipDraft(sanitizeMemberships(selectedUser.memberships || []));
-        setUserPanelMode('edit');
-    };
-
-    const cancelUserEdit = () => {
-        if (selectedUser) {
-            setUserForm(buildUserFormFromItem(selectedUser));
-            setMembershipDraft([]);
-            setUserPanelMode('view');
-            return;
-        }
-        setUserForm(EMPTY_USER_FORM);
-        setMembershipDraft([]);
-        setUserPanelMode('view');
-    };
-
-    const openRoleCreate = () => {
-        if (!canManageRoles) return;
-        setSelectedRoleKey('');
-        setRoleForm(EMPTY_ROLE_FORM);
-        setRolePanelMode('create');
-    };
-
-    const openRoleView = (roleKey) => {
-        const cleanRole = String(roleKey || '').trim().toLowerCase();
-        if (!cleanRole) return;
-        setSelectedRoleKey(cleanRole);
-        setRolePanelMode('view');
-    };
-
-    const openRoleEdit = () => {
-        if (!selectedRoleProfile || !canManageRoles) return;
-        setRoleForm(buildRoleFormFromItem(selectedRoleProfile));
-        setRolePanelMode('edit');
-    };
-
-    const cancelRoleEdit = () => {
-        if (selectedRoleProfile) {
-            setRoleForm(buildRoleFormFromItem(selectedRoleProfile));
-            setRolePanelMode('view');
-            return;
-        }
-        setRoleForm(EMPTY_ROLE_FORM);
-        setRolePanelMode('view');
-    };
-
-    const toggleRolePermission = (bucket, permissionKey, enabled) => {
-        const cleanBucket = String(bucket || '').trim().toLowerCase();
-        const cleanPermission = String(permissionKey || '').trim();
-        if (!['required', 'optional', 'blocked'].includes(cleanBucket) || !cleanPermission) return;
-
-        setRoleForm((prev) => {
-            const required = new Set(Array.isArray(prev?.required) ? prev.required.map((entry) => String(entry || '').trim()).filter(Boolean) : []);
-            const optional = new Set(Array.isArray(prev?.optional) ? prev.optional.map((entry) => String(entry || '').trim()).filter(Boolean) : []);
-            const blocked = new Set(Array.isArray(prev?.blocked) ? prev.blocked.map((entry) => String(entry || '').trim()).filter(Boolean) : []);
-
-            required.delete(cleanPermission);
-            optional.delete(cleanPermission);
-            blocked.delete(cleanPermission);
-
-            if (enabled) {
-                if (cleanBucket === 'required') required.add(cleanPermission);
-                if (cleanBucket === 'optional') optional.add(cleanPermission);
-                if (cleanBucket === 'blocked') blocked.add(cleanPermission);
-            }
-
-            return {
-                ...prev,
-                required: [...required].sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' })),
-                optional: [...optional].sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' })),
-                blocked: [...blocked].sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' }))
-            };
-        });
-    };
-
-    const saveRoleProfile = () => {
-        if (!canManageRoles) return;
-
-        runAction(rolePanelMode === 'create' ? 'Rol creado' : 'Rol actualizado', async () => {
-            const cleanRole = sanitizeRoleCode(roleForm?.role || selectedRoleKey);
-            if (!cleanRole) {
-                throw new Error('El codigo del rol es obligatorio.');
-            }
-
-            const required = Array.from(new Set(
-                (Array.isArray(roleForm?.required) ? roleForm.required : [])
-                    .map((entry) => String(entry || '').trim())
-                    .filter(Boolean)
-            ));
-            const optional = Array.from(new Set(
-                (Array.isArray(roleForm?.optional) ? roleForm.optional : [])
-                    .map((entry) => String(entry || '').trim())
-                    .filter((entry) => Boolean(entry) && !required.includes(entry))
-            ));
-            const blocked = Array.from(new Set(
-                (Array.isArray(roleForm?.blocked) ? roleForm.blocked : [])
-                    .map((entry) => String(entry || '').trim())
-                    .filter((entry) => Boolean(entry) && !required.includes(entry) && !optional.includes(entry))
-            ));
-
-            const body = {
-                role: cleanRole,
-                label: String(roleForm?.label || cleanRole).trim() || cleanRole,
-                required,
-                optional,
-                blocked,
-                active: roleForm?.active !== false
-            };
-
-            const endpoint = rolePanelMode === 'create'
-                ? '/api/admin/saas/access-profiles/roles'
-                : `/api/admin/saas/access-profiles/roles/${encodeURIComponent(cleanRole)}`;
-            const method = rolePanelMode === 'create' ? 'POST' : 'PUT';
-
-            const payload = await requestJson(endpoint, { method, body });
-            const nextCatalog = normalizeAccessCatalogPayload(payload);
-            setAccessCatalog(nextCatalog);
-
-            const nextSelectedRole = cleanRole;
-            const nextProfile = (Array.isArray(nextCatalog.roleProfiles) ? nextCatalog.roleProfiles : [])
-                .find((entry) => String(entry?.role || '').trim().toLowerCase() === nextSelectedRole) || null;
-
-            setSelectedRoleKey(nextSelectedRole);
-            setRoleForm(buildRoleFormFromItem(nextProfile));
-            setRolePanelMode('view');
-        });
-    };
     const openTenantFromUserMembership = (tenantId) => {
         openTenantView(tenantId);
         setCurrentSection('saas_empresas');
@@ -2383,6 +2220,20 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
