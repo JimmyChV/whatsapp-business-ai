@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import * as saasAdminPanelHelpers from './saas/helpers';
 
@@ -27,21 +27,19 @@ import {
     useQuickReplyAssetsUpload,
     useSaasAccessControl,
     useSaasApiClient,
+    useSaasPanelActions,
     useSaasPanelDerivedData,
+    useSaasPanelFormSyncEffects,
+    useSaasPanelLoadEffects,
+    useSaasPanelSelectionHotkeys,
+    useSaasPanelTenantScopeEffects,
+    useSaasTenantDataLoaders,
     useSaasTenantScope,
     useSaasTenantUsers,
     useTenantLabelsActions,
     useTenantsUsersAdminActions
 } from './saas/hooks';
-import {
-    fetchSaasOverview,
-    fetchTenantCustomers,
-    fetchTenantIntegrations,
-    fetchTenantSettings,
-    fetchTenantWaModules
-} from './saas/services';
 
-import { uploadImageAsset } from './saas/helpers';
 
 const {
     API_BASE,
@@ -112,14 +110,12 @@ const {
     getQuickReplyAssetDisplayName,
     normalizeTenantLabelColor,
     buildTenantLabelPayload,
-    normalizeOverview,
     sanitizeMemberships,
     resolvePrimaryRoleFromMemberships,
     getRolePriority,
     normalizeWaModule,
     sanitizeAiAssistantCode,
     buildAiAssistantFormFromItem,
-    normalizeIntegrationsPayload,
     buildIntegrationsUpdatePayload,
     normalizePlanForm,
     sanitizeRoleCode,
@@ -369,6 +365,30 @@ export default function SaasAdminPanel({
         currentUser,
         actorRoleForPolicy
     });
+
+    const {
+        refreshOverview,
+        loadTenantSettings,
+        loadTenantIntegrations,
+        loadWaModules,
+        loadCustomers
+    } = useSaasTenantDataLoaders({
+        requestJson,
+        requiresTenantSelection,
+        activeTenantId,
+        setOverview,
+        setSelectedTenantId,
+        setSettingsTenantId,
+        setSelectedUserId,
+        setLoadingSettings,
+        setTenantSettings,
+        setLoadingIntegrations,
+        setTenantIntegrations,
+        setWaModules,
+        setSelectedWaModuleId,
+        setCustomers,
+        setSelectedCustomerId
+    });
     const currentUserCapabilities = useMemo(() => {
         const capabilities = [];
         if (canManageTenants) capabilities.push('Gestion de empresas');
@@ -588,6 +608,13 @@ export default function SaasAdminPanel({
         setLabelPanelMode,
         setLoadingLabels
     });
+    const runActionFallback = useCallback(async (_label, action) => {
+        if (typeof action === 'function') {
+            await action();
+        }
+    }, []);
+    const runActionRef = useRef(runActionFallback);
+    const runActionProxy = useCallback((label, action) => runActionRef.current(label, action), []);
     const {
         loadTenantCatalogs,
         loadTenantCatalogProducts,
@@ -650,7 +677,7 @@ export default function SaasAdminPanel({
         setSelectedAiAssistantId,
         setAiAssistantForm,
         setAiAssistantPanelMode,
-        runAction
+        runAction: runActionProxy
     });
     const {
         loadPlanMatrix,
@@ -685,7 +712,7 @@ export default function SaasAdminPanel({
         setAccessCatalog,
         setSelectedRoleKey,
         setRoleForm,
-        runAction
+        runAction: runActionProxy
     });
     const {
         openTenantCreate,
@@ -871,128 +898,6 @@ export default function SaasAdminPanel({
         }
     };
 
-    const refreshOverview = async () => {
-        const payload = await fetchSaasOverview(requestJson);
-        const next = normalizeOverview(payload);
-        setOverview(next);
-
-        const availableTenantIds = new Set((next.tenants || []).map((item) => String(item?.id || '').trim()).filter(Boolean));
-        setSelectedTenantId((prev) => {
-            const cleanPrev = String(prev || '').trim();
-            if (cleanPrev && availableTenantIds.has(cleanPrev)) return cleanPrev;
-            return '';
-        });
-
-        setSettingsTenantId((prev) => {
-            const cleanPrev = String(prev || '').trim();
-            if (cleanPrev && availableTenantIds.has(cleanPrev)) return cleanPrev;
-            if (requiresTenantSelection) return '';
-
-            const activeTenant = String(activeTenantId || '').trim();
-            if (activeTenant && availableTenantIds.has(activeTenant)) return activeTenant;
-            if (availableTenantIds.size === 1) return Array.from(availableTenantIds)[0] || '';
-            return '';
-        });
-
-        const availableUserIds = new Set((next.users || []).map((item) => String(item?.id || '').trim()).filter(Boolean));
-        setSelectedUserId((prev) => {
-            const cleanPrev = String(prev || '').trim();
-            if (cleanPrev && availableUserIds.has(cleanPrev)) return cleanPrev;
-            return '';
-        });
-    };
-
-    const loadTenantSettings = async (tenantId) => {
-        const cleanTenantId = String(tenantId || '').trim();
-        if (!cleanTenantId) {
-            setTenantSettings(EMPTY_SETTINGS);
-            return;
-        }
-        setLoadingSettings(true);
-        try {
-            const payload = await fetchTenantSettings(requestJson, cleanTenantId);
-            const settings = payload?.settings && typeof payload.settings === 'object' ? payload.settings : {};
-            setTenantSettings({
-                catalogMode: CATALOG_MODE_OPTIONS.includes(String(settings.catalogMode || '').trim())
-                    ? String(settings.catalogMode).trim()
-                    : 'hybrid',
-                enabledModules: {
-                    aiPro: settings?.enabledModules?.aiPro !== false,
-                    catalog: settings?.enabledModules?.catalog !== false,
-                    cart: settings?.enabledModules?.cart !== false,
-                    quickReplies: settings?.enabledModules?.quickReplies !== false
-                }
-            });
-        } finally {
-            setLoadingSettings(false);
-        }
-    };
-
-    const loadTenantIntegrations = async (tenantId) => {
-        const cleanTenantId = String(tenantId || '').trim();
-        if (!cleanTenantId) {
-            setTenantIntegrations(EMPTY_INTEGRATIONS_FORM);
-        setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
-        setTenantCatalogProducts([]);
-        setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
-        setCatalogProductImageError('');
-            return;
-        }
-        setLoadingIntegrations(true);
-        try {
-            const payload = await fetchTenantIntegrations(requestJson, cleanTenantId);
-            setTenantIntegrations(normalizeIntegrationsPayload(payload?.integrations || {}));
-        } finally {
-            setLoadingIntegrations(false);
-        }
-    };
-    const loadWaModules = async (tenantId) => {
-        const cleanTenantId = String(tenantId || '').trim();
-        if (!cleanTenantId) {
-            setWaModules([]);
-        setSelectedWaModuleId('');
-        setTenantCatalogs([]);
-        setSelectedCatalogId('');
-        setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
-        setTenantCatalogProducts([]);
-        setSelectedCatalogProductId('');
-        setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
-        setCatalogProductPanelMode('view');
-            setCatalogProductImageError('');
-            return;
-        }
-        const payload = await fetchTenantWaModules(requestJson, cleanTenantId);
-        const items = (Array.isArray(payload?.items) ? payload.items : [])
-            .map(normalizeWaModule)
-            .filter(Boolean)
-            .sort((a, b) => String(a.name || a.moduleId).localeCompare(String(b.name || b.moduleId), 'es', { sensitivity: 'base' }));
-        setWaModules(items);
-        setSelectedWaModuleId((prev) => {
-            const cleanPrev = String(prev || '').trim();
-            const prevExists = items.some((item) => String(item?.moduleId || '').trim() === cleanPrev);
-            if (prevExists) return cleanPrev;
-            return '';
-        });
-    };
-
-    const loadCustomers = async (tenantId) => {
-        const cleanTenantId = String(tenantId || '').trim();
-        if (!cleanTenantId) {
-            setCustomers([]);
-            setSelectedCustomerId('');
-            return;
-        }
-        const payload = await fetchTenantCustomers(requestJson, cleanTenantId, { limit: 300, includeInactive: true });
-        const items = Array.isArray(payload?.items) ? payload.items : [];
-        setCustomers(items);
-        setSelectedCustomerId((prev) => {
-            const cleanPrev = String(prev || '').trim();
-            if (!cleanPrev) return '';
-            const exists = items.some((item) => String(item?.customerId || '').trim() === cleanPrev);
-            return exists ? cleanPrev : '';
-        });
-    };
-
     const resetWaModuleForm = () => {
         setWaModuleForm(EMPTY_WA_MODULE_FORM);
         setTenantIntegrations(EMPTY_INTEGRATIONS_FORM);
@@ -1086,67 +991,55 @@ export default function SaasAdminPanel({
         openWaModuleEditor,
         resetWaModuleForm
     });
-    async function runAction(label, action) {
-        setError('');
-        setBusy(true);
-        try {
-            await action();
-            await refreshOverview();
-            if (settingsTenantId) {
-                await loadTenantSettings(settingsTenantId);
-                await loadWaModules(settingsTenantId);
-                await loadTenantCatalogs(settingsTenantId);
-                await loadTenantAiAssistants(settingsTenantId);
-                await loadQuickReplyData(settingsTenantId);
-                await loadTenantLabels(settingsTenantId);
-            }
-        } catch (err) {
-            setError(String(err?.message || err || 'Error inesperado.'));
-        } finally {
-            setBusy(false);
-        }
-    }
-    const handleOpenOperation = () => {
-        if (typeof onOpenWhatsAppOperation !== 'function') return;
-        const cleanTenantId = String(tenantScopeId || activeTenantId || '').trim();
-        onOpenWhatsAppOperation('', { tenantId: cleanTenantId || undefined });
-    };
-    const handleFormImageUpload = async ({ file, scope, tenantId, onUploaded }) => {
-        if (!file) return;
-        const cleanTenantId = String(tenantId || tenantScopeId || selectedTenantId || activeTenantId || 'default').trim() || 'default';
-        setError('');
-        setBusy(true);
-        try {
-            const publicUrl = await uploadImageAsset({ file, tenantId: cleanTenantId, scope, requestJson });
-            if (!publicUrl) {
-                throw new Error('No se pudo obtener URL publica del archivo subido.');
-            }
-            if (typeof onUploaded === 'function') {
-                onUploaded(publicUrl);
-            }
-        } catch (err) {
-            setError(String(err?.message || err || 'No se pudo subir la imagen.'));
-        } finally {
-            setBusy(false);
-        }
-    };
-    useEffect(() => {
-        if (!isOpen || !canManageSaas) return;
-        runAction('Carga inicial', async () => {
-            const tasks = [
-                refreshOverview(),
-                loadAccessCatalog()
-            ];
-            if (canViewSuperAdminSections) {
-                tasks.push(loadPlanMatrix());
-            }
-            const results = await Promise.allSettled(tasks);
-            const firstError = results.find((entry) => entry.status === 'rejected');
-            if (firstError?.status === 'rejected') {
-                throw firstError.reason;
-            }
+    const {
+        runAction,
+        handleOpenOperation,
+        handleFormImageUpload
+    } = useSaasPanelActions({
+        requestJson,
+        onOpenWhatsAppOperation,
+        tenantScopeId,
+        activeTenantId,
+        selectedTenantId,
+        setError,
+        setBusy,
+        refreshOverview,
+        settingsTenantId,
+        loadTenantSettings,
+        loadWaModules,
+        loadTenantCatalogs,
+        loadTenantAiAssistants,
+        loadQuickReplyData,
+        loadTenantLabels
         });
-    }, [isOpen, canManageSaas, canViewSuperAdminSections]);
+
+
+    useEffect(() => {
+        runActionRef.current = runAction || runActionFallback;
+    }, [runAction, runActionFallback]);
+
+    useSaasPanelLoadEffects({
+        isOpen,
+        canManageSaas,
+        canViewSuperAdminSections,
+        tenantScopeId,
+        runAction,
+        refreshOverview,
+        loadAccessCatalog,
+        loadPlanMatrix,
+        loadTenantSettings,
+        loadWaModules,
+        loadTenantCatalogs,
+        loadTenantAiAssistants,
+        loadTenantIntegrations,
+        loadCustomers,
+        loadQuickReplyData,
+        loadTenantLabels,
+        loadTenantAssignmentRules,
+        loadTenantOperationsKpis,
+        setError
+    });
+
 
     const clearPanelSelection = useCallback(() => {
         setSelectedTenantId('');
@@ -1193,172 +1086,118 @@ export default function SaasAdminPanel({
         setModuleUserPickerId('');
         setModuleQuickReplyLibraryDraft([]);
     }, []);
-    useEffect(() => {
-        if (!isOpen) return;
-        clearPanelSelection();
-    }, [isOpen, clearPanelSelection]);
-    useEffect(() => {
-        if (!isOpen) return;
-        const onKeyDown = (event) => {
-            if (event.key !== 'Escape' || event.repeat) return;
 
-            const hasSelection = Boolean(
-                selectedTenantId
-                || selectedUserId
-                || selectedWaModuleId
-                || selectedCatalogId
-                || selectedCatalogProductId
-                || selectedConfigKey
-                || selectedRoleKey
-                || tenantPanelMode !== 'view'
-                || userPanelMode !== 'view'
-                || tenantSettingsPanelMode !== 'view'
-                || waModulePanelMode !== 'view'
-                || catalogPanelMode !== 'view'
-                || catalogProductPanelMode !== 'view'
-                || planPanelMode !== 'view'
-                || rolePanelMode !== 'view'
-                || selectedPlanId
-                || selectedCustomerId
-                || customerPanelMode !== 'view'
-                || selectedAiAssistantId
-                || aiAssistantPanelMode !== 'view'
-                || selectedLabelId
-                || labelPanelMode !== 'view'
-            );
-
-            if (!hasSelection) return;
-            event.preventDefault();
-            clearPanelSelection();
-        };
-
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-    }, [
-        clearPanelSelection,
-        isOpen,
+    const panelHasSelection = useMemo(() => Boolean(
+        selectedTenantId
+        || selectedUserId
+        || selectedWaModuleId
+        || selectedCatalogId
+        || selectedCatalogProductId
+        || selectedConfigKey
+        || selectedRoleKey
+        || tenantPanelMode !== 'view'
+        || userPanelMode !== 'view'
+        || tenantSettingsPanelMode !== 'view'
+        || waModulePanelMode !== 'view'
+        || catalogPanelMode !== 'view'
+        || catalogProductPanelMode !== 'view'
+        || planPanelMode !== 'view'
+        || rolePanelMode !== 'view'
+        || selectedPlanId
+        || selectedCustomerId
+        || customerPanelMode !== 'view'
+        || selectedAiAssistantId
+        || aiAssistantPanelMode !== 'view'
+        || selectedLabelId
+        || labelPanelMode !== 'view'
+    ), [
+        aiAssistantPanelMode,
+        catalogPanelMode,
+        catalogProductPanelMode,
+        customerPanelMode,
+        labelPanelMode,
+        planPanelMode,
+        rolePanelMode,
+        selectedAiAssistantId,
+        selectedCatalogId,
+        selectedCatalogProductId,
         selectedConfigKey,
+        selectedCustomerId,
+        selectedLabelId,
+        selectedPlanId,
         selectedRoleKey,
         selectedTenantId,
         selectedUserId,
         selectedWaModuleId,
-        selectedCatalogId,
         tenantPanelMode,
         tenantSettingsPanelMode,
         userPanelMode,
-        waModulePanelMode,
-        catalogPanelMode,
-        planPanelMode,
-        rolePanelMode,
-        selectedPlanId,
-        selectedCustomerId,
-        customerPanelMode,
-        selectedAiAssistantId,
-        aiAssistantPanelMode,
-        selectedLabelId,
-        labelPanelMode
+        waModulePanelMode
     ]);
-    useEffect(() => {
-        if (!isOpen || !canManageSaas || !tenantScopeId) return;
-        Promise.all([
-            loadTenantSettings(tenantScopeId),
-            loadWaModules(tenantScopeId),
-            loadTenantCatalogs(tenantScopeId),
-            loadTenantAiAssistants(tenantScopeId),
-            loadTenantIntegrations(tenantScopeId),
-            loadCustomers(tenantScopeId),
-            loadQuickReplyData(tenantScopeId),
-            loadTenantLabels(tenantScopeId),
-            loadTenantAssignmentRules(tenantScopeId),
-            loadTenantOperationsKpis(tenantScopeId)
-        ]).catch((err) => {
-            setError(String(err?.message || err || 'No se pudo cargar configuracion del tenant.'));
-        });
-    }, [isOpen, canManageSaas, tenantScopeId]);
-    useEffect(() => {
-        if (!isOpen) return;
-        if (String(tenantScopeId || '').trim()) return;
-        setWaModules([]);
-        setSelectedWaModuleId('');
-        setTenantCatalogs([]);
-        setSelectedCatalogId('');
-        setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
-        setTenantCatalogProducts([]);
-        setSelectedCatalogProductId('');
-        setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
-        setCatalogProductPanelMode('view');
-        setCatalogProductImageError('');
-        setTenantAiAssistants([]);
-        setSelectedAiAssistantId('');
-        setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
-        setAiAssistantPanelMode('view');
-        setQuickReplyLibraries([]);
-        setQuickReplyItems([]);
-        setSelectedQuickReplyLibraryId('');
-        setSelectedQuickReplyItemId('');
-        setQuickReplyModuleFilterId('');
-        setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM });
-        setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM });
-        setQuickReplyLibraryPanelMode('view');
-        setQuickReplyItemPanelMode('view');
-        setTenantLabels([]);
-        setSelectedLabelId('');
-        setLabelForm({ ...EMPTY_LABEL_FORM });
-        setLabelPanelMode('view');
-        resetOperationsState();
-    }, [isOpen, tenantScopeId]);
-    useEffect(() => {
-        setSelectedConfigKey('');
-        setSelectedRoleKey('');
-        setSelectedWaModuleId('');
-        setTenantSettingsPanelMode('view');
-        setWaModulePanelMode('view');
-        setCatalogPanelMode('view');
-        setModuleUserPickerId('');
-        setSelectedCustomerId('');
-        setCustomerPanelMode('view');
-        setCustomerSearch('');
-        setCustomerCsvText('');
-        setSelectedAiAssistantId('');
-        setAiAssistantPanelMode('view');
-        setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
-        setSelectedQuickReplyLibraryId('');
-        setSelectedQuickReplyItemId('');
-        setQuickReplyModuleFilterId('');
-        setQuickReplyLibraryPanelMode('view');
-        setQuickReplyItemPanelMode('view');
-        setSelectedLabelId('');
-        setLabelPanelMode('view');
-        setLabelForm({ ...EMPTY_LABEL_FORM });
-        setLabelSearch('');
-    }, [tenantScopeId]);
-    useEffect(() => {
-        if (!isOpen) return;
-        if (requiresTenantSelection || settingsTenantId) return;
-        const fallbackTenantId = String(activeTenantId || tenantOptions[0]?.id || '').trim();
-        if (!fallbackTenantId) return;
-        setSettingsTenantId(fallbackTenantId);
-    }, [isOpen, requiresTenantSelection, settingsTenantId, activeTenantId, tenantOptions]);
-    useEffect(() => {
-        if (!isOpen) return;
-        if (!requiresTenantSelection) return;
-        if (String(settingsTenantId || '').trim()) return;
-        if (String(launchSource || '').trim().toLowerCase() !== 'chat') return;
 
-        const requestedTenantId = String(preferredTenantId || '').trim();
-        if (!requestedTenantId) return;
-
-        const exists = tenantOptions.some((tenant) => String(tenant?.id || '').trim() === requestedTenantId);
-        if (!exists) return;
-
-        setSettingsTenantId(requestedTenantId);
-        setSelectedTenantId(requestedTenantId);
-    }, [isOpen, requiresTenantSelection, settingsTenantId, launchSource, preferredTenantId, tenantOptions]);
-    useEffect(() => {
-        if (!isOpen) return;
-        if (!requiresTenantSelection || tenantScopeId) return;
-        setCurrentSection('saas_empresas');
-    }, [isOpen, requiresTenantSelection, tenantScopeId]);
+    useSaasPanelSelectionHotkeys({
+        isOpen,
+        hasSelection: panelHasSelection,
+        clearPanelSelection
+    });
+    useSaasPanelTenantScopeEffects({
+        isOpen,
+        tenantScopeId,
+        requiresTenantSelection,
+        settingsTenantId,
+        activeTenantId,
+        tenantOptions,
+        launchSource,
+        preferredTenantId,
+        emptyTenantCatalogForm: EMPTY_TENANT_CATALOG_FORM,
+        emptyCatalogProductForm: EMPTY_CATALOG_PRODUCT_FORM,
+        emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
+        emptyQuickReplyLibraryForm: EMPTY_QUICK_REPLY_LIBRARY_FORM,
+        emptyQuickReplyItemForm: EMPTY_QUICK_REPLY_ITEM_FORM,
+        emptyLabelForm: EMPTY_LABEL_FORM,
+        resetOperationsState,
+        setWaModules,
+        setSelectedWaModuleId,
+        setTenantCatalogs,
+        setSelectedCatalogId,
+        setTenantCatalogForm,
+        setTenantCatalogProducts,
+        setSelectedCatalogProductId,
+        setCatalogProductForm,
+        setCatalogProductPanelMode,
+        setCatalogProductImageError,
+        setTenantAiAssistants,
+        setSelectedAiAssistantId,
+        setAiAssistantForm,
+        setAiAssistantPanelMode,
+        setQuickReplyLibraries,
+        setQuickReplyItems,
+        setSelectedQuickReplyLibraryId,
+        setSelectedQuickReplyItemId,
+        setQuickReplyModuleFilterId,
+        setQuickReplyLibraryForm,
+        setQuickReplyItemForm,
+        setQuickReplyLibraryPanelMode,
+        setQuickReplyItemPanelMode,
+        setTenantLabels,
+        setSelectedLabelId,
+        setLabelForm,
+        setLabelPanelMode,
+        setSelectedConfigKey,
+        setSelectedRoleKey,
+        setTenantSettingsPanelMode,
+        setWaModulePanelMode,
+        setCatalogPanelMode,
+        setModuleUserPickerId,
+        setSelectedCustomerId,
+        setCustomerPanelMode,
+        setCustomerSearch,
+        setCustomerCsvText,
+        setLabelSearch,
+        setSettingsTenantId,
+        setSelectedTenantId,
+        setCurrentSection
+    });
     useEffect(() => {
         const cleanPlanId = String(selectedPlanId || '').trim().toLowerCase();
         if (!cleanPlanId) return;
@@ -1385,108 +1224,57 @@ export default function SaasAdminPanel({
         if (!next) return;
         setCurrentSection(next);
     }, [activeSection]);
-    useEffect(() => {
-        if (tenantPanelMode === 'create') return;
-        if (!selectedTenant) {
-            setTenantForm(EMPTY_TENANT_FORM);
-            return;
-        }
-        setTenantForm(buildTenantFormFromItem(selectedTenant));
-    }, [selectedTenant, tenantPanelMode]);
-    useEffect(() => {
-        if (userPanelMode === 'create') return;
-        if (!selectedUser) {
-            setUserForm(EMPTY_USER_FORM);
-            return;
-        }
-        setUserForm(buildUserFormFromItem(selectedUser));
-    }, [selectedUser, userPanelMode]);
-    useEffect(() => {
-        if (customerPanelMode === 'create') return;
-        if (!selectedCustomer) {
-            setCustomerForm(EMPTY_CUSTOMER_FORM);
-            return;
-        }
-        setCustomerForm(normalizeCustomerFormFromItem(selectedCustomer));
-    }, [selectedCustomer, customerPanelMode]);
-    useEffect(() => {
-        if (aiAssistantPanelMode === 'create') return;
-        if (!selectedAiAssistant) {
-            setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
-            return;
-        }
-        setAiAssistantForm(buildAiAssistantFormFromItem(selectedAiAssistant));
-    }, [selectedAiAssistant, aiAssistantPanelMode]);
-    useEffect(() => {
-        if (catalogPanelMode === 'create') return;
-        if (!selectedTenantCatalog) {
-            setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
-            return;
-        }
-        setTenantCatalogForm(buildTenantCatalogFormFromItem(selectedTenantCatalog));
-    }, [selectedTenantCatalog, catalogPanelMode]);
-    useEffect(() => {
-        if (!isOpen || !settingsTenantId || !selectedTenantCatalog || selectedTenantCatalog.sourceType !== 'local') {
-            setTenantCatalogProducts([]);
-            setSelectedCatalogProductId('');
-            setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
-            setCatalogProductPanelMode('view');
-            setCatalogProductImageError('');
-            return;
-        }
-        loadTenantCatalogProducts(settingsTenantId, selectedTenantCatalog.catalogId)
-            .catch((err) => setError(String(err?.message || err || 'No se pudieron cargar productos del catalogo.')));
-    }, [isOpen, settingsTenantId, selectedTenantCatalog]);
-    useEffect(() => {
-        if (!selectedWaModule) {
-            resetWaModuleForm();
-            return;
-        }
-        openWaModuleEditor(selectedWaModule);
-    }, [selectedWaModule]);
-    useEffect(() => {
-        if (!selectedQuickReplyLibrary) {
-            setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM, moduleIds: quickReplyScopeModuleId ? [quickReplyScopeModuleId] : [] });
-            return;
-        }
-        if (quickReplyLibraryPanelMode === 'create') return;
-        setQuickReplyLibraryForm({
-            libraryId: selectedQuickReplyLibrary.libraryId,
-            name: selectedQuickReplyLibrary.name || '',
-            description: selectedQuickReplyLibrary.description || '',
-            isShared: selectedQuickReplyLibrary.isShared === true,
-            isActive: selectedQuickReplyLibrary.isActive !== false,
-            sortOrder: String(selectedQuickReplyLibrary.sortOrder || 100),
-            moduleIds: Array.isArray(selectedQuickReplyLibrary.moduleIds) ? [...selectedQuickReplyLibrary.moduleIds] : []
-        });
-    }, [selectedQuickReplyLibrary, quickReplyLibraryPanelMode, quickReplyScopeModuleId]);
-    useEffect(() => {
-        if (!selectedQuickReplyItem) {
-            setQuickReplyItemForm((prev) => ({
-                ...EMPTY_QUICK_REPLY_ITEM_FORM,
-                libraryId: String(selectedQuickReplyLibrary?.libraryId || prev?.libraryId || '').trim().toUpperCase()
-            }));
-            return;
-        }
-        if (quickReplyItemPanelMode === 'create') return;
-        setQuickReplyItemForm({
-            itemId: selectedQuickReplyItem.itemId,
-            libraryId: selectedQuickReplyItem.libraryId,
-            label: selectedQuickReplyItem.label || '',
-            text: selectedQuickReplyItem.text || '',
-            mediaAssets: normalizeQuickReplyMediaAssets(selectedQuickReplyItem.mediaAssets, {
-                url: selectedQuickReplyItem.mediaUrl || '',
-                mimeType: selectedQuickReplyItem.mediaMimeType || '',
-                fileName: selectedQuickReplyItem.mediaFileName || '',
-                sizeBytes: selectedQuickReplyItem.mediaSizeBytes
-            }),
-            mediaUrl: selectedQuickReplyItem.mediaUrl || '',
-            mediaMimeType: selectedQuickReplyItem.mediaMimeType || '',
-            mediaFileName: selectedQuickReplyItem.mediaFileName || '',
-            isActive: selectedQuickReplyItem.isActive !== false,
-            sortOrder: String(selectedQuickReplyItem.sortOrder || 100)
-        });
-    }, [selectedQuickReplyItem, selectedQuickReplyLibrary, quickReplyItemPanelMode]);
+    useSaasPanelFormSyncEffects({
+        isOpen,
+        settingsTenantId,
+        selectedTenant,
+        tenantPanelMode,
+        selectedUser,
+        userPanelMode,
+        selectedCustomer,
+        customerPanelMode,
+        selectedAiAssistant,
+        aiAssistantPanelMode,
+        selectedTenantCatalog,
+        catalogPanelMode,
+        selectedWaModule,
+        selectedQuickReplyLibrary,
+        quickReplyLibraryPanelMode,
+        selectedQuickReplyItem,
+        selectedQuickReplyLibraryEntity: selectedQuickReplyLibrary,
+        quickReplyItemPanelMode,
+        quickReplyScopeModuleId,
+        emptyTenantForm: EMPTY_TENANT_FORM,
+        emptyUserForm: EMPTY_USER_FORM,
+        emptyCustomerForm: EMPTY_CUSTOMER_FORM,
+        emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
+        emptyTenantCatalogForm: EMPTY_TENANT_CATALOG_FORM,
+        emptyCatalogProductForm: EMPTY_CATALOG_PRODUCT_FORM,
+        emptyQuickReplyLibraryForm: EMPTY_QUICK_REPLY_LIBRARY_FORM,
+        emptyQuickReplyItemForm: EMPTY_QUICK_REPLY_ITEM_FORM,
+        buildTenantFormFromItem,
+        buildUserFormFromItem,
+        normalizeCustomerFormFromItem,
+        buildAiAssistantFormFromItem,
+        buildTenantCatalogFormFromItem,
+        normalizeQuickReplyMediaAssets,
+        loadTenantCatalogProducts,
+        setError,
+        resetWaModuleForm,
+        openWaModuleEditor,
+        setTenantForm,
+        setUserForm,
+        setCustomerForm,
+        setAiAssistantForm,
+        setTenantCatalogForm,
+        setTenantCatalogProducts,
+        setSelectedCatalogProductId,
+        setCatalogProductForm,
+        setCatalogProductPanelMode,
+        setCatalogProductImageError,
+        setQuickReplyLibraryForm,
+        setQuickReplyItemForm
+    });
     const openTenantFromUserMembership = (tenantId) => {
         openTenantView(tenantId);
         setCurrentSection('saas_empresas');
@@ -2077,6 +1865,30 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

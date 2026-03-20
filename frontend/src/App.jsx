@@ -1,10 +1,67 @@
-﻿import { Suspense, lazy, useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
-import { io } from 'socket.io-client';
+import { Suspense, lazy, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 import Sidebar from './components/Sidebar';
 import BusinessSidebar, { ClientProfilePanel } from './components/BusinessSidebar';
 import ChatWindow from './components/ChatWindow';
+import NewChatModal from './components/chat/NewChatModal';
 import AppErrorBoundary from './components/shared/AppErrorBoundary';
+import { API_URL, CHAT_PAGE_SIZE, SOCKET_AUTH_TOKEN, TRANSPORT_STORAGE_KEY } from './config/runtime';
+import { loadStoredSaasSession, persistSaasSession } from './features/auth/helpers/saasSessionStorage';
+import { createSocketClient } from './features/chat/services/socketClient';
+import { useNewChatDialog } from './features/chat/hooks/useNewChatDialog';
+import { useMessagesAutoScroll } from './features/chat/hooks/useMessagesAutoScroll';
+import { useChatRuntimeSyncEffects } from './features/chat/hooks/useChatRuntimeSyncEffects';
+import { useSocketConnectionAuthEffect } from './features/chat/hooks/useSocketConnectionAuthEffect';
+import { readWaLaunchParams } from './features/chat/helpers/waLaunchParams';
+import StatusScreen from './features/chat/components/StatusScreen';
+import TransportBootstrapScreen from './features/chat/components/TransportBootstrapScreen';
+import { useSaasRecoveryFlow } from './features/auth/hooks/useSaasRecoveryFlow';
+import { useSaasSessionActions } from './features/auth/hooks/useSaasSessionActions';
+import SaasLoginScreen from './features/auth/components/SaasLoginScreen';
+import {
+  normalizeCatalogItem,
+  normalizeProfilePhotoUrl,
+  normalizeModuleImageUrl,
+  normalizeProfilePayload,
+  normalizeBusinessDataPayload,
+  normalizeWaModuleItem,
+  normalizeWaModules,
+  resolveSelectedWaModule,
+  normalizeChatLabels,
+  cleanLooseText,
+  normalizeDigits,
+  isLikelyPhoneDigits,
+  normalizeScopedModuleId,
+  parseScopedChatId,
+  buildScopedChatId,
+  normalizeChatScopedId,
+  chatIdsReferSameScope,
+  extractPhoneFromText,
+  getBestChatPhone,
+  repairMojibake,
+  sanitizeDisplayText,
+  normalizeMessageFilename,
+  isGenericFilename,
+  isMachineLikeFilename,
+  normalizeParticipantList,
+  normalizeMessageLocation,
+  normalizeQuotedMessage,
+  getMessagePreviewText,
+  isInternalIdentifier,
+  normalizeDisplayNameKey,
+  isPlaceholderChat,
+  chatIdentityKey,
+  dedupeChats,
+  chatMatchesQuery,
+  normalizeFilterToken,
+  normalizeChatFilters,
+  buildFiltersKey,
+  chatLabelTokenSet,
+  chatMatchesFilters,
+  normalizeQuickReplyDraft,
+  isVisibleChatId,
+  upsertAndSortChat
+} from './features/chat/helpers/appChat.helpers';
 
 import './index.css';
 
@@ -18,684 +75,10 @@ const PanelChunkFallback = () => (
   </div>
 );
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-const SOCKET_AUTH_TOKEN = import.meta.env.VITE_SOCKET_AUTH_TOKEN || '';
-const SAAS_SESSION_STORAGE_KEY = 'wa_saas_session_v1';
 
-const socket = io(API_URL, {
-  autoConnect: false,
-  auth: SOCKET_AUTH_TOKEN ? { token: SOCKET_AUTH_TOKEN } : undefined
-});
+const socket = createSocketClient(API_URL, SOCKET_AUTH_TOKEN);
 
-const loadStoredSaasSession = () => {
-  try {
-    const raw = localStorage.getItem(SAAS_SESSION_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return null;
-    const accessToken = String(parsed.accessToken || '').trim();
-    const refreshToken = String(parsed.refreshToken || '').trim();
-    if (!accessToken || !refreshToken) return null;
-    return {
-      accessToken,
-      refreshToken,
-      tokenType: String(parsed.tokenType || 'Bearer').trim() || 'Bearer',
-      accessExpiresAtUnix: Number(parsed.accessExpiresAtUnix || 0) || 0,
-      refreshExpiresAtUnix: Number(parsed.refreshExpiresAtUnix || 0) || 0,
-      user: parsed.user && typeof parsed.user === 'object' ? parsed.user : null
-    };
-  } catch (error) {
-    return null;
-  }
-};
 
-const persistSaasSession = (session = null) => {
-  try {
-    if (!session) {
-      localStorage.removeItem(SAAS_SESSION_STORAGE_KEY);
-      return;
-    }
-    localStorage.setItem(SAAS_SESSION_STORAGE_KEY, JSON.stringify(session));
-  } catch (error) {
-    // ignore storage errors
-  }
-};
-const normalizeCatalogItem = (item = {}, index = 0) => {
-  const safeItem = item && typeof item === 'object' ? item : {};
-  const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
-
-  const parsePrice = (value, fallback = 0) => {
-    const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
-    if (Number.isFinite(parsed)) return parsed;
-    return Number.isFinite(fallback) ? fallback : 0;
-  };
-
-  const priceNum = parsePrice(safeItem.price ?? safeItem.regular_price ?? safeItem.sale_price ?? safeItem.amount ?? safeItem.precio, 0);
-  const regularNum = parsePrice(safeItem.regularPrice ?? safeItem.regular_price ?? safeItem.price ?? safeItem.amount ?? safeItem.precio, priceNum);
-  const saleNum = parsePrice(safeItem.salePrice ?? safeItem.sale_price, priceNum);
-  const baseFinal = saleNum > 0 && saleNum < regularNum ? saleNum : priceNum;
-  const finalNum = baseFinal > 0 ? baseFinal : regularNum;
-  const computedDiscount = regularNum > 0 && finalNum > 0 && finalNum < regularNum
-    ? Number((((regularNum - finalNum) / regularNum) * 100).toFixed(1))
-    : 0;
-  const rawDiscount = Number.parseFloat(String(safeItem.discountPct ?? safeItem.discount_pct ?? computedDiscount).replace(',', '.'));
-  const discountPct = Number.isFinite(rawDiscount) ? Math.max(0, rawDiscount) : 0;
-  const rawCategories = Array.isArray(safeItem.categories)
-    ? safeItem.categories
-    : (typeof safeItem.categories === 'string'
-      ? safeItem.categories.split(',')
-      : (safeItem.category
-        ? [safeItem.category]
-        : (safeItem.categoryName
-          ? [safeItem.categoryName]
-          : (safeItem.category_slug ? [safeItem.category_slug] : []))));
-  const categories = rawCategories
-    .map((entry) => (typeof entry === 'string' ? entry : (entry?.name || entry?.slug || entry?.title || '')))
-    .map((entry) => String(entry || '').trim())
-    .filter(Boolean);
-
-  return {
-    id: safeItem.id || safeItem.product_id || `catalog_${index}`,
-    title: String(rawTitle || `Producto ${index + 1}`).trim(),
-    price: Number.isFinite(finalNum) ? finalNum.toFixed(2) : '0.00',
-    regularPrice: Number.isFinite(regularNum) ? regularNum.toFixed(2) : (Number.isFinite(finalNum) ? finalNum.toFixed(2) : '0.00'),
-    salePrice: Number.isFinite(saleNum) && saleNum > 0 ? saleNum.toFixed(2) : null,
-    discountPct,
-    description: safeItem.description || safeItem.short_description || safeItem.descripcion || '',
-    imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
-    source: safeItem.source || 'unknown',
-    sku: safeItem.sku || null,
-    stockStatus: safeItem.stockStatus || safeItem.stock_status || null,
-    moduleId: String(safeItem.moduleId || safeItem.module_id || '').trim().toLowerCase() || null,
-    catalogId: String(safeItem.catalogId || safeItem.catalog_id || '').trim().toUpperCase() || null,
-    catalogName: String(safeItem.catalogName || safeItem.catalog_name || safeItem.catalogId || safeItem.catalog_id || '').trim() || null,
-    channelType: String(safeItem.channelType || safeItem.channel_type || '').trim().toLowerCase() || null,
-    categories
-  };
-};
-
-const normalizeProfilePhotoUrl = (rawUrl = '') => {
-  const value = String(rawUrl || '').trim();
-  if (!value) return null;
-  if (value.startsWith('data:') || value.startsWith('blob:')) return value;
-
-  if (value.includes('/api/profile-photo?url=')) {
-    if (/^https?:\/\//i.test(value)) return value;
-    if (value.startsWith('/')) return `${API_URL}${value}`;
-    return `${API_URL}/${value}`;
-  }
-
-  if (!/^https?:\/\//i.test(value)) return value;
-  return `${API_URL}/api/profile-photo?url=${encodeURIComponent(value)}`;
-};
-
-const normalizeModuleImageUrl = (rawUrl = '') => {
-  const value = String(rawUrl || '').trim();
-  if (!value) return null;
-  if (value.startsWith('data:') || value.startsWith('blob:')) return value;
-  if (/^https?:\/\//i.test(value)) return value;
-  if (value.startsWith('/')) return `${API_URL}${value}`;
-  return `${API_URL}/${value}`;
-};
-const normalizeProfilePayload = (profile = null) => {
-  if (!profile || typeof profile !== 'object') return null;
-  return {
-    ...profile,
-    profilePicUrl: normalizeProfilePhotoUrl(profile.profilePicUrl)
-  };
-};
-
-const normalizeBusinessDataPayload = (data = {}) => {
-  const rawCatalog = Array.isArray(data.catalog) ? data.catalog : [];
-  const catalog = rawCatalog.map((item, idx) => normalizeCatalogItem(item, idx));
-  return {
-    profile: normalizeProfilePayload(data.profile || null),
-    labels: Array.isArray(data.labels) ? data.labels : [],
-    catalog,
-    catalogMeta: data.catalogMeta || { source: 'local', nativeAvailable: false }
-  };
-};
-
-const normalizeWaModuleItem = (item = {}) => {
-  const source = item && typeof item === 'object' ? item : {};
-  const moduleId = String(source.moduleId || source.id || '').trim().toLowerCase();
-  if (!moduleId) return null;
-  const transportMode = String(source.transportMode || source.transport || source.mode || '').trim().toLowerCase();
-  return {
-    moduleId,
-    name: String(source.name || moduleId).trim() || moduleId,
-    phoneNumber: String(source.phoneNumber || source.phone || '').trim() || null,
-    transportMode: 'cloud',
-    isActive: source.isActive !== false,
-    isDefault: source.isDefault === true,
-    isSelected: source.isSelected === true,
-    channelType: String(source.channelType || source.channel || '').trim().toLowerCase() || null,
-    imageUrl: normalizeModuleImageUrl(source.imageUrl || source.logoUrl || source.avatarUrl || '') || null,
-    logoUrl: normalizeModuleImageUrl(source.logoUrl || source.imageUrl || source.avatarUrl || '') || null,
-    assignedUserIds: Array.isArray(source.assignedUserIds)
-      ? source.assignedUserIds.map((entry) => String(entry || '').trim()).filter(Boolean)
-      : []
-  };
-};
-
-const normalizeWaModules = (items = []) => {
-  const source = Array.isArray(items) ? items : [];
-  const seen = new Set();
-  return source
-    .map(normalizeWaModuleItem)
-    .filter((module) => {
-      if (!module?.moduleId) return false;
-      if (seen.has(module.moduleId)) return false;
-      seen.add(module.moduleId);
-      return true;
-    });
-};
-
-const resolveSelectedWaModule = (items = [], preferred = null) => {
-  const modules = normalizeWaModules(items);
-  if (!modules.length) return null;
-  const preferredId = String(preferred?.moduleId || preferred?.id || '').trim().toLowerCase();
-  if (preferredId) {
-    const byId = modules.find((module) => module.moduleId === preferredId);
-    if (byId) return byId;
-  }
-  return modules.find((module) => module.isSelected) || modules.find((module) => module.isDefault) || modules[0];
-};
-const normalizeChatLabels = (labels = []) => (
-  Array.isArray(labels)
-    ? labels
-      .map((l) => {
-        const id = String(l?.id || l?.labelId || '').trim();
-        if (!id) return null;
-        return {
-          id,
-          labelId: id,
-          name: l?.name || '',
-          color: l?.color || null,
-        };
-      })
-      .filter(Boolean)
-    : []
-);
-
-const cleanLooseText = (value = '') => String(value || '')
-  .replace(/\uFFFD/g, '')
-  .replace(/[\u0000-\u001F]/g, ' ')
-  .replace(/\s+/g, ' ')
-  .trim();
-
-const normalizeDigits = (value = '') => String(value || '').replace(/\D/g, '');
-const isLikelyPhoneDigits = (digits = '') => {
-  const d = normalizeDigits(digits);
-  return d.length >= 8 && d.length <= 12;
-};
-
-const CHAT_SCOPE_SEPARATOR = '::mod::';
-const normalizeScopedModuleId = (value = '') => String(value || '').trim().toLowerCase();
-const parseScopedChatId = (value = '') => {
-  const raw = String(value || '').trim();
-  if (!raw) return { baseChatId: '', scopeModuleId: '' };
-  const idx = raw.lastIndexOf(CHAT_SCOPE_SEPARATOR);
-  if (idx < 0) return { baseChatId: raw, scopeModuleId: '' };
-  const baseChatId = String(raw.slice(0, idx) || '').trim();
-  const scopeModuleId = normalizeScopedModuleId(raw.slice(idx + CHAT_SCOPE_SEPARATOR.length));
-  if (!baseChatId || !scopeModuleId) return { baseChatId: raw, scopeModuleId: '' };
-  return { baseChatId, scopeModuleId };
-};
-const buildScopedChatId = (baseChatId = '', scopeModuleId = '') => {
-  const base = String(baseChatId || '').trim();
-  const scope = normalizeScopedModuleId(scopeModuleId);
-  if (!base || !scope) return base;
-  return `${base}${CHAT_SCOPE_SEPARATOR}${scope}`;
-};
-const normalizeChatScopedId = (chatId = '', fallbackModuleId = '') => {
-  const parsed = parseScopedChatId(chatId);
-  const base = String(parsed.baseChatId || chatId || '').trim();
-  const scope = parsed.scopeModuleId || normalizeScopedModuleId(fallbackModuleId);
-  return buildScopedChatId(base, scope) || base;
-};
-const chatIdsReferSameScope = (left = '', right = '') => {
-  const l = parseScopedChatId(left);
-  const r = parseScopedChatId(right);
-  const leftBase = String(l.baseChatId || left || '').trim();
-  const rightBase = String(r.baseChatId || right || '').trim();
-  if (!leftBase || !rightBase) return false;
-  if (leftBase !== rightBase) return false;
-  return String(l.scopeModuleId || '') === String(r.scopeModuleId || '');
-};
-const extractPhoneFromText = (value = '') => {
-  const text = String(value || '');
-  if (!text) return null;
-  const matches = text.match(/\+?\d[\d\s().-]{6,}\d/g) || [];
-  for (const token of matches) {
-    const digits = normalizeDigits(token);
-    if (isLikelyPhoneDigits(digits)) return digits;
-  }
-  return null;
-};
-
-const getBestChatPhone = (chat = {}) => {
-  const direct = normalizeDigits(chat?.phone || '');
-  if (isLikelyPhoneDigits(direct)) return direct;
-
-  const fromSubtitle = extractPhoneFromText(chat?.subtitle || '');
-  if (fromSubtitle) return fromSubtitle;
-
-  const fromStatus = extractPhoneFromText(chat?.status || '');
-  if (fromStatus) return fromStatus;
-
-  const id = String(chat?.id || '');
-  if (id.endsWith('@lid')) return null;
-  const idUser = normalizeDigits(id.split('@')[0] || '');
-  if (id.endsWith('@c.us') && isLikelyPhoneDigits(idUser)) return idUser;
-  if (isLikelyPhoneDigits(idUser)) return idUser;
-
-  return null;
-};
-
-const repairMojibake = (value = '') => {
-  let text = String(value || '');
-  if (!text) return '';
-  try {
-    const decoded = decodeURIComponent(escape(text));
-    const cleanDecoded = decoded.replace(/\uFFFD/g, '');
-    const cleanOriginal = text.replace(/\uFFFD/g, '');
-    if (decoded && decoded !== text && cleanDecoded.length >= Math.floor(cleanOriginal.length * 0.8)) {
-      text = decoded;
-    }
-  } catch (e) { }
-  return text.replace(/\uFFFD/g, '');
-};
-
-const sanitizeDisplayText = (value = '') => repairMojibake(value)
-  .replace(/[\u0000-\u001F]/g, ' ')
-  .replace(/\s+/g, ' ')
-  .trim();
-
-const normalizeMessageFilename = (value = '') => {
-  let name = String(value || '').trim();
-  if (!name) return null;
-  name = name
-    .replace(/\\/g, '/')
-    .split('/')
-    .filter(Boolean)
-    .pop() || '';
-  name = name.split('?')[0].split('#')[0].trim();
-  name = repairMojibake(name)
-    .replace(/[\u0000-\u001F]/g, '')
-    .replace(/[<>:"/\\|?*]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^\.+|\.+$/g, '')
-    .trim();
-  if (!name) return null;
-  return name;
-};
-
-const isGenericFilename = (value = '') => {
-  const base = String(value || '').trim().toLowerCase().replace(/\.[a-z0-9]{1,8}$/i, '');
-  if (!base) return true;
-  return ['archivo', 'file', 'adjunto', 'attachment', 'document', 'documento', 'media', 'download', 'descarga', 'unknown'].includes(base);
-};
-
-const isMachineLikeFilename = (value = '') => {
-  const base = String(value || '').trim().replace(/\.[a-z0-9]{1,8}$/i, '').replace(/\s+/g, '');
-  if (!base) return true;
-  if (/^\d{8,}$/.test(base)) return true;
-  if (/^[a-f0-9]{16,}$/i.test(base)) return true;
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(base)) return true;
-  if (/^3EB0[A-F0-9]{8,}$/i.test(base)) return true;
-  return false;
-};
-
-const normalizeParticipantList = (participants = []) => {
-  if (!Array.isArray(participants)) return [];
-
-  const seen = new Set();
-  const normalized = [];
-  for (const entry of participants) {
-    if (!entry || typeof entry !== 'object') continue;
-    const id = String(entry.id || '').trim();
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-
-    const pushname = sanitizeDisplayText(entry.pushname || '');
-    const shortName = sanitizeDisplayText(entry.shortName || '');
-    const displayName = sanitizeDisplayText(entry.displayName || '');
-    const name = sanitizeDisplayText(entry.name || displayName || pushname || shortName || '');
-    const phoneDigits = normalizeDigits(entry.phone || id.split('@')[0] || '');
-    const phone = isLikelyPhoneDigits(phoneDigits) ? phoneDigits : '';
-    const isSuperAdmin = Boolean(entry.isSuperAdmin);
-    const isAdmin = Boolean(entry.isAdmin || isSuperAdmin);
-
-    normalized.push({
-      id,
-      name: name || null,
-      displayName: displayName || name || null,
-      pushname: pushname || null,
-      shortName: shortName || null,
-      phone: phone || null,
-      isAdmin,
-      isSuperAdmin,
-      isMe: Boolean(entry.isMe),
-      role: isSuperAdmin ? 'superadmin' : (isAdmin ? 'admin' : 'member')
-    });
-  }
-
-  return normalized.sort((a, b) => {
-    if (a.isSuperAdmin !== b.isSuperAdmin) return a.isSuperAdmin ? -1 : 1;
-    if (a.isAdmin !== b.isAdmin) return a.isAdmin ? -1 : 1;
-    const aLabel = sanitizeDisplayText(a.displayName || a.name || a.phone || '').toLowerCase();
-    const bLabel = sanitizeDisplayText(b.displayName || b.name || b.phone || '').toLowerCase();
-    return aLabel.localeCompare(bLabel, 'es', { sensitivity: 'base' });
-  });
-};
-
-const normalizeMessageLocation = (location = null) => {
-  if (!location || typeof location !== 'object') return null;
-
-  const parseCoord = (value) => {
-    const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
-    return Number.isFinite(parsed) ? parsed : null;
-  };
-
-  const latitude = parseCoord(location?.latitude);
-  const longitude = parseCoord(location?.longitude);
-  const hasCoords = Number.isFinite(latitude) && Number.isFinite(longitude);
-
-  const rawMapUrl = String(location?.mapUrl || location?.url || '').trim();
-  const mapUrl = /^https?:\/\//i.test(rawMapUrl)
-    ? rawMapUrl
-    : (hasCoords ? `https://www.google.com/maps?q=${latitude},${longitude}` : null);
-
-  const label = sanitizeDisplayText(location?.label || '');
-  const text = sanitizeDisplayText(location?.text || '');
-
-  if (!label && !text && !mapUrl && !hasCoords) return null;
-
-  return {
-    latitude: hasCoords ? latitude : null,
-    longitude: hasCoords ? longitude : null,
-    label: label || null,
-    text: text || null,
-    mapUrl: mapUrl || null
-  };
-};
-
-const normalizeQuotedMessage = (quoted = null) => {
-  if (!quoted || typeof quoted !== 'object') return null;
-  const id = String(quoted?.id || '').trim();
-  const body = sanitizeDisplayText(quoted?.body || '');
-  const type = String(quoted?.type || 'chat').trim() || 'chat';
-  const fromMe = Boolean(quoted?.fromMe);
-  const hasMedia = Boolean(quoted?.hasMedia);
-  const timestamp = Number(quoted?.timestamp || 0) || null;
-
-  if (!id && !body && !hasMedia) return null;
-
-  const preview = body || (hasMedia ? 'Adjunto' : 'Mensaje');
-  return {
-    id: id || null,
-    body: preview,
-    type,
-    fromMe,
-    hasMedia,
-    timestamp
-  };
-};
-const getMessagePreviewText = (msg = {}) => {
-  const type = String(msg?.type || '').toLowerCase();
-  const location = normalizeMessageLocation(msg?.location);
-
-  if (type === 'location') {
-    if (location?.label) return 'Ubicacion: ' + location.label;
-    if (location?.text) return 'Ubicacion: ' + location.text;
-    return 'Ubicacion';
-  }
-
-  const body = sanitizeDisplayText(msg?.body || '');
-  if (body) {
-    const looksLikeMaps = /https?:\/\/(?:www\.)?(?:google\.[^\s/]+\/maps|maps\.app\.goo\.gl|maps\.google\.com)|geo:/i.test(body);
-    if (looksLikeMaps) return 'Ubicacion';
-    return body;
-  }
-
-  const fallbackByType = {
-    image: 'Imagen',
-    video: 'Video',
-    audio: 'Audio',
-    ptt: 'Nota de voz',
-    document: 'Documento',
-    sticker: 'Sticker',
-    location: 'Ubicacion',
-    vcard: 'Contacto',
-    order: 'Pedido',
-    revoked: 'Mensaje eliminado'
-  };
-
-  return fallbackByType[type] || 'Mensaje';
-};
-const isInternalIdentifier = (value = '') => {
-  const text = String(value || '').trim();
-  if (!text) return false;
-  return text.includes('@') || /^\d{14,}$/.test(text);
-};
-
-const normalizeDisplayNameKey = (value = '') => sanitizeDisplayText(value)
-  .toLowerCase()
-  .replace(/\s+/g, ' ')
-  .trim();
-
-const isPlaceholderChat = (chat = {}) => {
-  const ts = Number(chat?.timestamp || 0);
-  const lastMessage = sanitizeDisplayText(chat?.lastMessage || '');
-  return ts <= 0 && !lastMessage;
-};
-
-const chatIdentityKey = (chat = {}) => {
-  const scopedId = normalizeChatScopedId(
-    chat?.id || '',
-    chat?.scopeModuleId || chat?.lastMessageModuleId || ''
-  );
-  if (scopedId) return `id:${scopedId}`;
-  const phone = getBestChatPhone(chat);
-  if (phone) return `phone:${phone}`;
-  return 'id:';
-};
-
-const dedupeChats = (list = []) => {
-  const seen = new Set();
-  const deduped = [];
-  for (const chat of list) {
-    const key = chatIdentityKey(chat);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(chat);
-  }
-
-  const scopedBases = new Set(
-    deduped
-      .map((chat) => parseScopedChatId(chat?.id || ''))
-      .filter((parsed) => Boolean(parsed?.baseChatId) && Boolean(parsed?.scopeModuleId))
-      .map((parsed) => String(parsed.baseChatId || '').trim())
-      .filter(Boolean)
-  );
-
-  const scopeFiltered = deduped.filter((chat) => {
-    const parsed = parseScopedChatId(chat?.id || '');
-    const baseChatId = String(parsed?.baseChatId || chat?.baseChatId || chat?.id || '').trim();
-    if (!baseChatId) return true;
-    if (!parsed?.scopeModuleId && scopedBases.has(baseChatId)) return false;
-    return true;
-  });
-
-  const namesWithHistory = new Set(
-    scopeFiltered
-      .filter((chat) => !isPlaceholderChat(chat))
-      .map((chat) => normalizeDisplayNameKey(chat?.name || ''))
-      .filter(Boolean)
-  );
-
-  return scopeFiltered.filter((chat) => {
-    if (!isPlaceholderChat(chat)) return true;
-    const nameKey = normalizeDisplayNameKey(chat?.name || '');
-    if (!nameKey) return true;
-    return !namesWithHistory.has(nameKey);
-  });
-};
-
-const chatMatchesQuery = (chat = {}, query = '') => {
-  const q = String(query || '').trim().toLowerCase();
-  if (!q) return true;
-  const qDigits = normalizeDigits(q);
-  const name = String(chat?.name || '').toLowerCase();
-  const subtitle = String(chat?.subtitle || '').toLowerCase();
-  const lastMessage = String(chat?.lastMessage || '').toLowerCase();
-  const phone = getBestChatPhone(chat) || '';
-
-  if (qDigits) return phone.includes(qDigits);
-  return name.includes(q) || subtitle.includes(q) || lastMessage.includes(q);
-};
-const normalizeFilterToken = (value = '') => String(value || '').trim().toLowerCase();
-
-const normalizeChatFilters = (filters = {}) => {
-  const rawTokens = Array.isArray(filters?.labelTokens) ? filters.labelTokens : [];
-  const seen = new Set();
-  const labelTokens = [];
-  for (const token of rawTokens) {
-    const clean = normalizeFilterToken(token);
-    if (!clean || seen.has(clean)) continue;
-    seen.add(clean);
-    labelTokens.push(clean);
-  }
-
-  const contactMode = ['all', 'my', 'unknown'].includes(String(filters?.contactMode || 'all'))
-    ? String(filters?.contactMode || 'all')
-    : 'all';
-  const archivedMode = ['all', 'archived', 'active'].includes(String(filters?.archivedMode || 'all'))
-    ? String(filters?.archivedMode || 'all')
-    : 'all';
-  const pinnedMode = ['all', 'pinned', 'unpinned'].includes(String(filters?.pinnedMode || 'all'))
-    ? String(filters?.pinnedMode || 'all')
-    : 'all';
-
-  return {
-    labelTokens,
-    unreadOnly: Boolean(filters?.unreadOnly),
-    unlabeledOnly: Boolean(filters?.unlabeledOnly),
-    contactMode,
-    archivedMode,
-    pinnedMode,
-  };
-};
-
-const buildFiltersKey = (filters = {}) => {
-  const normalized = normalizeChatFilters(filters);
-  return JSON.stringify({
-    ...normalized,
-    labelTokens: [...normalized.labelTokens].sort(),
-  });
-};
-
-const chatLabelTokenSet = (chat = {}) => {
-  const set = new Set();
-  const labels = Array.isArray(chat?.labels) ? chat.labels : [];
-  for (const label of labels) {
-    const id = normalizeFilterToken(label?.id);
-    if (id) set.add(`id:${id}`);
-    const name = normalizeFilterToken(label?.name);
-    if (name) set.add(`name:${name}`);
-  }
-  return set;
-};
-
-const chatMatchesFilters = (chat = {}, filters = {}) => {
-  const normalized = normalizeChatFilters(filters);
-
-  if (normalized.unreadOnly && Number(chat?.unreadCount || 0) <= 0) return false;
-
-  const isMyContact = Boolean(chat?.isMyContact);
-  if (normalized.contactMode === 'my' && !isMyContact) return false;
-  if (normalized.contactMode === 'unknown' && isMyContact) return false;
-  const isArchived = Boolean(chat?.archived);
-  if (normalized.archivedMode === 'archived' && !isArchived) return false;
-  if (normalized.archivedMode === 'active' && isArchived) return false;
-  const isPinned = Boolean(chat?.pinned);
-  if (normalized.pinnedMode === 'pinned' && !isPinned) return false;
-  if (normalized.pinnedMode === 'unpinned' && isPinned) return false;
-
-  const labelSet = chatLabelTokenSet(chat);
-  if (normalized.unlabeledOnly && labelSet.size > 0) return false;
-
-  if (!normalized.unlabeledOnly && normalized.labelTokens.length > 0) {
-    const hasLabel = normalized.labelTokens.some((token) => {
-      const clean = normalizeFilterToken(token);
-      if (!clean) return false;
-      if (labelSet.has(clean)) return true;
-      if (clean.startsWith('id:')) {
-        const val = clean.slice(3);
-        return val ? labelSet.has(val) : false;
-      }
-      if (clean.startsWith('name:')) {
-        const val = clean.slice(5);
-        return val ? labelSet.has(val) : false;
-      }
-      return labelSet.has(`id:${clean}`) || labelSet.has(`name:${clean}`);
-    });
-    if (!hasLabel) return false;
-  }
-
-  return true;
-};
-const normalizeQuickReplyDraft = (value = null) => {
-  if (!value || typeof value !== 'object') return null;
-  const id = String(value?.id || '').trim();
-  const label = sanitizeDisplayText(value?.label || '');
-  const textBody = repairMojibake(value?.text || '').trim();
-  const mediaAssets = Array.isArray(value?.mediaAssets)
-    ? value.mediaAssets
-      .map((asset) => ({
-        url: String(asset?.url || asset?.mediaUrl || '').trim() || null,
-        mimeType: String(asset?.mimeType || asset?.mediaMimeType || '').trim().toLowerCase() || null,
-        fileName: String(asset?.fileName || asset?.mediaFileName || '').trim() || null,
-        sizeBytes: Number.isFinite(Number(asset?.sizeBytes ?? asset?.mediaSizeBytes)) ? Number(asset?.sizeBytes ?? asset?.mediaSizeBytes) : null
-      }))
-      .filter((asset) => Boolean(asset.url))
-    : [];
-  const mediaUrl = String(value?.mediaUrl || mediaAssets[0]?.url || '').trim() || null;
-  const mediaMimeType = String(value?.mediaMimeType || mediaAssets[0]?.mimeType || '').trim().toLowerCase() || null;
-  const mediaFileName = String(value?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null;
-  const hasPayload = Boolean(textBody || mediaUrl || mediaAssets.length > 0 || id);
-  if (!hasPayload) return null;
-  return {
-    id: id || null,
-    label: label || null,
-    text: textBody,
-    mediaAssets,
-    mediaUrl,
-    mediaMimeType,
-    mediaFileName
-  };
-};
-
-const isVisibleChatId = (chatId = '') => {
-  const id = String(chatId || '');
-  if (!id) return false;
-  if (id.includes('status@broadcast')) return false;
-  if (id.endsWith('@broadcast')) return false;
-  return true;
-};
-
-const upsertAndSortChat = (list = [], incoming = null) => {
-  if (!incoming?.id) return list;
-  const incomingKey = chatIdentityKey(incoming);
-  const without = list.filter((c) => c.id !== incoming.id && chatIdentityKey(c) !== incomingKey);
-  const merged = [incoming, ...without].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-  return dedupeChats(merged);
-};
-
-const CHAT_PAGE_SIZE = 80;
-const TRANSPORT_STORAGE_KEY = 'wa_transport_mode';
 function App() {
   // --------------------------------------------------------------
   const [isConnected, setIsConnected] = useState(false);
@@ -723,43 +106,8 @@ function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [saasAuthNotice, setSaasAuthNotice] = useState('');
-  const [recoveryStep, setRecoveryStep] = useState('idle');
-  const [recoveryEmail, setRecoveryEmail] = useState('');
-  const [recoveryCode, setRecoveryCode] = useState('');
-  const [recoveryResetToken, setRecoveryResetToken] = useState('');
-  const [recoveryPassword, setRecoveryPassword] = useState('');
-  const [recoveryPasswordConfirm, setRecoveryPasswordConfirm] = useState('');
-  const [showRecoveryPassword, setShowRecoveryPassword] = useState(false);
-  const [recoveryBusy, setRecoveryBusy] = useState(false);
-  const [recoveryError, setRecoveryError] = useState('');
-  const [recoveryNotice, setRecoveryNotice] = useState('');
-  const [recoveryDebugCode, setRecoveryDebugCode] = useState('');
   const [forceOperationLaunchBypass, setForceOperationLaunchBypass] = useState(false);
-  const waLaunchParams = useMemo(() => {
-    try {
-      const params = new URLSearchParams(window.location.search || '');
-      const launch = String(params.get('wa_launch') || '').trim().toLowerCase() === 'operation';
-      const moduleId = String(params.get('wa_module') || '').trim().toLowerCase();
-      const tenantId = String(params.get('wa_tenant') || '').trim();
-      const sectionId = String(params.get('wa_section') || '').trim().toLowerCase();
-      const source = String(params.get('wa_from') || '').trim().toLowerCase();
-      return {
-        forceOperationLaunch: launch,
-        requestedWaModuleId: moduleId || '',
-        requestedWaTenantId: tenantId || '',
-        requestedWaSectionId: sectionId || '',
-        requestedLaunchSource: source || ''
-      };
-    } catch (_) {
-      return {
-        forceOperationLaunch: false,
-        requestedWaModuleId: '',
-        requestedWaTenantId: '',
-        requestedWaSectionId: '',
-        requestedLaunchSource: ''
-      };
-    }
-  }, []);
+  const waLaunchParams = useMemo(() => readWaLaunchParams(window.location.search || ''), []);
   const forceOperationLaunch = waLaunchParams.forceOperationLaunch && !forceOperationLaunchBypass;
   const requestedWaModuleFromUrl = waLaunchParams.requestedWaModuleId;
   const requestedWaTenantFromUrl = waLaunchParams.requestedWaTenantId;
@@ -810,14 +158,6 @@ function App() {
   const [selectedCatalogModuleId, setSelectedCatalogModuleId] = useState('');
   const [selectedCatalogId, setSelectedCatalogId] = useState('');
   const [waModuleError, setWaModuleError] = useState('');
-  const [newChatDialog, setNewChatDialog] = useState({
-    open: false,
-    phone: '',
-    firstMessage: '',
-    moduleId: '',
-    error: ''
-  });
-
   const [waCapabilities, setWaCapabilities] = useState({ messageEdit: true, messageEditSync: true, messageForward: true, messageDelete: true, messageReply: true, quickReplies: false, quickRepliesRead: false, quickRepliesWrite: false });
   const [toasts, setToasts] = useState([]);
   const [pendingOrderCartLoad, setPendingOrderCartLoad] = useState(null);
@@ -887,6 +227,36 @@ function App() {
     if (tenantId) headers['X-Tenant-Id'] = tenantId;
     return headers;
   }, []);
+
+  const {
+    recoveryStep,
+    recoveryEmail,
+    setRecoveryEmail,
+    recoveryCode,
+    setRecoveryCode,
+    recoveryPassword,
+    setRecoveryPassword,
+    recoveryPasswordConfirm,
+    setRecoveryPasswordConfirm,
+    showRecoveryPassword,
+    setShowRecoveryPassword,
+    recoveryBusy,
+    recoveryError,
+    setRecoveryError,
+    recoveryNotice,
+    recoveryDebugCode,
+    resetRecoveryFlow,
+    openRecoveryFlow,
+    handleRecoveryRequest,
+    handleRecoveryVerify,
+    handleRecoveryReset
+  } = useSaasRecoveryFlow({
+    loginEmail,
+    setLoginEmail,
+    setLoginPassword,
+    setSaasAuthNotice,
+    buildApiHeaders
+  });
 
   const resolveSessionSenderIdentity = useCallback(() => {
     const sessionUser = (saasSessionRef.current?.user && typeof saasSessionRef.current.user === 'object')
@@ -1132,131 +502,60 @@ function App() {
     };
   }, [saasRuntime?.authEnabled, saasSession?.refreshToken, saasSession?.accessExpiresAtUnix, refreshSaasSession]);
 
-  useEffect(() => {
-    if (!saasRuntime?.loaded) return;
+  useSocketConnectionAuthEffect({
+    socket,
+    saasRuntime,
+    saasSession,
+    selectedWaModuleRef,
+    selectedWaModuleId: selectedWaModule?.moduleId,
+    socketAuthToken: SOCKET_AUTH_TOKEN,
+    setIsConnected,
+    setIsClientReady
+  });
 
-    const authRequired = Boolean(saasRuntime?.authEnabled);
-    const accessToken = String(saasSession?.accessToken || '').trim();
-    const tenantId = String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || '').trim();
+  useMessagesAutoScroll({
+    messages,
+    messagesEndRef,
+    prevMessagesMetaRef,
+    shouldInstantScrollRef,
+    suppressSmoothScrollUntilRef
+  });
 
-    if (authRequired && !accessToken) {
-      if (socket.connected) socket.disconnect();
-      setIsConnected(false);
-      setIsClientReady(false);
-      return;
-    }
-
-    const auth = {};
-    if (SOCKET_AUTH_TOKEN) auth.token = SOCKET_AUTH_TOKEN;
-    if (accessToken) auth.accessToken = accessToken;
-    if (tenantId) auth.tenantId = tenantId;
-    const selectedModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim();
-    if (selectedModuleId) auth.waModuleId = selectedModuleId;
-    socket.auth = Object.keys(auth).length > 0 ? auth : undefined;
-
-    if (!socket.connected) socket.connect();
-  }, [saasRuntime?.loaded, saasRuntime?.authEnabled, saasRuntime?.tenant?.id, saasSession?.accessToken, saasSession?.user?.tenantId, selectedWaModule?.moduleId]);
-
-  // --------------------------------------------------------------
-  // Auto-scroll
-  // --------------------------------------------------------------
-  useLayoutEffect(() => {
-    const endNode = messagesEndRef.current;
-    if (!endNode) return;
-    const messagesContainer = endNode.parentElement;
-    if (!messagesContainer) return;
-
-    const nextCount = Array.isArray(messages) ? messages.length : 0;
-    const nextLastId = nextCount > 0 ? String(messages[nextCount - 1]?.id || '') : '';
-    const prevMeta = prevMessagesMetaRef.current || { count: 0, lastId: '' };
-    const isNewMessageAppend = nextCount > prevMeta.count;
-    const shouldForceScroll = shouldInstantScrollRef.current || isNewMessageAppend;
-
-    if (shouldForceScroll) {
-      const inQuietWindow = Date.now() < suppressSmoothScrollUntilRef.current;
-      const behavior = (shouldInstantScrollRef.current || inQuietWindow || !isNewMessageAppend) ? 'auto' : 'smooth';
-      const targetTop = messagesContainer.scrollHeight;
-      if (behavior === 'smooth') {
-        messagesContainer.scrollTo({ top: targetTop, behavior: 'smooth' });
-      } else {
-        messagesContainer.scrollTop = targetTop;
-      }
-    }
-
-    if (shouldInstantScrollRef.current) shouldInstantScrollRef.current = false;
-    prevMessagesMetaRef.current = { count: nextCount, lastId: nextLastId };
-  }, [messages]);
-
-  useEffect(() => {
-    activeChatIdRef.current = activeChatId;
-  }, [activeChatId]);
-
-  useEffect(() => {
-    chatsRef.current = chats;
-  }, [chats]);
-
-  useEffect(() => {
-    chatSearchRef.current = String(chatSearchQuery || '').trim();
-  }, [chatSearchQuery]);
-
-  useEffect(() => {
-    chatFiltersRef.current = normalizeChatFilters(chatFilters);
-  }, [chatFilters]);
-
-  useEffect(() => {
-    selectedTransportRef.current = selectedTransport;
-    try {
-      localStorage.removeItem(TRANSPORT_STORAGE_KEY);
-    } catch (_) { }
-  }, [selectedTransport]);
-
-  useEffect(() => {
-    selectedWaModuleRef.current = selectedWaModule;
-  }, [selectedWaModule]);
-
-  useEffect(() => {
-    waModulesRef.current = Array.isArray(waModules) ? waModules : [];
-  }, [waModules]);
-
-  useEffect(() => {
-    selectedCatalogModuleIdRef.current = String(selectedCatalogModuleId || '').trim().toLowerCase();
-  }, [selectedCatalogModuleId]);
-
-  useEffect(() => {
-    selectedCatalogIdRef.current = String(selectedCatalogId || '').trim().toUpperCase();
-  }, [selectedCatalogId]);
-
-  useEffect(() => {
-    saasSessionRef.current = saasSession;
-    persistSaasSession(saasSession);
-  }, [saasSession]);
-
-  useEffect(() => {
-    saasRuntimeRef.current = saasRuntime;
-  }, [saasRuntime]);
-
-  useEffect(() => {
-    forceOperationLaunchRef.current = forceOperationLaunch;
-  }, [forceOperationLaunch]);
-
-  useEffect(() => {
-    if (selectedTransport !== 'cloud') return;
-    if (waRuntime?.activeTransport !== 'cloud') return;
-    if (waRuntime?.cloudConfigured) return;
-    setIsClientReady(false);
-    setTransportError('Cloud API no configurada en backend/.env.');
-  }, [selectedTransport, waRuntime]);
-
-  useEffect(() => {
-    if (!showClientProfile) return;
-    const handleOutsideClick = (event) => {
-      const target = event.target;
-      if (clientProfilePanelRef.current?.contains(target)) return;
-      setShowClientProfile(false);
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [showClientProfile]);
+  useChatRuntimeSyncEffects({
+    activeChatId,
+    activeChatIdRef,
+    chats,
+    chatsRef,
+    chatSearchQuery,
+    chatSearchRef,
+    chatFilters,
+    chatFiltersRef,
+    normalizeChatFilters,
+    selectedTransport,
+    selectedTransportRef,
+    transportStorageKey: TRANSPORT_STORAGE_KEY,
+    selectedWaModule,
+    selectedWaModuleRef,
+    waModules,
+    waModulesRef,
+    selectedCatalogModuleId,
+    selectedCatalogModuleIdRef,
+    selectedCatalogId,
+    selectedCatalogIdRef,
+    saasSession,
+    saasSessionRef,
+    persistSaasSession,
+    saasRuntime,
+    saasRuntimeRef,
+    forceOperationLaunch,
+    forceOperationLaunchRef,
+    waRuntime,
+    setIsClientReady,
+    setTransportError,
+    showClientProfile,
+    clientProfilePanelRef,
+    setShowClientProfile
+  });
 
   useEffect(() => {
     if (!isClientReady) return;
@@ -2367,313 +1666,40 @@ function App() {
     resetWorkspaceState();
   }, [tenantScopeId]);
 
-  const handleSaasLogin = async (event) => {
-    event?.preventDefault();
-    if (recoveryStep !== 'idle') return;
-    const email = String(loginEmail || '').trim().toLowerCase();
-    const password = String(loginPassword || '');
-
-    if (!email || !password) {
-      setSaasAuthError('Ingresa correo y contrasena para continuar.');
-      return;
-    }
-
-    setSaasAuthBusy(true);
-    setSaasAuthError('');
-    setSaasAuthNotice('');
-    setTenantSwitchError('');
-    setRecoveryError('');
-
-    try {
-      const response = await fetch(API_URL + '/api/auth/login', {
-        method: 'POST',
-        headers: buildApiHeaders({ includeJson: true }),
-        body: JSON.stringify({ email, password })
-      });
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok || !payload?.ok) {
-        throw new Error(String(payload?.error || 'No se pudo iniciar sesion.'));
-      }
-
-      const session = normalizeSaasSessionPayload(payload, null);
-      if (!session) throw new Error('Respuesta de autenticacion invalida.');
-      if (payload?.user && typeof payload.user === 'object') {
-        session.user = payload.user;
-      }
-
-      try {
-        const meResponse = await fetch(`${API_URL}/api/auth/me`, {
-          method: 'GET',
-          headers: buildApiHeaders({
-            tokenOverride: String(session?.accessToken || ''),
-            tenantIdOverride: String(session?.user?.tenantId || '')
-          })
-        });
-        const mePayload = await meResponse.json().catch(() => ({}));
-        if (meResponse.ok && mePayload?.ok && mePayload?.user && typeof mePayload.user === 'object') {
-          session.user = { ...(session.user || {}), ...mePayload.user };
-        }
-      } catch (_) {
-        // best effort: seguimos con lo recibido en login
-      }
-
-      const loginRole = String(session?.user?.role || '').trim().toLowerCase();
-      const loginCanManageSaas = Boolean(
-        session?.user?.canManageSaas
-        || session?.user?.isSuperAdmin
-        || loginRole === 'owner'
-        || loginRole === 'admin'
-        || loginRole === 'superadmin'
-      );
-      setSaasSession(session);
-      setForceOperationLaunchBypass(loginCanManageSaas);
-      if (loginCanManageSaas) {
-        try {
-          const cleanUrl = new URL(window.location.href);
-          cleanUrl.searchParams.delete('wa_launch');
-          cleanUrl.searchParams.delete('wa_module');
-          cleanUrl.searchParams.delete('wa_tenant');
-          window.history.replaceState({}, '', cleanUrl.toString());
-        } catch (_) {
-          // no-op
-        }
-        setSelectedTransport('');
-        setShowSaasAdminPanel(true);
-      } else {
-        setShowSaasAdminPanel(false);
-        setSelectedTransport('cloud');
-      }
-      setLoginPassword('');
-      setLoginEmail(String(session?.user?.email || payload?.user?.email || email));
-      setRecoveryStep('idle');
-    } catch (error) {
-      setSaasAuthError(String(error?.message || 'No se pudo iniciar sesion.'));
-    } finally {
-      setSaasAuthBusy(false);
-    }
-  };
-
-  const resetRecoveryFlow = () => {
-    setRecoveryStep('idle');
-    setRecoveryCode('');
-    setRecoveryResetToken('');
-    setRecoveryPassword('');
-    setRecoveryPasswordConfirm('');
-    setRecoveryBusy(false);
-    setRecoveryError('');
-    setRecoveryNotice('');
-    setRecoveryDebugCode('');
-    setShowRecoveryPassword(false);
-  };
-
-  const openRecoveryFlow = () => {
-    const emailSeed = String(loginEmail || '').trim().toLowerCase();
-    setRecoveryEmail(emailSeed);
-    setRecoveryStep('request');
-    setRecoveryCode('');
-    setRecoveryResetToken('');
-    setRecoveryPassword('');
-    setRecoveryPasswordConfirm('');
-    setRecoveryError('');
-    setRecoveryNotice('');
-    setRecoveryDebugCode('');
-    setSaasAuthNotice('');
-  };
-
-  const handleRecoveryRequest = async (event) => {
-    event?.preventDefault();
-    const email = String(recoveryEmail || '').trim().toLowerCase();
-    if (!email) {
-      setRecoveryError('Ingresa tu correo para recuperar acceso.');
-      return;
-    }
-
-    setRecoveryBusy(true);
-    setRecoveryError('');
-    setRecoveryNotice('');
-    try {
-      const response = await fetch(`${API_URL}/api/auth/recovery/request`, {
-        method: 'POST',
-        headers: buildApiHeaders({ includeJson: true }),
-        body: JSON.stringify({ email })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload?.ok === false) {
-        throw new Error(String(payload?.error || 'No se pudo iniciar la recuperacion.'));
-      }
-      setRecoveryNotice(String(payload?.message || 'Si el correo existe, enviaremos un codigo de recuperacion.'));
-      setRecoveryDebugCode(String(payload?.debugCode || ''));
-      setRecoveryStep('verify');
-    } catch (error) {
-      setRecoveryError(String(error?.message || 'No se pudo iniciar la recuperacion.'));
-    } finally {
-      setRecoveryBusy(false);
-    }
-  };
-
-  const handleRecoveryVerify = async (event) => {
-    event?.preventDefault();
-    const email = String(recoveryEmail || '').trim().toLowerCase();
-    const code = String(recoveryCode || '').trim();
-    if (!email || !code) {
-      setRecoveryError('Ingresa correo y codigo de verificacion.');
-      return;
-    }
-
-    setRecoveryBusy(true);
-    setRecoveryError('');
-    try {
-      const response = await fetch(`${API_URL}/api/auth/recovery/verify`, {
-        method: 'POST',
-        headers: buildApiHeaders({ includeJson: true }),
-        body: JSON.stringify({ email, code })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload?.ok === false) {
-        throw new Error(String(payload?.error || 'Codigo invalido o expirado.'));
-      }
-      setRecoveryResetToken(String(payload?.resetToken || ''));
-      setRecoveryStep('reset');
-      setRecoveryNotice('Codigo validado. Ahora crea tu nueva contrasena.');
-    } catch (error) {
-      setRecoveryError(String(error?.message || 'No se pudo validar el codigo.'));
-    } finally {
-      setRecoveryBusy(false);
-    }
-  };
-
-  const handleRecoveryReset = async (event) => {
-    event?.preventDefault();
-    const email = String(recoveryEmail || '').trim().toLowerCase();
-    const resetToken = String(recoveryResetToken || '').trim();
-    const newPassword = String(recoveryPassword || '');
-    if (!email || !resetToken) {
-      setRecoveryError('Sesion de recuperacion expirada. Solicita un nuevo codigo.');
-      return;
-    }
-    if (!newPassword || newPassword.length < 10) {
-      setRecoveryError('Usa una contrasena segura (minimo 10 caracteres).');
-      return;
-    }
-    if (newPassword !== String(recoveryPasswordConfirm || '')) {
-      setRecoveryError('Las contrasenas no coinciden.');
-      return;
-    }
-
-    setRecoveryBusy(true);
-    setRecoveryError('');
-    try {
-      const response = await fetch(`${API_URL}/api/auth/recovery/reset`, {
-        method: 'POST',
-        headers: buildApiHeaders({ includeJson: true }),
-        body: JSON.stringify({ email, resetToken, newPassword })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload?.ok === false) {
-        throw new Error(String(payload?.error || 'No se pudo actualizar la contrasena.'));
-      }
-      setLoginEmail(email);
-      setLoginPassword('');
-      resetRecoveryFlow();
-      setSaasAuthNotice(String(payload?.message || 'Contrasena actualizada. Inicia sesion con la nueva clave.'));
-    } catch (error) {
-      setRecoveryError(String(error?.message || 'No se pudo actualizar la contrasena.'));
-    } finally {
-      setRecoveryBusy(false);
-    }
-  };
-
-  const handleSaasLogout = async () => {
-    if (!window.confirm('Cerrar sesion de tu cuenta SaaS?')) return;
-    const current = saasSessionRef.current;
-    try {
-      if (current?.accessToken || current?.refreshToken) {
-        await fetch(`${API_URL}/api/auth/logout`, {
-          method: 'POST',
-          headers: buildApiHeaders({ includeJson: true, tokenOverride: String(current?.accessToken || '') }),
-          body: JSON.stringify({
-            accessToken: String(current?.accessToken || ''),
-            refreshToken: String(current?.refreshToken || '')
-          })
-        });
-      }
-    } catch (_error) {
-      // best effort
-    }
-    setSaasSession(null);
-    setSelectedTransport('');
-    setShowSaasAdminPanel(false);
-    setForceOperationLaunchBypass(false);
-    setSaasAuthError('');
-    setTenantSwitchError('');
-    setTenantSwitchBusy(false);
-    setWaModules([]);
-    setSelectedWaModule(null);
-    setSelectedCatalogModuleId('');
-    if (socket.connected) socket.disconnect();
-    setIsConnected(false);
-    resetWorkspaceState();
-  };
-
-  const handleSwitchTenant = async (nextTenantId = '') => {
-    if (!saasRuntimeRef.current?.authEnabled) return;
-    const current = saasSessionRef.current;
-    if (!current?.accessToken || !current?.refreshToken) return;
-
-    const targetTenantId = String(nextTenantId || '').trim();
-    const currentTenantId = String(current?.user?.tenantId || saasRuntimeRef.current?.tenant?.id || '').trim();
-    if (!targetTenantId || targetTenantId === currentTenantId) return;
-
-    setTenantSwitchError('');
-    setTenantSwitchBusy(true);
-
-    try {
-      const response = await fetch(`${API_URL}/api/auth/switch-tenant`, {
-        method: 'POST',
-        headers: buildApiHeaders({ includeJson: true, tokenOverride: String(current?.accessToken || ''), tenantIdOverride: currentTenantId }),
-        body: JSON.stringify({
-          targetTenantId,
-          refreshToken: String(current?.refreshToken || '')
-        })
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload?.ok) {
-        throw new Error(String(payload?.error || 'No se pudo cambiar de empresa.'));
-      }
-
-      const nextSession = normalizeSaasSessionPayload(payload, current);
-      if (!nextSession) throw new Error('Sesion invalida al cambiar de empresa.');
-      if (payload?.user && typeof payload.user === 'object') nextSession.user = payload.user;
-
-      const targetTenant = (Array.isArray(saasRuntimeRef.current?.tenants) ? saasRuntimeRef.current.tenants : [])
-        .find((item) => String(item?.id || '').trim() === targetTenantId) || null;
-
-      setSaasSession(nextSession);
-      setSaasRuntime((prev) => ({
-        ...prev,
-        tenant: targetTenant || { id: targetTenantId, slug: targetTenantId, name: targetTenantId, active: true, plan: prev?.tenant?.plan || 'starter' },
-        authContext: {
-          ...(prev?.authContext || {}),
-          enabled: true,
-          isAuthenticated: true,
-          user: nextSession.user || prev?.authContext?.user || null
-        }
-      }));
-
-      setWaModules([]);
-      setSelectedWaModule(null);
-      setWaModuleError('');
-      if (socket.connected) socket.disconnect();
-      setIsConnected(false);
-      resetWorkspaceState();
-    } catch (error) {
-      setTenantSwitchError(String(error?.message || 'No se pudo cambiar de empresa.'));
-    } finally {
-      setTenantSwitchBusy(false);
-    }
-  };
+  const {
+    handleSaasLogin,
+    handleSaasLogout,
+    handleSwitchTenant
+  } = useSaasSessionActions({
+    recoveryStep,
+    loginEmail,
+    loginPassword,
+    buildApiHeaders,
+    normalizeSaasSessionPayload,
+    setSaasAuthBusy,
+    setSaasAuthError,
+    setSaasAuthNotice,
+    setTenantSwitchError,
+    setRecoveryError,
+    setSaasSession,
+    setForceOperationLaunchBypass,
+    setSelectedTransport,
+    setShowSaasAdminPanel,
+    setLoginPassword,
+    setLoginEmail,
+    resetRecoveryFlow,
+    saasSessionRef,
+    saasRuntimeRef,
+    setTenantSwitchBusy,
+    setWaModules,
+    setSelectedWaModule,
+    setSelectedCatalogModuleId,
+    socket,
+    setIsConnected,
+    resetWorkspaceState,
+    setWaModuleError,
+    setSaasRuntime
+  });
 
   const handleChatSelect = (chatId, options = {}) => {
     if (!chatId) return;
@@ -3204,120 +2230,21 @@ function App() {
     socket.emit('set_chat_state', { chatId, pinned: nextPinned });
   };
 
-  const resolveNewChatAvailableModules = useCallback(() => (
-    normalizeWaModules(waModulesRef.current).filter((module) => module.isActive !== false)
-  ), []);
+  const {
+    newChatDialog,
+    setNewChatDialog,
+    newChatAvailableModules,
+    handleStartNewChat,
+    handleCancelNewChatDialog,
+    handleConfirmNewChat
+  } = useNewChatDialog({
+    waModulesRef,
+    selectedWaModuleRef,
+    chatsRef,
+    handleChatSelect,
+    socket
+  });
 
-  const resolveDefaultNewChatModuleId = useCallback((availableModules = []) => {
-    const preferredModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
-    if (availableModules.length === 1) {
-      return String(availableModules[0]?.moduleId || '').trim().toLowerCase();
-    }
-    if (preferredModuleId) {
-      const preferred = availableModules.find((module) => String(module?.moduleId || '').trim().toLowerCase() === preferredModuleId);
-      if (preferred?.moduleId) return String(preferred.moduleId || '').trim().toLowerCase();
-    }
-    return String(availableModules[0]?.moduleId || '').trim().toLowerCase();
-  }, []);
-
-  const resetNewChatDialog = useCallback(() => {
-    setNewChatDialog({
-      open: false,
-      phone: '',
-      firstMessage: '',
-      moduleId: '',
-      error: ''
-    });
-  }, []);
-
-  const executeStartNewChat = useCallback(({ normalizedPhone = '', firstMessage = '', targetModuleId = '' } = {}) => {
-    const cleanPhone = normalizeDigits(normalizedPhone);
-    const cleanModuleId = String(targetModuleId || '').trim().toLowerCase();
-    if (!cleanPhone) return;
-
-    const candidates = chatsRef.current
-      .filter((c) => {
-        const chatPhone = normalizeDigits(getBestChatPhone(c) || '');
-        if (!chatPhone || chatPhone !== cleanPhone) return false;
-        if (!cleanModuleId) return true;
-        const scoped = parseScopedChatId(c?.id || '');
-        const chatModuleId = String(scoped.scopeModuleId || c?.lastMessageModuleId || '').trim().toLowerCase();
-        return chatModuleId === cleanModuleId;
-      })
-      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-    if (candidates.length > 0) {
-      const best = candidates[0];
-      if (best?.id) {
-        handleChatSelect(best.id, { clearSearch: true });
-        if (String(firstMessage || '').trim()) {
-          socket.emit('send_message', {
-            to: best.id,
-            toPhone: cleanPhone,
-            body: String(firstMessage || '').trim()
-          });
-        }
-        return;
-      }
-    }
-
-    socket.emit('start_new_chat', {
-      phone: cleanPhone,
-      firstMessage: String(firstMessage || '').trim(),
-      moduleId: cleanModuleId || undefined
-    });
-  }, [handleChatSelect]);
-
-  const openStartNewChatDialog = useCallback((phoneArg = '', firstMessageArg = '') => {
-    const availableModules = resolveNewChatAvailableModules();
-    const defaultModuleId = resolveDefaultNewChatModuleId(availableModules);
-    setNewChatDialog({
-      open: true,
-      phone: String(phoneArg || '').trim(),
-      firstMessage: typeof firstMessageArg === 'string' ? firstMessageArg : '',
-      moduleId: defaultModuleId || '',
-      error: ''
-    });
-  }, [resolveDefaultNewChatModuleId, resolveNewChatAvailableModules]);
-
-  const handleStartNewChat = useCallback((phoneArg = '', firstMessageArg = '') => {
-    openStartNewChatDialog(phoneArg, firstMessageArg);
-  }, [openStartNewChatDialog]);
-
-  const handleCancelNewChatDialog = useCallback(() => {
-    resetNewChatDialog();
-  }, [resetNewChatDialog]);
-
-  const handleConfirmNewChat = useCallback(() => {
-    const normalizedPhone = normalizeDigits(newChatDialog.phone || '');
-    if (!normalizedPhone || normalizedPhone.length < 8) {
-      setNewChatDialog((prev) => ({ ...prev, error: 'Ingresa un numero valido con codigo de pais.' }));
-      return;
-    }
-
-    const availableModules = resolveNewChatAvailableModules();
-    const selectedModuleId = String(newChatDialog.moduleId || '').trim().toLowerCase();
-    const defaultModuleId = resolveDefaultNewChatModuleId(availableModules);
-    let targetModuleId = selectedModuleId || defaultModuleId;
-
-    if (availableModules.length > 0) {
-      const moduleIsValid = availableModules.some((module) => String(module?.moduleId || '').trim().toLowerCase() === targetModuleId);
-      if (!moduleIsValid) {
-        setNewChatDialog((prev) => ({ ...prev, error: 'Selecciona un modulo activo para iniciar el chat.' }));
-        return;
-      }
-    } else {
-      const preferredModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
-      targetModuleId = preferredModuleId || '';
-    }
-
-    executeStartNewChat({
-      normalizedPhone,
-      firstMessage: newChatDialog.firstMessage || '',
-      targetModuleId
-    });
-    resetNewChatDialog();
-  }, [executeStartNewChat, newChatDialog.firstMessage, newChatDialog.moduleId, newChatDialog.phone, resetNewChatDialog, resolveDefaultNewChatModuleId, resolveNewChatAvailableModules]);
   const handleEditMessage = (messageId, currentBody) => {
     if (!waCapabilities.messageEdit) {
       alert('La edicion de mensajes no esta disponible en esta sesion de WhatsApp.');
@@ -3684,225 +2611,50 @@ function App() {
   }, [selectedTransport, saasRuntime?.loaded, forceOperationLaunch, canManageSaas]);
 
   if (!saasRuntime?.loaded) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#111b21', gap: '20px' }}>
-        <div className='loader' />
-        <p style={{ color: '#8696a0', fontSize: '0.9rem' }}>Inicializando plataforma SaaS...</p>
-      </div>
-    );
+    return <StatusScreen message='Inicializando plataforma SaaS...' />;
   }
 
   if (saasAuthEnabled && !isSaasAuthenticated) {
     return (
-      <div className='login-screen login-screen--saas'>
-        <div className='login-ambient' aria-hidden='true' />
-        <form onSubmit={handleSaasLogin} className='saas-login-card fade-in'>
-          <div className='saas-login-head'>
-            <span className='saas-login-kicker'>Control plane</span>
-            <div className='saas-login-title'>Acceso seguro</div>
-            <p>Inicia sesion con usuario y contrasena. La empresa se asigna automaticamente segun tus permisos.</p>
-          </div>
-
-          <label className='saas-login-field'>
-            <span>Usuario o correo</span>
-            <input
-              type='text'
-              value={loginEmail}
-              onChange={(e) => setLoginEmail(e.target.value)}
-              autoComplete='username'
-              placeholder='usuario@empresa.com o user_id'
-              disabled={saasAuthBusy || recoveryBusy}
-            />
-          </label>
-
-          <label className='saas-login-field'>
-            <span>Contrasena</span>
-            <div className='saas-login-password-wrap'>
-              <input
-                type={showLoginPassword ? 'text' : 'password'}
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                autoComplete='current-password'
-                placeholder='********'
-                disabled={saasAuthBusy || recoveryBusy}
-              />
-              <button
-                type='button'
-                className='saas-login-visibility'
-                onClick={() => setShowLoginPassword((prev) => !prev)}
-                disabled={saasAuthBusy || recoveryBusy}
-                aria-label={showLoginPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
-              >
-                {showLoginPassword ? 'Ocultar' : 'Ver'}
-              </button>
-            </div>
-          </label>
-
-          {saasAuthError && (
-            <div className='saas-login-error'>
-              {saasAuthError}
-            </div>
-          )}
-          {saasAuthNotice && (
-            <div className='saas-login-notice'>
-              {saasAuthNotice}
-            </div>
-          )}
-
-          {recoveryStep === 'idle' ? (
-            <>
-              <button
-                type='submit'
-                disabled={saasAuthBusy || recoveryBusy}
-                className='saas-login-submit'
-              >
-                {saasAuthBusy ? 'Ingresando...' : 'Iniciar sesion'}
-              </button>
-              <button
-                type='button'
-                className='saas-login-link'
-                onClick={openRecoveryFlow}
-                disabled={saasAuthBusy || recoveryBusy}
-              >
-                Olvide mi contrasena
-              </button>
-            </>
-          ) : (
-            <div className='saas-recovery-box'>
-              <div className='saas-recovery-head'>
-                <strong>Recuperar acceso</strong>
-                <small>Paso seguro en 2 etapas con codigo por correo.</small>
-              </div>
-
-              {recoveryNotice && <div className='saas-login-notice'>{recoveryNotice}</div>}
-              {recoveryError && <div className='saas-login-error'>{recoveryError}</div>}
-
-              {recoveryStep === 'request' && (
-                <div className='saas-recovery-form'>
-                  <label className='saas-login-field'>
-                    <span>Correo</span>
-                    <input
-                      type='email'
-                      value={recoveryEmail}
-                      onChange={(event) => setRecoveryEmail(event.target.value)}
-                      placeholder='usuario@empresa.com'
-                      autoComplete='email'
-                      disabled={recoveryBusy}
-                    />
-                  </label>
-                  <button
-                    type='button'
-                    disabled={recoveryBusy}
-                    className='saas-login-submit'
-                    onClick={handleRecoveryRequest}
-                  >
-                    {recoveryBusy ? 'Enviando...' : 'Enviar codigo'}
-                  </button>
-                </div>
-              )}
-
-              {recoveryStep === 'verify' && (
-                <div className='saas-recovery-form'>
-                  <label className='saas-login-field'>
-                    <span>Correo</span>
-                    <input type='email' value={recoveryEmail} disabled />
-                  </label>
-                  <label className='saas-login-field'>
-                    <span>Codigo de verificacion</span>
-                    <input
-                      type='text'
-                      value={recoveryCode}
-                      onChange={(event) => setRecoveryCode(event.target.value)}
-                      placeholder='000000'
-                      autoComplete='one-time-code'
-                      disabled={recoveryBusy}
-                    />
-                  </label>
-                  <button
-                    type='button'
-                    disabled={recoveryBusy}
-                    className='saas-login-submit'
-                    onClick={handleRecoveryVerify}
-                  >
-                    {recoveryBusy ? 'Validando...' : 'Validar codigo'}
-                  </button>
-                  {recoveryDebugCode && (
-                    <div className='saas-login-debug'>
-                      Codigo debug (solo entorno local): <strong>{recoveryDebugCode}</strong>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {recoveryStep === 'reset' && (
-                <div className='saas-recovery-form'>
-                  <label className='saas-login-field'>
-                    <span>Nueva contrasena</span>
-                    <input
-                      type={showRecoveryPassword ? 'text' : 'password'}
-                      value={recoveryPassword}
-                      onChange={(event) => setRecoveryPassword(event.target.value)}
-                      placeholder='Minimo 10 caracteres, mayuscula, numero y simbolo'
-                      autoComplete='new-password'
-                      disabled={recoveryBusy}
-                    />
-                  </label>
-                  <label className='saas-login-field'>
-                    <span>Confirmar contrasena</span>
-                    <input
-                      type={showRecoveryPassword ? 'text' : 'password'}
-                      value={recoveryPasswordConfirm}
-                      onChange={(event) => setRecoveryPasswordConfirm(event.target.value)}
-                      placeholder='Repite la nueva contrasena'
-                      autoComplete='new-password'
-                      disabled={recoveryBusy}
-                    />
-                  </label>
-                  <label className='saas-login-check'>
-                    <input
-                      type='checkbox'
-                      checked={showRecoveryPassword}
-                      onChange={(event) => setShowRecoveryPassword(event.target.checked)}
-                      disabled={recoveryBusy}
-                    />
-                    <span>Mostrar contrasena</span>
-                  </label>
-                  <button
-                    type='button'
-                    disabled={recoveryBusy}
-                    className='saas-login-submit'
-                    onClick={handleRecoveryReset}
-                  >
-                    {recoveryBusy ? 'Actualizando...' : 'Actualizar contrasena'}
-                  </button>
-                </div>
-              )}
-
-              <button
-                type='button'
-                className='saas-login-link'
-                onClick={resetRecoveryFlow}
-                disabled={recoveryBusy}
-              >
-                Volver al inicio de sesion
-              </button>
-            </div>
-          )}
-        </form>
-      </div>
+      <SaasLoginScreen
+        loginEmail={loginEmail}
+        setLoginEmail={setLoginEmail}
+        loginPassword={loginPassword}
+        setLoginPassword={setLoginPassword}
+        showLoginPassword={showLoginPassword}
+        setShowLoginPassword={setShowLoginPassword}
+        saasAuthBusy={saasAuthBusy}
+        saasAuthError={saasAuthError}
+        saasAuthNotice={saasAuthNotice}
+        recoveryStep={recoveryStep}
+        recoveryBusy={recoveryBusy}
+        recoveryError={recoveryError}
+        recoveryNotice={recoveryNotice}
+        recoveryDebugCode={recoveryDebugCode}
+        recoveryEmail={recoveryEmail}
+        setRecoveryEmail={setRecoveryEmail}
+        recoveryCode={recoveryCode}
+        setRecoveryCode={setRecoveryCode}
+        recoveryPassword={recoveryPassword}
+        setRecoveryPassword={setRecoveryPassword}
+        recoveryPasswordConfirm={recoveryPasswordConfirm}
+        setRecoveryPasswordConfirm={setRecoveryPasswordConfirm}
+        showRecoveryPassword={showRecoveryPassword}
+        setShowRecoveryPassword={setShowRecoveryPassword}
+        handleSaasLogin={handleSaasLogin}
+        openRecoveryFlow={openRecoveryFlow}
+        handleRecoveryRequest={handleRecoveryRequest}
+        handleRecoveryVerify={handleRecoveryVerify}
+        handleRecoveryReset={handleRecoveryReset}
+        resetRecoveryFlow={resetRecoveryFlow}
+      />
     );
   }
 
-  // Render: Reconnecting
-  // --------------------------------------------------------------
   if (!isConnected) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#111b21', gap: '20px' }}>
-        <div className="loader" />
-        <p style={{ color: '#8696a0', fontSize: '0.9rem' }}>Conectando con el servidor...</p>
-      </div>
-    );
+    return <StatusScreen message='Conectando con el servidor...' />;
   }
+  // --------------------------------------------------------------
 
   // --------------------------------------------------------------
   // Render: Transport Selector
@@ -3955,51 +2707,18 @@ function App() {
   // Render: Transport Bootstrap
   // --------------------------------------------------------------
   if (!isClientReady) {
-    const showCloudConfigError = activeTransport === 'cloud' && !cloudConfigured;
-
     return (
-      <div className="login-screen">
-        <div style={{ textAlign: 'center', maxWidth: '520px', width: '100%' }}>
-          <div style={{ marginBottom: '24px' }}>
-            <div style={{ fontSize: '1.8rem', fontWeight: 300, color: '#e9edef', marginBottom: '10px' }}>WhatsApp Business Pro</div>
-            <p style={{ color: '#9eb2bf', fontSize: '0.9rem' }}>Conectando con <strong style={{ color: '#e9edef' }}>{selectedModeLabel}</strong>.</p>
-          </div>
-
-          {isSwitchingTransport && (
-            <div style={{ marginBottom: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(124,200,255,0.35)', background: 'rgba(124,200,255,0.08)', color: '#cdeaff', fontSize: '0.82rem' }}>
-              Cambiando transporte...
-            </div>
-          )}
-
-          {showCloudConfigError ? (
-            <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid rgba(255,170,0,0.4)', background: 'rgba(255,170,0,0.08)', color: '#ffe1a3', textAlign: 'left', fontSize: '0.83rem', lineHeight: 1.6 }}>
-              Falta configurar Cloud API en backend/.env.<br />
-              Variables minimas: <strong>META_APP_ID</strong>, <strong>META_SYSTEM_USER_TOKEN</strong>, <strong>META_WABA_PHONE_NUMBER_ID</strong>.
-            </div>
-          ) : (
-            <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(124,200,255,0.35)', background: '#202c33' }}>
-              <div className="loader" style={{ margin: '0 auto 12px' }} />
-              <p style={{ color: '#9eb2bf', fontSize: '0.86rem', margin: 0 }}>Esperando inicializacion de Cloud API...</p>
-            </div>
-          )}
-
-          {waModuleError && (
-            <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,153,102,0.45)', background: 'rgba(255,153,102,0.08)', color: '#ffd9c2', fontSize: '0.82rem' }}>
-              {waModuleError}
-            </div>
-          )}
-
-          {transportError && (
-            <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,113,113,0.4)', background: 'rgba(255,113,113,0.08)', color: '#ffd1d1', fontSize: '0.82rem' }}>
-              {transportError}
-            </div>
-          )}
-        </div>
-      </div>
+      <TransportBootstrapScreen
+        selectedModeLabel={selectedModeLabel}
+        isSwitchingTransport={isSwitchingTransport}
+        activeTransport={activeTransport}
+        cloudConfigured={cloudConfigured}
+        waModuleError={waModuleError}
+        transportError={transportError}
+      />
     );
   }
 
-  // --------------------------------------------------------------
   // Render: Main App
   // --------------------------------------------------------------
   const activeChatDetails = chats.find(c => c.id === activeChatId) || null;
@@ -4014,7 +2733,6 @@ function App() {
     }))
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-  const newChatAvailableModules = resolveNewChatAvailableModules();
   const appContainerClassName = forceOperationLaunch ? 'app-container app-container--operation' : 'app-container';
 
   return (
@@ -4190,62 +2908,14 @@ function App() {
         )}
       </div>
 
-      {newChatDialog.open && (
-        <div className="new-chat-modal-overlay" onClick={handleCancelNewChatDialog}>
-          <div className="new-chat-modal-card" role="dialog" aria-modal="true" aria-label="Nuevo chat" onClick={(event) => event.stopPropagation()}>
-            <div className="new-chat-modal-header">
-              <h3>Nuevo chat</h3>
-              <button type="button" className="new-chat-modal-close" onClick={handleCancelNewChatDialog} aria-label="Cerrar">x</button>
-            </div>
-            <p className="new-chat-modal-subtitle">Selecciona el modulo y abre una conversacion sin mezclar chats entre canales.</p>
-
-            <label className="new-chat-modal-label" htmlFor="new-chat-phone">Numero (con codigo de pais)</label>
-            <input
-              id="new-chat-phone"
-              type="text"
-              value={newChatDialog.phone}
-              onChange={(event) => setNewChatDialog((prev) => ({ ...prev, phone: event.target.value, error: '' }))}
-              onKeyDown={(event) => { if (event.key === 'Enter') handleConfirmNewChat(); }}
-              className="new-chat-modal-input"
-              placeholder="Ej: 51955123456"
-              autoFocus
-            />
-
-            <label className="new-chat-modal-label" htmlFor="new-chat-module">Modulo</label>
-            <select
-              id="new-chat-module"
-              value={newChatDialog.moduleId}
-              onChange={(event) => setNewChatDialog((prev) => ({ ...prev, moduleId: event.target.value, error: '' }))}
-              className="new-chat-modal-select"
-              disabled={newChatAvailableModules.length === 0}
-            >
-              {newChatAvailableModules.length === 0 && <option value="">Sin modulos activos</option>}
-              {newChatAvailableModules.map((module) => (
-                <option key={`new_chat_module_${module.moduleId}`} value={module.moduleId}>
-                  {module.name}
-                </option>
-              ))}
-            </select>
-
-            <label className="new-chat-modal-label" htmlFor="new-chat-first-message">Mensaje inicial (opcional)</label>
-            <textarea
-              id="new-chat-first-message"
-              value={newChatDialog.firstMessage}
-              onChange={(event) => setNewChatDialog((prev) => ({ ...prev, firstMessage: event.target.value, error: '' }))}
-              className="new-chat-modal-textarea"
-              rows={3}
-              placeholder="Escribe un mensaje de apertura"
-            />
-
-            {newChatDialog.error && <div className="new-chat-modal-error">{newChatDialog.error}</div>}
-
-            <div className="new-chat-modal-actions">
-              <button type="button" className="new-chat-modal-btn new-chat-modal-btn--ghost" onClick={handleCancelNewChatDialog}>Cancelar</button>
-              <button type="button" className="new-chat-modal-btn new-chat-modal-btn--primary" onClick={handleConfirmNewChat}>Iniciar chat</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <NewChatModal
+        isOpen={newChatDialog.open}
+        dialog={newChatDialog}
+        availableModules={newChatAvailableModules}
+        onChange={(patch) => setNewChatDialog((prev) => ({ ...prev, ...patch }))}
+        onConfirm={handleConfirmNewChat}
+        onCancel={handleCancelNewChatDialog}
+      />
       <Suspense fallback={null}>
         <AppErrorBoundary
           fallbackTitle='Error en Panel SaaS'
@@ -4278,6 +2948,39 @@ function App() {
 }
 
 export default App;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
