@@ -14,6 +14,7 @@ import { useChatRuntimeSyncEffects } from './features/chat/hooks/useChatRuntimeS
 import useScopedBusinessRequests from './features/chat/hooks/useScopedBusinessRequests';
 import { useSocketConnectionAuthEffect } from './features/chat/hooks/useSocketConnectionAuthEffect';
 import useChatPaginationRequester from './features/chat/hooks/useChatPaginationRequester';
+import useWaModuleSocketEvents from './features/chat/hooks/useWaModuleSocketEvents';
 import { readWaLaunchParams } from './features/chat/helpers/waLaunchParams';
 import StatusScreen from './features/chat/components/StatusScreen';
 import TransportBootstrapScreen from './features/chat/components/TransportBootstrapScreen';
@@ -29,7 +30,6 @@ import {
   normalizeModuleImageUrl,
   normalizeProfilePayload,
   normalizeBusinessDataPayload,
-  normalizeWaModuleItem,
   normalizeWaModules,
   resolveSelectedWaModule,
   normalizeChatLabels,
@@ -375,57 +375,28 @@ function App() {
     setIsLoadingMoreChats
   });
 
+
+  useWaModuleSocketEvents({
+    socket,
+    selectedWaModuleRef,
+    selectedCatalogModuleIdRef,
+    selectedCatalogIdRef,
+    requestedWaModuleFromUrlRef,
+    forceOperationLaunchRef,
+    canManageSaasRef,
+    emitScopedBusinessDataRequest,
+    requestQuickRepliesForModule,
+    setWaModules,
+    setSelectedWaModule,
+    setWaModuleError,
+    setSelectedCatalogModuleId,
+    setSelectedCatalogId,
+    setSelectedTransport
+  });
+
   // Socket Events
   // --------------------------------------------------------------
   useEffect(() => {
-    socket.on('wa_module_selected', (payload) => {
-      const selected = normalizeWaModuleItem(payload?.selected || payload?.item || payload || null);
-      if (!selected?.moduleId) return;
-      const previousModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
-      const selectedModuleId = String(selected?.moduleId || '').trim().toLowerCase();
-
-      setWaModules((prev) => {
-        const base = normalizeWaModules(prev || []);
-        const hasExisting = base.some((item) => item.moduleId === selected.moduleId);
-        const merged = hasExisting
-          ? base.map((item) => (item.moduleId === selected.moduleId ? { ...item, ...selected, isSelected: true } : { ...item, isSelected: false }))
-          : [{ ...selected, isSelected: true }, ...base.map((item) => ({ ...item, isSelected: false }))];
-        return normalizeWaModules(merged);
-      });
-      setSelectedWaModule(selected);
-      setWaModuleError('');
-
-      const currentCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
-      if (!currentCatalogModuleId && selectedModuleId) {
-        setSelectedCatalogModuleId(selectedModuleId);
-        selectedCatalogIdRef.current = '';
-        setSelectedCatalogId('');
-        if (socket.connected) {
-          emitScopedBusinessDataRequest({ moduleId: selectedModuleId, catalogId: '' });
-        }
-      }
-
-      const selectedId = String(selected?.moduleId || '').trim().toLowerCase();
-      if (selectedId && selectedId === String(requestedWaModuleFromUrlRef.current || '').trim().toLowerCase()) {
-        requestedWaModuleFromUrlRef.current = '';
-      }
-
-      const selectedMode = String(selected?.transportMode || '').trim().toLowerCase();
-      const shouldAutoSelectTransport = forceOperationLaunchRef.current || !canManageSaasRef.current;
-      if (shouldAutoSelectTransport && selectedMode === 'cloud') {
-        setSelectedTransport(selectedMode);
-      }
-
-      if (selectedModuleId && selectedModuleId !== previousModuleId) {
-        requestQuickRepliesForModule(selectedModuleId);
-        emitScopedBusinessDataRequest({ moduleId: selectedModuleId || selectedCatalogModuleIdRef.current, catalogId: selectedCatalogIdRef.current || '' });
-      }
-    });
-
-    socket.on('wa_module_error', (message) => {
-      setWaModuleError(String(message || 'No se pudo actualizar el modulo WhatsApp.'));
-    });
-
     socket.on('disconnect', () => {
       setIsConnected(false);
       setIsSwitchingTransport(false);
