@@ -937,6 +937,7 @@ export default function SaasAdminPanel({
     } = useSaasPanelActions({
         requestJson,
         onOpenWhatsAppOperation,
+        operationTenantId,
         tenantScopeId,
         activeTenantId,
         selectedTenantId,
@@ -1216,7 +1217,7 @@ export default function SaasAdminPanel({
                         title="Panel SaaS"
                         canOpenOperation={canOpenOperation}
                         isBusy={busy}
-                        onOpenOperation={typeof onOpenWhatsAppOperation === "function" ? () => onOpenWhatsAppOperation("", { tenantId: operationTenantId || undefined }) : undefined}
+                        onOpenOperation={handleOpenOperation}
                         currentUserAvatarUrl={currentUserAvatarUrl}
                         currentUserDisplayName={currentUserDisplayName}
                         currentUserRoleLabel={currentUserRoleLabel}
@@ -1240,7 +1241,7 @@ export default function SaasAdminPanel({
                     subtitle={`Empresa activa: ${activeTenantLabel}`}
                     canOpenOperation={canOpenOperation}
                     isBusy={busy}
-                    onOpenOperation={typeof onOpenWhatsAppOperation === "function" ? () => onOpenWhatsAppOperation("", { tenantId: operationTenantId || undefined }) : undefined}
+                    onOpenOperation={handleOpenOperation}
                     currentUserAvatarUrl={currentUserAvatarUrl}
                     currentUserDisplayName={currentUserDisplayName}
                     currentUserRoleLabel={currentUserRoleLabel}

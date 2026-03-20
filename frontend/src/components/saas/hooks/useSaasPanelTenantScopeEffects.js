@@ -68,25 +68,25 @@ export default function useSaasPanelTenantScopeEffects({
         setTenantCatalogForm(emptyTenantCatalogForm);
         setTenantCatalogProducts([]);
         setSelectedCatalogProductId('');
-        setCatalogProductForm({ ...emptyCatalogProductForm });
+        setCatalogProductForm(emptyCatalogProductForm);
         setCatalogProductPanelMode('view');
         setCatalogProductImageError('');
         setTenantAiAssistants([]);
         setSelectedAiAssistantId('');
-        setAiAssistantForm({ ...emptyAiAssistantForm });
+        setAiAssistantForm(emptyAiAssistantForm);
         setAiAssistantPanelMode('view');
         setQuickReplyLibraries([]);
         setQuickReplyItems([]);
         setSelectedQuickReplyLibraryId('');
         setSelectedQuickReplyItemId('');
         setQuickReplyModuleFilterId('');
-        setQuickReplyLibraryForm({ ...emptyQuickReplyLibraryForm });
-        setQuickReplyItemForm({ ...emptyQuickReplyItemForm });
+        setQuickReplyLibraryForm(emptyQuickReplyLibraryForm);
+        setQuickReplyItemForm(emptyQuickReplyItemForm);
         setQuickReplyLibraryPanelMode('view');
         setQuickReplyItemPanelMode('view');
         setTenantLabels([]);
         setSelectedLabelId('');
-        setLabelForm({ ...emptyLabelForm });
+        setLabelForm(emptyLabelForm);
         setLabelPanelMode('view');
         resetOperationsState();
     }, [
@@ -129,6 +129,7 @@ export default function useSaasPanelTenantScopeEffects({
     ]);
 
     useEffect(() => {
+        if (!isOpen) return;
         setSelectedConfigKey('');
         setSelectedRoleKey('');
         setSelectedWaModuleId('');
@@ -142,7 +143,7 @@ export default function useSaasPanelTenantScopeEffects({
         setCustomerCsvText('');
         setSelectedAiAssistantId('');
         setAiAssistantPanelMode('view');
-        setAiAssistantForm({ ...emptyAiAssistantForm });
+        setAiAssistantForm(emptyAiAssistantForm);
         setSelectedQuickReplyLibraryId('');
         setSelectedQuickReplyItemId('');
         setQuickReplyModuleFilterId('');
@@ -150,7 +151,7 @@ export default function useSaasPanelTenantScopeEffects({
         setQuickReplyItemPanelMode('view');
         setSelectedLabelId('');
         setLabelPanelMode('view');
-        setLabelForm({ ...emptyLabelForm });
+        setLabelForm(emptyLabelForm);
         setLabelSearch('');
     }, [
         emptyAiAssistantForm,
@@ -178,6 +179,7 @@ export default function useSaasPanelTenantScopeEffects({
         setSelectedWaModuleId,
         setTenantSettingsPanelMode,
         setWaModulePanelMode,
+        isOpen,
         tenantScopeId
     ]);
 

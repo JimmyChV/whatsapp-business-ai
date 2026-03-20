@@ -98,76 +98,68 @@ export default function useSaasPanelFormSyncEffects({
         setCatalogProductImageError
     });
 
-    useEffect(() => {
-        fnRef.current = {
-            emptyCatalogProductForm,
-            loadTenantCatalogProducts,
-            setError,
-            resetWaModuleForm,
-            openWaModuleEditor,
-            setTenantCatalogProducts,
-            setSelectedCatalogProductId,
-            setCatalogProductForm,
-            setCatalogProductPanelMode,
-            setCatalogProductImageError
-        };
-    }, [
+    fnRef.current = {
         emptyCatalogProductForm,
         loadTenantCatalogProducts,
-        openWaModuleEditor,
-        resetWaModuleForm,
-        setCatalogProductForm,
-        setCatalogProductImageError,
-        setCatalogProductPanelMode,
         setError,
+        resetWaModuleForm,
+        openWaModuleEditor,
+        setTenantCatalogProducts,
         setSelectedCatalogProductId,
-        setTenantCatalogProducts
-    ]);
+        setCatalogProductForm,
+        setCatalogProductPanelMode,
+        setCatalogProductImageError
+    };
 
     useEffect(() => {
+        if (!isOpen) return;
         if (tenantPanelMode === 'create') return;
         if (!selectedTenant) {
             setIfChanged(setTenantForm, emptyTenantForm);
             return;
         }
         setIfChanged(setTenantForm, buildTenantFormFromItem(selectedTenant));
-    }, [buildTenantFormFromItem, emptyTenantForm, selectedTenant, setTenantForm, tenantPanelMode]);
+    }, [buildTenantFormFromItem, emptyTenantForm, isOpen, selectedTenant, setTenantForm, tenantPanelMode]);
 
     useEffect(() => {
+        if (!isOpen) return;
         if (userPanelMode === 'create') return;
         if (!selectedUser) {
             setIfChanged(setUserForm, emptyUserForm);
             return;
         }
         setIfChanged(setUserForm, buildUserFormFromItem(selectedUser));
-    }, [buildUserFormFromItem, emptyUserForm, selectedUser, setUserForm, userPanelMode]);
+    }, [buildUserFormFromItem, emptyUserForm, isOpen, selectedUser, setUserForm, userPanelMode]);
 
     useEffect(() => {
+        if (!isOpen) return;
         if (customerPanelMode === 'create') return;
         if (!selectedCustomer) {
             setIfChanged(setCustomerForm, emptyCustomerForm);
             return;
         }
         setIfChanged(setCustomerForm, normalizeCustomerFormFromItem(selectedCustomer));
-    }, [customerPanelMode, emptyCustomerForm, normalizeCustomerFormFromItem, selectedCustomer, setCustomerForm]);
+    }, [customerPanelMode, emptyCustomerForm, isOpen, normalizeCustomerFormFromItem, selectedCustomer, setCustomerForm]);
 
     useEffect(() => {
+        if (!isOpen) return;
         if (aiAssistantPanelMode === 'create') return;
         if (!selectedAiAssistant) {
             setIfChanged(setAiAssistantForm, { ...emptyAiAssistantForm });
             return;
         }
         setIfChanged(setAiAssistantForm, buildAiAssistantFormFromItem(selectedAiAssistant));
-    }, [aiAssistantPanelMode, buildAiAssistantFormFromItem, emptyAiAssistantForm, selectedAiAssistant, setAiAssistantForm]);
+    }, [aiAssistantPanelMode, buildAiAssistantFormFromItem, emptyAiAssistantForm, isOpen, selectedAiAssistant, setAiAssistantForm]);
 
     useEffect(() => {
+        if (!isOpen) return;
         if (catalogPanelMode === 'create') return;
         if (!selectedTenantCatalog) {
             setIfChanged(setTenantCatalogForm, emptyTenantCatalogForm);
             return;
         }
         setIfChanged(setTenantCatalogForm, buildTenantCatalogFormFromItem(selectedTenantCatalog));
-    }, [buildTenantCatalogFormFromItem, catalogPanelMode, emptyTenantCatalogForm, selectedTenantCatalog, setTenantCatalogForm]);
+    }, [buildTenantCatalogFormFromItem, catalogPanelMode, emptyTenantCatalogForm, isOpen, selectedTenantCatalog, setTenantCatalogForm]);
 
     const catalogProductsSyncRef = useRef('');
     useEffect(() => {
@@ -212,6 +204,7 @@ export default function useSaasPanelFormSyncEffects({
 
     const waModuleSyncRef = useRef('');
     useEffect(() => {
+        if (!isOpen) return;
         const moduleId = String(selectedWaModule?.moduleId || '').trim();
         const {
             resetWaModuleForm: resetModuleForm,
@@ -228,9 +221,10 @@ export default function useSaasPanelFormSyncEffects({
         if (waModuleSyncRef.current === moduleId) return;
         waModuleSyncRef.current = moduleId;
         openModuleEditor(selectedWaModule);
-    }, [selectedWaModule]);
+    }, [isOpen, selectedWaModule]);
 
     useEffect(() => {
+        if (!isOpen) return;
         if (!selectedQuickReplyLibrary) {
             setIfChanged(setQuickReplyLibraryForm, {
                 ...emptyQuickReplyLibraryForm,
@@ -250,6 +244,7 @@ export default function useSaasPanelFormSyncEffects({
         });
     }, [
         emptyQuickReplyLibraryForm,
+        isOpen,
         quickReplyLibraryPanelMode,
         quickReplyScopeModuleId,
         selectedQuickReplyLibrary,
@@ -257,6 +252,7 @@ export default function useSaasPanelFormSyncEffects({
     ]);
 
     useEffect(() => {
+        if (!isOpen) return;
         if (!selectedQuickReplyItem) {
             setQuickReplyItemForm((previousValue) => {
                 const nextValue = {
@@ -287,6 +283,7 @@ export default function useSaasPanelFormSyncEffects({
         });
     }, [
         emptyQuickReplyItemForm,
+        isOpen,
         normalizeQuickReplyMediaAssets,
         quickReplyItemPanelMode,
         selectedQuickReplyItem,

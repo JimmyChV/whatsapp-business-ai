@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { uploadImageAsset } from '../helpers';
 
 export default function useSaasPanelActions({
     requestJson,
     onOpenWhatsAppOperation,
+    operationTenantId = '',
     tenantScopeId = '',
     activeTenantId = '',
     selectedTenantId = '',
@@ -29,18 +30,7 @@ export default function useSaasPanelActions({
         loadTenantLabels
     });
 
-    useEffect(() => {
-        loaderRef.current = {
-            refreshOverview,
-            settingsTenantId,
-            loadTenantSettings,
-            loadWaModules,
-            loadTenantCatalogs,
-            loadTenantAiAssistants,
-            loadQuickReplyData,
-            loadTenantLabels
-        };
-    }, [
+    loaderRef.current = {
         refreshOverview,
         settingsTenantId,
         loadTenantSettings,
@@ -49,7 +39,7 @@ export default function useSaasPanelActions({
         loadTenantAiAssistants,
         loadQuickReplyData,
         loadTenantLabels
-    ]);
+    };
 
     const runAction = useCallback(async (_label, action) => {
         const {
@@ -87,9 +77,9 @@ export default function useSaasPanelActions({
 
     const handleOpenOperation = useCallback(() => {
         if (typeof onOpenWhatsAppOperation !== 'function') return;
-        const cleanTenantId = String(tenantScopeId || activeTenantId || '').trim();
+        const cleanTenantId = String(operationTenantId || tenantScopeId || activeTenantId || '').trim();
         onOpenWhatsAppOperation('', { tenantId: cleanTenantId || undefined });
-    }, [activeTenantId, onOpenWhatsAppOperation, tenantScopeId]);
+    }, [activeTenantId, onOpenWhatsAppOperation, operationTenantId, tenantScopeId]);
 
     const handleFormImageUpload = useCallback(async ({ file, scope, tenantId, onUploaded }) => {
         if (!file) return;

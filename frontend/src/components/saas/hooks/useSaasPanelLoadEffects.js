@@ -39,28 +39,7 @@ export default function useSaasPanelLoadEffects({
         setError
     });
 
-    const bootLoadKeyRef = useRef('');
-    const tenantLoadKeyRef = useRef('');
-
-    useEffect(() => {
-        loadersRef.current = {
-            runAction,
-            refreshOverview,
-            loadAccessCatalog,
-            loadPlanMatrix,
-            loadTenantSettings,
-            loadWaModules,
-            loadTenantCatalogs,
-            loadTenantAiAssistants,
-            loadTenantIntegrations,
-            loadCustomers,
-            loadQuickReplyData,
-            loadTenantLabels,
-            loadTenantAssignmentRules,
-            loadTenantOperationsKpis,
-            setError
-        };
-    }, [
+    loadersRef.current = {
         runAction,
         refreshOverview,
         loadAccessCatalog,
@@ -76,17 +55,23 @@ export default function useSaasPanelLoadEffects({
         loadTenantAssignmentRules,
         loadTenantOperationsKpis,
         setError
-    ]);
+    };
+
+    const bootLoadKeyRef = useRef('');
+    const bootInFlightKeyRef = useRef('');
+    const tenantLoadKeyRef = useRef('');
+    const tenantInFlightKeyRef = useRef('');
 
     useEffect(() => {
         if (!isOpen || !canManageSaas) {
             bootLoadKeyRef.current = '';
+            bootInFlightKeyRef.current = '';
             return;
         }
 
         const bootKey = `${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}:${canViewSuperAdminSections ? '1' : '0'}`;
-        if (bootLoadKeyRef.current === bootKey) return;
-        bootLoadKeyRef.current = bootKey;
+        if (bootLoadKeyRef.current === bootKey || bootInFlightKeyRef.current === bootKey) return;
+        bootInFlightKeyRef.current = bootKey;
 
         const {
             runAction: runActionFn,
@@ -95,7 +80,10 @@ export default function useSaasPanelLoadEffects({
             loadPlanMatrix: loadPlanMatrixFn
         } = loadersRef.current;
 
-        if (typeof runActionFn !== 'function') return;
+        if (typeof runActionFn !== 'function') {
+            bootInFlightKeyRef.current = '';
+            return;
+        }
 
         runActionFn('Carga inicial', async () => {
             const tasks = [];
@@ -110,18 +98,27 @@ export default function useSaasPanelLoadEffects({
             if (firstError?.status === 'rejected') {
                 throw firstError.reason;
             }
-        });
+        })
+            .then(() => {
+                bootLoadKeyRef.current = bootKey;
+            })
+            .finally(() => {
+                if (bootInFlightKeyRef.current === bootKey) {
+                    bootInFlightKeyRef.current = '';
+                }
+            });
     }, [canManageSaas, canViewSuperAdminSections, isOpen]);
 
     useEffect(() => {
         if (!isOpen || !canManageSaas || !tenantScopeId) {
             tenantLoadKeyRef.current = '';
+            tenantInFlightKeyRef.current = '';
             return;
         }
 
         const tenantKey = `${tenantScopeId}:${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}`;
-        if (tenantLoadKeyRef.current === tenantKey) return;
-        tenantLoadKeyRef.current = tenantKey;
+        if (tenantLoadKeyRef.current === tenantKey || tenantInFlightKeyRef.current === tenantKey) return;
+        tenantInFlightKeyRef.current = tenantKey;
 
         const {
             loadTenantSettings: loadTenantSettingsFn,
@@ -149,10 +146,19 @@ export default function useSaasPanelLoadEffects({
         if (typeof loadTenantAssignmentRulesFn === 'function') tasks.push(loadTenantAssignmentRulesFn(tenantScopeId));
         if (typeof loadTenantOperationsKpisFn === 'function') tasks.push(loadTenantOperationsKpisFn(tenantScopeId));
 
-        Promise.all(tasks).catch((err) => {
-            if (typeof setErrorFn === 'function') {
-                setErrorFn(String(err?.message || err || 'No se pudo cargar configuracion del tenant.'));
-            }
-        });
+        Promise.all(tasks)
+            .then(() => {
+                tenantLoadKeyRef.current = tenantKey;
+            })
+            .catch((err) => {
+                if (typeof setErrorFn === 'function') {
+                    setErrorFn(String(err?.message || err || 'No se pudo cargar configuracion del tenant.'));
+                }
+            })
+            .finally(() => {
+                if (tenantInFlightKeyRef.current === tenantKey) {
+                    tenantInFlightKeyRef.current = '';
+                }
+            });
     }, [canManageSaas, isOpen, tenantScopeId]);
 }
