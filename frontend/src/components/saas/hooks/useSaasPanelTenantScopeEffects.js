@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 export default function useSaasPanelTenantScopeEffects({
     isOpen = false,
@@ -58,138 +58,192 @@ export default function useSaasPanelTenantScopeEffects({
     setSelectedTenantId,
     setCurrentSection
 } = {}) {
-    useEffect(() => {
-        if (!isOpen) return;
-        if (String(tenantScopeId || '').trim()) return;
-        setWaModules([]);
-        setSelectedWaModuleId('');
-        setTenantCatalogs([]);
-        setSelectedCatalogId('');
-        setTenantCatalogForm(emptyTenantCatalogForm);
-        setTenantCatalogProducts([]);
-        setSelectedCatalogProductId('');
-        setCatalogProductForm(emptyCatalogProductForm);
-        setCatalogProductPanelMode('view');
-        setCatalogProductImageError('');
-        setTenantAiAssistants([]);
-        setSelectedAiAssistantId('');
-        setAiAssistantForm(emptyAiAssistantForm);
-        setAiAssistantPanelMode('view');
-        setQuickReplyLibraries([]);
-        setQuickReplyItems([]);
-        setSelectedQuickReplyLibraryId('');
-        setSelectedQuickReplyItemId('');
-        setQuickReplyModuleFilterId('');
-        setQuickReplyLibraryForm(emptyQuickReplyLibraryForm);
-        setQuickReplyItemForm(emptyQuickReplyItemForm);
-        setQuickReplyLibraryPanelMode('view');
-        setQuickReplyItemPanelMode('view');
-        setTenantLabels([]);
-        setSelectedLabelId('');
-        setLabelForm(emptyLabelForm);
-        setLabelPanelMode('view');
-        resetOperationsState();
-    }, [
-        emptyAiAssistantForm,
-        emptyCatalogProductForm,
-        emptyLabelForm,
-        emptyQuickReplyItemForm,
-        emptyQuickReplyLibraryForm,
+    const refs = useRef({});
+    refs.current = {
         emptyTenantCatalogForm,
-        isOpen,
+        emptyCatalogProductForm,
+        emptyAiAssistantForm,
+        emptyQuickReplyLibraryForm,
+        emptyQuickReplyItemForm,
+        emptyLabelForm,
         resetOperationsState,
-        setAiAssistantForm,
-        setAiAssistantPanelMode,
-        setCatalogProductForm,
-        setCatalogProductImageError,
-        setCatalogProductPanelMode,
-        setLabelForm,
-        setLabelPanelMode,
-        setQuickReplyItemForm,
-        setQuickReplyItemPanelMode,
-        setQuickReplyItems,
-        setQuickReplyLibraryForm,
-        setQuickReplyLibraryPanelMode,
-        setQuickReplyLibraries,
-        setQuickReplyModuleFilterId,
-        setSelectedAiAssistantId,
-        setSelectedCatalogId,
-        setSelectedCatalogProductId,
-        setSelectedLabelId,
-        setSelectedQuickReplyItemId,
-        setSelectedQuickReplyLibraryId,
+        setWaModules,
         setSelectedWaModuleId,
-        setTenantAiAssistants,
+        setTenantCatalogs,
+        setSelectedCatalogId,
         setTenantCatalogForm,
         setTenantCatalogProducts,
-        setTenantCatalogs,
+        setSelectedCatalogProductId,
+        setCatalogProductForm,
+        setCatalogProductPanelMode,
+        setCatalogProductImageError,
+        setTenantAiAssistants,
+        setSelectedAiAssistantId,
+        setAiAssistantForm,
+        setAiAssistantPanelMode,
+        setQuickReplyLibraries,
+        setQuickReplyItems,
+        setSelectedQuickReplyLibraryId,
+        setSelectedQuickReplyItemId,
+        setQuickReplyModuleFilterId,
+        setQuickReplyLibraryForm,
+        setQuickReplyItemForm,
+        setQuickReplyLibraryPanelMode,
+        setQuickReplyItemPanelMode,
         setTenantLabels,
-        setWaModules,
-        tenantScopeId
-    ]);
+        setSelectedLabelId,
+        setLabelForm,
+        setLabelPanelMode,
+        setSelectedConfigKey,
+        setSelectedRoleKey,
+        setTenantSettingsPanelMode,
+        setWaModulePanelMode,
+        setCatalogPanelMode,
+        setModuleUserPickerId,
+        setSelectedCustomerId,
+        setCustomerPanelMode,
+        setCustomerSearch,
+        setCustomerCsvText,
+        setLabelSearch,
+        setSettingsTenantId,
+        setSelectedTenantId,
+        setCurrentSection
+    };
 
     useEffect(() => {
         if (!isOpen) return;
-        setSelectedConfigKey('');
-        setSelectedRoleKey('');
-        setSelectedWaModuleId('');
-        setTenantSettingsPanelMode('view');
-        setWaModulePanelMode('view');
-        setCatalogPanelMode('view');
-        setModuleUserPickerId('');
-        setSelectedCustomerId('');
-        setCustomerPanelMode('view');
-        setCustomerSearch('');
-        setCustomerCsvText('');
-        setSelectedAiAssistantId('');
-        setAiAssistantPanelMode('view');
-        setAiAssistantForm(emptyAiAssistantForm);
-        setSelectedQuickReplyLibraryId('');
-        setSelectedQuickReplyItemId('');
-        setQuickReplyModuleFilterId('');
-        setQuickReplyLibraryPanelMode('view');
-        setQuickReplyItemPanelMode('view');
-        setSelectedLabelId('');
-        setLabelPanelMode('view');
-        setLabelForm(emptyLabelForm);
-        setLabelSearch('');
-    }, [
-        emptyAiAssistantForm,
-        emptyLabelForm,
-        setAiAssistantForm,
-        setAiAssistantPanelMode,
-        setCatalogPanelMode,
-        setCustomerCsvText,
-        setCustomerPanelMode,
-        setCustomerSearch,
-        setLabelForm,
-        setLabelPanelMode,
-        setLabelSearch,
-        setModuleUserPickerId,
-        setQuickReplyItemPanelMode,
-        setQuickReplyLibraryPanelMode,
-        setQuickReplyModuleFilterId,
-        setSelectedAiAssistantId,
-        setSelectedConfigKey,
-        setSelectedCustomerId,
-        setSelectedLabelId,
-        setSelectedQuickReplyItemId,
-        setSelectedQuickReplyLibraryId,
-        setSelectedRoleKey,
-        setSelectedWaModuleId,
-        setTenantSettingsPanelMode,
-        setWaModulePanelMode,
-        isOpen,
-        tenantScopeId
-    ]);
+        if (String(tenantScopeId || '').trim()) return;
+
+        const {
+            emptyTenantCatalogForm: emptyCatalogForm,
+            emptyCatalogProductForm: emptyProductForm,
+            emptyAiAssistantForm: emptyAiForm,
+            emptyQuickReplyLibraryForm: emptyLibraryForm,
+            emptyQuickReplyItemForm: emptyItemForm,
+            emptyLabelForm: emptyChatLabelForm,
+            resetOperationsState: resetOps,
+            setWaModules: setModules,
+            setSelectedWaModuleId: setModuleId,
+            setTenantCatalogs: setCatalogs,
+            setSelectedCatalogId: setCatalogId,
+            setTenantCatalogForm: setCatalogForm,
+            setTenantCatalogProducts: setCatalogProducts,
+            setSelectedCatalogProductId: setCatalogProductId,
+            setCatalogProductForm: setProductForm,
+            setCatalogProductPanelMode: setProductMode,
+            setCatalogProductImageError: setProductError,
+            setTenantAiAssistants: setAssistants,
+            setSelectedAiAssistantId: setAssistantId,
+            setAiAssistantForm: setAssistantForm,
+            setAiAssistantPanelMode: setAssistantMode,
+            setQuickReplyLibraries: setLibraries,
+            setQuickReplyItems: setItems,
+            setSelectedQuickReplyLibraryId: setLibraryId,
+            setSelectedQuickReplyItemId: setItemId,
+            setQuickReplyModuleFilterId: setModuleFilter,
+            setQuickReplyLibraryForm: setLibraryForm,
+            setQuickReplyItemForm: setItemForm,
+            setQuickReplyLibraryPanelMode: setLibraryMode,
+            setQuickReplyItemPanelMode: setItemMode,
+            setTenantLabels: setLabels,
+            setSelectedLabelId: setLabelId,
+            setLabelForm: setChatLabelForm,
+            setLabelPanelMode: setChatLabelMode
+        } = refs.current;
+
+        setModules([]);
+        setModuleId('');
+        setCatalogs([]);
+        setCatalogId('');
+        setCatalogForm(emptyCatalogForm);
+        setCatalogProducts([]);
+        setCatalogProductId('');
+        setProductForm(emptyProductForm);
+        setProductMode('view');
+        setProductError('');
+        setAssistants([]);
+        setAssistantId('');
+        setAssistantForm(emptyAiForm);
+        setAssistantMode('view');
+        setLibraries([]);
+        setItems([]);
+        setLibraryId('');
+        setItemId('');
+        setModuleFilter('');
+        setLibraryForm(emptyLibraryForm);
+        setItemForm(emptyItemForm);
+        setLibraryMode('view');
+        setItemMode('view');
+        setLabels([]);
+        setLabelId('');
+        setChatLabelForm(emptyChatLabelForm);
+        setChatLabelMode('view');
+        resetOps();
+    }, [isOpen, tenantScopeId]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const {
+            emptyAiAssistantForm: emptyAiForm,
+            emptyLabelForm: emptyChatLabelForm,
+            setSelectedConfigKey: setConfigKey,
+            setSelectedRoleKey: setRoleKey,
+            setSelectedWaModuleId: setModuleId,
+            setTenantSettingsPanelMode: setTenantSettingsMode,
+            setWaModulePanelMode: setModuleMode,
+            setCatalogPanelMode: setCatalogMode,
+            setModuleUserPickerId: setUserPicker,
+            setSelectedCustomerId: setCustomerId,
+            setCustomerPanelMode: setCustomerMode,
+            setCustomerSearch: setCustomerQuery,
+            setCustomerCsvText: setCustomerCsv,
+            setSelectedAiAssistantId: setAssistantId,
+            setAiAssistantPanelMode: setAssistantMode,
+            setAiAssistantForm: setAssistantForm,
+            setSelectedQuickReplyLibraryId: setLibraryId,
+            setSelectedQuickReplyItemId: setItemId,
+            setQuickReplyModuleFilterId: setModuleFilter,
+            setQuickReplyLibraryPanelMode: setLibraryMode,
+            setQuickReplyItemPanelMode: setItemMode,
+            setSelectedLabelId: setLabelId,
+            setLabelPanelMode: setLabelMode,
+            setLabelForm: setChatLabelForm,
+            setLabelSearch: setLabelQuery
+        } = refs.current;
+
+        setConfigKey('');
+        setRoleKey('');
+        setModuleId('');
+        setTenantSettingsMode('view');
+        setModuleMode('view');
+        setCatalogMode('view');
+        setUserPicker('');
+        setCustomerId('');
+        setCustomerMode('view');
+        setCustomerQuery('');
+        setCustomerCsv('');
+        setAssistantId('');
+        setAssistantMode('view');
+        setAssistantForm(emptyAiForm);
+        setLibraryId('');
+        setItemId('');
+        setModuleFilter('');
+        setLibraryMode('view');
+        setItemMode('view');
+        setLabelId('');
+        setLabelMode('view');
+        setChatLabelForm(emptyChatLabelForm);
+        setLabelQuery('');
+    }, [isOpen, tenantScopeId]);
 
     useEffect(() => {
         if (!isOpen) return;
         if (requiresTenantSelection || settingsTenantId) return;
         const fallbackTenantId = String(activeTenantId || tenantOptions[0]?.id || '').trim();
         if (!fallbackTenantId) return;
-        setSettingsTenantId(fallbackTenantId);
-    }, [activeTenantId, isOpen, requiresTenantSelection, setSettingsTenantId, settingsTenantId, tenantOptions]);
+        refs.current.setSettingsTenantId(fallbackTenantId);
+    }, [activeTenantId, isOpen, requiresTenantSelection, settingsTenantId, tenantOptions]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -203,15 +257,13 @@ export default function useSaasPanelTenantScopeEffects({
         const exists = tenantOptions.some((tenant) => String(tenant?.id || '').trim() === requestedTenantId);
         if (!exists) return;
 
-        setSettingsTenantId(requestedTenantId);
-        setSelectedTenantId(requestedTenantId);
+        refs.current.setSettingsTenantId(requestedTenantId);
+        refs.current.setSelectedTenantId(requestedTenantId);
     }, [
         isOpen,
         launchSource,
         preferredTenantId,
         requiresTenantSelection,
-        setSelectedTenantId,
-        setSettingsTenantId,
         settingsTenantId,
         tenantOptions
     ]);
@@ -219,6 +271,6 @@ export default function useSaasPanelTenantScopeEffects({
     useEffect(() => {
         if (!isOpen) return;
         if (!requiresTenantSelection || tenantScopeId) return;
-        setCurrentSection('saas_empresas');
-    }, [isOpen, requiresTenantSelection, setCurrentSection, tenantScopeId]);
+        refs.current.setCurrentSection('saas_empresas');
+    }, [isOpen, requiresTenantSelection, tenantScopeId]);
 }
