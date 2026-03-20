@@ -3,7 +3,7 @@ import { sanitizeMemberships } from '../helpers';
 
 export default function useSaasTenantUsers({
     overviewUsers = [],
-    tenantScopeId = '',
+    settingsTenantId = '',
     waModuleForm = {},
     toUserDisplayName
 } = {}) {
@@ -26,11 +26,11 @@ export default function useSaasTenantUsers({
     }, [overviewUsers]);
 
     const usersForSettingsTenant = useMemo(() => {
-        const cleanTenantId = String(tenantScopeId || '').trim();
+        const cleanTenantId = String(settingsTenantId || '').trim();
         if (!cleanTenantId) return [];
         return [...(usersByTenant.get(cleanTenantId) || [])]
             .sort((left, right) => toUserDisplayName(left).localeCompare(toUserDisplayName(right), 'es', { sensitivity: 'base' }));
-    }, [tenantScopeId, usersByTenant, toUserDisplayName]);
+    }, [settingsTenantId, usersByTenant, toUserDisplayName]);
 
     const assignedModuleUsers = useMemo(() => {
         const assignedIds = new Set((Array.isArray(waModuleForm?.assignedUserIds) ? waModuleForm.assignedUserIds : [])
@@ -53,3 +53,4 @@ export default function useSaasTenantUsers({
         availableUsersForModulePicker
     };
 }
+

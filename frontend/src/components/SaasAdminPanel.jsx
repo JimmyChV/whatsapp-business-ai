@@ -2,25 +2,33 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import * as saasAdminPanelHelpers from './saas/helpers';
 
-import OperationsSection from './saas/sections/OperationsSection';
-import TenantLabelsSection from './saas/sections/TenantLabelsSection';
-import QuickRepliesSection from './saas/sections/QuickRepliesSection';
-import ModulesConfigSection from './saas/sections/ModulesConfigSection';
-import CatalogSection from './saas/sections/CatalogSection';
-import RoleProfilesSection from './saas/sections/RoleProfilesSection';
-import PlansSection from './saas/sections/PlansSection';
-import CustomersSection from './saas/sections/CustomersSection';
-import AiAssistantsSection from './saas/sections/AiAssistantsSection';
-import SummarySection from './saas/sections/SummarySection';
-import CompaniesSection from './saas/sections/CompaniesSection';
-import UsersSection from './saas/sections/UsersSection';
-import useOperationsPanelState from './saas/hooks/useOperationsPanelState';
-import useSaasAccessControl from './saas/hooks/useSaasAccessControl';
-import useSaasApiClient from './saas/hooks/useSaasApiClient';
-import useSaasTenantScope from './saas/hooks/useSaasTenantScope';
-import useSaasPanelDerivedData from './saas/hooks/useSaasPanelDerivedData';
-import useSaasTenantUsers from './saas/hooks/useSaasTenantUsers';
-import { buildDataUrlWithMime, resolveQuickReplyMimeType, uploadImageAsset } from './saas/helpers/assets.helpers';
+import {
+    AiAssistantsSection,
+    CatalogSection,
+    CompaniesSection,
+    CustomersSection,
+    ModulesConfigSection,
+    OperationsSection,
+    PlansSection,
+    QuickRepliesSection,
+    RoleProfilesSection,
+    SummarySection,
+    TenantLabelsSection,
+    UsersSection
+} from './saas/sections';
+import {
+    useOperationsPanelState,
+    useQuickReplyAdminActions,
+    useQuickReplyAssetsUpload,
+    useSaasAccessControl,
+    useSaasApiClient,
+    useSaasPanelDerivedData,
+    useSaasTenantScope,
+    useSaasTenantUsers,
+    useTenantLabelsActions
+} from './saas/hooks';
+
+import { uploadImageAsset } from './saas/helpers';
 
 const {
     API_BASE,
@@ -78,30 +86,22 @@ const {
     PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ,
     PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE,
     PERMISSION_TENANT_KPIS_READ,
-    QUICK_REPLY_ALLOWED_MIME_TYPES,
     QUICK_REPLY_ALLOWED_EXTENSIONS,
     QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL,
     QUICK_REPLY_ACCEPT_VALUE,
-    QUICK_REPLY_EXT_TO_MIME,
     QUICK_REPLY_DEFAULT_MAX_UPLOAD_MB,
     QUICK_REPLY_DEFAULT_STORAGE_MB,
     EMPTY_QUICK_REPLY_LIBRARY_FORM,
     EMPTY_QUICK_REPLY_ITEM_FORM,
     DEFAULT_LABEL_COLORS,
     EMPTY_LABEL_FORM,
-    normalizeQuickReplyLibraryItem,
-    normalizeQuickReplyItem,
     normalizeQuickReplyMediaAsset,
     normalizeQuickReplyMediaAssets,
     resolveQuickReplyAssetPreviewUrl,
     isQuickReplyImageAsset,
     getQuickReplyAssetTypeLabel,
     getQuickReplyAssetDisplayName,
-    buildQuickReplyLibraryPayload,
-    buildQuickReplyItemPayload,
     normalizeTenantLabelColor,
-    normalizeTenantLabelItem,
-    buildLabelFormFromItem,
     buildTenantLabelPayload,
     normalizeOverview,
     sanitizeMemberships,
@@ -209,7 +209,6 @@ export default function SaasAdminPanel({
     const [quickReplyLibrarySearch, setQuickReplyLibrarySearch] = useState('');
     const [quickReplyItemSearch, setQuickReplyItemSearch] = useState('');
     const [loadingQuickReplies, setLoadingQuickReplies] = useState(false);
-    const [uploadingQuickReplyAssets, setUploadingQuickReplyAssets] = useState(false);
     const [tenantLabels, setTenantLabels] = useState([]);
     const [selectedLabelId, setSelectedLabelId] = useState('');
     const [labelForm, setLabelForm] = useState({ ...EMPTY_LABEL_FORM });
@@ -507,9 +506,83 @@ export default function SaasAdminPanel({
         availableUsersForModulePicker
     } = useSaasTenantUsers({
         overviewUsers: overview.users,
-        tenantScopeId,
+        settingsTenantId,
         waModuleForm,
         toUserDisplayName
+    });
+    const {
+        uploadingQuickReplyAssets,
+        handleQuickReplyAssetSelection,
+        removeQuickReplyAssetAt
+    } = useQuickReplyAssetsUpload({
+        requestJson,
+        settingsTenantId,
+        selectedQuickReplyLibrary,
+        quickReplyUploadMaxBytes,
+        quickReplyUploadMaxMb,
+        setQuickReplyItemForm
+    });
+    const {
+        loadQuickReplyData,
+        openQuickReplyLibraryCreate,
+        openQuickReplyLibraryEdit,
+        cancelQuickReplyLibraryEdit,
+        toggleModuleInQuickReplyLibraryForm,
+        saveQuickReplyLibrary,
+        deactivateQuickReplyLibrary,
+        openQuickReplyItemCreate,
+        openQuickReplyItemEdit,
+        cancelQuickReplyItemEdit,
+        saveQuickReplyItem,
+        deactivateQuickReplyItem
+    } = useQuickReplyAdminActions({
+        requestJson,
+        settingsTenantId,
+        waModules,
+        selectedQuickReplyLibrary,
+        selectedQuickReplyLibraryId,
+        selectedQuickReplyItem,
+        selectedQuickReplyItemId,
+        quickReplyScopeModuleId,
+        quickReplyLibraryForm,
+        quickReplyItemForm,
+        quickReplyLibraryPanelMode,
+        quickReplyItemPanelMode,
+        emptyQuickReplyLibraryForm: EMPTY_QUICK_REPLY_LIBRARY_FORM,
+        emptyQuickReplyItemForm: EMPTY_QUICK_REPLY_ITEM_FORM,
+        setQuickReplyLibraries,
+        setQuickReplyItems,
+        setSelectedQuickReplyLibraryId,
+        setSelectedQuickReplyItemId,
+        setQuickReplyModuleFilterId,
+        setQuickReplyLibraryForm,
+        setQuickReplyItemForm,
+        setQuickReplyLibraryPanelMode,
+        setQuickReplyItemPanelMode,
+        setLoadingQuickReplies
+    });
+    const {
+        loadTenantLabels,
+        openTenantLabelCreate,
+        openTenantLabelEdit,
+        cancelTenantLabelEdit,
+        toggleModuleInLabelForm,
+        saveTenantLabel,
+        deactivateTenantLabel
+    } = useTenantLabelsActions({
+        requestJson,
+        settingsTenantId,
+        selectedTenantLabel,
+        selectedLabelId,
+        labelForm,
+        labelPanelMode,
+        emptyLabelForm: EMPTY_LABEL_FORM,
+        defaultLabelColors: DEFAULT_LABEL_COLORS,
+        setTenantLabels,
+        setSelectedLabelId,
+        setLabelForm,
+        setLabelPanelMode,
+        setLoadingLabels
     });
     const isSectionEnabled = useCallback((sectionId) => {
         const cleanId = String(sectionId || '').trim();
@@ -758,463 +831,6 @@ export default function SaasAdminPanel({
             setLoadingAiAssistants(false);
         }
     };
-    const loadQuickReplyData = async (tenantId) => {
-        const cleanTenantId = String(tenantId || '').trim();
-        if (!cleanTenantId) {
-            setQuickReplyLibraries([]);
-            setQuickReplyItems([]);
-            setSelectedQuickReplyLibraryId('');
-            setSelectedQuickReplyItemId('');
-            setQuickReplyModuleFilterId('');
-            setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM });
-            setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM });
-            setQuickReplyLibraryPanelMode('view');
-            setQuickReplyItemPanelMode('view');
-            return;
-        }
-
-        setLoadingQuickReplies(true);
-        try {
-            const [librariesPayload, itemsPayload] = await Promise.all([
-                requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-libraries?includeInactive=true`),
-                requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-items?includeInactive=true`)
-            ]);
-
-            const libraries = (Array.isArray(librariesPayload?.items) ? librariesPayload.items : [])
-                .map((entry) => normalizeQuickReplyLibraryItem(entry))
-                .filter(Boolean)
-                .sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), 'es', { sensitivity: 'base' }));
-
-            const items = (Array.isArray(itemsPayload?.items) ? itemsPayload.items : [])
-                .map((entry) => normalizeQuickReplyItem(entry))
-                .filter(Boolean);
-
-            setQuickReplyLibraries(libraries);
-            setQuickReplyItems(items);
-            setQuickReplyModuleFilterId((prev) => {
-                const cleanPrev = String(prev || '').trim().toLowerCase();
-                if (!cleanPrev) return cleanPrev;
-                const exists = (waModules || []).some((entry) => String(entry?.moduleId || '').trim().toLowerCase() === cleanPrev);
-                return exists ? cleanPrev : '';
-            });
-            setSelectedQuickReplyLibraryId((prev) => {
-                const cleanPrev = String(prev || '').trim().toUpperCase();
-                if (cleanPrev && libraries.some((entry) => entry.libraryId === cleanPrev)) return cleanPrev;
-                return String(libraries[0]?.libraryId || '').trim().toUpperCase();
-            });
-            setSelectedQuickReplyItemId((prev) => {
-                const cleanPrev = String(prev || '').trim().toUpperCase();
-                if (!cleanPrev) return '';
-                return items.some((entry) => entry.itemId === cleanPrev) ? cleanPrev : '';
-            });
-        } finally {
-            setLoadingQuickReplies(false);
-        }
-    };
-
-        const loadTenantLabels = async (tenantId) => {
-        const cleanTenantId = String(tenantId || '').trim();
-        if (!cleanTenantId) {
-            setTenantLabels([]);
-            setSelectedLabelId('');
-            setLabelForm({ ...EMPTY_LABEL_FORM });
-            setLabelPanelMode('view');
-            return;
-        }
-
-        setLoadingLabels(true);
-        try {
-            const payload = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/labels?includeInactive=true`);
-            const items = (Array.isArray(payload?.items) ? payload.items : [])
-                .map((entry) => normalizeTenantLabelItem(entry))
-                .filter(Boolean)
-                .sort((left, right) => {
-                    const delta = Number(left?.sortOrder || 100) - Number(right?.sortOrder || 100);
-                    if (delta !== 0) return delta;
-                    return String(left?.name || '').localeCompare(String(right?.name || ''), 'es', { sensitivity: 'base' });
-                });
-
-            setTenantLabels(items);
-            setSelectedLabelId((prev) => {
-                const cleanPrev = String(prev || '').trim().toUpperCase();
-                if (cleanPrev && items.some((entry) => entry.labelId === cleanPrev)) return cleanPrev;
-                return String(items[0]?.labelId || '').trim().toUpperCase();
-            });
-        } finally {
-            setLoadingLabels(false);
-        }
-    };
-    const openTenantLabelCreate = () => {
-        setLabelForm({ ...EMPTY_LABEL_FORM, color: DEFAULT_LABEL_COLORS[0], sortOrder: '100', isActive: true });
-        setLabelPanelMode('create');
-    };
-
-    const openTenantLabelEdit = () => {
-        if (!selectedTenantLabel) return;
-        setLabelForm(buildLabelFormFromItem(selectedTenantLabel));
-        setLabelPanelMode('edit');
-    };
-
-    const cancelTenantLabelEdit = () => {
-        if (selectedTenantLabel) {
-            setLabelForm(buildLabelFormFromItem(selectedTenantLabel));
-        } else {
-            setLabelForm({ ...EMPTY_LABEL_FORM });
-        }
-        setLabelPanelMode('view');
-    };
-
-    const toggleModuleInLabelForm = (moduleId) => {
-        const cleanModuleId = String(moduleId || '').trim().toLowerCase();
-        if (!cleanModuleId) return;
-        setLabelForm((prev) => {
-            const current = Array.isArray(prev?.moduleIds) ? prev.moduleIds : [];
-            const exists = current.includes(cleanModuleId);
-            return {
-                ...prev,
-                moduleIds: exists
-                    ? current.filter((entry) => entry !== cleanModuleId)
-                    : [...current, cleanModuleId]
-            };
-        });
-    };
-
-    const saveTenantLabel = async () => {
-        const cleanTenantId = String(settingsTenantId || '').trim();
-        if (!cleanTenantId) throw new Error('Selecciona una empresa para gestionar etiquetas.');
-        const payload = buildTenantLabelPayload(labelForm, { allowLabelId: labelPanelMode === 'create' });
-        if (!String(payload.name || '').trim()) throw new Error('Nombre de etiqueta requerido.');
-
-        if (labelPanelMode === 'create') {
-            const created = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/labels`, {
-                method: 'POST',
-                body: payload
-            });
-            const createdId = String(created?.item?.labelId || '').trim().toUpperCase();
-            await loadTenantLabels(cleanTenantId);
-            if (createdId) setSelectedLabelId(createdId);
-            setLabelPanelMode('view');
-            return;
-        }
-
-        const cleanLabelId = String(labelForm?.labelId || selectedLabelId || '').trim().toUpperCase();
-        if (!cleanLabelId) throw new Error('Selecciona una etiqueta para actualizar.');
-
-        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/labels/${encodeURIComponent(cleanLabelId)}`, {
-            method: 'PUT',
-            body: payload
-        });
-        await loadTenantLabels(cleanTenantId);
-        setSelectedLabelId(cleanLabelId);
-        setLabelPanelMode('view');
-    };
-
-    const deactivateTenantLabel = async (labelId) => {
-        const cleanTenantId = String(settingsTenantId || '').trim();
-        const cleanLabelId = String(labelId || '').trim().toUpperCase();
-        if (!cleanTenantId || !cleanLabelId) return;
-        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/labels/${encodeURIComponent(cleanLabelId)}/deactivate`, {
-            method: 'POST'
-        });
-        await loadTenantLabels(cleanTenantId);
-    };
-
-    const uploadQuickReplyAsset = async ({ file, tenantId, libraryId = '' } = {}) => {
-        if (!file) throw new Error('Selecciona un archivo para subir.');
-        const cleanTenantId = String(tenantId || '').trim();
-        if (!cleanTenantId) throw new Error('Selecciona tenant antes de subir adjunto.');
-
-        const resolvedMimeType = resolveQuickReplyMimeType(file, {
-            allowedMimeTypes: QUICK_REPLY_ALLOWED_MIME_TYPES,
-            extToMime: QUICK_REPLY_EXT_TO_MIME
-        });
-        if (!resolvedMimeType || !QUICK_REPLY_ALLOWED_MIME_TYPES.includes(resolvedMimeType)) {
-            throw new Error(`Formato no permitido para ${String(file?.name || 'adjunto')}. Usa ${QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL}.`);
-        }
-
-        const dataUrl = await buildDataUrlWithMime(file, resolvedMimeType);
-        const payload = await requestJson('/api/admin/saas/assets/upload', {
-            method: 'POST',
-            body: {
-                tenantId: cleanTenantId,
-                scope: String(libraryId || 'quick_reply').trim().toLowerCase(),
-                kind: 'quick_reply',
-                mimeType: resolvedMimeType,
-                fileName: String(file?.name || 'adjunto').trim() || 'adjunto',
-                dataUrl
-            }
-        });
-
-        const filePayload = payload?.file && typeof payload.file === 'object' ? payload.file : {};
-        return {
-            url: String(filePayload.url || filePayload.relativeUrl || '').trim(),
-            mimeType: String(filePayload.mimeType || resolvedMimeType).trim().toLowerCase(),
-            fileName: String(filePayload.fileName || file?.name || '').trim(),
-            sizeBytes: Number.isFinite(Number(filePayload.sizeBytes || file?.size || 0)) ? Number(filePayload.sizeBytes || file?.size || 0) : null
-        };
-    };
-
-    const handleQuickReplyAssetSelection = async (fileList) => {
-        const files = Array.from(fileList || []).filter(Boolean);
-        if (files.length === 0) return;
-        if (!settingsTenantId) throw new Error('Selecciona una empresa antes de subir adjuntos.');
-
-        for (const file of files) {
-            const mimeType = resolveQuickReplyMimeType(file, {
-                allowedMimeTypes: QUICK_REPLY_ALLOWED_MIME_TYPES,
-                extToMime: QUICK_REPLY_EXT_TO_MIME
-            });
-            if (!QUICK_REPLY_ALLOWED_MIME_TYPES.includes(mimeType)) {
-                throw new Error(`Formato no permitido para ${String(file?.name || 'adjunto')}. Usa ${QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL}.`);
-            }
-            if (Number(file?.size || 0) > quickReplyUploadMaxBytes) {
-                throw new Error(`El archivo ${String(file?.name || 'adjunto')} supera el maximo de ${quickReplyUploadMaxMb} MB por archivo.`);
-            }
-        }
-
-        setUploadingQuickReplyAssets(true);
-        try {
-            const uploadedAssets = [];
-            for (const file of files) {
-                const uploaded = await uploadQuickReplyAsset({
-                    file,
-                    tenantId: settingsTenantId,
-                    libraryId: selectedQuickReplyLibrary?.libraryId || ''
-                });
-                if (uploaded?.url) uploadedAssets.push(uploaded);
-            }
-            if (uploadedAssets.length === 0) throw new Error('No se pudo subir ningun adjunto.');
-
-            setQuickReplyItemForm((prev) => {
-                const mergedAssets = normalizeQuickReplyMediaAssets([
-                    ...(Array.isArray(prev?.mediaAssets) ? prev.mediaAssets : []),
-                    ...uploadedAssets
-                ]);
-                const primaryMedia = mergedAssets[0] || null;
-                return {
-                    ...prev,
-                    mediaAssets: mergedAssets,
-                    mediaUrl: String(primaryMedia?.url || prev?.mediaUrl || '').trim(),
-                    mediaMimeType: String(primaryMedia?.mimeType || prev?.mediaMimeType || '').trim().toLowerCase(),
-                    mediaFileName: String(primaryMedia?.fileName || prev?.mediaFileName || '').trim()
-                };
-            });
-        } finally {
-            setUploadingQuickReplyAssets(false);
-        }
-    };
-
-    const removeQuickReplyAssetAt = (index = -1) => {
-        const targetIndex = Number(index);
-        if (!Number.isInteger(targetIndex) || targetIndex < 0) return;
-        setQuickReplyItemForm((prev) => {
-            const assets = normalizeQuickReplyMediaAssets(prev?.mediaAssets, {
-                url: prev?.mediaUrl || '',
-                mimeType: prev?.mediaMimeType || '',
-                fileName: prev?.mediaFileName || '',
-                sizeBytes: prev?.mediaSizeBytes
-            });
-            const nextAssets = assets.filter((_asset, assetIdx) => assetIdx !== targetIndex);
-            const primaryMedia = nextAssets[0] || null;
-            return {
-                ...prev,
-                mediaAssets: nextAssets,
-                mediaUrl: String(primaryMedia?.url || '').trim(),
-                mediaMimeType: String(primaryMedia?.mimeType || '').trim().toLowerCase(),
-                mediaFileName: String(primaryMedia?.fileName || '').trim(),
-                mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes)) ? Number(primaryMedia?.sizeBytes) : null
-            };
-        });
-    };
-    const openQuickReplyLibraryCreate = () => {
-        const moduleIds = quickReplyScopeModuleId ? [quickReplyScopeModuleId] : [];
-        setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM, moduleIds });
-        setQuickReplyLibraryPanelMode('create');
-    };
-
-    const openQuickReplyLibraryEdit = () => {
-        if (!selectedQuickReplyLibrary) return;
-        setQuickReplyLibraryForm({
-            libraryId: selectedQuickReplyLibrary.libraryId,
-            name: selectedQuickReplyLibrary.name || '',
-            description: selectedQuickReplyLibrary.description || '',
-            isShared: selectedQuickReplyLibrary.isShared === true,
-            isActive: selectedQuickReplyLibrary.isActive !== false,
-            sortOrder: String(selectedQuickReplyLibrary.sortOrder || 100),
-            moduleIds: Array.isArray(selectedQuickReplyLibrary.moduleIds) ? [...selectedQuickReplyLibrary.moduleIds] : []
-        });
-        setQuickReplyLibraryPanelMode('edit');
-    };
-
-    const cancelQuickReplyLibraryEdit = () => {
-        if (selectedQuickReplyLibrary) {
-            setQuickReplyLibraryForm({
-                libraryId: selectedQuickReplyLibrary.libraryId,
-                name: selectedQuickReplyLibrary.name || '',
-                description: selectedQuickReplyLibrary.description || '',
-                isShared: selectedQuickReplyLibrary.isShared === true,
-                isActive: selectedQuickReplyLibrary.isActive !== false,
-                sortOrder: String(selectedQuickReplyLibrary.sortOrder || 100),
-                moduleIds: Array.isArray(selectedQuickReplyLibrary.moduleIds) ? [...selectedQuickReplyLibrary.moduleIds] : []
-            });
-        } else {
-            setQuickReplyLibraryForm({ ...EMPTY_QUICK_REPLY_LIBRARY_FORM });
-        }
-        setQuickReplyLibraryPanelMode('view');
-    };
-
-    const toggleModuleInQuickReplyLibraryForm = (moduleId) => {
-        const clean = String(moduleId || '').trim().toLowerCase();
-        if (!clean) return;
-        setQuickReplyLibraryForm((prev) => {
-            const current = Array.isArray(prev?.moduleIds) ? prev.moduleIds : [];
-            const exists = current.includes(clean);
-            return {
-                ...prev,
-                moduleIds: exists ? current.filter((entry) => entry !== clean) : [...current, clean]
-            };
-        });
-    };
-
-    const saveQuickReplyLibrary = async () => {
-        const cleanTenantId = String(settingsTenantId || '').trim();
-        if (!cleanTenantId) throw new Error('Selecciona una empresa para gestionar bibliotecas.');
-        const payload = buildQuickReplyLibraryPayload(quickReplyLibraryForm);
-        if (!String(payload.name || '').trim()) throw new Error('Nombre de biblioteca requerido.');
-
-        if (quickReplyLibraryPanelMode === 'create') {
-            const created = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-libraries`, {
-                method: 'POST',
-                body: payload
-            });
-            const createdId = String(created?.item?.libraryId || '').trim().toUpperCase();
-            await loadQuickReplyData(cleanTenantId);
-            if (createdId) setSelectedQuickReplyLibraryId(createdId);
-            setQuickReplyLibraryPanelMode('view');
-            return;
-        }
-
-        const cleanLibraryId = String(payload.libraryId || selectedQuickReplyLibraryId || '').trim().toUpperCase();
-        if (!cleanLibraryId) throw new Error('Selecciona una biblioteca para actualizar.');
-        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-libraries/${encodeURIComponent(cleanLibraryId)}`, {
-            method: 'PUT',
-            body: payload
-        });
-        await loadQuickReplyData(cleanTenantId);
-        setSelectedQuickReplyLibraryId(cleanLibraryId);
-        setQuickReplyLibraryPanelMode('view');
-    };
-
-    const deactivateQuickReplyLibrary = async (libraryId) => {
-        const cleanTenantId = String(settingsTenantId || '').trim();
-        const cleanLibraryId = String(libraryId || '').trim().toUpperCase();
-        if (!cleanTenantId || !cleanLibraryId) return;
-        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-libraries/${encodeURIComponent(cleanLibraryId)}/deactivate`, {
-            method: 'POST',
-            body: {}
-        });
-        await loadQuickReplyData(cleanTenantId);
-        setQuickReplyLibraryPanelMode('view');
-    };
-
-    const openQuickReplyItemCreate = () => {
-        if (!selectedQuickReplyLibrary) return;
-        setSelectedQuickReplyItemId('');
-        setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM, libraryId: selectedQuickReplyLibrary.libraryId, isActive: true, sortOrder: '100' });
-        setQuickReplyItemPanelMode('create');
-    };
-
-    const openQuickReplyItemEdit = () => {
-        if (!selectedQuickReplyItem) return;
-        setQuickReplyItemForm({
-            itemId: selectedQuickReplyItem.itemId,
-            libraryId: selectedQuickReplyItem.libraryId,
-            label: selectedQuickReplyItem.label || '',
-            text: selectedQuickReplyItem.text || '',
-            mediaAssets: normalizeQuickReplyMediaAssets(selectedQuickReplyItem.mediaAssets, {
-                url: selectedQuickReplyItem.mediaUrl || '',
-                mimeType: selectedQuickReplyItem.mediaMimeType || '',
-                fileName: selectedQuickReplyItem.mediaFileName || '',
-                sizeBytes: selectedQuickReplyItem.mediaSizeBytes
-            }),
-            mediaUrl: selectedQuickReplyItem.mediaUrl || '',
-            mediaMimeType: selectedQuickReplyItem.mediaMimeType || '',
-            mediaFileName: selectedQuickReplyItem.mediaFileName || '',
-            isActive: selectedQuickReplyItem.isActive !== false,
-            sortOrder: String(selectedQuickReplyItem.sortOrder || 100)
-        });
-        setQuickReplyItemPanelMode('edit');
-    };
-
-    const cancelQuickReplyItemEdit = () => {
-        if (selectedQuickReplyItem) {
-            setQuickReplyItemForm({
-            itemId: selectedQuickReplyItem.itemId,
-            libraryId: selectedQuickReplyItem.libraryId,
-            label: selectedQuickReplyItem.label || '',
-            text: selectedQuickReplyItem.text || '',
-            mediaAssets: normalizeQuickReplyMediaAssets(selectedQuickReplyItem.mediaAssets, {
-                url: selectedQuickReplyItem.mediaUrl || '',
-                mimeType: selectedQuickReplyItem.mediaMimeType || '',
-                fileName: selectedQuickReplyItem.mediaFileName || '',
-                sizeBytes: selectedQuickReplyItem.mediaSizeBytes
-            }),
-            mediaUrl: selectedQuickReplyItem.mediaUrl || '',
-            mediaMimeType: selectedQuickReplyItem.mediaMimeType || '',
-            mediaFileName: selectedQuickReplyItem.mediaFileName || '',
-            isActive: selectedQuickReplyItem.isActive !== false,
-            sortOrder: String(selectedQuickReplyItem.sortOrder || 100)
-        });
-        } else {
-            setQuickReplyItemForm({ ...EMPTY_QUICK_REPLY_ITEM_FORM, libraryId: String(selectedQuickReplyLibrary?.libraryId || '').trim().toUpperCase() });
-        }
-        setQuickReplyItemPanelMode('view');
-    };
-
-    const saveQuickReplyItem = async () => {
-        const cleanTenantId = String(settingsTenantId || '').trim();
-        const libraryId = String(quickReplyItemForm.libraryId || selectedQuickReplyLibrary?.libraryId || '').trim().toUpperCase();
-        if (!cleanTenantId || !libraryId) throw new Error('Selecciona biblioteca antes de guardar respuesta rapida.');
-
-        const payload = buildQuickReplyItemPayload(quickReplyItemForm, { libraryId });
-        if (!payload.label) throw new Error('Etiqueta requerida.');
-        if (!payload.text && (!Array.isArray(payload.mediaAssets) || payload.mediaAssets.length === 0) && !payload.mediaUrl) throw new Error('Debes registrar texto o adjunto.');
-
-        if (quickReplyItemPanelMode === 'create') {
-            const created = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-items`, {
-                method: 'POST',
-                body: payload
-            });
-            const createdId = String(created?.item?.itemId || '').trim().toUpperCase();
-            await loadQuickReplyData(cleanTenantId);
-            if (createdId) setSelectedQuickReplyItemId(createdId);
-            setQuickReplyItemPanelMode('view');
-            return;
-        }
-
-        const cleanItemId = String(payload.itemId || selectedQuickReplyItemId || '').trim().toUpperCase();
-        if (!cleanItemId) throw new Error('Selecciona una respuesta para actualizar.');
-        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-items/${encodeURIComponent(cleanItemId)}`, {
-            method: 'PUT',
-            body: payload
-        });
-        await loadQuickReplyData(cleanTenantId);
-        setSelectedQuickReplyItemId(cleanItemId);
-        setQuickReplyItemPanelMode('view');
-    };
-
-    const deactivateQuickReplyItem = async (itemId) => {
-        const cleanTenantId = String(settingsTenantId || '').trim();
-        const cleanItemId = String(itemId || '').trim().toUpperCase();
-        if (!cleanTenantId || !cleanItemId) return;
-        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-items/${encodeURIComponent(cleanItemId)}/deactivate`, {
-            method: 'POST',
-            body: {}
-        });
-        await loadQuickReplyData(cleanTenantId);
-        setQuickReplyItemPanelMode('view');
-    };
-
     const loadTenantCatalogs = async (tenantId) => {
         const cleanTenantId = String(tenantId || '').trim();
         if (!cleanTenantId) {
@@ -3075,6 +2691,18 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
