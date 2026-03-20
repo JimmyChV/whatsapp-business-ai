@@ -1,5 +1,39 @@
 import { useEffect, useRef } from 'react';
 
+function isObjectLike(value) {
+    return value !== null && typeof value === 'object';
+}
+
+function isDeepEqual(left, right) {
+    if (Object.is(left, right)) return true;
+
+    if (Array.isArray(left) || Array.isArray(right)) {
+        if (!Array.isArray(left) || !Array.isArray(right)) return false;
+        if (left.length !== right.length) return false;
+        for (let index = 0; index < left.length; index += 1) {
+            if (!isDeepEqual(left[index], right[index])) return false;
+        }
+        return true;
+    }
+
+    if (!isObjectLike(left) || !isObjectLike(right)) return false;
+
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    if (leftKeys.length !== rightKeys.length) return false;
+
+    for (const key of leftKeys) {
+        if (!Object.prototype.hasOwnProperty.call(right, key)) return false;
+        if (!isDeepEqual(left[key], right[key])) return false;
+    }
+
+    return true;
+}
+
+function setIfChanged(setter, nextValue) {
+    setter((previousValue) => (isDeepEqual(previousValue, nextValue) ? previousValue : nextValue));
+}
+
 export default function useSaasPanelFormSyncEffects({
     isOpen = false,
     settingsTenantId = '',
@@ -93,46 +127,46 @@ export default function useSaasPanelFormSyncEffects({
     useEffect(() => {
         if (tenantPanelMode === 'create') return;
         if (!selectedTenant) {
-            setTenantForm(emptyTenantForm);
+            setIfChanged(setTenantForm, emptyTenantForm);
             return;
         }
-        setTenantForm(buildTenantFormFromItem(selectedTenant));
+        setIfChanged(setTenantForm, buildTenantFormFromItem(selectedTenant));
     }, [buildTenantFormFromItem, emptyTenantForm, selectedTenant, setTenantForm, tenantPanelMode]);
 
     useEffect(() => {
         if (userPanelMode === 'create') return;
         if (!selectedUser) {
-            setUserForm(emptyUserForm);
+            setIfChanged(setUserForm, emptyUserForm);
             return;
         }
-        setUserForm(buildUserFormFromItem(selectedUser));
+        setIfChanged(setUserForm, buildUserFormFromItem(selectedUser));
     }, [buildUserFormFromItem, emptyUserForm, selectedUser, setUserForm, userPanelMode]);
 
     useEffect(() => {
         if (customerPanelMode === 'create') return;
         if (!selectedCustomer) {
-            setCustomerForm(emptyCustomerForm);
+            setIfChanged(setCustomerForm, emptyCustomerForm);
             return;
         }
-        setCustomerForm(normalizeCustomerFormFromItem(selectedCustomer));
+        setIfChanged(setCustomerForm, normalizeCustomerFormFromItem(selectedCustomer));
     }, [customerPanelMode, emptyCustomerForm, normalizeCustomerFormFromItem, selectedCustomer, setCustomerForm]);
 
     useEffect(() => {
         if (aiAssistantPanelMode === 'create') return;
         if (!selectedAiAssistant) {
-            setAiAssistantForm({ ...emptyAiAssistantForm });
+            setIfChanged(setAiAssistantForm, { ...emptyAiAssistantForm });
             return;
         }
-        setAiAssistantForm(buildAiAssistantFormFromItem(selectedAiAssistant));
+        setIfChanged(setAiAssistantForm, buildAiAssistantFormFromItem(selectedAiAssistant));
     }, [aiAssistantPanelMode, buildAiAssistantFormFromItem, emptyAiAssistantForm, selectedAiAssistant, setAiAssistantForm]);
 
     useEffect(() => {
         if (catalogPanelMode === 'create') return;
         if (!selectedTenantCatalog) {
-            setTenantCatalogForm(emptyTenantCatalogForm);
+            setIfChanged(setTenantCatalogForm, emptyTenantCatalogForm);
             return;
         }
-        setTenantCatalogForm(buildTenantCatalogFormFromItem(selectedTenantCatalog));
+        setIfChanged(setTenantCatalogForm, buildTenantCatalogFormFromItem(selectedTenantCatalog));
     }, [buildTenantCatalogFormFromItem, catalogPanelMode, emptyTenantCatalogForm, selectedTenantCatalog, setTenantCatalogForm]);
 
     const catalogProductsSyncRef = useRef('');
@@ -153,11 +187,14 @@ export default function useSaasPanelFormSyncEffects({
                 setCatalogProductImageError: setProductImageError,
                 emptyCatalogProductForm: emptyProductForm
             } = fnRef.current;
-            setProducts([]);
-            setSelectedProductId('');
-            setProductForm({ ...emptyProductForm });
-            setProductPanelMode('view');
-            setProductImageError('');
+            setProducts((previousValue) => (Array.isArray(previousValue) && previousValue.length === 0 ? previousValue : []));
+            setSelectedProductId((previousValue) => (previousValue ? '' : previousValue));
+            setProductForm((previousValue) => {
+                const nextValue = { ...emptyProductForm };
+                return isDeepEqual(previousValue, nextValue) ? previousValue : nextValue;
+            });
+            setProductPanelMode((previousValue) => (previousValue === 'view' ? previousValue : 'view'));
+            setProductImageError((previousValue) => (previousValue ? '' : previousValue));
             return;
         }
 
@@ -195,11 +232,14 @@ export default function useSaasPanelFormSyncEffects({
 
     useEffect(() => {
         if (!selectedQuickReplyLibrary) {
-            setQuickReplyLibraryForm({ ...emptyQuickReplyLibraryForm, moduleIds: quickReplyScopeModuleId ? [quickReplyScopeModuleId] : [] });
+            setIfChanged(setQuickReplyLibraryForm, {
+                ...emptyQuickReplyLibraryForm,
+                moduleIds: quickReplyScopeModuleId ? [quickReplyScopeModuleId] : []
+            });
             return;
         }
         if (quickReplyLibraryPanelMode === 'create') return;
-        setQuickReplyLibraryForm({
+        setIfChanged(setQuickReplyLibraryForm, {
             libraryId: selectedQuickReplyLibrary.libraryId,
             name: selectedQuickReplyLibrary.name || '',
             description: selectedQuickReplyLibrary.description || '',
@@ -218,14 +258,17 @@ export default function useSaasPanelFormSyncEffects({
 
     useEffect(() => {
         if (!selectedQuickReplyItem) {
-            setQuickReplyItemForm((prev) => ({
-                ...emptyQuickReplyItemForm,
-                libraryId: String(selectedQuickReplyLibraryEntity?.libraryId || prev?.libraryId || '').trim().toUpperCase()
-            }));
+            setQuickReplyItemForm((previousValue) => {
+                const nextValue = {
+                    ...emptyQuickReplyItemForm,
+                    libraryId: String(selectedQuickReplyLibraryEntity?.libraryId || previousValue?.libraryId || '').trim().toUpperCase()
+                };
+                return isDeepEqual(previousValue, nextValue) ? previousValue : nextValue;
+            });
             return;
         }
         if (quickReplyItemPanelMode === 'create') return;
-        setQuickReplyItemForm({
+        setIfChanged(setQuickReplyItemForm, {
             itemId: selectedQuickReplyItem.itemId,
             libraryId: selectedQuickReplyItem.libraryId,
             label: selectedQuickReplyItem.label || '',

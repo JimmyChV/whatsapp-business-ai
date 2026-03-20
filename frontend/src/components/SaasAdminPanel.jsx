@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import * as saasAdminPanelHelpers from './saas/helpers';
+import SaasPanelHeader from './saas/shared/SaasPanelHeader';
+import SaasPanelNav from './saas/shared/SaasPanelNav';
+import SaasPanelTenantPicker from './saas/shared/SaasPanelTenantPicker';
 
 import {
     AiAssistantsSection,
@@ -31,11 +34,13 @@ import {
     useSaasPanelDerivedData,
     useSaasPanelFormSyncEffects,
     useSaasPanelLoadEffects,
+    useSaasPanelNavigation,
     useSaasPanelSelectionHotkeys,
     useSaasPanelSelectionState,
     useSaasPanelSectionSyncEffects,
     useSaasPanelCrossNavigation,
     useSaasPanelTenantScopeEffects,
+    useSaasPanelUserScopeState,
     useSaasTenantDataLoaders,
     useSaasTenantScope,
     useSaasTenantUsers,
@@ -392,69 +397,46 @@ export default function SaasAdminPanel({
         setCustomers,
         setSelectedCustomerId
     });
-    const currentUserCapabilities = useMemo(() => {
-        const capabilities = [];
-        if (canManageTenants) capabilities.push('Gestion de empresas');
-        if (canManageUsers) capabilities.push('Gestion de usuarios');
-        if (canManageCatalog) capabilities.push('Gestion de catalogos');
-        if (canManageLabels) capabilities.push('Etiquetas de chat');
-        if (canManageTenantSettings) capabilities.push('Configuracion de empresa');
-        if (canEditModules) capabilities.push('Modulos WhatsApp');
-        if (canViewSuperAdminSections) capabilities.push('Planes y roles globales');
-        if (canEditOptionalAccess) capabilities.push('Accesos opcionales');
-        return capabilities;
-    }, [canManageTenants, canManageUsers, canManageCatalog, canManageLabels, canManageQuickReplies, canManageAi, canManageTenantSettings, canEditModules, canViewSuperAdminSections, canEditOptionalAccess]);
-
-    const scopedUsers = useMemo(() => {
-        if (!tenantScopeId) return [];
-        return (overview.users || []).filter((user) => {
-            const memberships = sanitizeMemberships(user?.memberships || []);
-            return memberships.some((membership) => String(membership?.tenantId || '').trim() === tenantScopeId);
-        });
-    }, [overview.users, tenantScopeId]);
-
-    const selectedUser = useMemo(
-        () => scopedUsers.find((user) => String(user?.id || '') === String(selectedUserId || '')) || null,
-        [scopedUsers, selectedUserId]
-    );
-
-    const selectedUserRole = useMemo(() => resolvePrimaryRoleFromMemberships(
-        sanitizeMemberships(selectedUser?.memberships || []),
-        selectedUser?.role || 'seller'
-    ), [selectedUser]);
-    const selectedUserRolePriority = getRolePriority(selectedUserRole);
-    const selectedUserIsSelf = Boolean(selectedUser && currentUserId && String(selectedUser?.id || '').trim() === currentUserId);
-    const canEditSelectedUser = Boolean(
-        selectedUser
-        && canManageUsers
-        && (actorRoleForPolicy === 'superadmin' || selectedUserIsSelf || actorRolePriority > selectedUserRolePriority)
-    );
-    const canEditSelectedUserRole = Boolean(
-        selectedUser
-        && !selectedUserIsSelf
-        && canEditSelectedUser
-        && canActorManageRoleChanges
-    );
-    const canToggleSelectedUserStatus = Boolean(selectedUser && !selectedUserIsSelf && canEditSelectedUser);
-    const canEditSelectedUserOptionalAccess = Boolean(
-        selectedUser
-        && !selectedUserIsSelf
-        && canEditSelectedUser
-        && canEditOptionalAccess
-    );
-    const canEditRoleInUserForm = userPanelMode === 'create' ? canManageUsers : canEditSelectedUserRole;
-    const canEditScopeInUserForm = userPanelMode === 'create' ? canManageUsers : canEditSelectedUserRole;
-    const canConfigureOptionalAccessInUserForm = userPanelMode === 'create' ? canEditOptionalAccess : canEditSelectedUserOptionalAccess;
-
-    const allowedOptionalPermissionsForUserFormRole = useMemo(() => {
-        return Array.from(getOptionalPermissionKeysForRole(userForm.role))
-            .sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' }));
-    }, [getOptionalPermissionKeysForRole, userForm.role]);
-
-    const allowedPackIdsForUserFormRole = useMemo(
-        () => getAllowedPackIdsForRole(userForm.role),
-        [getAllowedPackIdsForRole, userForm.role]
-    );
+    const {
+        currentUserCapabilities,
+        scopedUsers,
+        selectedUser,
+        selectedUserRole,
+        selectedUserRolePriority,
+        selectedUserIsSelf,
+        canEditSelectedUser,
+        canEditSelectedUserRole,
+        canToggleSelectedUserStatus,
+        canEditSelectedUserOptionalAccess,
+        canEditRoleInUserForm,
+        canEditScopeInUserForm,
+        canConfigureOptionalAccessInUserForm,
+        allowedOptionalPermissionsForUserFormRole,
+        allowedPackIdsForUserFormRole
+    } = useSaasPanelUserScopeState({
+        overviewUsers: overview.users,
+        tenantScopeId,
+        selectedUserId,
+        currentUserId,
+        actorRoleForPolicy,
+        actorRolePriority,
+        canManageUsers,
+        canActorManageRoleChanges,
+        canEditOptionalAccess,
+        userPanelMode,
+        userFormRole: userForm.role,
+        canManageTenants,
+        canManageCatalog,
+        canManageLabels,
+        canManageTenantSettings,
+        canEditModules,
+        canViewSuperAdminSections,
+        resolvePrimaryRoleFromMemberships,
+        sanitizeMemberships,
+        getRolePriority,
+        getOptionalPermissionKeysForRole,
+        getAllowedPackIdsForRole
+    });
     const {
         filteredCustomers,
         selectedCustomer,
@@ -764,22 +746,25 @@ export default function SaasAdminPanel({
         setCustomerPanelMode,
         setCustomerForm
     });
-    const isSectionEnabled = useCallback((sectionId) => {
-        const cleanId = String(sectionId || '').trim();
-        if (cleanId === 'saas_empresas') return canManageTenants;
-        if (cleanId === 'saas_usuarios') return canManageUsers;
-        if (cleanId === 'saas_clientes') return canViewCustomers;
-        if (cleanId === 'saas_operacion') return canViewOperations;
-        if (cleanId === 'saas_ia') return canViewAi;
-        if (cleanId === 'saas_etiquetas') return canViewLabels;
-        if (cleanId === 'saas_quick_replies') return canViewQuickReplies;
-        if (cleanId === 'saas_modulos') return canViewModules;
-        if (cleanId === 'saas_catalogos') return canManageCatalog;
-        if (cleanId === 'saas_planes') return canViewSuperAdminSections;
-        if (cleanId === 'saas_roles') return canViewSuperAdminSections;
-        if (cleanId === 'saas_config') return canViewTenantSettings;
-        return true;
-    }, [
+    const {
+        isSectionEnabled,
+        adminNavItems,
+        selectedSectionId,
+        isModulesSection,
+        isCatalogSection,
+        isPlansSection,
+        isRolesSection,
+        isCustomersSection,
+        isOperationsSection,
+        isAiSection,
+        isLabelsSection,
+        isQuickRepliesSection,
+        isGeneralConfigSection
+    } = useSaasPanelNavigation({
+        navItems: ADMIN_NAV_ITEMS,
+        currentSection,
+        activeSection,
+        initialSection,
         canManageTenants,
         canManageUsers,
         canViewCustomers,
@@ -791,32 +776,8 @@ export default function SaasAdminPanel({
         canManageCatalog,
         canViewSuperAdminSections,
         canViewTenantSettings
-    ]);
+    });
 
-    const adminNavItems = useMemo(() => {
-        return ADMIN_NAV_ITEMS
-            .filter((item) => canViewSuperAdminSections || !['saas_planes', 'saas_roles'].includes(String(item?.id || '').trim()))
-            .map((item) => ({
-                ...item,
-                enabled: isSectionEnabled(item.id)
-            }));
-    }, [isSectionEnabled, canViewSuperAdminSections]);
-
-    const selectedSectionId = (() => {
-        const preferred = String(currentSection || activeSection || initialSection || 'saas_resumen').trim();
-        if (adminNavItems.some((item) => item.id === preferred && item.enabled)) return preferred;
-        return adminNavItems.find((item) => item.enabled)?.id || 'saas_resumen';
-    })();
-    const isModulesSection = selectedSectionId === 'saas_modulos';
-    const isCatalogSection = selectedSectionId === 'saas_catalogos';
-    const isPlansSection = selectedSectionId === 'saas_planes';
-    const isRolesSection = selectedSectionId === 'saas_roles';
-    const isCustomersSection = selectedSectionId === 'saas_clientes';
-    const isOperationsSection = selectedSectionId === 'saas_operacion';
-    const isAiSection = selectedSectionId === 'saas_ia';
-    const isLabelsSection = selectedSectionId === 'saas_etiquetas';
-    const isQuickRepliesSection = selectedSectionId === 'saas_quick_replies';
-    const isGeneralConfigSection = selectedSectionId === 'saas_config';
 
     const handleSectionChange = (sectionId) => {
         const next = String(sectionId || '').trim();
@@ -1274,43 +1235,20 @@ export default function SaasAdminPanel({
         return (
             <div className={embedded ? "saas-admin-overlay saas-admin-overlay--embedded" : "saas-admin-overlay"} onClick={() => { if (!embedded) onClose?.(); }}>
                 <div className={embedded ? "saas-admin-panel saas-admin-panel--embedded" : "saas-admin-panel"} onClick={(event) => event.stopPropagation()}>
-                    {showHeader && (
-                        <div className="saas-admin-header">
-                            <h2>Panel SaaS</h2>
-                            {!embedded && (
-                            <div className="saas-admin-header-actions">
-                                {typeof onOpenWhatsAppOperation === 'function' && (
-                                    <button
-                                        type="button"
-                                        className="saas-admin-header-open-operation"
-                                        disabled={busy || !canOpenOperation}
-                                        onClick={() => onOpenWhatsAppOperation('', { tenantId: operationTenantId || undefined })}
-                                    >
-                                        Ir al chat
-                                    </button>
-                                )}
-                                <div className="saas-admin-header-profile" role="status" aria-label="Usuario en sesion">
-                                    <div className="saas-admin-header-profile-avatar">
-                                        {currentUserAvatarUrl
-                                            ? <img src={currentUserAvatarUrl} alt={currentUserDisplayName} />
-                                            : <span>{buildInitials(currentUserDisplayName)}</span>}
-                                    </div>
-                                    <div className="saas-admin-header-profile-meta">
-                                        <strong>{currentUserDisplayName}</strong>
-                                        <small>{currentUserRoleLabel}</small>
-                                    </div>
-                                </div>
-                                <button
-                                    type="button"
-                                    className="saas-admin-header-close-danger"
-                                    onClick={() => { if (typeof onLogout === 'function') { onLogout(); return; } onClose?.(); }}
-                                >
-                                    {closeLabel}
-                                </button>
-                            </div>
-                        )}
-                        </div>
-                    )}
+                    <SaasPanelHeader
+                        showHeader={showHeader}
+                        embedded={embedded}
+                        title="Panel SaaS"
+                        canOpenOperation={canOpenOperation}
+                        isBusy={busy}
+                        onOpenOperation={typeof onOpenWhatsAppOperation === "function" ? () => onOpenWhatsAppOperation("", { tenantId: operationTenantId || undefined }) : undefined}
+                        currentUserAvatarUrl={currentUserAvatarUrl}
+                        currentUserDisplayName={currentUserDisplayName}
+                        currentUserRoleLabel={currentUserRoleLabel}
+                        buildInitials={buildInitials}
+                        closeLabel={closeLabel}
+                        onClose={() => { if (typeof onLogout === "function") { onLogout(); return; } onClose?.(); }}
+                    />
                     <p>No tienes permisos para administrar empresas y usuarios.</p>
                 </div>
             </div>
@@ -1320,46 +1258,21 @@ export default function SaasAdminPanel({
     return (
         <div className={embedded ? "saas-admin-overlay saas-admin-overlay--embedded" : "saas-admin-overlay"} onClick={() => { if (!embedded) onClose?.(); }}>
             <div className={embedded ? "saas-admin-panel saas-admin-panel--embedded" : "saas-admin-panel"} onClick={(event) => event.stopPropagation()}>
-                {showHeader && (
-                    <div className="saas-admin-header">
-                        <div>
-                            <h2>Control SaaS</h2>
-                            <span>Empresa activa: {activeTenantLabel}</span>
-                        </div>
-                        {!embedded && (
-                            <div className="saas-admin-header-actions">
-                                {typeof onOpenWhatsAppOperation === 'function' && (
-                                    <button
-                                        type="button"
-                                        className="saas-admin-header-open-operation"
-                                        disabled={busy || !canOpenOperation}
-                                        onClick={() => onOpenWhatsAppOperation('', { tenantId: operationTenantId || undefined })}
-                                    >
-                                        Ir al chat
-                                    </button>
-                                )}
-                                <div className="saas-admin-header-profile" role="status" aria-label="Usuario en sesion">
-                                    <div className="saas-admin-header-profile-avatar">
-                                        {currentUserAvatarUrl
-                                            ? <img src={currentUserAvatarUrl} alt={currentUserDisplayName} />
-                                            : <span>{buildInitials(currentUserDisplayName)}</span>}
-                                    </div>
-                                    <div className="saas-admin-header-profile-meta">
-                                        <strong>{currentUserDisplayName}</strong>
-                                        <small>{currentUserRoleLabel}</small>
-                                    </div>
-                                </div>
-                                <button
-                                    type="button"
-                                    className="saas-admin-header-close-danger"
-                                    onClick={() => { if (typeof onLogout === 'function') { onLogout(); return; } onClose?.(); }}
-                                >
-                                    {closeLabel}
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                )}
+                <SaasPanelHeader
+                    showHeader={showHeader}
+                    embedded={embedded}
+                    title="Control SaaS"
+                    subtitle={`Empresa activa: ${activeTenantLabel}`}
+                    canOpenOperation={canOpenOperation}
+                    isBusy={busy}
+                    onOpenOperation={typeof onOpenWhatsAppOperation === "function" ? () => onOpenWhatsAppOperation("", { tenantId: operationTenantId || undefined }) : undefined}
+                    currentUserAvatarUrl={currentUserAvatarUrl}
+                    currentUserDisplayName={currentUserDisplayName}
+                    currentUserRoleLabel={currentUserRoleLabel}
+                    buildInitials={buildInitials}
+                    closeLabel={closeLabel}
+                    onClose={() => { if (typeof onLogout === "function") { onLogout(); return; } onClose?.(); }}
+                />
 
                 {error && (
                     <div className="saas-admin-alert error">
@@ -1374,54 +1287,31 @@ export default function SaasAdminPanel({
                         </div>
                     </div>
                 )}
-                {requiresTenantSelection && (
-                    <div className="saas-admin-tenant-picker-row">
-                        <select
-                            value={settingsTenantId}
-                            onChange={(event) => {
-                                const nextTenantId = String(event.target.value || '').trim();
-                                setSettingsTenantId(nextTenantId);
-                                if (nextTenantId) setSelectedTenantId(nextTenantId);
-                            }}
-                            disabled={busy}
-                        >
-                            <option value="">Seleccionar empresa para trabajar</option>
-                            {tenantOptions.map((tenant) => (
-                                <option key={tenant.id} value={tenant.id}>{toTenantDisplayName(tenant)}</option>
-                            ))}
-                        </select>
-                        {settingsTenantId && (
-                            <button
-                                type="button"
-                                className="saas-admin-tenant-picker-clear"
-                                disabled={busy}
-                                onClick={() => {
-                                    setSettingsTenantId('');
-                                    setSelectedTenantId('');
-                                }}
-                            >
-                                Limpiar seleccion
-                            </button>
-                        )}
-                    </div>
-                )}
+                <SaasPanelTenantPicker
+                    requiresTenantSelection={requiresTenantSelection}
+                    settingsTenantId={settingsTenantId}
+                    tenantOptions={tenantOptions}
+                    busy={busy}
+                    toTenantDisplayName={toTenantDisplayName}
+                    onChangeTenant={(nextTenantId) => {
+                        setSettingsTenantId(nextTenantId);
+                        if (nextTenantId) setSelectedTenantId(nextTenantId);
+                    }}
+                    onClearTenant={() => {
+                        setSettingsTenantId('');
+                        setSelectedTenantId('');
+                    }}
+                />
 
+                <SaasPanelNav
+                    showNavigation={showNavigation}
+                    adminNavItems={adminNavItems}
+                    selectedSectionId={selectedSectionId}
+                    busy={busy}
+                    tenantScopeLocked={tenantScopeLocked}
+                    onSectionChange={handleSectionChange}
+                />
 
-                {showNavigation && (
-                    <div className="saas-admin-nav">
-                        {adminNavItems.map((item) => (
-                            <button
-                                key={item.id}
-                                type="button"
-                                className={`saas-admin-nav-btn ${selectedSectionId === item.id ? "active" : ""}`.trim()}
-                                disabled={busy || !item.enabled || (tenantScopeLocked && !['saas_resumen', 'saas_empresas', 'saas_planes', 'saas_roles', 'saas_operacion'].includes(item.id))}
-                                onClick={() => handleSectionChange(item.id)}
-                            >
-                                {item.label}
-                            </button>
-                        ))}
-                    </div>
-                )}
 
                 <SummarySection
                     selectedSectionId={selectedSectionId}
@@ -1846,81 +1736,4 @@ export default function SaasAdminPanel({
         </div>
     );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

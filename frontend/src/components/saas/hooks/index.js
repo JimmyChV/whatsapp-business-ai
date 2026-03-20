@@ -22,3 +22,7 @@ export { default as useTenantLabelsActions } from './useTenantLabelsActions';
 export { default as useTenantsUsersAdminActions } from './useTenantsUsersAdminActions';
 export { default as useCustomersAdminActions } from './useCustomersAdminActions';
 export { default as useModuleConfigActions } from './useModuleConfigActions';
+
+export { default as useSaasPanelNavigation } from './useSaasPanelNavigation';
+export { default as useSaasPanelUserScopeState } from './useSaasPanelUserScopeState';
+
