@@ -1,22 +1,21 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Bot, Send, ShoppingCart, Clock, Sparkles, Trash2, Plus, Minus, ChevronDown, ChevronUp, Package, MessageSquare } from 'lucide-react';
 import {
-    buildAiScopeInfo,
     buildDefaultAiThread,
     clampNumber,
     formatMoney,
     formatMoneyCompact,
     formatQuoteProductTitle,
     normalizeCatalogItem,
-    normalizeSkuKey,
-    normalizeTextKey,
     parseMoney,
-    parseOrderTitleItems,
     repairMojibake,
     roundMoney
 } from './business/businessSidebar.helpers';
 import { useAiScopeState } from './business/hooks/useAiScopeState';
-import { attachAiSocketListeners, emitAiHistoryRequest, emitAiQuery } from './business/services/aiSocket.service';
+import { useAiSocketBridge } from './business/hooks/useAiSocketBridge';
+import { usePendingOrderCartImport } from './business/hooks/usePendingOrderCartImport';
+import { useCartDraftSync } from './business/hooks/useCartDraftSync';
+import { emitAiQuery } from './business/services/aiSocket.service';
 import { buildAiRuntimeContext, buildBusinessContextPrompt } from './business/businessSidebarAiContext.helpers';
 import {
     buildCartSnapshotPayload,
@@ -124,358 +123,61 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         lastImportedOrderRef.current = '';
     }, [normalizedTenantScopeKey, resetAiScopeState]);
 
-    useEffect(() => {
-        if (!socket) return;
-        if (!currentAiScopeChatId) return;
-        if (aiHistoryLoadedRef.current.has(currentAiScopeKey)) return;
-
-        aiHistoryLoadedRef.current.add(currentAiScopeKey);
-        const requestSeq = aiHistoryRequestSeqRef.current + 1;
-        aiHistoryRequestSeqRef.current = requestSeq;
-        aiHistoryScopeBySeqRef.current.set(requestSeq, currentAiScopeKey);
-
-        emitAiHistoryRequest(socket, {
-            requestSeq,
-            chatId: currentAiScopeChatId,
-            scopeModuleId: activeAiScope.scopeModuleId || null,
-            limit: 120
-        });
-    }, [socket, currentAiScopeKey, currentAiScopeChatId, activeAiScope.scopeModuleId]);
-
-    useEffect(() => {
-        setOrderImportStatus(null);
-        if (!activeChatId) return;
-        cartDraftSignaturesRef.current[activeChatId] = '';
-
-        const draft = cartDraftsByChat[activeChatId];
-        if (draft) {
-            const legacyPct = parseMoney(draft.globalDiscountPct ?? draft.discount ?? 0, 0);
-            const legacyAmount = parseMoney(draft.globalDiscountAmount ?? 0, 0);
-            const hasLegacyDiscount = legacyPct > 0 || legacyAmount > 0;
-            const resolvedDiscountType = draft.globalDiscountType || (legacyAmount > 0 ? 'amount' : 'percent');
-            const resolvedDiscountValue = parseMoney(
-                draft.globalDiscountValue ?? (resolvedDiscountType === 'amount' ? legacyAmount : legacyPct),
-                0
-            );
-
-            let resolvedDeliveryType = draft.deliveryType;
-            if (!resolvedDeliveryType) {
-                const legacyDeliveryEnabled = Boolean(draft.deliveryEnabled ?? false);
-                const legacyDeliveryAmount = parseMoney(draft.deliveryAmount ?? 0, 0);
-                resolvedDeliveryType = legacyDeliveryEnabled && legacyDeliveryAmount > 0 ? 'amount' : 'free';
-            }
-
-            setCart(draft.cart || []);
-            setShowOrderAdjustments(Boolean(draft.showOrderAdjustments ?? false));
-            setGlobalDiscountEnabled(Boolean(draft.globalDiscountEnabled ?? hasLegacyDiscount));
-            setGlobalDiscountType(resolvedDiscountType === 'amount' ? 'amount' : 'percent');
-            setGlobalDiscountValue(Math.max(0, resolvedDiscountValue));
-            setDeliveryType(resolvedDeliveryType === 'amount' ? 'amount' : 'free');
-            setDeliveryAmount(Math.max(0, parseMoney(draft.deliveryAmount ?? 0, 0)));
-            setShowCartTotalsBreakdown(Boolean(draft.showCartTotalsBreakdown ?? true));
-        } else {
-            setCart([]);
-            setShowOrderAdjustments(false);
-            setGlobalDiscountEnabled(false);
-            setGlobalDiscountType('percent');
-            setGlobalDiscountValue(0);
-            setDeliveryType('free');
-            setDeliveryAmount(0);
-            setShowCartTotalsBreakdown(true);
-        }
-    }, [activeChatId]);
-
-    useEffect(() => {
-        if (!activeChatId) return;
-        const nextDraft = {
-            cart,
-            showOrderAdjustments,
-            globalDiscountEnabled,
-            globalDiscountType,
-            globalDiscountValue,
-            deliveryType,
-            deliveryAmount,
-            showCartTotalsBreakdown
-        };
-
-        const nextSignature = JSON.stringify(nextDraft);
-        if (cartDraftSignaturesRef.current[activeChatId] === nextSignature) return;
-
-        cartDraftSignaturesRef.current[activeChatId] = nextSignature;
-        setCartDraftsByChat((prev) => {
-            const previousDraft = prev?.[activeChatId] || null;
-            if (previousDraft && JSON.stringify(previousDraft) === nextSignature) return prev;
-            return {
-                ...prev,
-                [activeChatId]: nextDraft
-            };
-        });
-    }, [activeChatId, cart, showOrderAdjustments, globalDiscountEnabled, globalDiscountType, globalDiscountValue, deliveryType, deliveryAmount, showCartTotalsBreakdown]);
-
-    useEffect(() => {
-        if (!pendingOrderCartLoad || !activeChatId) return;
-        if (String(pendingOrderCartLoad.chatId || '') !== String(activeChatId)) return;
-
-        const token = String(pendingOrderCartLoad.token || pendingOrderCartLoad.order?.orderId || '');
-        const dedupeKey = `${activeChatId}:${token}`;
-        if (token && lastImportedOrderRef.current === dedupeKey) return;
-        if (token) lastImportedOrderRef.current = dedupeKey;
-
-        const order = pendingOrderCartLoad.order && typeof pendingOrderCartLoad.order === 'object'
-            ? pendingOrderCartLoad.order
-            : {};
-        const orderType = String(order?.rawPreview?.type || '').toLowerCase();
-        const isProductImport = orderType.includes('product') && !String(order?.orderId || '').trim();
-        const isQuoteImport = orderType.includes('quote');
-        const quoteSummary = order?.rawPreview?.quoteSummary && typeof order.rawPreview.quoteSummary === 'object'
-            ? order.rawPreview.quoteSummary
-            : null;
-        const sourceItems = Array.isArray(order.products) ? order.products : [];
-        const titleFallbackItems = sourceItems.length === 0
-            ? parseOrderTitleItems(order?.rawPreview?.title || order?.rawPreview?.orderTitle || '')
-            : [];
-        const itemsToImport = sourceItems.length > 0 ? sourceItems : titleFallbackItems;
-        const usedTitleFallback = sourceItems.length === 0 && titleFallbackItems.length > 0;
-
-        if (itemsToImport.length === 0) {
-            const reportedCountRaw = parseMoney(order?.rawPreview?.itemCount ?? 1, 1);
-            const reportedCount = Math.max(1, Math.round(Number.isFinite(reportedCountRaw) ? reportedCountRaw : 1));
-            const subtotalValue = Math.max(0, parseMoney(order?.subtotal ?? 0, 0));
-            const unitValue = reportedCount > 0 ? (subtotalValue / reportedCount) : subtotalValue;
-
-            const fallbackCart = [{
-                id: `meta_order_unknown_${String(order?.orderId || token || Date.now())}`,
-                title: 'Pedido WhatsApp (detalle no disponible)',
-                price: Math.max(0, unitValue).toFixed(2),
-                regularPrice: Math.max(0, unitValue).toFixed(2),
-                salePrice: null,
-                discountPct: 0,
-                description: 'Meta/WhatsApp no devolvio lineas del pedido en esta sesion. Puedes aplicar descuento y delivery.',
-                imageUrl: null,
-                source: 'meta_order',
-                sku: null,
-                stockStatus: null,
-                qty: reportedCount,
-                lineDiscountEnabled: false,
-                lineDiscountType: 'percent',
-                lineDiscountValue: 0
-            }];
-
-            setCart(fallbackCart);
-            setShowOrderAdjustments(true);
-            setActiveTab('cart');
-            setOrderImportStatus({
-                level: 'warn',
-                text: `Pedido cargado sin detalle de productos (items reportados: ${reportedCount}). Usa subtotal S/ ${formatMoney(subtotalValue)} y aplica ajustes.`
-            });
-            return;
-        }
-
-        const catalogBySku = new Map();
-        const catalogByName = new Map();
-        const catalogList = [];
-        catalog.forEach((item, idx) => {
-            const normalized = normalizeCatalogItem(item, idx);
-            catalogList.push(normalized);
-            const skuKey = normalizeSkuKey(normalized.sku);
-            if (skuKey && !catalogBySku.has(skuKey)) catalogBySku.set(skuKey, normalized);
-            const nameKey = normalizeTextKey(normalized.title);
-            if (nameKey && !catalogByName.has(nameKey)) catalogByName.set(nameKey, normalized);
-        });
-
-        const merged = new Map();
-        let matchedBySku = 0;
-        let matchedByName = 0;
-        let fallbackLines = 0;
-
-        itemsToImport.forEach((line, idx) => {
-            if (!line || typeof line !== 'object') return;
-
-            const rawSku = String(line.sku || line.retailer_id || line.product_retailer_id || '').trim();
-            const skuKey = normalizeSkuKey(rawSku);
-            const rawName = String(line.name || line.title || '').trim();
-            const nameKey = normalizeTextKey(rawName);
-
-            let matched = null;
-            if (skuKey && catalogBySku.has(skuKey)) {
-                matched = catalogBySku.get(skuKey);
-                matchedBySku += 1;
-            } else if (nameKey && catalogByName.has(nameKey)) {
-                matched = catalogByName.get(nameKey);
-                matchedByName += 1;
-            } else if (nameKey) {
-                matched = catalogList.find((candidate) => {
-                    const candidateKey = normalizeTextKey(candidate.title);
-                    if (!candidateKey) return false;
-                    return candidateKey.includes(nameKey) || nameKey.includes(candidateKey);
-                }) || null;
-                if (matched) matchedByName += 1;
-            }
-
-            const qtyRaw = parseMoney(line.quantity ?? line.qty ?? 1, 1);
-            const qty = isProductImport
-                ? 1
-                : Math.max(1, Math.round(Number.isFinite(qtyRaw) ? qtyRaw : 1));
-            const linePrice = parseMoney(line.price ?? line.unitPrice ?? 0, 0);
-            const lineTotal = parseMoney(line.lineTotal ?? line.total ?? 0, 0);
-            const derivedUnitPrice = lineTotal > 0 && qty > 0 ? (lineTotal / qty) : linePrice;
-
-            const baseLine = matched
-                ? {
-                    ...matched,
-                    price: parseMoney(matched.price, derivedUnitPrice > 0 ? derivedUnitPrice : 0).toFixed(2),
-                    regularPrice: parseMoney(matched.regularPrice ?? matched.price, parseMoney(matched.price, 0)).toFixed(2),
-                    sku: matched.sku || rawSku || null,
-                    qty,
-                    lineDiscountEnabled: false,
-                    lineDiscountType: 'percent',
-                    lineDiscountValue: 0
-                }
-                : {
-                    id: `meta_order_${skuKey || nameKey || idx + 1}`,
-                    title: rawName || (rawSku ? `SKU ${rawSku}` : `Producto pedido ${idx + 1}`),
-                    price: Math.max(0, derivedUnitPrice || 0).toFixed(2),
-                    regularPrice: Math.max(0, derivedUnitPrice || 0).toFixed(2),
-                    salePrice: null,
-                    discountPct: 0,
-                    description: 'Producto importado desde pedido de WhatsApp.',
-                    imageUrl: null,
-                    source: 'meta_order',
-                    sku: rawSku || null,
-                    stockStatus: null,
-                    qty,
-                    lineDiscountEnabled: false,
-                    lineDiscountType: 'percent',
-                    lineDiscountValue: 0
-                };
-
-            if (!matched) fallbackLines += 1;
-
-            const lineKey = String(baseLine.id || `line_${idx}`);
-            if (merged.has(lineKey)) {
-                const prev = merged.get(lineKey);
-                merged.set(lineKey, {
-                    ...prev,
-                    qty: Math.max(1, Number(prev.qty || 1) + qty)
-                });
-                return;
-            }
-            merged.set(lineKey, baseLine);
-        });
-
-        const importedCart = Array.from(merged.values());
-        if (importedCart.length === 0) {
-            setOrderImportStatus({
-                level: 'warn',
-                text: 'Pedido recibido, pero no se pudo convertir a items del carrito.'
-            });
-            return;
-        }
-
-        if (isProductImport) {
-            setCart((prev) => {
-                const safePrev = Array.isArray(prev) ? prev : [];
-                const map = new Map();
-                const buildMergeKey = (item, idx) => {
-                    const sku = normalizeSkuKey(item?.sku);
-                    if (sku) return `sku:${sku}`;
-                    const id = String(item?.id || '').trim();
-                    if (id) return `id:${id}`;
-                    const name = normalizeTextKey(item?.title || item?.name || '');
-                    return name ? `name:${name}` : `line:${idx}`;
-                };
-
-                safePrev.forEach((item, idx) => {
-                    const key = buildMergeKey(item, idx);
-                    map.set(key, {
-                        ...item,
-                        qty: Math.max(1, Number(item?.qty || 1))
-                    });
-                });
-
-                importedCart.forEach((item, idx) => {
-                    const key = buildMergeKey(item, idx);
-                    if (map.has(key)) {
-                        const prevItem = map.get(key);
-                        map.set(key, {
-                            ...prevItem,
-                            qty: Math.max(1, Number(prevItem?.qty || 1) + 1)
-                        });
-                        return;
-                    }
-                    map.set(key, {
-                        ...item,
-                        qty: 1
-                    });
-                });
-
-                return Array.from(map.values());
-            });
-        } else {
-            setCart(importedCart);
-        }
-        setShowOrderAdjustments(true);
-        setActiveTab('cart');
-
-        let quoteDiscountAmount = 0;
-        let includedDiscountFromCatalog = 0;
-        let reconstructedGlobalDiscount = 0;
-
-        if (isQuoteImport && quoteSummary) {
-            const parseMaybe = (value) => {
-                const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
-                return Number.isFinite(parsed) ? parsed : null;
-            };
-
-            const summaryDiscount = parseMaybe(quoteSummary?.discount);
-            const summarySubtotal = parseMaybe(quoteSummary?.subtotal);
-            const summaryTotalAfterDiscount = parseMaybe(quoteSummary?.totalAfterDiscount);
-            quoteDiscountAmount = Number.isFinite(summaryDiscount)
-                ? Math.max(0, summaryDiscount)
-                : (Number.isFinite(summarySubtotal) && Number.isFinite(summaryTotalAfterDiscount)
-                    ? Math.max(0, roundMoney(summarySubtotal - summaryTotalAfterDiscount))
-                    : 0);
-
-            includedDiscountFromCatalog = roundMoney(importedCart.reduce((sum, item) => {
-                const qty = Math.max(1, Math.round(parseMoney(item?.qty, 1) || 1));
-                const unitPrice = Math.max(0, parseMoney(item?.price, 0));
-                const regularPrice = Math.max(unitPrice, parseMoney(item?.regularPrice ?? item?.price, unitPrice));
-                const lineIncluded = Math.max(0, roundMoney((regularPrice - unitPrice) * qty));
-                return sum + lineIncluded;
-            }, 0));
-
-            reconstructedGlobalDiscount = roundMoney(Math.max(0, quoteDiscountAmount - includedDiscountFromCatalog));
-
-            const quoteDeliveryAmount = Math.max(0, parseMoney(quoteSummary?.deliveryAmount ?? 0, 0));
-            const quoteDeliveryFree = Boolean(quoteSummary?.deliveryFree) || quoteDeliveryAmount <= 0;
-
-            setGlobalDiscountEnabled(reconstructedGlobalDiscount > 0);
-            setGlobalDiscountType('amount');
-            setGlobalDiscountValue(reconstructedGlobalDiscount > 0 ? reconstructedGlobalDiscount : 0);
-            setDeliveryType(quoteDeliveryFree ? 'free' : 'amount');
-            setDeliveryAmount(quoteDeliveryFree ? 0 : quoteDeliveryAmount);
-        }
-
-        const reportedItems = Number(order?.rawPreview?.itemCount || itemsToImport.length || importedCart.length);
-        const hasSubtotal = order?.subtotal !== null && order?.subtotal !== undefined && String(order.subtotal).trim() !== '';
-        const subtotalLabel = hasSubtotal ? ` | subtotal ${formatMoney(parseMoney(order.subtotal, 0))}` : '';
-        const statusBits = [
-            isProductImport ? 'Producto agregado al carrito (+1)' : `Pedido cargado al carrito: ${importedCart.length} productos`,
-            isProductImport ? null : `(items reportados: ${reportedItems})`,
-            usedTitleFallback ? 'origen: titulo del pedido' : null,
-            isQuoteImport && quoteSummary ? `descuento detectado: S/ ${formatMoney(quoteDiscountAmount)}` : null,
-            isQuoteImport && includedDiscountFromCatalog > 0 ? `descuento kit/base: S/ ${formatMoney(includedDiscountFromCatalog)}` : null,
-            isQuoteImport ? `descuento global aplicado: S/ ${formatMoney(reconstructedGlobalDiscount)}` : null,
-            matchedBySku > 0 ? `SKU: ${matchedBySku}` : null,
-            matchedByName > 0 ? `nombre: ${matchedByName}` : null,
-            fallbackLines > 0 ? `sin match: ${fallbackLines}` : null,
-        ].filter(Boolean);
-
-        setOrderImportStatus({
-            level: fallbackLines > 0 ? 'warn' : 'ok',
-            text: `${statusBits.join(' | ')}${subtotalLabel}`
-        });
-    }, [pendingOrderCartLoad, activeChatId, catalog]);
+    useAiSocketBridge({
+        socket,
+        tenantId: normalizedTenantScopeKey,
+        currentAiScopeKey,
+        currentAiScopeChatId,
+        scopeModuleId: activeAiScope.scopeModuleId || null,
+        aiHistoryLoadedRef,
+        aiHistoryRequestSeqRef,
+        aiHistoryScopeBySeqRef,
+        aiRequestScopeRef,
+        aiScopeKeyRef,
+        setAiThreadsByScope,
+        setAiScopeLoading,
+        setAiThreadMessages
+    });
+    useCartDraftSync({
+        activeChatId,
+        cartDraftsByChat,
+        cartDraftSignaturesRef,
+        parseMoney,
+        cart,
+        showOrderAdjustments,
+        globalDiscountEnabled,
+        globalDiscountType,
+        globalDiscountValue,
+        deliveryType,
+        deliveryAmount,
+        showCartTotalsBreakdown,
+        setOrderImportStatus,
+        setCart,
+        setShowOrderAdjustments,
+        setGlobalDiscountEnabled,
+        setGlobalDiscountType,
+        setGlobalDiscountValue,
+        setDeliveryType,
+        setDeliveryAmount,
+        setShowCartTotalsBreakdown,
+        setCartDraftsByChat
+    });
+    usePendingOrderCartImport({
+        pendingOrderCartLoad,
+        activeChatId,
+        catalog,
+        lastImportedOrderRef,
+        setCart,
+        setShowOrderAdjustments,
+        setActiveTab,
+        setOrderImportStatus,
+        setGlobalDiscountEnabled,
+        setGlobalDiscountType,
+        setGlobalDiscountValue,
+        setDeliveryType,
+        setDeliveryAmount,
+        formatMoney
+    });
 
     // Auto-scroll AI chat
     useEffect(() => { aiEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [aiMessages]);
@@ -509,102 +211,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         return () => document.removeEventListener('mousedown', handleOutsideClick);
     }, [showCompanyProfile]);
 
-    // Listen to AI responses from socket
-    useEffect(() => {
-        if (!socket) return;
-        let buffer = '';
-
-        const resolveTargetScope = (fallback = '') => {
-            const safeFallback = String(fallback || '').trim();
-            if (safeFallback) return safeFallback;
-            const fromRef = String(aiRequestScopeRef.current || aiScopeKeyRef.current || '').trim();
-            if (fromRef) return fromRef;
-            return currentAiScopeKey;
-        };
-
-        const onHistory = (payload = {}) => {
-            const requestSeq = Number(payload?.requestSeq || 0) || 0;
-            const mappedScope = requestSeq ? aiHistoryScopeBySeqRef.current.get(requestSeq) : '';
-            if (requestSeq) aiHistoryScopeBySeqRef.current.delete(requestSeq);
-
-            const incomingScopeInfo = buildAiScopeInfo(
-                tenantScopeRef.current || 'default',
-                payload?.scopeChatId || payload?.chatId || payload?.baseChatId || '',
-                payload?.scopeModuleId || ''
-            );
-            const scopeKey = resolveTargetScope(mappedScope || incomingScopeInfo.scopeKey);
-            const entries = Array.isArray(payload?.items) ? payload.items : [];
-            const normalized = entries
-                .map((entry) => {
-                    const role = String(entry?.role || '').trim().toLowerCase() === 'user' ? 'user' : 'assistant';
-                    const content = repairMojibake(String(entry?.content || '').trim());
-                    if (!content) return null;
-                    return { role, content };
-                })
-                .filter(Boolean);
-
-            setAiThreadsByScope((previous) => {
-                const existing = Array.isArray(previous?.[scopeKey]) ? previous[scopeKey] : [];
-                if (existing.some((entry) => entry?.streaming)) return previous;
-                if (normalized.length === 0) {
-                    if (existing.length > 0) return previous;
-                    return {
-                        ...previous,
-                        [scopeKey]: buildDefaultAiThread()
-                    };
-                }
-                return {
-                    ...previous,
-                    [scopeKey]: normalized
-                };
-            });
-            setAiScopeLoading(scopeKey, false);
-        };
-
-        const onChunk = (chunk) => {
-            const scopeKey = resolveTargetScope();
-            buffer += repairMojibake(chunk);
-            setAiThreadMessages(scopeKey, (previous) => {
-                const safePrevious = Array.isArray(previous) ? previous : buildDefaultAiThread();
-                const last = safePrevious[safePrevious.length - 1];
-                if (last?.role === 'assistant' && last?.streaming) {
-                    return [...safePrevious.slice(0, -1), { ...last, content: buffer }];
-                }
-                return [...safePrevious, { role: 'assistant', content: buffer, streaming: true }];
-            });
-        };
-
-        const onComplete = () => {
-            const scopeKey = resolveTargetScope();
-            buffer = '';
-            setAiScopeLoading(scopeKey, false);
-            setAiThreadMessages(scopeKey, (previous) => {
-                const safePrevious = Array.isArray(previous) ? previous : buildDefaultAiThread();
-                const last = safePrevious[safePrevious.length - 1];
-                if (last?.streaming) return [...safePrevious.slice(0, -1), { ...last, streaming: false }];
-                return safePrevious;
-            });
-            aiRequestScopeRef.current = '';
-        };
-
-        const onError = (msg) => {
-            const scopeKey = resolveTargetScope();
-            setAiScopeLoading(scopeKey, false);
-            setAiThreadMessages(scopeKey, (previous) => {
-                const safePrevious = Array.isArray(previous) ? previous : buildDefaultAiThread();
-                return [...safePrevious, { role: 'assistant', content: repairMojibake(msg || 'Error IA: no se pudo generar respuesta.') }];
-            });
-            aiRequestScopeRef.current = '';
-        };
-
-        const detachAiListeners = attachAiSocketListeners(socket, {
-            onHistory,
-            onChunk,
-            onComplete,
-            onError
-        });
-        return detachAiListeners;
-    }, [socket, currentAiScopeKey]);
     const buildBusinessContext = () => buildBusinessContextPrompt({
         catalog,
         profile,
@@ -1226,6 +832,12 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 };
 
 export default BusinessSidebar;
+
+
+
+
+
+
 
 
 
