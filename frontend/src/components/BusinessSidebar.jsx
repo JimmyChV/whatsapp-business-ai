@@ -17,6 +17,7 @@ import { usePendingOrderCartImport } from './business/hooks/usePendingOrderCartI
 import { useCartDraftSync } from './business/hooks/useCartDraftSync';
 import { useTenantScopeReset } from './business/hooks/useTenantScopeReset';
 import { useCompanyProfileOverlay } from './business/hooks/useCompanyProfileOverlay';
+import { useBusinessSidebarUiSync } from './business/hooks/useBusinessSidebarUiSync';
 import { emitAiQuery } from './business/services/aiSocket.service';
 import { buildAiRuntimeContext, buildBusinessContextPrompt } from './business/businessSidebarAiContext.helpers';
 import {
@@ -178,21 +179,14 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setDeliveryAmount,
         formatMoney
     });
-
-    // Auto-scroll AI chat
-    useEffect(() => { aiEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [aiMessages]);
-
-    useEffect(() => {
-        if (activeTab === 'quick' && !quickRepliesEnabled) {
-            setActiveTab('ai');
-        }
-    }, [activeTab, quickRepliesEnabled]);
-
-    useEffect(() => {
-        if (activeTab === 'cart' && cart.length === 0) {
-            setActiveTab('catalog');
-        }
-    }, [activeTab, cart.length]);
+    useBusinessSidebarUiSync({
+        aiEndRef,
+        aiMessages,
+        activeTab,
+        quickRepliesEnabled,
+        cart,
+        setActiveTab
+    });
     useCompanyProfileOverlay({
         openCompanyProfileToken,
         showCompanyProfile,
@@ -821,6 +815,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 };
 
 export default BusinessSidebar;
+
 
 
 
