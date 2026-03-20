@@ -17,6 +17,7 @@ import {
     UsersSection
 } from './saas/sections';
 import {
+    useAiAssistantsAdminActions,
     useCatalogAdminActions,
     useOperationsPanelState,
     useQuickReplyAdminActions,
@@ -107,10 +108,7 @@ const {
     getRolePriority,
     normalizeWaModule,
     sanitizeAiAssistantCode,
-    normalizeTenantAiAssistantItem,
     buildAiAssistantFormFromItem,
-    buildLavitatAssistantPreset,
-    buildAiAssistantPayload,
     normalizeIntegrationsPayload,
     buildIntegrationsUpdatePayload,
     normalizePlanForm,
@@ -619,6 +617,33 @@ export default function SaasAdminPanel({
         setLoadingCatalogProducts,
         setCatalogPanelMode
     });
+    const {
+        loadTenantAiAssistants,
+        openAiAssistantCreate,
+        applyLavitatAssistantPreset,
+        openAiAssistantView,
+        openAiAssistantEdit,
+        cancelAiAssistantEdit,
+        saveAiAssistant,
+        markAiAssistantAsDefault,
+        toggleAiAssistantActive
+    } = useAiAssistantsAdminActions({
+        requestJson,
+        settingsTenantId,
+        canManageAi,
+        selectedAiAssistant,
+        selectedAiAssistantId,
+        aiAssistantForm,
+        aiAssistantPanelMode,
+        tenantIntegrations,
+        emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
+        setLoadingAiAssistants,
+        setTenantAiAssistants,
+        setSelectedAiAssistantId,
+        setAiAssistantForm,
+        setAiAssistantPanelMode,
+        runAction
+    });
     const isSectionEnabled = useCallback((sectionId) => {
         const cleanId = String(sectionId || '').trim();
         if (cleanId === 'saas_empresas') return canManageTenants;
@@ -832,40 +857,6 @@ export default function SaasAdminPanel({
         }
     };
 
-    const loadTenantAiAssistants = async (tenantId) => {
-        const cleanTenantId = String(tenantId || '').trim();
-        if (!cleanTenantId) {
-            setTenantAiAssistants([]);
-            setSelectedAiAssistantId('');
-            setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
-            setAiAssistantPanelMode('view');
-            return;
-        }
-
-        setLoadingAiAssistants(true);
-        try {
-            const payload = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/ai-assistants`);
-            const items = (Array.isArray(payload?.items) ? payload.items : [])
-                .map((entry) => normalizeTenantAiAssistantItem(entry))
-                .filter(Boolean);
-            const defaultAssistantId = sanitizeAiAssistantCode(payload?.defaultAssistantId || '');
-            const normalizedItems = items.map((entry) => {
-                if (!defaultAssistantId) return entry;
-                return {
-                    ...entry,
-                    isDefault: entry.assistantId === defaultAssistantId
-                };
-            });
-            setTenantAiAssistants(normalizedItems);
-            setSelectedAiAssistantId((prev) => {
-                const cleanPrev = sanitizeAiAssistantCode(prev || '');
-                if (cleanPrev && normalizedItems.some((entry) => entry.assistantId === cleanPrev)) return cleanPrev;
-                return '';
-            });
-        } finally {
-            setLoadingAiAssistants(false);
-        }
-    };
     const openPlanView = (planId) => {
         const cleanPlanId = String(planId || '').trim().toLowerCase();
         if (!cleanPlanId) return;
@@ -1501,112 +1492,6 @@ export default function SaasAdminPanel({
         setUserPanelMode('view');
     };
 
-    const openAiAssistantCreate = () => {
-        if (!canManageAi || !settingsTenantId) return;
-        setSelectedAiAssistantId('');
-        setAiAssistantForm({
-            ...EMPTY_AI_ASSISTANT_FORM,
-            provider: 'openai',
-            model: String(tenantIntegrations?.aiModel || 'gpt-4o-mini').trim() || 'gpt-4o-mini'
-        });
-        setAiAssistantPanelMode('create');
-    };
-
-    const applyLavitatAssistantPreset = () => {
-        setAiAssistantForm((prev) => buildLavitatAssistantPreset(prev));
-    };
-    const openAiAssistantView = (assistantId) => {
-        const cleanAssistantId = sanitizeAiAssistantCode(assistantId || '');
-        if (!cleanAssistantId) return;
-        setSelectedAiAssistantId(cleanAssistantId);
-        setAiAssistantPanelMode('view');
-    };
-
-    const openAiAssistantEdit = () => {
-        if (!selectedAiAssistant) return;
-        setAiAssistantForm(buildAiAssistantFormFromItem(selectedAiAssistant));
-        setAiAssistantPanelMode('edit');
-    };
-
-    const cancelAiAssistantEdit = () => {
-        if (selectedAiAssistant) {
-            setAiAssistantForm(buildAiAssistantFormFromItem(selectedAiAssistant));
-            setAiAssistantPanelMode('view');
-            return;
-        }
-        setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
-        setAiAssistantPanelMode('view');
-    };
-
-    const saveAiAssistant = () => {
-        if (!settingsTenantId || !canManageAi) return;
-
-        runAction(aiAssistantPanelMode === 'create' ? 'Asistente IA creado' : 'Asistente IA actualizado', async () => {
-            const payload = buildAiAssistantPayload(aiAssistantForm, { allowAssistantId: aiAssistantPanelMode === 'create' });
-            if (!String(payload.name || '').trim()) {
-                throw new Error('El nombre del asistente IA es obligatorio.');
-            }
-
-            let response = null;
-            if (aiAssistantPanelMode === 'create') {
-                response = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/ai-assistants`, {
-                    method: 'POST',
-                    body: payload
-                });
-            } else {
-                const cleanAssistantId = sanitizeAiAssistantCode(selectedAiAssistant?.assistantId || aiAssistantForm.assistantId || selectedAiAssistantId);
-                if (!cleanAssistantId) throw new Error('Asistente IA invalido para actualizar.');
-                response = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/ai-assistants/${encodeURIComponent(cleanAssistantId)}`, {
-                    method: 'PUT',
-                    body: payload
-                });
-            }
-
-            await loadTenantAiAssistants(settingsTenantId);
-            const returnedId = sanitizeAiAssistantCode(response?.item?.assistantId || '');
-            if (returnedId) {
-                setSelectedAiAssistantId(returnedId);
-            }
-            setAiAssistantPanelMode('view');
-            setAiAssistantForm((prev) => ({ ...prev, openaiApiKey: '' }));
-        });
-    };
-
-    const markAiAssistantAsDefault = (assistantId) => {
-        const cleanAssistantId = sanitizeAiAssistantCode(assistantId || '');
-        if (!settingsTenantId || !cleanAssistantId || !canManageAi) return;
-
-        runAction('Asistente IA principal actualizado', async () => {
-            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/ai-assistants/${encodeURIComponent(cleanAssistantId)}/default`, {
-                method: 'POST',
-                body: {}
-            });
-            await loadTenantAiAssistants(settingsTenantId);
-            setSelectedAiAssistantId(cleanAssistantId);
-        });
-    };
-
-    const toggleAiAssistantActive = (assistant) => {
-        const cleanAssistantId = sanitizeAiAssistantCode(assistant?.assistantId || '');
-        if (!settingsTenantId || !cleanAssistantId || !canManageAi) return;
-        const isActive = assistant?.isActive !== false;
-
-        runAction('Estado de asistente IA actualizado', async () => {
-            if (isActive) {
-                await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/ai-assistants/${encodeURIComponent(cleanAssistantId)}/deactivate`, {
-                    method: 'POST',
-                    body: {}
-                });
-            } else {
-                await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/ai-assistants/${encodeURIComponent(cleanAssistantId)}`, {
-                    method: 'PUT',
-                    body: { isActive: true }
-                });
-            }
-            await loadTenantAiAssistants(settingsTenantId);
-            setSelectedAiAssistantId(cleanAssistantId);
-        });
-    };
     const openRoleCreate = () => {
         if (!canManageRoles) return;
         setSelectedRoleKey('');
@@ -2498,6 +2383,10 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
+
 
 
 

@@ -1,3 +1,4 @@
+export { default as useAiAssistantsAdminActions } from './useAiAssistantsAdminActions';
 export { default as useCatalogAdminActions } from './useCatalogAdminActions';
 export { default as useOperationsPanelState } from './useOperationsPanelState';
 export { default as useQuickReplyAssetsUpload } from './useQuickReplyAssetsUpload';
