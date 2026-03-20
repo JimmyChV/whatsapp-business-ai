@@ -20,6 +20,7 @@ import {
     useAiAssistantsAdminActions,
     useCatalogAdminActions,
     useCustomersAdminActions,
+    useModuleConfigActions,
     useOperationsPanelState,
     usePlansRolesAdminActions,
     useQuickReplyAdminActions,
@@ -1051,6 +1052,40 @@ export default function SaasAdminPanel({
         setModuleUserPickerId('');
         setModuleQuickReplyLibraryDraft(getQuickReplyLibraryIdsForModule(item.moduleId));
     };
+    const {
+        clearConfigSelection,
+        getQuickReplyLibraryIdsForModule,
+        openConfigModuleCreate,
+        openConfigModuleEdit,
+        openConfigModuleView,
+        openConfigSettingsEdit,
+        openConfigSettingsView,
+        syncQuickReplyLibrariesForModule,
+        toggleAssignedUserForModule,
+        toggleCatalogForModule,
+        toggleQuickReplyLibraryForModuleDraft
+    } = useModuleConfigActions({
+        requestJson,
+        settingsTenantId,
+        canEditTenantSettings,
+        canEditModules,
+        waModules,
+        selectedConfigModule,
+        quickReplyLibraries,
+        activeCatalogOptions,
+        defaultAiAssistantId,
+        setSelectedConfigKey,
+        setSelectedRoleKey,
+        setSelectedWaModuleId,
+        setTenantSettingsPanelMode,
+        setWaModulePanelMode,
+        setCatalogPanelMode,
+        setModuleUserPickerId,
+        setModuleQuickReplyLibraryDraft,
+        setWaModuleForm,
+        openWaModuleEditor,
+        resetWaModuleForm
+    });
     async function runAction(label, action) {
         setError('');
         setBusy(true);
@@ -1111,7 +1146,6 @@ export default function SaasAdminPanel({
                 throw firstError.reason;
             }
         });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, canManageSaas, canViewSuperAdminSections]);
 
     const clearPanelSelection = useCallback(() => {
@@ -1240,7 +1274,6 @@ export default function SaasAdminPanel({
         ]).catch((err) => {
             setError(String(err?.message || err || 'No se pudo cargar configuracion del tenant.'));
         });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, canManageSaas, tenantScopeId]);
     useEffect(() => {
         if (!isOpen) return;
@@ -1465,164 +1498,6 @@ export default function SaasAdminPanel({
         setCurrentSection('saas_usuarios');
         scrollToSection('saas_usuarios');
     };
-    const openConfigSettingsView = () => {
-        setSelectedConfigKey('tenant_settings');
-        setTenantSettingsPanelMode('view');
-        setWaModulePanelMode('view');
-        setSelectedWaModuleId('');
-    };
-
-    const openConfigSettingsEdit = () => {
-        if (!settingsTenantId || !canEditTenantSettings) return;
-        setSelectedConfigKey('tenant_settings');
-        setTenantSettingsPanelMode('edit');
-        setWaModulePanelMode('view');
-        setSelectedWaModuleId('');
-    };
-
-    const openConfigModuleView = (moduleId) => {
-        const cleanModuleId = String(moduleId || '').trim();
-        if (!cleanModuleId) return;
-        const moduleItem = waModules.find((item) => String(item?.moduleId || '').trim() === cleanModuleId);
-        if (!moduleItem) return;
-        setSelectedConfigKey(`wa_module:${cleanModuleId}`);
-        setTenantSettingsPanelMode('view');
-        setWaModulePanelMode('view');
-        openWaModuleEditor(moduleItem);
-    };
-
-    const openConfigModuleCreate = () => {
-        if (!canEditModules) return;
-        setSelectedConfigKey('');
-        setSelectedRoleKey('');
-        setSelectedWaModuleId('');
-        setTenantSettingsPanelMode('view');
-        setWaModulePanelMode('create');
-        setModuleUserPickerId('');
-        setModuleQuickReplyLibraryDraft([]);
-        resetWaModuleForm();
-        setWaModuleForm((prev) => ({
-            ...prev,
-            catalogIds: activeCatalogOptions.length > 0
-                ? [String(activeCatalogOptions[0]?.catalogId || '').trim().toUpperCase()].filter(Boolean)
-                : [],
-            aiAssistantId: defaultAiAssistantId || ''
-        }));
-    };
-
-    const openConfigModuleEdit = () => {
-        if (!canEditModules) return;
-        if (!selectedConfigModule) return;
-        setSelectedConfigKey(`wa_module:${selectedConfigModule.moduleId}`);
-        openWaModuleEditor(selectedConfigModule);
-        setWaModulePanelMode('edit');
-    };
-
-    const clearConfigSelection = () => {
-        setSelectedConfigKey('');
-        setSelectedRoleKey('');
-        setSelectedWaModuleId('');
-        setTenantSettingsPanelMode('view');
-        setWaModulePanelMode('view');
-        setCatalogPanelMode('view');
-        setModuleUserPickerId('');
-        resetWaModuleForm();
-    };
-
-    const toggleAssignedUserForModule = (userId) => {
-        const cleanUserId = String(userId || '').trim();
-        if (!cleanUserId) return;
-        setWaModuleForm((prev) => {
-            const set = new Set(Array.isArray(prev.assignedUserIds) ? prev.assignedUserIds : []);
-            if (set.has(cleanUserId)) {
-                set.delete(cleanUserId);
-            } else {
-                set.add(cleanUserId);
-            }
-            return {
-                ...prev,
-                assignedUserIds: Array.from(set)
-            };
-        });
-        setModuleUserPickerId('');
-    };
-
-    
-
-
-    const toggleCatalogForModule = (catalogId) => {
-        const cleanCatalogId = String(catalogId || '').trim().toUpperCase();
-        if (!/^CAT-[A-Z0-9]{4,}$/.test(cleanCatalogId)) return;
-        setWaModuleForm((prev) => {
-            const current = normalizeCatalogIdsList(prev?.catalogIds || []);
-            const set = new Set(current);
-            if (set.has(cleanCatalogId)) set.delete(cleanCatalogId);
-            else set.add(cleanCatalogId);
-            return {
-                ...prev,
-                catalogIds: Array.from(set).sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' }))
-            };
-        });
-    };
-
-    const getQuickReplyLibraryIdsForModule = useCallback((moduleId = '') => {
-        const cleanModuleId = String(moduleId || '').trim().toLowerCase();
-        if (!cleanModuleId) return [];
-        return (Array.isArray(quickReplyLibraries) ? quickReplyLibraries : [])
-            .filter((library) => library?.isShared !== true)
-            .filter((library) => Array.isArray(library?.moduleIds) && library.moduleIds.includes(cleanModuleId))
-            .map((library) => String(library?.libraryId || '').trim().toUpperCase())
-            .filter(Boolean);
-    }, [quickReplyLibraries]);
-
-    const toggleQuickReplyLibraryForModuleDraft = (libraryId = '') => {
-        const cleanLibraryId = String(libraryId || '').trim().toUpperCase();
-        if (!cleanLibraryId) return;
-        setModuleQuickReplyLibraryDraft((prev) => {
-            const set = new Set((Array.isArray(prev) ? prev : []).map((entry) => String(entry || '').trim().toUpperCase()).filter(Boolean));
-            if (set.has(cleanLibraryId)) set.delete(cleanLibraryId);
-            else set.add(cleanLibraryId);
-            return Array.from(set);
-        });
-    };
-
-    const syncQuickReplyLibrariesForModule = useCallback(async (moduleId = '', selectedLibraryIds = []) => {
-        const cleanTenantId = String(settingsTenantId || '').trim();
-        const cleanModuleId = String(moduleId || '').trim().toLowerCase();
-        if (!cleanTenantId || !cleanModuleId) return;
-
-        const selectedSet = new Set((Array.isArray(selectedLibraryIds) ? selectedLibraryIds : [])
-            .map((entry) => String(entry || '').trim().toUpperCase())
-            .filter(Boolean));
-
-        const mutableLibraries = (Array.isArray(quickReplyLibraries) ? quickReplyLibraries : [])
-            .filter((library) => library?.isShared !== true);
-
-        for (const library of mutableLibraries) {
-            const libraryId = String(library?.libraryId || '').trim().toUpperCase();
-            if (!libraryId) continue;
-            const currentSet = new Set((Array.isArray(library?.moduleIds) ? library.moduleIds : [])
-                .map((entry) => String(entry || '').trim().toLowerCase())
-                .filter(Boolean));
-            const currentlyAssigned = currentSet.has(cleanModuleId);
-            const shouldAssign = selectedSet.has(libraryId);
-            if (currentlyAssigned === shouldAssign) continue;
-
-            if (shouldAssign) currentSet.add(cleanModuleId);
-            else currentSet.delete(cleanModuleId);
-
-            const payload = buildQuickReplyLibraryPayload({
-                ...library,
-                moduleIds: Array.from(currentSet),
-                isShared: false
-            });
-
-            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/quick-reply-libraries/${encodeURIComponent(libraryId)}`, {
-                method: 'PUT',
-                body: payload
-            });
-        }
-    }, [quickReplyLibraries, settingsTenantId]);
 
     if (!isOpen) return null;
 
@@ -2202,6 +2077,10 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
+
 
 
 

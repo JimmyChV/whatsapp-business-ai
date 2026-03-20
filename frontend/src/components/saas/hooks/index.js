@@ -16,3 +16,6 @@ export { default as useTenantsUsersAdminActions } from './useTenantsUsersAdminAc
 
 export { default as useCustomersAdminActions } from './useCustomersAdminActions';
 
+
+export { default as useModuleConfigActions } from './useModuleConfigActions';
+
