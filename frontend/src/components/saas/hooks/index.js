@@ -11,6 +11,7 @@ export { default as useSaasPanelDerivedData } from './useSaasPanelDerivedData';
 export { default as useSaasPanelFormSyncEffects } from './useSaasPanelFormSyncEffects';
 export { default as useSaasPanelLoadEffects } from './useSaasPanelLoadEffects';
 export { default as useSaasPanelSelectionHotkeys } from './useSaasPanelSelectionHotkeys';
+export { default as useSaasPanelSelectionState } from './useSaasPanelSelectionState';
 export { default as useSaasPanelTenantScopeEffects } from './useSaasPanelTenantScopeEffects';
 export { default as useSaasTenantDataLoaders } from './useSaasTenantDataLoaders';
 export { default as useSaasTenantScope } from './useSaasTenantScope';
