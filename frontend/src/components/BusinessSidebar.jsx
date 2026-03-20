@@ -27,6 +27,12 @@ import {
 import { useAiScopeState } from './business/hooks/useAiScopeState';
 import { attachAiSocketListeners, emitAiHistoryRequest, emitAiQuery } from './business/services/aiSocket.service';
 import { buildAiRuntimeContext, buildBusinessContextPrompt } from './business/businessSidebarAiContext.helpers';
+import {
+    buildCartSnapshotPayload,
+    buildQuoteMessageFromCart,
+    calculateCartPricing,
+    getCartLineBreakdown
+} from './business/businessSidebarCart.helpers';
 // =========================================================
 // CLIENT PROFILE PANEL
 // =========================================================
@@ -1804,172 +1810,56 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     };
 
         // Cart functions
-    const getLineBreakdown = (item = {}) => {
-        const qty = Math.max(1, Math.trunc(parseMoney(item.qty, 1)) || 1);
-        const unitPrice = Math.max(0, parseMoney(item.price, 0));
-        const regularUnitCandidate = Math.max(0, parseMoney(item.regularPrice, unitPrice));
-        const regularUnit = regularUnitCandidate > 0 ? regularUnitCandidate : unitPrice;
+    const getLineBreakdown = (item = {}) => getCartLineBreakdown(item, {
+        parseMoney,
+        roundMoney,
+        clampNumber
+    });
 
-        const regularSubtotal = roundMoney(regularUnit * qty);
-        const baseSubtotal = roundMoney(unitPrice * qty);
-        const includedDiscount = roundMoney(Math.max(regularSubtotal - baseSubtotal, 0));
+    const {
+        lineBreakdowns,
+        regularSubtotalTotal,
+        subtotalProducts,
+        normalizedGlobalDiscountValue,
+        subtotalAfterGlobal,
+        totalDiscountForQuote,
+        safeDeliveryAmount,
+        deliveryFee,
+        cartTotal
+    } = useMemo(() => calculateCartPricing({
+        cart,
+        globalDiscountEnabled,
+        globalDiscountType,
+        globalDiscountValue,
+        deliveryType,
+        deliveryAmount,
+        parseMoney,
+        roundMoney,
+        clampNumber
+    }), [
+        cart,
+        globalDiscountEnabled,
+        globalDiscountType,
+        globalDiscountValue,
+        deliveryType,
+        deliveryAmount
+    ]);
 
-        const lineDiscountEnabled = Boolean(item.lineDiscountEnabled);
-        const lineDiscountType = item.lineDiscountType === 'amount' ? 'amount' : 'percent';
-        const rawLineDiscountValue = Math.max(0, parseMoney(item.lineDiscountValue, 0));
-        const lineDiscountValue = lineDiscountType === 'percent'
-            ? clampNumber(rawLineDiscountValue, 0, 100)
-            : rawLineDiscountValue;
-
-        let additionalDiscountApplied = 0;
-        if (lineDiscountEnabled) {
-            if (lineDiscountType === 'percent') {
-                additionalDiscountApplied = roundMoney(baseSubtotal * (lineDiscountValue / 100));
-            } else {
-                additionalDiscountApplied = roundMoney(Math.min(baseSubtotal, lineDiscountValue));
-            }
-        }
-
-        const lineFinal = roundMoney(baseSubtotal - additionalDiscountApplied);
-
-        return {
-            qty,
-            unitPrice,
-            regularUnit,
-            regularSubtotal,
-            baseSubtotal,
-            includedDiscount,
-            lineDiscountEnabled,
-            lineDiscountType,
-            lineDiscountValue,
-            additionalDiscountApplied,
-            lineFinal,
-            totalDiscount: roundMoney(includedDiscount + additionalDiscountApplied)
-        };
-    };
-
-    const addToCart = (item, qtyToAdd = 1) => {
-        const safeQty = Math.max(1, Number(qtyToAdd) || 1);
-        setCart(prev => {
-            const existing = prev.find(c => c.id === item.id);
-            if (existing) return prev.map(c => c.id === item.id ? { ...c, qty: c.qty + safeQty } : c);
-            return [...prev, { ...item, qty: safeQty, lineDiscountEnabled: false, lineDiscountType: 'percent', lineDiscountValue: 0 }];
-        });
-    };
-
-    const removeFromCart = (id) => setCart(prev => prev.filter(c => c.id !== id));
-    const updateQty = (id, delta) => setCart(prev => prev.map(c => c.id === id ? { ...c, qty: Math.max(1, c.qty + delta) } : c));
-
-    const updateCatalogQty = (id, delta) => {
-        const safeDelta = Number(delta) || 0;
-        if (!id || !safeDelta) return;
-        const targetId = String(id);
-        setCart(prev => prev.flatMap((item) => {
-            if (String(item.id) !== targetId) return [item];
-            const nextQty = (Number(item.qty) || 1) + safeDelta;
-            if (nextQty <= 0) return [];
-            return [{ ...item, qty: nextQty }];
-        }));
-    };
-
-    const updateItemDiscountEnabled = (id, enabled) => {
-        const isEnabled = Boolean(enabled);
-        setCart(prev => prev.map(c => c.id === id
-            ? {
-                ...c,
-                lineDiscountEnabled: isEnabled,
-                lineDiscountValue: isEnabled ? Math.max(0, parseMoney(c.lineDiscountValue, 0)) : 0
-            }
-            : c));
-    };
-
-    const updateItemDiscountType = (id, type) => {
-        const safeType = type === 'amount' ? 'amount' : 'percent';
-        setCart(prev => prev.map(c => c.id === id
-            ? {
-                ...c,
-                lineDiscountType: safeType,
-                lineDiscountValue: 0
-            }
-            : c));
-    };
-
-    const updateItemDiscountValue = (id, value) => {
-        setCart(prev => prev.map(c => {
-            if (c.id !== id) return c;
-            const safeType = c.lineDiscountType === 'amount' ? 'amount' : 'percent';
-            const rawValue = Math.max(0, parseMoney(value, 0));
-            const safeValue = safeType === 'percent' ? clampNumber(rawValue, 0, 100) : rawValue;
-            return { ...c, lineDiscountValue: safeValue };
-        }));
-    };
-
-    const lineBreakdowns = useMemo(
-        () => cart.map((item) => ({ item, ...getLineBreakdown(item) })),
-        [cart]
-    );
-    const regularSubtotalTotal = useMemo(
-        () => roundMoney(lineBreakdowns.reduce((sum, line) => sum + line.regularSubtotal, 0)),
-        [lineBreakdowns]
-    );
-    const subtotalProducts = useMemo(
-        () => roundMoney(lineBreakdowns.reduce((sum, line) => sum + line.lineFinal, 0)),
-        [lineBreakdowns]
-    );
-
-    const rawGlobalDiscountValue = Math.max(0, parseMoney(globalDiscountValue, 0));
-    const normalizedGlobalDiscountValue = globalDiscountType === 'amount'
-        ? rawGlobalDiscountValue
-        : clampNumber(rawGlobalDiscountValue, 0, 100);
-
-    const globalDiscountApplied = useMemo(
-        () => (
-            globalDiscountEnabled
-                ? roundMoney(Math.min(
-                    subtotalProducts,
-                    globalDiscountType === 'amount'
-                        ? normalizedGlobalDiscountValue
-                        : subtotalProducts * (normalizedGlobalDiscountValue / 100)
-                ))
-                : 0
-        ),
-        [globalDiscountEnabled, subtotalProducts, globalDiscountType, normalizedGlobalDiscountValue]
-    );
-
-    const subtotalAfterGlobal = useMemo(
-        () => roundMoney(subtotalProducts - globalDiscountApplied),
-        [subtotalProducts, globalDiscountApplied]
-    );
-    const totalDiscountForQuote = useMemo(
-        () => roundMoney(Math.max(0, regularSubtotalTotal - subtotalAfterGlobal)),
-        [regularSubtotalTotal, subtotalAfterGlobal]
-    );
-
-    const safeDeliveryAmount = Math.max(0, parseMoney(deliveryAmount, 0));
-    const deliveryFee = deliveryType === 'amount' ? safeDeliveryAmount : 0;
-    const cartTotal = roundMoney(subtotalAfterGlobal + deliveryFee);
     const lastCartSnapshotSignatureRef = useRef('');
     const onCartSnapshotChangeRef = useRef(onCartSnapshotChange);
 
-    const cartSnapshot = useMemo(() => ({
-        chatId: String(activeChatId || '').trim() || null,
-        items: lineBreakdowns.map(({ item, qty, unitPrice, lineDiscountEnabled, lineDiscountType, lineDiscountValue }) => ({
-            id: item?.id || null,
-            title: item?.title || null,
-            qty,
-            price: Number(unitPrice || 0),
-            regularPrice: Number(parseMoney(item?.regularPrice, unitPrice) || 0),
-            category: item?.category || item?.categoryName || null,
-            lineDiscountEnabled: Boolean(lineDiscountEnabled),
-            lineDiscountType: lineDiscountType === 'amount' ? 'amount' : 'percent',
-            lineDiscountValue: Number(lineDiscountValue || 0)
-        })),
-        subtotal: Number(subtotalProducts || 0),
-        discount: Number(totalDiscountForQuote || 0),
-        total: Number(cartTotal || 0),
-        delivery: Number(deliveryFee || 0),
-        currency: 'PEN',
-        notes: `delivery=${deliveryType}; globalDiscount=${globalDiscountEnabled ? `${globalDiscountType}:${normalizedGlobalDiscountValue}` : 'none'}`
+    const cartSnapshot = useMemo(() => buildCartSnapshotPayload({
+        activeChatId,
+        lineBreakdowns,
+        parseMoney,
+        subtotalProducts,
+        totalDiscountForQuote,
+        cartTotal,
+        deliveryFee,
+        deliveryType,
+        globalDiscountEnabled,
+        globalDiscountType,
+        normalizedGlobalDiscountValue
     }), [
         activeChatId,
         lineBreakdowns,
@@ -1996,40 +1886,18 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     }, [cartSnapshot]);
 
     const sendQuoteToChat = () => {
-        if (cart.length === 0) return;
-
-        const separator = '---------------------------------------------';
-
-        const productRows = cart.map((item) => {
-            const line = getLineBreakdown(item);
-            return `\u2796 *${line.qty}* ${formatQuoteProductTitle(item.title)}`;
+        const msg = buildQuoteMessageFromCart({
+            cart,
+            getLineBreakdown,
+            regularSubtotalTotal,
+            totalDiscountForQuote,
+            subtotalAfterGlobal,
+            deliveryFee,
+            cartTotal,
+            formatMoneyCompact,
+            formatQuoteProductTitle
         });
-
-        const paymentRows = [
-            `\u2796 Subtotal: S/ ${formatMoneyCompact(regularSubtotalTotal)}`,
-        ];
-
-        if (totalDiscountForQuote > 0) {
-            paymentRows.push(`\u2796 *DESCUENTO: S/ ${formatMoneyCompact(totalDiscountForQuote)}*`);
-            paymentRows.push(`\u2796 Total con Descuento: S/ ${formatMoneyCompact(subtotalAfterGlobal)}`);
-        }
-
-        paymentRows.push(`\u2796 Delivery: ${deliveryFee > 0 ? `S/ ${formatMoneyCompact(deliveryFee)}` : 'Gratuito'}`);
-        paymentRows.push(`\u2796 *TOTAL A PAGAR: S/ ${formatMoneyCompact(cartTotal)}*`);
-
-        const msg = [
-            `*\u2705 COTIZACION \u2705*`,
-            separator,
-            '*_DETALLE DE PRODUCTOS:_*',
-            separator,
-            ...productRows,
-            separator,
-            '*_DETALLE DE PAGO:_*',
-            separator,
-            ...paymentRows,
-            separator,
-        ].join('\n');
-
+        if (!msg) return;
         setInputText(msg);
     };
 
@@ -2441,6 +2309,8 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 };
 
 export default BusinessSidebar;
+
+
 
 
 
