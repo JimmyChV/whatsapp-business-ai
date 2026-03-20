@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import * as saasAdminPanelHelpers from './saas/helpers';
 import SaasPanelHeader from './saas/shared/SaasPanelHeader';
@@ -43,6 +43,7 @@ import {
     useSaasPanelCrossNavigation,
     useSaasPanelTenantScopeEffects,
     useSaasPanelUserScopeState,
+    useSaasRunActionBridge,
     useSaasTenantDataLoaders,
     useSaasTenantScope,
     useSaasTenantUsers,
@@ -595,13 +596,7 @@ export default function SaasAdminPanel({
         setLabelPanelMode,
         setLoadingLabels
     });
-    const runActionFallback = useCallback(async (_label, action) => {
-        if (typeof action === 'function') {
-            await action();
-        }
-    }, []);
-    const runActionRef = useRef(runActionFallback);
-    const runActionProxy = useCallback((label, action) => runActionRef.current(label, action), []);
+    const { runActionProxy, setRunAction } = useSaasRunActionBridge();
     const {
         loadTenantCatalogs,
         loadTenantCatalogProducts,
@@ -955,8 +950,8 @@ export default function SaasAdminPanel({
 
 
     useEffect(() => {
-        runActionRef.current = runAction || runActionFallback;
-    }, [runAction, runActionFallback]);
+        setRunAction(runAction);
+    }, [runAction, setRunAction]);
 
     useSaasPanelLoadEffects({
         isOpen,
