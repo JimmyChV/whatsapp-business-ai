@@ -1,3 +1,4 @@
+export { default as useCatalogAdminActions } from './useCatalogAdminActions';
 export { default as useOperationsPanelState } from './useOperationsPanelState';
 export { default as useQuickReplyAssetsUpload } from './useQuickReplyAssetsUpload';
 export { default as useQuickReplyAdminActions } from './useQuickReplyAdminActions';

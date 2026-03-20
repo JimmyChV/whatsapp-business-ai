@@ -17,6 +17,7 @@ import {
     UsersSection
 } from './saas/sections';
 import {
+    useCatalogAdminActions,
     useOperationsPanelState,
     useQuickReplyAdminActions,
     useQuickReplyAssetsUpload,
@@ -39,11 +40,8 @@ const {
     EMPTY_INTEGRATIONS_FORM,
     EMPTY_TENANT_CATALOG_FORM,
     EMPTY_CATALOG_PRODUCT_FORM,
-    normalizeCatalogProductItem,
     buildCatalogProductFormFromItem,
-    buildCatalogProductPayload,
     normalizeCatalogIdsList,
-    normalizeTenantCatalogItem,
     buildTenantCatalogFormFromItem,
     buildTenantCatalogPayload,
     EMPTY_ACCESS_CATALOG,
@@ -584,6 +582,43 @@ export default function SaasAdminPanel({
         setLabelPanelMode,
         setLoadingLabels
     });
+    const {
+        loadTenantCatalogs,
+        loadTenantCatalogProducts,
+        openCatalogProductCreate,
+        openCatalogProductEdit,
+        cancelCatalogProductEdit,
+        saveCatalogProduct,
+        deactivateCatalogProduct,
+        handleCatalogProductImageUpload,
+        openCatalogView,
+        openCatalogCreate,
+        openCatalogEdit,
+        cancelCatalogEdit
+    } = useCatalogAdminActions({
+        requestJson,
+        settingsTenantId,
+        canEditCatalog,
+        selectedTenantCatalog,
+        selectedCatalogProduct,
+        selectedCatalogProductId,
+        catalogProductForm,
+        catalogProductPanelMode,
+        emptyCatalogProductForm: EMPTY_CATALOG_PRODUCT_FORM,
+        emptyTenantCatalogForm: EMPTY_TENANT_CATALOG_FORM,
+        setTenantCatalogs,
+        setSelectedCatalogId,
+        setTenantCatalogForm,
+        setTenantCatalogProducts,
+        setSelectedCatalogProductId,
+        setCatalogProductForm,
+        setCatalogProductPanelMode,
+        setCatalogProductImageError,
+        setCatalogProductImageUploading,
+        setLoadingTenantCatalogs,
+        setLoadingCatalogProducts,
+        setCatalogPanelMode
+    });
     const isSectionEnabled = useCallback((sectionId) => {
         const cleanId = String(sectionId || '').trim();
         if (cleanId === 'saas_empresas') return canManageTenants;
@@ -831,234 +866,6 @@ export default function SaasAdminPanel({
             setLoadingAiAssistants(false);
         }
     };
-    const loadTenantCatalogs = async (tenantId) => {
-        const cleanTenantId = String(tenantId || '').trim();
-        if (!cleanTenantId) {
-            setTenantCatalogs([]);
-            setSelectedCatalogId('');
-            setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
-            setTenantCatalogProducts([]);
-            setSelectedCatalogProductId('');
-            setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
-            setCatalogProductPanelMode('view');
-            setCatalogProductImageError('');
-            return;
-        }
-        setLoadingTenantCatalogs(true);
-        try {
-            const payload = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/catalogs`);
-            const items = (Array.isArray(payload?.items) ? payload.items : [])
-                .map((entry) => normalizeTenantCatalogItem(entry))
-                .filter(Boolean);
-            setTenantCatalogs(items);
-            setSelectedCatalogId((prev) => {
-                const cleanPrev = String(prev || '').trim().toUpperCase();
-                if (cleanPrev && items.some((entry) => String(entry?.catalogId || '').trim().toUpperCase() === cleanPrev)) {
-                    return cleanPrev;
-                }
-                return '';
-            });
-        } finally {
-            setLoadingTenantCatalogs(false);
-        }
-    };
-    const loadTenantCatalogProducts = async (tenantId, catalogId) => {
-        const cleanTenantId = String(tenantId || '').trim();
-        const cleanCatalogId = String(catalogId || '').trim().toUpperCase();
-        if (!cleanTenantId || !cleanCatalogId) {
-            setTenantCatalogProducts([]);
-            setSelectedCatalogProductId('');
-            setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
-            setCatalogProductPanelMode('view');
-            setCatalogProductImageError('');
-            return;
-        }
-
-        setLoadingCatalogProducts(true);
-        try {
-            const payload = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/catalogs/${encodeURIComponent(cleanCatalogId)}/products`);
-            const items = (Array.isArray(payload?.items) ? payload.items : [])
-                .map((entry) => normalizeCatalogProductItem(entry))
-                .filter(Boolean)
-                .sort((a, b) => String(a?.title || '').localeCompare(String(b?.title || ''), 'es', { sensitivity: 'base' }));
-
-            setTenantCatalogProducts(items);
-            setSelectedCatalogProductId((prev) => {
-                const cleanPrev = String(prev || '').trim();
-                if (cleanPrev && items.some((item) => String(item?.productId || '').trim() === cleanPrev)) {
-                    return cleanPrev;
-                }
-                return '';
-            });
-        } finally {
-            setLoadingCatalogProducts(false);
-        }
-    };
-
-    const openCatalogProductCreate = () => {
-        if (!canEditCatalog || !selectedTenantCatalog || selectedTenantCatalog.sourceType !== 'local') return;
-        setSelectedCatalogProductId('');
-        setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
-        setCatalogProductPanelMode('create');
-        setCatalogProductImageError('');
-    };
-
-    const openCatalogProductEdit = (product) => {
-        if (!canEditCatalog || !product) return;
-        setSelectedCatalogProductId(String(product.productId || '').trim());
-        setCatalogProductForm(buildCatalogProductFormFromItem(product));
-        setCatalogProductPanelMode('edit');
-        setCatalogProductImageError('');
-    };
-
-    const cancelCatalogProductEdit = () => {
-        if (selectedCatalogProduct) {
-            setCatalogProductForm(buildCatalogProductFormFromItem(selectedCatalogProduct));
-        } else {
-            setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
-        }
-        setCatalogProductPanelMode('view');
-            setCatalogProductImageError('');
-    };
-
-    const saveCatalogProduct = async () => {
-        const cleanTenantId = String(settingsTenantId || '').trim();
-        const cleanCatalogId = String(selectedTenantCatalog?.catalogId || '').trim().toUpperCase();
-        if (!cleanTenantId || !cleanCatalogId) throw new Error('Selecciona tenant y catalogo antes de guardar.');
-
-        const payload = buildCatalogProductPayload(catalogProductForm, {
-            moduleId: '',
-            catalogId: cleanCatalogId
-        });
-
-        if (!String(payload.title || '').trim()) throw new Error('Titulo de producto es obligatorio.');
-        if (!String(payload.price || '').trim()) throw new Error('Precio de producto es obligatorio.');
-
-        if (catalogProductPanelMode === 'create') {
-            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/catalogs/${encodeURIComponent(cleanCatalogId)}/products`, {
-                method: 'POST',
-                body: payload
-            });
-        } else {
-            const cleanProductId = String(catalogProductForm.productId || selectedCatalogProductId || '').trim();
-            if (!cleanProductId) throw new Error('Producto invalido para actualizar.');
-            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/catalogs/${encodeURIComponent(cleanCatalogId)}/products/${encodeURIComponent(cleanProductId)}`, {
-                method: 'PUT',
-                body: payload
-            });
-        }
-
-        await loadTenantCatalogProducts(cleanTenantId, cleanCatalogId);
-        setCatalogProductPanelMode('view');
-        setCatalogProductForm({ ...EMPTY_CATALOG_PRODUCT_FORM });
-    };
-
-    const deactivateCatalogProduct = async (productId) => {
-        const cleanTenantId = String(settingsTenantId || '').trim();
-        const cleanCatalogId = String(selectedTenantCatalog?.catalogId || '').trim().toUpperCase();
-        const cleanProductId = String(productId || '').trim();
-        if (!cleanTenantId || !cleanCatalogId || !cleanProductId) return;
-
-        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/catalogs/${encodeURIComponent(cleanCatalogId)}/products/${encodeURIComponent(cleanProductId)}/deactivate`, {
-            method: 'POST',
-            body: {}
-        });
-        await loadTenantCatalogProducts(cleanTenantId, cleanCatalogId);
-        setCatalogProductPanelMode('view');
-    };
-
-    const handleCatalogProductImageUpload = async (file) => {
-        if (!file) return;
-        const cleanTenantId = String(settingsTenantId || '').trim();
-        const cleanCatalogId = String(selectedTenantCatalog?.catalogId || '').trim().toUpperCase();
-        if (!cleanTenantId || !cleanCatalogId) {
-            setCatalogProductImageError('Selecciona un catalogo local antes de subir imagen.');
-            return;
-        }
-
-        try {
-            setCatalogProductImageUploading(true);
-            setCatalogProductImageError('');
-            const uploadedUrl = await uploadImageAsset({
-                file,
-                tenantId: cleanTenantId,
-                scope: `catalog-product-${cleanCatalogId.toLowerCase()}`
-            });
-            if (!uploadedUrl) throw new Error('No se recibio URL de imagen.');
-            setCatalogProductForm((prev) => ({ ...prev, imageUrl: uploadedUrl }));
-        } catch (error) {
-            setCatalogProductImageError(String(error?.message || 'No se pudo subir la imagen del producto.'));
-        } finally {
-            setCatalogProductImageUploading(false);
-        }
-    };
-    const loadPlanMatrix = async () => {
-        setLoadingPlans(true);
-        try {
-            const payload = await requestJson('/api/admin/saas/plans');
-            const rows = Array.isArray(payload?.plans) ? payload.plans : [];
-            const nextMatrix = {};
-            rows.forEach((row) => {
-                const planId = String(row?.id || '').trim().toLowerCase();
-                if (!planId) return;
-                nextMatrix[planId] = row?.limits && typeof row.limits === 'object' ? row.limits : {};
-            });
-            setPlanMatrix(nextMatrix);
-            setSelectedPlanId((prev) => {
-                const cleanPrev = String(prev || '').trim().toLowerCase();
-                if (cleanPrev && nextMatrix?.[cleanPrev]) return cleanPrev;
-                return planIds.find((planId) => nextMatrix?.[planId]) || PLAN_OPTIONS[0] || '';
-            });
-        } finally {
-            setLoadingPlans(false);
-        }
-    };
-
-    const loadAccessCatalog = async () => {
-        setLoadingAccessCatalog(true);
-        try {
-            const payload = await requestJson('/api/admin/saas/access-profiles');
-            setAccessCatalog(normalizeAccessCatalogPayload(payload));
-        } catch (_) {
-            setAccessCatalog(EMPTY_ACCESS_CATALOG);
-        } finally {
-            setLoadingAccessCatalog(false);
-        }
-    };
-
-    const openCatalogView = (catalogId = '') => {
-        const cleanCatalogId = String(catalogId || '').trim().toUpperCase();
-        setSelectedCatalogId(cleanCatalogId);
-        if (!cleanCatalogId) {
-            setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
-        }
-        setCatalogPanelMode('view');
-        setCatalogProductPanelMode('view');
-    };
-
-    const openCatalogCreate = () => {
-        if (!canEditCatalog) return;
-        setSelectedCatalogId('');
-        setSelectedCatalogProductId('');
-        setCatalogPanelMode('create');
-        setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
-    };
-
-    const openCatalogEdit = () => {
-        if (!canEditCatalog || !selectedTenantCatalog) return;
-        setCatalogPanelMode('edit');
-        setTenantCatalogForm(buildTenantCatalogFormFromItem(selectedTenantCatalog));
-    };
-
-    const cancelCatalogEdit = () => {
-        if (selectedTenantCatalog) {
-            setTenantCatalogForm(buildTenantCatalogFormFromItem(selectedTenantCatalog));
-        } else {
-            setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
-        }
-        setCatalogPanelMode('view');
-    };
-
     const openPlanView = (planId) => {
         const cleanPlanId = String(planId || '').trim().toLowerCase();
         if (!cleanPlanId) return;
@@ -2691,6 +2498,9 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
 
 
 
