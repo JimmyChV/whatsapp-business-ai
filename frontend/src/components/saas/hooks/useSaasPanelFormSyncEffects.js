@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 export default function useSaasPanelFormSyncEffects({
     isOpen = false,
@@ -51,6 +51,45 @@ export default function useSaasPanelFormSyncEffects({
     setQuickReplyLibraryForm,
     setQuickReplyItemForm
 } = {}) {
+    const fnRef = useRef({
+        emptyCatalogProductForm,
+        loadTenantCatalogProducts,
+        setError,
+        resetWaModuleForm,
+        openWaModuleEditor,
+        setTenantCatalogProducts,
+        setSelectedCatalogProductId,
+        setCatalogProductForm,
+        setCatalogProductPanelMode,
+        setCatalogProductImageError
+    });
+
+    useEffect(() => {
+        fnRef.current = {
+            emptyCatalogProductForm,
+            loadTenantCatalogProducts,
+            setError,
+            resetWaModuleForm,
+            openWaModuleEditor,
+            setTenantCatalogProducts,
+            setSelectedCatalogProductId,
+            setCatalogProductForm,
+            setCatalogProductPanelMode,
+            setCatalogProductImageError
+        };
+    }, [
+        emptyCatalogProductForm,
+        loadTenantCatalogProducts,
+        openWaModuleEditor,
+        resetWaModuleForm,
+        setCatalogProductForm,
+        setCatalogProductImageError,
+        setCatalogProductPanelMode,
+        setError,
+        setSelectedCatalogProductId,
+        setTenantCatalogProducts
+    ]);
+
     useEffect(() => {
         if (tenantPanelMode === 'create') return;
         if (!selectedTenant) {
@@ -96,38 +135,63 @@ export default function useSaasPanelFormSyncEffects({
         setTenantCatalogForm(buildTenantCatalogFormFromItem(selectedTenantCatalog));
     }, [buildTenantCatalogFormFromItem, catalogPanelMode, emptyTenantCatalogForm, selectedTenantCatalog, setTenantCatalogForm]);
 
+    const catalogProductsSyncRef = useRef('');
     useEffect(() => {
-        if (!isOpen || !settingsTenantId || !selectedTenantCatalog || selectedTenantCatalog.sourceType !== 'local') {
-            setTenantCatalogProducts([]);
-            setSelectedCatalogProductId('');
-            setCatalogProductForm({ ...emptyCatalogProductForm });
-            setCatalogProductPanelMode('view');
-            setCatalogProductImageError('');
-            return;
-        }
-        loadTenantCatalogProducts(settingsTenantId, selectedTenantCatalog.catalogId)
-            .catch((err) => setError(String(err?.message || err || 'No se pudieron cargar productos del catalogo.')));
-    }, [
-        emptyCatalogProductForm,
-        isOpen,
-        loadTenantCatalogProducts,
-        selectedTenantCatalog,
-        setCatalogProductForm,
-        setCatalogProductImageError,
-        setCatalogProductPanelMode,
-        setError,
-        setSelectedCatalogProductId,
-        setTenantCatalogProducts,
-        settingsTenantId
-    ]);
+        const tenantId = String(settingsTenantId || '').trim();
+        const catalogId = String(selectedTenantCatalog?.catalogId || '').trim();
+        const sourceType = String(selectedTenantCatalog?.sourceType || '').trim().toLowerCase();
+        const shouldLoad = Boolean(isOpen && tenantId && catalogId && sourceType === 'local');
 
-    useEffect(() => {
-        if (!selectedWaModule) {
-            resetWaModuleForm();
+        if (!shouldLoad) {
+            if (catalogProductsSyncRef.current === 'reset') return;
+            catalogProductsSyncRef.current = 'reset';
+            const {
+                setTenantCatalogProducts: setProducts,
+                setSelectedCatalogProductId: setSelectedProductId,
+                setCatalogProductForm: setProductForm,
+                setCatalogProductPanelMode: setProductPanelMode,
+                setCatalogProductImageError: setProductImageError,
+                emptyCatalogProductForm: emptyProductForm
+            } = fnRef.current;
+            setProducts([]);
+            setSelectedProductId('');
+            setProductForm({ ...emptyProductForm });
+            setProductPanelMode('view');
+            setProductImageError('');
             return;
         }
-        openWaModuleEditor(selectedWaModule);
-    }, [openWaModuleEditor, resetWaModuleForm, selectedWaModule]);
+
+        const loadKey = `${tenantId}:${catalogId}`;
+        if (catalogProductsSyncRef.current === loadKey) return;
+        catalogProductsSyncRef.current = loadKey;
+
+        const {
+            loadTenantCatalogProducts: loadProducts,
+            setError: setPanelError
+        } = fnRef.current;
+        Promise.resolve(loadProducts(tenantId, catalogId))
+            .catch((err) => setPanelError(String(err?.message || err || 'No se pudieron cargar productos del catalogo.')));
+    }, [isOpen, settingsTenantId, selectedTenantCatalog?.catalogId, selectedTenantCatalog?.sourceType]);
+
+    const waModuleSyncRef = useRef('');
+    useEffect(() => {
+        const moduleId = String(selectedWaModule?.moduleId || '').trim();
+        const {
+            resetWaModuleForm: resetModuleForm,
+            openWaModuleEditor: openModuleEditor
+        } = fnRef.current;
+
+        if (!moduleId) {
+            if (waModuleSyncRef.current === 'reset') return;
+            waModuleSyncRef.current = 'reset';
+            resetModuleForm();
+            return;
+        }
+
+        if (waModuleSyncRef.current === moduleId) return;
+        waModuleSyncRef.current = moduleId;
+        openModuleEditor(selectedWaModule);
+    }, [selectedWaModule]);
 
     useEffect(() => {
         if (!selectedQuickReplyLibrary) {

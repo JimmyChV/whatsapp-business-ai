@@ -33,6 +33,8 @@ import {
     useSaasPanelLoadEffects,
     useSaasPanelSelectionHotkeys,
     useSaasPanelSelectionState,
+    useSaasPanelSectionSyncEffects,
+    useSaasPanelCrossNavigation,
     useSaasPanelTenantScopeEffects,
     useSaasTenantDataLoaders,
     useSaasTenantScope,
@@ -1187,32 +1189,24 @@ export default function SaasAdminPanel({
         setSelectedTenantId,
         setCurrentSection
     });
-    useEffect(() => {
-        const cleanPlanId = String(selectedPlanId || '').trim().toLowerCase();
-        if (!cleanPlanId) return;
-        const limits = planMatrix?.[cleanPlanId] && typeof planMatrix[cleanPlanId] === 'object' ? planMatrix[cleanPlanId] : {};
-        setPlanForm(normalizePlanForm(cleanPlanId, limits));
-    }, [selectedPlanId, planMatrix]);
-    useEffect(() => {
-        if (!String(selectedConfigKey || '').startsWith('wa_module:')) return;
-        if (selectedConfigModule) return;
-        setSelectedConfigKey('');
-        setSelectedRoleKey('');
-        setSelectedWaModuleId('');
-        setWaModulePanelMode('view');
-        resetWaModuleForm();
-    }, [selectedConfigKey, selectedConfigModule]);
-    useEffect(() => {
-        if (!isOpen || !canManageSaas) return;
-        const sectionId = String(initialSection || '').trim();
-        if (!sectionId) return;
-        setCurrentSection(sectionId);
-    }, [isOpen, canManageSaas, initialSection]);
-    useEffect(() => {
-        const next = String(activeSection || '').trim();
-        if (!next) return;
-        setCurrentSection(next);
-    }, [activeSection]);
+    useSaasPanelSectionSyncEffects({
+        isOpen,
+        canManageSaas,
+        initialSection,
+        activeSection,
+        selectedPlanId,
+        planMatrix,
+        selectedConfigKey,
+        selectedConfigModule,
+        normalizePlanForm,
+        setPlanForm,
+        setCurrentSection,
+        setSelectedConfigKey,
+        setSelectedRoleKey,
+        setSelectedWaModuleId,
+        setWaModulePanelMode,
+        resetWaModuleForm
+    });
     useSaasPanelFormSyncEffects({
         isOpen,
         settingsTenantId,
@@ -1264,17 +1258,15 @@ export default function SaasAdminPanel({
         setQuickReplyLibraryForm,
         setQuickReplyItemForm
     });
-    const openTenantFromUserMembership = (tenantId) => {
-        openTenantView(tenantId);
-        setCurrentSection('saas_empresas');
-        scrollToSection('saas_empresas');
-    };
-
-    const openUserFromTenant = (userId) => {
-        openUserView(userId);
-        setCurrentSection('saas_usuarios');
-        scrollToSection('saas_usuarios');
-    };
+    const {
+        openTenantFromUserMembership,
+        openUserFromTenant
+    } = useSaasPanelCrossNavigation({
+        openTenantView,
+        openUserView,
+        setCurrentSection,
+        scrollToSection
+    });
 
     if (!isOpen) return null;
 
@@ -1854,6 +1846,10 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
+
 
 
 

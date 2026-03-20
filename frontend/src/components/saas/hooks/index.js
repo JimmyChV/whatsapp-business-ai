@@ -13,6 +13,8 @@ export { default as useSaasPanelLoadEffects } from './useSaasPanelLoadEffects';
 export { default as useSaasPanelSelectionHotkeys } from './useSaasPanelSelectionHotkeys';
 export { default as useSaasPanelSelectionState } from './useSaasPanelSelectionState';
 export { default as useSaasPanelTenantScopeEffects } from './useSaasPanelTenantScopeEffects';
+export { default as useSaasPanelSectionSyncEffects } from './useSaasPanelSectionSyncEffects';
+export { default as useSaasPanelCrossNavigation } from './useSaasPanelCrossNavigation';
 export { default as useSaasTenantDataLoaders } from './useSaasTenantDataLoaders';
 export { default as useSaasTenantScope } from './useSaasTenantScope';
 export { default as useSaasTenantUsers } from './useSaasTenantUsers';
