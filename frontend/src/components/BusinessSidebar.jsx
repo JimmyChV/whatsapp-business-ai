@@ -33,6 +33,14 @@ import {
     calculateCartPricing,
     getCartLineBreakdown
 } from './business/businessSidebarCart.helpers';
+import {
+    addItemToCartState,
+    removeItemFromCartState,
+    setCartItemDiscountEnabledState,
+    setCartItemDiscountTypeState,
+    setCartItemDiscountValueState,
+    updateCartItemQtyState
+} from './business/businessSidebarCartMutations.helpers';
 // =========================================================
 // CLIENT PROFILE PANEL
 // =========================================================
@@ -1900,7 +1908,33 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         if (!msg) return;
         setInputText(msg);
     };
+    const addToCart = (item, qtyToAdd = 1) => {
+        setCart((previous) => addItemToCartState(previous, item, qtyToAdd));
+    };
 
+    const removeFromCart = (id) => {
+        setCart((previous) => removeItemFromCartState(previous, id));
+    };
+
+    const updateQty = (id, delta) => {
+        setCart((previous) => updateCartItemQtyState(previous, id, delta));
+    };
+
+    const updateCatalogQty = (id, delta) => {
+        setCart((previous) => updateCartItemQtyState(previous, id, delta));
+    };
+
+    const updateItemDiscountEnabled = (id, enabled) => {
+        setCart((previous) => setCartItemDiscountEnabledState(previous, id, enabled, parseMoney));
+    };
+
+    const updateItemDiscountType = (id, type) => {
+        setCart((previous) => setCartItemDiscountTypeState(previous, id, type));
+    };
+
+    const updateItemDiscountValue = (id, value) => {
+        setCart((previous) => setCartItemDiscountValueState(previous, id, value, parseMoney));
+    };
     const filteredQuickReplies = (Array.isArray(quickReplies) ? quickReplies : []).filter((item) => {
         const q = String(quickSearch || '').trim().toLowerCase();
         if (!q) return true;
@@ -2309,6 +2343,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 };
 
 export default BusinessSidebar;
+
+
+
 
 
 
