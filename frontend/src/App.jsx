@@ -11,12 +11,14 @@ import { createSocketClient } from './features/chat/services/socketClient';
 import { useNewChatDialog } from './features/chat/hooks/useNewChatDialog';
 import { useMessagesAutoScroll } from './features/chat/hooks/useMessagesAutoScroll';
 import { useChatRuntimeSyncEffects } from './features/chat/hooks/useChatRuntimeSyncEffects';
+import useScopedBusinessRequests from './features/chat/hooks/useScopedBusinessRequests';
 import { useSocketConnectionAuthEffect } from './features/chat/hooks/useSocketConnectionAuthEffect';
 import { readWaLaunchParams } from './features/chat/helpers/waLaunchParams';
 import StatusScreen from './features/chat/components/StatusScreen';
 import TransportBootstrapScreen from './features/chat/components/TransportBootstrapScreen';
 import { useSaasRecoveryFlow } from './features/auth/hooks/useSaasRecoveryFlow';
 import { useSaasSessionActions } from './features/auth/hooks/useSaasSessionActions';
+import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHelpers';
 import SaasLoginScreen from './features/auth/components/SaasLoginScreen';
 import {
   normalizeCatalogItem,
@@ -211,22 +213,17 @@ function App() {
   }, []);
 
 
-  const buildApiHeaders = useCallback((options = {}) => {
-    const includeJson = Boolean(options?.includeJson);
-    const tokenOverride = String(options?.tokenOverride || '').trim();
-    const tenantIdOverride = String(options?.tenantIdOverride || '').trim();
-
-    const session = saasSessionRef.current;
-    const runtime = saasRuntimeRef.current;
-    const accessToken = tokenOverride || String(session?.accessToken || '').trim();
-    const tenantId = tenantIdOverride || String(session?.user?.tenantId || runtime?.tenant?.id || '').trim();
-
-    const headers = {};
-    if (includeJson) headers['Content-Type'] = 'application/json';
-    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-    if (tenantId) headers['X-Tenant-Id'] = tenantId;
-    return headers;
-  }, []);
+  const {
+    buildApiHeaders,
+    resolveSessionSenderIdentity,
+    normalizeSaasSessionPayload,
+    refreshSaasSession
+  } = useSaasApiSessionHelpers({
+    apiUrl: API_URL,
+    saasSessionRef,
+    saasRuntimeRef,
+    setSaasSession
+  });
 
   const {
     recoveryStep,
@@ -258,122 +255,21 @@ function App() {
     buildApiHeaders
   });
 
-  const resolveSessionSenderIdentity = useCallback(() => {
-    const sessionUser = (saasSessionRef.current?.user && typeof saasSessionRef.current.user === 'object')
-      ? saasSessionRef.current.user
-      : null;
-    const runtimeAuthUser = (saasRuntimeRef.current?.authContext?.user && typeof saasRuntimeRef.current.authContext.user === 'object')
-      ? saasRuntimeRef.current.authContext.user
-      : null;
-    const user = sessionUser || runtimeAuthUser;
-    const id = String(user?.id || user?.userId || '').trim();
-    const email = String(user?.email || '').trim();
-    const role = String(user?.role || '').trim().toLowerCase();
-    const explicitName = String(user?.name || user?.displayName || user?.fullName || '').trim();
-    const name = String(explicitName || email || id || '').trim();
-    return {
-      id: id || null,
-      email: email || null,
-      role: role || null,
-      name: name || null
-    };
-  }, []);
+  const {
+    requestQuickRepliesForModule,
+    emitScopedBusinessDataRequest
+  } = useScopedBusinessRequests({
+    socket,
+    selectedCatalogModuleIdRef,
+    selectedWaModuleRef,
+    selectedCatalogIdRef,
+    quickRepliesRequestRef,
+    businessDataRequestDebounceRef,
+    businessDataScopeCacheRef,
+    businessDataRequestSeqRef,
+    setBusinessData
+  });
 
-  const requestQuickRepliesForModule = useCallback((moduleId = '') => {
-    if (!socket.connected) return;
-    const cleanModuleId = String(
-      moduleId
-      || selectedCatalogModuleIdRef.current
-      || selectedWaModuleRef.current?.moduleId
-      || ''
-    ).trim().toLowerCase();
-    const now = Date.now();
-    const cache = quickRepliesRequestRef.current || { key: '', at: 0 };
-    if (cache.key === cleanModuleId && (now - cache.at) < 250) return;
-    quickRepliesRequestRef.current = { key: cleanModuleId, at: now };
-    socket.emit('get_quick_replies', cleanModuleId ? { moduleId: cleanModuleId } : {});
-  }, []);
-
-  const emitScopedBusinessDataRequest = useCallback((scope = {}) => {
-    if (!socket.connected) return;
-    const requestedModuleId = String(
-      scope?.moduleId
-      || selectedCatalogModuleIdRef.current
-      || selectedWaModuleRef.current?.moduleId
-      || ''
-    ).trim().toLowerCase();
-    const requestedCatalogId = String(
-      scope?.catalogId
-      || selectedCatalogIdRef.current
-      || ''
-    ).trim().toUpperCase();
-    const dedupeKey = `${requestedModuleId}|${requestedCatalogId}`;
-    const now = Date.now();
-    const dedupe = businessDataRequestDebounceRef.current || { key: '', at: 0 };
-    if (dedupe.key === dedupeKey && (now - dedupe.at) < 220) return;
-    businessDataRequestDebounceRef.current = { key: dedupeKey, at: now };
-
-    const cachedScope = businessDataScopeCacheRef.current.get(dedupeKey);
-    if (cachedScope && Array.isArray(cachedScope.catalog)) {
-      setBusinessData((prev) => ({
-        ...prev,
-        catalog: cachedScope.catalog,
-        catalogMeta: cachedScope.catalogMeta || prev?.catalogMeta || { source: 'local', nativeAvailable: false }
-      }));
-    }
-
-    const payload = {};
-    if (requestedModuleId) payload.moduleId = requestedModuleId;
-    if (requestedCatalogId) payload.catalogId = requestedCatalogId;
-    const requestSeq = (businessDataRequestSeqRef.current || 0) + 1;
-    businessDataRequestSeqRef.current = requestSeq;
-    payload.requestSeq = requestSeq;
-    socket.emit('get_business_data', payload);
-  }, []);
-  const normalizeSaasSessionPayload = useCallback((payload = {}, previousSession = null) => {
-    const accessToken = String(payload?.accessToken || '').trim();
-    const refreshToken = String(payload?.refreshToken || '').trim() || String(previousSession?.refreshToken || '').trim();
-    if (!accessToken || !refreshToken) return null;
-
-    const now = Math.floor(Date.now() / 1000);
-    const accessExpiresIn = Number(payload?.expiresInSec || 0);
-    const accessExpiresAtUnix = accessExpiresIn > 0 ? (now + accessExpiresIn) : (Number(previousSession?.accessExpiresAtUnix || 0) || 0);
-    const refreshExpiresAtUnix = Number(payload?.refreshExpiresAtUnix || 0)
-      || (Number(payload?.refreshExpiresInSec || 0) > 0 ? (now + Number(payload.refreshExpiresInSec)) : 0)
-      || (Number(previousSession?.refreshExpiresAtUnix || 0) || 0);
-
-    return {
-      accessToken,
-      refreshToken,
-      tokenType: String(payload?.tokenType || previousSession?.tokenType || 'Bearer').trim() || 'Bearer',
-      accessExpiresAtUnix,
-      refreshExpiresAtUnix,
-      user: payload?.user && typeof payload.user === 'object'
-        ? payload.user
-        : (previousSession?.user && typeof previousSession.user === 'object' ? previousSession.user : null)
-    };
-  }, []);
-
-  const refreshSaasSession = useCallback(async (refreshTokenOverride = '') => {
-    const current = saasSessionRef.current;
-    const refreshToken = String(refreshTokenOverride || current?.refreshToken || '').trim();
-    if (!refreshToken) throw new Error('No hay refresh token disponible.');
-
-    const response = await fetch(`${API_URL}/api/auth/refresh`, {
-      method: 'POST',
-      headers: buildApiHeaders({ includeJson: true, tokenOverride: String(current?.accessToken || '').trim() }),
-      body: JSON.stringify({ refreshToken })
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload?.ok) {
-      throw new Error(String(payload?.error || 'No se pudo renovar sesion.'));
-    }
-
-    const nextSession = normalizeSaasSessionPayload(payload, current);
-    if (!nextSession) throw new Error('Sesion renovada invalida.');
-    setSaasSession(nextSession);
-    return nextSession;
-  }, [buildApiHeaders, normalizeSaasSessionPayload]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2948,6 +2844,8 @@ function App() {
 }
 
 export default App;
+
+
 
 
 
