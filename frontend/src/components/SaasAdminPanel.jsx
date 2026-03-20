@@ -39,6 +39,7 @@ import {
     useSaasPanelSelectionState,
     useSaasPanelSectionSyncEffects,
     useSaasPanelSectionChange,
+    useSaasOperationAccess,
     useSaasPanelCrossNavigation,
     useSaasPanelTenantScopeEffects,
     useSaasPanelUserScopeState,
@@ -815,20 +816,18 @@ export default function SaasAdminPanel({
     });
     const assignmentRoleOptions = ['seller', 'admin', 'owner'];
 
-    const operationTenantId = useMemo(() => {
-        if (requiresTenantSelection) return String(settingsTenantId || '').trim();
-        return String(tenantScopeId || settingsTenantId || activeTenantId || '').trim();
-    }, [requiresTenantSelection, settingsTenantId, tenantScopeId, activeTenantId]);
-    const hasActiveModuleForOperation = Boolean(
-        (Array.isArray(waModules) ? waModules : []).some((moduleItem) =>
-            String(moduleItem?.moduleId || '').trim() && moduleItem?.isActive !== false
-        )
-    );
-    const canOpenOperation = Boolean(
-        typeof onOpenWhatsAppOperation === 'function'
-        && operationTenantId
-        && hasActiveModuleForOperation
-    );
+    const {
+        operationTenantId,
+        hasActiveModuleForOperation,
+        canOpenOperation
+    } = useSaasOperationAccess({
+        requiresTenantSelection,
+        settingsTenantId,
+        tenantScopeId,
+        activeTenantId,
+        waModules,
+        onOpenWhatsAppOperation
+    });
     const scrollToSection = (sectionId, behavior = 'smooth') => {
         const cleanSection = String(sectionId || '').trim();
         if (!cleanSection) return;
@@ -1712,5 +1711,6 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
 
 

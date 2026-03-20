@@ -28,3 +28,5 @@ export { default as useSaasPanelUserScopeState } from './useSaasPanelUserScopeSt
 
 export { default as useSaasPanelSectionChange } from './useSaasPanelSectionChange';
 
+export { default as useSaasOperationAccess } from './useSaasOperationAccess';
+
