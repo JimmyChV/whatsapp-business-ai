@@ -15,6 +15,8 @@ import { useAiScopeState } from './business/hooks/useAiScopeState';
 import { useAiSocketBridge } from './business/hooks/useAiSocketBridge';
 import { usePendingOrderCartImport } from './business/hooks/usePendingOrderCartImport';
 import { useCartDraftSync } from './business/hooks/useCartDraftSync';
+import { useTenantScopeReset } from './business/hooks/useTenantScopeReset';
+import { useCompanyProfileOverlay } from './business/hooks/useCompanyProfileOverlay';
 import { emitAiQuery } from './business/services/aiSocket.service';
 import { buildAiRuntimeContext, buildBusinessContextPrompt } from './business/businessSidebarAiContext.helpers';
 import {
@@ -99,29 +101,27 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const labels = useMemo(() => (Array.isArray(businessData.labels) ? businessData.labels : []), [businessData.labels]);
     const profile = useMemo(() => (businessData.profile || myProfile || null), [businessData.profile, myProfile]);
     const quickRepliesEnabled = Boolean(waCapabilities?.quickReplies || waCapabilities?.quickRepliesRead || waCapabilities?.quickRepliesWrite);
-    useEffect(() => {
-        const nextScope = normalizedTenantScopeKey;
-        if (tenantScopeRef.current === nextScope) return;
-        tenantScopeRef.current = nextScope;
-
-        setActiveTab('ai');
-        setShowCompanyProfile(false);
-        resetAiScopeState();
-        setAiInput('');
-        setCart([]);
-        setShowOrderAdjustments(false);
-        setGlobalDiscountEnabled(false);
-        setGlobalDiscountType('percent');
-        setGlobalDiscountValue(0);
-        setDeliveryType('free');
-        setDeliveryAmount(0);
-        setShowCartTotalsBreakdown(true);
-        setCartDraftsByChat({});
-        cartDraftSignaturesRef.current = {};
-        setQuickSearch('');
-        setOrderImportStatus(null);
-        lastImportedOrderRef.current = '';
-    }, [normalizedTenantScopeKey, resetAiScopeState]);
+    useTenantScopeReset({
+        normalizedTenantScopeKey,
+        tenantScopeRef,
+        resetAiScopeState,
+        setActiveTab,
+        setShowCompanyProfile,
+        setAiInput,
+        setCart,
+        setShowOrderAdjustments,
+        setGlobalDiscountEnabled,
+        setGlobalDiscountType,
+        setGlobalDiscountValue,
+        setDeliveryType,
+        setDeliveryAmount,
+        setShowCartTotalsBreakdown,
+        setCartDraftsByChat,
+        cartDraftSignaturesRef,
+        setQuickSearch,
+        setOrderImportStatus,
+        lastImportedOrderRef
+    });
 
     useAiSocketBridge({
         socket,
@@ -193,23 +193,12 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             setActiveTab('catalog');
         }
     }, [activeTab, cart.length]);
-
-    useEffect(() => {
-        if (openCompanyProfileToken > 0) {
-            setShowCompanyProfile(true);
-        }
-    }, [openCompanyProfileToken]);
-
-    useEffect(() => {
-        if (!showCompanyProfile) return;
-        const handleOutsideClick = (event) => {
-            const target = event.target;
-            if (companyProfileRef.current?.contains(target)) return;
-            setShowCompanyProfile(false);
-        };
-        document.addEventListener('mousedown', handleOutsideClick);
-        return () => document.removeEventListener('mousedown', handleOutsideClick);
-    }, [showCompanyProfile]);
+    useCompanyProfileOverlay({
+        openCompanyProfileToken,
+        showCompanyProfile,
+        companyProfileRef,
+        setShowCompanyProfile
+    });
 
     const buildBusinessContext = () => buildBusinessContextPrompt({
         catalog,
@@ -832,6 +821,8 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 };
 
 export default BusinessSidebar;
+
+
 
 
 
