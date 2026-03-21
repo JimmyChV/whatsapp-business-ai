@@ -17,6 +17,7 @@ import useChatPaginationRequester from './features/chat/hooks/useChatPaginationR
 import useWaModuleSocketEvents from './features/chat/hooks/useWaModuleSocketEvents';
 import { readWaLaunchParams } from './features/chat/helpers/waLaunchParams';
 import { normalizeQuickRepliesSocketPayload } from './features/chat/helpers/quickRepliesSocket.helpers';
+import { resolveScopedCatalogSelection } from './features/chat/helpers/catalogScope.helpers';
 import StatusScreen from './features/chat/components/StatusScreen';
 import TransportBootstrapScreen from './features/chat/components/TransportBootstrapScreen';
 import { useSaasRecoveryFlow } from './features/auth/hooks/useSaasRecoveryFlow';
@@ -978,18 +979,11 @@ function App() {
         setSelectedCatalogModuleId(scopeModuleId);
       }
 
-      let nextCatalogId = currentCatalogId;
-      if (scopeCatalogId) {
-        nextCatalogId = scopeCatalogId;
-      } else if (scopeCatalogIds.length === 1) {
-        nextCatalogId = scopeCatalogIds[0];
-      } else if (currentCatalogId && scopeCatalogIds.includes(currentCatalogId)) {
-        nextCatalogId = currentCatalogId;
-      } else if (scopeCatalogIds.length > 0) {
-        nextCatalogId = scopeCatalogIds[0];
-      } else {
-        nextCatalogId = '';
-      }
+      const nextCatalogId = resolveScopedCatalogSelection({
+        scopeCatalogId,
+        scopeCatalogIds,
+        currentCatalogId
+      });
 
       if (nextCatalogId !== currentCatalogId) {
         setSelectedCatalogId(nextCatalogId);
@@ -1066,18 +1060,11 @@ function App() {
         setSelectedCatalogModuleId(scopeModuleId);
       }
 
-      let nextCatalogId = activeCatalogId;
-      if (scopeCatalogId) {
-        nextCatalogId = scopeCatalogId;
-      } else if (scopeCatalogIds.length === 1) {
-        nextCatalogId = scopeCatalogIds[0];
-      } else if (activeCatalogId && scopeCatalogIds.includes(activeCatalogId)) {
-        nextCatalogId = activeCatalogId;
-      } else if (scopeCatalogIds.length > 0) {
-        nextCatalogId = scopeCatalogIds[0];
-      } else {
-        nextCatalogId = '';
-      }
+      const nextCatalogId = resolveScopedCatalogSelection({
+        scopeCatalogId,
+        scopeCatalogIds,
+        currentCatalogId: activeCatalogId
+      });
 
       if (nextCatalogId !== activeCatalogId) {
         setSelectedCatalogId(nextCatalogId);
@@ -2580,6 +2567,9 @@ function App() {
 }
 
 export default App;
+
+
+
 
 
 
