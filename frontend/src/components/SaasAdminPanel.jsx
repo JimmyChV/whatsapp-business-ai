@@ -23,37 +23,32 @@ import {
     useAiAssistantsAdminActions,
     useCatalogAdminActions,
     useCustomersAdminActions,
-    useModuleConfigActions,
     useOperationsPanelState,
     usePlansRolesAdminActions,
     useQuickReplyAdminActions,
     useQuickReplyAssetsUpload,
     useSaasAccessControl,
     useSaasApiClient,
-    useSaasPanelActions,
+    useSaasModuleSectionActions,
+    useSaasOperationAccess,
+    useSaasPanelBootstrap,
+    useSaasPanelCrossNavigation,
     useSaasPanelDerivedData,
     useSaasPanelFormSyncEffects,
     useSaasPanelLoadingState,
-    useSaasPanelLoadEffects,
     useSaasPanelNavigation,
     useSaasPanelSelectionHotkeys,
     useSaasPanelSelectionState,
     useSaasPanelSectionSyncEffects,
-    useSaasPanelSectionChange,
-    useSaasOperationAccess,
-    useSaasPanelCrossNavigation,
     useSaasPanelTenantScopeEffects,
     useSaasPanelUserScopeState,
     useSaasRunActionBridge,
     useSaasTenantDataLoaders,
     useSaasTenantScope,
     useSaasTenantUsers,
-    useSaasWaModuleEditor,
     useTenantLabelsActions,
     useTenantsUsersAdminActions
 } from './saas/hooks';
-
-
 const {
     API_BASE,
     EMPTY_TENANT_FORM,
@@ -125,7 +120,8 @@ const {
     buildTenantLabelPayload,
     sanitizeMemberships,
     resolvePrimaryRoleFromMemberships,
-    getRolePriority,    sanitizeAiAssistantCode,
+    getRolePriority,
+    sanitizeAiAssistantCode,
     buildAiAssistantFormFromItem,
     buildIntegrationsUpdatePayload,
     normalizePlanForm,
@@ -771,39 +767,6 @@ export default function SaasAdminPanel({
     });
 
 
-    const handleSectionChange = useSaasPanelSectionChange({
-        isSectionEnabled,
-        setSelectedTenantId,
-        setTenantPanelMode,
-        setSelectedUserId,
-        setUserPanelMode,
-        setMembershipDraft,
-        setSelectedRoleKey,
-        setRolePanelMode,
-        setRoleForm,
-        emptyRoleForm: EMPTY_ROLE_FORM,
-        setSelectedCustomerId,
-        setCustomerPanelMode,
-        setSelectedAiAssistantId,
-        setAiAssistantPanelMode,
-        setAiAssistantForm,
-        emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
-        setSelectedLabelId,
-        setLabelPanelMode,
-        setLabelForm,
-        emptyLabelForm: EMPTY_LABEL_FORM,
-        setSelectedQuickReplyLibraryId,
-        setSelectedQuickReplyItemId,
-        setQuickReplyModuleFilterId,
-        setQuickReplyLibraryPanelMode,
-        setQuickReplyItemPanelMode,
-        setQuickReplyLibraryForm,
-        emptyQuickReplyLibraryForm: EMPTY_QUICK_REPLY_LIBRARY_FORM,
-        setQuickReplyItemForm,
-        emptyQuickReplyItemForm: EMPTY_QUICK_REPLY_ITEM_FORM,
-        clearConfigSelection,
-        setCurrentSection
-    });
     const assignmentRoleOptions = ['seller', 'admin', 'owner'];
 
     const {
@@ -829,38 +792,7 @@ export default function SaasAdminPanel({
 
     const {
         resetWaModuleForm,
-        openWaModuleEditor
-    } = useSaasWaModuleEditor({
-        quickReplyLibraries,
-        emptyWaModuleForm: EMPTY_WA_MODULE_FORM,
-        emptyIntegrationsForm: EMPTY_INTEGRATIONS_FORM,
-        emptyTenantCatalogForm: EMPTY_TENANT_CATALOG_FORM,
-        emptyCustomerForm: EMPTY_CUSTOMER_FORM,
-        emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
-        emptyRoleForm: EMPTY_ROLE_FORM,
-        normalizePlanForm,
-        setWaModuleForm,
-        setTenantIntegrations,
-        setTenantCatalogForm,
-        setSelectedPlanId,
-        setPlanForm,
-        setRoleForm,
-        setEditingWaModuleId,
-        setModuleUserPickerId,
-        setModuleQuickReplyLibraryDraft,
-        setSelectedCustomerId,
-        setCustomerPanelMode,
-        setCustomerForm,
-        setCustomerSearch,
-        setCustomerCsvText,
-        setSelectedAiAssistantId,
-        setAiAssistantPanelMode,
-        setAiAssistantForm,
-        setCustomerImportModuleId,
-        setSelectedWaModuleId
-    });
-
-    const {
+        openWaModuleEditor,
         clearConfigSelection,
         openConfigModuleCreate,
         openConfigModuleEdit,
@@ -870,77 +802,135 @@ export default function SaasAdminPanel({
         syncQuickReplyLibrariesForModule,
         toggleAssignedUserForModule,
         toggleCatalogForModule,
-        toggleQuickReplyLibraryForModuleDraft
-    } = useModuleConfigActions({
-        requestJson,
-        settingsTenantId,
-        canEditTenantSettings,
-        canEditModules,
-        waModules,
-        selectedConfigModule,
-        quickReplyLibraries,
-        activeCatalogOptions,
-        defaultAiAssistantId,
-        setSelectedConfigKey,
-        setSelectedRoleKey,
-        setSelectedWaModuleId,
-        setTenantSettingsPanelMode,
-        setWaModulePanelMode,
-        setCatalogPanelMode,
-        setModuleUserPickerId,
-        setModuleQuickReplyLibraryDraft,
-        setWaModuleForm,
-        openWaModuleEditor,
-        resetWaModuleForm
+        toggleQuickReplyLibraryForModuleDraft,
+        handleSectionChange
+    } = useSaasModuleSectionActions({
+        waModuleEditor: {
+            quickReplyLibraries,
+            emptyWaModuleForm: EMPTY_WA_MODULE_FORM,
+            emptyIntegrationsForm: EMPTY_INTEGRATIONS_FORM,
+            emptyTenantCatalogForm: EMPTY_TENANT_CATALOG_FORM,
+            emptyCustomerForm: EMPTY_CUSTOMER_FORM,
+            emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
+            emptyRoleForm: EMPTY_ROLE_FORM,
+            normalizePlanForm,
+            setWaModuleForm,
+            setTenantIntegrations,
+            setTenantCatalogForm,
+            setSelectedPlanId,
+            setPlanForm,
+            setRoleForm,
+            setEditingWaModuleId,
+            setModuleUserPickerId,
+            setModuleQuickReplyLibraryDraft,
+            setSelectedCustomerId,
+            setCustomerPanelMode,
+            setCustomerForm,
+            setCustomerSearch,
+            setCustomerCsvText,
+            setSelectedAiAssistantId,
+            setAiAssistantPanelMode,
+            setAiAssistantForm,
+            setCustomerImportModuleId,
+            setSelectedWaModuleId
+        },
+        moduleConfig: {
+            requestJson,
+            settingsTenantId,
+            canEditTenantSettings,
+            canEditModules,
+            waModules,
+            selectedConfigModule,
+            quickReplyLibraries,
+            activeCatalogOptions,
+            defaultAiAssistantId,
+            setSelectedConfigKey,
+            setSelectedRoleKey,
+            setSelectedWaModuleId,
+            setTenantSettingsPanelMode,
+            setWaModulePanelMode,
+            setCatalogPanelMode,
+            setModuleUserPickerId,
+            setModuleQuickReplyLibraryDraft,
+            setWaModuleForm
+        },
+        sectionChange: {
+            isSectionEnabled,
+            setSelectedTenantId,
+            setTenantPanelMode,
+            setSelectedUserId,
+            setUserPanelMode,
+            setMembershipDraft,
+            setSelectedRoleKey,
+            setRolePanelMode,
+            setRoleForm,
+            emptyRoleForm: EMPTY_ROLE_FORM,
+            setSelectedCustomerId,
+            setCustomerPanelMode,
+            setSelectedAiAssistantId,
+            setAiAssistantPanelMode,
+            setAiAssistantForm,
+            emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
+            setSelectedLabelId,
+            setLabelPanelMode,
+            setLabelForm,
+            emptyLabelForm: EMPTY_LABEL_FORM,
+            setSelectedQuickReplyLibraryId,
+            setSelectedQuickReplyItemId,
+            setQuickReplyModuleFilterId,
+            setQuickReplyLibraryPanelMode,
+            setQuickReplyItemPanelMode,
+            setQuickReplyLibraryForm,
+            emptyQuickReplyLibraryForm: EMPTY_QUICK_REPLY_LIBRARY_FORM,
+            setQuickReplyItemForm,
+            emptyQuickReplyItemForm: EMPTY_QUICK_REPLY_ITEM_FORM,
+            setCurrentSection
+        }
     });
     const {
         runAction,
         handleOpenOperation,
         handleFormImageUpload
-    } = useSaasPanelActions({
-        requestJson,
-        onOpenWhatsAppOperation,
-        operationTenantId,
-        tenantScopeId,
-        activeTenantId,
-        selectedTenantId,
-        setError,
-        setBusy,
-        refreshOverview,
-        settingsTenantId,
-        loadTenantSettings,
-        loadWaModules,
-        loadTenantCatalogs,
-        loadTenantAiAssistants,
-        loadQuickReplyData,
-        loadTenantLabels
-        });
-
-
-    useEffect(() => {
-        setRunAction(runAction);
-    }, [runAction, setRunAction]);
-
-    useSaasPanelLoadEffects({
-        isOpen,
-        canManageSaas,
-        canViewSuperAdminSections,
-        tenantScopeId,
-        runAction,
-        refreshOverview,
-        loadAccessCatalog,
-        loadPlanMatrix,
-        loadTenantSettings,
-        loadWaModules,
-        loadTenantCatalogs,
-        loadTenantAiAssistants,
-        loadTenantIntegrations,
-        loadCustomers,
-        loadQuickReplyData,
-        loadTenantLabels,
-        loadTenantAssignmentRules,
-        loadTenantOperationsKpis,
-        setError
+    } = useSaasPanelBootstrap({
+        actions: {
+            requestJson,
+            onOpenWhatsAppOperation,
+            operationTenantId,
+            tenantScopeId,
+            activeTenantId,
+            selectedTenantId,
+            setError,
+            setBusy,
+            refreshOverview,
+            settingsTenantId,
+            loadTenantSettings,
+            loadWaModules,
+            loadTenantCatalogs,
+            loadTenantAiAssistants,
+            loadQuickReplyData,
+            loadTenantLabels
+        },
+        loadEffects: {
+            isOpen,
+            canManageSaas,
+            canViewSuperAdminSections,
+            tenantScopeId,
+            refreshOverview,
+            loadAccessCatalog,
+            loadPlanMatrix,
+            loadTenantSettings,
+            loadWaModules,
+            loadTenantCatalogs,
+            loadTenantAiAssistants,
+            loadTenantIntegrations,
+            loadCustomers,
+            loadQuickReplyData,
+            loadTenantLabels,
+            loadTenantAssignmentRules,
+            loadTenantOperationsKpis,
+            setError
+        },
+        setRunAction
     });
 
     const {
@@ -1675,6 +1665,13 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
+
+
+
+
 
 
 

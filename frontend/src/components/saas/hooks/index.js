@@ -35,3 +35,5 @@ export { default as useSaasRunActionBridge } from './useSaasRunActionBridge';
 export { default as useSaasPanelLoadingState } from './useSaasPanelLoadingState';
 export { default as useSaasWaModuleEditor } from './useSaasWaModuleEditor';
 
+export { default as useSaasModuleSectionActions } from './useSaasModuleSectionActions';
+export { default as useSaasPanelBootstrap } from './useSaasPanelBootstrap';

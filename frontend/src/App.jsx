@@ -399,6 +399,22 @@ function App() {
   // Socket Events
   // --------------------------------------------------------------
   useEffect(() => {
+    socket.on('connect', () => {
+      setIsConnected(true);
+      const mode = selectedTransportRef.current;
+      setIsSwitchingTransport(true);
+      socket.emit('set_transport_mode', { mode: mode || 'idle' });
+      socket.emit('get_wa_capabilities');
+      socket.emit('get_wa_modules');
+    });
+
+    socket.on('connect_error', (err) => {
+      setIsConnected(false);
+      setIsSwitchingTransport(false);
+      const message = String(err?.message || '').trim();
+      if (message) console.error('[socket][connect_error]', message);
+    });
+
     socket.on('disconnect', () => {
       setIsConnected(false);
       setIsSwitchingTransport(false);
