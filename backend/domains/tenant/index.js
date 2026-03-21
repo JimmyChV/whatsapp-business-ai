@@ -11,8 +11,10 @@ module.exports = {
     aiUsageService: require('../../ai_usage_service'),
     registerTenantCustomerHttpRoutes: require('./http-routes-customers').registerTenantCustomerHttpRoutes,
     registerTenantWaModuleAdminHttpRoutes: require('./http-routes-wa-modules').registerTenantWaModuleAdminHttpRoutes,
-    registerTenantRuntimeSettingsHttpRoutes: require('./http-routes-runtime-settings').registerTenantRuntimeSettingsHttpRoutes
+    registerTenantRuntimeSettingsHttpRoutes: require('./http-routes-runtime-settings').registerTenantRuntimeSettingsHttpRoutes,
+    registerTenantLabelsQuickRepliesHttpRoutes: require('./http-routes-labels-quick-replies').registerTenantLabelsQuickRepliesHttpRoutes
 };
+
 
 
 
