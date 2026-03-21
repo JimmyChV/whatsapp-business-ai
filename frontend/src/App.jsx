@@ -16,6 +16,7 @@ import { useSocketConnectionAuthEffect } from './features/chat/hooks/useSocketCo
 import useChatPaginationRequester from './features/chat/hooks/useChatPaginationRequester';
 import useWaModuleSocketEvents from './features/chat/hooks/useWaModuleSocketEvents';
 import { readWaLaunchParams } from './features/chat/helpers/waLaunchParams';
+import { normalizeQuickRepliesSocketPayload } from './features/chat/helpers/quickRepliesSocket.helpers';
 import StatusScreen from './features/chat/components/StatusScreen';
 import TransportBootstrapScreen from './features/chat/components/TransportBootstrapScreen';
 import { useSaasRecoveryFlow } from './features/auth/hooks/useSaasRecoveryFlow';
@@ -1083,51 +1084,14 @@ function App() {
       }
     });
     socket.on('quick_replies', (payload) => {
-      const enabled = payload?.enabled !== false;
-      const writable = payload?.writable !== false;
+      const normalizedQuickReplies = normalizeQuickRepliesSocketPayload(payload || {});
       setWaCapabilities((prev) => ({
         ...prev,
-        quickReplies: enabled,
-        quickRepliesRead: enabled,
-        quickRepliesWrite: enabled && writable
+        quickReplies: normalizedQuickReplies.enabled,
+        quickRepliesRead: normalizedQuickReplies.enabled,
+        quickRepliesWrite: normalizedQuickReplies.enabled && normalizedQuickReplies.writable
       }));
-
-      const items = Array.isArray(payload?.items) ? payload.items : [];
-      const normalized = items
-        .map((item, idx) => {
-          const mediaAssets = Array.isArray(item?.mediaAssets)
-            ? item.mediaAssets
-              .map((asset) => ({
-                url: String(asset?.url || asset?.mediaUrl || '').trim() || null,
-                mimeType: String(asset?.mimeType || asset?.mediaMimeType || '').trim().toLowerCase() || null,
-                fileName: String(asset?.fileName || asset?.mediaFileName || '').trim() || null,
-                sizeBytes: Number.isFinite(Number(asset?.sizeBytes ?? asset?.mediaSizeBytes)) ? Number(asset?.sizeBytes ?? asset?.mediaSizeBytes) : null
-              }))
-              .filter((asset) => Boolean(asset.url))
-            : [];
-          const mediaUrl = String(item?.mediaUrl || mediaAssets[0]?.url || '').trim() || null;
-          const mediaMimeType = String(item?.mediaMimeType || mediaAssets[0]?.mimeType || '').trim().toLowerCase() || null;
-          const mediaFileName = String(item?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null;
-          const mediaSizeBytes = Number.isFinite(Number(item?.mediaSizeBytes))
-            ? Number(item.mediaSizeBytes)
-            : (Number.isFinite(Number(mediaAssets[0]?.sizeBytes)) ? Number(mediaAssets[0].sizeBytes) : null);
-
-          return {
-            id: String(item?.id || ('qr_' + (idx + 1))),
-            label: sanitizeDisplayText(item?.label || 'Respuesta rapida'),
-            text: repairMojibake(item?.text || ''),
-            mediaAssets,
-            mediaUrl,
-            mediaMimeType,
-            mediaFileName,
-            mediaSizeBytes,
-            libraryId: String(item?.libraryId || '').trim() || null,
-            libraryName: String(item?.libraryName || '').trim() || null,
-            isShared: item?.isShared !== false
-          };
-        })
-        .filter((item) => item.id && (item.text || item.mediaUrl || (Array.isArray(item.mediaAssets) && item.mediaAssets.length > 0)));
-      setQuickReplies(normalized);
+      setQuickReplies(normalizedQuickReplies.items);
     });
 
     socket.on('quick_reply_error', (msg) => {
@@ -2616,6 +2580,8 @@ function App() {
 }
 
 export default App;
+
+
 
 
 
