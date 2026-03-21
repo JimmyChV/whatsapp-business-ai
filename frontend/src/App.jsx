@@ -72,7 +72,7 @@ import {
 
 import './index.css';
 
-const SaasAdminPanel = lazy(() => import('./components/SaasAdminPanel'));
+const SaasAdminPanel = lazy(() => import('./features/saas/components/SaasAdminPanel'));
 const PanelChunkFallback = () => (
   <div className='login-screen'>
     <div style={{ textAlign: 'center' }}>
@@ -2583,6 +2583,7 @@ function App() {
 }
 
 export default App;
+
 
 
 
