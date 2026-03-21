@@ -33,6 +33,7 @@ import {
     useSaasPanelActions,
     useSaasPanelDerivedData,
     useSaasPanelFormSyncEffects,
+    useSaasPanelLoadingState,
     useSaasPanelLoadEffects,
     useSaasPanelNavigation,
     useSaasPanelSelectionHotkeys,
@@ -338,21 +339,16 @@ export default function SaasAdminPanel({
         canViewOperations,
         buildApiHeaders
     });
+    const {
+        showPanelLoading,
+        aiUsageByTenant
+    } = useSaasPanelLoadingState({
+        busy,
+        error,
+        overview,
+        pendingRequests
+    });
 
-    const showPanelLoading = useMemo(() => {
-        const hasOverviewData = (Array.isArray(overview?.tenants) && overview.tenants.length > 0)
-            || (Array.isArray(overview?.users) && overview.users.length > 0);
-        return Boolean(busy || (!error && !hasOverviewData && pendingRequests > 0));
-    }, [busy, error, overview, pendingRequests]);
-    const aiUsageByTenant = useMemo(() => {
-        const map = new Map();
-        (overview.aiUsage || []).forEach((entry) => {
-            const tenantId = String(entry?.tenantId || '').trim();
-            if (!tenantId) return;
-            map.set(tenantId, Number(entry?.requests || 0) || 0);
-        });
-        return map;
-    }, [overview]);
 
     const {
         tenantOptions,
@@ -1707,6 +1703,7 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
 
 
 

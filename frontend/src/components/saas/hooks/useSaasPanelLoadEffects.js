@@ -59,28 +59,41 @@ export default function useSaasPanelLoadEffects({
 
     const bootLoadKeyRef = useRef('');
     const bootInFlightKeyRef = useRef('');
+    const bootAttemptedKeyRef = useRef('');
     const tenantLoadKeyRef = useRef('');
     const tenantInFlightKeyRef = useRef('');
+    const tenantAttemptedKeyRef = useRef('');
 
     useEffect(() => {
         if (!isOpen || !canManageSaas) {
             bootLoadKeyRef.current = '';
             bootInFlightKeyRef.current = '';
+            bootAttemptedKeyRef.current = '';
             return;
         }
 
         const bootKey = `${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}:${canViewSuperAdminSections ? '1' : '0'}`;
-        if (bootLoadKeyRef.current === bootKey || bootInFlightKeyRef.current === bootKey) return;
+        if (
+            bootLoadKeyRef.current === bootKey
+            || bootInFlightKeyRef.current === bootKey
+            || bootAttemptedKeyRef.current === bootKey
+        ) {
+            return;
+        }
+
+        bootAttemptedKeyRef.current = bootKey;
         bootInFlightKeyRef.current = bootKey;
 
         const {
             runAction: runActionFn,
             refreshOverview: refreshOverviewFn,
             loadAccessCatalog: loadAccessCatalogFn,
-            loadPlanMatrix: loadPlanMatrixFn
+            loadPlanMatrix: loadPlanMatrixFn,
+            setError: setErrorFn
         } = loadersRef.current;
 
         if (typeof runActionFn !== 'function') {
+            bootLoadKeyRef.current = bootKey;
             bootInFlightKeyRef.current = '';
             return;
         }
@@ -99,10 +112,13 @@ export default function useSaasPanelLoadEffects({
                 throw firstError.reason;
             }
         })
-            .then(() => {
-                bootLoadKeyRef.current = bootKey;
+            .catch((err) => {
+                if (typeof setErrorFn === 'function') {
+                    setErrorFn(String(err?.message || err || 'No se pudo completar la carga inicial.'));
+                }
             })
             .finally(() => {
+                bootLoadKeyRef.current = bootKey;
                 if (bootInFlightKeyRef.current === bootKey) {
                     bootInFlightKeyRef.current = '';
                 }
@@ -113,11 +129,20 @@ export default function useSaasPanelLoadEffects({
         if (!isOpen || !canManageSaas || !tenantScopeId) {
             tenantLoadKeyRef.current = '';
             tenantInFlightKeyRef.current = '';
+            tenantAttemptedKeyRef.current = '';
             return;
         }
 
         const tenantKey = `${tenantScopeId}:${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}`;
-        if (tenantLoadKeyRef.current === tenantKey || tenantInFlightKeyRef.current === tenantKey) return;
+        if (
+            tenantLoadKeyRef.current === tenantKey
+            || tenantInFlightKeyRef.current === tenantKey
+            || tenantAttemptedKeyRef.current === tenantKey
+        ) {
+            return;
+        }
+
+        tenantAttemptedKeyRef.current = tenantKey;
         tenantInFlightKeyRef.current = tenantKey;
 
         const {
@@ -146,16 +171,15 @@ export default function useSaasPanelLoadEffects({
         if (typeof loadTenantAssignmentRulesFn === 'function') tasks.push(loadTenantAssignmentRulesFn(tenantScopeId));
         if (typeof loadTenantOperationsKpisFn === 'function') tasks.push(loadTenantOperationsKpisFn(tenantScopeId));
 
-        Promise.all(tasks)
-            .then(() => {
-                tenantLoadKeyRef.current = tenantKey;
-            })
-            .catch((err) => {
-                if (typeof setErrorFn === 'function') {
-                    setErrorFn(String(err?.message || err || 'No se pudo cargar configuracion del tenant.'));
+        Promise.allSettled(tasks)
+            .then((results) => {
+                const firstError = results.find((entry) => entry.status === 'rejected');
+                if (firstError?.status === 'rejected' && typeof setErrorFn === 'function') {
+                    setErrorFn(String(firstError.reason?.message || firstError.reason || 'No se pudo cargar configuracion del tenant.'));
                 }
             })
             .finally(() => {
+                tenantLoadKeyRef.current = tenantKey;
                 if (tenantInFlightKeyRef.current === tenantKey) {
                     tenantInFlightKeyRef.current = '';
                 }
