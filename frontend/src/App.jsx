@@ -26,6 +26,7 @@ import { useSaasSessionActions } from './features/auth/hooks/useSaasSessionActio
 import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHelpers';
 import SaasLoginScreen from './features/auth/components/SaasLoginScreen';
 import { useSaasPanelVisibilityController } from './features/saas/hooks/useSaasPanelVisibilityController';
+import { useSaasTenantScopeContext } from './features/saas/hooks/useSaasTenantScopeContext';
 import {
   normalizeCatalogItem,
   normalizeProfilePhotoUrl,
@@ -2130,23 +2131,17 @@ function App() {
   const selectedModeLabel = 'WhatsApp Cloud API';
   const saasAuthEnabled = Boolean(saasRuntime?.authEnabled);
   const isSaasAuthenticated = !saasAuthEnabled || Boolean(saasSession?.accessToken);
-  const runtimeTenantOptions = Array.isArray(saasRuntime?.tenants) ? saasRuntime.tenants : [];
-  const sessionMemberships = Array.isArray(saasSession?.user?.memberships) ? saasSession.user.memberships : [];
-  const tenantOptionsById = new Map();
-  runtimeTenantOptions.forEach((tenant) => {
-    const tenantId = String(tenant?.id || '').trim();
-    if (!tenantId) return;
-    tenantOptionsById.set(tenantId, tenant);
+  const {
+    availableTenantOptions,
+    canSwitchTenant,
+    saasUserRole,
+    canManageSaas,
+  } = useSaasTenantScopeContext({
+    saasRuntime,
+    saasSession,
+    saasAuthEnabled,
+    isSaasAuthenticated,
   });
-  sessionMemberships.forEach((membership) => {
-    const tenantId = String(membership?.tenantId || '').trim();
-    if (!tenantId || tenantOptionsById.has(tenantId)) return;
-    tenantOptionsById.set(tenantId, { id: tenantId, slug: tenantId, name: tenantId, active: true, plan: 'starter' });
-  });
-  const availableTenantOptions = Array.from(tenantOptionsById.values());
-  const canSwitchTenant = saasAuthEnabled && isSaasAuthenticated && availableTenantOptions.length > 1;
-  const saasUserRole = String(saasSession?.user?.role || '').trim().toLowerCase();
-  const canManageSaas = !saasAuthEnabled || Boolean(saasSession?.user?.canManageSaas || saasSession?.user?.isSuperAdmin || saasUserRole === 'owner' || saasUserRole === 'admin' || saasUserRole === 'superadmin');
   const availableWaModules = normalizeWaModules(waModules).filter((module) => module.isActive !== false);
   const hasModuleCatalog = availableWaModules.length > 0;
   const activeCatalogModuleId = String(selectedCatalogModuleId || '').trim();
@@ -2492,6 +2487,9 @@ function App() {
 }
 
 export default App;
+
+
+
 
 
 
