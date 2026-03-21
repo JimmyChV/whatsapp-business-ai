@@ -1,10 +1,9 @@
-import { Suspense, lazy, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { lazy, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 import Sidebar from './components/Sidebar';
 import BusinessSidebar, { ClientProfilePanel } from './components/BusinessSidebar';
 import ChatWindow from './components/ChatWindow';
 import NewChatModal from './components/chat/NewChatModal';
-import AppErrorBoundary from './components/shared/AppErrorBoundary';
 import { API_URL, CHAT_PAGE_SIZE, SOCKET_AUTH_TOKEN, TRANSPORT_STORAGE_KEY } from './config/runtime';
 import { loadStoredSaasSession, persistSaasSession } from './features/auth/helpers/saasSessionStorage';
 import { createSocketClient } from './features/chat/services/socketClient';
@@ -72,15 +71,7 @@ import {
 
 import './index.css';
 
-const SaasAdminPanel = lazy(() => import('./features/saas/components/SaasAdminPanel'));
-const PanelChunkFallback = () => (
-  <div className='login-screen'>
-    <div style={{ textAlign: 'center' }}>
-      <div className='loader' style={{ margin: '0 auto 12px' }} />
-      <p style={{ color: '#9eb2bf', fontSize: '0.86rem', margin: 0 }}>Cargando panel...</p>
-    </div>
-  </div>
-);
+const SaasAdminPanelShell = lazy(() => import('./features/saas/components/SaasAdminPanelShell'));
 
 
 const socket = createSocketClient(API_URL, SOCKET_AUTH_TOKEN);
@@ -2297,32 +2288,22 @@ function App() {
   if (!selectedTransport) {
     if (canManageSaas && !forceOperationLaunch) {
       return (
-        <Suspense fallback={<PanelChunkFallback />}>
-          <AppErrorBoundary
-            fallbackTitle='Error en Panel SaaS'
-            fallbackMessage='Se detecto un error al cargar el panel. Puedes reintentar sin salir de sesion.'
-            resetKeys={[tenantScopeId, saasSession?.user?.userId, requestedWaTenantFromUrl, requestedLaunchSource]}
-            onError={(error) => {
-              console.error('[SaaSPanelBoundary]', error);
-            }}
-          >
-            <SaasAdminPanel
-              isOpen
-              onClose={handleSaasLogout}
-              onLogout={handleSaasLogout}
-              closeLabel='Cerrar sesion'
-              onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
-              buildApiHeaders={buildApiHeaders}
-              activeTenantId={tenantScopeId}
-              canManageSaas={canManageSaas}
-              userRole={saasUserRole}
-              isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
-              currentUser={saasSession?.user || null}
-              preferredTenantId={requestedWaTenantFromUrl || ''}
-              launchSource={requestedLaunchSource || ''}
-            />
-          </AppErrorBoundary>
-        </Suspense>
+        <SaasAdminPanelShell
+          isOpen
+          onClose={handleSaasLogout}
+          onLogout={handleSaasLogout}
+          onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
+          buildApiHeaders={buildApiHeaders}
+          activeTenantId={tenantScopeId}
+          canManageSaas={canManageSaas}
+          userRole={saasUserRole}
+          isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+          currentUser={saasSession?.user || null}
+          preferredTenantId={requestedWaTenantFromUrl || ''}
+          launchSource={requestedLaunchSource || ''}
+          initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
+          resetKeys={[tenantScopeId, saasSession?.user?.userId, requestedWaTenantFromUrl, requestedLaunchSource]}
+        />
       );
     }
 
@@ -2551,38 +2532,33 @@ function App() {
         onConfirm={handleConfirmNewChat}
         onCancel={handleCancelNewChatDialog}
       />
-      <Suspense fallback={null}>
-        <AppErrorBoundary
-          fallbackTitle='Error en Panel SaaS'
-          fallbackMessage='El panel tuvo un error inesperado. Puedes reintentar sin perder la sesion activa.'
-          resetKeys={[showSaasAdminPanel, tenantScopeId, saasSession?.user?.userId, requestedWaSectionFromUrl]}
-          onError={(error) => {
-            console.error('[SaaSPanelModalBoundary]', error);
-          }}
-        >
-          <SaasAdminPanel
-            isOpen={showSaasAdminPanel}
-            onClose={() => setShowSaasAdminPanel(false)}
-            onLogout={handleSaasLogout}
-            closeLabel='Cerrar sesion'
-            onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
-            buildApiHeaders={buildApiHeaders}
-            activeTenantId={tenantScopeId}
-            canManageSaas={canManageSaas}
-            userRole={saasUserRole}
-            isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
-            currentUser={saasSession?.user || null}
-            preferredTenantId={requestedWaTenantFromUrl || ''}
-            launchSource={requestedLaunchSource || ''}
-            initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
-          />
-        </AppErrorBoundary>
-      </Suspense>
+      <SaasAdminPanelShell
+        isOpen={showSaasAdminPanel}
+        onClose={() => setShowSaasAdminPanel(false)}
+        onLogout={handleSaasLogout}
+        onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
+        buildApiHeaders={buildApiHeaders}
+        activeTenantId={tenantScopeId}
+        canManageSaas={canManageSaas}
+        userRole={saasUserRole}
+        isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+        currentUser={saasSession?.user || null}
+        preferredTenantId={requestedWaTenantFromUrl || ''}
+        launchSource={requestedLaunchSource || ''}
+        initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
+        resetKeys={[showSaasAdminPanel, tenantScopeId, saasSession?.user?.userId, requestedWaSectionFromUrl]}
+      />
     </div>
   );
 }
 
 export default App;
+
+
+
+
+
+
 
 
 

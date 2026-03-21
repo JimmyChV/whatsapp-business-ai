@@ -1,10 +1,8 @@
+const securityServices = require('./services');
+
 module.exports = {
-    authService: require('../../auth_service'),
-    authRecoveryService: require('../../auth_recovery_service'),
+    ...securityServices,
     accessPolicyService: require('./access-policy.service'),
-    planLimitsService: require('../../plan_limits_service'),
-    planLimitsStoreService: require('../../plan_limits_store_service'),
-    auditLogService: require('../../audit_log_service'),
     registerSecurityAuthHttpRoutes: require('./http-routes-auth').registerSecurityAuthHttpRoutes,
     registerSecurityAccessControlHttpRoutes: require('./http-routes-access-control').registerSecurityAccessControlHttpRoutes
 };

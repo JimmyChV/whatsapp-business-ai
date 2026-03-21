@@ -46,9 +46,10 @@ No mass rewrite; all steps preserve current runtime behavior.
   - `SaasPanelPage`
   - route-based shell.
 
-### Stage D
+### Stage D (in progress)
 - Move backend root services to domain service implementations.
 - Introduce repositories for persistence access.
+- Added service wrapper layers in domains/operations/services and domains/security/services and updated domain indexes.
 
 ### Stage E
 - Remove compatibility re-exports and legacy import paths.
@@ -59,3 +60,4 @@ No mass rewrite; all steps preserve current runtime behavior.
   - `cd backend; npm.cmd test`
   - `cd frontend; npm.cmd run build`
 - Commit in small blocks.
+
