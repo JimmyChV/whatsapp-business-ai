@@ -5,6 +5,7 @@ module.exports = {
     chatAssignmentRouterService: require('../../chat_assignment_router_service'),
     operationsKpiService: require('../../operations_kpi_service'),
     opsTelemetry: require('../../ops_telemetry'),
-    registerOperationsHttpRoutes: require('./http-routes').registerOperationsHttpRoutes
+    registerOperationsHttpRoutes: require('./http-routes').registerOperationsHttpRoutes,
+    registerOperationsUtilityHttpRoutes: require('./http-routes-utility').registerOperationsUtilityHttpRoutes
 };
 
