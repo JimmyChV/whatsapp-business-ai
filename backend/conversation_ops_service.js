@@ -28,105 +28,11 @@ const {
     missingRelation,
     nowIso
 } = require('./domains/operations/conversation-ops.helpers');
+const { ensureConversationOpsSchema } = require('./domains/operations/conversation-ops.schema');
 
 const STORE_FILE = 'conversation_ops.json';
 const EVENTS_FILE_LIMIT = Math.max(500, Number(process.env.CONVERSATION_EVENTS_FILE_LIMIT || 5000));
 const ASSIGNMENT_EVENTS_FILE_LIMIT = Math.max(500, Number(process.env.ASSIGNMENT_EVENTS_FILE_LIMIT || 5000));
-
-let schemaReady = false;
-let schemaPromise = null;
-async function ensurePostgresSchema() {
-    if (schemaReady) return;
-    if (schemaPromise) return schemaPromise;
-
-    schemaPromise = (async () => {
-        await queryPostgres(`
-            CREATE TABLE IF NOT EXISTS tenant_conversation_events (
-                tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-                event_id TEXT NOT NULL,
-                chat_id TEXT NOT NULL,
-                scope_module_id TEXT NOT NULL DEFAULT '',
-                customer_id TEXT NULL,
-                actor_user_id TEXT NULL REFERENCES users(user_id) ON DELETE SET NULL,
-                actor_role TEXT NULL,
-                event_type TEXT NOT NULL,
-                event_source TEXT NOT NULL DEFAULT 'system',
-                payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (tenant_id, event_id)
-            )
-        `);
-        await queryPostgres(`
-            CREATE INDEX IF NOT EXISTS idx_tenant_conversation_events_chat
-            ON tenant_conversation_events(tenant_id, chat_id, scope_module_id, created_at DESC)
-        `);
-        await queryPostgres(`
-            CREATE INDEX IF NOT EXISTS idx_tenant_conversation_events_type
-            ON tenant_conversation_events(tenant_id, event_type, created_at DESC)
-        `);
-        await queryPostgres(`
-            CREATE INDEX IF NOT EXISTS idx_tenant_conversation_events_actor
-            ON tenant_conversation_events(tenant_id, actor_user_id, created_at DESC)
-        `);
-
-        await queryPostgres(`
-            CREATE TABLE IF NOT EXISTS tenant_chat_assignments (
-                tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-                chat_id TEXT NOT NULL,
-                scope_module_id TEXT NOT NULL DEFAULT '',
-                assignee_user_id TEXT NULL REFERENCES users(user_id) ON DELETE SET NULL,
-                assignee_role TEXT NULL,
-                assigned_by_user_id TEXT NULL REFERENCES users(user_id) ON DELETE SET NULL,
-                assignment_mode TEXT NOT NULL DEFAULT 'manual',
-                assignment_reason TEXT NULL,
-                metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-                status TEXT NOT NULL DEFAULT 'active',
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (tenant_id, chat_id, scope_module_id)
-            )
-        `);
-        await queryPostgres(`
-            CREATE INDEX IF NOT EXISTS idx_tenant_chat_assignments_assignee
-            ON tenant_chat_assignments(tenant_id, assignee_user_id, updated_at DESC)
-        `);
-        await queryPostgres(`
-            CREATE INDEX IF NOT EXISTS idx_tenant_chat_assignments_status
-            ON tenant_chat_assignments(tenant_id, status, updated_at DESC)
-        `);
-
-        await queryPostgres(`
-            CREATE TABLE IF NOT EXISTS tenant_chat_assignment_events (
-                tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-                assignment_event_id TEXT NOT NULL,
-                chat_id TEXT NOT NULL,
-                scope_module_id TEXT NOT NULL DEFAULT '',
-                previous_assignee_user_id TEXT NULL,
-                next_assignee_user_id TEXT NULL,
-                next_assignee_role TEXT NULL,
-                assigned_by_user_id TEXT NULL,
-                assignment_mode TEXT NOT NULL DEFAULT 'manual',
-                assignment_reason TEXT NULL,
-                payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (tenant_id, assignment_event_id)
-            )
-        `);
-        await queryPostgres(`
-            CREATE INDEX IF NOT EXISTS idx_tenant_chat_assignment_events_chat
-            ON tenant_chat_assignment_events(tenant_id, chat_id, scope_module_id, created_at DESC)
-        `);
-        await queryPostgres(`
-            CREATE INDEX IF NOT EXISTS idx_tenant_chat_assignment_events_assignee
-            ON tenant_chat_assignment_events(tenant_id, next_assignee_user_id, created_at DESC)
-        `);
-
-        schemaReady = true;
-        schemaPromise = null;
-    })();
-
-    return schemaPromise;
-}
 
 async function listConversationEvents(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const cleanTenantId = resolveTenantId(tenantId);
@@ -151,7 +57,7 @@ async function listConversationEvents(tenantId = DEFAULT_TENANT_ID, options = {}
     }
 
     try {
-        await ensurePostgresSchema();
+        await ensureConversationOpsSchema();
         const params = [cleanTenantId];
         const where = ['tenant_id = $1'];
 
@@ -230,7 +136,7 @@ async function recordConversationEvent(tenantId = DEFAULT_TENANT_ID, payload = {
         return clean;
     }
 
-    await ensurePostgresSchema();
+    await ensureConversationOpsSchema();
     await queryPostgres(
         `INSERT INTO tenant_conversation_events (
             tenant_id, event_id, chat_id, scope_module_id, customer_id, actor_user_id, actor_role, event_type, event_source, payload, created_at
@@ -265,7 +171,7 @@ async function getChatAssignment(tenantId = DEFAULT_TENANT_ID, options = {}) {
     }
 
     try {
-        await ensurePostgresSchema();
+        await ensureConversationOpsSchema();
         const { rows } = await queryPostgres(
             `SELECT chat_id, scope_module_id, assignee_user_id, assignee_role, assigned_by_user_id,
                     assignment_mode, assignment_reason, metadata, status, created_at, updated_at
@@ -318,7 +224,7 @@ async function listChatAssignments(tenantId = DEFAULT_TENANT_ID, options = {}) {
     }
 
     try {
-        await ensurePostgresSchema();
+        await ensureConversationOpsSchema();
         const params = [cleanTenantId];
         const where = ['tenant_id = $1'];
 
@@ -382,7 +288,7 @@ async function listChatAssignmentEvents(tenantId = DEFAULT_TENANT_ID, options = 
     }
 
     try {
-        await ensurePostgresSchema();
+        await ensureConversationOpsSchema();
         const params = [cleanTenantId];
         const where = ['tenant_id = $1'];
 
@@ -501,7 +407,7 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
         return { assignment: nextRecord, previous, changed: (previous?.assigneeUserId || null) !== (nextRecord.assigneeUserId || null) };
     }
 
-    await ensurePostgresSchema();
+    await ensureConversationOpsSchema();
 
     await queryPostgres(
         `INSERT INTO tenant_chat_assignments (
@@ -589,5 +495,6 @@ module.exports = {
     upsertChatAssignment,
     clearChatAssignment
 };
+
 
 
