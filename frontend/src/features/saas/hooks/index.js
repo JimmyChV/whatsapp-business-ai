@@ -39,3 +39,7 @@ export { default as useSaasWaModuleEditor } from './useSaasWaModuleEditor';
 export { default as useSaasModuleSectionActions } from './useSaasModuleSectionActions';
 export { default as useSaasPanelBootstrap } from './useSaasPanelBootstrap';
 
+
+export { useSaasPanelVisibilityController } from './useSaasPanelVisibilityController';
+export { useSaasTenantScopeContext } from './useSaasTenantScopeContext';
+

@@ -25,8 +25,7 @@ import useSaasSessionAutoRefresh from './features/auth/hooks/useSaasSessionAutoR
 import { useSaasSessionActions } from './features/auth/hooks/useSaasSessionActions';
 import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHelpers';
 import SaasLoginScreen from './features/auth/components/SaasLoginScreen';
-import { useSaasPanelVisibilityController } from './features/saas/hooks/useSaasPanelVisibilityController';
-import { useSaasTenantScopeContext } from './features/saas/hooks/useSaasTenantScopeContext';
+import { useSaasPanelVisibilityController, useSaasTenantScopeContext } from './features/saas/hooks';
 import {
   normalizeCatalogItem,
   normalizeProfilePhotoUrl,
@@ -2487,6 +2486,7 @@ function App() {
 }
 
 export default App;
+
 
 
 
