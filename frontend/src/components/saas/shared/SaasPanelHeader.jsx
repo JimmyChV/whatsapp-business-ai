@@ -1,0 +1,58 @@
+export default function SaasPanelHeader({
+    showHeader = true,
+    embedded = false,
+    title = 'Control SaaS',
+    subtitle = '',
+    canOpenOperation = false,
+    isBusy = false,
+    onOpenOperation,
+    currentUserAvatarUrl = '',
+    currentUserDisplayName = 'Usuario',
+    currentUserRoleLabel = 'Sin rol',
+    buildInitials,
+    closeLabel = 'Cerrar sesion',
+    onClose
+}) {
+    if (!showHeader) return null;
+
+    return (
+        <div className="saas-admin-header">
+            <div>
+                <h2>{title}</h2>
+                {subtitle ? <span>{subtitle}</span> : null}
+            </div>
+            {!embedded && (
+                <div className="saas-admin-header-actions">
+                    {typeof onOpenOperation === 'function' && (
+                        <button
+                            type="button"
+                            className="saas-admin-header-open-operation"
+                            disabled={isBusy || !canOpenOperation}
+                            onClick={onOpenOperation}
+                        >
+                            Ir al chat
+                        </button>
+                    )}
+                    <div className="saas-admin-header-profile" role="status" aria-label="Usuario en sesion">
+                        <div className="saas-admin-header-profile-avatar">
+                            {currentUserAvatarUrl
+                                ? <img src={currentUserAvatarUrl} alt={currentUserDisplayName} />
+                                : <span>{typeof buildInitials === 'function' ? buildInitials(currentUserDisplayName) : 'U'}</span>}
+                        </div>
+                        <div className="saas-admin-header-profile-meta">
+                            <strong>{currentUserDisplayName}</strong>
+                            <small>{currentUserRoleLabel}</small>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        className="saas-admin-header-close-danger"
+                        onClick={onClose}
+                    >
+                        {closeLabel}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}

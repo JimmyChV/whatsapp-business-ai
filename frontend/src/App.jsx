@@ -1,49 +1,74 @@
-import { Suspense, lazy, useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
-import { io } from 'socket.io-client';
+import { Suspense, lazy, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 import Sidebar from './components/Sidebar';
 import BusinessSidebar, { ClientProfilePanel } from './components/BusinessSidebar';
 import ChatWindow from './components/ChatWindow';
+import NewChatModal from './components/chat/NewChatModal';
+import AppErrorBoundary from './components/shared/AppErrorBoundary';
+import { API_URL, CHAT_PAGE_SIZE, SOCKET_AUTH_TOKEN, TRANSPORT_STORAGE_KEY } from './config/runtime';
+import { loadStoredSaasSession, persistSaasSession } from './features/auth/helpers/saasSessionStorage';
+import { createSocketClient } from './features/chat/services/socketClient';
+import { useNewChatDialog } from './features/chat/hooks/useNewChatDialog';
+import { useMessagesAutoScroll } from './features/chat/hooks/useMessagesAutoScroll';
+import { useChatRuntimeSyncEffects } from './features/chat/hooks/useChatRuntimeSyncEffects';
+import useScopedBusinessRequests from './features/chat/hooks/useScopedBusinessRequests';
+import { useSocketConnectionAuthEffect } from './features/chat/hooks/useSocketConnectionAuthEffect';
+import useChatPaginationRequester from './features/chat/hooks/useChatPaginationRequester';
+import useWaModuleSocketEvents from './features/chat/hooks/useWaModuleSocketEvents';
+import { readWaLaunchParams } from './features/chat/helpers/waLaunchParams';
+import { normalizeQuickRepliesSocketPayload } from './features/chat/helpers/quickRepliesSocket.helpers';
+import { resolveScopedCatalogSelection } from './features/chat/helpers/catalogScope.helpers';
+import StatusScreen from './features/chat/components/StatusScreen';
+import TransportBootstrapScreen from './features/chat/components/TransportBootstrapScreen';
+import { useSaasRecoveryFlow } from './features/auth/hooks/useSaasRecoveryFlow';
+import useSaasRuntimeBootstrap from './features/auth/hooks/useSaasRuntimeBootstrap';
+import useSaasSessionAutoRefresh from './features/auth/hooks/useSaasSessionAutoRefresh';
+import { useSaasSessionActions } from './features/auth/hooks/useSaasSessionActions';
+import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHelpers';
+import SaasLoginScreen from './features/auth/components/SaasLoginScreen';
 import {
-  buildFiltersKey,
-  chatIdsReferSameScope,
-  chatMatchesFilters,
-  chatMatchesQuery,
-  cleanLooseText,
-  dedupeChats,
-  getBestChatPhone,
-  getMessagePreviewText,
-  isGenericFilename,
-  isInternalIdentifier,
-  isLikelyPhoneDigits,
-  isMachineLikeFilename,
-  isVisibleChatId,
-  normalizeChatFilters,
+  normalizeCatalogItem,
+  normalizeProfilePhotoUrl,
+  normalizeModuleImageUrl,
+  normalizeProfilePayload,
+  normalizeBusinessDataPayload,
+  normalizeWaModules,
+  resolveSelectedWaModule,
   normalizeChatLabels,
-  normalizeChatScopedId,
+  cleanLooseText,
   normalizeDigits,
-  normalizeMessageFilename,
-  normalizeMessageLocation,
-  normalizeParticipantList,
-  normalizeQuickReplyDraft,
-  normalizeQuotedMessage,
+  isLikelyPhoneDigits,
+  normalizeScopedModuleId,
   parseScopedChatId,
+  buildScopedChatId,
+  normalizeChatScopedId,
+  chatIdsReferSameScope,
+  extractPhoneFromText,
+  getBestChatPhone,
   repairMojibake,
   sanitizeDisplayText,
+  normalizeMessageFilename,
+  isGenericFilename,
+  isMachineLikeFilename,
+  normalizeParticipantList,
+  normalizeMessageLocation,
+  normalizeQuotedMessage,
+  getMessagePreviewText,
+  isInternalIdentifier,
+  normalizeDisplayNameKey,
+  isPlaceholderChat,
+  chatIdentityKey,
+  dedupeChats,
+  chatMatchesQuery,
+  normalizeFilterToken,
+  normalizeChatFilters,
+  buildFiltersKey,
+  chatLabelTokenSet,
+  chatMatchesFilters,
+  normalizeQuickReplyDraft,
+  isVisibleChatId,
   upsertAndSortChat
-} from './components/business/helpers/chatNormalization.helpers';
-import {
-  loadStoredSaasSession as loadStoredSaasSessionFromStorage,
-  normalizeBusinessDataPayload as normalizeBusinessDataPayloadWithApi,
-  normalizeCatalogItem as normalizeCatalogItemRaw,
-  normalizeModuleImageUrl as normalizeModuleImageUrlWithApi,
-  normalizeProfilePayload as normalizeProfilePayloadWithApi,
-  normalizeProfilePhotoUrl as normalizeProfilePhotoUrlWithApi,
-  normalizeWaModuleItem as normalizeWaModuleItemWithApi,
-  normalizeWaModules as normalizeWaModulesWithApi,
-  persistSaasSession as persistSaasSessionToStorage,
-  resolveSelectedWaModule as resolveSelectedWaModuleWithApi
-} from './components/business/helpers/runtimeNormalization.helpers';
+} from './features/chat/helpers/appChat.helpers';
 
 import './index.css';
 
@@ -57,27 +82,10 @@ const PanelChunkFallback = () => (
   </div>
 );
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-const SOCKET_AUTH_TOKEN = import.meta.env.VITE_SOCKET_AUTH_TOKEN || '';
-const SAAS_SESSION_STORAGE_KEY = 'wa_saas_session_v1';
 
-const socket = io(API_URL, {
-  autoConnect: false,
-  auth: SOCKET_AUTH_TOKEN ? { token: SOCKET_AUTH_TOKEN } : undefined
-});
+const socket = createSocketClient(API_URL, SOCKET_AUTH_TOKEN);
 
-const loadStoredSaasSession = () => loadStoredSaasSessionFromStorage(SAAS_SESSION_STORAGE_KEY);
-const persistSaasSession = (session = null) => persistSaasSessionToStorage(SAAS_SESSION_STORAGE_KEY, session);
-const normalizeCatalogItem = (item = {}, index = 0) => normalizeCatalogItemRaw(item, index);
-const normalizeProfilePhotoUrl = (rawUrl = '') => normalizeProfilePhotoUrlWithApi(rawUrl, API_URL);
-const normalizeModuleImageUrl = (rawUrl = '') => normalizeModuleImageUrlWithApi(rawUrl, API_URL);
-const normalizeProfilePayload = (profile = null) => normalizeProfilePayloadWithApi(profile, API_URL);
-const normalizeBusinessDataPayload = (data = {}) => normalizeBusinessDataPayloadWithApi(data, API_URL);
-const normalizeWaModuleItem = (item = {}) => normalizeWaModuleItemWithApi(item, API_URL);
-const normalizeWaModules = (items = []) => normalizeWaModulesWithApi(items, API_URL);
-const resolveSelectedWaModule = (items = [], preferred = null) => resolveSelectedWaModuleWithApi(items, preferred, API_URL);
-const CHAT_PAGE_SIZE = 80;
-const TRANSPORT_STORAGE_KEY = 'wa_transport_mode';
+
 function App() {
   // --------------------------------------------------------------
   const [isConnected, setIsConnected] = useState(false);
@@ -105,43 +113,8 @@ function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [saasAuthNotice, setSaasAuthNotice] = useState('');
-  const [recoveryStep, setRecoveryStep] = useState('idle');
-  const [recoveryEmail, setRecoveryEmail] = useState('');
-  const [recoveryCode, setRecoveryCode] = useState('');
-  const [recoveryResetToken, setRecoveryResetToken] = useState('');
-  const [recoveryPassword, setRecoveryPassword] = useState('');
-  const [recoveryPasswordConfirm, setRecoveryPasswordConfirm] = useState('');
-  const [showRecoveryPassword, setShowRecoveryPassword] = useState(false);
-  const [recoveryBusy, setRecoveryBusy] = useState(false);
-  const [recoveryError, setRecoveryError] = useState('');
-  const [recoveryNotice, setRecoveryNotice] = useState('');
-  const [recoveryDebugCode, setRecoveryDebugCode] = useState('');
   const [forceOperationLaunchBypass, setForceOperationLaunchBypass] = useState(false);
-  const waLaunchParams = useMemo(() => {
-    try {
-      const params = new URLSearchParams(window.location.search || '');
-      const launch = String(params.get('wa_launch') || '').trim().toLowerCase() === 'operation';
-      const moduleId = String(params.get('wa_module') || '').trim().toLowerCase();
-      const tenantId = String(params.get('wa_tenant') || '').trim();
-      const sectionId = String(params.get('wa_section') || '').trim().toLowerCase();
-      const source = String(params.get('wa_from') || '').trim().toLowerCase();
-      return {
-        forceOperationLaunch: launch,
-        requestedWaModuleId: moduleId || '',
-        requestedWaTenantId: tenantId || '',
-        requestedWaSectionId: sectionId || '',
-        requestedLaunchSource: source || ''
-      };
-    } catch (_) {
-      return {
-        forceOperationLaunch: false,
-        requestedWaModuleId: '',
-        requestedWaTenantId: '',
-        requestedWaSectionId: '',
-        requestedLaunchSource: ''
-      };
-    }
-  }, []);
+  const waLaunchParams = useMemo(() => readWaLaunchParams(window.location.search || ''), []);
   const forceOperationLaunch = waLaunchParams.forceOperationLaunch && !forceOperationLaunchBypass;
   const requestedWaModuleFromUrl = waLaunchParams.requestedWaModuleId;
   const requestedWaTenantFromUrl = waLaunchParams.requestedWaTenantId;
@@ -192,14 +165,6 @@ function App() {
   const [selectedCatalogModuleId, setSelectedCatalogModuleId] = useState('');
   const [selectedCatalogId, setSelectedCatalogId] = useState('');
   const [waModuleError, setWaModuleError] = useState('');
-  const [newChatDialog, setNewChatDialog] = useState({
-    open: false,
-    phone: '',
-    firstMessage: '',
-    moduleId: '',
-    error: ''
-  });
-
   const [waCapabilities, setWaCapabilities] = useState({ messageEdit: true, messageEditSync: true, messageForward: true, messageDelete: true, messageReply: true, quickReplies: false, quickRepliesRead: false, quickRepliesWrite: false });
   const [toasts, setToasts] = useState([]);
   const [pendingOrderCartLoad, setPendingOrderCartLoad] = useState(null);
@@ -253,392 +218,144 @@ function App() {
   }, []);
 
 
-  const buildApiHeaders = useCallback((options = {}) => {
-    const includeJson = Boolean(options?.includeJson);
-    const tokenOverride = String(options?.tokenOverride || '').trim();
-    const tenantIdOverride = String(options?.tenantIdOverride || '').trim();
+  const {
+    buildApiHeaders,
+    resolveSessionSenderIdentity,
+    normalizeSaasSessionPayload,
+    refreshSaasSession
+  } = useSaasApiSessionHelpers({
+    apiUrl: API_URL,
+    saasSessionRef,
+    saasRuntimeRef,
+    setSaasSession
+  });
 
-    const session = saasSessionRef.current;
-    const runtime = saasRuntimeRef.current;
-    const accessToken = tokenOverride || String(session?.accessToken || '').trim();
-    const tenantId = tenantIdOverride || String(session?.user?.tenantId || runtime?.tenant?.id || '').trim();
+  const {
+    recoveryStep,
+    recoveryEmail,
+    setRecoveryEmail,
+    recoveryCode,
+    setRecoveryCode,
+    recoveryPassword,
+    setRecoveryPassword,
+    recoveryPasswordConfirm,
+    setRecoveryPasswordConfirm,
+    showRecoveryPassword,
+    setShowRecoveryPassword,
+    recoveryBusy,
+    recoveryError,
+    setRecoveryError,
+    recoveryNotice,
+    recoveryDebugCode,
+    resetRecoveryFlow,
+    openRecoveryFlow,
+    handleRecoveryRequest,
+    handleRecoveryVerify,
+    handleRecoveryReset
+  } = useSaasRecoveryFlow({
+    loginEmail,
+    setLoginEmail,
+    setLoginPassword,
+    setSaasAuthNotice,
+    buildApiHeaders
+  });
 
-    const headers = {};
-    if (includeJson) headers['Content-Type'] = 'application/json';
-    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-    if (tenantId) headers['X-Tenant-Id'] = tenantId;
-    return headers;
-  }, []);
+  const {
+    requestQuickRepliesForModule,
+    emitScopedBusinessDataRequest
+  } = useScopedBusinessRequests({
+    socket,
+    selectedCatalogModuleIdRef,
+    selectedWaModuleRef,
+    selectedCatalogIdRef,
+    quickRepliesRequestRef,
+    businessDataRequestDebounceRef,
+    businessDataScopeCacheRef,
+    businessDataRequestSeqRef,
+    setBusinessData
+  });
+  useSaasRuntimeBootstrap({
+    apiUrl: API_URL,
+    buildApiHeaders,
+    refreshSaasSession,
+    saasSessionRef,
+    normalizeWaModules,
+    resolveSelectedWaModule,
+    setSaasSession,
+    setWaModules,
+    setSelectedWaModule,
+    setWaModuleError,
+    setSaasRuntime,
+    setLoginEmail,
+    setSaasAuthBusy,
+    setSaasAuthError
+  });
 
-  const resolveSessionSenderIdentity = useCallback(() => {
-    const sessionUser = (saasSessionRef.current?.user && typeof saasSessionRef.current.user === 'object')
-      ? saasSessionRef.current.user
-      : null;
-    const runtimeAuthUser = (saasRuntimeRef.current?.authContext?.user && typeof saasRuntimeRef.current.authContext.user === 'object')
-      ? saasRuntimeRef.current.authContext.user
-      : null;
-    const user = sessionUser || runtimeAuthUser;
-    const id = String(user?.id || user?.userId || '').trim();
-    const email = String(user?.email || '').trim();
-    const role = String(user?.role || '').trim().toLowerCase();
-    const explicitName = String(user?.name || user?.displayName || user?.fullName || '').trim();
-    const name = String(explicitName || email || id || '').trim();
-    return {
-      id: id || null,
-      email: email || null,
-      role: role || null,
-      name: name || null
-    };
-  }, []);
+  useSaasSessionAutoRefresh({
+    authEnabled: Boolean(saasRuntime?.authEnabled),
+    refreshToken: String(saasSession?.refreshToken || ''),
+    accessExpiresAtUnix: Number(saasSession?.accessExpiresAtUnix || 0),
+    saasSessionRef,
+    refreshSaasSession,
+    setSaasSession,
+    setSaasAuthError
+  });
 
-  const requestQuickRepliesForModule = useCallback((moduleId = '') => {
-    if (!socket.connected) return;
-    const cleanModuleId = String(
-      moduleId
-      || selectedCatalogModuleIdRef.current
-      || selectedWaModuleRef.current?.moduleId
-      || ''
-    ).trim().toLowerCase();
-    const now = Date.now();
-    const cache = quickRepliesRequestRef.current || { key: '', at: 0 };
-    if (cache.key === cleanModuleId && (now - cache.at) < 250) return;
-    quickRepliesRequestRef.current = { key: cleanModuleId, at: now };
-    socket.emit('get_quick_replies', cleanModuleId ? { moduleId: cleanModuleId } : {});
-  }, []);
 
-  const emitScopedBusinessDataRequest = useCallback((scope = {}) => {
-    if (!socket.connected) return;
-    const requestedModuleId = String(
-      scope?.moduleId
-      || selectedCatalogModuleIdRef.current
-      || selectedWaModuleRef.current?.moduleId
-      || ''
-    ).trim().toLowerCase();
-    const requestedCatalogId = String(
-      scope?.catalogId
-      || selectedCatalogIdRef.current
-      || ''
-    ).trim().toUpperCase();
-    const dedupeKey = `${requestedModuleId}|${requestedCatalogId}`;
-    const now = Date.now();
-    const dedupe = businessDataRequestDebounceRef.current || { key: '', at: 0 };
-    if (dedupe.key === dedupeKey && (now - dedupe.at) < 220) return;
-    businessDataRequestDebounceRef.current = { key: dedupeKey, at: now };
+  useSocketConnectionAuthEffect({
+    socket,
+    saasRuntime,
+    saasSession,
+    selectedWaModuleRef,
+    selectedWaModuleId: selectedWaModule?.moduleId,
+    socketAuthToken: SOCKET_AUTH_TOKEN,
+    setIsConnected,
+    setIsClientReady
+  });
 
-    const cachedScope = businessDataScopeCacheRef.current.get(dedupeKey);
-    if (cachedScope && Array.isArray(cachedScope.catalog)) {
-      setBusinessData((prev) => ({
-        ...prev,
-        catalog: cachedScope.catalog,
-        catalogMeta: cachedScope.catalogMeta || prev?.catalogMeta || { source: 'local', nativeAvailable: false }
-      }));
-    }
+  useMessagesAutoScroll({
+    messages,
+    messagesEndRef,
+    prevMessagesMetaRef,
+    shouldInstantScrollRef,
+    suppressSmoothScrollUntilRef
+  });
 
-    const payload = {};
-    if (requestedModuleId) payload.moduleId = requestedModuleId;
-    if (requestedCatalogId) payload.catalogId = requestedCatalogId;
-    const requestSeq = (businessDataRequestSeqRef.current || 0) + 1;
-    businessDataRequestSeqRef.current = requestSeq;
-    payload.requestSeq = requestSeq;
-    socket.emit('get_business_data', payload);
-  }, []);
-  const normalizeSaasSessionPayload = useCallback((payload = {}, previousSession = null) => {
-    const accessToken = String(payload?.accessToken || '').trim();
-    const refreshToken = String(payload?.refreshToken || '').trim() || String(previousSession?.refreshToken || '').trim();
-    if (!accessToken || !refreshToken) return null;
-
-    const now = Math.floor(Date.now() / 1000);
-    const accessExpiresIn = Number(payload?.expiresInSec || 0);
-    const accessExpiresAtUnix = accessExpiresIn > 0 ? (now + accessExpiresIn) : (Number(previousSession?.accessExpiresAtUnix || 0) || 0);
-    const refreshExpiresAtUnix = Number(payload?.refreshExpiresAtUnix || 0)
-      || (Number(payload?.refreshExpiresInSec || 0) > 0 ? (now + Number(payload.refreshExpiresInSec)) : 0)
-      || (Number(previousSession?.refreshExpiresAtUnix || 0) || 0);
-
-    return {
-      accessToken,
-      refreshToken,
-      tokenType: String(payload?.tokenType || previousSession?.tokenType || 'Bearer').trim() || 'Bearer',
-      accessExpiresAtUnix,
-      refreshExpiresAtUnix,
-      user: payload?.user && typeof payload.user === 'object'
-        ? payload.user
-        : (previousSession?.user && typeof previousSession.user === 'object' ? previousSession.user : null)
-    };
-  }, []);
-
-  const refreshSaasSession = useCallback(async (refreshTokenOverride = '') => {
-    const current = saasSessionRef.current;
-    const refreshToken = String(refreshTokenOverride || current?.refreshToken || '').trim();
-    if (!refreshToken) throw new Error('No hay refresh token disponible.');
-
-    const response = await fetch(`${API_URL}/api/auth/refresh`, {
-      method: 'POST',
-      headers: buildApiHeaders({ includeJson: true, tokenOverride: String(current?.accessToken || '').trim() }),
-      body: JSON.stringify({ refreshToken })
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload?.ok) {
-      throw new Error(String(payload?.error || 'No se pudo renovar sesion.'));
-    }
-
-    const nextSession = normalizeSaasSessionPayload(payload, current);
-    if (!nextSession) throw new Error('Sesion renovada invalida.');
-    setSaasSession(nextSession);
-    return nextSession;
-  }, [buildApiHeaders, normalizeSaasSessionPayload]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchRuntime = async (tokenOverride = '') => {
-      try {
-        const response = await fetch(`${API_URL}/api/saas/runtime`, {
-          headers: buildApiHeaders({ tokenOverride })
-        });
-        const payload = await response.json().catch(() => ({}));
-        return {
-          ok: response.ok,
-          payload: payload && typeof payload === 'object' ? payload : {},
-          error: String(payload?.error || '')
-        };
-      } catch (error) {
-        return {
-          ok: false,
-          payload: {},
-          error: String(error?.message || 'No se pudo cargar runtime SaaS.')
-        };
-      }
-    };
-
-    (async () => {
-      setSaasAuthBusy(true);
-      setSaasAuthError('');
-
-      const existing = saasSessionRef.current;
-      let nextSession = existing;
-
-      let runtimeResult = await fetchRuntime(String(existing?.accessToken || ''));
-      let runtimePayload = runtimeResult.payload || {};
-      const authEnabled = Boolean(runtimePayload?.authEnabled);
-      const runtimeAuthed = Boolean(runtimePayload?.authContext?.isAuthenticated && runtimePayload?.authContext?.user);
-
-      if (authEnabled) {
-        if (runtimeAuthed && existing?.accessToken) {
-          nextSession = { ...existing, user: runtimePayload.authContext.user };
-        } else if (existing?.refreshToken) {
-          try {
-            const refreshed = await refreshSaasSession(existing.refreshToken);
-            nextSession = refreshed;
-            runtimeResult = await fetchRuntime(String(refreshed?.accessToken || ''));
-            runtimePayload = runtimeResult.payload || runtimePayload;
-            if (runtimePayload?.authContext?.isAuthenticated && runtimePayload?.authContext?.user) {
-              nextSession = { ...refreshed, user: runtimePayload.authContext.user };
-            }
-          } catch (_error) {
-            nextSession = null;
-          }
-        } else {
-          nextSession = null;
-        }
-      }
-
-      if (cancelled) return;
-
-      const runtimeTenant = runtimePayload?.tenant || null;
-      const runtimeUser = runtimePayload?.authContext?.user || nextSession?.user || null;
-      const runtimeModules = normalizeWaModules(runtimePayload?.waModules || []);
-      const runtimeSelectedModule = resolveSelectedWaModule(runtimeModules, runtimePayload?.selectedWaModule || null);
-
-      setSaasSession(nextSession);
-      setWaModules(runtimeModules);
-      setSelectedWaModule(runtimeSelectedModule);
-      setWaModuleError('');
-      setSaasRuntime({
-        loaded: true,
-        authEnabled,
-        tenant: runtimeTenant,
-        tenants: Array.isArray(runtimePayload?.tenants) ? runtimePayload.tenants : [],
-        authContext: {
-          enabled: authEnabled,
-          isAuthenticated: Boolean(runtimePayload?.authContext?.isAuthenticated),
-          user: runtimeUser
-        }
-      });
-      const suggestedEmail = String(runtimeUser?.email || '').trim();
-      if (suggestedEmail) setLoginEmail((prev) => prev || suggestedEmail);
-
-      if (!runtimeResult.ok) {
-        setSaasAuthError(runtimeResult.error || 'No se pudo cargar runtime SaaS.');
-      }
-      setSaasAuthBusy(false);
-    })().catch((error) => {
-      if (cancelled) return;
-      setSaasRuntime((prev) => ({ ...prev, loaded: true }));
-      setWaModules([]);
-      setSelectedWaModule(null);
-      setSaasAuthBusy(false);
-      setSaasAuthError(String(error?.message || 'No se pudo inicializar SaaS.'));
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [buildApiHeaders, refreshSaasSession]);
-
-  useEffect(() => {
-    if (!saasRuntime?.authEnabled) return;
-    if (!saasSession?.refreshToken) return;
-    if (!Number.isFinite(Number(saasSession?.accessExpiresAtUnix)) || Number(saasSession.accessExpiresAtUnix) <= 0) return;
-
-    let cancelled = false;
-    const tick = async () => {
-      if (cancelled) return;
-      const expiresAt = Number(saasSessionRef.current?.accessExpiresAtUnix || 0);
-      const now = Math.floor(Date.now() / 1000);
-      if (!expiresAt || (expiresAt - now) > 120) return;
-
-      try {
-        await refreshSaasSession();
-      } catch (_error) {
-        if (cancelled) return;
-        setSaasSession(null);
-        setSaasAuthError('Sesion expirada. Inicia sesion nuevamente.');
-      }
-    };
-
-    const interval = setInterval(tick, 30000);
-    tick();
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [saasRuntime?.authEnabled, saasSession?.refreshToken, saasSession?.accessExpiresAtUnix, refreshSaasSession]);
-
-  useEffect(() => {
-    if (!saasRuntime?.loaded) return;
-
-    const authRequired = Boolean(saasRuntime?.authEnabled);
-    const accessToken = String(saasSession?.accessToken || '').trim();
-    const tenantId = String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || '').trim();
-
-    if (authRequired && !accessToken) {
-      if (socket.connected) socket.disconnect();
-      setIsConnected(false);
-      setIsClientReady(false);
-      return;
-    }
-
-    const auth = {};
-    if (SOCKET_AUTH_TOKEN) auth.token = SOCKET_AUTH_TOKEN;
-    if (accessToken) auth.accessToken = accessToken;
-    if (tenantId) auth.tenantId = tenantId;
-    const selectedModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim();
-    if (selectedModuleId) auth.waModuleId = selectedModuleId;
-    socket.auth = Object.keys(auth).length > 0 ? auth : undefined;
-
-    if (!socket.connected) socket.connect();
-  }, [saasRuntime?.loaded, saasRuntime?.authEnabled, saasRuntime?.tenant?.id, saasSession?.accessToken, saasSession?.user?.tenantId, selectedWaModule?.moduleId]);
-
-  // --------------------------------------------------------------
-  // Auto-scroll
-  // --------------------------------------------------------------
-  useLayoutEffect(() => {
-    const endNode = messagesEndRef.current;
-    if (!endNode) return;
-    const messagesContainer = endNode.parentElement;
-    if (!messagesContainer) return;
-
-    const nextCount = Array.isArray(messages) ? messages.length : 0;
-    const nextLastId = nextCount > 0 ? String(messages[nextCount - 1]?.id || '') : '';
-    const prevMeta = prevMessagesMetaRef.current || { count: 0, lastId: '' };
-    const isNewMessageAppend = nextCount > prevMeta.count;
-    const shouldForceScroll = shouldInstantScrollRef.current || isNewMessageAppend;
-
-    if (shouldForceScroll) {
-      const inQuietWindow = Date.now() < suppressSmoothScrollUntilRef.current;
-      const behavior = (shouldInstantScrollRef.current || inQuietWindow || !isNewMessageAppend) ? 'auto' : 'smooth';
-      const targetTop = messagesContainer.scrollHeight;
-      if (behavior === 'smooth') {
-        messagesContainer.scrollTo({ top: targetTop, behavior: 'smooth' });
-      } else {
-        messagesContainer.scrollTop = targetTop;
-      }
-    }
-
-    if (shouldInstantScrollRef.current) shouldInstantScrollRef.current = false;
-    prevMessagesMetaRef.current = { count: nextCount, lastId: nextLastId };
-  }, [messages]);
-
-  useEffect(() => {
-    activeChatIdRef.current = activeChatId;
-  }, [activeChatId]);
-
-  useEffect(() => {
-    chatsRef.current = chats;
-  }, [chats]);
-
-  useEffect(() => {
-    chatSearchRef.current = String(chatSearchQuery || '').trim();
-  }, [chatSearchQuery]);
-
-  useEffect(() => {
-    chatFiltersRef.current = normalizeChatFilters(chatFilters);
-  }, [chatFilters]);
-
-  useEffect(() => {
-    selectedTransportRef.current = selectedTransport;
-    try {
-      localStorage.removeItem(TRANSPORT_STORAGE_KEY);
-    } catch (_) { }
-  }, [selectedTransport]);
-
-  useEffect(() => {
-    selectedWaModuleRef.current = selectedWaModule;
-  }, [selectedWaModule]);
-
-  useEffect(() => {
-    waModulesRef.current = Array.isArray(waModules) ? waModules : [];
-  }, [waModules]);
-
-  useEffect(() => {
-    selectedCatalogModuleIdRef.current = String(selectedCatalogModuleId || '').trim().toLowerCase();
-  }, [selectedCatalogModuleId]);
-
-  useEffect(() => {
-    selectedCatalogIdRef.current = String(selectedCatalogId || '').trim().toUpperCase();
-  }, [selectedCatalogId]);
-
-  useEffect(() => {
-    saasSessionRef.current = saasSession;
-    persistSaasSession(saasSession);
-  }, [saasSession]);
-
-  useEffect(() => {
-    saasRuntimeRef.current = saasRuntime;
-  }, [saasRuntime]);
-
-  useEffect(() => {
-    forceOperationLaunchRef.current = forceOperationLaunch;
-  }, [forceOperationLaunch]);
-
-  useEffect(() => {
-    if (selectedTransport !== 'cloud') return;
-    if (waRuntime?.activeTransport !== 'cloud') return;
-    if (waRuntime?.cloudConfigured) return;
-    setIsClientReady(false);
-    setTransportError('Cloud API no configurada en backend/.env.');
-  }, [selectedTransport, waRuntime]);
-
-  useEffect(() => {
-    if (!showClientProfile) return;
-    const handleOutsideClick = (event) => {
-      const target = event.target;
-      if (clientProfilePanelRef.current?.contains(target)) return;
-      setShowClientProfile(false);
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [showClientProfile]);
+  useChatRuntimeSyncEffects({
+    activeChatId,
+    activeChatIdRef,
+    chats,
+    chatsRef,
+    chatSearchQuery,
+    chatSearchRef,
+    chatFilters,
+    chatFiltersRef,
+    normalizeChatFilters,
+    selectedTransport,
+    selectedTransportRef,
+    transportStorageKey: TRANSPORT_STORAGE_KEY,
+    selectedWaModule,
+    selectedWaModuleRef,
+    waModules,
+    waModulesRef,
+    selectedCatalogModuleId,
+    selectedCatalogModuleIdRef,
+    selectedCatalogId,
+    selectedCatalogIdRef,
+    saasSession,
+    saasSessionRef,
+    persistSaasSession,
+    saasRuntime,
+    saasRuntimeRef,
+    forceOperationLaunch,
+    forceOperationLaunchRef,
+    waRuntime,
+    setIsClientReady,
+    setTransportError,
+    showClientProfile,
+    clientProfilePanelRef,
+    setShowClientProfile
+  });
 
   useEffect(() => {
     if (!isClientReady) return;
@@ -648,168 +365,54 @@ function App() {
     return () => clearTimeout(timer);
   }, [chatSearchQuery, chatFilters, isClientReady]);
 
-  // --------------------------------------------------------------
-  const requestChatsPage = ({ reset = false } = {}) => {
-    if (chatPagingRef.current.loading && !reset) return;
-    if (!reset && !chatPagingRef.current.hasMore) return;
+  const { requestChatsPage } = useChatPaginationRequester({
+    socket,
+    chatPagingRef,
+    chatSearchRef,
+    chatFiltersRef,
+    chatPageSize: CHAT_PAGE_SIZE,
+    buildFiltersKey,
+    setChatsHasMore,
+    setChatsTotal,
+    setIsLoadingMoreChats
+  });
 
-    const offset = reset ? 0 : chatPagingRef.current.offset;
-    const query = chatSearchRef.current;
-    const filters = chatFiltersRef.current;
-    chatPagingRef.current.loading = true;
-    if (reset) {
-      chatPagingRef.current.offset = 0;
-      chatPagingRef.current.hasMore = true;
-      setChatsHasMore(true);
-      setChatsTotal(0);
-    }
-    setIsLoadingMoreChats(true);
-    socket.emit('get_chats', { offset, limit: CHAT_PAGE_SIZE, reset, query, filters, filterKey: buildFiltersKey(filters) });
-  };
+
+  useWaModuleSocketEvents({
+    socket,
+    selectedWaModuleRef,
+    selectedCatalogModuleIdRef,
+    selectedCatalogIdRef,
+    requestedWaModuleFromUrlRef,
+    forceOperationLaunchRef,
+    canManageSaasRef,
+    emitScopedBusinessDataRequest,
+    requestQuickRepliesForModule,
+    setWaModules,
+    setSelectedWaModule,
+    setWaModuleError,
+    setSelectedCatalogModuleId,
+    setSelectedCatalogId,
+    setSelectedTransport
+  });
 
   // Socket Events
   // --------------------------------------------------------------
   useEffect(() => {
     socket.on('connect', () => {
       setIsConnected(true);
-      setTransportError('');
       const mode = selectedTransportRef.current;
       setIsSwitchingTransport(true);
       socket.emit('set_transport_mode', { mode: mode || 'idle' });
       socket.emit('get_wa_capabilities');
       socket.emit('get_wa_modules');
     });
-    socket.on('connect_error', (error) => {
+
+    socket.on('connect_error', (err) => {
       setIsConnected(false);
-      const message = String(error?.message || '').trim();
-      if (saasRuntimeRef.current?.authEnabled && /unauthorized/i.test(message)) {
-        setSaasSession(null);
-        setSaasAuthError('Sesion SaaS expirada o invalida. Inicia sesion nuevamente.');
-      }
-    });
-
-    socket.on('tenant_context', (ctx) => {
-      if (!ctx || typeof ctx !== 'object') return;
-      const tenantId = String(ctx?.tenantId || '').trim();
-      const authUser = (ctx?.auth?.user && typeof ctx.auth.user === 'object')
-        ? ctx.auth.user
-        : (ctx?.user && typeof ctx.user === 'object' ? ctx.user : null);
-
-      if (tenantId) {
-        setSaasRuntime((prev) => ({
-          ...prev,
-          tenant: {
-            ...(prev?.tenant || {}),
-            id: tenantId,
-            slug: prev?.tenant?.slug || tenantId,
-            name: prev?.tenant?.name || tenantId,
-            active: prev?.tenant?.active !== false,
-            plan: prev?.tenant?.plan || 'starter'
-          }
-        }));
-      }
-
-      if (authUser && saasSessionRef.current?.accessToken) {
-        setSaasSession((prev) => prev ? ({ ...prev, user: { ...(prev?.user || {}), ...authUser } }) : prev);
-      }
-    });
-
-    socket.on('wa_module_context', (payload) => {
-      const items = normalizeWaModules(payload?.items || []);
-      const previousModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
-      const selected = resolveSelectedWaModule(items, payload?.selected || selectedWaModuleRef.current);
-      const selectedModuleId = String(selected?.moduleId || '').trim().toLowerCase();
-      setWaModules(items);
-      setSelectedWaModule(selected);
-      setWaModuleError('');
-
-      const previousCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
-      const selectedCatalogExists = previousCatalogModuleId
-        ? items.some((item) => String(item?.moduleId || '').trim().toLowerCase() === previousCatalogModuleId)
-        : false;
-      const nextCatalogModuleId = selectedCatalogExists
-        ? previousCatalogModuleId
-        : (selectedModuleId || String(items[0]?.moduleId || '').trim().toLowerCase());
-      setSelectedCatalogModuleId(nextCatalogModuleId || '');
-      if (nextCatalogModuleId !== previousCatalogModuleId) {
-        selectedCatalogIdRef.current = '';
-        setSelectedCatalogId('');
-      }
-      if (nextCatalogModuleId && socket.connected) {
-        const nextCatalogId = nextCatalogModuleId === previousCatalogModuleId
-          ? (selectedCatalogIdRef.current || '')
-          : '';
-        emitScopedBusinessDataRequest({ moduleId: nextCatalogModuleId, catalogId: nextCatalogId });
-      }
-
-      const requestedModuleId = String(requestedWaModuleFromUrlRef.current || '').trim().toLowerCase();
-      if (requestedModuleId) {
-        const requestedMatch = items.find((item) => String(item?.moduleId || '').trim().toLowerCase() === requestedModuleId);
-        if (requestedMatch && String(selected?.moduleId || '').trim().toLowerCase() !== requestedModuleId) {
-          socket.emit('set_wa_module', { moduleId: requestedMatch.moduleId });
-          return;
-        }
-        requestedWaModuleFromUrlRef.current = '';
-      }
-
-      const selectedMode = String(selected?.transportMode || '').trim().toLowerCase();
-      const shouldAutoSelectTransport = forceOperationLaunchRef.current || !canManageSaasRef.current;
-      if (shouldAutoSelectTransport && selectedMode === 'cloud' && selectedMode !== selectedTransportRef.current) {
-        setSelectedTransport(selectedMode);
-      }
-
-      if (selectedModuleId && selectedModuleId !== previousModuleId) {
-        requestQuickRepliesForModule(selectedModuleId);
-        emitScopedBusinessDataRequest({ moduleId: selectedModuleId || selectedCatalogModuleIdRef.current, catalogId: selectedCatalogIdRef.current || '' });
-      }
-    });
-
-    socket.on('wa_module_selected', (payload) => {
-      const selected = normalizeWaModuleItem(payload?.selected || payload?.item || payload || null);
-      if (!selected?.moduleId) return;
-      const previousModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
-      const selectedModuleId = String(selected?.moduleId || '').trim().toLowerCase();
-
-      setWaModules((prev) => {
-        const base = normalizeWaModules(prev || []);
-        const hasExisting = base.some((item) => item.moduleId === selected.moduleId);
-        const merged = hasExisting
-          ? base.map((item) => (item.moduleId === selected.moduleId ? { ...item, ...selected, isSelected: true } : { ...item, isSelected: false }))
-          : [{ ...selected, isSelected: true }, ...base.map((item) => ({ ...item, isSelected: false }))];
-        return normalizeWaModules(merged);
-      });
-      setSelectedWaModule(selected);
-      setWaModuleError('');
-
-      const currentCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
-      if (!currentCatalogModuleId && selectedModuleId) {
-        setSelectedCatalogModuleId(selectedModuleId);
-        selectedCatalogIdRef.current = '';
-        setSelectedCatalogId('');
-        if (socket.connected) {
-          emitScopedBusinessDataRequest({ moduleId: selectedModuleId, catalogId: '' });
-        }
-      }
-
-      const selectedId = String(selected?.moduleId || '').trim().toLowerCase();
-      if (selectedId && selectedId === String(requestedWaModuleFromUrlRef.current || '').trim().toLowerCase()) {
-        requestedWaModuleFromUrlRef.current = '';
-      }
-
-      const selectedMode = String(selected?.transportMode || '').trim().toLowerCase();
-      const shouldAutoSelectTransport = forceOperationLaunchRef.current || !canManageSaasRef.current;
-      if (shouldAutoSelectTransport && selectedMode === 'cloud') {
-        setSelectedTransport(selectedMode);
-      }
-
-      if (selectedModuleId && selectedModuleId !== previousModuleId) {
-        requestQuickRepliesForModule(selectedModuleId);
-        emitScopedBusinessDataRequest({ moduleId: selectedModuleId || selectedCatalogModuleIdRef.current, catalogId: selectedCatalogIdRef.current || '' });
-      }
-    });
-
-    socket.on('wa_module_error', (message) => {
-      setWaModuleError(String(message || 'No se pudo actualizar el modulo WhatsApp.'));
+      setIsSwitchingTransport(false);
+      const message = String(err?.message || '').trim();
+      if (message) console.error('[socket][connect_error]', message);
     });
 
     socket.on('disconnect', () => {
@@ -1392,18 +995,11 @@ function App() {
         setSelectedCatalogModuleId(scopeModuleId);
       }
 
-      let nextCatalogId = currentCatalogId;
-      if (scopeCatalogId) {
-        nextCatalogId = scopeCatalogId;
-      } else if (scopeCatalogIds.length === 1) {
-        nextCatalogId = scopeCatalogIds[0];
-      } else if (currentCatalogId && scopeCatalogIds.includes(currentCatalogId)) {
-        nextCatalogId = currentCatalogId;
-      } else if (scopeCatalogIds.length > 0) {
-        nextCatalogId = scopeCatalogIds[0];
-      } else {
-        nextCatalogId = '';
-      }
+      const nextCatalogId = resolveScopedCatalogSelection({
+        scopeCatalogId,
+        scopeCatalogIds,
+        currentCatalogId
+      });
 
       if (nextCatalogId !== currentCatalogId) {
         setSelectedCatalogId(nextCatalogId);
@@ -1480,69 +1076,25 @@ function App() {
         setSelectedCatalogModuleId(scopeModuleId);
       }
 
-      let nextCatalogId = activeCatalogId;
-      if (scopeCatalogId) {
-        nextCatalogId = scopeCatalogId;
-      } else if (scopeCatalogIds.length === 1) {
-        nextCatalogId = scopeCatalogIds[0];
-      } else if (activeCatalogId && scopeCatalogIds.includes(activeCatalogId)) {
-        nextCatalogId = activeCatalogId;
-      } else if (scopeCatalogIds.length > 0) {
-        nextCatalogId = scopeCatalogIds[0];
-      } else {
-        nextCatalogId = '';
-      }
+      const nextCatalogId = resolveScopedCatalogSelection({
+        scopeCatalogId,
+        scopeCatalogIds,
+        currentCatalogId: activeCatalogId
+      });
 
       if (nextCatalogId !== activeCatalogId) {
         setSelectedCatalogId(nextCatalogId);
       }
     });
     socket.on('quick_replies', (payload) => {
-      const enabled = payload?.enabled !== false;
-      const writable = payload?.writable !== false;
+      const normalizedQuickReplies = normalizeQuickRepliesSocketPayload(payload || {});
       setWaCapabilities((prev) => ({
         ...prev,
-        quickReplies: enabled,
-        quickRepliesRead: enabled,
-        quickRepliesWrite: enabled && writable
+        quickReplies: normalizedQuickReplies.enabled,
+        quickRepliesRead: normalizedQuickReplies.enabled,
+        quickRepliesWrite: normalizedQuickReplies.enabled && normalizedQuickReplies.writable
       }));
-
-      const items = Array.isArray(payload?.items) ? payload.items : [];
-      const normalized = items
-        .map((item, idx) => {
-          const mediaAssets = Array.isArray(item?.mediaAssets)
-            ? item.mediaAssets
-              .map((asset) => ({
-                url: String(asset?.url || asset?.mediaUrl || '').trim() || null,
-                mimeType: String(asset?.mimeType || asset?.mediaMimeType || '').trim().toLowerCase() || null,
-                fileName: String(asset?.fileName || asset?.mediaFileName || '').trim() || null,
-                sizeBytes: Number.isFinite(Number(asset?.sizeBytes ?? asset?.mediaSizeBytes)) ? Number(asset?.sizeBytes ?? asset?.mediaSizeBytes) : null
-              }))
-              .filter((asset) => Boolean(asset.url))
-            : [];
-          const mediaUrl = String(item?.mediaUrl || mediaAssets[0]?.url || '').trim() || null;
-          const mediaMimeType = String(item?.mediaMimeType || mediaAssets[0]?.mimeType || '').trim().toLowerCase() || null;
-          const mediaFileName = String(item?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null;
-          const mediaSizeBytes = Number.isFinite(Number(item?.mediaSizeBytes))
-            ? Number(item.mediaSizeBytes)
-            : (Number.isFinite(Number(mediaAssets[0]?.sizeBytes)) ? Number(mediaAssets[0].sizeBytes) : null);
-
-          return {
-            id: String(item?.id || ('qr_' + (idx + 1))),
-            label: sanitizeDisplayText(item?.label || 'Respuesta rapida'),
-            text: repairMojibake(item?.text || ''),
-            mediaAssets,
-            mediaUrl,
-            mediaMimeType,
-            mediaFileName,
-            mediaSizeBytes,
-            libraryId: String(item?.libraryId || '').trim() || null,
-            libraryName: String(item?.libraryName || '').trim() || null,
-            isShared: item?.isShared !== false
-          };
-        })
-        .filter((item) => item.id && (item.text || item.mediaUrl || (Array.isArray(item.mediaAssets) && item.mediaAssets.length > 0)));
-      setQuickReplies(normalized);
+      setQuickReplies(normalizedQuickReplies.items);
     });
 
     socket.on('quick_reply_error', (msg) => {
@@ -1749,313 +1301,40 @@ function App() {
     resetWorkspaceState();
   }, [tenantScopeId]);
 
-  const handleSaasLogin = async (event) => {
-    event?.preventDefault();
-    if (recoveryStep !== 'idle') return;
-    const email = String(loginEmail || '').trim().toLowerCase();
-    const password = String(loginPassword || '');
-
-    if (!email || !password) {
-      setSaasAuthError('Ingresa correo y contrasena para continuar.');
-      return;
-    }
-
-    setSaasAuthBusy(true);
-    setSaasAuthError('');
-    setSaasAuthNotice('');
-    setTenantSwitchError('');
-    setRecoveryError('');
-
-    try {
-      const response = await fetch(API_URL + '/api/auth/login', {
-        method: 'POST',
-        headers: buildApiHeaders({ includeJson: true }),
-        body: JSON.stringify({ email, password })
-      });
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok || !payload?.ok) {
-        throw new Error(String(payload?.error || 'No se pudo iniciar sesion.'));
-      }
-
-      const session = normalizeSaasSessionPayload(payload, null);
-      if (!session) throw new Error('Respuesta de autenticacion invalida.');
-      if (payload?.user && typeof payload.user === 'object') {
-        session.user = payload.user;
-      }
-
-      try {
-        const meResponse = await fetch(`${API_URL}/api/auth/me`, {
-          method: 'GET',
-          headers: buildApiHeaders({
-            tokenOverride: String(session?.accessToken || ''),
-            tenantIdOverride: String(session?.user?.tenantId || '')
-          })
-        });
-        const mePayload = await meResponse.json().catch(() => ({}));
-        if (meResponse.ok && mePayload?.ok && mePayload?.user && typeof mePayload.user === 'object') {
-          session.user = { ...(session.user || {}), ...mePayload.user };
-        }
-      } catch (_) {
-        // best effort: seguimos con lo recibido en login
-      }
-
-      const loginRole = String(session?.user?.role || '').trim().toLowerCase();
-      const loginCanManageSaas = Boolean(
-        session?.user?.canManageSaas
-        || session?.user?.isSuperAdmin
-        || loginRole === 'owner'
-        || loginRole === 'admin'
-        || loginRole === 'superadmin'
-      );
-      setSaasSession(session);
-      setForceOperationLaunchBypass(loginCanManageSaas);
-      if (loginCanManageSaas) {
-        try {
-          const cleanUrl = new URL(window.location.href);
-          cleanUrl.searchParams.delete('wa_launch');
-          cleanUrl.searchParams.delete('wa_module');
-          cleanUrl.searchParams.delete('wa_tenant');
-          window.history.replaceState({}, '', cleanUrl.toString());
-        } catch (_) {
-          // no-op
-        }
-        setSelectedTransport('');
-        setShowSaasAdminPanel(true);
-      } else {
-        setShowSaasAdminPanel(false);
-        setSelectedTransport('cloud');
-      }
-      setLoginPassword('');
-      setLoginEmail(String(session?.user?.email || payload?.user?.email || email));
-      setRecoveryStep('idle');
-    } catch (error) {
-      setSaasAuthError(String(error?.message || 'No se pudo iniciar sesion.'));
-    } finally {
-      setSaasAuthBusy(false);
-    }
-  };
-
-  const resetRecoveryFlow = () => {
-    setRecoveryStep('idle');
-    setRecoveryCode('');
-    setRecoveryResetToken('');
-    setRecoveryPassword('');
-    setRecoveryPasswordConfirm('');
-    setRecoveryBusy(false);
-    setRecoveryError('');
-    setRecoveryNotice('');
-    setRecoveryDebugCode('');
-    setShowRecoveryPassword(false);
-  };
-
-  const openRecoveryFlow = () => {
-    const emailSeed = String(loginEmail || '').trim().toLowerCase();
-    setRecoveryEmail(emailSeed);
-    setRecoveryStep('request');
-    setRecoveryCode('');
-    setRecoveryResetToken('');
-    setRecoveryPassword('');
-    setRecoveryPasswordConfirm('');
-    setRecoveryError('');
-    setRecoveryNotice('');
-    setRecoveryDebugCode('');
-    setSaasAuthNotice('');
-  };
-
-  const handleRecoveryRequest = async (event) => {
-    event?.preventDefault();
-    const email = String(recoveryEmail || '').trim().toLowerCase();
-    if (!email) {
-      setRecoveryError('Ingresa tu correo para recuperar acceso.');
-      return;
-    }
-
-    setRecoveryBusy(true);
-    setRecoveryError('');
-    setRecoveryNotice('');
-    try {
-      const response = await fetch(`${API_URL}/api/auth/recovery/request`, {
-        method: 'POST',
-        headers: buildApiHeaders({ includeJson: true }),
-        body: JSON.stringify({ email })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload?.ok === false) {
-        throw new Error(String(payload?.error || 'No se pudo iniciar la recuperacion.'));
-      }
-      setRecoveryNotice(String(payload?.message || 'Si el correo existe, enviaremos un codigo de recuperacion.'));
-      setRecoveryDebugCode(String(payload?.debugCode || ''));
-      setRecoveryStep('verify');
-    } catch (error) {
-      setRecoveryError(String(error?.message || 'No se pudo iniciar la recuperacion.'));
-    } finally {
-      setRecoveryBusy(false);
-    }
-  };
-
-  const handleRecoveryVerify = async (event) => {
-    event?.preventDefault();
-    const email = String(recoveryEmail || '').trim().toLowerCase();
-    const code = String(recoveryCode || '').trim();
-    if (!email || !code) {
-      setRecoveryError('Ingresa correo y codigo de verificacion.');
-      return;
-    }
-
-    setRecoveryBusy(true);
-    setRecoveryError('');
-    try {
-      const response = await fetch(`${API_URL}/api/auth/recovery/verify`, {
-        method: 'POST',
-        headers: buildApiHeaders({ includeJson: true }),
-        body: JSON.stringify({ email, code })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload?.ok === false) {
-        throw new Error(String(payload?.error || 'Codigo invalido o expirado.'));
-      }
-      setRecoveryResetToken(String(payload?.resetToken || ''));
-      setRecoveryStep('reset');
-      setRecoveryNotice('Codigo validado. Ahora crea tu nueva contrasena.');
-    } catch (error) {
-      setRecoveryError(String(error?.message || 'No se pudo validar el codigo.'));
-    } finally {
-      setRecoveryBusy(false);
-    }
-  };
-
-  const handleRecoveryReset = async (event) => {
-    event?.preventDefault();
-    const email = String(recoveryEmail || '').trim().toLowerCase();
-    const resetToken = String(recoveryResetToken || '').trim();
-    const newPassword = String(recoveryPassword || '');
-    if (!email || !resetToken) {
-      setRecoveryError('Sesion de recuperacion expirada. Solicita un nuevo codigo.');
-      return;
-    }
-    if (!newPassword || newPassword.length < 10) {
-      setRecoveryError('Usa una contrasena segura (minimo 10 caracteres).');
-      return;
-    }
-    if (newPassword !== String(recoveryPasswordConfirm || '')) {
-      setRecoveryError('Las contrasenas no coinciden.');
-      return;
-    }
-
-    setRecoveryBusy(true);
-    setRecoveryError('');
-    try {
-      const response = await fetch(`${API_URL}/api/auth/recovery/reset`, {
-        method: 'POST',
-        headers: buildApiHeaders({ includeJson: true }),
-        body: JSON.stringify({ email, resetToken, newPassword })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload?.ok === false) {
-        throw new Error(String(payload?.error || 'No se pudo actualizar la contrasena.'));
-      }
-      setLoginEmail(email);
-      setLoginPassword('');
-      resetRecoveryFlow();
-      setSaasAuthNotice(String(payload?.message || 'Contrasena actualizada. Inicia sesion con la nueva clave.'));
-    } catch (error) {
-      setRecoveryError(String(error?.message || 'No se pudo actualizar la contrasena.'));
-    } finally {
-      setRecoveryBusy(false);
-    }
-  };
-
-  const handleSaasLogout = async () => {
-    if (!window.confirm('Cerrar sesion de tu cuenta SaaS?')) return;
-    const current = saasSessionRef.current;
-    try {
-      if (current?.accessToken || current?.refreshToken) {
-        await fetch(`${API_URL}/api/auth/logout`, {
-          method: 'POST',
-          headers: buildApiHeaders({ includeJson: true, tokenOverride: String(current?.accessToken || '') }),
-          body: JSON.stringify({
-            accessToken: String(current?.accessToken || ''),
-            refreshToken: String(current?.refreshToken || '')
-          })
-        });
-      }
-    } catch (_error) {
-      // best effort
-    }
-    setSaasSession(null);
-    setSelectedTransport('');
-    setShowSaasAdminPanel(false);
-    setForceOperationLaunchBypass(false);
-    setSaasAuthError('');
-    setTenantSwitchError('');
-    setTenantSwitchBusy(false);
-    setWaModules([]);
-    setSelectedWaModule(null);
-    setSelectedCatalogModuleId('');
-    if (socket.connected) socket.disconnect();
-    setIsConnected(false);
-    resetWorkspaceState();
-  };
-
-  const handleSwitchTenant = async (nextTenantId = '') => {
-    if (!saasRuntimeRef.current?.authEnabled) return;
-    const current = saasSessionRef.current;
-    if (!current?.accessToken || !current?.refreshToken) return;
-
-    const targetTenantId = String(nextTenantId || '').trim();
-    const currentTenantId = String(current?.user?.tenantId || saasRuntimeRef.current?.tenant?.id || '').trim();
-    if (!targetTenantId || targetTenantId === currentTenantId) return;
-
-    setTenantSwitchError('');
-    setTenantSwitchBusy(true);
-
-    try {
-      const response = await fetch(`${API_URL}/api/auth/switch-tenant`, {
-        method: 'POST',
-        headers: buildApiHeaders({ includeJson: true, tokenOverride: String(current?.accessToken || ''), tenantIdOverride: currentTenantId }),
-        body: JSON.stringify({
-          targetTenantId,
-          refreshToken: String(current?.refreshToken || '')
-        })
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload?.ok) {
-        throw new Error(String(payload?.error || 'No se pudo cambiar de empresa.'));
-      }
-
-      const nextSession = normalizeSaasSessionPayload(payload, current);
-      if (!nextSession) throw new Error('Sesion invalida al cambiar de empresa.');
-      if (payload?.user && typeof payload.user === 'object') nextSession.user = payload.user;
-
-      const targetTenant = (Array.isArray(saasRuntimeRef.current?.tenants) ? saasRuntimeRef.current.tenants : [])
-        .find((item) => String(item?.id || '').trim() === targetTenantId) || null;
-
-      setSaasSession(nextSession);
-      setSaasRuntime((prev) => ({
-        ...prev,
-        tenant: targetTenant || { id: targetTenantId, slug: targetTenantId, name: targetTenantId, active: true, plan: prev?.tenant?.plan || 'starter' },
-        authContext: {
-          ...(prev?.authContext || {}),
-          enabled: true,
-          isAuthenticated: true,
-          user: nextSession.user || prev?.authContext?.user || null
-        }
-      }));
-
-      setWaModules([]);
-      setSelectedWaModule(null);
-      setWaModuleError('');
-      if (socket.connected) socket.disconnect();
-      setIsConnected(false);
-      resetWorkspaceState();
-    } catch (error) {
-      setTenantSwitchError(String(error?.message || 'No se pudo cambiar de empresa.'));
-    } finally {
-      setTenantSwitchBusy(false);
-    }
-  };
+  const {
+    handleSaasLogin,
+    handleSaasLogout,
+    handleSwitchTenant
+  } = useSaasSessionActions({
+    recoveryStep,
+    loginEmail,
+    loginPassword,
+    buildApiHeaders,
+    normalizeSaasSessionPayload,
+    setSaasAuthBusy,
+    setSaasAuthError,
+    setSaasAuthNotice,
+    setTenantSwitchError,
+    setRecoveryError,
+    setSaasSession,
+    setForceOperationLaunchBypass,
+    setSelectedTransport,
+    setShowSaasAdminPanel,
+    setLoginPassword,
+    setLoginEmail,
+    resetRecoveryFlow,
+    saasSessionRef,
+    saasRuntimeRef,
+    setTenantSwitchBusy,
+    setWaModules,
+    setSelectedWaModule,
+    setSelectedCatalogModuleId,
+    socket,
+    setIsConnected,
+    resetWorkspaceState,
+    setWaModuleError,
+    setSaasRuntime
+  });
 
   const handleChatSelect = (chatId, options = {}) => {
     if (!chatId) return;
@@ -2586,120 +1865,21 @@ function App() {
     socket.emit('set_chat_state', { chatId, pinned: nextPinned });
   };
 
-  const resolveNewChatAvailableModules = useCallback(() => (
-    normalizeWaModules(waModulesRef.current).filter((module) => module.isActive !== false)
-  ), []);
+  const {
+    newChatDialog,
+    setNewChatDialog,
+    newChatAvailableModules,
+    handleStartNewChat,
+    handleCancelNewChatDialog,
+    handleConfirmNewChat
+  } = useNewChatDialog({
+    waModulesRef,
+    selectedWaModuleRef,
+    chatsRef,
+    handleChatSelect,
+    socket
+  });
 
-  const resolveDefaultNewChatModuleId = useCallback((availableModules = []) => {
-    const preferredModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
-    if (availableModules.length === 1) {
-      return String(availableModules[0]?.moduleId || '').trim().toLowerCase();
-    }
-    if (preferredModuleId) {
-      const preferred = availableModules.find((module) => String(module?.moduleId || '').trim().toLowerCase() === preferredModuleId);
-      if (preferred?.moduleId) return String(preferred.moduleId || '').trim().toLowerCase();
-    }
-    return String(availableModules[0]?.moduleId || '').trim().toLowerCase();
-  }, []);
-
-  const resetNewChatDialog = useCallback(() => {
-    setNewChatDialog({
-      open: false,
-      phone: '',
-      firstMessage: '',
-      moduleId: '',
-      error: ''
-    });
-  }, []);
-
-  const executeStartNewChat = useCallback(({ normalizedPhone = '', firstMessage = '', targetModuleId = '' } = {}) => {
-    const cleanPhone = normalizeDigits(normalizedPhone);
-    const cleanModuleId = String(targetModuleId || '').trim().toLowerCase();
-    if (!cleanPhone) return;
-
-    const candidates = chatsRef.current
-      .filter((c) => {
-        const chatPhone = normalizeDigits(getBestChatPhone(c) || '');
-        if (!chatPhone || chatPhone !== cleanPhone) return false;
-        if (!cleanModuleId) return true;
-        const scoped = parseScopedChatId(c?.id || '');
-        const chatModuleId = String(scoped.scopeModuleId || c?.lastMessageModuleId || '').trim().toLowerCase();
-        return chatModuleId === cleanModuleId;
-      })
-      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-    if (candidates.length > 0) {
-      const best = candidates[0];
-      if (best?.id) {
-        handleChatSelect(best.id, { clearSearch: true });
-        if (String(firstMessage || '').trim()) {
-          socket.emit('send_message', {
-            to: best.id,
-            toPhone: cleanPhone,
-            body: String(firstMessage || '').trim()
-          });
-        }
-        return;
-      }
-    }
-
-    socket.emit('start_new_chat', {
-      phone: cleanPhone,
-      firstMessage: String(firstMessage || '').trim(),
-      moduleId: cleanModuleId || undefined
-    });
-  }, [handleChatSelect]);
-
-  const openStartNewChatDialog = useCallback((phoneArg = '', firstMessageArg = '') => {
-    const availableModules = resolveNewChatAvailableModules();
-    const defaultModuleId = resolveDefaultNewChatModuleId(availableModules);
-    setNewChatDialog({
-      open: true,
-      phone: String(phoneArg || '').trim(),
-      firstMessage: typeof firstMessageArg === 'string' ? firstMessageArg : '',
-      moduleId: defaultModuleId || '',
-      error: ''
-    });
-  }, [resolveDefaultNewChatModuleId, resolveNewChatAvailableModules]);
-
-  const handleStartNewChat = useCallback((phoneArg = '', firstMessageArg = '') => {
-    openStartNewChatDialog(phoneArg, firstMessageArg);
-  }, [openStartNewChatDialog]);
-
-  const handleCancelNewChatDialog = useCallback(() => {
-    resetNewChatDialog();
-  }, [resetNewChatDialog]);
-
-  const handleConfirmNewChat = useCallback(() => {
-    const normalizedPhone = normalizeDigits(newChatDialog.phone || '');
-    if (!normalizedPhone || normalizedPhone.length < 8) {
-      setNewChatDialog((prev) => ({ ...prev, error: 'Ingresa un numero valido con codigo de pais.' }));
-      return;
-    }
-
-    const availableModules = resolveNewChatAvailableModules();
-    const selectedModuleId = String(newChatDialog.moduleId || '').trim().toLowerCase();
-    const defaultModuleId = resolveDefaultNewChatModuleId(availableModules);
-    let targetModuleId = selectedModuleId || defaultModuleId;
-
-    if (availableModules.length > 0) {
-      const moduleIsValid = availableModules.some((module) => String(module?.moduleId || '').trim().toLowerCase() === targetModuleId);
-      if (!moduleIsValid) {
-        setNewChatDialog((prev) => ({ ...prev, error: 'Selecciona un modulo activo para iniciar el chat.' }));
-        return;
-      }
-    } else {
-      const preferredModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
-      targetModuleId = preferredModuleId || '';
-    }
-
-    executeStartNewChat({
-      normalizedPhone,
-      firstMessage: newChatDialog.firstMessage || '',
-      targetModuleId
-    });
-    resetNewChatDialog();
-  }, [executeStartNewChat, newChatDialog.firstMessage, newChatDialog.moduleId, newChatDialog.phone, resetNewChatDialog, resolveDefaultNewChatModuleId, resolveNewChatAvailableModules]);
   const handleEditMessage = (messageId, currentBody) => {
     if (!waCapabilities.messageEdit) {
       alert('La edicion de mensajes no esta disponible en esta sesion de WhatsApp.');
@@ -3066,225 +2246,50 @@ function App() {
   }, [selectedTransport, saasRuntime?.loaded, forceOperationLaunch, canManageSaas]);
 
   if (!saasRuntime?.loaded) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#111b21', gap: '20px' }}>
-        <div className='loader' />
-        <p style={{ color: '#8696a0', fontSize: '0.9rem' }}>Inicializando plataforma SaaS...</p>
-      </div>
-    );
+    return <StatusScreen message='Inicializando plataforma SaaS...' />;
   }
 
   if (saasAuthEnabled && !isSaasAuthenticated) {
     return (
-      <div className='login-screen login-screen--saas'>
-        <div className='login-ambient' aria-hidden='true' />
-        <form onSubmit={handleSaasLogin} className='saas-login-card fade-in'>
-          <div className='saas-login-head'>
-            <span className='saas-login-kicker'>Control plane</span>
-            <div className='saas-login-title'>Acceso seguro</div>
-            <p>Inicia sesion con usuario y contrasena. La empresa se asigna automaticamente segun tus permisos.</p>
-          </div>
-
-          <label className='saas-login-field'>
-            <span>Usuario o correo</span>
-            <input
-              type='text'
-              value={loginEmail}
-              onChange={(e) => setLoginEmail(e.target.value)}
-              autoComplete='username'
-              placeholder='usuario@empresa.com o user_id'
-              disabled={saasAuthBusy || recoveryBusy}
-            />
-          </label>
-
-          <label className='saas-login-field'>
-            <span>Contrasena</span>
-            <div className='saas-login-password-wrap'>
-              <input
-                type={showLoginPassword ? 'text' : 'password'}
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                autoComplete='current-password'
-                placeholder='********'
-                disabled={saasAuthBusy || recoveryBusy}
-              />
-              <button
-                type='button'
-                className='saas-login-visibility'
-                onClick={() => setShowLoginPassword((prev) => !prev)}
-                disabled={saasAuthBusy || recoveryBusy}
-                aria-label={showLoginPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
-              >
-                {showLoginPassword ? 'Ocultar' : 'Ver'}
-              </button>
-            </div>
-          </label>
-
-          {saasAuthError && (
-            <div className='saas-login-error'>
-              {saasAuthError}
-            </div>
-          )}
-          {saasAuthNotice && (
-            <div className='saas-login-notice'>
-              {saasAuthNotice}
-            </div>
-          )}
-
-          {recoveryStep === 'idle' ? (
-            <>
-              <button
-                type='submit'
-                disabled={saasAuthBusy || recoveryBusy}
-                className='saas-login-submit'
-              >
-                {saasAuthBusy ? 'Ingresando...' : 'Iniciar sesion'}
-              </button>
-              <button
-                type='button'
-                className='saas-login-link'
-                onClick={openRecoveryFlow}
-                disabled={saasAuthBusy || recoveryBusy}
-              >
-                Olvide mi contrasena
-              </button>
-            </>
-          ) : (
-            <div className='saas-recovery-box'>
-              <div className='saas-recovery-head'>
-                <strong>Recuperar acceso</strong>
-                <small>Paso seguro en 2 etapas con codigo por correo.</small>
-              </div>
-
-              {recoveryNotice && <div className='saas-login-notice'>{recoveryNotice}</div>}
-              {recoveryError && <div className='saas-login-error'>{recoveryError}</div>}
-
-              {recoveryStep === 'request' && (
-                <div className='saas-recovery-form'>
-                  <label className='saas-login-field'>
-                    <span>Correo</span>
-                    <input
-                      type='email'
-                      value={recoveryEmail}
-                      onChange={(event) => setRecoveryEmail(event.target.value)}
-                      placeholder='usuario@empresa.com'
-                      autoComplete='email'
-                      disabled={recoveryBusy}
-                    />
-                  </label>
-                  <button
-                    type='button'
-                    disabled={recoveryBusy}
-                    className='saas-login-submit'
-                    onClick={handleRecoveryRequest}
-                  >
-                    {recoveryBusy ? 'Enviando...' : 'Enviar codigo'}
-                  </button>
-                </div>
-              )}
-
-              {recoveryStep === 'verify' && (
-                <div className='saas-recovery-form'>
-                  <label className='saas-login-field'>
-                    <span>Correo</span>
-                    <input type='email' value={recoveryEmail} disabled />
-                  </label>
-                  <label className='saas-login-field'>
-                    <span>Codigo de verificacion</span>
-                    <input
-                      type='text'
-                      value={recoveryCode}
-                      onChange={(event) => setRecoveryCode(event.target.value)}
-                      placeholder='000000'
-                      autoComplete='one-time-code'
-                      disabled={recoveryBusy}
-                    />
-                  </label>
-                  <button
-                    type='button'
-                    disabled={recoveryBusy}
-                    className='saas-login-submit'
-                    onClick={handleRecoveryVerify}
-                  >
-                    {recoveryBusy ? 'Validando...' : 'Validar codigo'}
-                  </button>
-                  {recoveryDebugCode && (
-                    <div className='saas-login-debug'>
-                      Codigo debug (solo entorno local): <strong>{recoveryDebugCode}</strong>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {recoveryStep === 'reset' && (
-                <div className='saas-recovery-form'>
-                  <label className='saas-login-field'>
-                    <span>Nueva contrasena</span>
-                    <input
-                      type={showRecoveryPassword ? 'text' : 'password'}
-                      value={recoveryPassword}
-                      onChange={(event) => setRecoveryPassword(event.target.value)}
-                      placeholder='Minimo 10 caracteres, mayuscula, numero y simbolo'
-                      autoComplete='new-password'
-                      disabled={recoveryBusy}
-                    />
-                  </label>
-                  <label className='saas-login-field'>
-                    <span>Confirmar contrasena</span>
-                    <input
-                      type={showRecoveryPassword ? 'text' : 'password'}
-                      value={recoveryPasswordConfirm}
-                      onChange={(event) => setRecoveryPasswordConfirm(event.target.value)}
-                      placeholder='Repite la nueva contrasena'
-                      autoComplete='new-password'
-                      disabled={recoveryBusy}
-                    />
-                  </label>
-                  <label className='saas-login-check'>
-                    <input
-                      type='checkbox'
-                      checked={showRecoveryPassword}
-                      onChange={(event) => setShowRecoveryPassword(event.target.checked)}
-                      disabled={recoveryBusy}
-                    />
-                    <span>Mostrar contrasena</span>
-                  </label>
-                  <button
-                    type='button'
-                    disabled={recoveryBusy}
-                    className='saas-login-submit'
-                    onClick={handleRecoveryReset}
-                  >
-                    {recoveryBusy ? 'Actualizando...' : 'Actualizar contrasena'}
-                  </button>
-                </div>
-              )}
-
-              <button
-                type='button'
-                className='saas-login-link'
-                onClick={resetRecoveryFlow}
-                disabled={recoveryBusy}
-              >
-                Volver al inicio de sesion
-              </button>
-            </div>
-          )}
-        </form>
-      </div>
+      <SaasLoginScreen
+        loginEmail={loginEmail}
+        setLoginEmail={setLoginEmail}
+        loginPassword={loginPassword}
+        setLoginPassword={setLoginPassword}
+        showLoginPassword={showLoginPassword}
+        setShowLoginPassword={setShowLoginPassword}
+        saasAuthBusy={saasAuthBusy}
+        saasAuthError={saasAuthError}
+        saasAuthNotice={saasAuthNotice}
+        recoveryStep={recoveryStep}
+        recoveryBusy={recoveryBusy}
+        recoveryError={recoveryError}
+        recoveryNotice={recoveryNotice}
+        recoveryDebugCode={recoveryDebugCode}
+        recoveryEmail={recoveryEmail}
+        setRecoveryEmail={setRecoveryEmail}
+        recoveryCode={recoveryCode}
+        setRecoveryCode={setRecoveryCode}
+        recoveryPassword={recoveryPassword}
+        setRecoveryPassword={setRecoveryPassword}
+        recoveryPasswordConfirm={recoveryPasswordConfirm}
+        setRecoveryPasswordConfirm={setRecoveryPasswordConfirm}
+        showRecoveryPassword={showRecoveryPassword}
+        setShowRecoveryPassword={setShowRecoveryPassword}
+        handleSaasLogin={handleSaasLogin}
+        openRecoveryFlow={openRecoveryFlow}
+        handleRecoveryRequest={handleRecoveryRequest}
+        handleRecoveryVerify={handleRecoveryVerify}
+        handleRecoveryReset={handleRecoveryReset}
+        resetRecoveryFlow={resetRecoveryFlow}
+      />
     );
   }
 
-  // Render: Reconnecting
-  // --------------------------------------------------------------
   if (!isConnected) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#111b21', gap: '20px' }}>
-        <div className="loader" />
-        <p style={{ color: '#8696a0', fontSize: '0.9rem' }}>Conectando con el servidor...</p>
-      </div>
-    );
+    return <StatusScreen message='Conectando con el servidor...' />;
   }
+  // --------------------------------------------------------------
 
   // --------------------------------------------------------------
   // Render: Transport Selector
@@ -3293,21 +2298,30 @@ function App() {
     if (canManageSaas && !forceOperationLaunch) {
       return (
         <Suspense fallback={<PanelChunkFallback />}>
-          <SaasAdminPanel
-            isOpen
-            onClose={handleSaasLogout}
-            onLogout={handleSaasLogout}
-            closeLabel='Cerrar sesion'
-            onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
-            buildApiHeaders={buildApiHeaders}
-            activeTenantId={tenantScopeId}
-            canManageSaas={canManageSaas}
-            userRole={saasUserRole}
-            isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
-            currentUser={saasSession?.user || null}
-            preferredTenantId={requestedWaTenantFromUrl || ''}
-            launchSource={requestedLaunchSource || ''}
-          />
+          <AppErrorBoundary
+            fallbackTitle='Error en Panel SaaS'
+            fallbackMessage='Se detecto un error al cargar el panel. Puedes reintentar sin salir de sesion.'
+            resetKeys={[tenantScopeId, saasSession?.user?.userId, requestedWaTenantFromUrl, requestedLaunchSource]}
+            onError={(error) => {
+              console.error('[SaaSPanelBoundary]', error);
+            }}
+          >
+            <SaasAdminPanel
+              isOpen
+              onClose={handleSaasLogout}
+              onLogout={handleSaasLogout}
+              closeLabel='Cerrar sesion'
+              onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
+              buildApiHeaders={buildApiHeaders}
+              activeTenantId={tenantScopeId}
+              canManageSaas={canManageSaas}
+              userRole={saasUserRole}
+              isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+              currentUser={saasSession?.user || null}
+              preferredTenantId={requestedWaTenantFromUrl || ''}
+              launchSource={requestedLaunchSource || ''}
+            />
+          </AppErrorBoundary>
         </Suspense>
       );
     }
@@ -3328,51 +2342,18 @@ function App() {
   // Render: Transport Bootstrap
   // --------------------------------------------------------------
   if (!isClientReady) {
-    const showCloudConfigError = activeTransport === 'cloud' && !cloudConfigured;
-
     return (
-      <div className="login-screen">
-        <div style={{ textAlign: 'center', maxWidth: '520px', width: '100%' }}>
-          <div style={{ marginBottom: '24px' }}>
-            <div style={{ fontSize: '1.8rem', fontWeight: 300, color: '#e9edef', marginBottom: '10px' }}>WhatsApp Business Pro</div>
-            <p style={{ color: '#9eb2bf', fontSize: '0.9rem' }}>Conectando con <strong style={{ color: '#e9edef' }}>{selectedModeLabel}</strong>.</p>
-          </div>
-
-          {isSwitchingTransport && (
-            <div style={{ marginBottom: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(124,200,255,0.35)', background: 'rgba(124,200,255,0.08)', color: '#cdeaff', fontSize: '0.82rem' }}>
-              Cambiando transporte...
-            </div>
-          )}
-
-          {showCloudConfigError ? (
-            <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid rgba(255,170,0,0.4)', background: 'rgba(255,170,0,0.08)', color: '#ffe1a3', textAlign: 'left', fontSize: '0.83rem', lineHeight: 1.6 }}>
-              Falta configurar Cloud API en backend/.env.<br />
-              Variables minimas: <strong>META_APP_ID</strong>, <strong>META_SYSTEM_USER_TOKEN</strong>, <strong>META_WABA_PHONE_NUMBER_ID</strong>.
-            </div>
-          ) : (
-            <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid rgba(124,200,255,0.35)', background: '#202c33' }}>
-              <div className="loader" style={{ margin: '0 auto 12px' }} />
-              <p style={{ color: '#9eb2bf', fontSize: '0.86rem', margin: 0 }}>Esperando inicializacion de Cloud API...</p>
-            </div>
-          )}
-
-          {waModuleError && (
-            <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,153,102,0.45)', background: 'rgba(255,153,102,0.08)', color: '#ffd9c2', fontSize: '0.82rem' }}>
-              {waModuleError}
-            </div>
-          )}
-
-          {transportError && (
-            <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(255,113,113,0.4)', background: 'rgba(255,113,113,0.08)', color: '#ffd1d1', fontSize: '0.82rem' }}>
-              {transportError}
-            </div>
-          )}
-        </div>
-      </div>
+      <TransportBootstrapScreen
+        selectedModeLabel={selectedModeLabel}
+        isSwitchingTransport={isSwitchingTransport}
+        activeTransport={activeTransport}
+        cloudConfigured={cloudConfigured}
+        waModuleError={waModuleError}
+        transportError={transportError}
+      />
     );
   }
 
-  // --------------------------------------------------------------
   // Render: Main App
   // --------------------------------------------------------------
   const activeChatDetails = chats.find(c => c.id === activeChatId) || null;
@@ -3387,7 +2368,6 @@ function App() {
     }))
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-  const newChatAvailableModules = resolveNewChatAvailableModules();
   const appContainerClassName = forceOperationLaunch ? 'app-container app-container--operation' : 'app-container';
 
   return (
@@ -3563,85 +2543,92 @@ function App() {
         )}
       </div>
 
-      {newChatDialog.open && (
-        <div className="new-chat-modal-overlay" onClick={handleCancelNewChatDialog}>
-          <div className="new-chat-modal-card" role="dialog" aria-modal="true" aria-label="Nuevo chat" onClick={(event) => event.stopPropagation()}>
-            <div className="new-chat-modal-header">
-              <h3>Nuevo chat</h3>
-              <button type="button" className="new-chat-modal-close" onClick={handleCancelNewChatDialog} aria-label="Cerrar">x</button>
-            </div>
-            <p className="new-chat-modal-subtitle">Selecciona el modulo y abre una conversacion sin mezclar chats entre canales.</p>
-
-            <label className="new-chat-modal-label" htmlFor="new-chat-phone">Numero (con codigo de pais)</label>
-            <input
-              id="new-chat-phone"
-              type="text"
-              value={newChatDialog.phone}
-              onChange={(event) => setNewChatDialog((prev) => ({ ...prev, phone: event.target.value, error: '' }))}
-              onKeyDown={(event) => { if (event.key === 'Enter') handleConfirmNewChat(); }}
-              className="new-chat-modal-input"
-              placeholder="Ej: 51955123456"
-              autoFocus
-            />
-
-            <label className="new-chat-modal-label" htmlFor="new-chat-module">Modulo</label>
-            <select
-              id="new-chat-module"
-              value={newChatDialog.moduleId}
-              onChange={(event) => setNewChatDialog((prev) => ({ ...prev, moduleId: event.target.value, error: '' }))}
-              className="new-chat-modal-select"
-              disabled={newChatAvailableModules.length === 0}
-            >
-              {newChatAvailableModules.length === 0 && <option value="">Sin modulos activos</option>}
-              {newChatAvailableModules.map((module) => (
-                <option key={`new_chat_module_${module.moduleId}`} value={module.moduleId}>
-                  {module.name}
-                </option>
-              ))}
-            </select>
-
-            <label className="new-chat-modal-label" htmlFor="new-chat-first-message">Mensaje inicial (opcional)</label>
-            <textarea
-              id="new-chat-first-message"
-              value={newChatDialog.firstMessage}
-              onChange={(event) => setNewChatDialog((prev) => ({ ...prev, firstMessage: event.target.value, error: '' }))}
-              className="new-chat-modal-textarea"
-              rows={3}
-              placeholder="Escribe un mensaje de apertura"
-            />
-
-            {newChatDialog.error && <div className="new-chat-modal-error">{newChatDialog.error}</div>}
-
-            <div className="new-chat-modal-actions">
-              <button type="button" className="new-chat-modal-btn new-chat-modal-btn--ghost" onClick={handleCancelNewChatDialog}>Cancelar</button>
-              <button type="button" className="new-chat-modal-btn new-chat-modal-btn--primary" onClick={handleConfirmNewChat}>Iniciar chat</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <NewChatModal
+        isOpen={newChatDialog.open}
+        dialog={newChatDialog}
+        availableModules={newChatAvailableModules}
+        onChange={(patch) => setNewChatDialog((prev) => ({ ...prev, ...patch }))}
+        onConfirm={handleConfirmNewChat}
+        onCancel={handleCancelNewChatDialog}
+      />
       <Suspense fallback={null}>
-        <SaasAdminPanel
-          isOpen={showSaasAdminPanel}
-          onClose={() => setShowSaasAdminPanel(false)}
-          onLogout={handleSaasLogout}
-          closeLabel='Cerrar sesion'
-          onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
-          buildApiHeaders={buildApiHeaders}
-          activeTenantId={tenantScopeId}
-          canManageSaas={canManageSaas}
-          userRole={saasUserRole}
-          isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
-          currentUser={saasSession?.user || null}
-          preferredTenantId={requestedWaTenantFromUrl || ''}
-          launchSource={requestedLaunchSource || ''}
-          initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
-        />
+        <AppErrorBoundary
+          fallbackTitle='Error en Panel SaaS'
+          fallbackMessage='El panel tuvo un error inesperado. Puedes reintentar sin perder la sesion activa.'
+          resetKeys={[showSaasAdminPanel, tenantScopeId, saasSession?.user?.userId, requestedWaSectionFromUrl]}
+          onError={(error) => {
+            console.error('[SaaSPanelModalBoundary]', error);
+          }}
+        >
+          <SaasAdminPanel
+            isOpen={showSaasAdminPanel}
+            onClose={() => setShowSaasAdminPanel(false)}
+            onLogout={handleSaasLogout}
+            closeLabel='Cerrar sesion'
+            onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
+            buildApiHeaders={buildApiHeaders}
+            activeTenantId={tenantScopeId}
+            canManageSaas={canManageSaas}
+            userRole={saasUserRole}
+            isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+            currentUser={saasSession?.user || null}
+            preferredTenantId={requestedWaTenantFromUrl || ''}
+            launchSource={requestedLaunchSource || ''}
+            initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
+          />
+        </AppErrorBoundary>
       </Suspense>
     </div>
   );
 }
 
 export default App;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -1,0 +1,12 @@
+export { default as AiAssistantsSection } from './AiAssistantsSection';
+export { default as CatalogSection } from './CatalogSection';
+export { default as CompaniesSection } from './CompaniesSection';
+export { default as CustomersSection } from './CustomersSection';
+export { default as ModulesConfigSection } from './ModulesConfigSection';
+export { default as OperationsSection } from './OperationsSection';
+export { default as PlansSection } from './PlansSection';
+export { default as QuickRepliesSection } from './QuickRepliesSection';
+export { default as RoleProfilesSection } from './RoleProfilesSection';
+export { default as SummarySection } from './SummarySection';
+export { default as TenantLabelsSection } from './TenantLabelsSection';
+export { default as UsersSection } from './UsersSection';
