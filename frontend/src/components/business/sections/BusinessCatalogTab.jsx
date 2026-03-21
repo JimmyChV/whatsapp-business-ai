@@ -1,24 +1,19 @@
 import React, { useState } from 'react';
 import { Check, Minus, Package, Plus, PlusCircle, Search, Send, ShoppingCart, SlidersHorizontal } from 'lucide-react';
-import { formatMoney, normalizeTextKey } from '../helpers';
+import {
+    buildCatalogFormDataFromProduct,
+    buildCatalogProductPayloadFromForm,
+    createCatalogProductEmptyForm,
+    extractCatalogCategoryLabels,
+    formatMoney,
+    normalizeCatalogCategoryKey,
+    normalizeTextKey
+} from '../helpers';
 
 const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
-    const [formData, setFormData] = useState({
-        title: '',
-        price: '',
-        regularPrice: '',
-        salePrice: '',
-        description: '',
-        imageUrl: '',
-        sku: '',
-        stockStatus: 'instock',
-        stockQuantity: '',
-        categories: '',
-        url: '',
-        brand: ''
-    });
+    const [formData, setFormData] = useState(() => createCatalogProductEmptyForm());
     const [imageUploadBusy, setImageUploadBusy] = useState(false);
     const [imageUploadError, setImageUploadError] = useState('');
     const [catalogSearch, setCatalogSearch] = useState('');
@@ -50,85 +45,16 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     const isExternalCatalog = ['native', 'woocommerce', 'meta'].includes(effectiveCatalogSource);
     const chatCatalogReadOnly = true;
     const showCatalogForm = !chatCatalogReadOnly && showForm;
-    const emptyFormData = () => ({
-        title: '',
-        price: '',
-        regularPrice: '',
-        salePrice: '',
-        description: '',
-        imageUrl: '',
-        sku: '',
-        stockStatus: 'instock',
-        stockQuantity: '',
-        categories: '',
-        url: '',
-        brand: ''
-    });
-
-    const toPriceString = (value = '') => {
-        const clean = String(value ?? '').trim();
-        if (!clean) return '';
-        const parsed = Number.parseFloat(clean.replace(',', '.'));
-        if (!Number.isFinite(parsed)) return clean;
-        return parsed.toFixed(2);
-    };
-
-    const normalizeCategoriesInput = (value = '') => String(value || '')
-        .split(',')
-        .map((entry) => String(entry || '').trim())
-        .filter(Boolean);
-
-    const buildProductPayloadFromForm = (input = {}) => {
-        const categories = normalizeCategoriesInput(input.categories);
-        const price = toPriceString(input.price);
-        const regularPrice = toPriceString(input.regularPrice || input.price);
-        const salePrice = toPriceString(input.salePrice);
-        const stockQuantity = String(input.stockQuantity || '').trim();
-        return {
-            title: String(input.title || '').trim(),
-            price,
-            regularPrice,
-            salePrice: salePrice || null,
-            description: String(input.description || '').trim(),
-            imageUrl: String(input.imageUrl || '').trim() || null,
-            sku: String(input.sku || '').trim() || null,
-            stockStatus: String(input.stockStatus || '').trim().toLowerCase() || null,
-            stockQuantity: stockQuantity ? Number.parseInt(stockQuantity, 10) : null,
-            categories,
-            category: categories[0] || null,
-            url: String(input.url || '').trim() || null,
-            brand: String(input.brand || '').trim() || null,
-            moduleId: activeCatalogModuleId || null,
-            catalogId: activeCatalogId || null
-        };
-    };
-
     const handleAddClick = () => {
         setEditingProduct(null);
-        setFormData(emptyFormData());
+        setFormData(createCatalogProductEmptyForm());
         setImageUploadError('');
         setShowForm(true);
     };
 
     const handleEditClick = (product) => {
-        const categories = Array.isArray(product?.categories)
-            ? product.categories
-            : (product?.category ? [product.category] : []);
         setEditingProduct(product);
-        setFormData({
-            title: String(product?.title || '').trim(),
-            price: toPriceString(product?.price || ''),
-            regularPrice: toPriceString(product?.regularPrice || product?.price || ''),
-            salePrice: toPriceString(product?.salePrice || ''),
-            description: String(product?.description || '').trim(),
-            imageUrl: String(product?.imageUrl || '').trim(),
-            sku: String(product?.sku || '').trim(),
-            stockStatus: String(product?.stockStatus || 'instock').trim().toLowerCase() || 'instock',
-            stockQuantity: Number.isFinite(Number(product?.stockQuantity)) ? String(product.stockQuantity) : '',
-            categories: categories.join(', '),
-            url: String(product?.url || product?.permalink || product?.productUrl || product?.link || '').trim(),
-            brand: String(product?.brand || '').trim()
-        });
+        setFormData(buildCatalogFormDataFromProduct(product));
         setImageUploadError('');
         setShowForm(true);
     };
@@ -182,7 +108,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        const payload = buildProductPayloadFromForm(formData);
+        const payload = buildCatalogProductPayloadFromForm(formData, { activeCatalogModuleId, activeCatalogId });
         if (!payload.title) {
             window.alert('El titulo del producto es obligatorio.');
             return;
@@ -236,35 +162,11 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     };
 
     const normalizedSearch = normalizeTextKey(catalogSearch);
-    const normalizeCategoryKey = (value) => normalizeTextKey(String(value || '').trim());
-    const extractCategoryLabels = (itemOrValue) => {
-        if (!itemOrValue) return [];
-        const source = itemOrValue && typeof itemOrValue === 'object' && !Array.isArray(itemOrValue)
-            ? itemOrValue
-            : { categories: itemOrValue };
-
-        const raw = [];
-        if (Array.isArray(source.categories)) raw.push(...source.categories);
-        else if (typeof source.categories === 'string') raw.push(...source.categories.split(','));
-
-        ['category', 'categoryName', 'category_slug', 'categorySlug'].forEach((key) => {
-            if (source[key]) raw.push(source[key]);
-        });
-
-        const unique = new Set();
-        raw.forEach((entry) => {
-            const label = typeof entry === 'string'
-                ? entry
-                : (entry?.name || entry?.slug || entry?.title || entry?.label || '');
-            const clean = String(label || '').trim();
-            if (clean) unique.add(clean);
-        });
-        return Array.from(unique);
-    };
+    const normalizeCategoryKey = (value) => normalizeCatalogCategoryKey(value, normalizeTextKey);
 
     const metaCategories = Array.isArray(catalogMeta?.categories) ? catalogMeta.categories : [];
     const categoryMap = new Map();
-    [...metaCategories, ...catalog.flatMap((item) => extractCategoryLabels(item))]
+    [...metaCategories, ...catalog.flatMap((item) => extractCatalogCategoryLabels(item))]
         .map((entry) => String(entry || '').trim())
         .filter(Boolean)
         .forEach((label) => {
@@ -282,7 +184,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
         const searchable = normalizeTextKey(String(item?.title || '') + ' ' + String(item?.sku || '') + ' ' + String(item?.description || ''));
         const searchMatch = !normalizedSearch || searchable.includes(normalizedSearch);
 
-        const itemCategoryKeys = extractCategoryLabels(item)
+        const itemCategoryKeys = extractCatalogCategoryLabels(item)
             .map((entry) => normalizeCategoryKey(entry))
             .filter(Boolean);
         const categoryMatch = selectedCategoryKey === 'all'
@@ -767,6 +669,13 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 };
 
 export default CatalogTab;
+
+
+
+
+
+
+
 
 
 
