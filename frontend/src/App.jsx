@@ -25,6 +25,7 @@ import useSaasSessionAutoRefresh from './features/auth/hooks/useSaasSessionAutoR
 import { useSaasSessionActions } from './features/auth/hooks/useSaasSessionActions';
 import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHelpers';
 import SaasLoginScreen from './features/auth/components/SaasLoginScreen';
+import { useSaasPanelVisibilityController } from './features/saas/hooks/useSaasPanelVisibilityController';
 import {
   normalizeCatalogItem,
   normalizeProfilePhotoUrl,
@@ -2151,90 +2152,28 @@ function App() {
   const activeCatalogModuleId = String(selectedCatalogModuleId || '').trim();
   const activeCatalogId = String(selectedCatalogId || '').trim().toUpperCase();
 
-  useEffect(() => {
-    canManageSaasRef.current = canManageSaas;
-  }, [canManageSaas]);
-
-  useEffect(() => {
-    if (canManageSaas) return;
-    if (showSaasAdminPanel) setShowSaasAdminPanel(false);
-  }, [canManageSaas, showSaasAdminPanel]);
-
-  useEffect(() => {
-    if (!saasRuntime?.loaded) return;
-    if (!saasAuthEnabled || !isSaasAuthenticated) return;
-    if (!canManageSaas) return;
-    if (forceOperationLaunch) return;
-    if (selectedTransport) return;
-
-    const tenantKey = String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || 'default').trim() || 'default';
-    const userKey = String(saasSession?.user?.id || saasSession?.user?.email || '').trim() || 'manager';
-    const sessionKey = `${tenantKey}:${userKey}`;
-    if (saasAdminAutoOpenRef.current === sessionKey) return;
-
-    saasAdminAutoOpenRef.current = sessionKey;
-    setShowSaasAdminPanel(true);
-  }, [
-    saasRuntime?.loaded,
-    saasRuntime?.tenant?.id,
+  useSaasPanelVisibilityController({
+    canManageSaasRef,
+    canManageSaas,
+    showSaasAdminPanel,
+    setShowSaasAdminPanel,
+    saasRuntimeLoaded: saasRuntime?.loaded,
+    saasRuntimeTenantId: saasRuntime?.tenant?.id,
     saasAuthEnabled,
     isSaasAuthenticated,
-    canManageSaas,
-    selectedTransport,
-    saasSession?.user?.tenantId,
-    saasSession?.user?.id,
-    saasSession?.user?.email
-  ]);
-
-  useEffect(() => {
-    if (isSaasAuthenticated) return;
-    saasAdminAutoOpenRef.current = '';
-  }, [isSaasAuthenticated]);
-
-  useEffect(() => {
-    if (!forceOperationLaunch) return;
-    if (!isSaasAuthenticated) return;
-
-    const requestedTenantId = String(requestedWaTenantFromUrlRef.current || '').trim();
-    if (!requestedTenantId) return;
-    if (requestedTenantId === tenantScopeId) {
-      requestedWaTenantFromUrlRef.current = '';
-      return;
-    }
-
-    const isAllowedTenant = availableTenantOptions.some((entry) => String(entry?.id || '').trim() === requestedTenantId);
-    if (!isAllowedTenant) {
-      requestedWaTenantFromUrlRef.current = '';
-      return;
-    }
-
-    const marker = `${requestedTenantId}:${String(saasSession?.user?.id || saasSession?.user?.email || '')}`;
-    if (launchTenantAppliedRef.current === marker) return;
-    launchTenantAppliedRef.current = marker;
-
-    Promise.resolve(handleSwitchTenant(requestedTenantId))
-      .catch(() => { })
-      .finally(() => {
-        requestedWaTenantFromUrlRef.current = '';
-      });
-  }, [
     forceOperationLaunch,
-    isSaasAuthenticated,
+    selectedTransport,
+    setSelectedTransport,
+    saasSessionUserTenantId: saasSession?.user?.tenantId,
+    saasSessionUserId: saasSession?.user?.id,
+    saasSessionUserEmail: saasSession?.user?.email,
+    saasAdminAutoOpenRef,
+    requestedWaTenantFromUrlRef,
     tenantScopeId,
     availableTenantOptions,
     handleSwitchTenant,
-    saasSession?.user?.id,
-    saasSession?.user?.email
-  ]);
-
-  useEffect(() => {
-    if (selectedTransport) return;
-    if (!saasRuntime?.loaded) return;
-    if (forceOperationLaunch || !canManageSaas) {
-      setShowSaasAdminPanel(false);
-      setSelectedTransport('cloud');
-    }
-  }, [selectedTransport, saasRuntime?.loaded, forceOperationLaunch, canManageSaas]);
+    launchTenantAppliedRef,
+  });
 
   if (!saasRuntime?.loaded) {
     return <StatusScreen message='Inicializando plataforma SaaS...' />;
@@ -2553,6 +2492,8 @@ function App() {
 }
 
 export default App;
+
+
 
 
 
