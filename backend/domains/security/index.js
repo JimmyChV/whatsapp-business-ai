@@ -5,5 +5,6 @@ module.exports = {
     planLimitsService: require('../../plan_limits_service'),
     planLimitsStoreService: require('../../plan_limits_store_service'),
     auditLogService: require('../../audit_log_service'),
-    registerSecurityAuthHttpRoutes: require('./http-routes-auth').registerSecurityAuthHttpRoutes
+    registerSecurityAuthHttpRoutes: require('./http-routes-auth').registerSecurityAuthHttpRoutes,
+    registerSecurityAccessControlHttpRoutes: require('./http-routes-access-control').registerSecurityAccessControlHttpRoutes
 };
