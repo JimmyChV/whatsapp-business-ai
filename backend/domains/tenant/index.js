@@ -13,8 +13,10 @@ module.exports = {
     registerTenantWaModuleAdminHttpRoutes: require('./http-routes-wa-modules').registerTenantWaModuleAdminHttpRoutes,
     registerTenantRuntimeSettingsHttpRoutes: require('./http-routes-runtime-settings').registerTenantRuntimeSettingsHttpRoutes,
     registerTenantLabelsQuickRepliesHttpRoutes: require('./http-routes-labels-quick-replies').registerTenantLabelsQuickRepliesHttpRoutes,
-    registerTenantAdminConfigCatalogHttpRoutes: require('./http-routes-admin-config-catalog').registerTenantAdminConfigCatalogHttpRoutes
+    registerTenantAdminConfigCatalogHttpRoutes: require('./http-routes-admin-config-catalog').registerTenantAdminConfigCatalogHttpRoutes,
+    registerTenantAdminTenantsUsersHttpRoutes: require('./http-routes-admin-tenants-users').registerTenantAdminTenantsUsersHttpRoutes
 };
+
 
 
 
