@@ -14,8 +14,10 @@ module.exports = {
     registerTenantRuntimeSettingsHttpRoutes: require('./http-routes-runtime-settings').registerTenantRuntimeSettingsHttpRoutes,
     registerTenantLabelsQuickRepliesHttpRoutes: require('./http-routes-labels-quick-replies').registerTenantLabelsQuickRepliesHttpRoutes,
     registerTenantAdminConfigCatalogHttpRoutes: require('./http-routes-admin-config-catalog').registerTenantAdminConfigCatalogHttpRoutes,
-    registerTenantAdminTenantsUsersHttpRoutes: require('./http-routes-admin-tenants-users').registerTenantAdminTenantsUsersHttpRoutes
+    registerTenantAdminTenantsUsersHttpRoutes: require('./http-routes-admin-tenants-users').registerTenantAdminTenantsUsersHttpRoutes,
+    registerTenantAssetsUploadHttpRoutes: require('./http-routes-assets-upload').registerTenantAssetsUploadHttpRoutes
 };
+
 
 
 
