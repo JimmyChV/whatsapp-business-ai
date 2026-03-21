@@ -72,7 +72,7 @@ import {
 
 import './index.css';
 
-const SaasAdminPanelShell = lazy(() => import('./features/saas/components/SaasAdminPanelShell'));
+const SaasPanelPage = lazy(() => import('./pages/SaasPanelPage'));
 
 
 const socket = createSocketClient(API_URL, SOCKET_AUTH_TOKEN);
@@ -2221,7 +2221,7 @@ function App() {
   if (!selectedTransport) {
     if (canManageSaas && !forceOperationLaunch) {
       return (
-        <SaasAdminPanelShell
+        <SaasPanelPage
           isOpen
           onClose={handleSaasLogout}
           onLogout={handleSaasLogout}
@@ -2465,7 +2465,7 @@ function App() {
         onConfirm={handleConfirmNewChat}
         onCancel={handleCancelNewChatDialog}
       />
-      <SaasAdminPanelShell
+      <SaasPanelPage
         isOpen={showSaasAdminPanel}
         onClose={() => setShowSaasAdminPanel(false)}
         onLogout={handleSaasLogout}
@@ -2486,6 +2486,7 @@ function App() {
 }
 
 export default App;
+
 
 
 

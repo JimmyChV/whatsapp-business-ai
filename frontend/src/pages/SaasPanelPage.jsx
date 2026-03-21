@@ -1,5 +1,5 @@
-import SaasAdminPanel from '../features/saas/components/SaasAdminPanel';
+import SaasAdminPanelShell from '../features/saas/components/SaasAdminPanelShell';
 
 export default function SaasPanelPage(props) {
-  return <SaasAdminPanel {...props} />;
+  return <SaasAdminPanelShell {...props} />;
 }
