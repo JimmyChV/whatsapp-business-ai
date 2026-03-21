@@ -1,5 +1,9 @@
 import { useCallback } from 'react';
-import { buildQuickReplyLibraryPayload, normalizeCatalogIdsList } from '../helpers';
+import {
+    buildQuickReplyLibraryPayload,
+    normalizeCatalogIdsList,
+    resolveQuickReplyLibraryIdsForModule
+} from '../helpers';
 import { updateQuickReplyLibrary } from '../services';
 
 export default function useModuleConfigActions({
@@ -24,16 +28,6 @@ export default function useModuleConfigActions({
     openWaModuleEditor,
     resetWaModuleForm
 } = {}) {
-    const getQuickReplyLibraryIdsForModule = useCallback((moduleId = '') => {
-        const cleanModuleId = String(moduleId || '').trim().toLowerCase();
-        if (!cleanModuleId) return [];
-        return (Array.isArray(quickReplyLibraries) ? quickReplyLibraries : [])
-            .filter((library) => library?.isShared !== true)
-            .filter((library) => Array.isArray(library?.moduleIds) && library.moduleIds.includes(cleanModuleId))
-            .map((library) => String(library?.libraryId || '').trim().toUpperCase())
-            .filter(Boolean);
-    }, [quickReplyLibraries]);
-
     const openConfigSettingsView = () => {
         setSelectedConfigKey('tenant_settings');
         setTenantSettingsPanelMode('view');
@@ -176,6 +170,10 @@ export default function useModuleConfigActions({
             await updateQuickReplyLibrary(requestJson, cleanTenantId, libraryId, payload);
         }
     }, [quickReplyLibraries, requestJson, settingsTenantId]);
+
+    const getQuickReplyLibraryIdsForModule = useCallback((moduleId = '') => (
+        resolveQuickReplyLibraryIdsForModule(moduleId, quickReplyLibraries)
+    ), [quickReplyLibraries]);
 
     return {
         clearConfigSelection,

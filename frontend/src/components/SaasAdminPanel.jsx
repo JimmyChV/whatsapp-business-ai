@@ -48,6 +48,7 @@ import {
     useSaasTenantDataLoaders,
     useSaasTenantScope,
     useSaasTenantUsers,
+    useSaasWaModuleEditor,
     useTenantLabelsActions,
     useTenantsUsersAdminActions
 } from './saas/hooks';
@@ -124,9 +125,7 @@ const {
     buildTenantLabelPayload,
     sanitizeMemberships,
     resolvePrimaryRoleFromMemberships,
-    getRolePriority,
-    normalizeWaModule,
-    sanitizeAiAssistantCode,
+    getRolePriority,    sanitizeAiAssistantCode,
     buildAiAssistantFormFromItem,
     buildIntegrationsUpdatePayload,
     normalizePlanForm,
@@ -828,68 +827,41 @@ export default function SaasAdminPanel({
         }
     };
 
-    const resetWaModuleForm = () => {
-        setWaModuleForm(EMPTY_WA_MODULE_FORM);
-        setTenantIntegrations(EMPTY_INTEGRATIONS_FORM);
-        setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
-        setSelectedPlanId('');
-        setPlanForm(normalizePlanForm('starter', {}));
-        setRoleForm(EMPTY_ROLE_FORM);
-        setEditingWaModuleId('');
-        setModuleUserPickerId('');
-        setModuleQuickReplyLibraryDraft([]);
-        setSelectedCustomerId('');
-        setCustomerPanelMode('view');
-        setCustomerForm(EMPTY_CUSTOMER_FORM);
-        setCustomerSearch('');
-        setCustomerCsvText('');
-        setSelectedAiAssistantId('');
-        setAiAssistantPanelMode('view');
-        setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM });
-        setCustomerImportModuleId('');
-    };
+    const {
+        resetWaModuleForm,
+        openWaModuleEditor
+    } = useSaasWaModuleEditor({
+        quickReplyLibraries,
+        emptyWaModuleForm: EMPTY_WA_MODULE_FORM,
+        emptyIntegrationsForm: EMPTY_INTEGRATIONS_FORM,
+        emptyTenantCatalogForm: EMPTY_TENANT_CATALOG_FORM,
+        emptyCustomerForm: EMPTY_CUSTOMER_FORM,
+        emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
+        emptyRoleForm: EMPTY_ROLE_FORM,
+        normalizePlanForm,
+        setWaModuleForm,
+        setTenantIntegrations,
+        setTenantCatalogForm,
+        setSelectedPlanId,
+        setPlanForm,
+        setRoleForm,
+        setEditingWaModuleId,
+        setModuleUserPickerId,
+        setModuleQuickReplyLibraryDraft,
+        setSelectedCustomerId,
+        setCustomerPanelMode,
+        setCustomerForm,
+        setCustomerSearch,
+        setCustomerCsvText,
+        setSelectedAiAssistantId,
+        setAiAssistantPanelMode,
+        setAiAssistantForm,
+        setCustomerImportModuleId,
+        setSelectedWaModuleId
+    });
 
-    const openWaModuleEditor = (moduleItem = null) => {
-        const item = normalizeWaModule(moduleItem || {});
-        if (!item) {
-            resetWaModuleForm();
-            return;
-        }
-        setSelectedWaModuleId(item.moduleId);
-        setEditingWaModuleId(item.moduleId);
-        setWaModuleForm({
-            moduleId: item.moduleId,
-            name: item.name,
-            phoneNumber: item.phoneNumber || '',
-            transportMode: item.transportMode || 'cloud',
-            imageUrl: item.imageUrl || '',
-            assignedUserIds: [...(item.assignedUserIds || [])],
-            catalogIds: [...(item.catalogIds || [])],
-            aiAssistantId: sanitizeAiAssistantCode(item.moduleAiAssistantId || ''),
-            moduleCatalogMode: item.moduleCatalogMode || 'inherit',
-            moduleAiEnabled: item?.moduleFeatureFlags?.aiPro !== false,
-            moduleCatalogEnabled: item?.moduleFeatureFlags?.catalog !== false,
-            moduleCartEnabled: item?.moduleFeatureFlags?.cart !== false,
-            moduleQuickRepliesEnabled: item?.moduleFeatureFlags?.quickReplies !== false,
-            cloudAppId: item?.cloudConfig?.appId || '',
-            cloudWabaId: item?.cloudConfig?.wabaId || '',
-            cloudPhoneNumberId: item?.cloudConfig?.phoneNumberId || '',
-            cloudVerifyToken: item?.cloudConfig?.verifyToken || '',
-            cloudGraphVersion: item?.cloudConfig?.graphVersion || 'v22.0',
-            cloudDisplayPhoneNumber: item?.cloudConfig?.displayPhoneNumber || '',
-            cloudBusinessName: item?.cloudConfig?.businessName || '',
-            cloudAppSecret: '',
-            cloudSystemUserToken: '',
-            cloudAppSecretMasked: item?.cloudConfig?.appSecretMasked || '',
-            cloudSystemUserTokenMasked: item?.cloudConfig?.systemUserTokenMasked || '',
-            cloudEnforceSignature: item?.cloudConfig?.enforceSignature !== false
-        });
-        setModuleUserPickerId('');
-        setModuleQuickReplyLibraryDraft(getQuickReplyLibraryIdsForModule(item.moduleId));
-    };
     const {
         clearConfigSelection,
-        getQuickReplyLibraryIdsForModule,
         openConfigModuleCreate,
         openConfigModuleEdit,
         openConfigModuleView,
@@ -1703,6 +1675,12 @@ export default function SaasAdminPanel({
         </div>
     );
 }
+
+
+
+
+
+
 
 
 
