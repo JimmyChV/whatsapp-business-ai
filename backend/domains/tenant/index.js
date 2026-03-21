@@ -8,5 +8,11 @@ module.exports = {
     waModuleService: require('../../wa_module_service'),
     customerService: require('../../customer_service'),
     quickReplyLibrariesService: require('./quick-reply-libraries.service'),
-    aiUsageService: require('../../ai_usage_service')
+    aiUsageService: require('../../ai_usage_service'),
+    registerTenantCustomerHttpRoutes: require('./http-routes-customers').registerTenantCustomerHttpRoutes,
+    registerTenantWaModuleAdminHttpRoutes: require('./http-routes-wa-modules').registerTenantWaModuleAdminHttpRoutes,
+    registerTenantRuntimeSettingsHttpRoutes: require('./http-routes-runtime-settings').registerTenantRuntimeSettingsHttpRoutes
 };
+
+
+

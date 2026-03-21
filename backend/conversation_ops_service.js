@@ -1,262 +1,38 @@
-const crypto = require('crypto');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
-    normalizeTenantId,
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
 } = require('./persistence_runtime');
+const {
+    resolveTenantId,
+    toText,
+    toLower,
+    normalizeChatId,
+    normalizeScopeModuleId,
+    normalizeEventType,
+    normalizeEventSource,
+    normalizeMode,
+    normalizeStatus,
+    normalizeLimit,
+    normalizeOffset,
+    normalizeObject,
+    createId,
+    trimArrayRight,
+    normalizeEventRecord,
+    normalizeAssignmentRecord,
+    normalizeAssignmentEventRecord,
+    normalizeStore,
+    assignmentKey,
+    missingRelation,
+    nowIso
+} = require('./domains/operations/conversation-ops.helpers');
+const { ensureConversationOpsSchema } = require('./domains/operations/conversation-ops.schema');
 
 const STORE_FILE = 'conversation_ops.json';
-const MAX_LIMIT = 500;
-const DEFAULT_LIMIT = 50;
 const EVENTS_FILE_LIMIT = Math.max(500, Number(process.env.CONVERSATION_EVENTS_FILE_LIMIT || 5000));
 const ASSIGNMENT_EVENTS_FILE_LIMIT = Math.max(500, Number(process.env.ASSIGNMENT_EVENTS_FILE_LIMIT || 5000));
-
-let schemaReady = false;
-let schemaPromise = null;
-
-function nowIso() {
-    return new Date().toISOString();
-}
-
-function resolveTenantId(input = null) {
-    if (typeof input === 'string') return normalizeTenantId(input || DEFAULT_TENANT_ID);
-    if (input && typeof input === 'object') return normalizeTenantId(input.tenantId || DEFAULT_TENANT_ID);
-    return DEFAULT_TENANT_ID;
-}
-
-function toText(value = '') {
-    return String(value ?? '').trim();
-}
-
-function toLower(value = '') {
-    return toText(value).toLowerCase();
-}
-
-function normalizeChatId(value = '') {
-    return toText(value);
-}
-
-function normalizeScopeModuleId(value = '') {
-    return toLower(value);
-}
-
-function normalizeEventType(value = '') {
-    return toLower(value).replace(/\s+/g, '_');
-}
-
-function normalizeEventSource(value = '') {
-    const source = toLower(value);
-    if (!source) return 'system';
-    if (['socket', 'http', 'worker', 'system', 'webhook', 'automation'].includes(source)) return source;
-    return 'system';
-}
-
-function normalizeMode(value = '') {
-    const mode = toLower(value);
-    if (mode === 'auto' || mode === 'automatic') return 'auto';
-    if (mode === 'manual') return 'manual';
-    if (mode === 'fallback') return 'fallback';
-    return 'manual';
-}
-
-function normalizeStatus(value = '') {
-    const status = toLower(value);
-    if (['active', 'released', 'reassigned'].includes(status)) return status;
-    return 'active';
-}
-
-function normalizeLimit(value = DEFAULT_LIMIT) {
-    const parsed = Number(value || DEFAULT_LIMIT);
-    if (!Number.isFinite(parsed)) return DEFAULT_LIMIT;
-    return Math.max(1, Math.min(MAX_LIMIT, Math.floor(parsed)));
-}
-
-function normalizeOffset(value = 0) {
-    const parsed = Number(value || 0);
-    if (!Number.isFinite(parsed)) return 0;
-    return Math.max(0, Math.floor(parsed));
-}
-
-function normalizeObject(value = {}) {
-    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
-    return {};
-}
-
-function createId(prefix = 'EVT') {
-    const cleanPrefix = toText(prefix || 'EVT').toUpperCase() || 'EVT';
-    const stamp = Date.now().toString(36).toUpperCase();
-    const random = crypto.randomBytes(4).toString('hex').toUpperCase();
-    return `${cleanPrefix}-${stamp}${random}`;
-}
-
-function trimArrayRight(items = [], maxSize = 1000) {
-    const source = Array.isArray(items) ? items : [];
-    if (source.length <= maxSize) return source;
-    return source.slice(source.length - maxSize);
-}
-
-function normalizeEventRecord(item = {}) {
-    const source = item && typeof item === 'object' ? item : {};
-    return {
-        eventId: toText(source.eventId || source.event_id || createId('EVT')),
-        chatId: normalizeChatId(source.chatId || source.chat_id),
-        scopeModuleId: normalizeScopeModuleId(source.scopeModuleId || source.scope_module_id),
-        customerId: toText(source.customerId || source.customer_id) || null,
-        actorUserId: toText(source.actorUserId || source.actor_user_id) || null,
-        actorRole: toLower(source.actorRole || source.actor_role) || null,
-        eventType: normalizeEventType(source.eventType || source.event_type || 'conversation.event'),
-        eventSource: normalizeEventSource(source.eventSource || source.event_source || 'system'),
-        payload: normalizeObject(source.payload),
-        createdAt: toText(source.createdAt || source.created_at || nowIso()) || nowIso()
-    };
-}
-
-function normalizeAssignmentRecord(item = {}) {
-    const source = item && typeof item === 'object' ? item : {};
-    return {
-        chatId: normalizeChatId(source.chatId || source.chat_id),
-        scopeModuleId: normalizeScopeModuleId(source.scopeModuleId || source.scope_module_id),
-        assigneeUserId: toText(source.assigneeUserId || source.assignee_user_id) || null,
-        assigneeRole: toLower(source.assigneeRole || source.assignee_role) || null,
-        assignedByUserId: toText(source.assignedByUserId || source.assigned_by_user_id) || null,
-        assignmentMode: normalizeMode(source.assignmentMode || source.assignment_mode || 'manual'),
-        assignmentReason: toText(source.assignmentReason || source.assignment_reason) || null,
-        metadata: normalizeObject(source.metadata),
-        status: normalizeStatus(source.status || 'active'),
-        createdAt: toText(source.createdAt || source.created_at || nowIso()) || nowIso(),
-        updatedAt: toText(source.updatedAt || source.updated_at || nowIso()) || nowIso()
-    };
-}
-
-function normalizeAssignmentEventRecord(item = {}) {
-    const source = item && typeof item === 'object' ? item : {};
-    return {
-        assignmentEventId: toText(source.assignmentEventId || source.assignment_event_id || createId('ASG')),
-        chatId: normalizeChatId(source.chatId || source.chat_id),
-        scopeModuleId: normalizeScopeModuleId(source.scopeModuleId || source.scope_module_id),
-        previousAssigneeUserId: toText(source.previousAssigneeUserId || source.previous_assignee_user_id) || null,
-        nextAssigneeUserId: toText(source.nextAssigneeUserId || source.next_assignee_user_id) || null,
-        nextAssigneeRole: toLower(source.nextAssigneeRole || source.next_assignee_role) || null,
-        assignedByUserId: toText(source.assignedByUserId || source.assigned_by_user_id) || null,
-        assignmentMode: normalizeMode(source.assignmentMode || source.assignment_mode || 'manual'),
-        assignmentReason: toText(source.assignmentReason || source.assignment_reason) || null,
-        payload: normalizeObject(source.payload),
-        createdAt: toText(source.createdAt || source.created_at || nowIso()) || nowIso()
-    };
-}
-
-function normalizeStore(input = {}) {
-    const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
-    return {
-        events: Array.isArray(source.events) ? source.events.map((entry) => normalizeEventRecord(entry)).filter((entry) => entry.chatId && entry.eventType) : [],
-        assignments: Array.isArray(source.assignments) ? source.assignments.map((entry) => normalizeAssignmentRecord(entry)).filter((entry) => entry.chatId) : [],
-        assignmentEvents: Array.isArray(source.assignmentEvents) ? source.assignmentEvents.map((entry) => normalizeAssignmentEventRecord(entry)).filter((entry) => entry.chatId) : []
-    };
-}
-
-function assignmentKey(chatId = '', scopeModuleId = '') {
-    return `${normalizeChatId(chatId)}::${normalizeScopeModuleId(scopeModuleId)}`;
-}
-
-function missingRelation(error) {
-    return String(error?.code || '').trim() === '42P01';
-}
-
-async function ensurePostgresSchema() {
-    if (schemaReady) return;
-    if (schemaPromise) return schemaPromise;
-
-    schemaPromise = (async () => {
-        await queryPostgres(`
-            CREATE TABLE IF NOT EXISTS tenant_conversation_events (
-                tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-                event_id TEXT NOT NULL,
-                chat_id TEXT NOT NULL,
-                scope_module_id TEXT NOT NULL DEFAULT '',
-                customer_id TEXT NULL,
-                actor_user_id TEXT NULL REFERENCES users(user_id) ON DELETE SET NULL,
-                actor_role TEXT NULL,
-                event_type TEXT NOT NULL,
-                event_source TEXT NOT NULL DEFAULT 'system',
-                payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (tenant_id, event_id)
-            )
-        `);
-        await queryPostgres(`
-            CREATE INDEX IF NOT EXISTS idx_tenant_conversation_events_chat
-            ON tenant_conversation_events(tenant_id, chat_id, scope_module_id, created_at DESC)
-        `);
-        await queryPostgres(`
-            CREATE INDEX IF NOT EXISTS idx_tenant_conversation_events_type
-            ON tenant_conversation_events(tenant_id, event_type, created_at DESC)
-        `);
-        await queryPostgres(`
-            CREATE INDEX IF NOT EXISTS idx_tenant_conversation_events_actor
-            ON tenant_conversation_events(tenant_id, actor_user_id, created_at DESC)
-        `);
-
-        await queryPostgres(`
-            CREATE TABLE IF NOT EXISTS tenant_chat_assignments (
-                tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-                chat_id TEXT NOT NULL,
-                scope_module_id TEXT NOT NULL DEFAULT '',
-                assignee_user_id TEXT NULL REFERENCES users(user_id) ON DELETE SET NULL,
-                assignee_role TEXT NULL,
-                assigned_by_user_id TEXT NULL REFERENCES users(user_id) ON DELETE SET NULL,
-                assignment_mode TEXT NOT NULL DEFAULT 'manual',
-                assignment_reason TEXT NULL,
-                metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-                status TEXT NOT NULL DEFAULT 'active',
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (tenant_id, chat_id, scope_module_id)
-            )
-        `);
-        await queryPostgres(`
-            CREATE INDEX IF NOT EXISTS idx_tenant_chat_assignments_assignee
-            ON tenant_chat_assignments(tenant_id, assignee_user_id, updated_at DESC)
-        `);
-        await queryPostgres(`
-            CREATE INDEX IF NOT EXISTS idx_tenant_chat_assignments_status
-            ON tenant_chat_assignments(tenant_id, status, updated_at DESC)
-        `);
-
-        await queryPostgres(`
-            CREATE TABLE IF NOT EXISTS tenant_chat_assignment_events (
-                tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-                assignment_event_id TEXT NOT NULL,
-                chat_id TEXT NOT NULL,
-                scope_module_id TEXT NOT NULL DEFAULT '',
-                previous_assignee_user_id TEXT NULL,
-                next_assignee_user_id TEXT NULL,
-                next_assignee_role TEXT NULL,
-                assigned_by_user_id TEXT NULL,
-                assignment_mode TEXT NOT NULL DEFAULT 'manual',
-                assignment_reason TEXT NULL,
-                payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (tenant_id, assignment_event_id)
-            )
-        `);
-        await queryPostgres(`
-            CREATE INDEX IF NOT EXISTS idx_tenant_chat_assignment_events_chat
-            ON tenant_chat_assignment_events(tenant_id, chat_id, scope_module_id, created_at DESC)
-        `);
-        await queryPostgres(`
-            CREATE INDEX IF NOT EXISTS idx_tenant_chat_assignment_events_assignee
-            ON tenant_chat_assignment_events(tenant_id, next_assignee_user_id, created_at DESC)
-        `);
-
-        schemaReady = true;
-        schemaPromise = null;
-    })();
-
-    return schemaPromise;
-}
 
 async function listConversationEvents(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const cleanTenantId = resolveTenantId(tenantId);
@@ -281,7 +57,7 @@ async function listConversationEvents(tenantId = DEFAULT_TENANT_ID, options = {}
     }
 
     try {
-        await ensurePostgresSchema();
+        await ensureConversationOpsSchema();
         const params = [cleanTenantId];
         const where = ['tenant_id = $1'];
 
@@ -360,7 +136,7 @@ async function recordConversationEvent(tenantId = DEFAULT_TENANT_ID, payload = {
         return clean;
     }
 
-    await ensurePostgresSchema();
+    await ensureConversationOpsSchema();
     await queryPostgres(
         `INSERT INTO tenant_conversation_events (
             tenant_id, event_id, chat_id, scope_module_id, customer_id, actor_user_id, actor_role, event_type, event_source, payload, created_at
@@ -395,7 +171,7 @@ async function getChatAssignment(tenantId = DEFAULT_TENANT_ID, options = {}) {
     }
 
     try {
-        await ensurePostgresSchema();
+        await ensureConversationOpsSchema();
         const { rows } = await queryPostgres(
             `SELECT chat_id, scope_module_id, assignee_user_id, assignee_role, assigned_by_user_id,
                     assignment_mode, assignment_reason, metadata, status, created_at, updated_at
@@ -448,7 +224,7 @@ async function listChatAssignments(tenantId = DEFAULT_TENANT_ID, options = {}) {
     }
 
     try {
-        await ensurePostgresSchema();
+        await ensureConversationOpsSchema();
         const params = [cleanTenantId];
         const where = ['tenant_id = $1'];
 
@@ -512,7 +288,7 @@ async function listChatAssignmentEvents(tenantId = DEFAULT_TENANT_ID, options = 
     }
 
     try {
-        await ensurePostgresSchema();
+        await ensureConversationOpsSchema();
         const params = [cleanTenantId];
         const where = ['tenant_id = $1'];
 
@@ -631,7 +407,7 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
         return { assignment: nextRecord, previous, changed: (previous?.assigneeUserId || null) !== (nextRecord.assigneeUserId || null) };
     }
 
-    await ensurePostgresSchema();
+    await ensureConversationOpsSchema();
 
     await queryPostgres(
         `INSERT INTO tenant_chat_assignments (
@@ -719,3 +495,6 @@ module.exports = {
     upsertChatAssignment,
     clearChatAssignment
 };
+
+
+

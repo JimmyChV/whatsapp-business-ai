@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 
 import {
     ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL,
@@ -6,7 +6,7 @@ import {
     ADMIN_IMAGE_MAX_BYTES,
     formatBytes,
     validateImageFile
-} from '../SaasAdminPanel.helpers';
+} from '../helpers';
 
 export default function ImageDropInput({
     label = 'Subir imagen',
@@ -59,3 +59,4 @@ export default function ImageDropInput({
         </label>
     );
 }
+
