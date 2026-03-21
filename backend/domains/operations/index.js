@@ -6,6 +6,8 @@ module.exports = {
     operationsKpiService: require('../../operations_kpi_service'),
     opsTelemetry: require('../../ops_telemetry'),
     registerOperationsHttpRoutes: require('./http-routes').registerOperationsHttpRoutes,
-    registerOperationsUtilityHttpRoutes: require('./http-routes-utility').registerOperationsUtilityHttpRoutes
+    registerOperationsUtilityHttpRoutes: require('./http-routes-utility').registerOperationsUtilityHttpRoutes,
+    registerOperationsHealthHttpRoutes: require('./http-routes-health').registerOperationsHealthHttpRoutes
 };
+
 

@@ -36,7 +36,8 @@ const {
     registerTenantLabelsQuickRepliesHttpRoutes,
     registerTenantAdminConfigCatalogHttpRoutes,
     registerTenantAdminTenantsUsersHttpRoutes,
-    registerTenantAssetsUploadHttpRoutes
+    registerTenantAssetsUploadHttpRoutes,
+    registerTenantRuntimePublicHttpRoutes
 } = require('./domains/tenant');
 const {
     messageHistoryService,
@@ -46,7 +47,8 @@ const {
     operationsKpiService,
     opsTelemetry,
     registerOperationsHttpRoutes,
-    registerOperationsUtilityHttpRoutes
+    registerOperationsUtilityHttpRoutes,
+    registerOperationsHealthHttpRoutes
 } = require('./domains/operations');
 const {
     invalidateWebhookCloudRegistryCache,
@@ -536,11 +538,6 @@ io.on('connection', (socket) => {
 // Initialize Managers
 const socketManager = new SocketManager(io);
 
-// Basic Route
-app.get('/', (req, res) => {
-    res.send('WhatsApp Business API V4 - Robust & Modular');
-});
-
 function toPublicTenant(tenant = null) {
     if (!tenant || typeof tenant !== 'object') return null;
     const logoUrl = String(tenant?.logoUrl || tenant?.logo_url || '').trim();
@@ -556,119 +553,24 @@ function toPublicTenant(tenant = null) {
         coverImageUrl: /^https?:\/\//i.test(coverImageUrl) ? coverImageUrl : null
     };
 }
-
-app.get('/api/ops/health', (req, res) => {
-    if (!hasOpsAccess(req)) return res.status(401).json({ ok: false, error: 'No autorizado para operacion.' });
-    const runtime = typeof waClient.getRuntimeInfo === 'function'
-        ? waClient.getRuntimeInfo()
-        : { requestedTransport: 'idle', activeTransport: 'idle' };
-
-    return res.json({
-        ok: true,
-        requestId: req.requestId || null,
-        now: new Date().toISOString(),
-        uptimeSec: Math.max(0, Math.floor(process.uptime())),
-        runtime,
-        waReady: Boolean(waClient.isReady)
-    });
+// Platform and public runtime routes
+registerOperationsHealthHttpRoutes({
+    app,
+    hasOpsAccess,
+    waClient,
+    opsTelemetry,
+    tenantService,
+    authService,
+    opsReadyRequireWa
 });
 
-app.get('/api/ops/ready', (req, res) => {
-    if (!hasOpsAccess(req)) return res.status(401).json({ ok: false, error: 'No autorizado para operacion.' });
-
-    const runtime = typeof waClient.getRuntimeInfo === 'function'
-        ? waClient.getRuntimeInfo()
-        : { requestedTransport: 'idle', activeTransport: 'idle' };
-    const waReady = Boolean(waClient.isReady);
-    const ready = opsReadyRequireWa ? waReady : true;
-
-    return res.status(ready ? 200 : 503).json({
-        ok: ready,
-        requestId: req.requestId || null,
-        ready,
-        checks: {
-            process: true,
-            wa: waReady,
-            waReady,
-            waRequired: Boolean(opsReadyRequireWa)
-        },
-        runtime
-    });
-});
-
-app.get('/api/ops/metrics', (req, res) => {
-    if (!hasOpsAccess(req)) return res.status(401).json({ ok: false, error: 'No autorizado para operacion.' });
-
-    const runtime = typeof waClient.getRuntimeInfo === 'function'
-        ? waClient.getRuntimeInfo()
-        : { requestedTransport: 'idle', activeTransport: 'idle' };
-    const snapshot = opsTelemetry.buildSnapshot({
-        waRuntime: runtime,
-        waReady: Boolean(waClient.isReady),
-        saasEnabled: tenantService.isSaasEnabled(),
-        authEnabled: authService.isAuthEnabled()
-    });
-
-    return res.json({ ok: true, requestId: req.requestId || null, ...snapshot });
-});
-
-app.get('/api/saas/runtime', async (req, res) => {
-    const authContext = req.authContext || { enabled: false, isAuthenticated: false, user: null };
-    const authEnabled = authService.isAuthEnabled();
-    const isAuthenticated = Boolean(authContext?.isAuthenticated && authContext?.user);
-
-    const allTenants = tenantService.getTenants();
-    const allowedTenants = isAuthenticated
-        ? authService.getAllowedTenantsForUser(authContext?.user || {}, allTenants)
-        : allTenants;
-
-    // Avoid exposing tenant/company data before login when SaaS auth is enabled.
-    const exposeTenantData = !authEnabled || isAuthenticated;
-    const runtimeTenants = exposeTenantData ? allowedTenants : [];
-
-    const requestedTenantId = String(req?.tenantContext?.id || '').trim();
-    const fallbackTenant = req.tenantContext || tenantService.DEFAULT_TENANT;
-    const effectiveTenant = exposeTenantData
-        ? (runtimeTenants.find((tenant) => String(tenant?.id || '').trim() === requestedTenantId)
-            || runtimeTenants[0]
-            || fallbackTenant)
-        : fallbackTenant;
-
-    const tenantId = String(effectiveTenant?.id || 'default');
-    const authUser = authContext?.user && typeof authContext.user === 'object' ? authContext.user : null;
-    const runtimeUserId = String(authUser?.userId || authUser?.id || '').trim();
-
-    let tenantSettings = null;
-    let waModules = [];
-    let selectedWaModule = null;
-
-    if (exposeTenantData) {
-        tenantSettings = await tenantSettingsService.getTenantSettings(tenantId);
-        waModules = await waModuleService.listModules(tenantId, {
-            includeInactive: false,
-            userId: runtimeUserId
-        });
-        selectedWaModule = await waModuleService.getSelectedModule(tenantId, {
-            userId: runtimeUserId
-        });
-    }
-
-    return res.json({
-        ok: true,
-        saasEnabled: tenantService.isSaasEnabled(),
-        authEnabled,
-        socketAuthRequired: saasSocketAuthRequired,
-        tenant: exposeTenantData ? toPublicTenant(effectiveTenant) : null,
-        tenantSettings: exposeTenantData ? tenantSettings : null,
-        waModules: exposeTenantData ? waModules : [],
-        selectedWaModule: exposeTenantData ? selectedWaModule : null,
-        tenants: exposeTenantData ? (runtimeTenants || []).map(toPublicTenant).filter(Boolean) : [],
-        authContext: {
-            enabled: Boolean(authContext.enabled),
-            isAuthenticated: Boolean(authContext.isAuthenticated),
-            user: authContext.user || null
-        }
-    });
+registerTenantRuntimePublicHttpRoutes({
+    app,
+    authService,
+    tenantService,
+    tenantSettingsService,
+    waModuleService,
+    saasSocketAuthRequired
 });
 
 registerSecurityAuthHttpRoutes({
@@ -1448,6 +1350,9 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
+
+
+
 
 
 
