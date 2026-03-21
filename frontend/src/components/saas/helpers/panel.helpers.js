@@ -1,6 +1,6 @@
-﻿// Helpers extraidos desde SaasAdminPanel para reducir tamano del modulo principal.
-import { sanitizeMemberships } from './helpers/rbac.helpers';
-import { sanitizeAiAssistantCode } from './helpers/ai.helpers';
+// Helpers extraidos desde SaasAdminPanel para reducir tamano del modulo principal.
+import { sanitizeMemberships } from './rbac.helpers';
+import { sanitizeAiAssistantCode } from './ai.helpers';
 
 export { sanitizeAiAssistantCode };
 
@@ -55,7 +55,7 @@ export const EMPTY_SETTINGS = {
         quickReplies: true
     }
 };
-export { EMPTY_INTEGRATIONS_FORM } from './helpers/integrations.helpers';
+export { EMPTY_INTEGRATIONS_FORM } from './integrations.helpers';
 
 export {
     EMPTY_TENANT_CATALOG_FORM,
@@ -67,7 +67,7 @@ export {
     normalizeTenantCatalogItem,
     buildTenantCatalogFormFromItem,
     buildTenantCatalogPayload
-} from './helpers/catalogs.helpers';
+} from './catalogs.helpers';
 
 export {
     EMPTY_ACCESS_CATALOG,
@@ -107,7 +107,7 @@ export {
     normalizeRoleProfileItem,
     buildRoleFormFromItem,
     sanitizeRoleCode
-} from './helpers/rbac.helpers';
+} from './rbac.helpers';
 
 export const EMPTY_WA_MODULE_FORM = {
     moduleId: '',
@@ -143,7 +143,7 @@ export {
     AI_PROVIDER_OPTIONS,
     AI_MODEL_OPTIONS,
     LAVITAT_FIRST_ASSISTANT_SYSTEM_PROMPT
-} from './helpers/ai.helpers';
+} from './ai.helpers';
 
 export const BASE_ROLE_OPTIONS = ['owner', 'admin', 'seller'];
 export const PLAN_OPTIONS = ['starter', 'pro', 'enterprise'];
@@ -192,7 +192,7 @@ export {
     getQuickReplyAssetDisplayName,
     buildQuickReplyLibraryPayload,
     buildQuickReplyItemPayload
-} from './helpers/quickReplies.helpers';
+} from './quickReplies.helpers';
 export {
     DEFAULT_LABEL_COLORS,
     EMPTY_LABEL_FORM,
@@ -200,7 +200,7 @@ export {
     normalizeTenantLabelItem,
     buildLabelFormFromItem,
     buildTenantLabelPayload
-} from './helpers/labels.helpers';
+} from './labels.helpers';
 
 export function normalizeOverview(payload = {}) {
     return {
@@ -272,11 +272,11 @@ export {
     buildAiAssistantFormFromItem,
     buildLavitatAssistantPreset,
     buildAiAssistantPayload
-} from './helpers/ai.helpers';
+} from './ai.helpers';
 export {
     normalizeIntegrationsPayload,
     buildIntegrationsUpdatePayload
-} from './helpers/integrations.helpers';
+} from './integrations.helpers';
 
 export function buildTenantFormFromItem(item = null) {
     if (!item || typeof item !== 'object') return EMPTY_TENANT_FORM;
@@ -418,6 +418,7 @@ export function validateImageFile(file = null) {
     }
     return '';
 }
+
 
 
 

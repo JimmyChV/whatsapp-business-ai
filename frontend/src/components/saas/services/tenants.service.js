@@ -1,0 +1,34 @@
+function encodeTenantId(tenantId) {
+    return encodeURIComponent(String(tenantId || '').trim());
+}
+
+export async function fetchSaasOverview(requestJson) {
+    return requestJson('/api/admin/saas/overview');
+}
+
+export async function fetchTenantSettings(requestJson, tenantId) {
+    return requestJson(`/api/admin/saas/tenants/${encodeTenantId(tenantId)}/settings`);
+}
+
+export async function fetchTenantIntegrations(requestJson, tenantId) {
+    return requestJson(`/api/admin/saas/tenants/${encodeTenantId(tenantId)}/integrations`);
+}
+
+export async function fetchTenantWaModules(requestJson, tenantId) {
+    return requestJson(`/api/admin/saas/tenants/${encodeTenantId(tenantId)}/wa-modules`);
+}
+
+export async function fetchTenantCustomers(
+    requestJson,
+    tenantId,
+    {
+        limit = 300,
+        includeInactive = true
+    } = {}
+) {
+    const params = new URLSearchParams();
+    params.set('limit', String(Number(limit) > 0 ? Number(limit) : 300));
+    params.set('includeInactive', includeInactive ? 'true' : 'false');
+
+    return requestJson(`/api/admin/saas/tenants/${encodeTenantId(tenantId)}/customers?${params.toString()}`);
+}
