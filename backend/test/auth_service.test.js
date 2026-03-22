@@ -1,4 +1,4 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -6,10 +6,10 @@ const os = require('os');
 const path = require('path');
 
 function loadAuthServiceFresh({ preserveControlPlaneCache = false } = {}) {
-    const authPath = require.resolve('../auth_service');
-    const sessionPath = require.resolve('../auth_session_service');
-    const controlPath = require.resolve('../saas_control_plane_service');
-    const tenantServicePath = require.resolve('../tenant_service');
+    const authPath = require.resolve('../domains/security/services/auth.service');
+    const sessionPath = require.resolve('../domains/security/services/auth-session.service');
+    const controlPath = require.resolve('../domains/tenant/services/tenant-control.service');
+    const tenantServicePath = require.resolve('../domains/tenant/services/tenant-core.service');
 
     delete require.cache[authPath];
     delete require.cache[sessionPath];
@@ -19,7 +19,7 @@ function loadAuthServiceFresh({ preserveControlPlaneCache = false } = {}) {
         delete require.cache[controlPath];
     }
 
-    return require('../auth_service');
+    return require('../domains/security/services/auth.service');
 }
 
 function snapshotEnv() {
@@ -318,7 +318,7 @@ test('auth_service login uses snapshot users when control-plane auth list is inc
     const prev = snapshotEnv();
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auth-test-'));
 
-    const saasControl = require('../saas_control_plane_service');
+    const saasControl = require('../domains/tenant/services/tenant-control.service');
     const originalGetUsersForAuthSync = saasControl.getUsersForAuthSync;
     const originalGetSnapshotSync = saasControl.getSnapshotSync;
     const originalEnsureLoaded = saasControl.ensureLoaded;
@@ -392,3 +392,4 @@ test('auth_service login uses snapshot users when control-plane auth list is inc
         fs.rmSync(tempDir, { recursive: true, force: true });
     }
 });
+

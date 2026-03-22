@@ -1,10 +1,10 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 
 function loadOpsTelemetryFresh() {
-    const p = require.resolve('../ops_telemetry');
+    const p = require.resolve('../domains/operations/services/ops-telemetry.service');
     delete require.cache[p];
-    return require('../ops_telemetry');
+    return require('../domains/operations/services/ops-telemetry.service');
 }
 
 test('ops_telemetry records http and computes latency percentiles', () => {
@@ -44,3 +44,4 @@ test('ops_telemetry records socket lifecycle and internal errors', () => {
     assert.equal(snapshot.internal.errors, 1);
     assert.equal(snapshot.internal.lastError.scope, 'unit_test');
 });
+

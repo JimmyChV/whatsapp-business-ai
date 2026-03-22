@@ -11,7 +11,7 @@ const {
     getTenantDataDir,
     queryPostgres
 } = require('../persistence_runtime');
-const tenantService = require('../tenant_service');
+const tenantService = require('../domains/tenant/services/tenant-core.service');
 
 function parseArgs(argv = []) {
     const args = {

@@ -1,4 +1,4 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs/promises');
 const os = require('os');
@@ -6,10 +6,10 @@ const path = require('path');
 
 function loadTenantSettingsServiceFresh() {
     const runtimePath = require.resolve('../persistence_runtime');
-    const modulePath = require.resolve('../tenant_settings_service');
+    const modulePath = require.resolve('../domains/tenant/services/tenant-settings.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
-    return require('../tenant_settings_service');
+    return require('../domains/tenant/services/tenant-settings.service');
 }
 
 test('tenant_settings_service keeps tenant isolation and defaults', async () => {
@@ -66,3 +66,4 @@ test('tenant_settings_service keeps tenant isolation and defaults', async () => 
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
+

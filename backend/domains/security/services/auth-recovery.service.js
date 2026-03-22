@@ -1,7 +1,7 @@
 const crypto = require('crypto');
-const authSessionService = require('../../../auth_session_service');
-const saasControlService = require('../../../saas_control_plane_service');
-const emailService = require('../../../email_service');
+const authSessionService = require('./auth-session.service');
+const saasControlService = require('../../tenant/services/tenant-control.service');
+const emailService = require('./email.service');
 const {
     DEFAULT_TENANT_ID,
     readTenantJsonFile,

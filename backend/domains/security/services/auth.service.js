@@ -1,9 +1,9 @@
 const crypto = require('crypto');
-const authSessionService = require('../../../auth_session_service');
-const tenantService = require('../../../tenant_service');
-const saasControlService = require('../../../saas_control_plane_service');
-const accessPolicyService = require('../../../access_policy_service');
-const passwordHashService = require('../../../password_hash_service');
+const authSessionService = require('./auth-session.service');
+const tenantService = require('../../tenant/services/tenant-core.service');
+const saasControlService = require('../../tenant/services/tenant-control.service');
+const accessPolicyService = require('./access-policy.service');
+const passwordHashService = require('./password-hash.service');
 
 function parseBooleanEnv(value, defaultValue = false) {
     const raw = String(value ?? '').trim().toLowerCase();

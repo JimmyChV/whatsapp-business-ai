@@ -1,4 +1,4 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const RateLimiter = require('../rate_limiter');
 
@@ -8,3 +8,4 @@ test('allows up to max requests in window', () => {
     assert.equal(limiter.check('k').allowed, true);
     assert.equal(limiter.check('k').allowed, false);
 });
+

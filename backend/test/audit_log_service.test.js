@@ -6,10 +6,10 @@ const path = require('path');
 
 function loadAuditServiceFresh() {
     const runtimePath = require.resolve('../persistence_runtime');
-    const modulePath = require.resolve('../audit_log_service');
+    const modulePath = require.resolve('../domains/security/services/audit-log.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
-    return require('../audit_log_service');
+    return require('../domains/security/services/audit-log.service');
 }
 
 test('audit_log_service writes and lists audit rows for tenant in file mode', async () => {
@@ -64,3 +64,4 @@ test('audit_log_service writes and lists audit rows for tenant in file mode', as
         fs.rmSync(tempDir, { recursive: true, force: true });
     }
 });
+

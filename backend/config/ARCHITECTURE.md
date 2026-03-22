@@ -11,7 +11,7 @@ Canonical structure:
 Current migration policy:
 1. New implementations must be created under `domains/*/services`.
 2. Domain root should expose only `index.js`, `ARCHITECTURE.md`, and optional compatibility shims.
-3. Legacy root files in `backend/*.js` are temporary compatibility wrappers and should be reduced incrementally.
+3. Root `backend/*.js` must remain minimal and infrastructural only.
 4. Empty placeholder folders are removed until they have real implementation.
 
 Latest canonicalized modules:
@@ -19,3 +19,9 @@ Latest canonicalized modules:
 - channels: `socket-manager.service`, `media-manager.service`.
 - tenant: `tenant-control.service`, `woocommerce.service`.
 - security: `email.service`, `meta-config-crypto.service`, `helpers/security-utils`.
+
+Current root JS surface:
+- `server.js` (bootstrap)
+- `persistence_runtime.js` (storage runtime abstraction)
+- `rate_limiter.js` (shared limiter utility)
+- `logger.js` (shared logger utility)

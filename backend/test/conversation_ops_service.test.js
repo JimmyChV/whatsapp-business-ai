@@ -1,4 +1,4 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs/promises');
 const os = require('os');
@@ -6,10 +6,10 @@ const path = require('path');
 
 function loadConversationOpsServiceFresh() {
     const runtimePath = require.resolve('../persistence_runtime');
-    const modulePath = require.resolve('../conversation_ops_service');
+    const modulePath = require.resolve('../domains/operations/services/conversation-ops.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
-    return require('../conversation_ops_service');
+    return require('../domains/operations/services/conversation-ops.service');
 }
 
 test('conversation_ops_service stores events and assignments with tenant isolation (file driver)', async () => {

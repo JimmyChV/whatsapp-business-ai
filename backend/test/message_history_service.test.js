@@ -1,4 +1,4 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs/promises');
 const os = require('os');
@@ -6,10 +6,10 @@ const path = require('path');
 
 function loadMessageHistoryServiceFresh() {
     const runtimePath = require.resolve('../persistence_runtime');
-    const modulePath = require.resolve('../message_history_service');
+    const modulePath = require.resolve('../domains/operations/services/message-history.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
-    return require('../message_history_service');
+    return require('../domains/operations/services/message-history.service');
 }
 
 test('message_history_service persists messages with tenant isolation and supports ack/edit updates', async () => {
@@ -158,3 +158,4 @@ test('message_history_service respects disabled toggle', async () => {
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
+

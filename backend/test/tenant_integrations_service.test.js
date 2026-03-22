@@ -1,10 +1,10 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const tenantIntegrationsService = require('../tenant_integrations_service');
+const tenantIntegrationsService = require('../domains/tenant/services/integrations.service');
 
 test('tenant_integrations_service keeps legacy assistant ids stable and updatable', async (t) => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tenant-ai-legacy-'));
@@ -94,3 +94,4 @@ test('tenant_integrations_service keeps legacy assistant ids stable and updatabl
     assert.equal(persisted.ai.assistants[0].assistantId, normalizedAssistantId);
     assert.equal(persisted.ai.assistants[0].name, 'Asistente Legacy Actualizado');
 });
+

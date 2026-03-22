@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ quiet: true });
 const logger = require('./logger');
-const { parseCsvEnv, resolveAndValidatePublicHost } = require('./security_utils');
+const { parseCsvEnv, resolveAndValidatePublicHost } = require('./domains/security/helpers/security-utils');
 const RateLimiter = require('./rate_limiter');
 const {
     authService,

@@ -1,10 +1,10 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const aiChatHistoryService = require('../ai_chat_history_service');
+const aiChatHistoryService = require('../domains/operations/services/ai-chat-history.service');
 
 test('ai_chat_history_service stores and isolates entries by scoped chat in file driver', async (t) => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tenant-ai-history-'));
@@ -72,3 +72,4 @@ test('ai_chat_history_service stores and isolates entries by scoped chat in file
     assert.equal(historyB[1].role, 'assistant');
     assert.match(String(historyB[0].content || ''), /cotizacion/i);
 });
+

@@ -12,8 +12,8 @@ No mass rewrite: every movement keeps current behavior via compatibility wrapper
 - `frontend/src/features/chat/components/BusinessSidebar.jsx` still combines UI and cross-feature orchestration.
 
 ### Backend
-- Root still contains large legacy implementations (`server.js`, `socket_manager.js`, channel/integration services, control-plane services).
-- Domain-first shape exists, but not all implementations have been inverted yet.
+- Root legacy service clutter was removed; backend root now keeps only infrastructure files.
+- Remaining work is mostly import-boundary hardening and repository-layer extraction.
 
 ## Target shape (minimal)
 
@@ -24,7 +24,7 @@ No mass rewrite: every movement keeps current behavior via compatibility wrapper
 
 ### Backend
 - `domains/<domain>/{routes,services,repositories,validators}`
-- Root files only for: entrypoints + compatibility wrappers.
+- Root files only for: entrypoints + shared infra utilities.
 - `config/`, `db/`, `scripts/`, `test/`.
 
 ## Migration stages
@@ -61,11 +61,11 @@ No mass rewrite: every movement keeps current behavior via compatibility wrapper
   - `woocommerce.service` -> `domains/tenant/services`.
   - `tenant-control.service` canonicalized under `domains/tenant/services`.
   - `email.service`, `meta-config-crypto.service`, `security-utils` -> `domains/security/*`.
-- Root files for those modules now remain as compatibility wrappers only.
+- Root wrappers for those modules were removed after migrating imports/tests/scripts to canonical domain paths.
 
 ### Stage E (next)
-- Continue reducing root compatibility wrappers by migrating imports/tests to canonical domain paths.
-- Finalize channels/service inversion around provider/cloud/webjs shims and wrapper retirement.
+- Enforce domain import boundaries (avoid new root-level service coupling).
+- Finalize channels/service inversion around provider/cloud/webjs internals.
 - Start repository layer extraction for persistence-heavy services.
 
 ### Stage F (final Phase 2 closeout)
