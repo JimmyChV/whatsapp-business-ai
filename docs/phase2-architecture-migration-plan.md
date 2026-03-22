@@ -55,6 +55,7 @@ No mass rewrite; all steps preserve current runtime behavior.
 - Moved quick replies manager implementation into `domains/tenant/services` (`quick-replies-manager.service`) and kept root compatibility wrapper.
 - Moved catalog manager implementation into `domains/tenant/services` (`catalog-manager.service`) and kept root compatibility wrapper.
 - Moved AI chat history implementation into `domains/operations/services` (`ai-chat-history.service`) and kept root compatibility wrapper.
+- Moved tenant core service implementation into domains/tenant/services (	enant-core.service) and kept root compatibility wrapper.
 
 ### Stage E
 - Remove compatibility re-exports and legacy import paths.
