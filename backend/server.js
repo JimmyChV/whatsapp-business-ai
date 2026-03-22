@@ -9,6 +9,7 @@ require('dotenv').config({ quiet: true });
 const logger = require('./config/logger');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./domains/security/helpers/security-utils');
 const RateLimiter = require('./config/rate-limiter');
+const { resolveRuntimeFlags, createCorsOriginChecker } = require('./config/runtime-flags');
 const {
     authService,
     authRecoveryService,
@@ -57,272 +58,60 @@ const {
     invalidateWebhookCloudRegistryCache,
     registerCloudWebhookHttpRoutes
 } = require('./domains/channels');
+const { createTenantAdminPayloadSanitizers } = require('./domains/tenant/helpers/admin-payload-sanitizers');
+const { createTenantAssetUploadHelpers } = require('./domains/tenant/helpers/asset-upload.helpers');
 const { loadCatalog, addProduct, updateProduct } = catalogManagerService;
-
-function parseBooleanEnv(value, defaultValue = false) {
-    const raw = String(value ?? '').trim().toLowerCase();
-    if (!raw) return Boolean(defaultValue);
-    return ['1', 'true', 'yes', 'on'].includes(raw);
-}
-
-const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
-const allowedOrigins = parseCsvEnv(process.env.ALLOWED_ORIGINS);
-const allowEmptyOriginsInProd = parseBooleanEnv(process.env.CORS_ALLOW_EMPTY_IN_PROD, false);
-const securityHeadersEnabled = parseBooleanEnv(process.env.SECURITY_HEADERS_ENABLED, true);
-const socketAuthRequired = parseBooleanEnv(process.env.SOCKET_AUTH_REQUIRED, isProduction);
-const httpRateLimitEnabled = parseBooleanEnv(process.env.HTTP_RATE_LIMIT_ENABLED, true);
-const trustProxyEnabled = parseBooleanEnv(process.env.TRUST_PROXY, false);
-const saasSocketAuthRequired = parseBooleanEnv(process.env.SAAS_SOCKET_AUTH_REQUIRED, parseBooleanEnv(process.env.SAAS_AUTH_ENABLED, false));
-const opsApiToken = String(process.env.OPS_API_TOKEN || '').trim();
-const opsReadyRequireWa = parseBooleanEnv(process.env.OPS_READY_REQUIRE_WA, false);
+const {
+    isProduction,
+    allowedOrigins,
+    allowEmptyOriginsInProd,
+    securityHeadersEnabled,
+    socketAuthRequired,
+    httpRateLimitEnabled,
+    trustProxyEnabled,
+    saasSocketAuthRequired,
+    opsApiToken,
+    opsReadyRequireWa
+} = resolveRuntimeFlags({ env: process.env, parseCsvEnv });
 const httpRateLimiter = new RateLimiter({
     windowMs: Number(process.env.HTTP_RATE_LIMIT_WINDOW_MS || 10000),
     max: Number(process.env.HTTP_RATE_LIMIT_MAX || 120)
 });
-
-function isCorsOriginAllowed(origin) {
-    if (!origin) return true;
-    if (allowedOrigins.includes(origin)) return true;
-    if (allowedOrigins.length === 0) {
-        if (isProduction && !allowEmptyOriginsInProd) return false;
-        return true;
-    }
-    return false;
-}
+const isCorsOriginAllowed = createCorsOriginChecker({
+    allowedOrigins,
+    isProduction,
+    allowEmptyOriginsInProd
+});
 
 const app = express();
 app.disable('x-powered-by');
 const JSON_BODY_LIMIT_MB = Math.max(12, Math.min(256, Number(process.env.API_JSON_BODY_LIMIT_MB || 80) || 80));
 
-const UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.join(__dirname, 'uploads')).trim() || path.join(__dirname, 'uploads'));
-const ADMIN_ASSET_UPLOAD_MAX_BYTES = Math.max(200 * 1024, Number(process.env.ADMIN_ASSET_UPLOAD_MAX_BYTES || 2 * 1024 * 1024));
-const ADMIN_ASSET_QUICK_REPLY_MAX_BYTES = Math.max(500 * 1024, Number(process.env.ADMIN_ASSET_QUICK_REPLY_MAX_BYTES || 50 * 1024 * 1024));
-const ADMIN_ASSET_ALLOWED_MIME_TYPES_IMAGE = new Set((() => {
-    const configured = parseCsvEnv(process.env.ADMIN_ASSET_ALLOWED_MIME_TYPES);
-    const base = configured.length > 0 ? configured : ['image/jpeg', 'image/png', 'image/webp'];
-    return base
-        .map((entry) => String(entry || '').trim().toLowerCase())
-        .filter(Boolean);
-})());
-const ADMIN_ASSET_ALLOWED_MIME_TYPES_QUICK_REPLY = new Set((() => {
-    const configured = parseCsvEnv(process.env.ADMIN_ASSET_QUICK_REPLY_ALLOWED_MIME_TYPES);
-    const base = configured.length > 0
-        ? configured
-        : [
-            'image/jpeg',
-            'image/png',
-            'image/webp',
-            'image/gif',
-            'application/pdf',
-            'text/plain',
-            'text/csv',
-            'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/vnd.ms-excel',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'application/vnd.ms-powerpoint',
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-            'application/zip',
-            'application/x-zip-compressed',
-            'audio/mpeg',
-            'audio/ogg',
-            'video/mp4'
-        ];
-    return base
-        .map((entry) => String(entry || '').trim().toLowerCase())
-        .filter(Boolean);
-})());
-if (!fs.existsSync(UPLOADS_ROOT)) {
-    fs.mkdirSync(UPLOADS_ROOT, { recursive: true });
-}
+const {
+    uploadsRoot: UPLOADS_ROOT,
+    adminAssetQuickReplyMaxBytes: ADMIN_ASSET_QUICK_REPLY_MAX_BYTES,
+    normalizeAssetUploadKind,
+    sanitizeStorageSegment,
+    resolveTenantQuickReplyAssetLimits,
+    parseAssetUploadPayload,
+    estimateDirectorySizeBytes,
+    saveAssetFile,
+    getRequestOrigin
+} = createTenantAssetUploadHelpers({
+    env: process.env,
+    uploadsBaseDir: __dirname,
+    parseCsvEnv,
+    fs,
+    path,
+    crypto,
+    tenantService,
+    planLimitsService
+});
 
 app.use('/uploads', express.static(UPLOADS_ROOT, {
     fallthrough: true,
     maxAge: isProduction ? '30d' : 0
 }));
-
-function sanitizeStorageSegment(value = '', fallback = 'default') {
-    const source = String(value || fallback || '').trim();
-    if (!source) return fallback;
-    const clean = source.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
-    return clean || fallback;
-}
-
-function getRequestOrigin(req = {}) {
-    const protoRaw = String(req.headers?.['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
-    const hostRaw = String(req.headers?.['x-forwarded-host'] || req.headers?.host || '').split(',')[0].trim();
-    const proto = protoRaw || 'http';
-    if (!hostRaw) return '';
-    return proto + '://' + hostRaw;
-}
-
-function normalizeAssetExtension(fileName = '', mimeType = '') {
-    const fromName = String(fileName || '').trim().split('.').pop();
-    const cleanNameExt = String(fromName || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (cleanNameExt && ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf', 'txt', 'csv', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'mp3', 'ogg', 'mp4'].includes(cleanNameExt)) {
-        return cleanNameExt === 'jpg' ? 'jpeg' : cleanNameExt;
-    }
-
-    const mime = String(mimeType || '').trim().toLowerCase().split(';')[0];
-    const map = {
-        'image/png': 'png',
-        'image/jpeg': 'jpeg',
-        'image/jpg': 'jpeg',
-        'image/webp': 'webp',
-        'image/gif': 'gif',
-        'application/pdf': 'pdf',
-        'text/plain': 'txt',
-        'text/csv': 'csv',
-        'application/msword': 'doc',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-        'application/vnd.ms-excel': 'xls',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-        'application/vnd.ms-powerpoint': 'ppt',
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
-        'application/zip': 'zip',
-        'application/x-zip-compressed': 'zip',
-        'audio/mpeg': 'mp3',
-        'audio/ogg': 'ogg',
-        'video/mp4': 'mp4'
-    };
-    return map[mime] || 'bin';
-}
-
-function normalizeAssetUploadKind(value = '') {
-    const clean = String(value || '').trim().toLowerCase();
-    if (clean === 'quick_reply' || clean === 'quickreply' || clean === 'quick-reply') return 'quick_reply';
-    return 'image';
-}
-
-function parseAssetUploadPayload(body = {}, options = {}) {
-    const source = body && typeof body === 'object' ? body : {};
-    const dataUrl = String(source.dataUrl || source.data || '').trim();
-    const base64Raw = String(source.base64 || '').trim();
-
-    if (!dataUrl && !base64Raw) {
-        throw new Error('No se recibio archivo para subir.');
-    }
-
-    let mimeType = String(source.mimeType || source.contentType || '').trim().toLowerCase();
-    const kind = normalizeAssetUploadKind(source.kind || source.assetKind || source.scopeKind || '');
-    let base64Data = base64Raw;
-
-    if (dataUrl) {
-        const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/i);
-        if (!match) {
-            throw new Error('Formato dataUrl invalido.');
-        }
-        mimeType = String(match[1] || mimeType || '').trim().toLowerCase();
-        base64Data = String(match[2] || '').trim();
-    }
-
-    const allowedMimes = kind === 'quick_reply'
-        ? (options.allowedQuickReplyMimes || ADMIN_ASSET_ALLOWED_MIME_TYPES_QUICK_REPLY)
-        : ADMIN_ASSET_ALLOWED_MIME_TYPES_IMAGE;
-    const fallbackQuickReplyMaxBytes = Math.max(500 * 1024, Number(options.fallbackQuickReplyMaxBytes || ADMIN_ASSET_QUICK_REPLY_MAX_BYTES || 8 * 1024 * 1024));
-    const configuredQuickReplyMaxBytes = Math.max(500 * 1024, Number(options.maxQuickReplyBytes || fallbackQuickReplyMaxBytes || 8 * 1024 * 1024));
-    const maxBytes = kind === 'quick_reply'
-        ? configuredQuickReplyMaxBytes
-        : ADMIN_ASSET_UPLOAD_MAX_BYTES;
-
-    if (!allowedMimes.has(mimeType)) {
-        if (kind === 'quick_reply') {
-            throw new Error('Formato no permitido para respuestas rapidas.');
-        }
-        throw new Error('Formato de imagen no permitido. Usa JPG, PNG o WEBP.');
-    }
-
-    let buffer;
-    try {
-        buffer = Buffer.from(base64Data, 'base64');
-    } catch (_) {
-        throw new Error('El archivo no es base64 valido.');
-    }
-
-    if (!buffer || !buffer.length) {
-        throw new Error('El archivo esta vacio.');
-    }
-
-    if (buffer.length > maxBytes) {
-        throw new Error('El archivo supera el tamano permitido.');
-    }
-
-    return {
-        kind,
-        mimeType,
-        buffer,
-        fileName: String(source.fileName || source.filename || '').trim() || 'archivo'
-    };
-}
-
-async function saveAssetFile({ tenantId = 'default', scope = 'general', mimeType = 'image/png', fileName = 'archivo', buffer = Buffer.alloc(0) } = {}) {
-    const cleanTenant = sanitizeStorageSegment(tenantId, 'default');
-    const cleanScope = sanitizeStorageSegment(scope, 'general');
-    const ext = normalizeAssetExtension(fileName, mimeType);
-    const now = new Date();
-    const yyyy = String(now.getUTCFullYear());
-    const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(now.getUTCDate()).padStart(2, '0');
-    const baseName = sanitizeStorageSegment(path.parse(fileName).name || 'archivo', 'archivo').slice(0, 32);
-    const suffix = crypto.randomBytes(5).toString('hex');
-    const outName = baseName + '_' + suffix + '.' + ext;
-
-    const relativeParts = ['saas-assets', cleanTenant, cleanScope, yyyy, mm, dd, outName];
-    const relativePath = relativeParts.join('/');
-    const absolutePath = path.join(UPLOADS_ROOT, ...relativeParts);
-
-    await fs.promises.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.promises.writeFile(absolutePath, buffer);
-
-    return {
-        relativePath,
-        relativeUrl: '/uploads/' + relativePath,
-        absolutePath
-    };
-}
-
-function resolveTenantQuickReplyAssetLimits(tenantId = 'default') {
-    const tenant = tenantService.findTenantById(tenantId) || tenantService.DEFAULT_TENANT || { plan: 'starter' };
-    const limits = planLimitsService.getTenantPlanLimits(tenant) || {};
-    const fallbackUploadMb = Math.max(1, Math.floor((ADMIN_ASSET_QUICK_REPLY_MAX_BYTES || (8 * 1024 * 1024)) / (1024 * 1024)));
-    const maxUploadMb = Math.max(1, Math.min(1024, Number(limits.quickReplyMaxUploadMb || fallbackUploadMb) || fallbackUploadMb));
-    const storageQuotaMbRaw = Number(limits.quickReplyStorageQuotaMb || 0);
-    const storageQuotaMb = Number.isFinite(storageQuotaMbRaw) ? Math.max(0, Math.floor(storageQuotaMbRaw)) : 0;
-    return {
-        maxUploadMb,
-        maxUploadBytes: Math.max(500 * 1024, Math.floor(maxUploadMb * 1024 * 1024)),
-        storageQuotaMb,
-        storageQuotaBytes: storageQuotaMb > 0 ? Math.floor(storageQuotaMb * 1024 * 1024) : 0
-    };
-}
-
-async function estimateDirectorySizeBytes(dirPath = '') {
-    const cleanDirPath = String(dirPath || '').trim();
-    if (!cleanDirPath) return 0;
-    let entries = [];
-    try {
-        entries = await fs.promises.readdir(cleanDirPath, { withFileTypes: true });
-    } catch (_) {
-        return 0;
-    }
-    let total = 0;
-    for (const entry of entries) {
-        if (!entry) continue;
-        const absolute = path.join(cleanDirPath, entry.name);
-        if (entry.isDirectory()) {
-            total += await estimateDirectorySizeBytes(absolute);
-            continue;
-        }
-        if (!entry.isFile()) continue;
-        try {
-            const stats = await fs.promises.stat(absolute);
-            total += Number(stats?.size || 0) || 0;
-        } catch (_) {
-            // ignore unreadable file and continue
-        }
-    }
-    return total;
-}
 
 function resolveRequestId(req = {}) {
     const fromHeader = String(req.headers?.['x-request-id'] || req.headers?.['x-correlation-id'] || '').trim();
@@ -835,6 +624,28 @@ function hasAnyAccessOverride(payload = {}) {
     return grants.length > 0 || packs.length > 0;
 }
 
+const {
+    sanitizeMembershipPayload,
+    sanitizeObjectPayload,
+    sanitizeUrlValue,
+    sanitizeTenantPayload,
+    sanitizeUserPayload,
+    hasOwnerRoleMembership,
+    sanitizeCatalogIdListPayload,
+    sanitizeAiAssistantIdPayload,
+    sanitizeWaModulePayload,
+    sanitizeAiAssistantPayload,
+    sanitizeQuickReplyLibraryPayload,
+    normalizeQuickReplyMediaAsset,
+    normalizeQuickReplyMediaAssets,
+    sanitizeQuickReplyItemPayload,
+    sanitizeTenantLabelPayload
+} = createTenantAdminPayloadSanitizers({
+    accessPolicyService,
+    quickReplyLibrariesService,
+    tenantLabelService
+});
+
 function filterAdminOverviewByScope(req = {}, overview = {}) {
     if (req?.authContext?.user?.isSuperAdmin) return overview;
 
@@ -851,302 +662,6 @@ function filterAdminOverviewByScope(req = {}, overview = {}) {
 
     return { tenants, users, metrics };
 }
-
-function sanitizeMembershipPayload(memberships = []) {
-    const source = Array.isArray(memberships) ? memberships : [];
-    const normalized = source
-        .map((item) => ({
-            tenantId: String(item?.tenantId || item?.tenant || item?.id || '').trim(),
-            role: String(item?.role || 'seller').trim().toLowerCase() || 'seller',
-            active: item?.active !== false
-        }))
-        .filter((item) => Boolean(item.tenantId));
-
-    if (!normalized.length) return [];
-    const primary = normalized.find((item) => item.active !== false) || normalized[0];
-    return [primary];
-}
-
-
-function sanitizeObjectPayload(value = {}) {
-    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
-    return {};
-}
-
-function sanitizeUrlValue(value = '') {
-    const textValue = String(value || '').trim();
-    if (!textValue) return null;
-    return /^https?:\/\//i.test(textValue) ? textValue : null;
-}
-
-function sanitizeTenantPayload(payload = {}) {
-    const source = sanitizeObjectPayload(payload);
-    const patch = {};
-
-    if (Object.prototype.hasOwnProperty.call(source, 'id') || Object.prototype.hasOwnProperty.call(source, 'tenantId')) {
-        const id = String(source.id || source.tenantId || '').trim();
-        if (id) patch.id = id;
-    }
-    if (Object.prototype.hasOwnProperty.call(source, 'slug')) patch.slug = String(source.slug || '').trim();
-    if (Object.prototype.hasOwnProperty.call(source, 'name')) patch.name = String(source.name || '').trim();
-    if (Object.prototype.hasOwnProperty.call(source, 'plan')) patch.plan = String(source.plan || '').trim().toLowerCase();
-    if (Object.prototype.hasOwnProperty.call(source, 'active')) patch.active = source.active !== false;
-    if (Object.prototype.hasOwnProperty.call(source, 'logoUrl') || Object.prototype.hasOwnProperty.call(source, 'logo_url')) {
-        patch.logoUrl = sanitizeUrlValue(source.logoUrl || source.logo_url);
-    }
-    if (Object.prototype.hasOwnProperty.call(source, 'coverImageUrl') || Object.prototype.hasOwnProperty.call(source, 'cover_image_url')) {
-        patch.coverImageUrl = sanitizeUrlValue(source.coverImageUrl || source.cover_image_url);
-    }
-
-    return patch;
-}
-
-function sanitizeUserPayload(payload = {}, { allowMemberships = true } = {}) {
-    const source = sanitizeObjectPayload(payload);
-    const patch = {};
-
-    if (Object.prototype.hasOwnProperty.call(source, 'id') || Object.prototype.hasOwnProperty.call(source, 'userId')) {
-        const id = String(source.id || source.userId || '').trim();
-        if (id) patch.id = id;
-    }
-    if (Object.prototype.hasOwnProperty.call(source, 'email')) patch.email = String(source.email || '').trim().toLowerCase();
-    if (Object.prototype.hasOwnProperty.call(source, 'name')) patch.name = String(source.name || '').trim();
-    if (Object.prototype.hasOwnProperty.call(source, 'password')) patch.password = String(source.password || '');
-    if (Object.prototype.hasOwnProperty.call(source, 'active')) patch.active = source.active !== false;
-    if (Object.prototype.hasOwnProperty.call(source, 'avatarUrl') || Object.prototype.hasOwnProperty.call(source, 'avatar_url')) {
-        patch.avatarUrl = sanitizeUrlValue(source.avatarUrl || source.avatar_url);
-    }
-    if (Object.prototype.hasOwnProperty.call(source, 'permissionGrants')) {
-        patch.permissionGrants = accessPolicyService.normalizePermissionList(source.permissionGrants);
-    }
-    if (Object.prototype.hasOwnProperty.call(source, 'permissionPacks')) {
-        patch.permissionPacks = accessPolicyService.normalizePackList(source.permissionPacks);
-    }
-    if (Object.prototype.hasOwnProperty.call(source, 'role')) {
-        patch.role = accessPolicyService.normalizeRole(source.role || 'seller');
-    }
-    if (allowMemberships && Object.prototype.hasOwnProperty.call(source, 'memberships')) {
-        patch.memberships = sanitizeMembershipPayload(source.memberships);
-    }
-
-    return patch;
-}
-
-function hasOwnerRoleMembership(memberships = []) {
-    const source = Array.isArray(memberships) ? memberships : [];
-    return source.some((item) => String(item?.role || '').trim().toLowerCase() === 'owner');
-}
-
-function sanitizeCatalogIdListPayload(value = []) {
-    const source = Array.isArray(value) ? value : [];
-    const seen = new Set();
-    const out = [];
-    source.forEach((entry) => {
-        const clean = String(entry || '').trim().toUpperCase();
-        if (!/^CAT-[A-Z0-9]{4,}$/.test(clean)) return;
-        if (seen.has(clean)) return;
-        seen.add(clean);
-        out.push(clean);
-    });
-    return out;
-}
-
-function sanitizeAiAssistantIdPayload(value = '') {
-    const clean = String(value || '').trim().toUpperCase();
-    if (!clean) return null;
-    return /^AIA-[A-Z0-9]{6}$/.test(clean) ? clean : null;
-}
-
-function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
-    const source = sanitizeObjectPayload(payload);
-    const sourceMetadata = sanitizeObjectPayload(source.metadata);
-    const topCloudConfig = sanitizeObjectPayload(source.cloudConfig);
-    const nestedCloudConfig = sanitizeObjectPayload(sourceMetadata.cloudConfig);
-    const cloudConfig = Object.keys(topCloudConfig).length > 0
-        ? { ...nestedCloudConfig, ...topCloudConfig }
-        : nestedCloudConfig;
-
-    const metadataModuleSettings = sanitizeObjectPayload(sourceMetadata.moduleSettings);
-    const incomingCatalogIds = sanitizeCatalogIdListPayload(
-        Array.isArray(source.catalogIds)
-            ? source.catalogIds
-            : (Array.isArray(metadataModuleSettings.catalogIds) ? metadataModuleSettings.catalogIds : [])
-    );
-    const incomingAiAssistantId = sanitizeAiAssistantIdPayload(
-        source.aiAssistantId
-        || source.moduleAiAssistantId
-        || metadataModuleSettings.aiAssistantId
-    );
-
-    const base = {
-        name: String(source.name || '').trim(),
-        phoneNumber: String(source.phoneNumber || source.phone || source.number || '').trim() || null,
-        transportMode: String(source.transportMode || source.transport || source.mode || '').trim().toLowerCase() || 'cloud',
-        imageUrl: sanitizeUrlValue(source.imageUrl || source.image_url || source.logoUrl || source.logo_url),
-        isActive: source.isActive !== false,
-        isDefault: source.isDefault === true,
-        isSelected: source.isSelected === true,
-        assignedUserIds: Array.isArray(source.assignedUserIds)
-            ? source.assignedUserIds.map((entry) => String(entry || '').trim()).filter(Boolean)
-            : [],
-        metadata: {
-            ...sourceMetadata,
-            moduleSettings: {
-                ...metadataModuleSettings,
-                catalogIds: incomingCatalogIds,
-                aiAssistantId: incomingAiAssistantId
-            },
-            cloudConfig
-        }
-    };
-
-    if (allowModuleId) {
-        const moduleId = String(source.moduleId || source.id || '').trim();
-        if (moduleId) base.moduleId = moduleId;
-    }
-
-    return base;
-}
-
-function sanitizeAiAssistantPayload(payload = {}, { allowAssistantId = true } = {}) {
-    const source = sanitizeObjectPayload(payload);
-    const base = {
-        name: String(source.name || '').trim(),
-        description: String(source.description || '').trim() || null,
-        provider: String(source.provider || 'openai').trim().toLowerCase() || 'openai',
-        model: String(source.model || 'gpt-4o-mini').trim() || 'gpt-4o-mini',
-        systemPrompt: String(source.systemPrompt || '').trim() || null,
-        temperature: Math.max(0, Math.min(2, Number(source.temperature ?? 0.7) || 0.7)),
-        topP: Math.max(0, Math.min(1, Number(source.topP ?? 1) || 1)),
-        maxTokens: Math.max(64, Math.min(4096, Number(source.maxTokens ?? 800) || 800)),
-        isActive: source.isActive !== false,
-        isDefault: source.isDefault === true
-    };
-
-    const openaiApiKey = String(source.openaiApiKey || source.apiKey || '').trim();
-    if (openaiApiKey) base.openaiApiKey = openaiApiKey;
-
-    if (allowAssistantId) {
-        const assistantId = sanitizeAiAssistantIdPayload(source.assistantId || source.id || '');
-        if (assistantId) base.assistantId = assistantId;
-    }
-
-    return base;
-}
-
-function sanitizeQuickReplyLibraryPayload(payload = {}, { allowLibraryId = true } = {}) {
-    const source = sanitizeObjectPayload(payload);
-    const cleanLibraryId = quickReplyLibrariesService.normalizeLibraryId(source.libraryId || source.id || '');
-    const moduleIds = Array.isArray(source.moduleIds)
-        ? Array.from(new Set(source.moduleIds.map((entry) => quickReplyLibrariesService.normalizeModuleId(entry)).filter(Boolean)))
-        : [];
-
-    const parsedSortOrder = Number.parseInt(String(source.sortOrder ?? ''), 10);
-    const sortOrder = Number.isFinite(parsedSortOrder) ? Math.max(1, parsedSortOrder) : 1000;
-    const isShared = source.isShared !== false;
-
-    const base = {
-        name: String(source.name || source.libraryName || '').trim(),
-        description: String(source.description || '').trim() || '',
-        isShared,
-        isActive: source.isActive !== false,
-        sortOrder,
-        moduleIds: isShared ? [] : moduleIds
-    };
-
-    if (allowLibraryId && cleanLibraryId) base.libraryId = cleanLibraryId;
-    return base;
-}
-
-function normalizeQuickReplyMediaAsset(input = {}) {
-    const source = input && typeof input === 'object' ? input : {};
-    const url = String(source.url || source.mediaUrl || source.media_url || '').trim();
-    if (!url) return null;
-    const mimeType = String(source.mimeType || source.mediaMimeType || source.media_mime_type || '').trim().toLowerCase() || null;
-    const fileName = String(source.fileName || source.mediaFileName || source.media_file_name || source.filename || '').trim() || null;
-    const sizeRaw = Number(source.sizeBytes ?? source.mediaSizeBytes ?? source.media_size_bytes);
-    const sizeBytes = Number.isFinite(sizeRaw) && sizeRaw > 0 ? Math.floor(sizeRaw) : null;
-    return {
-        url,
-        mimeType,
-        fileName,
-        sizeBytes
-    };
-}
-
-function normalizeQuickReplyMediaAssets(value = [], fallback = null) {
-    const source = Array.isArray(value) ? value : [];
-    const seen = new Set();
-    const assets = source
-        .map((entry) => normalizeQuickReplyMediaAsset(entry))
-        .filter(Boolean)
-        .filter((entry) => {
-            const dedupeKey = `${String(entry.url || '').trim()}|${String(entry.fileName || '').trim()}|${String(entry.mimeType || '').trim()}`;
-            if (!dedupeKey || seen.has(dedupeKey)) return false;
-            seen.add(dedupeKey);
-            return true;
-        });
-    if (assets.length > 0) return assets;
-    const fallbackAsset = normalizeQuickReplyMediaAsset(fallback);
-    return fallbackAsset ? [fallbackAsset] : [];
-}
-
-function sanitizeQuickReplyItemPayload(payload = {}, { allowItemId = true } = {}) {
-    const source = sanitizeObjectPayload(payload);
-    const cleanItemId = quickReplyLibrariesService.normalizeItemId(source.itemId || source.id || '');
-    const cleanLibraryId = quickReplyLibrariesService.normalizeLibraryId(source.libraryId || source.library || quickReplyLibrariesService.DEFAULT_LIBRARY_ID || '');
-    const parsedSortOrder = Number.parseInt(String(source.sortOrder ?? ''), 10);
-    const sortOrder = Number.isFinite(parsedSortOrder) ? Math.max(1, parsedSortOrder) : 1000;
-    const metadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
-        ? source.metadata
-        : {};
-    const mediaAssets = normalizeQuickReplyMediaAssets(source.mediaAssets || metadata.mediaAssets, {
-        url: source.mediaUrl || source.media_url || '',
-        mimeType: source.mediaMimeType || source.media_mime_type || '',
-        fileName: source.mediaFileName || source.media_file_name || '',
-        sizeBytes: source.mediaSizeBytes
-    });
-    const primaryMedia = mediaAssets[0] || null;
-
-    const base = {
-        libraryId: cleanLibraryId,
-        label: String(source.label || '').trim(),
-        text: String(source.text || source.bodyText || source.body || '').trim(),
-        mediaAssets,
-        mediaUrl: String(primaryMedia?.url || source.mediaUrl || source.media_url || '').trim() || null,
-        mediaMimeType: String(primaryMedia?.mimeType || source.mediaMimeType || source.media_mime_type || '').trim().toLowerCase() || null,
-        mediaFileName: String(primaryMedia?.fileName || source.mediaFileName || source.media_file_name || '').trim() || null,
-        mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes)) ? Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes) : null,
-        isActive: source.isActive !== false,
-        sortOrder
-    };
-
-    if (allowItemId && cleanItemId) base.itemId = cleanItemId;
-    return base;
-}
-
-function sanitizeTenantLabelPayload(payload = {}, { allowLabelId = true } = {}) {
-    const source = sanitizeObjectPayload(payload);
-    const cleanLabelId = tenantLabelService.normalizeLabelId(source.labelId || source.id || '');
-    const parsedSortOrder = Number.parseInt(String(source.sortOrder ?? ''), 10);
-    const sortOrder = Number.isFinite(parsedSortOrder) ? Math.max(1, parsedSortOrder) : 1000;
-    const metadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
-        ? source.metadata
-        : {};
-
-    const base = {
-        name: String(source.name || source.label || '').trim(),
-        description: String(source.description || '').trim(),
-        color: tenantLabelService.normalizeColor(source.color || source.hex || ''),
-        isActive: source.isActive !== false,
-        sortOrder,
-        metadata
-    };
-
-    if (allowLabelId && cleanLabelId) base.labelId = cleanLabelId;
-    return base;
-}
-
 
 registerTenantAssetsUploadHttpRoutes({
     app,

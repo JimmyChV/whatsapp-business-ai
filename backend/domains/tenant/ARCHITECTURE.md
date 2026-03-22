@@ -1,16 +1,15 @@
 # Backend Architecture Baseline (Phase 2)
 
-Target per domain:
-- routes/
-- controllers/
-- services/
-- repositories/
-- validators/
+Canonical tenant domain layout:
+- `routes/`: HTTP route registrars.
+- `services/`: tenant business logic (control plane, modules, catalogs, customers, quick replies).
+- `helpers/`: pure payload/asset helpers shared by tenant routes.
 
 Current state:
-- routes already moved to domain registrars.
-- this phase starts service migration with compat wrappers.
+- routes and services are migrated.
+- reusable sanitizers live in `helpers/admin-payload-sanitizers.js`.
+- upload parsing/storage helpers live in `helpers/asset-upload.helpers.js`.
 
 Rule:
-- migrate consumers to domain services first.
-- move implementation files after import graph is stable.
+- keep `server.js` as bootstrap/orchestration only.
+- any new tenant payload validation must be implemented under `helpers/`, not in root bootstrap.
