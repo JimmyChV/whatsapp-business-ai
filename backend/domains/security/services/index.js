@@ -1,4 +1,5 @@
 module.exports = {
+    accessPolicyService: require('./access-policy.service'),
     authService: require('./auth.service'),
     authRecoveryService: require('./auth-recovery.service'),
     planLimitsService: require('./plan-limits.service'),

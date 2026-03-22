@@ -1,4 +1,4 @@
-const { queryPostgres } = require('../../persistence_runtime');
+const { queryPostgres } = require('../../../persistence_runtime');
 
 let schemaReady = false;
 let schemaPromise = null;
@@ -99,3 +99,4 @@ async function ensureConversationOpsSchema() {
 module.exports = {
     ensureConversationOpsSchema
 };
+

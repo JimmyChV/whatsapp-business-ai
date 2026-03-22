@@ -47,6 +47,12 @@ No mass rewrite: every movement keeps current behavior via compatibility wrapper
 ### Stage D (done in this step)
 - Frontend business internals moved from `components/business/*` to `features/chat/business/*`.
 - `components/business/*` now act as compatibility facades.
+- Operation page now imports chat components directly from `features/chat/components`.
+- `AppErrorBoundary` moved to `shared/components` as canonical shared layer.
+- Removed `src/components/*` compatibility wrappers already replaced by direct `features/*` imports.
+- Tenant domain routes moved to `backend/domains/tenant/routes/*` to avoid flat root clutter.
+- Tenant integrations and quick reply library implementations moved into `backend/domains/tenant/services/*`.
+- Removed empty placeholder directories (`controllers/repositories/validators/middlewares`) until real implementation is added.
 
 ### Stage E (next)
 - Continue domain inversion for remaining backend root heavy services:

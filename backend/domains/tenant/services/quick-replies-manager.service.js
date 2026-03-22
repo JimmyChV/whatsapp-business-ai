@@ -6,7 +6,7 @@ const {
     readTenantJsonFile,
     writeTenantJsonFile
 } = require('../../../persistence_runtime');
-const quickReplyLibrariesService = require('../quick-reply-libraries.service');
+const quickReplyLibrariesService = require('./quick-reply-libraries.service');
 
 const QUICK_REPLIES_FILE = 'quick_replies.json';
 const LEGACY_QUICK_REPLIES_PATH = path.join(__dirname, '../../../quick_replies.json');

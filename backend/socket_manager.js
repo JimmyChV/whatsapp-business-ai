@@ -35,7 +35,7 @@ const {
     safeOrderDebugJson,
     extractCatalogItemCategories,
     buildCatalogDebugLine
-} = require('./domains/operations/order-parsing.helpers');
+} = require('./domains/operations/helpers/order-parsing.helpers');
 const fs = require('fs');
 const path = require('path');
 

@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 
-import AppErrorBoundary from '../../../components/shared/AppErrorBoundary';
+import AppErrorBoundary from '../../../shared/components/AppErrorBoundary';
 import SaasAdminPanel from './SaasAdminPanel';
 
 const PanelChunkFallback = () => (
@@ -58,3 +58,4 @@ export default function SaasAdminPanelShell({
     </Suspense>
   );
 }
+

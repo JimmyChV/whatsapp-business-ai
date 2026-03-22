@@ -1,4 +1,4 @@
-const accessPolicyStore = require('./services/access-policy-store.service');
+const accessPolicyStore = require('./access-policy-store.service');
 const ROLE_VALUES = ['owner', 'admin', 'seller'];
 
 const PERMISSIONS = Object.freeze({

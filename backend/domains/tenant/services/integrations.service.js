@@ -6,13 +6,13 @@ const {
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
-} = require('../../persistence_runtime');
+} = require('../../../persistence_runtime');
 const {
     encryptSecret,
     decryptSecret,
     maskSecret,
     isEncryptedValue
-} = require('../../meta_config_crypto');
+} = require('../../../meta_config_crypto');
 
 const INTEGRATIONS_FILE_NAME = 'tenant_integrations.json';
 const ALLOWED_CATALOG_MODES = new Set(['hybrid', 'meta_only', 'woo_only', 'local_only']);
@@ -921,4 +921,5 @@ module.exports = {
     setDefaultTenantAiAssistant,
     toRuntimeConfig
 };
+
 

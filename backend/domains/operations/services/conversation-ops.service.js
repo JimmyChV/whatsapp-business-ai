@@ -27,8 +27,8 @@ const {
     assignmentKey,
     missingRelation,
     nowIso
-} = require('../conversation-ops.helpers');
-const { ensureConversationOpsSchema } = require('../conversation-ops.schema');
+} = require('../helpers/conversation-ops.helpers');
+const { ensureConversationOpsSchema } = require('../helpers/conversation-ops.schema');
 
 const STORE_FILE = 'conversation_ops.json';
 const EVENTS_FILE_LIMIT = Math.max(500, Number(process.env.CONVERSATION_EVENTS_FILE_LIMIT || 5000));

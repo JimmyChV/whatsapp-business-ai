@@ -22,7 +22,7 @@ import {
     setCartItemDiscountTypeState,
     setCartItemDiscountValueState,
     updateCartItemQtyState
-} from '../../../components/business/helpers';
+} from '../business/helpers';
 import {
     useAiScopeState,
     useAiSocketBridge,
@@ -31,9 +31,9 @@ import {
     useCompanyProfileOverlay,
     usePendingOrderCartImport,
     useTenantScopeReset
-} from '../../../components/business/hooks';
-import { emitAiQuery } from '../../../components/business/services';
-import { BusinessCatalogTab, ClientProfilePanel, CompanyProfilePanel } from '../../../components/business/sections';
+} from '../business/hooks';
+import { emitAiQuery } from '../business/services';
+import { BusinessCatalogTab, ClientProfilePanel, CompanyProfilePanel } from '../business/sections';
 
 export { ClientProfilePanel };
 // =========================================================

@@ -8,6 +8,8 @@ module.exports = {
   waModuleService: require('./wa-modules.service'),
   customerService: require('./customers.service'),
   aiUsageService: require('./ai-usage.service'),
-  quickRepliesManagerService: require('./quick-replies-manager.service')
+  quickRepliesManagerService: require('./quick-replies-manager.service'),
+  tenantIntegrationsService: require('./integrations.service'),
+  quickReplyLibrariesService: require('./quick-reply-libraries.service')
 };
 

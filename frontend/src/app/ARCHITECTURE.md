@@ -1,13 +1,14 @@
 # Frontend Architecture Baseline (Phase 2)
 
-This folder scaffolds the target structure for incremental migration:
-- app/
-- pages/
-- routes/
-- features/
-- shared/
+Canonical structure:
+- `app/`: app-level wiring and architecture notes.
+- `pages/`: route-level screens (`OperationPage`, `SaasPanelPage`).
+- `routes/`: route map and navigation config.
+- `features/<domain>/`: business code by domain (chat, saas, auth).
+- `shared/components/`: truly cross-feature UI primitives.
 
-Current migration strategy:
-1) Keep compatibility reexports.
-2) Move consumers gradually.
-3) Remove legacy paths only after all imports are migrated.
+Rules now in force:
+1. Chat UI and business logic live in `features/chat/*`.
+2. SaaS panel UI and logic live in `features/saas/*`.
+3. Avoid adding new files to `src/components`; use `features/*` or `shared/components`.
+4. If compatibility wrappers are needed, they must be temporary and tracked in the migration plan.
