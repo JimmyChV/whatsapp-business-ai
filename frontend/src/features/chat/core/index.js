@@ -16,6 +16,7 @@ export { default as useChatMessageUiActions } from './hooks/useChatMessageUiActi
 export { default as useChatSelectionAction } from './hooks/useChatSelectionAction';
 export { default as useWorkspaceResetOnTenantChange } from './hooks/useWorkspaceResetOnTenantChange';
 export { default as useAppDerivedChatState } from './hooks/useAppDerivedChatState';
+export { default as useGlobalEscapeToCloseChat } from './hooks/useGlobalEscapeToCloseChat';
 
 export { readWaLaunchParams } from './helpers/waLaunchParams';
 export { normalizeQuickRepliesSocketPayload } from './helpers/quickRepliesSocket.helpers';

@@ -20,6 +20,7 @@ import {
   useChatSelectionAction,
   useWorkspaceResetOnTenantChange,
   useAppDerivedChatState,
+  useGlobalEscapeToCloseChat,
   readWaLaunchParams,
   normalizeQuickRepliesSocketPayload,
   resolveScopedCatalogSelection,
@@ -1562,17 +1563,10 @@ function App() {
     chats
   });
 
-  useEffect(() => {
-    const onGlobalKeyDown = (event) => {
-      if (event.key !== 'Escape' || event.repeat) return;
-      if (!activeChatIdRef.current) return;
-      event.preventDefault();
-      handleExitActiveChat();
-    };
-
-    window.addEventListener('keydown', onGlobalKeyDown);
-    return () => window.removeEventListener('keydown', onGlobalKeyDown);
-  }, []);
+  useGlobalEscapeToCloseChat({
+    activeChatIdRef,
+    handleExitActiveChat
+  });
 
   function requestAiSuggestion(customPromptArg) {
     requestAiSuggestionForChat({
