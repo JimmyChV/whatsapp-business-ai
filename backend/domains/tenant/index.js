@@ -6,6 +6,7 @@ module.exports = {
     saasControlService: tenantDomainServices.saasControlService,
     tenantIntegrationsService: require('./integrations.service'),
     tenantCatalogService: tenantDomainServices.tenantCatalogService,
+    catalogManagerService: tenantDomainServices.catalogManagerService,
     tenantLabelService: tenantDomainServices.tenantLabelService,
     waModuleService: tenantDomainServices.waModuleService,
     customerService: tenantDomainServices.customerService,

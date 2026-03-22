@@ -3,6 +3,7 @@ module.exports = {
   tenantSettingsService: require('./tenant-settings.service'),
   saasControlService: require('./tenant-control.service'),
   tenantCatalogService: require('./tenant-catalog.service'),
+  catalogManagerService: require('./catalog-manager.service'),
   tenantLabelService: require('./tenant-labels.service'),
   waModuleService: require('./wa-modules.service'),
   customerService: require('./customers.service'),
