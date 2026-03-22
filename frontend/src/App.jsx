@@ -1,9 +1,5 @@
 import { lazy, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
-import Sidebar from './components/Sidebar';
-import BusinessSidebar, { ClientProfilePanel } from './components/BusinessSidebar';
-import ChatWindow from './components/ChatWindow';
-import NewChatModal from './components/chat/NewChatModal';
 import { API_URL, CHAT_PAGE_SIZE, SOCKET_AUTH_TOKEN, TRANSPORT_STORAGE_KEY } from './config/runtime';
 import { loadStoredSaasSession, persistSaasSession } from './features/auth/helpers/saasSessionStorage';
 import { createSocketClient } from './features/chat/services/socketClient';
@@ -25,6 +21,7 @@ import useSaasSessionAutoRefresh from './features/auth/hooks/useSaasSessionAutoR
 import { useSaasSessionActions } from './features/auth/hooks/useSaasSessionActions';
 import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHelpers';
 import SaasLoginScreen from './features/auth/components/SaasLoginScreen';
+import OperationPage from './pages/OperationPage';
 import { useSaasPanelVisibilityController, useSaasTenantScopeContext } from './features/saas/hooks';
 import {
   normalizeCatalogItem,
@@ -73,8 +70,6 @@ import {
 import './index.css';
 
 const SaasPanelPage = lazy(() => import('./pages/SaasPanelPage'));
-
-
 const socket = createSocketClient(API_URL, SOCKET_AUTH_TOKEN);
 
 
@@ -2270,283 +2265,107 @@ function App() {
 
   // Render: Main App
   // --------------------------------------------------------------
-  const activeChatDetails = chats.find(c => c.id === activeChatId) || null;
-  const forwardChatOptions = chats
-    .filter((chat) => chat?.id && String(chat.id) !== String(activeChatId || ''))
-    .map((chat) => ({
-      id: chat.id,
-      name: sanitizeDisplayText(chat?.name || '') || 'Contacto',
-      phone: sanitizeDisplayText(chat?.phone || ''),
-      subtitle: sanitizeDisplayText(chat?.subtitle || ''),
-      timestamp: Number(chat?.timestamp || 0) || 0
-    }))
-    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-  const appContainerClassName = forceOperationLaunch ? 'app-container app-container--operation' : 'app-container';
-
   return (
-    <div className={appContainerClassName}>
-      {/* Hidden file input */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        style={{ display: 'none' }}
-        onChange={handleFileChange}
-        accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
-      />
-
-      {/* Sidebar - Chat List */}
-      <Sidebar
-        chats={chats}
-        activeChatId={activeChatId}
-        onChatSelect={handleChatSelect}
-        myProfile={myProfile || businessData?.profile}
-        onLogout={handleLogoutWhatsapp}
-        onRefreshChats={handleRefreshChats}
-        onStartNewChat={handleStartNewChat}
-        labelDefinitions={labelDefinitions}
-        onCreateLabel={handleCreateLabel}
-        onLoadMoreChats={handleLoadMoreChats}
-        chatsHasMore={chatsHasMore}
-        chatsLoadingMore={isLoadingMoreChats}
-        chatsTotal={chatsTotal}
-        searchQuery={chatSearchQuery}
-        onSearchQueryChange={handleChatSearchChange}
-        activeFilters={chatFilters}
-        onFiltersChange={handleChatFiltersChange}
-        onOpenCompanyProfile={handleOpenCompanyProfile}
-        saasAuthEnabled={saasAuthEnabled}
-        tenantOptions={availableTenantOptions}
-        activeTenantId={tenantScopeId}
-        tenantSwitchError={tenantSwitchError}
-        onSaasLogout={handleSaasLogout}
-        canManageSaas={canManageSaas}
-        onOpenSaasAdmin={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
-        waModules={availableWaModules}
-        showBackToPanel={Boolean(forceOperationLaunch && canManageSaas)}
-        onBackToPanel={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
-      />
-
-      {/* Main Content Area */}
-      <div className="main-workspace">
-        {activeChatId ? (
-          <div className="conversation-pane-shell">
-            {/* Chat Window */}
-            <ChatWindow
-              activeChatDetails={{ ...activeChatDetails, ...clientContact }}
-              messages={messages}
-              messagesEndRef={messagesEndRef}
-              isDragOver={isDragOver}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              showClientProfile={showClientProfile}
-              setShowClientProfile={setShowClientProfile}
-              /* ChatInput props */
-              inputText={inputText}
-              setInputText={setInputText}
-              onSendMessage={handleSendMessage}
-              onFileClick={() => fileInputRef.current?.click()}
-              attachment={attachment}
-              attachmentPreview={attachmentPreview}
-              removeAttachment={removeAttachment}
-              isAiLoading={isAiLoading}
-              onRequestAiSuggestion={requestAiSuggestion}
-              aiPrompt={aiPrompt}
-              setAiPrompt={setAiPrompt}
-              isCopilotMode={isCopilotMode}
-              setIsCopilotMode={setIsCopilotMode}
-              labelDefinitions={labelDefinitions}
-              onToggleChatLabel={handleToggleChatLabel}
-              onToggleChatPinned={handleToggleChatPinned}
-              onEditMessage={handleEditMessage}
-              onReplyMessage={waCapabilities.messageReply ? handleReplyMessage : null}
-              onForwardMessage={waCapabilities.messageForward ? handleForwardMessage : null}
-              onDeleteMessage={waCapabilities.messageDelete ? handleDeleteMessage : null}
-              forwardChatOptions={forwardChatOptions}
-              quickReplies={quickReplies}
-              onSendQuickReply={handleSendQuickReply}
-              quickReplyDraft={quickReplyDraft}
-              onClearQuickReplyDraft={() => setQuickReplyDraft(null)}
-              onLoadOrderToCart={handleLoadOrderToCart}
-              onStartNewChat={handleStartNewChat}
-              onCancelEditMessage={handleCancelEditMessage}
-              onCancelReplyMessage={handleCancelReplyMessage}
-              editingMessage={editingMessage}
-              replyingMessage={replyingMessage}
-              buildApiHeaders={buildApiHeaders}
-              canEditMessages={waCapabilities.messageEdit}
-              waModules={availableWaModules}
-            />
-
-            {/* Client Profile Panel (slides in from right) */}
-            {showClientProfile && (
-              <ClientProfilePanel
-                contact={{ ...activeChatDetails, ...clientContact }}
-                chats={chats}
-                onClose={() => setShowClientProfile(false)}
-                onQuickAiAction={requestAiSuggestion}
-                panelRef={clientProfilePanelRef}
-              />
-            )}
-          </div>
-        ) : (
-          <div style={{
-            flex: 1, display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center',
-            background: '#222e35',
-          }}>
-            <div className="conversation-empty-card">
-              <div className="conversation-empty-icon">WA</div>
-              <h1 className="conversation-empty-title">
-                WhatsApp Business Pro
-              </h1>
-              <p className="conversation-empty-text">
-                Selecciona un chat para comenzar a vender.<br />
-                Usa los botones de IA para cerrar mas ventas con OpenAI.
-              </p>
-              <div className="conversation-empty-features">
-                <strong>Funciones IA disponibles:</strong><br />
-                Sugerencia de respuesta automatica<br />
-                Recomendacion de producto<br />
-                Tecnicas de cierre de venta<br />
-                Manejo de objeciones
-              </div>
-            </div>
-          </div>
-        )}
-
-        {toasts.length > 0 && (
-          <div className="in-app-toast-stack">
-            {toasts.map((toast) => (
-              <button key={toast.id} className="in-app-toast" onClick={() => { handleChatSelect(toast.chatId); setToasts((prev) => prev.filter((t) => t.id !== toast.id)); }}>
-                <strong>{toast.title || 'Nuevo mensaje'}</strong>
-                <span>{toast.body}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Business Sidebar - AI and Catalog */}
-        {activeChatId && (
-          <BusinessSidebar
-            tenantScopeKey={tenantScopeId}
-            setInputText={setInputText}
-            businessData={businessData}
-            messages={messages}
-            activeChatId={activeChatId}
-            activeChatPhone={activeChatDetails?.phone || clientContact?.phone || ''}
-            activeChatDetails={activeChatDetails ? { ...activeChatDetails, ...clientContact } : (clientContact || null)}
-            socket={socket}
-            myProfile={myProfile || businessData?.profile}
-            onLogout={handleLogoutWhatsapp}
-            quickReplies={quickReplies}
-            onSendQuickReply={handleSendQuickReply}
-            pendingOrderCartLoad={pendingOrderCartLoad}
-            waCapabilities={waCapabilities}
-            openCompanyProfileToken={openCompanyProfileToken}
-            waModules={availableWaModules}
-            selectedCatalogModuleId={activeCatalogModuleId}
-            selectedCatalogId={activeCatalogId}
-            activeModuleId={String(activeChatDetails?.scopeModuleId || selectedWaModule?.moduleId || '').trim().toLowerCase()}
-            onSelectCatalogModule={handleSelectCatalogModule}
-            onSelectCatalog={handleSelectCatalog}
-            onUploadCatalogImage={handleUploadCatalogImage}
-            onCartSnapshotChange={handleCartSnapshotChange}
-          />
-        )}
-      </div>
-
-      <NewChatModal
-        isOpen={newChatDialog.open}
-        dialog={newChatDialog}
-        availableModules={newChatAvailableModules}
-        onChange={(patch) => setNewChatDialog((prev) => ({ ...prev, ...patch }))}
-        onConfirm={handleConfirmNewChat}
-        onCancel={handleCancelNewChatDialog}
-      />
-      <SaasPanelPage
-        isOpen={showSaasAdminPanel}
-        onClose={() => setShowSaasAdminPanel(false)}
-        onLogout={handleSaasLogout}
-        onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
-        buildApiHeaders={buildApiHeaders}
-        activeTenantId={tenantScopeId}
-        canManageSaas={canManageSaas}
-        userRole={saasUserRole}
-        isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
-        currentUser={saasSession?.user || null}
-        preferredTenantId={requestedWaTenantFromUrl || ''}
-        launchSource={requestedLaunchSource || ''}
-        initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
-        resetKeys={[showSaasAdminPanel, tenantScopeId, saasSession?.user?.userId, requestedWaSectionFromUrl]}
-      />
-    </div>
-  );
+    <OperationPage
+      forceOperationLaunch={forceOperationLaunch}
+      socket={socket}
+      fileInputRef={fileInputRef}
+      handleFileChange={handleFileChange}
+      chats={chats}
+      activeChatId={activeChatId}
+      handleChatSelect={handleChatSelect}
+      myProfile={myProfile}
+      businessData={businessData}
+      handleLogoutWhatsapp={handleLogoutWhatsapp}
+      handleRefreshChats={handleRefreshChats}
+      handleStartNewChat={handleStartNewChat}
+      labelDefinitions={labelDefinitions}
+      handleCreateLabel={handleCreateLabel}
+      handleLoadMoreChats={handleLoadMoreChats}
+      chatsHasMore={chatsHasMore}
+      isLoadingMoreChats={isLoadingMoreChats}
+      chatsTotal={chatsTotal}
+      chatSearchQuery={chatSearchQuery}
+      handleChatSearchChange={handleChatSearchChange}
+      chatFilters={chatFilters}
+      handleChatFiltersChange={handleChatFiltersChange}
+      handleOpenCompanyProfile={handleOpenCompanyProfile}
+      saasAuthEnabled={saasAuthEnabled}
+      availableTenantOptions={availableTenantOptions}
+      tenantScopeId={tenantScopeId}
+      tenantSwitchError={tenantSwitchError}
+      handleSaasLogout={handleSaasLogout}
+      canManageSaas={canManageSaas}
+      handleOpenSaasAdminWorkspace={handleOpenSaasAdminWorkspace}
+      availableWaModules={availableWaModules}
+      clientContact={clientContact}
+      messages={messages}
+      messagesEndRef={messagesEndRef}
+      isDragOver={isDragOver}
+      handleDragOver={handleDragOver}
+      handleDragLeave={handleDragLeave}
+      handleDrop={handleDrop}
+      showClientProfile={showClientProfile}
+      setShowClientProfile={setShowClientProfile}
+      inputText={inputText}
+      setInputText={setInputText}
+      handleSendMessage={handleSendMessage}
+      attachment={attachment}
+      attachmentPreview={attachmentPreview}
+      removeAttachment={removeAttachment}
+      isAiLoading={isAiLoading}
+      requestAiSuggestion={requestAiSuggestion}
+      aiPrompt={aiPrompt}
+      setAiPrompt={setAiPrompt}
+      isCopilotMode={isCopilotMode}
+      setIsCopilotMode={setIsCopilotMode}
+      handleToggleChatLabel={handleToggleChatLabel}
+      handleToggleChatPinned={handleToggleChatPinned}
+      handleEditMessage={handleEditMessage}
+      waCapabilities={waCapabilities}
+      handleReplyMessage={handleReplyMessage}
+      handleForwardMessage={handleForwardMessage}
+      handleDeleteMessage={handleDeleteMessage}
+      quickReplies={quickReplies}
+      handleSendQuickReply={handleSendQuickReply}
+      quickReplyDraft={quickReplyDraft}
+      setQuickReplyDraft={setQuickReplyDraft}
+      handleLoadOrderToCart={handleLoadOrderToCart}
+      handleCancelEditMessage={handleCancelEditMessage}
+      handleCancelReplyMessage={handleCancelReplyMessage}
+      editingMessage={editingMessage}
+      replyingMessage={replyingMessage}
+      buildApiHeaders={buildApiHeaders}
+      clientProfilePanelRef={clientProfilePanelRef}
+      toasts={toasts}
+      setToasts={setToasts}
+      pendingOrderCartLoad={pendingOrderCartLoad}
+      openCompanyProfileToken={openCompanyProfileToken}
+      selectedCatalogModuleId={activeCatalogModuleId}
+      activeCatalogId={activeCatalogId}
+      selectedWaModule={selectedWaModule}
+      handleSelectCatalogModule={handleSelectCatalogModule}
+      handleSelectCatalog={handleSelectCatalog}
+      handleUploadCatalogImage={handleUploadCatalogImage}
+      handleCartSnapshotChange={handleCartSnapshotChange}
+      newChatDialog={newChatDialog}
+      setNewChatDialog={setNewChatDialog}
+      newChatAvailableModules={newChatAvailableModules}
+      handleConfirmNewChat={handleConfirmNewChat}
+      handleCancelNewChatDialog={handleCancelNewChatDialog}
+      showSaasAdminPanel={showSaasAdminPanel}
+      setShowSaasAdminPanel={setShowSaasAdminPanel}
+      handleOpenWhatsAppOperation={handleOpenWhatsAppOperation}
+      saasUserRole={saasUserRole}
+      saasSession={saasSession}
+      requestedWaTenantFromUrl={requestedWaTenantFromUrl}
+      requestedLaunchSource={requestedLaunchSource}
+      requestedWaSectionFromUrl={requestedWaSectionFromUrl}
+      SaasPanelComponent={SaasPanelPage}
+    />
+    );
 }
 
 export default App;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
