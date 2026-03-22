@@ -50,6 +50,7 @@ No mass rewrite; all steps preserve current runtime behavior.
 - Move backend root services to domain service implementations.
 - Introduce repositories for persistence access.
 - Added service wrapper layers in domains/operations/services and domains/security/services and updated domain indexes.
+- Moved security service implementations for access policy store and plan limits store/logic into domains/security/services and left root files as compatibility wrappers.
 
 ### Stage E
 - Remove compatibility re-exports and legacy import paths.
@@ -60,5 +61,6 @@ No mass rewrite; all steps preserve current runtime behavior.
   - `cd backend; npm.cmd test`
   - `cd frontend; npm.cmd run build`
 - Commit in small blocks.
+
 
 
