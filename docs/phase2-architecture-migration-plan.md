@@ -1,68 +1,66 @@
 # Phase 2 - Architecture Migration Plan (Incremental, Safe)
 
 ## Scope
-This plan aligns with Phase 2 hardening and maintainability goals.
-No mass rewrite; all steps preserve current runtime behavior.
+This plan keeps Phase 2 focused on maintainability and runtime safety.
+No mass rewrite: every movement keeps current behavior via compatibility wrappers.
 
-## Current hotspots (mislocated / oversized)
+## Current hotspots (remaining)
 
 ### Frontend
-- `frontend/src/App.jsx` (2331 lines): too much orchestration.
-- `frontend/src/components/SaasAdminPanel.jsx` (1700+ lines): cross-domain state + section orchestration.
-- `frontend/src/components/ChatWindow.jsx` and `MessageBubble.jsx`: large UI/logic blend.
-- `frontend/src/components/business/sections/BusinessCatalogTab.jsx`: reduced partially, still large.
+- `frontend/src/App.jsx` still orchestrates too much chat/runtime state.
+- `frontend/src/features/saas/components/SaasAdminPanel.jsx` still centralizes many section concerns.
+- `frontend/src/features/chat/components/BusinessSidebar.jsx` still combines UI and cross-feature orchestration.
 
 ### Backend
-- Many service files still in backend root (`*_service.js`).
-- `backend/server.js` improved but still bootstrap-heavy.
-- Domain routes are extracted; service layer migration is ongoing.
+- Root still contains large legacy implementations (`server.js`, `socket_manager.js`, channel/integration services, control-plane services).
+- Domain-first shape exists, but not all implementations have been inverted yet.
 
 ## Target shape (minimal)
 
 ### Frontend
-- `app/`, `pages/`, `routes/`, `features/*`, `shared/*`.
+- `app/`, `pages/`, `routes/`
+- `features/<domain>/{components,sections,hooks,services,helpers}`
+- `components/*` only as compatibility facades during migration.
 
 ### Backend
-- `domains/*` with `routes/controllers/services/repositories/validators`.
-- `config/`, `middlewares/`, `db/`.
+- `domains/<domain>/{routes,services,repositories,validators}`
+- Root files only for: entrypoints + compatibility wrappers.
+- `config/`, `db/`, `scripts/`, `test/`.
 
 ## Migration stages
 
-### Stage A (done in this step)
-- Scaffold frontend architecture folders.
-- Add SaaS feature compat entrypoint.
-- Add backend tenant domain service wrappers.
-- Switch domain index to wrappers (no behavior change).
+### Stage A (done)
+- Frontend architecture scaffold + pages/routes foundation.
+- Tenant/security/operations domain wrappers created.
 
-### Stage B
-- Split `SaasAdminPanel` into:
-  - layout renderer
-  - section controller hooks
-  - reduced state surface in component file.
+### Stage B (in progress)
+- `SaasAdminPanel` split into hooks and section sync layers.
+- `App.jsx` chat logic split into dedicated hooks (navigation, transport, send, attachments).
 
-### Stage C
-- Split `App.jsx` into pages:
-  - `OperationPage`
-  - `SaasPanelPage`
-  - route-based shell.
+### Stage C (in progress)
+- Domain inversion for backend services (implementation in `domains/*`, root as compat).
+- Completed inversions:
+  - operations: assignment rules/router, conversation ops, message history, KPI, AI chat history.
+  - tenant: tenant core, catalog manager, quick replies manager.
+  - security: auth, auth recovery, auth sessions, audit logs, password hash.
 
-### Stage D (in progress)
-- Move backend root services to domain service implementations.
-- Introduce repositories for persistence access.
-- Added service wrapper layers in domains/operations/services and domains/security/services and updated domain indexes.
-- Moved security service implementations for access policy store and plan limits store/logic into domains/security/services and left root files as compatibility wrappers.
-- Moved operations service implementations (assignment rules, assignment router, conversation ops, message history, KPI service) into `domains/operations/services` with root compatibility wrappers.
-- Moved quick replies manager implementation into `domains/tenant/services` (`quick-replies-manager.service`) and kept root compatibility wrapper.
-- Moved catalog manager implementation into `domains/tenant/services` (`catalog-manager.service`) and kept root compatibility wrapper.
-- Moved AI chat history implementation into `domains/operations/services` (`ai-chat-history.service`) and kept root compatibility wrapper.
-- Moved tenant core service implementation into domains/tenant/services (	enant-core.service) and kept root compatibility wrapper.
+### Stage D (done in this step)
+- Frontend business internals moved from `components/business/*` to `features/chat/business/*`.
+- `components/business/*` now act as compatibility facades.
 
-### Stage E
-- Remove compatibility re-exports and legacy import paths.
+### Stage E (next)
+- Continue domain inversion for remaining backend root heavy services:
+  - channels/integrations (`whatsapp_cloud_client`, `whatsapp_client`, `woocommerce_service`, `wa_provider`).
+  - control-plane/security helpers where applicable.
+- Start repository layer extraction for persistence-heavy services.
+
+### Stage F (final Phase 2 closeout)
+- Remove unused compatibility facades after imports are fully migrated.
+- Freeze import boundaries with lint rules/path aliases.
 
 ## Risk controls
-- Keep compatibility files during migration.
+- Keep compatibility wrappers during transition.
 - Validate each block with:
   - `cd backend; npm.cmd test`
   - `cd frontend; npm.cmd run build`
-- Commit in small blocks.
+- Commit in small vertical slices and push every stable block.
