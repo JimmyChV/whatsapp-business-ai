@@ -19,6 +19,7 @@ import {
   useChatMessageUiActions,
   useChatSelectionAction,
   useWorkspaceResetOnTenantChange,
+  useAppDerivedChatState,
   readWaLaunchParams,
   normalizeQuickRepliesSocketPayload,
   resolveScopedCatalogSelection,
@@ -1541,11 +1542,25 @@ function App() {
   const handleSendQuickReply = (quickReply = null) => {
     applyQuickReplyDraft(quickReply, activeChatIdRef.current, normalizeQuickReplyDraft);
   };
-  const activeChatDetails = useMemo(() => {
-    const currentActiveId = String(activeChatId || activeChatIdRef.current || '').trim();
-    if (!currentActiveId) return null;
-    return chats.find((chat) => chatIdsReferSameScope(String(chat?.id || ''), currentActiveId)) || null;
-  }, [activeChatId, chats]);
+  const {
+    activeTransport,
+    cloudConfigured,
+    selectedModeLabel,
+    availableWaModules,
+    hasModuleCatalog,
+    activeCatalogModuleId,
+    activeCatalogId,
+    activeChatDetails
+  } = useAppDerivedChatState({
+    waRuntime,
+    waModules,
+    selectedCatalogModuleId,
+    selectedCatalogId,
+    selectedTransport,
+    activeChatId,
+    activeChatIdRef,
+    chats
+  });
 
   useEffect(() => {
     const onGlobalKeyDown = (event) => {
@@ -1580,13 +1595,6 @@ function App() {
       setIsAiLoading
     });
   };
-  const activeTransport = String(waRuntime?.activeTransport || 'idle').toLowerCase();
-  const cloudConfigured = Boolean(waRuntime?.cloudConfigured);
-  const selectedModeLabel = 'WhatsApp Cloud API';
-  const availableWaModules = normalizeWaModules(waModules).filter((module) => module.isActive !== false);
-  const hasModuleCatalog = availableWaModules.length > 0;
-  const activeCatalogModuleId = String(selectedCatalogModuleId || '').trim();
-  const activeCatalogId = String(selectedCatalogId || '').trim().toUpperCase();
 
   useSaasPanelVisibilityController({
     canManageSaasRef,
