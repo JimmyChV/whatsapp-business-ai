@@ -45,3 +45,4 @@ test('ops_telemetry records socket lifecycle and internal errors', () => {
     assert.equal(snapshot.internal.lastError.scope, 'unit_test');
 });
 
+

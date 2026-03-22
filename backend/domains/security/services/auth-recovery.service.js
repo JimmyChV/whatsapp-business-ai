@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const authSessionService = require('./auth-session.service');
 const saasControlService = require('../../tenant/services/tenant-control.service');
 const emailService = require('./email.service');
@@ -6,7 +6,7 @@ const {
     DEFAULT_TENANT_ID,
     readTenantJsonFile,
     writeTenantJsonFile
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 
 const STORE_FILE = 'auth_recovery_store.json';
 const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
@@ -402,4 +402,5 @@ module.exports = {
     verifyPasswordRecoveryCode,
     resetPasswordWithRecoveryToken
 };
+
 

@@ -1,4 +1,4 @@
-function registerSecurityAuthHttpRoutes({
+﻿function registerSecurityAuthHttpRoutes({
     app,
     isProduction,
     authService,
@@ -320,3 +320,4 @@ function registerSecurityAuthHttpRoutes({
 module.exports = {
     registerSecurityAuthHttpRoutes
 };
+

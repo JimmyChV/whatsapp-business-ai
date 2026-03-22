@@ -1,11 +1,11 @@
-const {
+﻿const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
     normalizeTenantId,
     queryPostgres,
     readTenantJsonFile,
     writeTenantJsonFile
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 
 const LABELS_FILE = 'tenant_labels.json';
 const DEFAULT_COLOR = '#00A884';
@@ -487,4 +487,5 @@ module.exports = {
     listChatLabelsMap,
     setChatLabels
 };
+
 

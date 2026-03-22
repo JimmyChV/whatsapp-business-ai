@@ -1,10 +1,10 @@
-const {
+﻿const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 const planLimitsService = require('./plan-limits.service');
 
 const PLAN_LIMITS_FILE_NAME = 'saas_plan_limits.json';
@@ -101,4 +101,5 @@ module.exports = {
     saveOverrides,
     initializePlanLimits
 };
+
 

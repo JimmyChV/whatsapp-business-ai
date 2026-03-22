@@ -95,3 +95,4 @@ test('tenant_integrations_service keeps legacy assistant ids stable and updatabl
     assert.equal(persisted.ai.assistants[0].name, 'Asistente Legacy Actualizado');
 });
 
+

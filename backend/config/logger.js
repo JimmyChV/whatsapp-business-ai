@@ -1,4 +1,4 @@
-const fs = require('fs');
+﻿const fs = require('fs');
 const path = require('path');
 
 class Logger {
@@ -23,3 +23,4 @@ class Logger {
 }
 
 module.exports = new Logger();
+

@@ -1,4 +1,4 @@
-module.exports = {
+﻿module.exports = {
     messageHistoryService: require('./message-history.service'),
     conversationOpsService: require('./conversation-ops.service'),
     assignmentRulesService: require('./assignment-rules.service'),
@@ -9,3 +9,4 @@ module.exports = {
     aiService: require('./ai.service'),
     aiPromptContextService: require('./ai-prompt-context.service')
 };
+

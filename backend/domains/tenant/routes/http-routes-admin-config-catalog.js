@@ -1,4 +1,4 @@
-function defaultSanitizeCatalogProductPayload(payload = {}, { allowPartial = false } = {}) {
+﻿function defaultSanitizeCatalogProductPayload(payload = {}, { allowPartial = false } = {}) {
     const source = payload && typeof payload === 'object' ? payload : {};
     const categories = Array.isArray(source.categories)
         ? source.categories
@@ -425,3 +425,4 @@ function registerTenantAdminConfigCatalogHttpRoutes({
 module.exports = {
     registerTenantAdminConfigCatalogHttpRoutes
 };
+

@@ -1,4 +1,4 @@
-const EventEmitter = require('events');
+﻿const EventEmitter = require('events');
 const webjsClient = require('./whatsapp-webjs-client.service');
 const cloudClient = require('./whatsapp-cloud-client.service');
 
@@ -339,6 +339,7 @@ class WAProvider extends EventEmitter {
 }
 
 module.exports = new WAProvider();
+
 
 
 

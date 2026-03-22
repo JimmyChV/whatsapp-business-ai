@@ -1,4 +1,4 @@
-function parseOrderNumber(value) {
+﻿function parseOrderNumber(value) {
     if (value === null || value === undefined) return null;
     if (typeof value === 'number') return Number.isFinite(value) ? value : null;
 
@@ -351,3 +351,4 @@ module.exports = {
     extractCatalogItemCategories,
     buildCatalogDebugLine
 };
+

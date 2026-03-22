@@ -1,4 +1,4 @@
-function ensureAuthenticated(req, res, authService) {
+﻿function ensureAuthenticated(req, res, authService) {
     if (authService.isAuthEnabled() && !req?.authContext?.isAuthenticated) {
         res.status(401).json({ ok: false, error: 'No autenticado.' });
         return false;
@@ -488,3 +488,4 @@ function registerOperationsHttpRoutes({
 module.exports = {
     registerOperationsHttpRoutes
 };
+

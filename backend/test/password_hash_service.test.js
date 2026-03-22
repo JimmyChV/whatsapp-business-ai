@@ -18,3 +18,4 @@ test('password_hash_service keeps legacy sha256 compatibility', () => {
     assert.equal(passwordHashService.normalizeStoredHash(legacy.toUpperCase()), legacy);
 });
 
+

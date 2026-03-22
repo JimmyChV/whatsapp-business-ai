@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -6,7 +6,7 @@ const {
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 const {
     encryptSecret,
     decryptSecretFully,
@@ -587,4 +587,5 @@ module.exports = {
     updateCatalog,
     deactivateCatalog
 };
+
 

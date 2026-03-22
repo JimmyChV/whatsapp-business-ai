@@ -1,4 +1,4 @@
-module.exports = {
+﻿module.exports = {
   tenantService: require('./tenant-core.service'),
   tenantSettingsService: require('./tenant-settings.service'),
   saasControlService: require('./tenant-control.service'),
@@ -13,4 +13,5 @@ module.exports = {
   quickReplyLibrariesService: require('./quick-reply-libraries.service'),
   woocommerceService: require('./woocommerce.service')
 };
+
 

@@ -1,11 +1,11 @@
-const {
+﻿const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
     normalizeTenantId,
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 
 const HISTORY_FILE = 'message_history.json';
 let postgresMessageColumnsReadyPromise = null;
@@ -841,6 +841,7 @@ module.exports = {
     listChats,
     listMessages
 };
+
 
 
 

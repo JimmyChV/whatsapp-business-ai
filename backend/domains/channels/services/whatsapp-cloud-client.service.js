@@ -1,4 +1,4 @@
-const EventEmitter = require('events');
+﻿const EventEmitter = require('events');
 const crypto = require('crypto');
 
 function normalizeDigits(value = '') {
@@ -1262,3 +1262,4 @@ class WhatsAppCloudClient extends EventEmitter {
 }
 
 module.exports = new WhatsAppCloudClient();
+

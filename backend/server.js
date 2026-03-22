@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
@@ -6,9 +6,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ quiet: true });
-const logger = require('./logger');
+const logger = require('./config/logger');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./domains/security/helpers/security-utils');
-const RateLimiter = require('./rate_limiter');
+const RateLimiter = require('./config/rate-limiter');
 const {
     authService,
     authRecoveryService,
@@ -1350,6 +1350,7 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
+
 
 
 

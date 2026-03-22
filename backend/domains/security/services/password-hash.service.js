@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 
 const HASH_PREFIX = 'pbkdf2_sha512';
 const DEFAULT_ITERATIONS = Math.max(120000, Number(process.env.SAAS_PASSWORD_HASH_ITERATIONS || 210000));
@@ -95,3 +95,4 @@ module.exports = {
     isLegacySha256Hash,
     HASH_PREFIX
 };
+

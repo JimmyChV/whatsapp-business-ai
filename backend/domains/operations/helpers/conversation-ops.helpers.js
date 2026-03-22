@@ -1,8 +1,8 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const {
     DEFAULT_TENANT_ID,
     normalizeTenantId
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 
 const MAX_LIMIT = 500;
 const DEFAULT_LIMIT = 50;
@@ -179,5 +179,6 @@ module.exports = {
     missingRelation,
     nowIso
 };
+
 
 

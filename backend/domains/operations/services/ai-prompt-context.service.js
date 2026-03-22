@@ -1,4 +1,4 @@
-const tenantService = require('../../tenant/services/tenant-core.service');
+﻿const tenantService = require('../../tenant/services/tenant-core.service');
 const tenantSettingsService = require('../../tenant/services/tenant-settings.service');
 const tenantIntegrationsService = require('../../tenant/services/integrations.service');
 const tenantCatalogService = require('../../tenant/services/tenant-catalog.service');
@@ -686,3 +686,4 @@ EJECUTA LA TAREA CON ESE CONTEXTO Y RESPETA EL FORMATO OBLIGATORIO.`;
 module.exports = {
     buildAiPromptPackage
 };
+

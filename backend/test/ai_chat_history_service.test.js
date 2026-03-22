@@ -73,3 +73,4 @@ test('ai_chat_history_service stores and isolates entries by scoped chat in file
     assert.match(String(historyB[0].content || ''), /cotizacion/i);
 });
 
+

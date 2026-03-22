@@ -1,4 +1,4 @@
-const DEFAULT_MAX_LATENCY_SAMPLES = Math.max(200, Number(process.env.OPS_MAX_LATENCY_SAMPLES || 4000));
+﻿const DEFAULT_MAX_LATENCY_SAMPLES = Math.max(200, Number(process.env.OPS_MAX_LATENCY_SAMPLES || 4000));
 
 function nowIso() {
     return new Date().toISOString();
@@ -156,3 +156,4 @@ class OpsTelemetry {
 }
 
 module.exports = new OpsTelemetry();
+

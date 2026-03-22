@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 require('dotenv').config({ quiet: true });
 
 const fs = require('fs');
@@ -10,7 +10,7 @@ const {
     normalizeTenantId,
     getTenantDataDir,
     queryPostgres
-} = require('../persistence_runtime');
+} = require('../config/persistence-runtime');
 const tenantService = require('../domains/tenant/services/tenant-core.service');
 
 function parseArgs(argv = []) {
@@ -279,4 +279,5 @@ main().catch((error) => {
     console.error('[Backup] ERROR:', String(error?.message || error));
     process.exit(1);
 });
+
 

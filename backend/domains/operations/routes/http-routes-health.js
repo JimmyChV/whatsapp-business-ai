@@ -1,4 +1,4 @@
-function registerOperationsHealthHttpRoutes({
+﻿function registerOperationsHealthHttpRoutes({
     app,
     hasOpsAccess,
     waClient,
@@ -72,3 +72,4 @@ function registerOperationsHealthHttpRoutes({
 module.exports = {
     registerOperationsHealthHttpRoutes
 };
+

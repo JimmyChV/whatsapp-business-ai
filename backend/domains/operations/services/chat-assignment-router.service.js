@@ -1,4 +1,4 @@
-const { getStorageDriver, queryPostgres } = require('../../../persistence_runtime');
+﻿const { getStorageDriver, queryPostgres } = require('../../../config/persistence-runtime');
 const assignmentRulesService = require('./assignment-rules.service');
 const conversationOpsService = require('./conversation-ops.service');
 const saasControlService = require('../../tenant/services/tenant-control.service');
@@ -286,4 +286,5 @@ module.exports = {
     resolveCandidateUsersForTenant,
     listOpenChatCounts
 };
+
 

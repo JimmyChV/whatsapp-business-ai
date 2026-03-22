@@ -12,7 +12,8 @@ No mass rewrite: every movement keeps current behavior via compatibility wrapper
 - `frontend/src/features/chat/components/BusinessSidebar.jsx` still combines UI and cross-feature orchestration.
 
 ### Backend
-- Root legacy service clutter was removed; backend root now keeps only infrastructure files.
+- Root legacy service clutter was removed; backend root now keeps only `server.js`.
+- Shared infra utilities were moved to `backend/config/*` (`logger`, `rate-limiter`, `persistence-runtime`).
 - Remaining work is mostly import-boundary hardening and repository-layer extraction.
 
 ## Target shape (minimal)

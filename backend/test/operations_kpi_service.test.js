@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 
 function loadServicesFresh() {
-    const runtimePath = require.resolve('../persistence_runtime');
+    const runtimePath = require.resolve('../config/persistence-runtime');
     const msgPath = require.resolve('../domains/operations/services/message-history.service');
     const opsPath = require.resolve('../domains/operations/services/conversation-ops.service');
     const kpiPath = require.resolve('../domains/operations/services/operations-kpi.service');
@@ -123,4 +123,5 @@ test('operations_kpi_service computes metrics with scope and assignee filters (f
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
+
 

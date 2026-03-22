@@ -22,6 +22,6 @@ Latest canonicalized modules:
 
 Current root JS surface:
 - `server.js` (bootstrap)
-- `persistence_runtime.js` (storage runtime abstraction)
-- `rate_limiter.js` (shared limiter utility)
-- `logger.js` (shared logger utility)
+- `config/persistence-runtime.js` (storage runtime abstraction)
+- `config/rate-limiter.js` (shared limiter utility)
+- `config/logger.js` (shared logger utility)

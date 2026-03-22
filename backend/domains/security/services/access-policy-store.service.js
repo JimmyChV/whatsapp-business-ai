@@ -1,10 +1,10 @@
-const {
+﻿const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 
 const ACCESS_CATALOG_FILE = 'saas_access_catalog.json';
 const GLOBAL_SCOPE = 'global';
@@ -147,5 +147,6 @@ module.exports = {
     updateOverrides,
     normalizeOverrides
 };
+
 
 

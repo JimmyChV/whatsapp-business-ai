@@ -1,10 +1,10 @@
-const {
+﻿const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 const {
     resolveTenantId,
     toText,
@@ -495,6 +495,7 @@ module.exports = {
     upsertChatAssignment,
     clearChatAssignment
 };
+
 
 
 

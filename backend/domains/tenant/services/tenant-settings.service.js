@@ -1,11 +1,11 @@
-const {
+﻿const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
     normalizeTenantId,
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 
 const SETTINGS_FILE_NAME = 'tenant_settings.json';
 const ALLOWED_CATALOG_MODES = new Set(['hybrid', 'meta_only', 'woo_only', 'local_only']);
@@ -203,6 +203,7 @@ module.exports = {
     normalizeTenantSettings,
     normalizeCatalogMode
 };
+
 
 
 

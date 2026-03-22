@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 
 function loadAssignmentRulesServiceFresh() {
-    const runtimePath = require.resolve('../persistence_runtime');
+    const runtimePath = require.resolve('../config/persistence-runtime');
     const modulePath = require.resolve('../domains/operations/services/assignment-rules.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
@@ -76,4 +76,5 @@ test('assignment_rules_service persists rules and resolves effective inheritance
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
+
 

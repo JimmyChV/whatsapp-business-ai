@@ -1,11 +1,11 @@
-const {
+﻿const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
     normalizeTenantId,
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 
 const AI_USAGE_FILE = 'ai_usage.json';
 const MAX_MONTHS = 24;
@@ -205,5 +205,6 @@ module.exports = {
     getMonthlyUsage,
     incrementMonthlyUsage
 };
+
 
 

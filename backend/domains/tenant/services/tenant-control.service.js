@@ -1,11 +1,11 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 const planLimitsService = require('../../security/services/plan-limits.service');
 const accessPolicyService = require('../../security/services/access-policy.service');
 const passwordHashService = require('../../security/services/password-hash.service');
@@ -1189,4 +1189,5 @@ module.exports = {
     CONTROL_FILE_NAME,
     CONTROL_TENANT_ID
 };
+
 

@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 
 function loadAuditServiceFresh() {
-    const runtimePath = require.resolve('../persistence_runtime');
+    const runtimePath = require.resolve('../config/persistence-runtime');
     const modulePath = require.resolve('../domains/security/services/audit-log.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
@@ -64,4 +64,5 @@ test('audit_log_service writes and lists audit rows for tenant in file mode', as
         fs.rmSync(tempDir, { recursive: true, force: true });
     }
 });
+
 

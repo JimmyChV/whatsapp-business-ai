@@ -1,4 +1,4 @@
-function toPublicTenant(tenant = null) {
+﻿function toPublicTenant(tenant = null) {
     if (!tenant || typeof tenant !== 'object') return null;
     const logoUrl = String(tenant?.logoUrl || tenant?.logo_url || '').trim();
     const coverImageUrl = String(tenant?.coverImageUrl || tenant?.cover_image_url || '').trim();
@@ -87,3 +87,4 @@ function registerTenantRuntimePublicHttpRoutes({
 module.exports = {
     registerTenantRuntimePublicHttpRoutes
 };
+

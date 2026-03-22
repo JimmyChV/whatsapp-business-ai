@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const authSessionService = require('./auth-session.service');
 const tenantService = require('../../tenant/services/tenant-core.service');
 const saasControlService = require('../../tenant/services/tenant-control.service');
@@ -816,5 +816,6 @@ module.exports = {
     getAllowedTenantsForUser,
     findUserRecord
 };
+
 
 

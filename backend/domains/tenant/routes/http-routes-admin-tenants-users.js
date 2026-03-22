@@ -1,4 +1,4 @@
-function registerTenantAdminTenantsUsersHttpRoutes({
+﻿function registerTenantAdminTenantsUsersHttpRoutes({
     app,
     saasControlService,
     waModuleService,
@@ -313,3 +313,4 @@ function registerTenantAdminTenantsUsersHttpRoutes({
 module.exports = {
     registerTenantAdminTenantsUsersHttpRoutes
 };
+

@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 
 function loadMessageHistoryServiceFresh() {
-    const runtimePath = require.resolve('../persistence_runtime');
+    const runtimePath = require.resolve('../config/persistence-runtime');
     const modulePath = require.resolve('../domains/operations/services/message-history.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
@@ -158,4 +158,5 @@ test('message_history_service respects disabled toggle', async () => {
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
+
 

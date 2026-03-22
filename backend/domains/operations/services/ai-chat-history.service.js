@@ -1,4 +1,4 @@
-const { randomUUID } = require('crypto');
+﻿const { randomUUID } = require('crypto');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -6,7 +6,7 @@ const {
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 
 const AI_CHAT_HISTORY_FILE = 'ai_chat_history.json';
 const MAX_SCOPE_ITEMS = 600;
@@ -335,3 +335,4 @@ module.exports = {
     appendInteraction,
     listEntries
 };
+

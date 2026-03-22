@@ -1,4 +1,4 @@
-const { parseCsvEnv } = require('../../security/helpers/security-utils');
+﻿const { parseCsvEnv } = require('../../security/helpers/security-utils');
 const saasControlService = require('./tenant-control.service');
 
 function parseBooleanEnv(value, defaultValue = false) {
@@ -155,3 +155,4 @@ module.exports = {
     isSaasEnabled,
     DEFAULT_TENANT
 };
+

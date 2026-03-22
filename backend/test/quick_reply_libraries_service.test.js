@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 
 function loadQuickReplyLibrariesServiceFresh() {
-    const runtimePath = require.resolve('../persistence_runtime');
+    const runtimePath = require.resolve('../config/persistence-runtime');
     const modulePath = require.resolve('../domains/tenant/services/quick-reply-libraries.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
@@ -61,4 +61,5 @@ test('quick_reply_libraries_service invalidates cache on writes in file driver',
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
+
 

@@ -1,4 +1,4 @@
-module.exports = {
+﻿module.exports = {
     accessPolicyService: require('./access-policy.service'),
     authService: require('./auth.service'),
     authRecoveryService: require('./auth-recovery.service'),
@@ -10,4 +10,5 @@ module.exports = {
     emailService: require('./email.service'),
     metaConfigCryptoService: require('./meta-config-crypto.service')
 };
+
 

@@ -1,4 +1,4 @@
-const { getChatSuggestion, askInternalCopilot } = require('../../operations/services/ai.service');
+﻿const { getChatSuggestion, askInternalCopilot } = require('../../operations/services/ai.service');
 const waClient = require('./wa-provider.service');
 const mediaManager = require('./media-manager.service');
 const { loadCatalog, addProduct, updateProduct, deleteProduct } = require('../../tenant/services/catalog-manager.service');
@@ -17,7 +17,7 @@ const customerService = require('../../tenant/services/customers.service');
 const tenantLabelService = require('../../tenant/services/tenant-labels.service');
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
 const auditLogService = require('../../security/services/audit-log.service');
-const RateLimiter = require('../../../rate_limiter');
+const RateLimiter = require('../../../config/rate-limiter');
 const { URL } = require('url');
 const { resolveAndValidatePublicHost } = require('../../security/helpers/security-utils');
 const {
@@ -6704,6 +6704,7 @@ class SocketManager {
 
 
 module.exports = SocketManager;
+
 
 
 

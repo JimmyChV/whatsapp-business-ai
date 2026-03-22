@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 
 function loadCatalogManagerFresh() {
-    const runtimePath = require.resolve('../persistence_runtime');
+    const runtimePath = require.resolve('../config/persistence-runtime');
     const modulePath = require.resolve('../domains/tenant/services/catalog-manager.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
@@ -47,4 +47,5 @@ test('catalog_manager isolates tenant data in file driver', async () => {
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
+
 

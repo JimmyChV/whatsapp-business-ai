@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 
 function loadConversationOpsServiceFresh() {
-    const runtimePath = require.resolve('../persistence_runtime');
+    const runtimePath = require.resolve('../config/persistence-runtime');
     const modulePath = require.resolve('../domains/operations/services/conversation-ops.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
@@ -121,3 +121,4 @@ test('conversation_ops_service stores events and assignments with tenant isolati
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
+

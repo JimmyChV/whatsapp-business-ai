@@ -1,11 +1,11 @@
-const {
+﻿const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
     normalizeTenantId,
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 
 const STORE_FILE = 'assignment_rules.json';
 const DEFAULT_ALLOWED_ROLES = ['seller', 'admin', 'owner'];
@@ -270,3 +270,4 @@ module.exports = {
     getEffectiveRule,
     upsertRule
 };
+

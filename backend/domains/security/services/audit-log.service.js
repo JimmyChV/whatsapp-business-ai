@@ -1,11 +1,11 @@
-const {
+﻿const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
     normalizeTenantId,
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 
 const AUDIT_FILE = 'audit_logs.json';
 
@@ -161,4 +161,5 @@ module.exports = {
     writeAuditLog,
     listAuditLogs
 };
+
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 require('dotenv').config({ quiet: true });
 
 const { performance } = require('perf_hooks');
@@ -184,3 +184,4 @@ main().catch((error) => {
     console.error('[LoadSmoke] ERROR:', String(error?.message || error));
     process.exit(1);
 });
+

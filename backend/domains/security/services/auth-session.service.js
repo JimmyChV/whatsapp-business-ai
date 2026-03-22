@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const {
@@ -9,7 +9,7 @@ const {
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 
 const AUTH_SESSIONS_FILE = 'auth_sessions.json';
 
@@ -664,4 +664,5 @@ module.exports = {
     revokeAccessToken,
     isAccessTokenRevoked
 };
+
 

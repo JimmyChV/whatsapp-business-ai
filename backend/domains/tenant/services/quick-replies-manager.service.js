@@ -1,11 +1,11 @@
-const path = require('path');
+﻿const path = require('path');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
     normalizeTenantId,
     readTenantJsonFile,
     writeTenantJsonFile
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 const quickReplyLibrariesService = require('./quick-reply-libraries.service');
 
 const QUICK_REPLIES_FILE = 'quick_replies.json';
@@ -211,3 +211,4 @@ module.exports = {
     updateQuickReply,
     deleteQuickReply,
 };
+

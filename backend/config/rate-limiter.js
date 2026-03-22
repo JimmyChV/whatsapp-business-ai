@@ -1,4 +1,4 @@
-class RateLimiter {
+﻿class RateLimiter {
     constructor({ windowMs = 10000, max = 20 } = {}) {
         this.windowMs = windowMs;
         this.max = max;
@@ -24,3 +24,4 @@ class RateLimiter {
 }
 
 module.exports = RateLimiter;
+

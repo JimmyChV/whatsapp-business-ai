@@ -1,4 +1,4 @@
-const fs = require('fs');
+﻿const fs = require('fs');
 const path = require('path');
 const tenantIntegrationsService = require('../../tenant/services/integrations.service');
 const { buildAiPromptPackage } = require('./ai-prompt-context.service');
@@ -257,3 +257,4 @@ module.exports = {
     getChatSuggestion,
     askInternalCopilot
 };
+

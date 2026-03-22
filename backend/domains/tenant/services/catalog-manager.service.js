@@ -1,4 +1,4 @@
-const path = require('path');
+﻿const path = require('path');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -6,7 +6,7 @@ const {
     readTenantJsonFile,
     writeTenantJsonFile,
     queryPostgres
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 
 const CATALOG_FILE_NAME = 'catalogo.json';
 const LEGACY_CATALOG_PATH = path.join(__dirname, '../../../catalogo.json');
@@ -590,3 +590,4 @@ module.exports = {
     updateProduct,
     deleteProduct
 };
+

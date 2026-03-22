@@ -1,4 +1,4 @@
-const operationServices = require('./services');
+﻿const operationServices = require('./services');
 
 module.exports = {
     ...operationServices,
@@ -6,3 +6,4 @@ module.exports = {
     registerOperationsUtilityHttpRoutes: require('./routes/http-routes-utility').registerOperationsUtilityHttpRoutes,
     registerOperationsHealthHttpRoutes: require('./routes/http-routes-health').registerOperationsHealthHttpRoutes
 };
+

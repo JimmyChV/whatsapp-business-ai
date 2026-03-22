@@ -1,4 +1,4 @@
-const DEFAULT_PLAN = 'starter';
+﻿const DEFAULT_PLAN = 'starter';
 
 const DEFAULT_LIMITS = {
     starter: {
@@ -203,4 +203,5 @@ module.exports = {
     isFeatureEnabledForTenant,
     assertUsageWithinLimit
 };
+
 

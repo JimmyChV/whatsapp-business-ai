@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 
 function loadQuickRepliesManagerFresh() {
-    const runtimePath = require.resolve('../persistence_runtime');
+    const runtimePath = require.resolve('../config/persistence-runtime');
     const modulePath = require.resolve('../domains/tenant/services/quick-replies-manager.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
@@ -56,4 +56,5 @@ test('quick_replies_manager isolates tenant quick replies in file driver', async
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
+
 

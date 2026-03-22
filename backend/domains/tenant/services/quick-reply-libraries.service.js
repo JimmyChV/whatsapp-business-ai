@@ -1,4 +1,4 @@
-
+﻿
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -6,7 +6,7 @@ const {
     queryPostgres,
     readTenantJsonFile,
     writeTenantJsonFile
-} = require('../../../persistence_runtime');
+} = require('../../../config/persistence-runtime');
 
 const QUICK_REPLIES_FILE = 'quick_replies.json';
 const DEFAULT_LIBRARY_ID = 'QRL-SHARED';
@@ -709,5 +709,6 @@ module.exports = {
     normalizeModuleId,
     missingRelation
 };
+
 
 

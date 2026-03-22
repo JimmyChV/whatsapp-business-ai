@@ -1,4 +1,4 @@
-function registerTenantAssetsUploadHttpRoutes({
+﻿function registerTenantAssetsUploadHttpRoutes({
     app,
     accessPolicyService,
     hasPermission,
@@ -94,3 +94,4 @@ function registerTenantAssetsUploadHttpRoutes({
 module.exports = {
     registerTenantAssetsUploadHttpRoutes
 };
+

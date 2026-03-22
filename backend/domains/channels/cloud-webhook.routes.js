@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 
 const CLOUD_WEBHOOK_DEBUG = String(process.env.CLOUD_WEBHOOK_DEBUG || 'true').trim().toLowerCase() !== 'false';
 const WEBHOOK_CONFIG_CACHE_TTL_MS = Math.max(3000, Number(process.env.WEBHOOK_CONFIG_CACHE_TTL_MS || 15000));
@@ -302,3 +302,4 @@ module.exports = {
     invalidateWebhookCloudRegistryCache,
     registerCloudWebhookHttpRoutes
 };
+

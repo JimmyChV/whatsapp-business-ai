@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 
 const ENCRYPTION_PREFIX = 'encv1:';
 let cachedKey = null;
@@ -236,3 +236,4 @@ module.exports = {
     sanitizeModuleMetadataForPublic,
     resolveCloudConfigFromMetadata
 };
+

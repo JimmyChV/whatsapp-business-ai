@@ -1,4 +1,4 @@
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+﻿const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const EventEmitter = require('events');
 const fs = require('fs');
@@ -536,4 +536,5 @@ class WhatsAppClient extends EventEmitter {
 }
 
 module.exports = new WhatsAppClient();
+
 

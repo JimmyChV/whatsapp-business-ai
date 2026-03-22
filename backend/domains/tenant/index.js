@@ -1,4 +1,4 @@
-const tenantDomainServices = require('./services');
+﻿const tenantDomainServices = require('./services');
 
 module.exports = {
     tenantService: tenantDomainServices.tenantService,
@@ -22,6 +22,7 @@ module.exports = {
     registerTenantAssetsUploadHttpRoutes: require('./routes/http-routes-assets-upload').registerTenantAssetsUploadHttpRoutes,
     registerTenantRuntimePublicHttpRoutes: require('./routes/http-routes-runtime-public').registerTenantRuntimePublicHttpRoutes
 };
+
 
 
 

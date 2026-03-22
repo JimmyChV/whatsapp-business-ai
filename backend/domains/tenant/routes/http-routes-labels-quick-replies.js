@@ -1,4 +1,4 @@
-function registerTenantLabelsQuickRepliesHttpRoutes({
+﻿function registerTenantLabelsQuickRepliesHttpRoutes({
     app,
     accessPolicyService,
     tenantLabelService,
@@ -260,3 +260,4 @@ function registerTenantLabelsQuickRepliesHttpRoutes({
 module.exports = {
     registerTenantLabelsQuickRepliesHttpRoutes
 };
+

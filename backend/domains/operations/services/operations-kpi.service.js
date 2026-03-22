@@ -1,4 +1,4 @@
-const { DEFAULT_TENANT_ID, getStorageDriver, normalizeTenantId, queryPostgres } = require('../../../persistence_runtime');
+﻿const { DEFAULT_TENANT_ID, getStorageDriver, normalizeTenantId, queryPostgres } = require('../../../config/persistence-runtime');
 const conversationOpsService = require('./conversation-ops.service');
 const messageHistoryService = require('./message-history.service');
 
@@ -438,4 +438,5 @@ async function getOperationsKpis(tenantId = DEFAULT_TENANT_ID, options = {}) {
 module.exports = {
     getOperationsKpis
 };
+
 

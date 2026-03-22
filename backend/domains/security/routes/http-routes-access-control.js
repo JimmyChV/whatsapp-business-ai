@@ -1,4 +1,4 @@
-function registerSecurityAccessControlHttpRoutes({
+﻿function registerSecurityAccessControlHttpRoutes({
     app,
     saasControlService,
     aiUsageService,
@@ -208,3 +208,4 @@ function registerSecurityAccessControlHttpRoutes({
 module.exports = {
     registerSecurityAccessControlHttpRoutes
 };
+

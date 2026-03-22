@@ -1,4 +1,4 @@
-function hasTenantSettingsWriteAccess(req = {}, authService) {
+﻿function hasTenantSettingsWriteAccess(req = {}, authService) {
     if (!authService?.isAuthEnabled || !authService.isAuthEnabled()) return true;
     const authContext = req.authContext || { isAuthenticated: false, user: null };
     if (!authContext.isAuthenticated || !authContext.user) return false;
@@ -94,3 +94,4 @@ function registerTenantRuntimeSettingsHttpRoutes({
 module.exports = {
     registerTenantRuntimeSettingsHttpRoutes
 };
+

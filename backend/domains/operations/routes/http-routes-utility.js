@@ -1,4 +1,4 @@
-const { URL } = require('url');
+﻿const { URL } = require('url');
 
 const PROFILE_PHOTO_ALLOWED_HOST_SUFFIXES = ['whatsapp.net', 'fbcdn.net', 'fbsbx.com'];
 
@@ -457,3 +457,4 @@ function registerOperationsUtilityHttpRoutes({
 module.exports = {
     registerOperationsUtilityHttpRoutes
 };
+
