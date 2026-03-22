@@ -342,6 +342,27 @@ function toPublicTenant(tenant = null) {
         coverImageUrl: /^https?:\/\//i.test(coverImageUrl) ? coverImageUrl : null
     };
 }
+const {
+    sanitizeMembershipPayload,
+    sanitizeObjectPayload,
+    sanitizeUrlValue,
+    sanitizeTenantPayload,
+    sanitizeUserPayload,
+    hasOwnerRoleMembership,
+    sanitizeCatalogIdListPayload,
+    sanitizeAiAssistantIdPayload,
+    sanitizeWaModulePayload,
+    sanitizeAiAssistantPayload,
+    sanitizeQuickReplyLibraryPayload,
+    normalizeQuickReplyMediaAsset,
+    normalizeQuickReplyMediaAssets,
+    sanitizeQuickReplyItemPayload,
+    sanitizeTenantLabelPayload
+} = createTenantAdminPayloadSanitizers({
+    accessPolicyService,
+    quickReplyLibrariesService,
+    tenantLabelService
+});
 // Platform and public runtime routes
 registerOperationsHealthHttpRoutes({
     app,
@@ -623,28 +644,6 @@ function hasAnyAccessOverride(payload = {}) {
     const packs = Array.isArray(source.permissionPacks) ? source.permissionPacks : [];
     return grants.length > 0 || packs.length > 0;
 }
-
-const {
-    sanitizeMembershipPayload,
-    sanitizeObjectPayload,
-    sanitizeUrlValue,
-    sanitizeTenantPayload,
-    sanitizeUserPayload,
-    hasOwnerRoleMembership,
-    sanitizeCatalogIdListPayload,
-    sanitizeAiAssistantIdPayload,
-    sanitizeWaModulePayload,
-    sanitizeAiAssistantPayload,
-    sanitizeQuickReplyLibraryPayload,
-    normalizeQuickReplyMediaAsset,
-    normalizeQuickReplyMediaAssets,
-    sanitizeQuickReplyItemPayload,
-    sanitizeTenantLabelPayload
-} = createTenantAdminPayloadSanitizers({
-    accessPolicyService,
-    quickReplyLibrariesService,
-    tenantLabelService
-});
 
 function filterAdminOverviewByScope(req = {}, overview = {}) {
     if (req?.authContext?.user?.isSuperAdmin) return overview;
