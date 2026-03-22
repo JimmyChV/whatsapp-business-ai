@@ -51,7 +51,10 @@ No mass rewrite; all steps preserve current runtime behavior.
 - Introduce repositories for persistence access.
 - Added service wrapper layers in domains/operations/services and domains/security/services and updated domain indexes.
 - Moved security service implementations for access policy store and plan limits store/logic into domains/security/services and left root files as compatibility wrappers.
-System.Text.RegularExpressions.MatchEvaluator
+- Moved operations service implementations (assignment rules, assignment router, conversation ops, message history, KPI service) into `domains/operations/services` with root compatibility wrappers.
+- Moved quick replies manager implementation into `domains/tenant/services` (`quick-replies-manager.service`) and kept root compatibility wrapper.
+- Moved catalog manager implementation into `domains/tenant/services` (`catalog-manager.service`) and kept root compatibility wrapper.
+- Moved AI chat history implementation into `domains/operations/services` (`ai-chat-history.service`) and kept root compatibility wrapper.
 
 ### Stage E
 - Remove compatibility re-exports and legacy import paths.
@@ -62,8 +65,3 @@ System.Text.RegularExpressions.MatchEvaluator
   - `cd backend; npm.cmd test`
   - `cd frontend; npm.cmd run build`
 - Commit in small blocks.
-
-
-
-
-
