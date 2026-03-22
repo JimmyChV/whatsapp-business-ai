@@ -7,6 +7,7 @@ Purpose:
 Structure:
 - `routes/*`: HTTP route registrars for channel endpoints/webhooks.
 - `services/*`: runtime channel services (`wa-provider`, `socket-manager`, `media-manager`).
+- `helpers/*`: pure utilities shared by channel services (scope/phone normalization, chat identity).
 - `index.js`: domain barrel export (`services` + `routes`).
 
 Rules:
