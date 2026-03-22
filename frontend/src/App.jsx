@@ -12,6 +12,7 @@ import useChatPaginationRequester from './features/chat/hooks/useChatPaginationR
 import useWaModuleSocketEvents from './features/chat/hooks/useWaModuleSocketEvents';
 import useWorkspaceNavigation from './features/chat/hooks/useWorkspaceNavigation';
 import useTransportSelectionActions from './features/chat/hooks/useTransportSelectionActions';
+import useChatMessageActions from './features/chat/hooks/useChatMessageActions';
 import { readWaLaunchParams } from './features/chat/helpers/waLaunchParams';
 import { normalizeQuickRepliesSocketPayload } from './features/chat/helpers/quickRepliesSocket.helpers';
 import { resolveScopedCatalogSelection } from './features/chat/helpers/catalogScope.helpers';
@@ -1401,110 +1402,36 @@ function App() {
     socket.emit('get_contact_info', resolvedChatId);
     setChats((prev) => prev.map((c) => chatIdsReferSameScope(String(c?.id || ''), resolvedChatId) ? { ...c, unreadCount: 0 } : c));
   };
-  const handleExitActiveChat = () => {
-    activeChatIdRef.current = null;
-    setActiveChatId(null);
-    prevMessagesMetaRef.current = { count: 0, lastId: '' };
-    suppressSmoothScrollUntilRef.current = 0;
-    setMessages([]);
-    setEditingMessage(null);
-    setReplyingMessage(null);
-    setShowClientProfile(false);
-    setClientContact(null);
-    setPendingOrderCartLoad(null);
-    setQuickReplyDraft(null);
-    setInputText('');
-    removeAttachment();
-  };
-
-  const handleSendMessage = (e) => {
-    e?.preventDefault();
-    const text = inputText.trim();
-
-    if (editingMessage?.id) {
-      if (!waCapabilities.messageEdit) {
-        alert('La edicion de mensajes no esta disponible en esta sesion de WhatsApp.');
-        return;
-      }
-      if (attachment) {
-        alert('No puedes adjuntar archivos mientras editas un mensaje.');
-        return;
-      }
-      if (!text) return;
-
-      const original = String(editingMessage.originalBody || '').trim();
-      if (text === original) {
-        setEditingMessage(null);
-        setInputText('');
-        return;
-      }
-
-      const activeId = String(activeChatIdRef.current || '');
-      if (!activeId) return;
-      socket.emit('edit_message', { chatId: activeId, messageId: String(editingMessage.id), body: text });
-      setEditingMessage(null);
-      setInputText('');
-      return;
-    }
-
-    if (!text && !attachment && !quickReplyDraft) return;
-
-    // Command: /ayudar
-    if (text === '/ayudar') {
-      requestAiSuggestion();
-      setInputText('');
-      return;
-    }
-
-    const quotedMessageId = String(replyingMessage?.id || '').trim() || null;
-
-    const activeChatForSend = chatsRef.current.find((c) => String(c?.id || '') === String(activeChatId || ''));
-    const activeChatPhone = normalizeDigits(activeChatForSend?.phone || '');
-    const toPhone = activeChatPhone || null;
-
-
-    const draftQuickReply = normalizeQuickReplyDraft(quickReplyDraft);
-    if (draftQuickReply && !attachment) {
-      const outboundText = String(text || draftQuickReply.text || '').trim();
-      const draftMediaAssets = Array.isArray(draftQuickReply.mediaAssets) ? draftQuickReply.mediaAssets : [];
-      socket.emit('send_quick_reply', {
-        quickReplyId: draftQuickReply.id || undefined,
-        quickReply: {
-          id: draftQuickReply.id || undefined,
-          label: draftQuickReply.label || undefined,
-          text: outboundText,
-          mediaAssets: draftMediaAssets,
-          mediaUrl: String(draftQuickReply.mediaUrl || draftMediaAssets[0]?.url || '').trim() || null,
-          mediaMimeType: String(draftQuickReply.mediaMimeType || draftMediaAssets[0]?.mimeType || '').trim().toLowerCase() || null,
-          mediaFileName: String(draftQuickReply.mediaFileName || draftMediaAssets[0]?.fileName || '').trim() || null
-        },
-        to: activeChatId,
-        toPhone,
-        quotedMessageId
-      });
-      setQuickReplyDraft(null);
-      setInputText('');
-      setReplyingMessage(null);
-      return;
-    }
-
-    if (attachment) {
-      socket.emit('send_media_message', {
-        to: activeChatId,
-        toPhone,
-        body: inputText,
-        mediaData: attachment.data,
-        mimetype: attachment.mimetype,
-        filename: attachment.filename,
-        quotedMessageId
-      });
-      removeAttachment();
-    } else {
-      socket.emit('send_message', { to: activeChatId, toPhone, body: inputText, quotedMessageId });
-    }
-    setInputText('');
-    setReplyingMessage(null);
-  };
+  const {
+    handleExitActiveChat,
+    handleSendMessage
+  } = useChatMessageActions({
+    socket,
+    activeChatId,
+    activeChatIdRef,
+    chatsRef,
+    inputText,
+    editingMessage,
+    waCapabilities,
+    attachment,
+    quickReplyDraft,
+    replyingMessage,
+    requestAiSuggestion,
+    normalizeDigits,
+    normalizeQuickReplyDraft,
+    prevMessagesMetaRef,
+    suppressSmoothScrollUntilRef,
+    setActiveChatId,
+    setMessages,
+    setEditingMessage,
+    setReplyingMessage,
+    setShowClientProfile,
+    setClientContact,
+    setPendingOrderCartLoad,
+    setQuickReplyDraft,
+    setInputText,
+    removeAttachment
+  });
 
   const handleLogoutWhatsapp = () => {
     if (!window.confirm('Cerrar sesion de WhatsApp en este equipo?')) return;
@@ -1831,7 +1758,7 @@ function App() {
     return () => window.removeEventListener('keydown', onGlobalKeyDown);
   }, []);
 
-  const requestAiSuggestion = (customPromptArg) => {
+  function requestAiSuggestion(customPromptArg) {
     if (!activeChatId) return;
     const customPrompt = typeof customPromptArg === 'string' ? customPromptArg : null;
     setAiSuggestion('');
