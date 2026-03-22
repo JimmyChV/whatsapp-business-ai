@@ -7,6 +7,7 @@ Structure:
 - `routes/*`: auth/access HTTP route registrars.
 - `services/*`: auth/session/access/plan/audit/email services.
 - `helpers/*`: low-level security helpers.
+  - `request-access.helpers.js`: request-scoped authorization and tenant-scope access evaluators shared by server route wiring.
 - `index.js`: domain barrel export.
 
 Rules:

@@ -8,6 +8,7 @@ Structure:
 - `routes/*`: operational HTTP APIs.
 - `services/*`: orchestration services (assignment, KPI, AI context/history).
 - `helpers/*`: pure helpers/schemas for operations parsing/validation.
+  - `request-ops.helpers.js`: request-id and ops-token authorization helpers used by HTTP bootstrap.
 - `index.js`: domain barrel export.
 
 Rules:
