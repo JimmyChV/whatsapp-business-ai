@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { isDeepEqual, setIfChanged } from './formSync.helpers';
+import { isDeepEqual, setIfChanged } from '../helpers/formSync.helpers';
 
 
 export default function useSaasPanelFormSyncEffects({

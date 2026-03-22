@@ -9,3 +9,4 @@ export * from './rbac.helpers';
 
 export * from './moduleQuickReplies.helpers';
 
+export * from './formSync.helpers';
