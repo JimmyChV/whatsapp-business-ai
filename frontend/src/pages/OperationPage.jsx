@@ -1,7 +1,4 @@
-import Sidebar from '../features/chat/components/Sidebar';
-import BusinessSidebar, { ClientProfilePanel } from '../features/chat/components/BusinessSidebar';
-import ChatWindow from '../features/chat/components/ChatWindow';
-import NewChatModal from '../features/chat/components/NewChatModal';
+import { Sidebar, BusinessSidebar, ClientProfilePanel, ChatWindow, NewChatModal } from '../features/chat/components';
 import { sanitizeDisplayText } from '../features/chat/core';
 
 export default function OperationPage({

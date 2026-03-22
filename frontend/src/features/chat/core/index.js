@@ -5,6 +5,7 @@ export { useMessagesAutoScroll } from './hooks/useMessagesAutoScroll';
 export { useChatRuntimeSyncEffects } from './hooks/useChatRuntimeSyncEffects';
 export { default as useScopedBusinessRequests } from './hooks/useScopedBusinessRequests';
 export { useSocketConnectionAuthEffect } from './hooks/useSocketConnectionAuthEffect';
+export { default as useSocketConnectionRuntimeEvents } from './hooks/useSocketConnectionRuntimeEvents';
 export { default as useChatPaginationRequester } from './hooks/useChatPaginationRequester';
 export { default as useWaModuleSocketEvents } from './hooks/useWaModuleSocketEvents';
 export { default as useWorkspaceNavigation } from './hooks/useWorkspaceNavigation';
