@@ -1,1 +1,1 @@
-export * from './aiSocket.service';
+export * from '../../../features/chat/business/services';

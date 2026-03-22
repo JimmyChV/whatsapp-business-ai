@@ -1,2 +1,1 @@
-export { default as BusinessCatalogTab } from './BusinessCatalogTab';
-export * from './BusinessProfiles';
+export * from '../../../features/chat/business/sections';
