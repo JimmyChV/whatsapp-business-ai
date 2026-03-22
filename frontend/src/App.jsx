@@ -1,7 +1,7 @@
-import { lazy, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { lazy, useState, useEffect } from 'react';
 
 import { API_URL, CHAT_PAGE_SIZE, SOCKET_AUTH_TOKEN, TRANSPORT_STORAGE_KEY } from './config/runtime';
-import { loadStoredSaasSession, persistSaasSession } from './features/auth/helpers/saasSessionStorage';
+import { persistSaasSession } from './features/auth/helpers/saasSessionStorage';
 import {
   createSocketClient,
   useNewChatDialog,
@@ -26,7 +26,7 @@ import {
   useWorkspaceResetOnTenantChange,
   useAppDerivedChatState,
   useGlobalEscapeToCloseChat,
-  readWaLaunchParams,
+  useOperationWorkspaceState,
   normalizeQuickRepliesSocketPayload,
   resolveScopedCatalogSelection,
   requestAiSuggestionForChat,
@@ -81,6 +81,8 @@ import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHel
 import SaasLoginScreen from './features/auth/components/SaasLoginScreen';
 import OperationPage from './pages/OperationPage';
 import { useSaasPanelVisibilityController, useSaasTenantScopeContext } from './features/saas/hooks';
+import { buildOperationPageProps } from './app/helpers/operationPageProps';
+import { useAppSessionTransportState } from './app/hooks';
 
 import './index.css';
 
@@ -89,126 +91,162 @@ const socket = createSocketClient(API_URL, SOCKET_AUTH_TOKEN);
 
 
 function App() {
-  // --------------------------------------------------------------
-  const [isConnected, setIsConnected] = useState(false);
-  const [qrCode, setQrCode] = useState('');
-  const [isClientReady, setIsClientReady] = useState(false);
-  const [selectedTransport, setSelectedTransport] = useState('');
-  const [waRuntime, setWaRuntime] = useState({ requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false, cloudReady: false, availableTransports: ['cloud'] });
-  const [transportError, setTransportError] = useState('');
-  const [isSwitchingTransport, setIsSwitchingTransport] = useState(false);
+  const {
+    isConnected,
+    setIsConnected,
+    qrCode,
+    setQrCode,
+    isClientReady,
+    setIsClientReady,
+    selectedTransport,
+    setSelectedTransport,
+    waRuntime,
+    setWaRuntime,
+    transportError,
+    setTransportError,
+    isSwitchingTransport,
+    setIsSwitchingTransport,
+    saasRuntime,
+    setSaasRuntime,
+    saasSession,
+    setSaasSession,
+    saasAuthBusy,
+    setSaasAuthBusy,
+    saasAuthError,
+    setSaasAuthError,
+    tenantSwitchBusy,
+    setTenantSwitchBusy,
+    tenantSwitchError,
+    setTenantSwitchError,
+    showSaasAdminPanel,
+    setShowSaasAdminPanel,
+    loginEmail,
+    setLoginEmail,
+    loginPassword,
+    setLoginPassword,
+    showLoginPassword,
+    setShowLoginPassword,
+    saasAuthNotice,
+    setSaasAuthNotice,
+    setForceOperationLaunchBypass,
+    forceOperationLaunch,
+    requestedWaModuleFromUrl,
+    requestedWaTenantFromUrl,
+    requestedWaSectionFromUrl,
+    requestedLaunchSource,
+    tenantScopeId
+  } = useAppSessionTransportState();
 
-  const [saasRuntime, setSaasRuntime] = useState({
-    loaded: false,
-    authEnabled: false,
-    tenant: null,
-    tenants: [],
-    authContext: { enabled: false, isAuthenticated: false, user: null }
+  const {
+    chats,
+    setChats,
+    chatsTotal,
+    setChatsTotal,
+    chatsHasMore,
+    setChatsHasMore,
+    isLoadingMoreChats,
+    setIsLoadingMoreChats,
+    chatSearchQuery,
+    setChatSearchQuery,
+    chatFilters,
+    setChatFilters,
+    activeChatId,
+    setActiveChatId,
+    messages,
+    setMessages,
+    inputText,
+    setInputText,
+    editingMessage,
+    setEditingMessage,
+    replyingMessage,
+    setReplyingMessage,
+    myProfile,
+    setMyProfile,
+    showClientProfile,
+    setShowClientProfile,
+    clientContact,
+    setClientContact,
+    openCompanyProfileToken,
+    setOpenCompanyProfileToken,
+    attachment,
+    setAttachment,
+    attachmentPreview,
+    setAttachmentPreview,
+    fileInputRef,
+    aiSuggestion,
+    setAiSuggestion,
+    isAiLoading,
+    setIsAiLoading,
+    aiPrompt,
+    setAiPrompt,
+    isCopilotMode,
+    setIsCopilotMode,
+    businessData,
+    setBusinessData,
+    activeCartSnapshot,
+    labelDefinitions,
+    setLabelDefinitions,
+    quickReplies,
+    setQuickReplies,
+    quickReplyDraft,
+    setQuickReplyDraft,
+    waModules,
+    setWaModules,
+    selectedWaModule,
+    setSelectedWaModule,
+    selectedCatalogModuleId,
+    setSelectedCatalogModuleId,
+    selectedCatalogId,
+    setSelectedCatalogId,
+    waModuleError,
+    setWaModuleError,
+    waCapabilities,
+    setWaCapabilities,
+    toasts,
+    setToasts,
+    pendingOrderCartLoad,
+    setPendingOrderCartLoad,
+    handleCartSnapshotChange,
+    isDragOver,
+    setIsDragOver,
+    messagesEndRef,
+    clientProfilePanelRef,
+    activeChatIdRef,
+    chatsRef,
+    chatSearchRef,
+    chatFiltersRef,
+    chatPagingRef,
+    shouldInstantScrollRef,
+    prevMessagesMetaRef,
+    suppressSmoothScrollUntilRef,
+    selectedTransportRef,
+    selectedWaModuleRef,
+    waModulesRef,
+    selectedCatalogModuleIdRef,
+    selectedCatalogIdRef,
+    saasSessionRef,
+    saasRuntimeRef,
+    forceOperationLaunchRef,
+    canManageSaasRef,
+    requestedWaModuleFromUrlRef,
+    requestedWaTenantFromUrlRef,
+    launchTenantAppliedRef,
+    saasAdminAutoOpenRef,
+    tenantScopeRef,
+    businessDataRequestSeqRef,
+    businessDataResponseSeqRef,
+    businessDataScopeCacheRef,
+    businessDataRequestDebounceRef,
+    quickRepliesRequestRef
+  } = useOperationWorkspaceState({
+    selectedTransport,
+    saasSession,
+    saasRuntime,
+    forceOperationLaunch,
+    requestedWaModuleFromUrl,
+    requestedWaTenantFromUrl,
+    tenantScopeId
   });
-  const [saasSession, setSaasSession] = useState(() => loadStoredSaasSession());
-  const [saasAuthBusy, setSaasAuthBusy] = useState(false);
-  const [saasAuthError, setSaasAuthError] = useState('');
-  const [tenantSwitchBusy, setTenantSwitchBusy] = useState(false);
-  const [tenantSwitchError, setTenantSwitchError] = useState('');
-  const [showSaasAdminPanel, setShowSaasAdminPanel] = useState(false);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [showLoginPassword, setShowLoginPassword] = useState(false);
-  const [saasAuthNotice, setSaasAuthNotice] = useState('');
-  const [forceOperationLaunchBypass, setForceOperationLaunchBypass] = useState(false);
-  const waLaunchParams = useMemo(() => readWaLaunchParams(window.location.search || ''), []);
-  const forceOperationLaunch = waLaunchParams.forceOperationLaunch && !forceOperationLaunchBypass;
-  const requestedWaModuleFromUrl = waLaunchParams.requestedWaModuleId;
-  const requestedWaTenantFromUrl = waLaunchParams.requestedWaTenantId;
-  const requestedWaSectionFromUrl = waLaunchParams.requestedWaSectionId;
-  const requestedLaunchSource = waLaunchParams.requestedLaunchSource;
-  const tenantScopeId = String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || 'default').trim() || 'default';
-
-  // --------------------------------------------------------------
-  const [chats, setChats] = useState([]);
-  const [chatsTotal, setChatsTotal] = useState(0);
-  const [chatsHasMore, setChatsHasMore] = useState(true);
-  const [isLoadingMoreChats, setIsLoadingMoreChats] = useState(false);
-  const [chatSearchQuery, setChatSearchQuery] = useState('');
-  const [chatFilters, setChatFilters] = useState({ labelTokens: [], unreadOnly: false, unlabeledOnly: false, contactMode: 'all', archivedMode: 'all', pinnedMode: 'all' });
-  const [activeChatId, setActiveChatId] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [inputText, setInputText] = useState('');
-  const [editingMessage, setEditingMessage] = useState(null);
-  const [replyingMessage, setReplyingMessage] = useState(null);
-
-  // --------------------------------------------------------------
-  const [myProfile, setMyProfile] = useState(null);
-
-  // --------------------------------------------------------------
-  const [showClientProfile, setShowClientProfile] = useState(false);
-  const [clientContact, setClientContact] = useState(null);
-  const [openCompanyProfileToken, setOpenCompanyProfileToken] = useState(0);
-
-  // --------------------------------------------------------------
-  const [attachment, setAttachment] = useState(null);
-  const [attachmentPreview, setAttachmentPreview] = useState(null);
-  const fileInputRef = useRef(null);
-
-  // --------------------------------------------------------------
-  const [aiSuggestion, setAiSuggestion] = useState('');
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [isCopilotMode, setIsCopilotMode] = useState(false);
-
-  // --------------------------------------------------------------
-  const [businessData, setBusinessData] = useState({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
-  const [activeCartSnapshot, setActiveCartSnapshot] = useState(null);
-  const [labelDefinitions, setLabelDefinitions] = useState([]);
-  const [quickReplies, setQuickReplies] = useState([]);
-  const [quickReplyDraft, setQuickReplyDraft] = useState(null);
-  const [waModules, setWaModules] = useState([]);
-  const [selectedWaModule, setSelectedWaModule] = useState(null);
-  const [selectedCatalogModuleId, setSelectedCatalogModuleId] = useState('');
-  const [selectedCatalogId, setSelectedCatalogId] = useState('');
-  const [waModuleError, setWaModuleError] = useState('');
-  const [waCapabilities, setWaCapabilities] = useState({ messageEdit: true, messageEditSync: true, messageForward: true, messageDelete: true, messageReply: true, quickReplies: false, quickRepliesRead: false, quickRepliesWrite: false });
-  const [toasts, setToasts] = useState([]);
-  const [pendingOrderCartLoad, setPendingOrderCartLoad] = useState(null);
-  const activeCartSnapshotSignatureRef = useRef('');
-  const handleCartSnapshotChange = useCallback((snapshot) => {
-    const normalized = snapshot && typeof snapshot === 'object' ? snapshot : null;
-    const signature = normalized ? JSON.stringify(normalized) : '';
-    if (activeCartSnapshotSignatureRef.current === signature) return;
-    activeCartSnapshotSignatureRef.current = signature;
-    setActiveCartSnapshot(normalized);
-  }, []);
-  // --------------------------------------------------------------
-  const [isDragOver, setIsDragOver] = useState(false);
-  const messagesEndRef = useRef(null);
-  const clientProfilePanelRef = useRef(null);
-  const activeChatIdRef = useRef(null);
-  const chatsRef = useRef([]);
-  const chatSearchRef = useRef('');
-  const chatFiltersRef = useRef(normalizeChatFilters({ labelTokens: [], unreadOnly: false, unlabeledOnly: false, contactMode: 'all', archivedMode: 'all', pinnedMode: 'all' }));
-  const chatPagingRef = useRef({ offset: 0, hasMore: true, loading: false });
-  const shouldInstantScrollRef = useRef(false);
-  const prevMessagesMetaRef = useRef({ count: 0, lastId: '' });
-  const suppressSmoothScrollUntilRef = useRef(0);
-  const selectedTransportRef = useRef(selectedTransport);
-  const selectedWaModuleRef = useRef(selectedWaModule);
-  const waModulesRef = useRef(waModules);
-  const selectedCatalogModuleIdRef = useRef(selectedCatalogModuleId);
-  const selectedCatalogIdRef = useRef(selectedCatalogId);
-  const saasSessionRef = useRef(saasSession);
-  const saasRuntimeRef = useRef(saasRuntime);
-  const forceOperationLaunchRef = useRef(forceOperationLaunch);
-  const canManageSaasRef = useRef(false);
-  const requestedWaModuleFromUrlRef = useRef(requestedWaModuleFromUrl);
-  const requestedWaTenantFromUrlRef = useRef(requestedWaTenantFromUrl);
-  const launchTenantAppliedRef = useRef('');
-  const saasAdminAutoOpenRef = useRef('');
-  const tenantScopeRef = useRef(tenantScopeId);
-  const businessDataRequestSeqRef = useRef(0);
-  const businessDataResponseSeqRef = useRef(0);
-  const businessDataScopeCacheRef = useRef(new Map());
-  const businessDataRequestDebounceRef = useRef({ key: '', at: 0 });
-  const quickRepliesRequestRef = useRef({ key: '', at: 0 });
 
   // --------------------------------------------------------------
   // Notifications
@@ -882,6 +920,104 @@ function App() {
     launchTenantAppliedRef,
   });
 
+  const operationPageProps = buildOperationPageProps({
+    forceOperationLaunch,
+    socket,
+    fileInputRef,
+    handleFileChange,
+    chats,
+    activeChatId,
+    handleChatSelect,
+    myProfile,
+    businessData,
+    handleLogoutWhatsapp,
+    handleRefreshChats,
+    handleStartNewChat,
+    labelDefinitions,
+    handleCreateLabel,
+    handleLoadMoreChats,
+    chatsHasMore,
+    isLoadingMoreChats,
+    chatsTotal,
+    chatSearchQuery,
+    handleChatSearchChange,
+    chatFilters,
+    handleChatFiltersChange,
+    handleOpenCompanyProfile,
+    saasAuthEnabled,
+    availableTenantOptions,
+    tenantScopeId,
+    tenantSwitchError,
+    handleSaasLogout,
+    canManageSaas,
+    handleOpenSaasAdminWorkspace,
+    availableWaModules,
+    clientContact,
+    messages,
+    messagesEndRef,
+    isDragOver,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    showClientProfile,
+    setShowClientProfile,
+    inputText,
+    setInputText,
+    handleSendMessage,
+    attachment,
+    attachmentPreview,
+    removeAttachment,
+    isAiLoading,
+    requestAiSuggestion,
+    aiPrompt,
+    setAiPrompt,
+    isCopilotMode,
+    setIsCopilotMode,
+    handleToggleChatLabel,
+    handleToggleChatPinned,
+    handleEditMessage,
+    waCapabilities,
+    handleReplyMessage,
+    handleForwardMessage,
+    handleDeleteMessage,
+    quickReplies,
+    handleSendQuickReply,
+    quickReplyDraft,
+    setQuickReplyDraft,
+    handleLoadOrderToCart,
+    handleCancelEditMessage,
+    handleCancelReplyMessage,
+    editingMessage,
+    replyingMessage,
+    buildApiHeaders,
+    clientProfilePanelRef,
+    toasts,
+    setToasts,
+    pendingOrderCartLoad,
+    openCompanyProfileToken,
+    selectedCatalogModuleId: activeCatalogModuleId,
+    activeCatalogId,
+    selectedWaModule,
+    handleSelectCatalogModule,
+    handleSelectCatalog,
+    handleUploadCatalogImage,
+    handleCartSnapshotChange,
+    newChatDialog,
+    setNewChatDialog,
+    newChatAvailableModules,
+    handleConfirmNewChat,
+    handleCancelNewChatDialog,
+    showSaasAdminPanel,
+    setShowSaasAdminPanel,
+    handleOpenWhatsAppOperation,
+    saasUserRole,
+    saasSession,
+    requestedWaTenantFromUrl,
+    requestedLaunchSource,
+    requestedWaSectionFromUrl,
+    SaasPanelComponent: SaasPanelPage
+  });
+
   if (!saasRuntime?.loaded) {
     return <StatusScreen message='Inicializando plataforma SaaS...' />;
   }
@@ -984,103 +1120,7 @@ function App() {
   // Render: Main App
   // --------------------------------------------------------------
   return (
-    <OperationPage
-      forceOperationLaunch={forceOperationLaunch}
-      socket={socket}
-      fileInputRef={fileInputRef}
-      handleFileChange={handleFileChange}
-      chats={chats}
-      activeChatId={activeChatId}
-      handleChatSelect={handleChatSelect}
-      myProfile={myProfile}
-      businessData={businessData}
-      handleLogoutWhatsapp={handleLogoutWhatsapp}
-      handleRefreshChats={handleRefreshChats}
-      handleStartNewChat={handleStartNewChat}
-      labelDefinitions={labelDefinitions}
-      handleCreateLabel={handleCreateLabel}
-      handleLoadMoreChats={handleLoadMoreChats}
-      chatsHasMore={chatsHasMore}
-      isLoadingMoreChats={isLoadingMoreChats}
-      chatsTotal={chatsTotal}
-      chatSearchQuery={chatSearchQuery}
-      handleChatSearchChange={handleChatSearchChange}
-      chatFilters={chatFilters}
-      handleChatFiltersChange={handleChatFiltersChange}
-      handleOpenCompanyProfile={handleOpenCompanyProfile}
-      saasAuthEnabled={saasAuthEnabled}
-      availableTenantOptions={availableTenantOptions}
-      tenantScopeId={tenantScopeId}
-      tenantSwitchError={tenantSwitchError}
-      handleSaasLogout={handleSaasLogout}
-      canManageSaas={canManageSaas}
-      handleOpenSaasAdminWorkspace={handleOpenSaasAdminWorkspace}
-      availableWaModules={availableWaModules}
-      clientContact={clientContact}
-      messages={messages}
-      messagesEndRef={messagesEndRef}
-      isDragOver={isDragOver}
-      handleDragOver={handleDragOver}
-      handleDragLeave={handleDragLeave}
-      handleDrop={handleDrop}
-      showClientProfile={showClientProfile}
-      setShowClientProfile={setShowClientProfile}
-      inputText={inputText}
-      setInputText={setInputText}
-      handleSendMessage={handleSendMessage}
-      attachment={attachment}
-      attachmentPreview={attachmentPreview}
-      removeAttachment={removeAttachment}
-      isAiLoading={isAiLoading}
-      requestAiSuggestion={requestAiSuggestion}
-      aiPrompt={aiPrompt}
-      setAiPrompt={setAiPrompt}
-      isCopilotMode={isCopilotMode}
-      setIsCopilotMode={setIsCopilotMode}
-      handleToggleChatLabel={handleToggleChatLabel}
-      handleToggleChatPinned={handleToggleChatPinned}
-      handleEditMessage={handleEditMessage}
-      waCapabilities={waCapabilities}
-      handleReplyMessage={handleReplyMessage}
-      handleForwardMessage={handleForwardMessage}
-      handleDeleteMessage={handleDeleteMessage}
-      quickReplies={quickReplies}
-      handleSendQuickReply={handleSendQuickReply}
-      quickReplyDraft={quickReplyDraft}
-      setQuickReplyDraft={setQuickReplyDraft}
-      handleLoadOrderToCart={handleLoadOrderToCart}
-      handleCancelEditMessage={handleCancelEditMessage}
-      handleCancelReplyMessage={handleCancelReplyMessage}
-      editingMessage={editingMessage}
-      replyingMessage={replyingMessage}
-      buildApiHeaders={buildApiHeaders}
-      clientProfilePanelRef={clientProfilePanelRef}
-      toasts={toasts}
-      setToasts={setToasts}
-      pendingOrderCartLoad={pendingOrderCartLoad}
-      openCompanyProfileToken={openCompanyProfileToken}
-      selectedCatalogModuleId={activeCatalogModuleId}
-      activeCatalogId={activeCatalogId}
-      selectedWaModule={selectedWaModule}
-      handleSelectCatalogModule={handleSelectCatalogModule}
-      handleSelectCatalog={handleSelectCatalog}
-      handleUploadCatalogImage={handleUploadCatalogImage}
-      handleCartSnapshotChange={handleCartSnapshotChange}
-      newChatDialog={newChatDialog}
-      setNewChatDialog={setNewChatDialog}
-      newChatAvailableModules={newChatAvailableModules}
-      handleConfirmNewChat={handleConfirmNewChat}
-      handleCancelNewChatDialog={handleCancelNewChatDialog}
-      showSaasAdminPanel={showSaasAdminPanel}
-      setShowSaasAdminPanel={setShowSaasAdminPanel}
-      handleOpenWhatsAppOperation={handleOpenWhatsAppOperation}
-      saasUserRole={saasUserRole}
-      saasSession={saasSession}
-      requestedWaTenantFromUrl={requestedWaTenantFromUrl}
-      requestedLaunchSource={requestedLaunchSource}
-      requestedWaSectionFromUrl={requestedWaSectionFromUrl}
-      SaasPanelComponent={SaasPanelPage}
-    />
+    <OperationPage {...operationPageProps} />
     );
 }
 

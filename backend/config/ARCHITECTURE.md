@@ -21,6 +21,7 @@ Latest canonicalized modules:
 - operations: `ai.service`, `ai-prompt-context.service`, `ops-telemetry.service`.
 - channels: `routes/http-routes-cloud-webhook.js`, `socket-manager.service`, `media-manager.service`.
 - tenant: `tenant-control.service`, `woocommerce.service`.
+- tenant helpers: `helpers/admin-payload-sanitizers.js` for admin/CRM payload validation reused by route registration.
 - security: `email.service`, `meta-config-crypto.service`, `helpers/security-utils`.
 
 Current root JS surface:
@@ -28,3 +29,4 @@ Current root JS surface:
 - `config/persistence-runtime.js` (storage runtime abstraction)
 - `config/rate-limiter.js` (shared limiter utility)
 - `config/logger.js` (shared logger utility)
+- `config/runtime-flags.js` (env/runtime flag normalization + CORS checker factory)

@@ -13,6 +13,7 @@ Rules:
 1. Channel/runtime logic lives in `core/*`.
 2. Catalog/profile/copilot-specific logic lives in `business/*`.
 3. Keep render components slim; move transformations to helpers/hooks.
+4. Workspace app state for operation chat is centralized in `core/hooks/useOperationWorkspaceState.js`.
 
 Sub-documents:
 - `core/ARCHITECTURE.md`
