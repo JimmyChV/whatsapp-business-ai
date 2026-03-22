@@ -8,6 +8,7 @@ Purpose:
   - AI commercial context.
 
 Contains:
+- `components/*`: business-facing composite components (`BusinessSidebar`, `ClientProfilePanel`).
 - `sections/*`: business UI sections (`BusinessCatalogTab`, `BusinessProfiles`).
 - `hooks/*`: business state synchronization hooks.
 - `helpers/*`: commercial pure helpers (catalog, cart, business normalization).

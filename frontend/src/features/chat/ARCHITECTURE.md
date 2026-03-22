@@ -1,10 +1,11 @@
 ﻿# Chat Feature Architecture
 
 Canonical layout:
-- `components/`: core chat UI (sidebar, window, input, modals).
+- `components/`: core chat UI (sidebar, window, input, modals) + compatibility wrappers.
 - `core/hooks/`: runtime hooks (socket, pagination, actions, sync).
 - `core/helpers/`: generic chat utilities.
 - `core/services/`: chat transport/service adapters.
+- `business/components/`: business composite UI (`BusinessSidebar`, profile panel).
 - `business/sections/`: right-panel business views (catalogo, perfiles).
 - `business/hooks/`: business context state/effects.
 - `business/helpers/`: business pure helpers.
