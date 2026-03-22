@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo } from 'react';
 
 import * as saasAdminPanelHelpers from '../helpers';
-import SaasPanelHeader from './panel/SaasPanelHeader';
-import SaasPanelNav from './panel/SaasPanelNav';
-import SaasPanelTenantPicker from './panel/SaasPanelTenantPicker';
+import SaasPanelFrame from './panel/SaasPanelFrame';
+import SaasPanelNoAccess from './panel/SaasPanelNoAccess';
 
 import {
     AiAssistantsSection,
@@ -1247,84 +1246,57 @@ export default function SaasAdminPanel({
 
     if (!canManageSaas) {
         return (
-            <div className={embedded ? "saas-admin-overlay saas-admin-overlay--embedded" : "saas-admin-overlay"} onClick={() => { if (!embedded) onClose?.(); }}>
-                <div className={embedded ? "saas-admin-panel saas-admin-panel--embedded" : "saas-admin-panel"} onClick={(event) => event.stopPropagation()}>
-                    <SaasPanelHeader
-                        showHeader={showHeader}
-                        embedded={embedded}
-                        title="Panel SaaS"
-                        canOpenOperation={canOpenOperation}
-                        isBusy={busy}
-                        onOpenOperation={handleOpenOperation}
-                        currentUserAvatarUrl={currentUserAvatarUrl}
-                        currentUserDisplayName={currentUserDisplayName}
-                        currentUserRoleLabel={currentUserRoleLabel}
-                        buildInitials={buildInitials}
-                        closeLabel={closeLabel}
-                        onClose={() => { if (typeof onLogout === "function") { onLogout(); return; } onClose?.(); }}
-                    />
-                    <p>No tienes permisos para administrar empresas y usuarios.</p>
-                </div>
-            </div>
+            <SaasPanelNoAccess
+                embedded={embedded}
+                showHeader={showHeader}
+                canOpenOperation={canOpenOperation}
+                isBusy={busy}
+                onOpenOperation={handleOpenOperation}
+                currentUserAvatarUrl={currentUserAvatarUrl}
+                currentUserDisplayName={currentUserDisplayName}
+                currentUserRoleLabel={currentUserRoleLabel}
+                buildInitials={buildInitials}
+                closeLabel={closeLabel}
+                onClose={() => { if (typeof onLogout === "function") { onLogout(); return; } onClose?.(); }}
+            />
         );
     }
 
     return (
-        <div className={embedded ? "saas-admin-overlay saas-admin-overlay--embedded" : "saas-admin-overlay"} onClick={() => { if (!embedded) onClose?.(); }}>
-            <div className={embedded ? "saas-admin-panel saas-admin-panel--embedded" : "saas-admin-panel"} onClick={(event) => event.stopPropagation()}>
-                <SaasPanelHeader
-                    showHeader={showHeader}
-                    embedded={embedded}
-                    title="Control SaaS"
-                    subtitle={`Empresa activa: ${activeTenantLabel}`}
-                    canOpenOperation={canOpenOperation}
-                    isBusy={busy}
-                    onOpenOperation={handleOpenOperation}
-                    currentUserAvatarUrl={currentUserAvatarUrl}
-                    currentUserDisplayName={currentUserDisplayName}
-                    currentUserRoleLabel={currentUserRoleLabel}
-                    buildInitials={buildInitials}
-                    closeLabel={closeLabel}
-                    onClose={() => { if (typeof onLogout === "function") { onLogout(); return; } onClose?.(); }}
-                />
-
-                {error && (
-                    <div className="saas-admin-alert error">
-                        {error}
-                    </div>
-                )}
-
-                {showPanelLoading && (
-                    <div className="saas-admin-loading-overlay" role="status" aria-live="polite" aria-label="Cargando panel">
-                        <div className="saas-admin-loading-card">
-                            <div className="loader" />
-                        </div>
-                    </div>
-                )}
-                <SaasPanelTenantPicker
-                    requiresTenantSelection={requiresTenantSelection}
-                    settingsTenantId={settingsTenantId}
-                    tenantOptions={tenantOptions}
-                    busy={busy}
-                    toTenantDisplayName={toTenantDisplayName}
-                    onChangeTenant={(nextTenantId) => {
-                        setSettingsTenantId(nextTenantId);
-                        if (nextTenantId) setSelectedTenantId(nextTenantId);
-                    }}
-                    onClearTenant={() => {
-                        setSettingsTenantId('');
-                        setSelectedTenantId('');
-                    }}
-                />
-
-                <SaasPanelNav
-                    showNavigation={showNavigation}
-                    adminNavItems={adminNavItems}
-                    selectedSectionId={selectedSectionId}
-                    busy={busy}
-                    tenantScopeLocked={tenantScopeLocked}
-                    onSectionChange={handleSectionChange}
-                />
+        <SaasPanelFrame
+            embedded={embedded}
+            showHeader={showHeader}
+            title="Control SaaS"
+            subtitle={`Empresa activa: ${activeTenantLabel}`}
+            canOpenOperation={canOpenOperation}
+            isBusy={busy}
+            onOpenOperation={handleOpenOperation}
+            currentUserAvatarUrl={currentUserAvatarUrl}
+            currentUserDisplayName={currentUserDisplayName}
+            currentUserRoleLabel={currentUserRoleLabel}
+            buildInitials={buildInitials}
+            closeLabel={closeLabel}
+            onClose={() => { if (typeof onLogout === "function") { onLogout(); return; } onClose?.(); }}
+            error={error}
+            showPanelLoading={showPanelLoading}
+            requiresTenantSelection={requiresTenantSelection}
+            settingsTenantId={settingsTenantId}
+            tenantOptions={tenantOptions}
+            toTenantDisplayName={toTenantDisplayName}
+            onChangeTenant={(nextTenantId) => {
+                setSettingsTenantId(nextTenantId);
+                if (nextTenantId) setSelectedTenantId(nextTenantId);
+            }}
+            onClearTenant={() => {
+                setSettingsTenantId('');
+                setSelectedTenantId('');
+            }}
+            showNavigation={showNavigation}
+            adminNavItems={adminNavItems}
+            selectedSectionId={selectedSectionId}
+            tenantScopeLocked={tenantScopeLocked}
+            onSectionChange={handleSectionChange}
+        >
 
 
                 <SummarySection
@@ -1347,7 +1319,7 @@ export default function SaasAdminPanel({
                     isSectionEnabled={isSectionEnabled}
                     handleSectionChange={handleSectionChange}
                 />
-                {selectedSectionId !== 'saas_resumen' && (
+            {selectedSectionId !== 'saas_resumen' && (
                 <div className="saas-admin-grid">
                     <CompaniesSection
                         selectedSectionId={selectedSectionId}
@@ -1745,9 +1717,8 @@ export default function SaasAdminPanel({
                         cancelPlanEdit={cancelPlanEdit}
                     />
                 </div>
-                )}
-            </div>
-        </div>
+            )}
+        </SaasPanelFrame>
     );
 }
 
