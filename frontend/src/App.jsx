@@ -13,6 +13,7 @@ import useWaModuleSocketEvents from './features/chat/hooks/useWaModuleSocketEven
 import useWorkspaceNavigation from './features/chat/hooks/useWorkspaceNavigation';
 import useTransportSelectionActions from './features/chat/hooks/useTransportSelectionActions';
 import useChatMessageActions from './features/chat/hooks/useChatMessageActions';
+import useAttachmentActions from './features/chat/hooks/useAttachmentActions';
 import { readWaLaunchParams } from './features/chat/helpers/waLaunchParams';
 import { normalizeQuickRepliesSocketPayload } from './features/chat/helpers/quickRepliesSocket.helpers';
 import { resolveScopedCatalogSelection } from './features/chat/helpers/catalogScope.helpers';
@@ -1403,6 +1404,18 @@ function App() {
     setChats((prev) => prev.map((c) => chatIdsReferSameScope(String(c?.id || ''), resolvedChatId) ? { ...c, unreadCount: 0 } : c));
   };
   const {
+    removeAttachment,
+    handleFileChange,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop
+  } = useAttachmentActions({
+    setAttachment,
+    setAttachmentPreview,
+    setIsDragOver
+  });
+
+  const {
     handleExitActiveChat,
     handleSendMessage
   } = useChatMessageActions({
@@ -1887,32 +1900,6 @@ function App() {
       runtimeContext
     });
   };
-  const processFile = (file) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64Data = event.target.result.split(',')[1];
-      setQuickReplyDraft(null);
-      setAttachment({ data: base64Data, mimetype: file.type, filename: file.name });
-      setAttachmentPreview(file.type.startsWith('image/') ? event.target.result : 'document');
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const removeAttachment = () => { setAttachment(null); setAttachmentPreview(null); };
-
-  const handleFileChange = (e) => {
-    if (e.target.files[0]) processFile(e.target.files[0]);
-    e.target.value = null;
-  };
-
-  const handleDragOver = (e) => { e.preventDefault(); setIsDragOver(true); };
-  const handleDragLeave = () => setIsDragOver(false);
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    Array.from(e.dataTransfer.files).forEach(processFile);
-  };
-
   const activeTransport = String(waRuntime?.activeTransport || 'idle').toLowerCase();
   const cloudConfigured = Boolean(waRuntime?.cloudConfigured);
   const selectedModeLabel = 'WhatsApp Cloud API';
