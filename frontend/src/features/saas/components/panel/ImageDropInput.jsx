@@ -6,7 +6,7 @@ import {
     ADMIN_IMAGE_MAX_BYTES,
     formatBytes,
     validateImageFile
-} from '../helpers';
+} from '../../helpers';
 
 export default function ImageDropInput({
     label = 'Subir imagen',

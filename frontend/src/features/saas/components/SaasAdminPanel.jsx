@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo } from 'react';
 
 import * as saasAdminPanelHelpers from '../helpers';
-import SaasPanelHeader from '../shared/SaasPanelHeader';
-import SaasPanelNav from '../shared/SaasPanelNav';
-import SaasPanelTenantPicker from '../shared/SaasPanelTenantPicker';
+import SaasPanelHeader from './panel/SaasPanelHeader';
+import SaasPanelNav from './panel/SaasPanelNav';
+import SaasPanelTenantPicker from './panel/SaasPanelTenantPicker';
 
 import {
     AiAssistantsSection,

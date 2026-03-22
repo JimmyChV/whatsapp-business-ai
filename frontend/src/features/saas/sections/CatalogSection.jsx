@@ -1,5 +1,5 @@
 ﻿import React from 'react';
-import ImageDropInput from '../shared/ImageDropInput';
+import ImageDropInput from '../components/panel/ImageDropInput';
 
 function CatalogSection({
     isCatalogSection,

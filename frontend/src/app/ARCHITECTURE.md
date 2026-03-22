@@ -13,3 +13,7 @@ Rules now in force:
 3. Operation service APIs live in `features/operations/services/*`.
 4. Avoid adding new files to `src/components`; use `features/*` or `shared/components`.
 5. If compatibility wrappers are needed, they must be temporary and tracked in the migration plan.
+
+Feature docs:
+- `features/chat/ARCHITECTURE.md`
+- `features/saas/ARCHITECTURE.md`
