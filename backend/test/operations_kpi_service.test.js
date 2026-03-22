@@ -1,14 +1,14 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
 
 function loadServicesFresh() {
-    const runtimePath = require.resolve('../persistence_runtime');
-    const msgPath = require.resolve('../message_history_service');
-    const opsPath = require.resolve('../conversation_ops_service');
-    const kpiPath = require.resolve('../operations_kpi_service');
+    const runtimePath = require.resolve('../config/persistence-runtime');
+    const msgPath = require.resolve('../domains/operations/services/message-history.service');
+    const opsPath = require.resolve('../domains/operations/services/conversation-ops.service');
+    const kpiPath = require.resolve('../domains/operations/services/operations-kpi.service');
 
     delete require.cache[runtimePath];
     delete require.cache[msgPath];
@@ -16,9 +16,9 @@ function loadServicesFresh() {
     delete require.cache[kpiPath];
 
     return {
-        messageHistoryService: require('../message_history_service'),
-        conversationOpsService: require('../conversation_ops_service'),
-        operationsKpiService: require('../operations_kpi_service')
+        messageHistoryService: require('../domains/operations/services/message-history.service'),
+        conversationOpsService: require('../domains/operations/services/conversation-ops.service'),
+        operationsKpiService: require('../domains/operations/services/operations-kpi.service')
     };
 }
 
@@ -123,3 +123,5 @@ test('operations_kpi_service computes metrics with scope and assignee filters (f
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
+
+

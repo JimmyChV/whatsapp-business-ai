@@ -1,15 +1,15 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
 
 function loadAssignmentRulesServiceFresh() {
-    const runtimePath = require.resolve('../persistence_runtime');
-    const modulePath = require.resolve('../assignment_rules_service');
+    const runtimePath = require.resolve('../config/persistence-runtime');
+    const modulePath = require.resolve('../domains/operations/services/assignment-rules.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
-    return require('../assignment_rules_service');
+    return require('../domains/operations/services/assignment-rules.service');
 }
 
 test('assignment_rules_service persists rules and resolves effective inheritance (file driver)', async () => {
@@ -76,3 +76,5 @@ test('assignment_rules_service persists rules and resolves effective inheritance
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
+
+

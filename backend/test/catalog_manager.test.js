@@ -1,15 +1,15 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
 
 function loadCatalogManagerFresh() {
-    const runtimePath = require.resolve('../persistence_runtime');
-    const modulePath = require.resolve('../catalog_manager');
+    const runtimePath = require.resolve('../config/persistence-runtime');
+    const modulePath = require.resolve('../domains/tenant/services/catalog-manager.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
-    return require('../catalog_manager');
+    return require('../domains/tenant/services/catalog-manager.service');
 }
 
 test('catalog_manager isolates tenant data in file driver', async () => {
@@ -47,3 +47,5 @@ test('catalog_manager isolates tenant data in file driver', async () => {
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
+
+

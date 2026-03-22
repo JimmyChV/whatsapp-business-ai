@@ -1,6 +1,6 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
-const { isPrivateIPv4, isPrivateIPv6, isPrivateIp, parseCsvEnv } = require('../security_utils');
+const { isPrivateIPv4, isPrivateIPv6, isPrivateIp, parseCsvEnv } = require('../domains/security/helpers/security-utils');
 
 test('detects private IPv4 ranges', () => {
     assert.equal(isPrivateIPv4('127.0.0.1'), true);
@@ -25,3 +25,5 @@ test('parseCsvEnv handles empty and spaced values', () => {
     assert.deepEqual(parseCsvEnv('a, b,,c '), ['a', 'b', 'c']);
     assert.deepEqual(parseCsvEnv(''), []);
 });
+
+

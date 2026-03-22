@@ -1,12 +1,12 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 
 function loadTenantServiceFresh() {
-    const modulePath = require.resolve('../tenant_service');
-    const controlPath = require.resolve('../saas_control_plane_service');
+    const modulePath = require.resolve('../domains/tenant/services/tenant-core.service');
+    const controlPath = require.resolve('../domains/tenant/services/tenant-control.service');
     delete require.cache[modulePath];
     delete require.cache[controlPath];
-    return require('../tenant_service');
+    return require('../domains/tenant/services/tenant-core.service');
 }
 
 test('tenant_service resolves tenant from request header', () => {
@@ -58,3 +58,5 @@ test('tenant_service prioritizes authContext tenant', () => {
         process.env.SAAS_TENANTS_JSON = prev.SAAS_TENANTS_JSON;
     }
 });
+
+

@@ -1,15 +1,15 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
 
 function loadQuickReplyLibrariesServiceFresh() {
-    const runtimePath = require.resolve('../persistence_runtime');
-    const modulePath = require.resolve('../quick_reply_libraries_service');
+    const runtimePath = require.resolve('../config/persistence-runtime');
+    const modulePath = require.resolve('../domains/tenant/services/quick-reply-libraries.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
-    return require('../quick_reply_libraries_service');
+    return require('../domains/tenant/services/quick-reply-libraries.service');
 }
 
 test('quick_reply_libraries_service invalidates cache on writes in file driver', async () => {
@@ -61,3 +61,5 @@ test('quick_reply_libraries_service invalidates cache on writes in file driver',
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
+
+

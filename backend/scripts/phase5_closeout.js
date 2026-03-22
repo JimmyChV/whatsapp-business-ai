@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 require('dotenv').config({ quiet: true });
 
 const fs = require('fs');
@@ -11,8 +11,8 @@ const {
     normalizeTenantId,
     getTenantDataDir,
     queryPostgres
-} = require('../persistence_runtime');
-const tenantService = require('../tenant_service');
+} = require('../config/persistence-runtime');
+const tenantService = require('../domains/tenant/services/tenant-core.service');
 
 function parseArgs(argv = []) {
     const args = {
@@ -407,4 +407,5 @@ main().catch((error) => {
     console.error('[Phase5Closeout] ERROR:', String(error?.message || error));
     process.exit(1);
 });
+
 

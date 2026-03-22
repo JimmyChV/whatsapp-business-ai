@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
@@ -6,9 +6,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ quiet: true });
-const logger = require('./logger');
-const { parseCsvEnv, resolveAndValidatePublicHost } = require('./security_utils');
-const RateLimiter = require('./rate_limiter');
+const logger = require('./config/logger');
+const { parseCsvEnv, resolveAndValidatePublicHost } = require('./domains/security/helpers/security-utils');
+const RateLimiter = require('./config/rate-limiter');
 const {
     authService,
     authRecoveryService,
@@ -25,6 +25,7 @@ const {
     saasControlService,
     tenantIntegrationsService,
     tenantCatalogService,
+    catalogManagerService,
     tenantLabelService,
     waModuleService,
     customerService,
@@ -32,7 +33,12 @@ const {
     aiUsageService,
     registerTenantCustomerHttpRoutes,
     registerTenantWaModuleAdminHttpRoutes,
-    registerTenantRuntimeSettingsHttpRoutes
+    registerTenantRuntimeSettingsHttpRoutes,
+    registerTenantLabelsQuickRepliesHttpRoutes,
+    registerTenantAdminConfigCatalogHttpRoutes,
+    registerTenantAdminTenantsUsersHttpRoutes,
+    registerTenantAssetsUploadHttpRoutes,
+    registerTenantRuntimePublicHttpRoutes
 } = require('./domains/tenant');
 const {
     messageHistoryService,
@@ -42,16 +48,16 @@ const {
     operationsKpiService,
     opsTelemetry,
     registerOperationsHttpRoutes,
-    registerOperationsUtilityHttpRoutes
+    registerOperationsUtilityHttpRoutes,
+    registerOperationsHealthHttpRoutes
 } = require('./domains/operations');
 const {
+    waProvider: waClient,
+    socketManager: SocketManager,
     invalidateWebhookCloudRegistryCache,
     registerCloudWebhookHttpRoutes
 } = require('./domains/channels');
-const { loadCatalog, addProduct, updateProduct } = require('./catalog_manager');
-
-const waClient = require('./wa_provider');
-const SocketManager = require('./socket_manager');
+const { loadCatalog, addProduct, updateProduct } = catalogManagerService;
 
 function parseBooleanEnv(value, defaultValue = false) {
     const raw = String(value ?? '').trim().toLowerCase();
@@ -532,11 +538,6 @@ io.on('connection', (socket) => {
 // Initialize Managers
 const socketManager = new SocketManager(io);
 
-// Basic Route
-app.get('/', (req, res) => {
-    res.send('WhatsApp Business API V4 - Robust & Modular');
-});
-
 function toPublicTenant(tenant = null) {
     if (!tenant || typeof tenant !== 'object') return null;
     const logoUrl = String(tenant?.logoUrl || tenant?.logo_url || '').trim();
@@ -552,119 +553,24 @@ function toPublicTenant(tenant = null) {
         coverImageUrl: /^https?:\/\//i.test(coverImageUrl) ? coverImageUrl : null
     };
 }
-
-app.get('/api/ops/health', (req, res) => {
-    if (!hasOpsAccess(req)) return res.status(401).json({ ok: false, error: 'No autorizado para operacion.' });
-    const runtime = typeof waClient.getRuntimeInfo === 'function'
-        ? waClient.getRuntimeInfo()
-        : { requestedTransport: 'idle', activeTransport: 'idle' };
-
-    return res.json({
-        ok: true,
-        requestId: req.requestId || null,
-        now: new Date().toISOString(),
-        uptimeSec: Math.max(0, Math.floor(process.uptime())),
-        runtime,
-        waReady: Boolean(waClient.isReady)
-    });
+// Platform and public runtime routes
+registerOperationsHealthHttpRoutes({
+    app,
+    hasOpsAccess,
+    waClient,
+    opsTelemetry,
+    tenantService,
+    authService,
+    opsReadyRequireWa
 });
 
-app.get('/api/ops/ready', (req, res) => {
-    if (!hasOpsAccess(req)) return res.status(401).json({ ok: false, error: 'No autorizado para operacion.' });
-
-    const runtime = typeof waClient.getRuntimeInfo === 'function'
-        ? waClient.getRuntimeInfo()
-        : { requestedTransport: 'idle', activeTransport: 'idle' };
-    const waReady = Boolean(waClient.isReady);
-    const ready = opsReadyRequireWa ? waReady : true;
-
-    return res.status(ready ? 200 : 503).json({
-        ok: ready,
-        requestId: req.requestId || null,
-        ready,
-        checks: {
-            process: true,
-            wa: waReady,
-            waReady,
-            waRequired: Boolean(opsReadyRequireWa)
-        },
-        runtime
-    });
-});
-
-app.get('/api/ops/metrics', (req, res) => {
-    if (!hasOpsAccess(req)) return res.status(401).json({ ok: false, error: 'No autorizado para operacion.' });
-
-    const runtime = typeof waClient.getRuntimeInfo === 'function'
-        ? waClient.getRuntimeInfo()
-        : { requestedTransport: 'idle', activeTransport: 'idle' };
-    const snapshot = opsTelemetry.buildSnapshot({
-        waRuntime: runtime,
-        waReady: Boolean(waClient.isReady),
-        saasEnabled: tenantService.isSaasEnabled(),
-        authEnabled: authService.isAuthEnabled()
-    });
-
-    return res.json({ ok: true, requestId: req.requestId || null, ...snapshot });
-});
-
-app.get('/api/saas/runtime', async (req, res) => {
-    const authContext = req.authContext || { enabled: false, isAuthenticated: false, user: null };
-    const authEnabled = authService.isAuthEnabled();
-    const isAuthenticated = Boolean(authContext?.isAuthenticated && authContext?.user);
-
-    const allTenants = tenantService.getTenants();
-    const allowedTenants = isAuthenticated
-        ? authService.getAllowedTenantsForUser(authContext?.user || {}, allTenants)
-        : allTenants;
-
-    // Avoid exposing tenant/company data before login when SaaS auth is enabled.
-    const exposeTenantData = !authEnabled || isAuthenticated;
-    const runtimeTenants = exposeTenantData ? allowedTenants : [];
-
-    const requestedTenantId = String(req?.tenantContext?.id || '').trim();
-    const fallbackTenant = req.tenantContext || tenantService.DEFAULT_TENANT;
-    const effectiveTenant = exposeTenantData
-        ? (runtimeTenants.find((tenant) => String(tenant?.id || '').trim() === requestedTenantId)
-            || runtimeTenants[0]
-            || fallbackTenant)
-        : fallbackTenant;
-
-    const tenantId = String(effectiveTenant?.id || 'default');
-    const authUser = authContext?.user && typeof authContext.user === 'object' ? authContext.user : null;
-    const runtimeUserId = String(authUser?.userId || authUser?.id || '').trim();
-
-    let tenantSettings = null;
-    let waModules = [];
-    let selectedWaModule = null;
-
-    if (exposeTenantData) {
-        tenantSettings = await tenantSettingsService.getTenantSettings(tenantId);
-        waModules = await waModuleService.listModules(tenantId, {
-            includeInactive: false,
-            userId: runtimeUserId
-        });
-        selectedWaModule = await waModuleService.getSelectedModule(tenantId, {
-            userId: runtimeUserId
-        });
-    }
-
-    return res.json({
-        ok: true,
-        saasEnabled: tenantService.isSaasEnabled(),
-        authEnabled,
-        socketAuthRequired: saasSocketAuthRequired,
-        tenant: exposeTenantData ? toPublicTenant(effectiveTenant) : null,
-        tenantSettings: exposeTenantData ? tenantSettings : null,
-        waModules: exposeTenantData ? waModules : [],
-        selectedWaModule: exposeTenantData ? selectedWaModule : null,
-        tenants: exposeTenantData ? (runtimeTenants || []).map(toPublicTenant).filter(Boolean) : [],
-        authContext: {
-            enabled: Boolean(authContext.enabled),
-            isAuthenticated: Boolean(authContext.isAuthenticated),
-            user: authContext.user || null
-        }
-    });
+registerTenantRuntimePublicHttpRoutes({
+    app,
+    authService,
+    tenantService,
+    tenantSettingsService,
+    waModuleService,
+    saasSocketAuthRequired
 });
 
 registerSecurityAuthHttpRoutes({
@@ -1241,1009 +1147,44 @@ function sanitizeTenantLabelPayload(payload = {}, { allowLabelId = true } = {}) 
     return base;
 }
 
-app.post('/api/admin/saas/assets/upload', async (req, res) => {
-    try {
-        const body = req.body && typeof req.body === 'object' ? req.body : {};
-        const uploadKind = normalizeAssetUploadKind(body.kind || body.assetKind || body.scopeKind || '');
-        const canUploadGenericAssets = hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_ASSETS_UPLOAD);
-        const canManageQuickReplies = hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE);
-        const canUploadQuickReplyAssets = uploadKind === 'quick_reply' && canManageQuickReplies;
-        if (!canUploadGenericAssets && !canUploadQuickReplyAssets) {
-            return res.status(403).json({ ok: false, error: 'No autorizado para subir archivos.' });
-        }
-        const requestedTenantId = String(body.tenantId || req?.tenantContext?.id || 'default').trim() || 'default';
-        const tenantId = sanitizeStorageSegment(requestedTenantId, 'default');
 
-        if (!req?.authContext?.user?.isSuperAdmin && !isTenantAllowedForUser(req, requestedTenantId)) {
-            return res.status(403).json({ ok: false, error: 'No tienes acceso a ese tenant para subir archivos.' });
-        }
-
-        const quickReplyAssetLimits = uploadKind === 'quick_reply'
-            ? resolveTenantQuickReplyAssetLimits(requestedTenantId)
-            : null;
-        const scope = sanitizeStorageSegment(body.scope || 'general', 'general');
-        const parsed = parseAssetUploadPayload(body, {
-            maxQuickReplyBytes: quickReplyAssetLimits?.maxUploadBytes,
-            fallbackQuickReplyMaxBytes: ADMIN_ASSET_QUICK_REPLY_MAX_BYTES
-        });
-
-        if (parsed.kind === 'quick_reply' && quickReplyAssetLimits?.storageQuotaBytes > 0) {
-            const tenantAssetsRoot = path.join(UPLOADS_ROOT, 'saas-assets', tenantId);
-            const usedBytes = await estimateDirectorySizeBytes(tenantAssetsRoot);
-            const incomingBytes = Number(parsed?.buffer?.length || 0) || 0;
-            if ((usedBytes + incomingBytes) > quickReplyAssetLimits.storageQuotaBytes) {
-                throw new Error('El tenant supero la cuota de almacenamiento para respuestas rapidas.' +
-                    ` (plan: ${quickReplyAssetLimits.storageQuotaMb} MB).`);
-            }
-        }
-
-        const stored = await saveAssetFile({
-            tenantId,
-            scope,
-            mimeType: parsed.mimeType,
-            fileName: parsed.fileName,
-            buffer: parsed.buffer
-        });
-
-        const origin = getRequestOrigin(req);
-        const publicUrl = origin ? origin + stored.relativeUrl : stored.relativeUrl;
-
-        return res.status(201).json({
-            ok: true,
-            tenantId,
-            scope,
-            limits: parsed.kind === 'quick_reply' && quickReplyAssetLimits
-                ? {
-                    maxUploadMb: quickReplyAssetLimits.maxUploadMb,
-                    storageQuotaMb: quickReplyAssetLimits.storageQuotaMb
-                }
-                : undefined,
-            file: {
-                url: publicUrl,
-                relativeUrl: stored.relativeUrl,
-                relativePath: stored.relativePath,
-                mimeType: parsed.mimeType,
-                sizeBytes: Number(parsed.buffer?.length || 0) || 0,
-                fileName: path.basename(stored.absolutePath),
-                kind: parsed.kind
-            }
-        });
-    } catch (error) {
-        const message = String(error?.message || 'No se pudo subir el archivo.');
-        const status = /tamano|base64|imagen|archivo|formato/i.test(message) ? 400 : 500;
-        return res.status(status).json({ ok: false, error: message });
-    }
-});
-app.get('/api/admin/saas/tenants', async (req, res) => {
-    try {
-        if (!hasSaasControlReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-
-        const tenants = await saasControlService.listTenants({ includeInactive: true });
-        const scoped = req?.authContext?.user?.isSuperAdmin
-            ? tenants
-            : tenants.filter((tenant) => isTenantAllowedForUser(req, tenant.id));
-
-        return res.json({ ok: true, items: scoped.map((tenant) => saasControlService.sanitizeTenantPublic(tenant)) });
-    } catch (error) {
-        return res.status(500).json({ ok: false, error: 'No se pudieron cargar las empresas.' });
-    }
+registerTenantAssetsUploadHttpRoutes({
+    app,
+    accessPolicyService,
+    hasPermission,
+    isTenantAllowedForUser,
+    normalizeAssetUploadKind,
+    sanitizeStorageSegment,
+    resolveTenantQuickReplyAssetLimits,
+    parseAssetUploadPayload,
+    adminAssetQuickReplyMaxBytes: ADMIN_ASSET_QUICK_REPLY_MAX_BYTES,
+    estimateDirectorySizeBytes,
+    uploadsRoot: UPLOADS_ROOT,
+    path,
+    saveAssetFile,
+    getRequestOrigin
 });
 
-app.post('/api/admin/saas/tenants', async (req, res) => {
-    try {
-        if (!hasSaasControlWriteAccess(req, { requireSuperAdmin: true })) {
-            return res.status(403).json({ ok: false, error: 'Solo superadmin puede crear empresas.' });
-        }
-
-        const payload = sanitizeTenantPayload(req.body);
-        const snapshot = await saasControlService.createTenant(payload);
-        const createdId = String(payload.id || payload.tenantId || '').trim();
-        const tenant = Array.isArray(snapshot?.tenants) ? snapshot.tenants.find((item) => item.id === createdId) : null;
-
-        return res.status(201).json({ ok: true, tenant: tenant ? saasControlService.sanitizeTenantPublic(tenant) : null });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear empresa.') });
-    }
-});
-
-app.put('/api/admin/saas/tenants/:tenantId', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasSaasControlWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    if (!isTenantAllowedForUser(req, tenantId) && !req?.authContext?.user?.isSuperAdmin) return res.status(403).json({ ok: false, error: 'No tienes acceso a esta empresa.' });
-
-    try {
-        const payload = sanitizeTenantPayload(req.body);
-        const snapshot = await saasControlService.updateTenant(tenantId, payload);
-        const tenant = Array.isArray(snapshot?.tenants) ? snapshot.tenants.find((item) => item.id === tenantId) : null;
-        return res.json({ ok: true, tenant: tenant ? saasControlService.sanitizeTenantPublic(tenant) : null });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar empresa.') });
-    }
-});
-
-app.delete('/api/admin/saas/tenants/:tenantId', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasSaasControlWriteAccess(req, { requireSuperAdmin: true })) return res.status(403).json({ ok: false, error: 'Solo superadmin puede desactivar empresas.' });
-
-    try {
-        await saasControlService.deleteTenant(tenantId);
-        return res.json({ ok: true });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar empresa.') });
-    }
-});
-
-app.get('/api/admin/saas/users', async (req, res) => {
-    try {
-        if (!hasSaasControlReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-
-        const tenantId = String(req.query?.tenantId || '').trim();
-        if (tenantId && !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No tienes acceso a ese tenant.' });
-
-        const users = await saasControlService.listUsers({ includeInactive: true, tenantId: tenantId || '' });
-        const scoped = req?.authContext?.user?.isSuperAdmin
-            ? users
-            : users.filter((user) => (Array.isArray(user?.memberships) ? user.memberships : []).some((membership) => isTenantAllowedForUser(req, membership?.tenantId)));
-
-        return res.json({ ok: true, items: scoped.map((user) => saasControlService.sanitizeUserPublic(user)) });
-    } catch (error) {
-        return res.status(500).json({ ok: false, error: 'No se pudieron cargar usuarios.' });
-    }
-});
-
-app.post('/api/admin/saas/users', async (req, res) => {
-    try {
-        if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para crear usuarios.' });
-
-        const payload = sanitizeUserPayload(req.body, { allowMemberships: true });
-        payload.memberships = sanitizeMembershipPayload(payload.memberships);
-
-        if (!payload.memberships.length) {
-            return res.status(400).json({ ok: false, error: 'Debes asignar al menos una empresa al usuario.' });
-        }
-
-        const targetRole = resolvePrimaryRoleFromMemberships(payload.memberships, payload.role || 'seller');
-        if (!canActorAssignRole(req, targetRole)) {
-            return res.status(403).json({ ok: false, error: 'No tienes permisos para asignar ese rol.' });
-        }
-
-        if (!req?.authContext?.user?.isSuperAdmin) {
-            const invalid = payload.memberships.some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
-            if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar empresas fuera de tu alcance.' });
-            if (hasAnyAccessOverride(payload) && !canActorEditOptionalAccess(req)) {
-                return res.status(403).json({ ok: false, error: 'No tienes permisos para editar accesos opcionales.' });
-            }
-        }
-
-        delete payload.role;
-        const snapshot = await saasControlService.createUser(payload);
-        const createdId = String(payload.id || payload.userId || '').trim();
-        const user = Array.isArray(snapshot?.users)
-            ? snapshot.users.find((item) => {
-                if (createdId && String(item?.id || '').trim() === createdId) return true;
-                return String(item?.email || '').trim().toLowerCase() === String(payload.email || '').trim().toLowerCase();
-            })
-            : null;
-        return res.status(201).json({ ok: true, user: user ? saasControlService.sanitizeUserPublic(user) : null });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear usuario.') });
-    }
-});
-
-app.put('/api/admin/saas/users/:userId', async (req, res) => {
-    try {
-        if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para editar usuarios.' });
-        const userId = String(req.params?.userId || '').trim();
-        if (!userId) return res.status(400).json({ ok: false, error: 'userId invalido.' });
-
-        const currentUsers = await saasControlService.listUsers({ includeInactive: true });
-        const targetUser = (Array.isArray(currentUsers) ? currentUsers : []).find((item) => String(item?.id || '').trim() === userId) || null;
-        if (!targetUser) return res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
-
-        const payload = sanitizeUserPayload(req.body, { allowMemberships: true });
-        if (payload.memberships) payload.memberships = sanitizeMembershipPayload(payload.memberships);
-
-        if (Object.prototype.hasOwnProperty.call(payload, 'role') && !Array.isArray(payload.memberships)) {
-            const currentMemberships = sanitizeMembershipPayload(targetUser.memberships || []);
-            const currentTenantId = String(currentMemberships[0]?.tenantId || '').trim();
-            payload.memberships = sanitizeMembershipPayload([{ tenantId: currentTenantId, role: payload.role, active: true }]);
-        }
-
-        const resultingMemberships = Array.isArray(payload.memberships) && payload.memberships.length > 0
-            ? payload.memberships
-            : sanitizeMembershipPayload(targetUser.memberships || []);
-
-        const targetRoleBefore = getUserPrimaryRole(targetUser);
-        const targetRoleAfter = resolvePrimaryRoleFromMemberships(resultingMemberships, payload.role || targetRoleBefore || 'seller');
-        const isSelf = isSelfUserAction(req, userId);
-        const touchesRole = Boolean(Array.isArray(payload.memberships) || Object.prototype.hasOwnProperty.call(payload, 'role'));
-        const touchesOptionalAccess = hasAnyAccessOverride(payload);
-
-        if (!req?.authContext?.user?.isSuperAdmin) {
-            const targetInScope = sanitizeMembershipPayload(targetUser.memberships || []).some((membership) => isTenantAllowedForUser(req, membership.tenantId));
-            if (!targetInScope) {
-                return res.status(403).json({ ok: false, error: 'No puedes editar usuarios fuera de tu alcance.' });
-            }
-
-            const invalid = resultingMemberships.some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
-            if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar empresas fuera de tu alcance.' });
-
-            if (!isSelf && !isActorSuperiorToRole(req, targetRoleBefore)) {
-                return res.status(403).json({ ok: false, error: 'No puedes editar usuarios con rol igual o superior al tuyo.' });
-            }
-
-            if (touchesRole) {
-                if (isSelf) {
-                    return res.status(403).json({ ok: false, error: 'No puedes editar tu propio rol.' });
-                }
-                if (!canActorManageRoleChanges(req)) {
-                    return res.status(403).json({ ok: false, error: 'No tienes permisos para editar roles de usuarios.' });
-                }
-                if (!canActorAssignRole(req, targetRoleAfter)) {
-                    return res.status(403).json({ ok: false, error: 'No tienes permisos para administrar ese rol.' });
-                }
-            }
-
-            if (touchesOptionalAccess) {
-                if (isSelf) {
-                    return res.status(403).json({ ok: false, error: 'No puedes editar tus propios accesos opcionales.' });
-                }
-                if (!canActorEditOptionalAccess(req)) {
-                    return res.status(403).json({ ok: false, error: 'No tienes permisos para editar accesos opcionales.' });
-                }
-            }
-        }
-
-        delete payload.role;
-        const snapshot = await saasControlService.updateUser(userId, payload);
-        const user = Array.isArray(snapshot?.users) ? snapshot.users.find((item) => item.id === userId) : null;
-        return res.json({ ok: true, user: user ? saasControlService.sanitizeUserPublic(user) : null });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar usuario.') });
-    }
-});
-
-app.put('/api/admin/saas/users/:userId/memberships', async (req, res) => {
-    try {
-        if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para editar membresias.' });
-        const userId = String(req.params?.userId || '').trim();
-        if (!userId) return res.status(400).json({ ok: false, error: 'userId invalido.' });
-
-        const memberships = sanitizeMembershipPayload(req.body?.memberships || []);
-        if (!memberships.length) return res.status(400).json({ ok: false, error: 'Debes enviar al menos una membresia.' });
-
-        const currentUsers = await saasControlService.listUsers({ includeInactive: true });
-        const targetUser = (Array.isArray(currentUsers) ? currentUsers : []).find((item) => String(item?.id || '').trim() === userId) || null;
-        if (!targetUser) return res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
-
-        const targetRoleBefore = getUserPrimaryRole(targetUser);
-        const targetRole = resolvePrimaryRoleFromMemberships(memberships, targetRoleBefore || 'seller');
-        const isSelf = isSelfUserAction(req, userId);
-
-        if (!req?.authContext?.user?.isSuperAdmin) {
-            const targetInScope = sanitizeMembershipPayload(targetUser.memberships || []).some((membership) => isTenantAllowedForUser(req, membership.tenantId));
-            if (!targetInScope) return res.status(403).json({ ok: false, error: 'No puedes editar usuarios fuera de tu alcance.' });
-
-            if (isSelf) return res.status(403).json({ ok: false, error: 'No puedes editar tu propio rol.' });
-            if (!isActorSuperiorToRole(req, targetRoleBefore)) {
-                return res.status(403).json({ ok: false, error: 'No puedes editar usuarios con rol igual o superior al tuyo.' });
-            }
-            if (!canActorManageRoleChanges(req)) {
-                return res.status(403).json({ ok: false, error: 'No tienes permisos para editar roles de usuarios.' });
-            }
-
-            const invalid = memberships.some((membership) => !isTenantAllowedForUser(req, membership.tenantId));
-            if (invalid) return res.status(403).json({ ok: false, error: 'No puedes asignar empresas fuera de tu alcance.' });
-        }
-
-        if (!canActorAssignRole(req, targetRole)) {
-            return res.status(403).json({ ok: false, error: 'No tienes permisos para asignar ese rol.' });
-        }
-
-        const snapshot = await saasControlService.setUserMemberships(userId, memberships);
-        const user = Array.isArray(snapshot?.users) ? snapshot.users.find((item) => item.id === userId) : null;
-        return res.json({ ok: true, user: user ? saasControlService.sanitizeUserPublic(user) : null });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar membresias.') });
-    }
-});
-
-app.delete('/api/admin/saas/users/:userId', async (req, res) => {
-    try {
-        if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para desactivar usuarios.' });
-        const userId = String(req.params?.userId || '').trim();
-        if (!userId) return res.status(400).json({ ok: false, error: 'userId invalido.' });
-
-        const currentUsers = await saasControlService.listUsers({ includeInactive: true });
-        const targetUser = (Array.isArray(currentUsers) ? currentUsers : []).find((item) => String(item?.id || '').trim() === userId) || null;
-        if (!targetUser) return res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
-
-        const targetRole = getUserPrimaryRole(targetUser);
-        const isSelf = isSelfUserAction(req, userId);
-
-        if (!req?.authContext?.user?.isSuperAdmin) {
-            const memberships = sanitizeMembershipPayload(targetUser.memberships || []);
-            const targetInScope = memberships.some((membership) => isTenantAllowedForUser(req, membership.tenantId));
-            if (!targetInScope) return res.status(403).json({ ok: false, error: 'No puedes desactivar usuarios fuera de tu alcance.' });
-
-            if (isSelf) {
-                return res.status(403).json({ ok: false, error: 'No puedes desactivar tu propio usuario.' });
-            }
-
-            if (!isActorSuperiorToRole(req, targetRole)) {
-                return res.status(403).json({ ok: false, error: 'No puedes desactivar usuarios con rol igual o superior al tuyo.' });
-            }
-
-            if (!canActorAssignRole(req, targetRole)) {
-                return res.status(403).json({ ok: false, error: 'No tienes permisos para desactivar ese rol.' });
-            }
-        }
-
-        await saasControlService.deleteUser(userId);
-        return res.json({ ok: true });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar usuario.') });
-    }
-});
-
-app.get('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_SETTINGS_READ, accessPolicyService.PERMISSIONS.TENANT_SETTINGS_MANAGE])) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-
-    try {
-        const settings = await tenantSettingsService.getTenantSettings(tenantId);
-        return res.json({ ok: true, tenantId, settings });
-    } catch (error) {
-        return res.status(500).json({ ok: false, error: 'No se pudo cargar configuracion del tenant.' });
-    }
-});
-
-app.put('/api/admin/saas/tenants/:tenantId/settings', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_SETTINGS_MANAGE)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-
-    try {
-        const patch = req.body && typeof req.body === 'object' ? req.body : {};
-        const settings = await tenantSettingsService.updateTenantSettings(tenantId, patch);
-        return res.json({ ok: true, tenantId, settings });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar configuracion del tenant.') });
-    }
-});
-
-app.get('/api/admin/saas/tenants/:tenantId/integrations', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE])) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-
-    try {
-        const integrations = await tenantIntegrationsService.getTenantIntegrations(tenantId);
-        return res.json({ ok: true, tenantId, integrations });
-    } catch (error) {
-        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar integraciones del tenant.') });
-    }
-});
-
-app.put('/api/admin/saas/tenants/:tenantId/integrations', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-
-    try {
-        const patch = req.body && typeof req.body === 'object' ? req.body : {};
-        const integrations = await tenantIntegrationsService.updateTenantIntegrations(tenantId, patch);
-        return res.json({ ok: true, tenantId, integrations });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar integraciones del tenant.') });
-    }
-});
-
-app.get('/api/admin/saas/tenants/:tenantId/ai-assistants', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId)
-        || !hasAnyPermission(req, [
-            accessPolicyService.PERMISSIONS.TENANT_AI_READ,
-            accessPolicyService.PERMISSIONS.TENANT_AI_MANAGE,
-            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ,
-            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE
-        ])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const result = await tenantIntegrationsService.listTenantAiAssistants(tenantId);
-        return res.json({ ok: true, tenantId, defaultAssistantId: result?.defaultAssistantId || null, items: result?.items || [] });
-    } catch (error) {
-        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar asistentes IA del tenant.') });
-    }
-});
-
-app.post('/api/admin/saas/tenants/:tenantId/ai-assistants', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_AI_MANAGE, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const payload = sanitizeAiAssistantPayload(req.body, { allowAssistantId: true });
-        if (!payload.name) return res.status(400).json({ ok: false, error: 'Nombre de asistente requerido.' });
-
-        const result = await tenantIntegrationsService.createTenantAiAssistant(tenantId, payload);
-        return res.json({ ok: true, tenantId, defaultAssistantId: result?.defaultAssistantId || null, item: result?.item || null });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear asistente IA.') });
-    }
-});
-
-app.put('/api/admin/saas/tenants/:tenantId/ai-assistants/:assistantId', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const assistantId = sanitizeAiAssistantIdPayload(req.params?.assistantId || '');
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!assistantId) return res.status(400).json({ ok: false, error: 'assistantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_AI_MANAGE, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const payload = sanitizeAiAssistantPayload(req.body, { allowAssistantId: false });
-        const result = await tenantIntegrationsService.updateTenantAiAssistant(tenantId, assistantId, payload);
-        return res.json({ ok: true, tenantId, defaultAssistantId: result?.defaultAssistantId || null, item: result?.item || null });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar asistente IA.') });
-    }
-});
-
-app.post('/api/admin/saas/tenants/:tenantId/ai-assistants/:assistantId/default', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const assistantId = sanitizeAiAssistantIdPayload(req.params?.assistantId || '');
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!assistantId) return res.status(400).json({ ok: false, error: 'assistantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_AI_MANAGE, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const result = await tenantIntegrationsService.setDefaultTenantAiAssistant(tenantId, assistantId);
-        return res.json({ ok: true, tenantId, defaultAssistantId: result?.defaultAssistantId || null, item: result?.item || null });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo definir asistente principal.') });
-    }
-});
-
-app.post('/api/admin/saas/tenants/:tenantId/ai-assistants/:assistantId/deactivate', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const assistantId = sanitizeAiAssistantIdPayload(req.params?.assistantId || '');
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!assistantId) return res.status(400).json({ ok: false, error: 'assistantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_AI_MANAGE, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const result = await tenantIntegrationsService.deactivateTenantAiAssistant(tenantId, assistantId);
-        return res.json({ ok: true, tenantId, defaultAssistantId: result?.defaultAssistantId || null, item: result?.item || null });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar asistente IA.') });
-    }
-});
-app.get('/api/admin/saas/tenants/:tenantId/labels', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId)
-        || !hasAnyPermission(req, [
-            accessPolicyService.PERMISSIONS.TENANT_LABELS_READ,
-            accessPolicyService.PERMISSIONS.TENANT_LABELS_MANAGE,
-            accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
-            accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
-        ])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() === 'true';
-        const items = await tenantLabelService.listLabels({ tenantId, includeInactive });
-        return res.json({ ok: true, tenantId, items: Array.isArray(items) ? items : [] });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar etiquetas.') });
-    }
-});
-
-app.post('/api/admin/saas/tenants/:tenantId/labels', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId)
-        || !hasAnyPermission(req, [
-            accessPolicyService.PERMISSIONS.TENANT_LABELS_MANAGE,
-            accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
-        ])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const payload = sanitizeTenantLabelPayload(req.body, { allowLabelId: true });
-        if (!String(payload.name || '').trim()) return res.status(400).json({ ok: false, error: 'Nombre de etiqueta requerido.' });
-        const item = await tenantLabelService.saveLabel(payload, { tenantId });
-        return res.status(201).json({ ok: true, tenantId, item });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear etiqueta.') });
-    }
-});
-
-app.put('/api/admin/saas/tenants/:tenantId/labels/:labelId', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const labelId = tenantLabelService.normalizeLabelId(req.params?.labelId || '');
-    if (!tenantId || !labelId) return res.status(400).json({ ok: false, error: 'tenantId/labelId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId)
-        || !hasAnyPermission(req, [
-            accessPolicyService.PERMISSIONS.TENANT_LABELS_MANAGE,
-            accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
-        ])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const payload = sanitizeTenantLabelPayload(req.body, { allowLabelId: false });
-        if (!String(payload.name || '').trim()) return res.status(400).json({ ok: false, error: 'Nombre de etiqueta requerido.' });
-        const item = await tenantLabelService.saveLabel({ ...payload, labelId }, { tenantId });
-        return res.json({ ok: true, tenantId, item });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar etiqueta.') });
-    }
-});
-
-app.post('/api/admin/saas/tenants/:tenantId/labels/:labelId/deactivate', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const labelId = tenantLabelService.normalizeLabelId(req.params?.labelId || '');
-    if (!tenantId || !labelId) return res.status(400).json({ ok: false, error: 'tenantId/labelId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId)
-        || !hasAnyPermission(req, [
-            accessPolicyService.PERMISSIONS.TENANT_LABELS_MANAGE,
-            accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
-        ])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        await tenantLabelService.deactivateLabel(labelId, { tenantId });
-        return res.json({ ok: true, tenantId, labelId });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar etiqueta.') });
-    }
-});
-
-app.get('/api/admin/saas/tenants/:tenantId/quick-reply-libraries', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId)
-        || !hasAnyPermission(req, [
-            accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_READ,
-            accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE,
-            accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
-            accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
-        ])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() === 'true';
-        const moduleId = String(req.query?.moduleId || '').trim().toLowerCase();
-        const items = await quickReplyLibrariesService.listQuickReplyLibraries({
-            tenantId,
-            includeInactive,
-            moduleId
-        });
-        return res.json({ ok: true, tenantId, items: Array.isArray(items) ? items : [] });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar bibliotecas de respuestas rapidas.') });
-    }
-});
-
-app.post('/api/admin/saas/tenants/:tenantId/quick-reply-libraries', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const payload = sanitizeQuickReplyLibraryPayload(req.body, { allowLibraryId: true });
-        if (!payload.name) return res.status(400).json({ ok: false, error: 'Nombre de biblioteca requerido.' });
-        const item = await quickReplyLibrariesService.saveQuickReplyLibrary(payload, { tenantId });
-        return res.status(201).json({ ok: true, tenantId, item });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear biblioteca de respuestas rapidas.') });
-    }
-});
-
-app.put('/api/admin/saas/tenants/:tenantId/quick-reply-libraries/:libraryId', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const libraryId = quickReplyLibrariesService.normalizeLibraryId(req.params?.libraryId || '');
-    if (!tenantId || !libraryId) return res.status(400).json({ ok: false, error: 'tenantId/libraryId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const payload = sanitizeQuickReplyLibraryPayload(req.body, { allowLibraryId: false });
-        if (!payload.name) return res.status(400).json({ ok: false, error: 'Nombre de biblioteca requerido.' });
-        const item = await quickReplyLibrariesService.saveQuickReplyLibrary({ ...payload, libraryId }, { tenantId });
-        return res.json({ ok: true, tenantId, item });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar biblioteca de respuestas rapidas.') });
-    }
-});
-
-app.post('/api/admin/saas/tenants/:tenantId/quick-reply-libraries/:libraryId/deactivate', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const libraryId = quickReplyLibrariesService.normalizeLibraryId(req.params?.libraryId || '');
-    if (!tenantId || !libraryId) return res.status(400).json({ ok: false, error: 'tenantId/libraryId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        await quickReplyLibrariesService.deactivateQuickReplyLibrary(libraryId, { tenantId });
-        return res.json({ ok: true, tenantId, libraryId });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar biblioteca de respuestas rapidas.') });
-    }
-});
-
-app.get('/api/admin/saas/tenants/:tenantId/quick-reply-items', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId)
-        || !hasAnyPermission(req, [
-            accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_READ,
-            accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE,
-            accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
-            accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
-        ])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() === 'true';
-        const moduleId = String(req.query?.moduleId || '').trim().toLowerCase();
-        const libraryId = quickReplyLibrariesService.normalizeLibraryId(req.query?.libraryId || '');
-        const items = await quickReplyLibrariesService.listQuickReplyItems({
-            tenantId,
-            includeInactive,
-            moduleId,
-            libraryId
-        });
-        return res.json({ ok: true, tenantId, items: Array.isArray(items) ? items : [] });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar respuestas rapidas.') });
-    }
-});
-
-app.post('/api/admin/saas/tenants/:tenantId/quick-reply-items', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const payload = sanitizeQuickReplyItemPayload(req.body, { allowItemId: true });
-        if (!payload.label) return res.status(400).json({ ok: false, error: 'Etiqueta requerida.' });
-        if (!payload.text && (!Array.isArray(payload.mediaAssets) || payload.mediaAssets.length === 0) && !payload.mediaUrl) return res.status(400).json({ ok: false, error: 'Debes registrar texto o adjunto.' });
-        const item = await quickReplyLibrariesService.saveQuickReplyItem(payload, { tenantId });
-        return res.status(201).json({ ok: true, tenantId, item });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear respuesta rapida.') });
-    }
-});
-
-app.put('/api/admin/saas/tenants/:tenantId/quick-reply-items/:itemId', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const itemId = quickReplyLibrariesService.normalizeItemId(req.params?.itemId || '');
-    if (!tenantId || !itemId) return res.status(400).json({ ok: false, error: 'tenantId/itemId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const payload = sanitizeQuickReplyItemPayload(req.body, { allowItemId: false });
-        if (!payload.label) return res.status(400).json({ ok: false, error: 'Etiqueta requerida.' });
-        if (!payload.text && (!Array.isArray(payload.mediaAssets) || payload.mediaAssets.length === 0) && !payload.mediaUrl) return res.status(400).json({ ok: false, error: 'Debes registrar texto o adjunto.' });
-        const item = await quickReplyLibrariesService.saveQuickReplyItem({ ...payload, itemId }, { tenantId });
-        return res.json({ ok: true, tenantId, item });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar respuesta rapida.') });
-    }
-});
-
-app.post('/api/admin/saas/tenants/:tenantId/quick-reply-items/:itemId/deactivate', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const itemId = quickReplyLibrariesService.normalizeItemId(req.params?.itemId || '');
-    if (!tenantId || !itemId) return res.status(400).json({ ok: false, error: 'tenantId/itemId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasAnyPermission(req, [accessPolicyService.PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        await quickReplyLibrariesService.deactivateQuickReplyItem(itemId, { tenantId });
-        return res.json({ ok: true, tenantId, itemId });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar respuesta rapida.') });
-    }
-});
-
-app.get('/api/admin/saas/tenants/:tenantId/catalogs', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId)
-        || !hasAnyPermission(req, [
-            accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE,
-            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ,
-            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
-            accessPolicyService.PERMISSIONS.TENANT_MODULES_READ
-        ])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const items = await tenantCatalogService.ensureDefaultCatalog(tenantId);
-        return res.json({ ok: true, tenantId, items });
-    } catch (error) {
-        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar catalogos del tenant.') });
-    }
-});
-
-app.post('/api/admin/saas/tenants/:tenantId/catalogs', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const payload = req.body && typeof req.body === 'object' ? req.body : {};
-        const tenant = tenantService.findTenantById(tenantId) || tenantService.DEFAULT_TENANT;
-        const limits = planLimitsService.getTenantPlanLimits(tenant);
-        const item = await tenantCatalogService.createCatalog(tenantId, payload, {
-            maxCatalogs: Number(limits?.maxCatalogs || 0) || 0
-        });
-        return res.status(201).json({ ok: true, tenantId, item });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el catalogo.') });
-    }
-});
-
-app.put('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
-    if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const patch = req.body && typeof req.body === 'object' ? req.body : {};
-        const item = await tenantCatalogService.updateCatalog(tenantId, catalogId, patch);
-        return res.json({ ok: true, tenantId, item });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el catalogo.') });
-    }
-});
-
-app.delete('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
-    if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const result = await tenantCatalogService.deactivateCatalog(tenantId, catalogId);
-        return res.json({ ok: true, tenantId, ...result });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar el catalogo.') });
-    }
-});
-
-function sanitizeCatalogProductPayload(payload = {}, { allowPartial = false } = {}) {
-    const source = payload && typeof payload === 'object' ? payload : {};
-    const categories = Array.isArray(source.categories)
-        ? source.categories
-        : String(source.categoriesText || source.categories || source.category || '')
-            .split(',');
-
-    const cleanCategories = categories
-        .map((entry) => String(entry || '').trim())
-        .filter(Boolean);
-    const hasIsActive = Object.prototype.hasOwnProperty.call(source, 'isActive');
-
-    const out = {
-        title: String(source.title || source.name || '').trim(),
-        price: String(source.price || '').trim(),
-        regularPrice: String(source.regularPrice || source.regular_price || '').trim(),
-        salePrice: String(source.salePrice || source.sale_price || '').trim(),
-        description: String(source.description || '').trim(),
-        imageUrl: String(source.imageUrl || source.image || source.image_url || '').trim(),
-        sku: String(source.sku || '').trim(),
-        stockStatus: String(source.stockStatus || source.stock_status || '').trim().toLowerCase(),
-        stockQuantity: source.stockQuantity,
-        categories: cleanCategories,
-        category: cleanCategories[0] || '',
-        url: String(source.url || source.permalink || source.productUrl || source.link || '').trim(),
-        brand: String(source.brand || '').trim(),
-        moduleId: String(source.moduleId || '').trim().toLowerCase(),
-        catalogId: String(source.catalogId || '').trim().toUpperCase()
-    };
-
-    if (!allowPartial || hasIsActive) {
-        out.isActive = source.isActive !== false;
-    }
-
-    if (!allowPartial) {
-        if (!out.title) throw new Error('Titulo de producto es obligatorio.');
-        if (!out.price) throw new Error('Precio de producto es obligatorio.');
-    }
-
-    const parsedStock = Number.parseInt(String(out.stockQuantity || '').trim(), 10);
-    if (Number.isFinite(parsedStock)) {
-        out.stockQuantity = parsedStock;
-    } else {
-        delete out.stockQuantity;
-    }
-
-    const clean = {};
-    Object.keys(out).forEach((key) => {
-        const value = out[key];
-        if (value === null || value === undefined) return;
-        if (typeof value === 'string' && !value.trim()) return;
-        if (Array.isArray(value) && value.length === 0) return;
-        clean[key] = value;
-    });
-
-    if (allowPartial) return clean;
-
-    return {
-        ...clean,
-        source: 'local'
-    };
-}
-
-app.get('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId/products', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
-    const moduleId = String(req.query?.moduleId || '').trim().toLowerCase();
-    if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId)
-        || !hasAnyPermission(req, [
-            accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE,
-            accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
-            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ
-        ])) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const items = await loadCatalog({
-            tenantId,
-            catalogId,
-            moduleId: moduleId || null
-        });
-        return res.json({ ok: true, tenantId, catalogId, moduleId: moduleId || null, items: Array.isArray(items) ? items : [] });
-    } catch (error) {
-        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar los productos del catalogo.') });
-    }
-});
-
-app.post('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId/products', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
-    if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const payload = sanitizeCatalogProductPayload(req.body, { allowPartial: false });
-        const moduleId = String(payload.moduleId || req.body?.moduleId || '').trim().toLowerCase();
-        const item = await addProduct({
-            ...payload,
-            catalogId,
-            moduleId: moduleId || undefined,
-            metadata: {
-                ...(req.body?.metadata && typeof req.body.metadata === 'object' ? req.body.metadata : {}),
-                isActive: payload.isActive !== false
-            }
-        }, {
-            tenantId,
-            catalogId,
-            moduleId: moduleId || null
-        });
-        return res.status(201).json({ ok: true, tenantId, catalogId, item });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el producto del catalogo.') });
-    }
-});
-
-app.put('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId/products/:productId', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
-    const productId = String(req.params?.productId || '').trim();
-    if (!tenantId || !catalogId || !productId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId/productId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const updates = sanitizeCatalogProductPayload(req.body, { allowPartial: true });
-        const moduleId = String(updates.moduleId || req.body?.moduleId || '').trim().toLowerCase();
-        const metadataPatch = req.body?.metadata && typeof req.body.metadata === 'object' ? { ...req.body.metadata } : {};
-        if (Object.prototype.hasOwnProperty.call(updates, 'isActive')) {
-            metadataPatch.isActive = updates.isActive !== false;
-            delete updates.isActive;
-        }
-        const item = await updateProduct(productId, {
-            ...updates,
-            catalogId,
-            moduleId: moduleId || undefined,
-            ...(Object.keys(metadataPatch).length > 0 ? { metadata: metadataPatch } : {})
-        }, {
-            tenantId,
-            catalogId,
-            moduleId: moduleId || null
-        });
-        if (!item) {
-            return res.status(404).json({ ok: false, error: 'Producto no encontrado para este catalogo.' });
-        }
-        return res.json({ ok: true, tenantId, catalogId, item });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el producto.') });
-    }
-});
-
-app.post('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId/products/:productId/deactivate', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
-    const productId = String(req.params?.productId || '').trim();
-    if (!tenantId || !catalogId || !productId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId/productId invalido.' });
-    if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
-        return res.status(403).json({ ok: false, error: 'No autorizado.' });
-    }
-
-    try {
-        const item = await updateProduct(productId, {
-            catalogId,
-            stockStatus: 'outofstock',
-            metadata: {
-                ...(req.body?.metadata && typeof req.body.metadata === 'object' ? req.body.metadata : {}),
-                isActive: false
-            }
-        }, { tenantId, catalogId });
-        if (!item) {
-            return res.status(404).json({ ok: false, error: 'Producto no encontrado para este catalogo.' });
-        }
-        return res.json({ ok: true, tenantId, catalogId, item });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar el producto.') });
-    }
-});
-app.get('/api/admin/saas/tenants/:tenantId/wa-modules', async (req, res) => {
-    const tenantId = String(req.params?.tenantId || '').trim();
-    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-    if (!hasTenantModuleReadAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-
-    try {
-        const items = await waModuleService.listModules(tenantId, { includeInactive: true });
-        const selected = await waModuleService.getSelectedModule(tenantId);
-        return res.json({ ok: true, tenantId, items, selected });
-    } catch (error) {
-        return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar modulos WA.') });
-    }
+registerTenantAdminTenantsUsersHttpRoutes({
+    app,
+    saasControlService,
+    waModuleService,
+    hasSaasControlReadAccess,
+    hasSaasControlWriteAccess,
+    hasTenantAdminWriteAccess,
+    hasTenantModuleReadAccess,
+    isTenantAllowedForUser,
+    sanitizeTenantPayload,
+    sanitizeUserPayload,
+    sanitizeMembershipPayload,
+    resolvePrimaryRoleFromMemberships,
+    canActorAssignRole,
+    hasAnyAccessOverride,
+    canActorEditOptionalAccess,
+    getUserPrimaryRole,
+    isSelfUserAction,
+    isActorSuperiorToRole,
+    canActorManageRoleChanges
 });
 
 registerTenantWaModuleAdminHttpRoutes({
@@ -2289,6 +1230,34 @@ registerTenantRuntimeSettingsHttpRoutes({
     accessPolicyService,
     isTenantAllowedForUser,
     hasPermission
+});
+registerTenantLabelsQuickRepliesHttpRoutes({
+    app,
+    accessPolicyService,
+    tenantLabelService,
+    quickReplyLibrariesService,
+    isTenantAllowedForUser,
+    hasAnyPermission,
+    sanitizeTenantLabelPayload,
+    sanitizeQuickReplyLibraryPayload,
+    sanitizeQuickReplyItemPayload
+});
+registerTenantAdminConfigCatalogHttpRoutes({
+    app,
+    tenantService,
+    tenantSettingsService,
+    tenantIntegrationsService,
+    tenantCatalogService,
+    planLimitsService,
+    accessPolicyService,
+    isTenantAllowedForUser,
+    hasPermission,
+    hasAnyPermission,
+    sanitizeAiAssistantIdPayload,
+    sanitizeAiAssistantPayload,
+    loadCatalog,
+    addProduct,
+    updateProduct
 });
 registerOperationsUtilityHttpRoutes({
     app,
@@ -2381,6 +1350,25 @@ server.listen(PORT, () => {
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     scheduleWaInitialize();
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

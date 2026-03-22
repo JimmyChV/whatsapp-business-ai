@@ -43,3 +43,6 @@ backend/backups/
 
 backend/uploads/
 backend/uploads/wa-media/
+backend/domains/channels/services/media_cache/
+backend/domains/channels/services/uploads/
+backend/config/server.log

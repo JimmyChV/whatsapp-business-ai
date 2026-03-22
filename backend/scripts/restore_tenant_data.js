@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 require('dotenv').config({ quiet: true });
 
 const fs = require('fs');
@@ -9,7 +9,7 @@ const {
     normalizeTenantId,
     getTenantDataDir,
     queryPostgres
-} = require('../persistence_runtime');
+} = require('../config/persistence-runtime');
 
 const IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
@@ -368,4 +368,5 @@ main().catch((error) => {
     console.error('[Restore] ERROR:', String(error?.message || error));
     process.exit(1);
 });
+
 

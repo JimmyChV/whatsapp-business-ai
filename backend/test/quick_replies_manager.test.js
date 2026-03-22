@@ -1,15 +1,15 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
 
 function loadQuickRepliesManagerFresh() {
-    const runtimePath = require.resolve('../persistence_runtime');
-    const modulePath = require.resolve('../quick_replies_manager');
+    const runtimePath = require.resolve('../config/persistence-runtime');
+    const modulePath = require.resolve('../domains/tenant/services/quick-replies-manager.service');
     delete require.cache[runtimePath];
     delete require.cache[modulePath];
-    return require('../quick_replies_manager');
+    return require('../domains/tenant/services/quick-replies-manager.service');
 }
 
 test('quick_replies_manager isolates tenant quick replies in file driver', async () => {
@@ -56,3 +56,5 @@ test('quick_replies_manager isolates tenant quick replies in file driver', async
         await fs.rm(tempRoot, { recursive: true, force: true });
     }
 });
+
+

@@ -1,8 +1,8 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
 
-const passwordHashService = require('../password_hash_service');
+const passwordHashService = require('../domains/security/services/password-hash.service');
 
 test('password_hash_service hashes and verifies PBKDF2 passwords', () => {
     const hash = passwordHashService.hashPassword('MyS3cret!');
@@ -17,3 +17,5 @@ test('password_hash_service keeps legacy sha256 compatibility', () => {
     assert.equal(passwordHashService.verifyPassword('bad-pass', legacy), false);
     assert.equal(passwordHashService.normalizeStoredHash(legacy.toUpperCase()), legacy);
 });
+
+
