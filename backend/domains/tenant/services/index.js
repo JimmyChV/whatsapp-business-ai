@@ -6,5 +6,7 @@ module.exports = {
   tenantLabelService: require('./tenant-labels.service'),
   waModuleService: require('./wa-modules.service'),
   customerService: require('./customers.service'),
-  aiUsageService: require('./ai-usage.service')
+  aiUsageService: require('./ai-usage.service'),
+  quickRepliesManagerService: require('./quick-replies-manager.service')
 };
+

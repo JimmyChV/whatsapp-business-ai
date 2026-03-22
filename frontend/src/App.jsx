@@ -10,6 +10,8 @@ import useScopedBusinessRequests from './features/chat/hooks/useScopedBusinessRe
 import { useSocketConnectionAuthEffect } from './features/chat/hooks/useSocketConnectionAuthEffect';
 import useChatPaginationRequester from './features/chat/hooks/useChatPaginationRequester';
 import useWaModuleSocketEvents from './features/chat/hooks/useWaModuleSocketEvents';
+import useWorkspaceNavigation from './features/chat/hooks/useWorkspaceNavigation';
+import useTransportSelectionActions from './features/chat/hooks/useTransportSelectionActions';
 import { readWaLaunchParams } from './features/chat/helpers/waLaunchParams';
 import { normalizeQuickRepliesSocketPayload } from './features/chat/helpers/quickRepliesSocket.helpers';
 import { resolveScopedCatalogSelection } from './features/chat/helpers/catalogScope.helpers';
@@ -1629,174 +1631,38 @@ function App() {
       sizeBytes: Number(payload?.file?.sizeBytes || 0) || 0
     };
   };
-  const sanitizeWorkspaceKey = (value = '') => String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '_') || 'default';
+  const {
+    openWhatsAppOperation: handleOpenWhatsAppOperation,
+    openSaasAdminWorkspace: handleOpenSaasAdminWorkspace
+  } = useWorkspaceNavigation({
+    tenantScopeId,
+    setShowSaasAdminPanel
+  });
 
-  const buildWorkspaceUrl = ({ mode = 'operation', tenantId = '', moduleId = '', source = '', section = '' } = {}) => {
-    const nextUrl = new URL(window.location.href);
-    const cleanTenantId = String(tenantId || '').trim();
-    const cleanModuleId = String(moduleId || '').trim().toLowerCase();
-    const cleanMode = String(mode || '').trim().toLowerCase();
-    const cleanSource = String(source || '').trim().toLowerCase();
-
-    if (cleanMode === 'operation') {
-      nextUrl.searchParams.set('wa_launch', 'operation');
-      if (cleanModuleId) nextUrl.searchParams.set('wa_module', cleanModuleId);
-      else nextUrl.searchParams.delete('wa_module');
-      nextUrl.searchParams.delete('wa_section');
-    } else {
-      nextUrl.searchParams.delete('wa_launch');
-      nextUrl.searchParams.delete('wa_module');
-      const cleanSection = String(section || '').trim().toLowerCase();
-      if (cleanSection) nextUrl.searchParams.set('wa_section', cleanSection);
-      else nextUrl.searchParams.delete('wa_section');
-    }
-
-    if (cleanTenantId) nextUrl.searchParams.set('wa_tenant', cleanTenantId);
-    else nextUrl.searchParams.delete('wa_tenant');
-
-    if (cleanSource) nextUrl.searchParams.set('wa_from', cleanSource);
-    else nextUrl.searchParams.delete('wa_from');
-
-    return nextUrl;
-  };
-
-  const isWorkspaceTabAligned = (rawHref = '', { mode = 'operation', tenantId = '', section = '' } = {}) => {
-    try {
-      const current = new URL(String(rawHref || ''));
-      const currentMode = String(current.searchParams.get('wa_launch') || '').trim().toLowerCase() === 'operation'
-        ? 'operation'
-        : 'panel';
-      const currentTenant = String(current.searchParams.get('wa_tenant') || '').trim();
-      const currentSection = String(current.searchParams.get('wa_section') || '').trim().toLowerCase();
-      const expectedMode = String(mode || '').trim().toLowerCase() === 'operation' ? 'operation' : 'panel';
-      const expectedTenant = String(tenantId || '').trim();
-      const expectedSection = String(section || '').trim().toLowerCase();
-      if (currentMode !== expectedMode) return false;
-      if (currentTenant !== expectedTenant) return false;
-      if (expectedMode === 'panel' && expectedSection) return currentSection === expectedSection;
-      return true;
-    } catch (_) {
-      return false;
-    }
-  };
-
-  const openOrFocusWorkspaceTab = ({ mode = 'operation', tenantId = '', moduleId = '', source = '', section = '' } = {}) => {
-    const cleanTenantId = String(tenantId || '').trim();
-    const cleanMode = String(mode || '').trim().toLowerCase() === 'operation' ? 'operation' : 'panel';
-    const targetUrl = buildWorkspaceUrl({ mode: cleanMode, tenantId: cleanTenantId, moduleId, source, section });
-    const targetName = cleanMode === 'operation'
-      ? `lavitat_chat_${sanitizeWorkspaceKey(cleanTenantId)}`
-      : `lavitat_panel_${sanitizeWorkspaceKey(cleanTenantId)}`;
-
-    let targetWindow = null;
-    try {
-      targetWindow = window.open('', targetName);
-    } catch (_) {
-      targetWindow = null;
-    }
-
-    if (!targetWindow) {
-      window.location.assign(targetUrl.toString());
-      return;
-    }
-
-    let mustNavigate = true;
-    try {
-      const currentHref = String(targetWindow.location?.href || '').trim();
-      if (currentHref && currentHref !== 'about:blank') {
-        mustNavigate = !isWorkspaceTabAligned(currentHref, { mode: cleanMode, tenantId: cleanTenantId, section });
-      }
-    } catch (_) {
-      mustNavigate = true;
-    }
-
-    if (mustNavigate) {
-      targetWindow.location.href = targetUrl.toString();
-    }
-    targetWindow.focus();
-  };
-
-  const handleOpenWhatsAppOperation = (moduleId = '', options = {}) => {
-    const preferredModuleId = String(moduleId || '').trim();
-    const targetTenantId = String(options?.tenantId || tenantScopeId || '').trim();
-    if (!targetTenantId) return;
-
-    setShowSaasAdminPanel(false);
-    openOrFocusWorkspaceTab({
-      mode: 'operation',
-      tenantId: targetTenantId,
-      moduleId: preferredModuleId,
-      source: 'panel'
-    });
-  };
-
-  const handleOpenSaasAdminWorkspace = (options = {}) => {
-    const targetTenantId = String(options?.tenantId || tenantScopeId || '').trim();
-    const targetSectionId = String(options?.section || '').trim().toLowerCase();
-    if (!targetTenantId) return;
-
-    setShowSaasAdminPanel(false);
-    openOrFocusWorkspaceTab({
-      mode: 'panel',
-      tenantId: targetTenantId,
-      source: 'chat',
-      section: targetSectionId
-    });
-  };
-
-  const handleSelectTransport = (mode) => {
-    const safeMode = String(mode || '').trim().toLowerCase();
-    if (safeMode !== 'cloud') return;
-
-    setSelectedTransport(safeMode);
-    setTransportError('');
-    setIsSwitchingTransport(true);
-    setIsClientReady(false);
-    setQrCode('');
-
-    setChats([]);
-    setChatsTotal(0);
-    setChatsHasMore(true);
-    chatPagingRef.current = { offset: 0, hasMore: true, loading: false };
-    setMessages([]);
-    setActiveChatId(null);
-    setEditingMessage(null);
-    setReplyingMessage(null);
-    setShowClientProfile(false);
-    setClientContact(null);
-
-    if (isConnected) {
-      socket.emit('set_transport_mode', { mode: safeMode });
-    }
-  };
-
-  const handleResetTransportSelection = () => {
-    if (isConnected) {
-      socket.emit('set_transport_mode', { mode: 'idle' });
-    }
-    setSelectedTransport('');
-    setTransportError('');
-    setWaModuleError('');
-    setIsSwitchingTransport(false);
-    setIsClientReady(false);
-    setQrCode('');
-    setWaRuntime({ requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false, cloudReady: false, availableTransports: ['cloud'] });
-    setChats([]);
-    setChatsTotal(0);
-    setChatsHasMore(true);
-    chatPagingRef.current = { offset: 0, hasMore: true, loading: false };
-    setMessages([]);
-    setActiveChatId(null);
-    setEditingMessage(null);
-    setReplyingMessage(null);
-    setShowClientProfile(false);
-    setClientContact(null);
-    setInputText('');
-    removeAttachment();
-  };
+  const {
+    handleSelectTransport,
+    handleResetTransportSelection
+  } = useTransportSelectionActions({
+    socket,
+    isConnected,
+    chatPagingRef,
+    setSelectedTransport,
+    setTransportError,
+    setIsSwitchingTransport,
+    setIsClientReady,
+    setQrCode,
+    setChats,
+    setChatsTotal,
+    setChatsHasMore,
+    setMessages,
+    setActiveChatId,
+    setEditingMessage,
+    setReplyingMessage,
+    setShowClientProfile,
+    setClientContact,
+    setWaModuleError,
+    setWaRuntime
+  });
   const handleRefreshChats = () => {
     requestChatsPage({ reset: true });
   };

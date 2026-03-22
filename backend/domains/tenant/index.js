@@ -10,6 +10,7 @@ module.exports = {
     waModuleService: tenantDomainServices.waModuleService,
     customerService: tenantDomainServices.customerService,
     quickReplyLibrariesService: require('./quick-reply-libraries.service'),
+    quickRepliesManagerService: tenantDomainServices.quickRepliesManagerService,
     aiUsageService: tenantDomainServices.aiUsageService,
     registerTenantCustomerHttpRoutes: require('./http-routes-customers').registerTenantCustomerHttpRoutes,
     registerTenantWaModuleAdminHttpRoutes: require('./http-routes-wa-modules').registerTenantWaModuleAdminHttpRoutes,
@@ -20,6 +21,7 @@ module.exports = {
     registerTenantAssetsUploadHttpRoutes: require('./http-routes-assets-upload').registerTenantAssetsUploadHttpRoutes,
     registerTenantRuntimePublicHttpRoutes: require('./http-routes-runtime-public').registerTenantRuntimePublicHttpRoutes
 };
+
 
 
 
