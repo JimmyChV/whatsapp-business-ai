@@ -1,7 +1,7 @@
-import { lazy, useState, useEffect, useMemo } from 'react';
+import { lazy, useState, useEffect } from 'react';
 
 import { API_URL, CHAT_PAGE_SIZE, SOCKET_AUTH_TOKEN, TRANSPORT_STORAGE_KEY } from './config/runtime';
-import { loadStoredSaasSession, persistSaasSession } from './features/auth/helpers/saasSessionStorage';
+import { persistSaasSession } from './features/auth/helpers/saasSessionStorage';
 import {
   createSocketClient,
   useNewChatDialog,
@@ -27,7 +27,6 @@ import {
   useAppDerivedChatState,
   useGlobalEscapeToCloseChat,
   useOperationWorkspaceState,
-  readWaLaunchParams,
   normalizeQuickRepliesSocketPayload,
   resolveScopedCatalogSelection,
   requestAiSuggestionForChat,
@@ -83,6 +82,7 @@ import SaasLoginScreen from './features/auth/components/SaasLoginScreen';
 import OperationPage from './pages/OperationPage';
 import { useSaasPanelVisibilityController, useSaasTenantScopeContext } from './features/saas/hooks';
 import { buildOperationPageProps } from './app/helpers/operationPageProps';
+import { useAppSessionTransportState } from './app/hooks';
 
 import './index.css';
 
@@ -91,40 +91,51 @@ const socket = createSocketClient(API_URL, SOCKET_AUTH_TOKEN);
 
 
 function App() {
-  // --------------------------------------------------------------
-  const [isConnected, setIsConnected] = useState(false);
-  const [qrCode, setQrCode] = useState('');
-  const [isClientReady, setIsClientReady] = useState(false);
-  const [selectedTransport, setSelectedTransport] = useState('');
-  const [waRuntime, setWaRuntime] = useState({ requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false, cloudReady: false, availableTransports: ['cloud'] });
-  const [transportError, setTransportError] = useState('');
-  const [isSwitchingTransport, setIsSwitchingTransport] = useState(false);
-
-  const [saasRuntime, setSaasRuntime] = useState({
-    loaded: false,
-    authEnabled: false,
-    tenant: null,
-    tenants: [],
-    authContext: { enabled: false, isAuthenticated: false, user: null }
-  });
-  const [saasSession, setSaasSession] = useState(() => loadStoredSaasSession());
-  const [saasAuthBusy, setSaasAuthBusy] = useState(false);
-  const [saasAuthError, setSaasAuthError] = useState('');
-  const [tenantSwitchBusy, setTenantSwitchBusy] = useState(false);
-  const [tenantSwitchError, setTenantSwitchError] = useState('');
-  const [showSaasAdminPanel, setShowSaasAdminPanel] = useState(false);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [showLoginPassword, setShowLoginPassword] = useState(false);
-  const [saasAuthNotice, setSaasAuthNotice] = useState('');
-  const [forceOperationLaunchBypass, setForceOperationLaunchBypass] = useState(false);
-  const waLaunchParams = useMemo(() => readWaLaunchParams(window.location.search || ''), []);
-  const forceOperationLaunch = waLaunchParams.forceOperationLaunch && !forceOperationLaunchBypass;
-  const requestedWaModuleFromUrl = waLaunchParams.requestedWaModuleId;
-  const requestedWaTenantFromUrl = waLaunchParams.requestedWaTenantId;
-  const requestedWaSectionFromUrl = waLaunchParams.requestedWaSectionId;
-  const requestedLaunchSource = waLaunchParams.requestedLaunchSource;
-  const tenantScopeId = String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || 'default').trim() || 'default';
+  const {
+    isConnected,
+    setIsConnected,
+    qrCode,
+    setQrCode,
+    isClientReady,
+    setIsClientReady,
+    selectedTransport,
+    setSelectedTransport,
+    waRuntime,
+    setWaRuntime,
+    transportError,
+    setTransportError,
+    isSwitchingTransport,
+    setIsSwitchingTransport,
+    saasRuntime,
+    setSaasRuntime,
+    saasSession,
+    setSaasSession,
+    saasAuthBusy,
+    setSaasAuthBusy,
+    saasAuthError,
+    setSaasAuthError,
+    tenantSwitchBusy,
+    setTenantSwitchBusy,
+    tenantSwitchError,
+    setTenantSwitchError,
+    showSaasAdminPanel,
+    setShowSaasAdminPanel,
+    loginEmail,
+    setLoginEmail,
+    loginPassword,
+    setLoginPassword,
+    showLoginPassword,
+    setShowLoginPassword,
+    saasAuthNotice,
+    setSaasAuthNotice,
+    setForceOperationLaunchBypass,
+    forceOperationLaunch,
+    requestedWaModuleFromUrl,
+    requestedWaTenantFromUrl,
+    requestedWaSectionFromUrl,
+    requestedLaunchSource,
+    tenantScopeId
+  } = useAppSessionTransportState();
 
   const {
     chats,

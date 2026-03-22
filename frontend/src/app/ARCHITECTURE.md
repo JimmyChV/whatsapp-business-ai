@@ -3,6 +3,7 @@
 Canonical structure:
 - `app/`: app-level wiring and architecture notes.
 - `app/helpers/`: glue utilities for app composition (`operationPageProps`).
+- `app/hooks/`: top-level state orchestration hooks (`useAppSessionTransportState`).
 - `pages/`: route-level screens (`OperationPage`, `SaasPanelPage`).
 - `routes/`: route map and navigation config.
 - `features/<domain>/`: business code by domain (`chat`, `saas`, `auth`).
