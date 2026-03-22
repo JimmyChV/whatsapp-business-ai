@@ -9,6 +9,7 @@ export { default as useSocketConnectionRuntimeEvents } from './hooks/useSocketCo
 export { default as useSocketBusinessDataEvents } from './hooks/useSocketBusinessDataEvents';
 export { default as useSocketMessageLifecycleEvents } from './hooks/useSocketMessageLifecycleEvents';
 export { default as useSocketAiAndSessionEvents } from './hooks/useSocketAiAndSessionEvents';
+export { default as useSocketChatConversationEvents } from './hooks/useSocketChatConversationEvents';
 export { default as useChatPaginationRequester } from './hooks/useChatPaginationRequester';
 export { default as useWaModuleSocketEvents } from './hooks/useWaModuleSocketEvents';
 export { default as useWorkspaceNavigation } from './hooks/useWorkspaceNavigation';
