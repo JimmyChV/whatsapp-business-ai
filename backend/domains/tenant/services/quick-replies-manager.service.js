@@ -9,7 +9,7 @@ const {
 const quickReplyLibrariesService = require('./quick-reply-libraries.service');
 
 const QUICK_REPLIES_FILE = 'quick_replies.json';
-const LEGACY_QUICK_REPLIES_PATH = path.join(__dirname, '../../../quick_replies.json');
+const LEGACY_QUICK_REPLIES_PATH = path.join(__dirname, '../../../data/legacy/quick_replies.json');
 
 const DEFAULT_QUICK_REPLIES = [
     { id: 'qr_saludo', label: 'Saludo', text: 'Hola. Bienvenido a nuestro negocio. En que puedo ayudarte hoy?' },

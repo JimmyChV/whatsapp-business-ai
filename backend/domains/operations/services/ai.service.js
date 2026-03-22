@@ -119,7 +119,7 @@ async function generateWithOpenAI(messages, config, onChunk = null) {
 }
 
 function loadBaseBusinessContext() {
-    const contextFilePath = path.join(__dirname, 'lavitat_context.txt');
+    const contextFilePath = path.join(__dirname, '../../../data/legacy/lavitat_context.txt');
     if (fs.existsSync(contextFilePath)) {
         return fs.readFileSync(contextFilePath, 'utf-8');
     }

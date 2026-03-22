@@ -9,7 +9,7 @@ const {
 } = require('../../../config/persistence-runtime');
 
 const CATALOG_FILE_NAME = 'catalogo.json';
-const LEGACY_CATALOG_PATH = path.join(__dirname, '../../../catalogo.json');
+const LEGACY_CATALOG_PATH = path.join(__dirname, '../../../data/legacy/catalogo.json');
 
 let postgresSchemaReadyPromise = null;
 

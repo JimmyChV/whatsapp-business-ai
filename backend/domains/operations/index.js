@@ -1,9 +1,8 @@
-﻿const operationServices = require('./services');
+const operationServices = require('./services');
+const operationRoutes = require('./routes');
 
 module.exports = {
     ...operationServices,
-    registerOperationsHttpRoutes: require('./routes/http-routes').registerOperationsHttpRoutes,
-    registerOperationsUtilityHttpRoutes: require('./routes/http-routes-utility').registerOperationsUtilityHttpRoutes,
-    registerOperationsHealthHttpRoutes: require('./routes/http-routes-health').registerOperationsHealthHttpRoutes
+    ...operationRoutes
 };
 

@@ -4,8 +4,9 @@ const crypto = require('crypto');
 
 class MediaManager {
     constructor() {
-        this.cacheDir = path.join(__dirname, 'media_cache');
-        const uploadsRoot = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.join(__dirname, 'uploads')).trim() || path.join(__dirname, 'uploads'));
+        this.cacheDir = path.resolve(__dirname, '../../../data/cache/media');
+        const defaultUploadsRoot = path.resolve(__dirname, '../../../uploads');
+        const uploadsRoot = path.resolve(String(process.env.SAAS_UPLOADS_DIR || defaultUploadsRoot).trim() || defaultUploadsRoot);
         this.waMediaDir = path.resolve(String(process.env.WA_MEDIA_STORAGE_DIR || path.join(uploadsRoot, 'wa-media')).trim() || path.join(uploadsRoot, 'wa-media'));
 
         if (!fs.existsSync(this.cacheDir)) {

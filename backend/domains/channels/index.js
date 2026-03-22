@@ -1,8 +1,8 @@
-﻿const channelServices = require('./services');
+const channelServices = require('./services');
+const channelRoutes = require('./routes');
 
 module.exports = {
     ...channelServices,
-    invalidateWebhookCloudRegistryCache: require('./cloud-webhook.routes').invalidateWebhookCloudRegistryCache,
-    registerCloudWebhookHttpRoutes: require('./cloud-webhook.routes').registerCloudWebhookHttpRoutes
+    ...channelRoutes
 };
 

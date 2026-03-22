@@ -4,7 +4,7 @@ import {
   updateAdminTenantAssignmentRules,
   triggerAdminAutoAssign,
   getAdminTenantOperationsKpis
-} from '../../operations/services/operations.service';
+} from '../services/operations.service';
 
 const DEFAULT_ASSIGNMENT_RULES = {
   enabled: false,

@@ -38,6 +38,7 @@ export { default as useSaasWaModuleEditor } from './useSaasWaModuleEditor';
 
 export { default as useSaasModuleSectionActions } from './useSaasModuleSectionActions';
 export { default as useSaasPanelBootstrap } from './useSaasPanelBootstrap';
+export { default as useSaasPanelLifecycle } from './useSaasPanelLifecycle';
 
 
 export { useSaasPanelVisibilityController } from './useSaasPanelVisibilityController';

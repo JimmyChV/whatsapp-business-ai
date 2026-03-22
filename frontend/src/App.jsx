@@ -2,32 +2,27 @@ import { lazy, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 import { API_URL, CHAT_PAGE_SIZE, SOCKET_AUTH_TOKEN, TRANSPORT_STORAGE_KEY } from './config/runtime';
 import { loadStoredSaasSession, persistSaasSession } from './features/auth/helpers/saasSessionStorage';
-import { createSocketClient } from './features/chat/services/socketClient';
-import { useNewChatDialog } from './features/chat/hooks/useNewChatDialog';
-import { useMessagesAutoScroll } from './features/chat/hooks/useMessagesAutoScroll';
-import { useChatRuntimeSyncEffects } from './features/chat/hooks/useChatRuntimeSyncEffects';
-import useScopedBusinessRequests from './features/chat/hooks/useScopedBusinessRequests';
-import { useSocketConnectionAuthEffect } from './features/chat/hooks/useSocketConnectionAuthEffect';
-import useChatPaginationRequester from './features/chat/hooks/useChatPaginationRequester';
-import useWaModuleSocketEvents from './features/chat/hooks/useWaModuleSocketEvents';
-import useWorkspaceNavigation from './features/chat/hooks/useWorkspaceNavigation';
-import useTransportSelectionActions from './features/chat/hooks/useTransportSelectionActions';
-import useChatMessageActions from './features/chat/hooks/useChatMessageActions';
-import useAttachmentActions from './features/chat/hooks/useAttachmentActions';
-import { readWaLaunchParams } from './features/chat/helpers/waLaunchParams';
-import { normalizeQuickRepliesSocketPayload } from './features/chat/helpers/quickRepliesSocket.helpers';
-import { resolveScopedCatalogSelection } from './features/chat/helpers/catalogScope.helpers';
-import StatusScreen from './features/chat/components/StatusScreen';
-import TransportBootstrapScreen from './features/chat/components/TransportBootstrapScreen';
-import { useSaasRecoveryFlow } from './features/auth/hooks/useSaasRecoveryFlow';
-import useSaasRuntimeBootstrap from './features/auth/hooks/useSaasRuntimeBootstrap';
-import useSaasSessionAutoRefresh from './features/auth/hooks/useSaasSessionAutoRefresh';
-import { useSaasSessionActions } from './features/auth/hooks/useSaasSessionActions';
-import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHelpers';
-import SaasLoginScreen from './features/auth/components/SaasLoginScreen';
-import OperationPage from './pages/OperationPage';
-import { useSaasPanelVisibilityController, useSaasTenantScopeContext } from './features/saas/hooks';
 import {
+  createSocketClient,
+  useNewChatDialog,
+  useMessagesAutoScroll,
+  useChatRuntimeSyncEffects,
+  useScopedBusinessRequests,
+  useSocketConnectionAuthEffect,
+  useChatPaginationRequester,
+  useWaModuleSocketEvents,
+  useWorkspaceNavigation,
+  useTransportSelectionActions,
+  useChatMessageActions,
+  useAttachmentActions,
+  useChatSidebarActions,
+  useChatMessageUiActions,
+  useChatSelectionAction,
+  useWorkspaceResetOnTenantChange,
+  readWaLaunchParams,
+  normalizeQuickRepliesSocketPayload,
+  resolveScopedCatalogSelection,
+  requestAiSuggestionForChat,
   normalizeCatalogItem,
   normalizeProfilePhotoUrl,
   normalizeModuleImageUrl,
@@ -69,7 +64,17 @@ import {
   normalizeQuickReplyDraft,
   isVisibleChatId,
   upsertAndSortChat
-} from './features/chat/helpers/appChat.helpers';
+} from './features/chat/core';
+import StatusScreen from './features/chat/components/StatusScreen';
+import TransportBootstrapScreen from './features/chat/components/TransportBootstrapScreen';
+import { useSaasRecoveryFlow } from './features/auth/hooks/useSaasRecoveryFlow';
+import useSaasRuntimeBootstrap from './features/auth/hooks/useSaasRuntimeBootstrap';
+import useSaasSessionAutoRefresh from './features/auth/hooks/useSaasSessionAutoRefresh';
+import { useSaasSessionActions } from './features/auth/hooks/useSaasSessionActions';
+import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHelpers';
+import SaasLoginScreen from './features/auth/components/SaasLoginScreen';
+import OperationPage from './pages/OperationPage';
+import { useSaasPanelVisibilityController, useSaasTenantScopeContext } from './features/saas/hooks';
 
 import './index.css';
 
@@ -1256,41 +1261,38 @@ function App() {
   // --------------------------------------------------------------
   // Handlers
   // --------------------------------------------------------------
-  const resetWorkspaceState = () => {
-    setIsClientReady(false);
-    setQrCode('');
-    setSelectedTransport('');
-    setWaModules([]);
-    setSelectedWaModule(null);
-    setSelectedCatalogModuleId('');
-    setSelectedCatalogId('');
-    setChats([]);
-    setChatsTotal(0);
-    setChatsHasMore(true);
-    chatPagingRef.current = { offset: 0, hasMore: true, loading: false };
-    setIsLoadingMoreChats(false);
-    setMessages([]);
-    setActiveChatId(null);
-    activeChatIdRef.current = null;
-    setEditingMessage(null);
-    setReplyingMessage(null);
-    setShowClientProfile(false);
-    setClientContact(null);
-    setBusinessData({ profile: null, labels: [], catalog: [], catalogMeta: { source: 'local', nativeAvailable: false } });
-    setQuickReplies([]);
-    setWaModuleError('');
-    setPendingOrderCartLoad(null);
-    setToasts([]);
-    setInputText('');
-    removeAttachment();
-  };
-
-  useEffect(() => {
-    const previousTenant = String(tenantScopeRef.current || '').trim() || 'default';
-    if (previousTenant === tenantScopeId) return;
-    tenantScopeRef.current = tenantScopeId;
-    resetWorkspaceState();
-  }, [tenantScopeId]);
+  const { resetWorkspaceState } = useWorkspaceResetOnTenantChange({
+    tenantScopeId,
+    tenantScopeRef,
+    setIsClientReady,
+    setQrCode,
+    setSelectedTransport,
+    setWaModules,
+    setSelectedWaModule,
+    setSelectedCatalogModuleId,
+    setSelectedCatalogId,
+    setChats,
+    setChatsTotal,
+    setChatsHasMore,
+    chatPagingRef,
+    setIsLoadingMoreChats,
+    setMessages,
+    setActiveChatId,
+    activeChatIdRef,
+    setEditingMessage,
+    setReplyingMessage,
+    setShowClientProfile,
+    setClientContact,
+    setBusinessData,
+    setQuickReplies,
+    setWaModuleError,
+    setPendingOrderCartLoad,
+    setToasts,
+    setInputText,
+    setAttachment,
+    setAttachmentPreview,
+    setIsDragOver
+  });
 
   const {
     handleSaasLogin,
@@ -1327,82 +1329,35 @@ function App() {
     setSaasRuntime
   });
 
-  const handleChatSelect = (chatId, options = {}) => {
-    if (!chatId) return;
-    const clearSearch = Boolean(options?.clearSearch);
-    if (clearSearch && chatSearchRef.current) {
-      chatSearchRef.current = '';
-      setChatSearchQuery('');
-      requestChatsPage({ reset: true });
-    }
-
-    const requestedChatId = String(chatId || '').trim();
-    let resolvedChatId = requestedChatId;
-    let selectedChat = chatsRef.current.find((c) => String(c?.id || '') === requestedChatId) || null;
-    let resolvedScopeModuleId = '';
-
-    if (selectedChat) {
-      const parsedSelected = parseScopedChatId(selectedChat?.id || '');
-      const selectedScopeModuleId = String(parsedSelected?.scopeModuleId || selectedChat?.scopeModuleId || selectedChat?.lastMessageModuleId || '').trim().toLowerCase();
-      resolvedScopeModuleId = selectedScopeModuleId;
-      if (!selectedScopeModuleId) {
-        const baseSelectedChatId = String(parsedSelected?.baseChatId || selectedChat?.baseChatId || selectedChat?.id || '').trim();
-        if (baseSelectedChatId) {
-          const scopedCandidates = chatsRef.current
-            .filter((entry) => {
-              const parsedEntry = parseScopedChatId(entry?.id || '');
-              const entryBase = String(parsedEntry?.baseChatId || entry?.baseChatId || entry?.id || '').trim();
-              const entryScope = String(parsedEntry?.scopeModuleId || entry?.scopeModuleId || entry?.lastMessageModuleId || '').trim().toLowerCase();
-              return Boolean(entryBase && entryBase === baseSelectedChatId && entryScope);
-            })
-            .sort((a, b) => Number(b?.timestamp || 0) - Number(a?.timestamp || 0));
-          if (scopedCandidates.length > 0) {
-            selectedChat = scopedCandidates[0];
-            resolvedChatId = String(selectedChat?.id || requestedChatId);
-            const parsedResolved = parseScopedChatId(selectedChat?.id || '');
-            resolvedScopeModuleId = String(parsedResolved?.scopeModuleId || selectedChat?.scopeModuleId || selectedChat?.lastMessageModuleId || '').trim().toLowerCase();
-          }
-        }
-      }
-    }
-
-    if (resolvedScopeModuleId) {
-      const currentCatalogModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
-      const currentWaModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
-
-      if (resolvedScopeModuleId !== currentCatalogModuleId) {
-        selectedCatalogModuleIdRef.current = resolvedScopeModuleId;
-        selectedCatalogIdRef.current = '';
-        setSelectedCatalogModuleId(resolvedScopeModuleId);
-        setSelectedCatalogId('');
-      }
-
-      if (isConnected) {
-        requestQuickRepliesForModule(resolvedScopeModuleId);
-        if (resolvedScopeModuleId !== currentWaModuleId) {
-          socket.emit('set_wa_module', { moduleId: resolvedScopeModuleId });
-        } else {
-          emitScopedBusinessDataRequest({ moduleId: resolvedScopeModuleId, catalogId: selectedCatalogIdRef.current || '' });
-        }
-      }
-    }
-
-    activeChatIdRef.current = resolvedChatId;
-    setActiveChatId(resolvedChatId);
-    shouldInstantScrollRef.current = true;
-    suppressSmoothScrollUntilRef.current = Date.now() + 2200;
-    prevMessagesMetaRef.current = { count: 0, lastId: '' };
-    setMessages([]);
-    setEditingMessage(null);
-    setReplyingMessage(null);
-    setShowClientProfile(false);
-    setClientContact(null);
-    setQuickReplyDraft(null);
-    socket.emit('get_chat_history', resolvedChatId);
-    socket.emit('mark_chat_read', resolvedChatId);
-    socket.emit('get_contact_info', resolvedChatId);
-    setChats((prev) => prev.map((c) => chatIdsReferSameScope(String(c?.id || ''), resolvedChatId) ? { ...c, unreadCount: 0 } : c));
-  };
+  const { handleChatSelect } = useChatSelectionAction({
+    chatsRef,
+    chatSearchRef,
+    setChatSearchQuery,
+    requestChatsPage,
+    parseScopedChatId,
+    selectedCatalogModuleIdRef,
+    selectedCatalogIdRef,
+    selectedWaModuleRef,
+    setSelectedCatalogModuleId,
+    setSelectedCatalogId,
+    isConnected,
+    requestQuickRepliesForModule,
+    socket,
+    emitScopedBusinessDataRequest,
+    activeChatIdRef,
+    setActiveChatId,
+    shouldInstantScrollRef,
+    suppressSmoothScrollUntilRef,
+    prevMessagesMetaRef,
+    setMessages,
+    setEditingMessage,
+    setReplyingMessage,
+    setShowClientProfile,
+    setClientContact,
+    setQuickReplyDraft,
+    setChats,
+    chatIdsReferSameScope
+  });
   const {
     removeAttachment,
     handleFileChange,
@@ -1451,132 +1406,25 @@ function App() {
     socket.emit('logout_whatsapp');
   };
 
-  const handleSelectWaModule = (moduleId = '') => {
-    const safeModuleId = String(moduleId || '').trim();
-    if (!safeModuleId) return;
-
-    const nextModule = (Array.isArray(waModules) ? waModules : [])
-      .find((item) => String(item?.moduleId || '').trim() === safeModuleId);
-    if (!nextModule) {
-      setWaModuleError('No se encontro el modulo seleccionado.');
-      return;
-    }
-
-    const moduleTransport = String(nextModule?.transportMode || '').trim().toLowerCase();
-    const normalizedTransport = moduleTransport === 'cloud' ? 'cloud' : 'cloud';
-
-    setSelectedWaModule(nextModule);
-    setSelectedTransport(normalizedTransport);
-    setTransportError('');
-    setWaModuleError('');
-
-    if (isConnected) {
-      requestQuickRepliesForModule(nextModule.moduleId);
-      socket.emit('set_wa_module', { moduleId: nextModule.moduleId });
-      return;
-    }
-
-    handleSelectTransport(normalizedTransport);
-  };
-
-  const handleSelectCatalogModule = (moduleId = '') => {
-    const safeModuleId = String(moduleId || '').trim().toLowerCase();
-    if (!safeModuleId) return;
-
-    const moduleExists = (Array.isArray(waModules) ? waModules : [])
-      .some((item) => String(item?.moduleId || '').trim().toLowerCase() === safeModuleId && item?.isActive !== false);
-    if (!moduleExists) {
-      setWaModuleError('No se encontro el modulo para ese catalogo.');
-      return;
-    }
-
-    selectedCatalogModuleIdRef.current = safeModuleId;
-    selectedCatalogIdRef.current = '';
-    setSelectedCatalogModuleId(safeModuleId);
-    setSelectedCatalogId('');
-    setBusinessData((prev) => ({
-      ...prev,
-      catalog: [],
-      catalogMeta: {
-        ...(prev?.catalogMeta || { source: 'local', nativeAvailable: false }),
-        scope: {
-          ...(prev?.catalogMeta?.scope || {}),
-          moduleId: safeModuleId,
-          catalogId: ''
-        }
-      }
-    }));
-    if (isConnected) {
-      requestQuickRepliesForModule(safeModuleId);
-      emitScopedBusinessDataRequest({ moduleId: safeModuleId, catalogId: '' });
-    }
-  };
-
-  const handleSelectCatalog = (catalogId = '') => {
-    const safeCatalogId = String(catalogId || '').trim().toUpperCase();
-    const safeModuleId = String(selectedCatalogModuleIdRef.current || '').trim().toLowerCase();
-    if (!safeModuleId) return;
-    selectedCatalogIdRef.current = safeCatalogId;
-    setSelectedCatalogId(safeCatalogId);
-    setBusinessData((prev) => ({
-      ...prev,
-      catalog: [],
-      catalogMeta: {
-        ...(prev?.catalogMeta || { source: 'local', nativeAvailable: false }),
-        scope: {
-          ...(prev?.catalogMeta?.scope || {}),
-          moduleId: safeModuleId,
-          catalogId: safeCatalogId || ''
-        }
-      }
-    }));
-    if (isConnected) {
-      emitScopedBusinessDataRequest({
-        moduleId: safeModuleId,
-        catalogId: safeCatalogId || ''
-      });
-    }
-  };
-  const handleUploadCatalogImage = async ({ dataUrl, fileName, scope = '' } = {}) => {
-    const safeDataUrl = String(dataUrl || '').trim();
-    if (!safeDataUrl) throw new Error('No se recibio imagen para subir.');
-
-    const tenantId = String(saasSessionRef.current?.user?.tenantId || saasRuntimeRef.current?.tenant?.id || tenantScopeId || 'default').trim() || 'default';
-    const moduleId = String(selectedCatalogModuleIdRef.current || selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
-    const scopeSuffix = moduleId ? `catalog-${moduleId}` : 'catalog';
-    const safeScope = String(scope || scopeSuffix).trim() || scopeSuffix;
-
-    const response = await fetch(`${API_URL}/api/admin/saas/assets/upload`, {
-      method: 'POST',
-      headers: buildApiHeaders({ includeJson: true }),
-      body: JSON.stringify({
-        tenantId,
-        scope: safeScope,
-        fileName: String(fileName || 'producto').trim() || 'producto',
-        dataUrl: safeDataUrl
-      })
-    });
-
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload?.ok === false) {
-      throw new Error(String(payload?.error || 'No se pudo subir la imagen.'));
-    }
-
-    const url = String(payload?.file?.url || payload?.file?.relativeUrl || '').trim();
-    if (!url) throw new Error('El servidor no devolvio URL para la imagen.');
-    return {
-      url,
-      relativeUrl: String(payload?.file?.relativeUrl || '').trim() || null,
-      mimeType: String(payload?.file?.mimeType || '').trim() || null,
-      sizeBytes: Number(payload?.file?.sizeBytes || 0) || 0
-    };
-  };
   const {
     openWhatsAppOperation: handleOpenWhatsAppOperation,
     openSaasAdminWorkspace: handleOpenSaasAdminWorkspace
   } = useWorkspaceNavigation({
     tenantScopeId,
     setShowSaasAdminPanel
+  });
+  const saasAuthEnabled = Boolean(saasRuntime?.authEnabled);
+  const isSaasAuthenticated = !saasAuthEnabled || Boolean(saasSession?.accessToken);
+  const {
+    availableTenantOptions,
+    canSwitchTenant,
+    saasUserRole,
+    canManageSaas,
+  } = useSaasTenantScopeContext({
+    saasRuntime,
+    saasSession,
+    saasAuthEnabled,
+    isSaasAuthenticated,
   });
 
   const {
@@ -1603,60 +1451,52 @@ function App() {
     setWaModuleError,
     setWaRuntime
   });
-  const handleRefreshChats = () => {
-    requestChatsPage({ reset: true });
-  };
-
-  const handleChatSearchChange = (value) => {
-    setChatSearchQuery(String(value || ''));
-  };
-
-  const handleChatFiltersChange = (nextFilters = {}) => {
-    setChatFilters(normalizeChatFilters(nextFilters));
-  };
-
-  const handleLoadMoreChats = () => {
-    requestChatsPage({ reset: false });
-  };
-
-  const handleCreateLabel = () => {
-    if (!canManageSaas) {
-      alert('No tienes permisos para gestionar etiquetas.');
-      return;
-    }
-    handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId, section: 'saas_etiquetas' });
-  };
-
-  const handleOpenCompanyProfile = () => {
-    setOpenCompanyProfileToken((prev) => prev + 1);
-  };
-
-  const handleToggleChatLabel = (chatId, labelId) => {
-    if (!chatId || labelId === undefined || labelId === null || labelId === '') return;
-    const chat = chats.find((c) => c.id === chatId);
-    const current = Array.isArray(chat?.labels) ? chat.labels : [];
-
-    const idStr = String(labelId);
-    const has = current.some((l) => String(l?.id || l?.labelId || '') === idStr);
-    const nextIds = has
-      ? current
-        .filter((l) => String(l?.id || l?.labelId || '') !== idStr)
-        .map((l) => String(l?.id || l?.labelId || '').trim())
-        .filter(Boolean)
-      : [
-        ...current
-          .map((l) => String(l?.id || l?.labelId || '').trim())
-          .filter(Boolean),
-        idStr
-      ];
-
-    socket.emit('set_chat_labels', { chatId, labelIds: nextIds });
-  };
-
-  const handleToggleChatPinned = (chatId, nextPinned) => {
-    if (!chatId || typeof nextPinned !== 'boolean') return;
-    socket.emit('set_chat_state', { chatId, pinned: nextPinned });
-  };
+  const {
+    handleSelectWaModule,
+    handleSelectCatalogModule,
+    handleSelectCatalog,
+    handleUploadCatalogImage,
+    handleRefreshChats,
+    handleChatSearchChange,
+    handleChatFiltersChange,
+    handleLoadMoreChats,
+    handleCreateLabel,
+    handleOpenCompanyProfile,
+    handleToggleChatLabel,
+    handleToggleChatPinned,
+    handleLoadOrderToCart: loadOrderToCartForActiveChat
+  } = useChatSidebarActions({
+    waModules,
+    setWaModuleError,
+    setSelectedWaModule,
+    setSelectedTransport,
+    setTransportError,
+    isConnected,
+    requestQuickRepliesForModule,
+    socket,
+    emitScopedBusinessDataRequest,
+    selectedCatalogModuleIdRef,
+    selectedCatalogIdRef,
+    selectedWaModuleRef,
+    setSelectedCatalogModuleId,
+    setSelectedCatalogId,
+    setBusinessData,
+    handleSelectTransport,
+    saasSessionRef,
+    saasRuntimeRef,
+    tenantScopeId,
+    apiUrl: API_URL,
+    buildApiHeaders,
+    requestChatsPage,
+    setChatSearchQuery,
+    setChatFilters,
+    normalizeChatFilters,
+    canManageSaas,
+    handleOpenSaasAdminWorkspace,
+    setOpenCompanyProfileToken,
+    chats,
+    setPendingOrderCartLoad
+  });
 
   const {
     newChatDialog,
@@ -1673,92 +1513,40 @@ function App() {
     socket
   });
 
-  const handleEditMessage = (messageId, currentBody) => {
-    if (!waCapabilities.messageEdit) {
-      alert('La edicion de mensajes no esta disponible en esta sesion de WhatsApp.');
-      return;
-    }
-    removeAttachment();
-    setQuickReplyDraft(null);
-    const cleanId = String(messageId || '').trim();
-    if (!cleanId) return;
-    const body = String(currentBody || '');
-    setReplyingMessage(null);
-    setEditingMessage({ id: cleanId, originalBody: body });
-    setInputText(body);
-  };
-
-  const handleCancelEditMessage = () => {
-    setEditingMessage(null);
-    setInputText('');
-  };
-
-  const handleReplyMessage = (message = null) => {
-    const cleanId = String(message?.id || '').trim();
-    if (!cleanId) return;
-
-    const bodyText = sanitizeDisplayText(message?.body || '');
-    const hasMedia = Boolean(message?.hasMedia);
-    const preview = bodyText || (hasMedia ? 'Adjunto' : 'Mensaje');
-
-    setEditingMessage(null);
-    setReplyingMessage({
-      id: cleanId,
-      body: preview,
-      fromMe: Boolean(message?.fromMe),
-      type: String(message?.type || 'chat')
-    });
-  };
-
-  const handleCancelReplyMessage = () => {
-    setReplyingMessage(null);
-  };
-
-  const handleForwardMessage = (messageId, toChatId) => {
-    const sourceMessageId = String(messageId || '').trim();
-    const targetChatId = String(toChatId || '').trim();
-    if (!sourceMessageId || !targetChatId) return;
-    socket.emit('forward_message', {
-      messageId: sourceMessageId,
-      toChatId: targetChatId
-    });
-  };
-  const handleDeleteMessage = (payload = {}) => {
-    const messageId = String(payload?.id || '').trim();
-    if (!messageId || !activeChatIdRef.current) return;
-
-    const ok = window.confirm('Eliminar este mensaje? WhatsApp solo lo permite en algunos casos.');
-    if (!ok) return;
-
-    socket.emit('delete_message', {
-      chatId: String(payload?.chatId || activeChatIdRef.current || '').trim(),
-      messageId
-    });
-  };
+  const {
+    handleEditMessage,
+    handleCancelEditMessage,
+    handleReplyMessage,
+    handleCancelReplyMessage,
+    handleForwardMessage,
+    handleDeleteMessage,
+    handleSendQuickReply: applyQuickReplyDraft
+  } = useChatMessageUiActions({
+    waCapabilities,
+    removeAttachment,
+    setQuickReplyDraft,
+    setEditingMessage,
+    setReplyingMessage,
+    setInputText,
+    setAttachment,
+    setAttachmentPreview,
+    sanitizeDisplayText,
+    socket,
+    activeChatIdRef
+  });
   const handleLoadOrderToCart = (orderPayload) => {
-    if (!activeChatIdRef.current || !orderPayload || typeof orderPayload !== 'object') return;
-    const token = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-    setPendingOrderCartLoad({
-      token,
-      chatId: String(activeChatIdRef.current),
-      order: orderPayload
-    });
+    loadOrderToCartForActiveChat(activeChatIdRef.current, orderPayload);
   };
 
   const handleSendQuickReply = (quickReply = null) => {
-    if (!waCapabilities.quickRepliesRead) return;
-    const activeId = String(activeChatIdRef.current || '').trim();
-    if (!activeId) return;
-
-    const draft = normalizeQuickReplyDraft(quickReply);
-    if (!draft) return;
-
-    setEditingMessage(null);
-    setAttachment(null);
-    setAttachmentPreview(null);
-    setQuickReplyDraft(draft);
-    setInputText(String(draft.text || '').trim());
+    applyQuickReplyDraft(quickReply, activeChatIdRef.current, normalizeQuickReplyDraft);
   };
+  const activeChatDetails = useMemo(() => {
+    const currentActiveId = String(activeChatId || activeChatIdRef.current || '').trim();
+    if (!currentActiveId) return null;
+    return chats.find((chat) => chatIdsReferSameScope(String(chat?.id || ''), currentActiveId)) || null;
+  }, [activeChatId, chats]);
+
   useEffect(() => {
     const onGlobalKeyDown = (event) => {
       if (event.key !== 'Escape' || event.repeat) return;
@@ -1772,150 +1560,29 @@ function App() {
   }, []);
 
   function requestAiSuggestion(customPromptArg) {
-    if (!activeChatId) return;
-    const customPrompt = typeof customPromptArg === 'string' ? customPromptArg : null;
-    setAiSuggestion('');
-    setIsAiLoading(true);
-
-    const normalizeModuleId = (value = '') => String(value || '').trim().toLowerCase();
-    const normalizeCatalogId = (value = '') => String(value || '').trim().toUpperCase();
-
-    const catalogScope = (businessData?.catalogMeta?.scope && typeof businessData.catalogMeta.scope === 'object')
-      ? businessData.catalogMeta.scope
-      : {};
-    const aiModuleId = normalizeModuleId(activeChatDetails?.scopeModuleId || selectedWaModuleRef.current?.moduleId || selectedCatalogModuleIdRef.current || '');
-    const moduleRows = normalizeWaModules(waModulesRef.current || []);
-    const moduleRow = moduleRows.find((entry) => normalizeModuleId(entry?.moduleId) === aiModuleId) || null;
-
-    const selectedCatalog = normalizeCatalogId(selectedCatalogIdRef.current || catalogScope.catalogId || '');
-    const scopeCatalogIds = Array.isArray(catalogScope.catalogIds)
-      ? catalogScope.catalogIds.map((entry) => normalizeCatalogId(entry)).filter(Boolean)
-      : [];
-    const catalogIds = Array.from(new Set([
-      selectedCatalog,
-      ...scopeCatalogIds
-    ].filter(Boolean)));
-
-    const e164Phone = (() => {
-      const digits = String(activeChatDetails?.phone || clientContact?.phone || '').replace(/\D/g, '');
-      if (!digits) return '';
-      return '+' + digits;
-    })();
-
-    const recentMessagesRows = messages.slice(-18).map((entry) => ({
-      fromMe: entry?.fromMe === true,
-      body: String(entry?.body || '').trim(),
-      type: String(entry?.type || '').trim().toLowerCase() || 'chat',
-      timestamp: Number(entry?.timestamp || 0) || null
-    }));
-
-    const runtimeContext = {
-      tenant: {
-        id: String(tenantScopeRef.current || 'default').trim() || 'default',
-        name: String(saasRuntimeRef.current?.tenant?.name || businessData?.profile?.name || '').trim() || null,
-        plan: String(saasRuntimeRef.current?.tenant?.plan || '').trim() || null
-      },
-      module: {
-        moduleId: aiModuleId || null,
-        name: String(moduleRow?.name || activeChatDetails?.moduleName || '').trim() || null,
-        channelType: String(moduleRow?.channelType || activeChatDetails?.channelType || 'whatsapp').trim().toLowerCase() || 'whatsapp',
-        transportMode: 'cloud'
-      },
-      catalog: {
-        catalogId: selectedCatalog || null,
-        catalogIds,
-        source: String(businessData?.catalogMeta?.source || '').trim().toLowerCase() || 'local',
-        items: (Array.isArray(businessData?.catalog) ? businessData.catalog : []).slice(0, 70).map((item) => ({
-          id: item?.id || null,
-          title: item?.title || null,
-          price: item?.price || null,
-          regularPrice: item?.regularPrice || null,
-          salePrice: item?.salePrice || null,
-          discountPct: Number(item?.discountPct || 0) || 0,
-          description: item?.description || '',
-          category: item?.category || item?.categoryName || null,
-          categories: Array.isArray(item?.categories) ? item.categories : [],
-          catalogId: item?.catalogId || selectedCatalog || null,
-          catalogName: item?.catalogName || null,
-          source: item?.source || null,
-          sku: item?.sku || null,
-          stockStatus: item?.stockStatus || null,
-          imageUrl: item?.imageUrl || null,
-          presentation: item?.presentation || item?.metadata?.presentation || item?.metadata?.presentacion || null,
-          aroma: item?.aroma || item?.metadata?.aroma || item?.metadata?.scent || null,
-          hypoallergenic: typeof item?.metadata?.hypoallergenic === 'boolean' ? item.metadata.hypoallergenic : null,
-          petFriendly: typeof item?.metadata?.petFriendly === 'boolean' ? item.metadata.petFriendly : (typeof item?.metadata?.pet_friendly === 'boolean' ? item.metadata.pet_friendly : null)
-        }))
-      },
-      cart: (() => {
-        const snapshot = activeCartSnapshot && typeof activeCartSnapshot === 'object' ? activeCartSnapshot : null;
-        const sameChat = String(snapshot?.chatId || '').trim() === String(activeChatId || '').trim();
-        if (!snapshot || !sameChat) {
-          return {
-            items: [],
-            subtotal: 0,
-            discount: 0,
-            total: 0,
-            delivery: 0,
-            currency: 'PEN',
-            notes: null
-          };
-        }
-        return {
-          items: Array.isArray(snapshot.items) ? snapshot.items : [],
-          subtotal: Number(snapshot.subtotal || 0),
-          discount: Number(snapshot.discount || 0),
-          total: Number(snapshot.total || 0),
-          delivery: Number(snapshot.delivery || 0),
-          currency: String(snapshot.currency || 'PEN').trim() || 'PEN',
-          notes: String(snapshot.notes || '').trim() || null
-        };
-      })(),
-      chat: {
-        chatId: String(activeChatId || '').trim(),
-        phone: e164Phone || null,
-        recentMessages: recentMessagesRows
-      },
-      customer: {
-        customerId: String(clientContact?.customerId || activeChatDetails?.customerId || '').trim() || null,
-        phoneE164: e164Phone || null,
-        name: String(activeChatDetails?.name || clientContact?.name || activeChatDetails?.pushname || '').trim() || null
-      },
-      ui: {
-        contextSource: 'chat_window'
-      }
-    };
-
-    const businessContext = `Contexto dinamico enviado en runtimeContext. Usa este bloque solo como fallback.`;
-
-    const recentMessages = recentMessagesRows
-      .map((entry) => `${entry.fromMe ? 'VENDEDOR' : 'CLIENTE'}: ${entry.body || '[sin texto]'}`)
-      .join('\n');
-
-    socket.emit('request_ai_suggestion', {
-      contextText: recentMessages,
-      businessContext,
-      customPrompt: customPrompt || aiPrompt,
-      moduleId: aiModuleId || undefined,
-      runtimeContext
+    requestAiSuggestionForChat({
+      socket,
+      activeChatId,
+      activeChatDetails,
+      clientContact,
+      selectedWaModuleRef,
+      selectedCatalogModuleIdRef,
+      selectedCatalogIdRef,
+      waModulesRef,
+      businessData,
+      messages,
+      activeCartSnapshot,
+      tenantScopeRef,
+      saasRuntimeRef,
+      aiPrompt,
+      customPromptArg,
+      setAiSuggestion,
+      setIsAiLoading
     });
   };
   const activeTransport = String(waRuntime?.activeTransport || 'idle').toLowerCase();
   const cloudConfigured = Boolean(waRuntime?.cloudConfigured);
   const selectedModeLabel = 'WhatsApp Cloud API';
-  const saasAuthEnabled = Boolean(saasRuntime?.authEnabled);
-  const isSaasAuthenticated = !saasAuthEnabled || Boolean(saasSession?.accessToken);
-  const {
-    availableTenantOptions,
-    canSwitchTenant,
-    saasUserRole,
-    canManageSaas,
-  } = useSaasTenantScopeContext({
-    saasRuntime,
-    saasSession,
-    saasAuthEnabled,
-    isSaasAuthenticated,
-  });
   const availableWaModules = normalizeWaModules(waModules).filter((module) => module.isActive !== false);
   const hasModuleCatalog = availableWaModules.length > 0;
   const activeCatalogModuleId = String(selectedCatalogModuleId || '').trim();

@@ -5,7 +5,7 @@ Canonical layout:
 - `components/panel/`: reusable panel widgets (header/nav/tenant picker/image drop input).
 - `sections/`: business sections (Empresas, Usuarios, Modulos, Catalogos, etc.).
 - `hooks/`: orchestration/state/actions/effects for SaaS panel.
-- `services/`: SaaS API access layer.
+- `services/`: SaaS API access layer (including operations/admin assignment APIs).
 - `helpers/`: pure utilities/constants (no side effects).
 
 Rules:

@@ -70,7 +70,8 @@ const QUICK_REPLY_MEDIA_TIMEOUT_MS = Math.max(
 );
 let sharpImageProcessor = null;
 let sharpLoadAttempted = false;
-const SAAS_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.join(__dirname, 'uploads')).trim() || path.join(__dirname, 'uploads'));
+const DEFAULT_SAAS_UPLOADS_ROOT = path.resolve(__dirname, '../../../uploads');
+const SAAS_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || DEFAULT_SAAS_UPLOADS_ROOT).trim() || DEFAULT_SAAS_UPLOADS_ROOT);
 
 function guardRateLimit(socket, eventName) {
     const key = `${socket.id}:${eventName}`;

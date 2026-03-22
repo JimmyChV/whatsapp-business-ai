@@ -1,4 +1,4 @@
-import { API_URL } from '../../../config/runtime';
+import { API_URL } from '../../../../config/runtime';
 
 export const normalizeCatalogItem = (item = {}, index = 0) => {
   const safeItem = item && typeof item === 'object' ? item : {};

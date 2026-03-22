@@ -4,7 +4,10 @@ Canonical structure:
 - `server.js`: bootstrap and route registration only.
 - `domains/<domain>/routes/*`: HTTP route registrars.
 - `domains/<domain>/services/*`: domain logic and orchestration.
+- `domains/<domain>/helpers/*`: pure utilities for the domain (if needed).
 - `db/*`: migrations and DB tooling.
+- `data/legacy/*`: compatibility seed/fallback files migrated from backend root.
+- `data/cache/*`: runtime cache artifacts (no cache under source folders).
 - `scripts/*`: operational scripts.
 - `test/*`: automated tests.
 
@@ -16,7 +19,7 @@ Current migration policy:
 
 Latest canonicalized modules:
 - operations: `ai.service`, `ai-prompt-context.service`, `ops-telemetry.service`.
-- channels: `socket-manager.service`, `media-manager.service`.
+- channels: `routes/http-routes-cloud-webhook.js`, `socket-manager.service`, `media-manager.service`.
 - tenant: `tenant-control.service`, `woocommerce.service`.
 - security: `email.service`, `meta-config-crypto.service`, `helpers/security-utils`.
 
