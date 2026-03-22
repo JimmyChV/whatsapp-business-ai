@@ -1,5 +1,5 @@
-const { parseCsvEnv } = require('../../../security_utils');
-const saasControlService = require('../../../saas_control_plane_service');
+const { parseCsvEnv } = require('../../security/helpers/security-utils');
+const saasControlService = require('./tenant-control.service');
 
 function parseBooleanEnv(value, defaultValue = false) {
     const raw = String(value ?? '').trim().toLowerCase();

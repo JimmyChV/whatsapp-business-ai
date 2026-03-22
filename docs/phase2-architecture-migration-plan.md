@@ -53,11 +53,19 @@ No mass rewrite: every movement keeps current behavior via compatibility wrapper
 - Tenant domain routes moved to `backend/domains/tenant/routes/*` to avoid flat root clutter.
 - Tenant integrations and quick reply library implementations moved into `backend/domains/tenant/services/*`.
 - Removed empty placeholder directories (`controllers/repositories/validators/middlewares`) until real implementation is added.
+- Moved frontend operations API service from `src/services` to `features/operations/services`.
+- Moved backend heavy implementations to canonical domain layers:
+  - `ai.service`, `ai-prompt-context.service` -> `domains/operations/services`.
+  - `ops-telemetry.service` -> `domains/operations/services`.
+  - `socket-manager.service`, `media-manager.service` -> `domains/channels/services`.
+  - `woocommerce.service` -> `domains/tenant/services`.
+  - `tenant-control.service` canonicalized under `domains/tenant/services`.
+  - `email.service`, `meta-config-crypto.service`, `security-utils` -> `domains/security/*`.
+- Root files for those modules now remain as compatibility wrappers only.
 
 ### Stage E (next)
-- Continue domain inversion for remaining backend root heavy services:
-  - channels/integrations (`whatsapp_cloud_client`, `whatsapp_client`, `woocommerce_service`, `wa_provider`).
-  - control-plane/security helpers where applicable.
+- Continue reducing root compatibility wrappers by migrating imports/tests to canonical domain paths.
+- Finalize channels/service inversion around provider/cloud/webjs shims and wrapper retirement.
 - Start repository layer extraction for persistence-heavy services.
 
 ### Stage F (final Phase 2 closeout)

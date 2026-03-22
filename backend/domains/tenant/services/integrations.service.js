@@ -12,7 +12,7 @@ const {
     decryptSecret,
     maskSecret,
     isEncryptedValue
-} = require('../../../meta_config_crypto');
+} = require('../../security/services/meta-config-crypto.service');
 
 const INTEGRATIONS_FILE_NAME = 'tenant_integrations.json';
 const ALLOWED_CATALOG_MODES = new Set(['hybrid', 'meta_only', 'woo_only', 'local_only']);

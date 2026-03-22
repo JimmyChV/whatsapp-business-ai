@@ -25,6 +25,7 @@ const {
     saasControlService,
     tenantIntegrationsService,
     tenantCatalogService,
+    catalogManagerService,
     tenantLabelService,
     waModuleService,
     customerService,
@@ -51,13 +52,12 @@ const {
     registerOperationsHealthHttpRoutes
 } = require('./domains/operations');
 const {
+    waProvider: waClient,
+    socketManager: SocketManager,
     invalidateWebhookCloudRegistryCache,
     registerCloudWebhookHttpRoutes
 } = require('./domains/channels');
-const { loadCatalog, addProduct, updateProduct } = require('./catalog_manager');
-
-const waClient = require('./wa_provider');
-const SocketManager = require('./socket_manager');
+const { loadCatalog, addProduct, updateProduct } = catalogManagerService;
 
 function parseBooleanEnv(value, defaultValue = false) {
     const raw = String(value ?? '').trim().toLowerCase();

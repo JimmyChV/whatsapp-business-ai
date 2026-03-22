@@ -12,7 +12,7 @@ const {
     decryptSecretFully,
     maskSecret,
     isEncryptedValue
-} = require('../../../meta_config_crypto');
+} = require('../../security/services/meta-config-crypto.service');
 
 const CATALOGS_FILE = 'tenant_catalogs.json';
 const ALLOWED_CATALOG_SOURCES = new Set(['local', 'woocommerce', 'meta']);

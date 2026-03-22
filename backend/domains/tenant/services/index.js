@@ -10,6 +10,7 @@ module.exports = {
   aiUsageService: require('./ai-usage.service'),
   quickRepliesManagerService: require('./quick-replies-manager.service'),
   tenantIntegrationsService: require('./integrations.service'),
-  quickReplyLibrariesService: require('./quick-reply-libraries.service')
+  quickReplyLibrariesService: require('./quick-reply-libraries.service'),
+  woocommerceService: require('./woocommerce.service')
 };
 

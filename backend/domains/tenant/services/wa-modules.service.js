@@ -12,7 +12,7 @@ const {
     prepareModuleMetadataForSave,
     sanitizeModuleMetadataForPublic,
     resolveCloudConfigFromMetadata
-} = require('../../../meta_config_crypto');
+} = require('../../security/services/meta-config-crypto.service');
 
 const MODULES_FILE = 'wa_modules.json';
 const ALLOWED_TRANSPORTS = new Set(['cloud']);
