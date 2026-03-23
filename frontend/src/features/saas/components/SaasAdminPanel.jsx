@@ -1533,13 +1533,7 @@ export default function SaasAdminPanel({
                         openConfigModuleEdit={openConfigModuleEdit}
                         runAction={runAction}
                         requestJson={requestJson}
-                        setTenantSettingsPanelMode={setTenantSettingsPanelMode}
-                        loadTenantSettings={loadTenantSettings}
-                        setBusy={setBusy}
-                        setError={setError}
-                        loadingSettings={loadingSettings}
                         tenantSettingsPanelMode={tenantSettingsPanelMode}
-                        setTenantSettings={setTenantSettings}
                         CATALOG_MODE_OPTIONS={CATALOG_MODE_OPTIONS}
                         formatDateTimeLabel={formatDateTimeLabel}
                         buildInitials={buildInitials}
@@ -1557,7 +1551,6 @@ export default function SaasAdminPanel({
                         setModuleUserPickerId={setModuleUserPickerId}
                         syncQuickReplyLibrariesForModule={syncQuickReplyLibrariesForModule}
                         handleFormImageUpload={handleFormImageUpload}
-                        canEditTenantSettings={canEditTenantSettings}
                         setWaModulePanelMode={setWaModulePanelMode}
                         setSelectedWaModuleId={setSelectedWaModuleId}
                         setSelectedConfigKey={setSelectedConfigKey}

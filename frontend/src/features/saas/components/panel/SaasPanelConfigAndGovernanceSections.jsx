@@ -34,13 +34,7 @@ export default function SaasPanelConfigAndGovernanceSections({
     openConfigModuleEdit,
     runAction,
     requestJson,
-    setTenantSettingsPanelMode,
-    loadTenantSettings,
-    setBusy,
-    setError,
-    loadingSettings = false,
     tenantSettingsPanelMode = 'view',
-    setTenantSettings,
     CATALOG_MODE_OPTIONS = [],
     formatDateTimeLabel,
     buildInitials,
@@ -58,7 +52,6 @@ export default function SaasPanelConfigAndGovernanceSections({
     setModuleUserPickerId,
     syncQuickReplyLibrariesForModule,
     handleFormImageUpload,
-    canEditTenantSettings = false,
     setWaModulePanelMode,
     setSelectedWaModuleId,
     setSelectedConfigKey,
@@ -165,13 +158,7 @@ export default function SaasPanelConfigAndGovernanceSections({
                 openConfigModuleEdit={openConfigModuleEdit}
                 runAction={runAction}
                 requestJson={requestJson}
-                setTenantSettingsPanelMode={setTenantSettingsPanelMode}
-                loadTenantSettings={loadTenantSettings}
-                setBusy={setBusy}
-                setError={setError}
-                loadingSettings={loadingSettings}
                 tenantSettingsPanelMode={tenantSettingsPanelMode}
-                setTenantSettings={setTenantSettings}
                 CATALOG_MODE_OPTIONS={CATALOG_MODE_OPTIONS}
                 formatDateTimeLabel={formatDateTimeLabel}
                 buildInitials={buildInitials}
@@ -189,7 +176,6 @@ export default function SaasPanelConfigAndGovernanceSections({
                 setModuleUserPickerId={setModuleUserPickerId}
                 syncQuickReplyLibrariesForModule={syncQuickReplyLibrariesForModule}
                 handleFormImageUpload={handleFormImageUpload}
-                canEditTenantSettings={canEditTenantSettings}
                 setWaModulePanelMode={setWaModulePanelMode}
                 setSelectedWaModuleId={setSelectedWaModuleId}
                 setSelectedConfigKey={setSelectedConfigKey}

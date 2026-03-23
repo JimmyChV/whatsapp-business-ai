@@ -30,13 +30,7 @@ function ModulesConfigSection({
     openConfigModuleEdit,
     runAction,
     requestJson,
-    setTenantSettingsPanelMode,
-    loadTenantSettings,
-    setBusy,
-    setError,
-    loadingSettings,
     tenantSettingsPanelMode,
-    setTenantSettings,
     CATALOG_MODE_OPTIONS,
     formatDateTimeLabel,
     buildInitials,
@@ -54,7 +48,6 @@ function ModulesConfigSection({
     setModuleUserPickerId,
     syncQuickReplyLibrariesForModule,
     handleFormImageUpload,
-    canEditTenantSettings,
     setWaModulePanelMode,
     setSelectedWaModuleId,
     setSelectedConfigKey
@@ -153,50 +146,7 @@ function ModulesConfigSection({
                                                 <h3>Perfil de empresa</h3>
                                                 <small>{tenantSettingsPanelMode === 'edit' ? 'Edicion activa' : 'Vista de solo lectura'}</small>
                                             </div>
-                                            <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                                {false && (
-                                                    <button type="button" disabled={busy || loadingSettings || !canEditTenantSettings} onClick={openConfigSettingsEdit}>
-                                                        Editar
-                                                    </button>
-                                                )}
-                                                {false && (
-                                                    <>
-                                                        <button
-                                                            type="button"
-                                                            disabled={busy || loadingSettings}
-                                                            onClick={() => runAction('Configuracion de tenant guardada', async () => {
-                                                                await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/settings`, {
-                                                                    method: 'PUT',
-                                                                    body: {
-                                                                        catalogMode: tenantSettings.catalogMode,
-                                                                        enabledModules: tenantSettings.enabledModules
-                                                                    }
-                                                                });
-                                                                setTenantSettingsPanelMode('view');
-                                                            })}
-                                                        >
-                                                            Guardar
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            disabled={busy || loadingSettings}
-                                                            onClick={async () => {
-                                                                try {
-                                                                    setBusy(true);
-                                                                    await loadTenantSettings(settingsTenantId);
-                                                                    setTenantSettingsPanelMode('view');
-                                                                } catch (err) {
-                                                                    setError(String(err?.message || err || 'No se pudo recargar la configuracion.'));
-                                                                } finally {
-                                                                    setBusy(false);
-                                                                }
-                                                            }}
-                                                        >
-                                                            Cancelar
-                                                        </button>
-                                                    </>
-                                                )}
-                                            </div>
+                                            <div className="saas-admin-list-actions saas-admin-list-actions--row" />
                                         </div>
 
                                         {tenantSettingsPanelMode === 'view' && (
@@ -219,40 +169,6 @@ function ModulesConfigSection({
                                             </>
                                         )}
 
-                                        {false && (
-                                                    <>
-                                                <div className="saas-admin-form-row">
-                                                    <select
-                                                        value={tenantSettings.catalogMode}
-                                                        onChange={(event) => setTenantSettings((prev) => ({ ...prev, catalogMode: event.target.value }))}
-                                                        disabled={!settingsTenantId || loadingSettings || busy}
-                                                    >
-                                                        {CATALOG_MODE_OPTIONS.map((mode) => (
-                                                            <option key={mode} value={mode}>{mode}</option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-                                                <div className="saas-admin-modules">
-                                                    {MODULE_KEYS.map((moduleEntry) => (
-                                                        <label key={`cfg_enabled_${moduleEntry.key}`} className="saas-admin-module-toggle">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={tenantSettings?.enabledModules?.[moduleEntry.key] !== false}
-                                                                disabled={!settingsTenantId || loadingSettings || busy}
-                                                                onChange={(event) => setTenantSettings((prev) => ({
-                                                                    ...prev,
-                                                                    enabledModules: {
-                                                                        ...(prev?.enabledModules || {}),
-                                                                        [moduleEntry.key]: event.target.checked
-                                                                    }
-                                                                }))}
-                                                            />
-                                                            <span>{moduleEntry.label}</span>
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                            </>
-                                        )}
                                     </>
                                 )}
 
