@@ -72,17 +72,17 @@ import {
   isVisibleChatId,
   upsertAndSortChat
 } from './features/chat/core';
-import { StatusScreen, TransportBootstrapScreen } from './features/chat/components';
 import { useSaasRecoveryFlow } from './features/auth/hooks/useSaasRecoveryFlow';
 import useSaasRuntimeBootstrap from './features/auth/hooks/useSaasRuntimeBootstrap';
 import useSaasSessionAutoRefresh from './features/auth/hooks/useSaasSessionAutoRefresh';
 import { useSaasSessionActions } from './features/auth/hooks/useSaasSessionActions';
 import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHelpers';
-import SaasLoginScreen from './features/auth/components/SaasLoginScreen';
 import OperationPage from './pages/OperationPage';
 import { useSaasPanelVisibilityController, useSaasTenantScopeContext } from './features/saas/hooks';
 import { buildOperationPageProps } from './app/helpers/operationPageProps';
-import { useAppSessionTransportState } from './app/hooks';
+import { APP_RUNTIME_GATES } from './app/helpers/runtimeGate.helpers';
+import { useAppSessionTransportState, useAppRuntimeGate } from './app/hooks';
+import AppRuntimeGate from './app/components/AppRuntimeGate';
 
 import './index.css';
 
@@ -1018,101 +1018,85 @@ function App() {
     SaasPanelComponent: SaasPanelPage
   });
 
-  if (!saasRuntime?.loaded) {
-    return <StatusScreen message='Inicializando plataforma SaaS...' />;
-  }
+  const runtimeGate = useAppRuntimeGate({
+    saasRuntimeLoaded: Boolean(saasRuntime?.loaded),
+    saasAuthEnabled,
+    isSaasAuthenticated,
+    isConnected,
+    selectedTransport,
+    canManageSaas,
+    forceOperationLaunch,
+    isClientReady
+  });
 
-  if (saasAuthEnabled && !isSaasAuthenticated) {
+  const loginScreenProps = {
+    loginEmail,
+    setLoginEmail,
+    loginPassword,
+    setLoginPassword,
+    showLoginPassword,
+    setShowLoginPassword,
+    saasAuthBusy,
+    saasAuthError,
+    saasAuthNotice,
+    recoveryStep,
+    recoveryBusy,
+    recoveryError,
+    recoveryNotice,
+    recoveryDebugCode,
+    recoveryEmail,
+    setRecoveryEmail,
+    recoveryCode,
+    setRecoveryCode,
+    recoveryPassword,
+    setRecoveryPassword,
+    recoveryPasswordConfirm,
+    setRecoveryPasswordConfirm,
+    showRecoveryPassword,
+    setShowRecoveryPassword,
+    handleSaasLogin,
+    openRecoveryFlow,
+    handleRecoveryRequest,
+    handleRecoveryVerify,
+    handleRecoveryReset,
+    resetRecoveryFlow
+  };
+
+  const saasPanelGateNode = (
+    <SaasPanelPage
+      isOpen
+      onClose={handleSaasLogout}
+      onLogout={handleSaasLogout}
+      onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
+      buildApiHeaders={buildApiHeaders}
+      activeTenantId={tenantScopeId}
+      canManageSaas={canManageSaas}
+      userRole={saasUserRole}
+      isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
+      currentUser={saasSession?.user || null}
+      preferredTenantId={requestedWaTenantFromUrl || ''}
+      launchSource={requestedLaunchSource || ''}
+      initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
+      resetKeys={[tenantScopeId, saasSession?.user?.userId, requestedWaTenantFromUrl, requestedLaunchSource]}
+    />
+  );
+
+  const transportBootstrapProps = {
+    selectedModeLabel,
+    isSwitchingTransport,
+    activeTransport,
+    cloudConfigured,
+    waModuleError,
+    transportError
+  };
+
+  if (runtimeGate !== APP_RUNTIME_GATES.MAIN) {
     return (
-      <SaasLoginScreen
-        loginEmail={loginEmail}
-        setLoginEmail={setLoginEmail}
-        loginPassword={loginPassword}
-        setLoginPassword={setLoginPassword}
-        showLoginPassword={showLoginPassword}
-        setShowLoginPassword={setShowLoginPassword}
-        saasAuthBusy={saasAuthBusy}
-        saasAuthError={saasAuthError}
-        saasAuthNotice={saasAuthNotice}
-        recoveryStep={recoveryStep}
-        recoveryBusy={recoveryBusy}
-        recoveryError={recoveryError}
-        recoveryNotice={recoveryNotice}
-        recoveryDebugCode={recoveryDebugCode}
-        recoveryEmail={recoveryEmail}
-        setRecoveryEmail={setRecoveryEmail}
-        recoveryCode={recoveryCode}
-        setRecoveryCode={setRecoveryCode}
-        recoveryPassword={recoveryPassword}
-        setRecoveryPassword={setRecoveryPassword}
-        recoveryPasswordConfirm={recoveryPasswordConfirm}
-        setRecoveryPasswordConfirm={setRecoveryPasswordConfirm}
-        showRecoveryPassword={showRecoveryPassword}
-        setShowRecoveryPassword={setShowRecoveryPassword}
-        handleSaasLogin={handleSaasLogin}
-        openRecoveryFlow={openRecoveryFlow}
-        handleRecoveryRequest={handleRecoveryRequest}
-        handleRecoveryVerify={handleRecoveryVerify}
-        handleRecoveryReset={handleRecoveryReset}
-        resetRecoveryFlow={resetRecoveryFlow}
-      />
-    );
-  }
-
-  if (!isConnected) {
-    return <StatusScreen message='Conectando con el servidor...' />;
-  }
-  // --------------------------------------------------------------
-
-  // --------------------------------------------------------------
-  // Render: Transport Selector
-  // --------------------------------------------------------------
-  if (!selectedTransport) {
-    if (canManageSaas && !forceOperationLaunch) {
-      return (
-        <SaasPanelPage
-          isOpen
-          onClose={handleSaasLogout}
-          onLogout={handleSaasLogout}
-          onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
-          buildApiHeaders={buildApiHeaders}
-          activeTenantId={tenantScopeId}
-          canManageSaas={canManageSaas}
-          userRole={saasUserRole}
-          isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
-          currentUser={saasSession?.user || null}
-          preferredTenantId={requestedWaTenantFromUrl || ''}
-          launchSource={requestedLaunchSource || ''}
-          initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
-          resetKeys={[tenantScopeId, saasSession?.user?.userId, requestedWaTenantFromUrl, requestedLaunchSource]}
-        />
-      );
-    }
-
-    return (
-      <div className="login-screen">
-        <div style={{ textAlign: 'center', maxWidth: '520px', width: '100%' }}>
-          <div className="loader" style={{ margin: '0 auto 14px' }} />
-          <p style={{ color: '#9eb2bf', fontSize: '0.9rem', margin: 0 }}>
-            Preparando operacion WhatsApp Cloud API...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // --------------------------------------------------------------
-  // Render: Transport Bootstrap
-  // --------------------------------------------------------------
-  if (!isClientReady) {
-    return (
-      <TransportBootstrapScreen
-        selectedModeLabel={selectedModeLabel}
-        isSwitchingTransport={isSwitchingTransport}
-        activeTransport={activeTransport}
-        cloudConfigured={cloudConfigured}
-        waModuleError={waModuleError}
-        transportError={transportError}
+      <AppRuntimeGate
+        gateMode={runtimeGate}
+        loginProps={loginScreenProps}
+        saasPanelNode={saasPanelGateNode}
+        transportBootstrapProps={transportBootstrapProps}
       />
     );
   }
