@@ -17,7 +17,6 @@ import {
     useSaasPanelDataContexts,
     useSaasPanelFrameProps,
     useSaasPanelLoadingState,
-    useSaasPanelSectionContextsInput,
     useSaasPanelSectionContexts
 } from '../hooks';
 const {
@@ -849,7 +848,7 @@ export default function SaasAdminPanel({
         );
     }
 
-    const sectionContextsInput = useSaasPanelSectionContextsInput({
+    const sectionContextsInput = {
         panelCoreState,
         saasAccessControl,
         operationsPanelState,
@@ -870,6 +869,7 @@ export default function SaasAdminPanel({
         panelNavigation,
         operationAccess,
         moduleSectionActions,
+        lifecycleState,
         extras: {
             selectedSectionId,
             requestJson,
@@ -909,7 +909,7 @@ export default function SaasAdminPanel({
             sanitizeRoleCode,
             buildCustomerPayloadFromForm
         }
-    });
+    };
 
     const {
         entitySectionsContext,

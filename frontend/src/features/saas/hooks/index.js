@@ -41,7 +41,6 @@ export { default as useSaasModuleSectionActions } from './useSaasModuleSectionAc
 export { default as useSaasPanelBootstrap } from './panel/useSaasPanelBootstrap';
 export { default as useSaasPanelLifecycle } from './panel/useSaasPanelLifecycle';
 export { default as useSaasPanelFrameProps } from './panel/useSaasPanelFrameProps';
-export { default as useSaasPanelSectionContextsInput } from './panel/useSaasPanelSectionContextsInput';
 export { default as useSaasPanelDataContexts } from './panel/useSaasPanelDataContexts';
 export { default as useSaasPanelActionContexts } from './panel/useSaasPanelActionContexts';
 
