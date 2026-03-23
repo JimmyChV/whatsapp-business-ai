@@ -5,8 +5,9 @@
 - `components/panel/`: panel primitives + section composition wrappers.
 - `sections/`: business-facing views by tab.
 - `hooks/panel/*`: lifecycle/sync/selection/bootstrap helpers.
-- `hooks/panel/controller/*`: orchestration hooks for panel assembly (action/data/frame composition).
-- `hooks/*.js`: domain actions and API orchestration.
+- `hooks/panel/controller/*`: orchestration hooks for panel assembly (action/data/frame composition + panel controller).
+- `hooks/domains/*`: domain actions organized by bounded context (`ai`, `catalogs`, `customers`, `labels`, `modules`, `operations`, `quickReplies`, `tenants`).
+- `hooks/*.js`: compatibility wrappers while consumers migrate to `hooks/domains/*`.
 - `services/`: HTTP contracts per SaaS domain.
 - `helpers/`: pure constants/mappers/formatters.
 
@@ -60,7 +61,6 @@
    - existing backend tests
 
 ## Next incremental cuts
-1. Stabilize initialization order and remove use-before-declare hazards in panel orchestration.
-2. Introduce controller hook skeleton and move frame/lifecycle wiring there.
-3. Replace spread-based section context merge with explicit builders.
-4. Move domain hooks/services to `domains/*` folders with compatibility exports.
+1. Move `useSaasPanelActionContexts`/`useSaasPanelDataContexts` internals to smaller domain controller units.
+2. Move remaining SaaS service orchestration to domain controllers and remove wrappers once imports are migrated.
+3. Keep collapsing prop-surface in sections by replacing generic `extras` payload with domain-specific adapters.
