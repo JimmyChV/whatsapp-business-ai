@@ -1,7 +1,7 @@
 ﻿# Chat Feature Architecture
 
 Canonical layout:
-- `components/`: core chat UI (sidebar, window, input, modals) + compatibility wrappers.
+- `components/`: core chat UI public exports (sidebar, window, input, modals).
 - `core/hooks/`: runtime hooks (socket, pagination, actions, sync).
 - `core/helpers/`: generic chat utilities.
 - `core/services/`: chat transport/service adapters.

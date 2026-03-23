@@ -1,5 +1,4 @@
-export { default as BusinessSidebar } from './BusinessSidebar';
-export { ClientProfilePanel } from './BusinessSidebar';
+export { default as BusinessSidebar, ClientProfilePanel } from '../business/components/BusinessSidebar';
 export { default as ChannelBrandIcon } from './ChannelBrandIcon';
 export { default as ChatInput } from './ChatInput';
 export { default as ChatWindow } from './ChatWindow';
