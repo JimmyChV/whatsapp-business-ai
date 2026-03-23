@@ -1,4 +1,5 @@
 const EventEmitter = require('events');
+const crypto = require('crypto');
 const {
     normalizeDigits,
     toChatId,
