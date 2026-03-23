@@ -9,6 +9,7 @@ Structure:
 - `services/*`: runtime channel services (`wa-provider`, `socket-manager`, `media-manager`).
 - `helpers/*`: pure utilities shared by channel services.
   - scope/identity: `chat-scope.helpers.js`, `agent-meta.helpers.js`, `chat-profile.helpers.js`
+  - sender/group metadata cache: `sender-meta.helpers.js`
   - message parsing: `message-location.helpers.js`, `message-file.helpers.js`, `message-media-assets.helpers.js`
   - runtime helpers: `chat-runtime.helpers.js`
 - `index.js`: domain barrel export (`services` + `routes`).
