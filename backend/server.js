@@ -8,6 +8,8 @@ const path = require('path');
 require('dotenv').config({ quiet: true });
 const logger = require('./config/logger');
 const { createServerLifecycleHandlers } = require('./config/bootstrap/server-lifecycle');
+const { registerHttpRoutes } = require('./config/bootstrap/http-routes');
+const { preloadRuntimeServices } = require('./config/bootstrap/runtime-preload');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./domains/security/helpers/security-utils');
 const RateLimiter = require('./config/rate-limiter');
 const { resolveRuntimeFlags, createCorsOriginChecker } = require('./config/runtime-flags');
@@ -371,37 +373,32 @@ const {
     accessPolicyService,
     authService
 });
-// Platform and public runtime routes
-registerOperationsHealthHttpRoutes({
+registerHttpRoutes({
     app,
     hasOpsAccess,
     waClient,
     opsTelemetry,
     tenantService,
     authService,
-    opsReadyRequireWa
-});
-
-registerTenantRuntimePublicHttpRoutes({
-    app,
-    authService,
-    tenantService,
-    tenantSettingsService,
-    waModuleService,
-    saasSocketAuthRequired
-});
-
-registerSecurityAuthHttpRoutes({
-    app,
+    opsReadyRequireWa,
+    registerOperationsHealthHttpRoutes,
+    registerTenantRuntimePublicHttpRoutes,
+    registerSecurityAuthHttpRoutes,
+    registerSecurityAccessControlHttpRoutes,
+    registerTenantAssetsUploadHttpRoutes,
+    registerTenantAdminTenantsUsersHttpRoutes,
+    registerTenantWaModuleAdminHttpRoutes,
+    registerTenantCustomerHttpRoutes,
+    registerOperationsHttpRoutes,
+    registerTenantRuntimeSettingsHttpRoutes,
+    registerTenantLabelsQuickRepliesHttpRoutes,
+    registerTenantAdminConfigCatalogHttpRoutes,
+    registerOperationsUtilityHttpRoutes,
+    registerCloudWebhookHttpRoutes,
     isProduction,
-    authService,
     authRecoveryService,
     auditLogService,
-    tenantService,
-    toPublicTenant
-});
-registerSecurityAccessControlHttpRoutes({
-    app,
+    toPublicTenant,
     saasControlService,
     aiUsageService,
     accessPolicyService,
@@ -411,13 +408,13 @@ registerSecurityAccessControlHttpRoutes({
     hasSaasControlWriteAccess,
     getAuthRole,
     filterAdminOverviewByScope,
-    sanitizeObjectPayload
-});
-
-registerTenantAssetsUploadHttpRoutes({
-    app,
-    accessPolicyService,
+    sanitizeObjectPayload,
+    tenantLabelService,
+    quickReplyLibrariesService,
+    customerService,
+    waModuleService,
     hasPermission,
+    hasAnyPermission,
     isTenantAllowedForUser,
     normalizeAssetUploadKind,
     sanitizeStorageSegment,
@@ -428,18 +425,9 @@ registerTenantAssetsUploadHttpRoutes({
     uploadsRoot: UPLOADS_ROOT,
     path,
     saveAssetFile,
-    getRequestOrigin
-});
-
-registerTenantAdminTenantsUsersHttpRoutes({
-    app,
-    saasControlService,
-    waModuleService,
-    hasSaasControlReadAccess,
-    hasSaasControlWriteAccess,
+    getRequestOrigin,
     hasTenantAdminWriteAccess,
     hasTenantModuleReadAccess,
-    isTenantAllowedForUser,
     sanitizeTenantPayload,
     sanitizeUserPayload,
     sanitizeMembershipPayload,
@@ -450,29 +438,10 @@ registerTenantAdminTenantsUsersHttpRoutes({
     getUserPrimaryRole,
     isSelfUserAction,
     isActorSuperiorToRole,
-    canActorManageRoleChanges
-});
-
-registerTenantWaModuleAdminHttpRoutes({
-    app,
-    waModuleService,
+    canActorManageRoleChanges,
     sanitizeWaModulePayload,
     invalidateWebhookCloudRegistryCache,
-    hasTenantModuleWriteAccess
-});
-registerTenantCustomerHttpRoutes({
-    app,
-    authService,
-    accessPolicyService,
-    customerService,
-    waModuleService,
-    isTenantAllowedForUser,
-    hasPermission
-});
-registerOperationsHttpRoutes({
-    app,
-    authService,
-    auditLogService,
+    hasTenantModuleWriteAccess,
     conversationOpsService,
     assignmentRulesService,
     chatAssignmentRouterService,
@@ -483,65 +452,24 @@ registerOperationsHttpRoutes({
     hasChatAssignmentsWriteAccess,
     hasAssignmentRulesReadAccess,
     hasAssignmentRulesWriteAccess,
-    hasOperationsKpiReadAccess
-});
-registerTenantRuntimeSettingsHttpRoutes({
-    app,
-    authService,
-    tenantService,
-    tenantSettingsService,
-    auditLogService,
-    aiUsageService,
-    waClient,
-    accessPolicyService,
-    isTenantAllowedForUser,
-    hasPermission
-});
-registerTenantLabelsQuickRepliesHttpRoutes({
-    app,
-    accessPolicyService,
-    tenantLabelService,
-    quickReplyLibrariesService,
-    isTenantAllowedForUser,
-    hasAnyPermission,
-    sanitizeTenantLabelPayload,
-    sanitizeQuickReplyLibraryPayload,
-    sanitizeQuickReplyItemPayload
-});
-registerTenantAdminConfigCatalogHttpRoutes({
-    app,
-    tenantService,
+    hasOperationsKpiReadAccess,
     tenantSettingsService,
     tenantIntegrationsService,
     tenantCatalogService,
-    planLimitsService,
-    accessPolicyService,
-    isTenantAllowedForUser,
-    hasPermission,
-    hasAnyPermission,
     sanitizeAiAssistantIdPayload,
     sanitizeAiAssistantPayload,
     loadCatalog,
     addProduct,
-    updateProduct
-});
-registerOperationsUtilityHttpRoutes({
-    app,
-    authService,
-    tenantService,
+    updateProduct,
     messageHistoryService,
-    auditLogService,
-    waClient,
     parseCsvEnv,
-    resolveAndValidatePublicHost
-});
-registerCloudWebhookHttpRoutes({
-    app,
+    resolveAndValidatePublicHost,
     logger,
-    saasControlService,
-    waModuleService,
-    waClient,
-    socketManager
+    socketManager,
+    sanitizeTenantLabelPayload,
+    sanitizeQuickReplyLibraryPayload,
+    sanitizeQuickReplyItemPayload,
+    saasSocketAuthRequired
 });
 const { scheduleWaInitialize, registerProcessHandlers } = createServerLifecycleHandlers({
     waClient,
@@ -556,16 +484,11 @@ const PORT = process.env.PORT || 3001;
 
 registerProcessHandlers();
 
-saasControlService.ensureLoaded().catch((error) => {
-    logger.warn('[SaaS] no se pudo precargar control plane: ' + String(error?.message || error));
-});
-
-planLimitsStoreService.initializePlanLimits().catch((error) => {
-    logger.warn('[SaaS] no se pudo precargar limites de plan: ' + String(error?.message || error));
-});
-
-accessPolicyService.initializeAccessPolicy().catch((error) => {
-    logger.warn('[SaaS] no se pudo precargar catalogo de accesos: ' + String(error?.message || error));
+preloadRuntimeServices({
+    saasControlService,
+    planLimitsStoreService,
+    accessPolicyService,
+    logger
 });
 
 server.listen(PORT, () => {
