@@ -3,7 +3,7 @@ export { default as ChannelBrandIcon } from './ChannelBrandIcon';
 export { default as ChatInput } from './ChatInput';
 export { default as ChatWindow } from './ChatWindow';
 export { default as CopilotView } from './CopilotView';
-export { default as MessageBubble } from './MessageBubble';
+export { default as MessageBubble } from './message-bubble/MessageBubble';
 export { default as NewChatModal } from './NewChatModal';
 export { default as Sidebar } from './Sidebar';
 export { default as StatusScreen } from './StatusScreen';

@@ -15,7 +15,7 @@ import {
     buildAttachmentMeta,
     renderAttachmentIcon,
     extractPhoneCandidatesFromText
-} from './messageBubble.helpers';
+} from './helpers';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const linkPreviewCache = new Map();

@@ -2,6 +2,7 @@
 
 Canonical layout:
 - `components/`: core chat UI public exports (sidebar, window, input, modals).
+  - `components/message-bubble/*`: isolated message bubble renderer + helper module.
 - `core/hooks/`: runtime hooks (socket, pagination, actions, sync).
 - `core/helpers/`: generic chat utilities.
 - `core/services/`: chat transport/service adapters.

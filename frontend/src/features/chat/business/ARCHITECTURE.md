@@ -12,6 +12,7 @@ Contains:
 - `sections/*`: business UI sections (`BusinessCatalogTab`, `BusinessProfiles`).
 - `hooks/*`: business state synchronization hooks.
 - `helpers/*`: commercial pure helpers (catalog, cart, business normalization).
+  - includes AI message rendering helper (`aiMessageRender.helpers.jsx`) to keep JSX parsing logic out of `BusinessSidebar`.
 - `services/*`: business socket/request bridges.
 
 Rules:

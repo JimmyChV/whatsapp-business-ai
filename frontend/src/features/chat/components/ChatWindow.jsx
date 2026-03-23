@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, MoreVertical, ChevronUp, ChevronDown, Tag, MapPin, Share2 } from 'lucide-react';
-import MessageBubble from './MessageBubble';
+import MessageBubble from './message-bubble/MessageBubble';
 import moment from 'moment';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import ChatInput from './ChatInput';
