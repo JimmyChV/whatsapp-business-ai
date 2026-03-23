@@ -1,6 +1,8 @@
 import React from 'react';
 
-function CustomersSection({
+function CustomersSection(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     isCustomersSection,
     filteredCustomers,
     busy,
@@ -29,7 +31,7 @@ function CustomersSection({
     setCustomerImportModuleId,
     customerCsvText,
     setCustomerCsvText
-}) {
+    } = context;
     if (!isCustomersSection) {
         return null;
     }

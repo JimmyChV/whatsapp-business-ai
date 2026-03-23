@@ -1,7 +1,9 @@
 ﻿import React from 'react';
 import ImageDropInput from '../components/panel/ImageDropInput';
 
-function CompaniesSection({
+function CompaniesSection(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     selectedSectionId,
     tenantOptions,
     busy,
@@ -32,7 +34,7 @@ function CompaniesSection({
     overview,
     aiUsageByTenant,
     settingsTenantId
-}) {
+    } = context;
     if (selectedSectionId !== 'saas_empresas') {
         return null;
     }

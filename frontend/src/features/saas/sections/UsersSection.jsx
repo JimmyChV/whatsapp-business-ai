@@ -1,7 +1,9 @@
 ﻿import React from 'react';
 import ImageDropInput from '../components/panel/ImageDropInput';
 
-function UsersSection({
+function UsersSection(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     selectedSectionId,
     tenantScopeLocked,
     busy,
@@ -49,7 +51,7 @@ function UsersSection({
     buildInitials,
     activeTenantId,
     packId = ''
-}) {
+    } = context;
     if (selectedSectionId !== 'saas_usuarios') {
         return null;
     }

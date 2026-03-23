@@ -1,6 +1,8 @@
 import React from 'react';
 
-export default function QuickRepliesSection({
+export default function QuickRepliesSection(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     busy,
     loadingQuickReplies,
     settingsTenantId,
@@ -56,7 +58,7 @@ export default function QuickRepliesSection({
     saveQuickReplyItem,
     cancelQuickReplyItemEdit,
     openQuickReplyItemCreate
-}) {
+    } = context;
     return (
                     <section id="saas_quick_replies" className="saas-admin-card saas-admin-card--full">
                         <div className="saas-admin-master-detail">

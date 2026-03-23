@@ -1,6 +1,8 @@
 import React from 'react';
 
-function AiAssistantsSection({
+function AiAssistantsSection(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     isAiSection,
     busy,
     loadingAiAssistants,
@@ -26,7 +28,7 @@ function AiAssistantsSection({
     setSelectedAiAssistantId,
     setAiAssistantPanelMode,
     EMPTY_AI_ASSISTANT_FORM
-}) {
+    } = context;
     if (!isAiSection) {
         return null;
     }

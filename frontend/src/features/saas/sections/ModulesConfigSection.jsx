@@ -4,7 +4,9 @@ import GeneralSettingsDetailPane from './modules-config/GeneralSettingsDetailPan
 import ModulesConfigModuleDetailPane from './modules-config/ModulesConfigModuleDetailPane';
 import ModulesConfigDetailEmptyState from './modules-config/ModulesConfigDetailEmptyState';
 
-function ModulesConfigSection({
+function ModulesConfigSection(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     isGeneralConfigSection,
     isModulesSection,
     settingsTenantId,
@@ -54,7 +56,7 @@ function ModulesConfigSection({
     setWaModulePanelMode,
     setSelectedWaModuleId,
     setSelectedConfigKey
-}) {
+    } = context;
     if (!(isGeneralConfigSection || isModulesSection)) {
         return null;
     }

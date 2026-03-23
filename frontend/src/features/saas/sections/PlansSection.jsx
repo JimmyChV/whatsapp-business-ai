@@ -1,6 +1,8 @@
 import React from 'react';
 
-function PlansSection({
+function PlansSection(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     isPlansSection,
     busy,
     loadingPlans,
@@ -21,7 +23,7 @@ function PlansSection({
     requestJson,
     setPlanPanelMode,
     cancelPlanEdit
-}) {
+    } = context;
     if (!isPlansSection) {
         return null;
     }
