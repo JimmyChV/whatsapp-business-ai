@@ -9,7 +9,8 @@ Purpose:
 
 Contains:
 - `components/*`: business-facing composite components (`BusinessSidebar`, `ClientProfilePanel`).
-- `sections/*`: business UI sections (`BusinessCatalogTab`, `BusinessProfiles`).
+- `sections/*`: business UI sections (`BusinessCatalogTab`, `BusinessAiTabSection`, `BusinessCartTabSection`, `BusinessQuickRepliesTabSection`, `BusinessProfiles`).
+- `sections/catalog/*`: catalog-specific presentational subcomponents (`BusinessCatalogProductCard`, `BusinessCatalogProductForm`).
 - `hooks/*`: business state synchronization hooks.
 - `helpers/*`: commercial pure helpers (catalog, cart, business normalization).
   - includes AI message rendering helper (`aiMessageRender.helpers.jsx`) to keep JSX parsing logic out of `BusinessSidebar`.

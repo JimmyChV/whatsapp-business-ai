@@ -9,8 +9,7 @@ import {
     normalizeCatalogCategoryKey,
     normalizeTextKey
 } from '../helpers';
-import BusinessCatalogProductCard from './catalog/BusinessCatalogProductCard';
-import BusinessCatalogProductForm from './catalog/BusinessCatalogProductForm';
+import { BusinessCatalogProductCard, BusinessCatalogProductForm } from './catalog';
 
 const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null }) => {
     const [showForm, setShowForm] = useState(false);
