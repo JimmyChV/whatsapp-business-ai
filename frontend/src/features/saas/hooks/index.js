@@ -40,9 +40,9 @@ export { default as useSaasWaModuleEditor } from './useSaasWaModuleEditor';
 export { default as useSaasModuleSectionActions } from './useSaasModuleSectionActions';
 export { default as useSaasPanelBootstrap } from './panel/useSaasPanelBootstrap';
 export { default as useSaasPanelLifecycle } from './panel/useSaasPanelLifecycle';
-export { default as useSaasPanelFrameProps } from './panel/useSaasPanelFrameProps';
-export { default as useSaasPanelDataContexts } from './panel/useSaasPanelDataContexts';
-export { default as useSaasPanelActionContexts } from './panel/useSaasPanelActionContexts';
+export { default as useSaasPanelFrameProps } from './panel/controller/useSaasPanelFrameProps';
+export { default as useSaasPanelDataContexts } from './panel/controller/useSaasPanelDataContexts';
+export { default as useSaasPanelActionContexts } from './panel/controller/useSaasPanelActionContexts';
 
 
 export { useSaasPanelVisibilityController } from './panel/useSaasPanelVisibilityController';

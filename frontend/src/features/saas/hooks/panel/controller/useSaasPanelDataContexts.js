@@ -1,8 +1,8 @@
-import useSaasPanelDerivedData from './useSaasPanelDerivedData';
-import useSaasPanelUserScopeState from './useSaasPanelUserScopeState';
-import useSaasTenantDataLoaders from '../useSaasTenantDataLoaders';
-import useSaasTenantScope from '../useSaasTenantScope';
-import useSaasTenantUsers from '../useSaasTenantUsers';
+import useSaasPanelDerivedData from '../useSaasPanelDerivedData';
+import useSaasPanelUserScopeState from '../useSaasPanelUserScopeState';
+import useSaasTenantDataLoaders from '../../useSaasTenantDataLoaders';
+import useSaasTenantScope from '../../useSaasTenantScope';
+import useSaasTenantUsers from '../../useSaasTenantUsers';
 
 export default function useSaasPanelDataContexts(input = {}) {
     const c = input;

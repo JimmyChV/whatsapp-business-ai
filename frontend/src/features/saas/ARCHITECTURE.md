@@ -5,6 +5,7 @@
 - `components/panel/`: panel primitives + section composition wrappers.
 - `sections/`: business-facing views by tab.
 - `hooks/panel/*`: lifecycle/sync/selection/bootstrap helpers.
+- `hooks/panel/controller/*`: orchestration hooks for panel assembly (action/data/frame composition).
 - `hooks/*.js`: domain actions and API orchestration.
 - `services/`: HTTP contracts per SaaS domain.
 - `helpers/`: pure constants/mappers/formatters.
