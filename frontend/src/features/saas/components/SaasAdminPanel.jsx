@@ -1,17 +1,14 @@
 import { useCallback, useEffect, useMemo } from 'react';
 
 import * as saasAdminPanelHelpers from '../helpers';
+import SaasPanelConfigAndGovernanceSections from './panel/SaasPanelConfigAndGovernanceSections';
 import SaasPanelFrame from './panel/SaasPanelFrame';
 import SaasPanelNoAccess from './panel/SaasPanelNoAccess';
 import SaasPanelOpsAndAutomationSections from './panel/SaasPanelOpsAndAutomationSections';
 
 import {
-    CatalogSection,
     CompaniesSection,
     CustomersSection,
-    ModulesConfigSection,
-    PlansSection,
-    RoleProfilesSection,
     SummarySection,
     UsersSection
 } from '../sections';
@@ -1546,7 +1543,7 @@ export default function SaasAdminPanel({
                         cancelQuickReplyItemEdit={cancelQuickReplyItemEdit}
                         openQuickReplyItemCreate={openQuickReplyItemCreate}
                     />
-                    <ModulesConfigSection
+                    <SaasPanelConfigAndGovernanceSections
                         isGeneralConfigSection={isGeneralConfigSection}
                         isModulesSection={isModulesSection}
                         settingsTenantId={settingsTenantId}
@@ -1603,12 +1600,7 @@ export default function SaasAdminPanel({
                         setWaModulePanelMode={setWaModulePanelMode}
                         setSelectedWaModuleId={setSelectedWaModuleId}
                         setSelectedConfigKey={setSelectedConfigKey}
-                    />
-
-                    <CatalogSection
                         isCatalogSection={isCatalogSection}
-                        busy={busy}
-                        settingsTenantId={settingsTenantId}
                         loadingTenantCatalogs={loadingTenantCatalogs}
                         loadTenantCatalogs={loadTenantCatalogs}
                         canEditCatalog={canEditCatalog}
@@ -1621,10 +1613,7 @@ export default function SaasAdminPanel({
                         setTenantCatalogForm={setTenantCatalogForm}
                         EMPTY_TENANT_CATALOG_FORM={EMPTY_TENANT_CATALOG_FORM}
                         cancelCatalogEdit={cancelCatalogEdit}
-                        formatDateTimeLabel={formatDateTimeLabel}
                         openCatalogEdit={openCatalogEdit}
-                        requestJson={requestJson}
-                        runAction={runAction}
                         buildTenantCatalogPayload={buildTenantCatalogPayload}
                         selectedCatalogProductId={selectedCatalogProductId}
                         setSelectedCatalogProductId={setSelectedCatalogProductId}
@@ -1648,11 +1637,7 @@ export default function SaasAdminPanel({
                         cancelCatalogProductEdit={cancelCatalogProductEdit}
                         setSelectedCatalogId={setSelectedCatalogId}
                         tenantCatalogForm={tenantCatalogForm}
-                    />
-
-                    <RoleProfilesSection
                         isRolesSection={isRolesSection}
-                        busy={busy}
                         canManageRoles={canManageRoles}
                         openRoleCreate={openRoleCreate}
                         roleProfiles={roleProfiles}
@@ -1669,10 +1654,7 @@ export default function SaasAdminPanel({
                         toggleRolePermission={toggleRolePermission}
                         saveRoleProfile={saveRoleProfile}
                         cancelRoleEdit={cancelRoleEdit}
-                    />
-                    <PlansSection
                         isPlansSection={isPlansSection}
-                        busy={busy}
                         loadingPlans={loadingPlans}
                         loadPlanMatrix={loadPlanMatrix}
                         planIds={planIds}
@@ -1687,8 +1669,6 @@ export default function SaasAdminPanel({
                         planForm={planForm}
                         setPlanForm={setPlanForm}
                         chunkItems={chunkItems}
-                        runAction={runAction}
-                        requestJson={requestJson}
                         setPlanPanelMode={setPlanPanelMode}
                         cancelPlanEdit={cancelPlanEdit}
                     />
