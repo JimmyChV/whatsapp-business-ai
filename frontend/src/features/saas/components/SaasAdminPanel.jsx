@@ -25,6 +25,7 @@ import {
     useSaasPanelLifecycle,
     useSaasPanelLoadingState,
     useSaasPanelNavigation,
+    useSaasPanelSectionContexts,
     useSaasPanelUserScopeState,
     useSaasRunActionBridge,
     useSaasTenantDataLoaders,
@@ -1299,7 +1300,11 @@ export default function SaasAdminPanel({
         );
     }
 
-    const entitySectionsContext = {
+    const {
+        entitySectionsContext,
+        opsAndAutomationSectionsContext,
+        configAndGovernanceSectionsContext
+    } = useSaasPanelSectionContexts({
         selectedSectionId,
         currentUserAvatarUrl,
         buildInitials,
@@ -1393,13 +1398,8 @@ export default function SaasAdminPanel({
         customerImportModuleId,
         setCustomerImportModuleId,
         customerCsvText,
-        setCustomerCsvText
-    };
-
-    const opsAndAutomationSectionsContext = {
+        setCustomerCsvText,
         isOperationsSection,
-        tenantScopeLocked,
-        busy,
         loadingAssignmentRules,
         loadingOperationsKpis,
         canManageAssignments,
@@ -1407,17 +1407,13 @@ export default function SaasAdminPanel({
         assignmentRules,
         assignmentRoleOptions,
         operationsSnapshot,
-        activeTenantChatCandidates: unassignedCandidates,
-        tenantScopeId,
+        unassignedCandidates,
         setAssignmentRules,
-        runAction,
         saveAssignmentRules,
         loadTenantOperationsKpis,
         triggerAutoAssignPreview,
-        formatDateTimeLabel,
         isAiSection,
         loadingAiAssistants,
-        settingsTenantId,
         loadTenantAiAssistants,
         openAiAssistantCreate,
         tenantAiAssistantItems,
@@ -1453,7 +1449,6 @@ export default function SaasAdminPanel({
         setLabelPanelMode,
         openTenantLabelEdit,
         deactivateTenantLabel,
-        requestJson,
         buildTenantLabelPayload,
         labelForm,
         setLabelForm,
@@ -1473,7 +1468,6 @@ export default function SaasAdminPanel({
         setSelectedQuickReplyItemId,
         setQuickReplyLibraryPanelMode,
         setQuickReplyItemPanelMode,
-        waModules,
         quickReplyLibrarySearch,
         setQuickReplyLibrarySearch,
         visibleQuickReplyLibraries,
@@ -1512,29 +1506,20 @@ export default function SaasAdminPanel({
         removeQuickReplyAssetAt,
         saveQuickReplyItem,
         cancelQuickReplyItemEdit,
-        openQuickReplyItemCreate
-    };
-
-    const configAndGovernanceSectionsContext = {
+        openQuickReplyItemCreate,
         isGeneralConfigSection,
         isModulesSection,
-        settingsTenantId,
-        toTenantDisplayName,
-        tenantOptions,
-        busy,
         canEditModules,
         openConfigModuleCreate,
         openConfigSettingsView,
         clearConfigSelection,
         tenantSettings,
         MODULE_KEYS,
-        waModules,
         selectedConfigKey,
         openConfigModuleView,
         waModulePanelMode,
         selectedConfigModule,
         assignedModuleUsers,
-        toUserDisplayName,
         usersForSettingsTenant,
         normalizeCatalogIdsList,
         activeCatalogLabelMap,
@@ -1542,12 +1527,8 @@ export default function SaasAdminPanel({
         aiAssistantLabelMap,
         handleOpenOperation,
         openConfigModuleEdit,
-        runAction,
-        requestJson,
         tenantSettingsPanelMode,
         CATALOG_MODE_OPTIONS,
-        formatDateTimeLabel,
-        buildInitials,
         waModuleForm,
         setWaModuleForm,
         availableUsersForModulePicker,
@@ -1561,7 +1542,6 @@ export default function SaasAdminPanel({
         moduleUserPickerId,
         setModuleUserPickerId,
         syncQuickReplyLibrariesForModule,
-        handleFormImageUpload,
         setWaModulePanelMode,
         setSelectedWaModuleId,
         setSelectedConfigKey,
@@ -1611,7 +1591,6 @@ export default function SaasAdminPanel({
         openRoleView,
         selectedRoleProfile,
         openRoleEdit,
-        permissionLabelMap,
         rolePermissionOptions,
         roleForm,
         setRoleForm,
@@ -1636,7 +1615,7 @@ export default function SaasAdminPanel({
         chunkItems,
         setPlanPanelMode,
         cancelPlanEdit
-    };
+    });
 
     return (
         <SaasPanelFrame {...frameProps}>

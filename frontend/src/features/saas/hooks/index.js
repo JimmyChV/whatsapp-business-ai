@@ -26,6 +26,7 @@ export { default as useModuleConfigActions } from './useModuleConfigActions';
 
 export { default as useSaasPanelNavigation } from './panel/useSaasPanelNavigation';
 export { default as useSaasPanelUserScopeState } from './panel/useSaasPanelUserScopeState';
+export { default as useSaasPanelSectionContexts } from './panel/useSaasPanelSectionContexts';
 
 export { default as useSaasPanelSectionChange } from './panel/useSaasPanelSectionChange';
 

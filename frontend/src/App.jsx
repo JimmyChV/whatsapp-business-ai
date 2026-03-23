@@ -5,17 +5,8 @@ import { persistSaasSession } from './features/auth/helpers/saasSessionStorage';
 import {
   createSocketClient,
   useNewChatDialog,
-  useMessagesAutoScroll,
-  useChatRuntimeSyncEffects,
   useScopedBusinessRequests,
   useSocketConnectionAuthEffect,
-  useSocketConnectionRuntimeEvents,
-  useSocketBusinessDataEvents,
-  useSocketMessageLifecycleEvents,
-  useSocketAiAndSessionEvents,
-  useSocketChatConversationEvents,
-  useChatPaginationRequester,
-  useWaModuleSocketEvents,
   useWorkspaceNavigation,
   useTransportSelectionActions,
   useChatMessageActions,
@@ -56,7 +47,6 @@ import {
   normalizeParticipantList,
   normalizeMessageLocation,
   normalizeQuotedMessage,
-  getMessagePreviewText,
   isInternalIdentifier,
   normalizeDisplayNameKey,
   isPlaceholderChat,
@@ -81,7 +71,7 @@ import OperationPage from './pages/OperationPage';
 import { useSaasPanelVisibilityController, useSaasTenantScopeContext } from './features/saas/hooks';
 import { buildOperationPageProps } from './app/helpers/operationPageProps';
 import { APP_RUNTIME_GATES } from './app/helpers/runtimeGate.helpers';
-import { useAppSessionTransportState, useAppRuntimeGate } from './app/hooks';
+import { useAppSessionTransportState, useAppRuntimeGate, useAppChatSocketRuntime } from './app/hooks';
 import AppRuntimeGate from './app/components/AppRuntimeGate';
 
 import './index.css';
@@ -353,15 +343,18 @@ function App() {
     setIsClientReady
   });
 
-  useMessagesAutoScroll({
+  const { requestChatsPage } = useAppChatSocketRuntime({
+    socket,
+    chatPageSize: CHAT_PAGE_SIZE,
+    requestQuickRepliesForModule,
+    emitScopedBusinessDataRequest,
+
     messages,
     messagesEndRef,
     prevMessagesMetaRef,
     shouldInstantScrollRef,
-    suppressSmoothScrollUntilRef
-  });
+    suppressSmoothScrollUntilRef,
 
-  useChatRuntimeSyncEffects({
     activeChatId,
     activeChatIdRef,
     chats,
@@ -390,121 +383,85 @@ function App() {
     forceOperationLaunch,
     forceOperationLaunchRef,
     waRuntime,
+    setIsConnected,
+    setIsSwitchingTransport,
     setIsClientReady,
     setTransportError,
     showClientProfile,
     clientProfilePanelRef,
-    setShowClientProfile
-  });
+    setShowClientProfile,
 
-  useEffect(() => {
-    if (!isClientReady) return;
-    const timer = setTimeout(() => {
-      requestChatsPage({ reset: true });
-    }, 180);
-    return () => clearTimeout(timer);
-  }, [chatSearchQuery, chatFilters, isClientReady]);
-
-  const { requestChatsPage } = useChatPaginationRequester({
-    socket,
-    chatPagingRef,
-    chatSearchRef,
-    chatFiltersRef,
-    chatPageSize: CHAT_PAGE_SIZE,
+    socketPagingRef: chatPagingRef,
     buildFiltersKey,
     setChatsHasMore,
     setChatsTotal,
-    setIsLoadingMoreChats
-  });
+    setIsLoadingMoreChats,
 
-
-  useWaModuleSocketEvents({
-    socket,
-    selectedWaModuleRef,
-    selectedCatalogModuleIdRef,
-    selectedCatalogIdRef,
-    requestedWaModuleFromUrlRef,
-    forceOperationLaunchRef,
-    canManageSaasRef,
-    emitScopedBusinessDataRequest,
-    requestQuickRepliesForModule,
     setWaModules,
     setSelectedWaModule,
     setWaModuleError,
     setSelectedCatalogModuleId,
     setSelectedCatalogId,
-    setSelectedTransport
-  });
+    setSelectedTransport,
+    requestedWaModuleFromUrlRef,
+    canManageSaasRef,
 
-  useSocketConnectionRuntimeEvents({
-    socket,
-    selectedTransportRef,
-    setIsConnected,
-    setIsSwitchingTransport,
-    setIsLoadingMoreChats,
-    chatPagingRef,
-    setQrCode,
-    setIsClientReady,
-    requestChatsPage,
-    emitScopedBusinessDataRequest,
-    selectedCatalogModuleIdRef,
-    selectedWaModuleRef,
-    selectedCatalogIdRef,
-    requestQuickRepliesForModule,
     normalizeProfilePayload,
     setMyProfile,
     setWaCapabilities,
     setWaRuntime,
-    setTransportError
-  });
 
-  useSocketBusinessDataEvents({
-    socket,
     normalizeBusinessDataPayload,
     businessDataRequestSeqRef,
     businessDataResponseSeqRef,
     businessDataScopeCacheRef,
-    selectedCatalogModuleIdRef,
-    selectedCatalogIdRef,
     resolveScopedCatalogSelection,
     setBusinessData,
     setLabelDefinitions,
     normalizeChatLabels,
-    setSelectedCatalogModuleId,
-    setSelectedCatalogId,
     normalizeCatalogItem,
     businessData,
-    setWaCapabilities,
     normalizeQuickRepliesSocketPayload,
-    setQuickReplies
-  });
+    setQuickReplies,
 
-  useSocketMessageLifecycleEvents({
-    socket,
-    activeChatIdRef,
     setMessages,
-    repairMojibake,
     setEditingMessage,
     setChats,
     normalizeChatScopedId,
-    chatIdsReferSameScope
-  });
+    chatIdsReferSameScope,
 
-  useSocketAiAndSessionEvents({
-    socket,
     setAiSuggestion,
     setIsAiLoading,
-    setIsClientReady,
     setQrCode,
-    setChats,
-    setChatsTotal,
-    setChatsHasMore,
-    chatPagingRef,
-    setIsLoadingMoreChats,
-    setMessages,
-    setEditingMessage,
     setReplyingMessage,
-    setActiveChatId
+    setActiveChatId,
+
+    isVisibleChatId,
+    parseScopedChatId,
+    sanitizeDisplayText,
+    getBestChatPhone,
+    normalizeProfilePhotoUrl,
+    normalizeModuleImageUrl,
+    chatMatchesFilters,
+    dedupeChats,
+    chatMatchesQuery,
+    chatIdentityKey,
+    upsertAndSortChat,
+    normalizeDigits,
+    isLikelyPhoneDigits,
+    normalizeWaModules,
+    handleChatSelect,
+    resolveSessionSenderIdentity,
+    repairMojibake,
+    normalizeMessageLocation,
+    normalizeMessageFilename,
+    normalizeQuotedMessage,
+    isGenericFilename,
+    isMachineLikeFilename,
+    normalizeParticipantList,
+    setClientContact,
+    isInternalIdentifier,
+    setToasts
   });
 
   // --------------------------------------------------------------
@@ -618,55 +575,6 @@ function App() {
     chatIdsReferSameScope
   });
 
-  useSocketChatConversationEvents({
-    socket,
-    chatSearchRef,
-    buildFiltersKey,
-    chatFiltersRef,
-    chatsRef,
-    isVisibleChatId,
-    normalizeChatScopedId,
-    parseScopedChatId,
-    sanitizeDisplayText,
-    getBestChatPhone,
-    normalizeChatLabels,
-    normalizeProfilePhotoUrl,
-    normalizeModuleImageUrl,
-    chatMatchesFilters,
-    setChats,
-    dedupeChats,
-    chatPagingRef,
-    setChatsTotal,
-    setChatsHasMore,
-    setIsLoadingMoreChats,
-    chatIdsReferSameScope,
-    chatMatchesQuery,
-    chatIdentityKey,
-    upsertAndSortChat,
-    requestChatsPage,
-    normalizeDigits,
-    isLikelyPhoneDigits,
-    normalizeWaModules,
-    waModulesRef,
-    handleChatSelect,
-    activeChatIdRef,
-    setActiveChatId,
-    shouldInstantScrollRef,
-    suppressSmoothScrollUntilRef,
-    prevMessagesMetaRef,
-    resolveSessionSenderIdentity,
-    repairMojibake,
-    normalizeMessageLocation,
-    normalizeMessageFilename,
-    normalizeQuotedMessage,
-    setMessages,
-    isGenericFilename,
-    isMachineLikeFilename,
-    normalizeParticipantList,
-    setClientContact,
-    isInternalIdentifier,
-    setToasts
-  });
   const {
     removeAttachment,
     handleFileChange,

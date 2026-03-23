@@ -11,6 +11,7 @@ Canonical layout:
   - `sections/modules-config/*`: detalle desacoplado de la vista Modulos/Configuracion (master pane, empty states, tenant settings, read view y edit form de modulo).
 - `hooks/`: feature hooks grouped by responsibility.
   - `hooks/panel/*`: panel lifecycle, selection, sync effects and cross-navigation orchestration.
+  - `hooks/panel/useSaasPanelSectionContexts.js`: single assembly point for section context contracts.
   - `hooks/*.js`: domain actions (plans/roles, tenants/users, catalogs, IA, quick replies, labels, customers, operation access).
 - `services/`: SaaS API access layer (including operations/admin assignment APIs).
 - `helpers/`: pure utilities/constants (no side effects).

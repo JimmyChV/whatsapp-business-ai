@@ -1,20 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, MoreVertical, ChevronUp, ChevronDown, Tag, MapPin, Share2 } from 'lucide-react';
+import { Search, MoreVertical, ChevronUp, ChevronDown, Tag, MapPin, Share2, X } from 'lucide-react';
 import MessageBubble from './message-bubble/MessageBubble';
 import moment from 'moment';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import ChatInput from './ChatInput';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-
-const normalizeModuleImageUrl = (rawUrl = '') => {
-    const value = String(rawUrl || '').trim();
-    if (!value) return null;
-    if (value.startsWith('data:') || value.startsWith('blob:')) return value;
-    if (/^https?:\/\//i.test(value)) return value;
-    if (value.startsWith('/')) return `${API_URL}${value}`;
-    return `${API_URL}/${value}`;
-};
+import { normalizeModuleImageUrl } from '../core/helpers/appChat.helpers';
 
 // ============================================================
 // ChatWindow - Full component with Profile Panel

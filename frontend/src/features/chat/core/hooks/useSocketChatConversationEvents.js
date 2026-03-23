@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { getMessagePreviewText as getMessagePreviewTextFallback } from '../helpers/appChat.helpers';
 
 export default function useSocketChatConversationEvents({
     socket,
@@ -10,6 +11,7 @@ export default function useSocketChatConversationEvents({
     normalizeChatScopedId,
     parseScopedChatId,
     sanitizeDisplayText,
+    getMessagePreviewText = getMessagePreviewTextFallback,
     getBestChatPhone,
     normalizeChatLabels,
     normalizeProfilePhotoUrl,

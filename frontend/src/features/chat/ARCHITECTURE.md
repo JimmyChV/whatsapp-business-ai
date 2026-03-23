@@ -17,6 +17,7 @@ Rules:
 2. Catalog/profile/copilot-specific logic lives in `business/*`.
 3. Keep render components slim; move transformations to helpers/hooks.
 4. Workspace app state for operation chat is centralized in `core/hooks/useOperationWorkspaceState.js`.
+5. Chat normalization/identity/preview helpers have a single source of truth in `core/helpers/appChat.helpers.js` (no duplicated variants in `business/helpers`).
 
 Sub-documents:
 - `core/ARCHITECTURE.md`
