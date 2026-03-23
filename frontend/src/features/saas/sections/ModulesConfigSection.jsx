@@ -1,5 +1,6 @@
-﻿import React from 'react';
+import React from 'react';
 import ImageDropInput from '../components/panel/ImageDropInput';
+import ModulesConfigMasterPane from './modules-config/ModulesConfigMasterPane';
 
 function ModulesConfigSection({
     isGeneralConfigSection,
@@ -57,74 +58,27 @@ function ModulesConfigSection({
     }
 
     return (
-                    <section id={isModulesSection ? 'saas_modulos' : 'saas_config'} className="saas-admin-card saas-admin-card--full">
-                        <div className="saas-admin-master-detail">
-                            <aside className="saas-admin-master-pane">
-                                <div className="saas-admin-pane-header">
-                                    <h3>{isModulesSection ? 'Modulos' : 'Configuracion general'}</h3>
-                                    <small>
-                                        {settingsTenantId
-                                            ? `Empresa: ${toTenantDisplayName(tenantOptions.find((tenant) => tenant.id === settingsTenantId) || {})}`
-                                            : 'Selecciona una empresa para administrar su panel.'}
-                                    </small>
-                                </div>
+        <section id={isModulesSection ? 'saas_modulos' : 'saas_config'} className="saas-admin-card saas-admin-card--full">
+            <div className="saas-admin-master-detail">
+                <ModulesConfigMasterPane
+                    isModulesSection={isModulesSection}
+                    isGeneralConfigSection={isGeneralConfigSection}
+                    settingsTenantId={settingsTenantId}
+                    toTenantDisplayName={toTenantDisplayName}
+                    tenantOptions={tenantOptions}
+                    busy={busy}
+                    canEditModules={canEditModules}
+                    openConfigModuleCreate={openConfigModuleCreate}
+                    openConfigSettingsView={openConfigSettingsView}
+                    clearConfigSelection={clearConfigSelection}
+                    tenantSettings={tenantSettings}
+                    MODULE_KEYS={MODULE_KEYS}
+                    waModules={waModules}
+                    selectedConfigKey={selectedConfigKey}
+                    openConfigModuleView={openConfigModuleView}
+                />
 
-                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                    {isModulesSection && (
-                                        <button type="button" disabled={busy || !settingsTenantId || !canEditModules} onClick={openConfigModuleCreate}>
-                                            Nuevo modulo
-                                        </button>
-                                    )}
-                                    {isGeneralConfigSection && (
-                                        <button type="button" disabled={busy || !settingsTenantId} onClick={openConfigSettingsView}>
-                                            Abrir configuracion general
-                                        </button>
-                                    )}
-                                    <button type="button" disabled={busy} onClick={clearConfigSelection}>
-                                        Deseleccionar
-                                    </button>
-                                </div>
-
-                                <div className="saas-admin-list saas-admin-list--compact">
-                                    {!settingsTenantId && (
-                                        <div className="saas-admin-empty-state">
-                                            <h4>Sin empresa seleccionada</h4>
-                                            <p>Elige una empresa para ver su configuracion.</p>
-                                        </div>
-                                    )}
-
-                                    {settingsTenantId && isGeneralConfigSection && (
-                                        <button
-                                            type="button"
-                                            className={`saas-admin-list-item saas-admin-list-item--button ${selectedConfigKey === 'tenant_settings' ? 'active' : ''}`.trim()}
-                                            onClick={openConfigSettingsView}
-                                        >
-                                            <strong>Perfil de empresa</strong>
-                                            <small>Catalogo: {tenantSettings.catalogMode}</small>
-                                            <small>Modulos habilitados: {MODULE_KEYS.filter((entry) => tenantSettings?.enabledModules?.[entry.key] !== false).length}/{MODULE_KEYS.length}</small>
-                                        </button>
-                                    )}
-
-                                    {settingsTenantId && isModulesSection && waModules.length === 0 && (
-                                        <div className="saas-admin-empty-inline">Sin modulos WhatsApp configurados.</div>
-                                    )}
-
-                                    {settingsTenantId && isModulesSection && waModules.map((moduleItem) => (
-                                        <button
-                                            key={moduleItem.moduleId}
-                                            type="button"
-                                            className={`saas-admin-list-item saas-admin-list-item--button ${selectedConfigKey === `wa_module:${moduleItem.moduleId}` ? 'active' : ''}`.trim()}
-                                            onClick={() => openConfigModuleView(moduleItem.moduleId)}
-                                        >
-                                            <strong>{moduleItem.name || 'Modulo sin nombre'}</strong>
-                                            <small>Cloud API | {moduleItem.isActive ? 'activo' : 'inactivo'}</small>
-                                            <small>{moduleItem.phoneNumber ? `Numero: ${moduleItem.phoneNumber}` : 'Numero sin configurar'}</small>
-                                        </button>
-                                    ))}
-                                </div>
-                            </aside>
-
-                            <div className="saas-admin-detail-pane">
+                <div className="saas-admin-detail-pane">
                                 {!settingsTenantId && (
                                     <div className="saas-admin-empty-state saas-admin-empty-state--detail">
                                         <h4>{isModulesSection ? 'Modulos por empresa' : 'Configuracion por empresa'}</h4>
@@ -747,12 +701,13 @@ function ModulesConfigSection({
                                             )}
                                         </>
                                     );
-                                })()}                            </div>
-                        </div>
-
-                    </section>
+                                })()}
+                </div>
+            </div>
+        </section>
     );
 }
 
 export default React.memo(ModulesConfigSection);
+
 
