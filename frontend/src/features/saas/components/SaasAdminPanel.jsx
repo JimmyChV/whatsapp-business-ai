@@ -3,19 +3,16 @@ import { useCallback, useEffect, useMemo } from 'react';
 import * as saasAdminPanelHelpers from '../helpers';
 import SaasPanelFrame from './panel/SaasPanelFrame';
 import SaasPanelNoAccess from './panel/SaasPanelNoAccess';
+import SaasPanelOpsAndAutomationSections from './panel/SaasPanelOpsAndAutomationSections';
 
 import {
-    AiAssistantsSection,
     CatalogSection,
     CompaniesSection,
     CustomersSection,
     ModulesConfigSection,
-    OperationsSection,
     PlansSection,
-    QuickRepliesSection,
     RoleProfilesSection,
     SummarySection,
-    TenantLabelsSection,
     UsersSection
 } from '../sections';
 import {
@@ -1431,32 +1428,26 @@ export default function SaasAdminPanel({
                         customerCsvText={customerCsvText}
                         setCustomerCsvText={setCustomerCsvText}
                     />
-
-                                        {isOperationsSection && (
-                        <OperationsSection
-                            tenantScopeLocked={tenantScopeLocked}
-                            busy={busy}
-                            loadingAssignmentRules={loadingAssignmentRules}
-                            loadingOperationsKpis={loadingOperationsKpis}
-                            canManageAssignments={canManageAssignments}
-                            canViewOperations={canViewOperations}
-                            assignmentRules={assignmentRules}
-                            assignmentRoleOptions={assignmentRoleOptions}
-                            operationsSnapshot={operationsSnapshot}
-                            activeTenantChatCandidates={unassignedCandidates}
-                            tenantScopeId={tenantScopeId}
-                            setAssignmentRules={setAssignmentRules}
-                            runAction={runAction}
-                            saveAssignmentRules={saveAssignmentRules}
-                            loadTenantOperationsKpis={loadTenantOperationsKpis}
-                            triggerAutoAssignPreview={triggerAutoAssignPreview}
-                            formatDateTimeLabel={formatDateTimeLabel}
-                        />
-                    )}
-
-                    <AiAssistantsSection
-                        isAiSection={isAiSection}
+                    <SaasPanelOpsAndAutomationSections
+                        isOperationsSection={isOperationsSection}
+                        tenantScopeLocked={tenantScopeLocked}
                         busy={busy}
+                        loadingAssignmentRules={loadingAssignmentRules}
+                        loadingOperationsKpis={loadingOperationsKpis}
+                        canManageAssignments={canManageAssignments}
+                        canViewOperations={canViewOperations}
+                        assignmentRules={assignmentRules}
+                        assignmentRoleOptions={assignmentRoleOptions}
+                        operationsSnapshot={operationsSnapshot}
+                        activeTenantChatCandidates={unassignedCandidates}
+                        tenantScopeId={tenantScopeId}
+                        setAssignmentRules={setAssignmentRules}
+                        runAction={runAction}
+                        saveAssignmentRules={saveAssignmentRules}
+                        loadTenantOperationsKpis={loadTenantOperationsKpis}
+                        triggerAutoAssignPreview={triggerAutoAssignPreview}
+                        formatDateTimeLabel={formatDateTimeLabel}
+                        isAiSection={isAiSection}
                         loadingAiAssistants={loadingAiAssistants}
                         settingsTenantId={settingsTenantId}
                         loadTenantAiAssistants={loadTenantAiAssistants}
@@ -1466,7 +1457,6 @@ export default function SaasAdminPanel({
                         aiAssistantPanelMode={aiAssistantPanelMode}
                         openAiAssistantView={openAiAssistantView}
                         selectedAiAssistant={selectedAiAssistant}
-                        formatDateTimeLabel={formatDateTimeLabel}
                         canManageAi={canManageAi}
                         openAiAssistantEdit={openAiAssistantEdit}
                         markAiAssistantAsDefault={markAiAssistantAsDefault}
@@ -1480,12 +1470,8 @@ export default function SaasAdminPanel({
                         setSelectedAiAssistantId={setSelectedAiAssistantId}
                         setAiAssistantPanelMode={setAiAssistantPanelMode}
                         EMPTY_AI_ASSISTANT_FORM={EMPTY_AI_ASSISTANT_FORM}
-                    />
-                                        {isLabelsSection && (
-                    <TenantLabelsSection
-                        busy={busy}
+                        isLabelsSection={isLabelsSection}
                         loadingLabels={loadingLabels}
-                        settingsTenantId={settingsTenantId}
                         loadTenantLabels={loadTenantLabels}
                         setError={setError}
                         canManageLabels={canManageLabels}
@@ -1498,26 +1484,19 @@ export default function SaasAdminPanel({
                         setSelectedLabelId={setSelectedLabelId}
                         setLabelPanelMode={setLabelPanelMode}
                         openTenantLabelEdit={openTenantLabelEdit}
-                        runAction={runAction}
                         deactivateTenantLabel={deactivateTenantLabel}
                         requestJson={requestJson}
                         buildTenantLabelPayload={buildTenantLabelPayload}
-                                                labelForm={labelForm}
+                        labelForm={labelForm}
                         setLabelForm={setLabelForm}
                         normalizeTenantLabelColor={normalizeTenantLabelColor}
                         DEFAULT_LABEL_COLORS={DEFAULT_LABEL_COLORS}
                         toggleModuleInLabelForm={toggleModuleInLabelForm}
                         saveTenantLabel={saveTenantLabel}
                         cancelTenantLabelEdit={cancelTenantLabelEdit}
-                    />
-                    )}
-                    {isQuickRepliesSection && (
-                    <QuickRepliesSection
-                        busy={busy}
+                        isQuickRepliesSection={isQuickRepliesSection}
                         loadingQuickReplies={loadingQuickReplies}
-                        settingsTenantId={settingsTenantId}
                         loadQuickReplyData={loadQuickReplyData}
-                        setError={setError}
                         canManageQuickReplies={canManageQuickReplies}
                         openQuickReplyLibraryCreate={openQuickReplyLibraryCreate}
                         quickReplyModuleFilterId={quickReplyModuleFilterId}
@@ -1533,7 +1512,6 @@ export default function SaasAdminPanel({
                         selectedQuickReplyLibrary={selectedQuickReplyLibrary}
                         quickReplyLibraryPanelMode={quickReplyLibraryPanelMode}
                         openQuickReplyLibraryEdit={openQuickReplyLibraryEdit}
-                        runAction={runAction}
                         deactivateQuickReplyLibrary={deactivateQuickReplyLibrary}
                         quickReplyLibraryForm={quickReplyLibraryForm}
                         setQuickReplyLibraryForm={setQuickReplyLibraryForm}
@@ -1552,7 +1530,6 @@ export default function SaasAdminPanel({
                         openQuickReplyItemEdit={openQuickReplyItemEdit}
                         deactivateQuickReplyItem={deactivateQuickReplyItem}
                         selectedQuickReplyItemMediaAssets={selectedQuickReplyItemMediaAssets}
-                        formatDateTimeLabel={formatDateTimeLabel}
                         resolveQuickReplyAssetPreviewUrl={resolveQuickReplyAssetPreviewUrl}
                         getQuickReplyAssetDisplayName={getQuickReplyAssetDisplayName}
                         isQuickReplyImageAsset={isQuickReplyImageAsset}
@@ -1569,7 +1546,6 @@ export default function SaasAdminPanel({
                         cancelQuickReplyItemEdit={cancelQuickReplyItemEdit}
                         openQuickReplyItemCreate={openQuickReplyItemCreate}
                     />
-                    )}
                     <ModulesConfigSection
                         isGeneralConfigSection={isGeneralConfigSection}
                         isModulesSection={isModulesSection}
