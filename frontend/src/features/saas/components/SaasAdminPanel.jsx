@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo } from 'react';
 
 import * as saasAdminPanelHelpers from '../helpers';
-import SaasPanelEntitySections from './panel/SaasPanelEntitySections';
-import SaasPanelConfigAndGovernanceSections from './panel/SaasPanelConfigAndGovernanceSections';
-import SaasPanelFrame from './panel/SaasPanelFrame';
-import SaasPanelNoAccess from './panel/SaasPanelNoAccess';
-import SaasPanelOpsAndAutomationSections from './panel/SaasPanelOpsAndAutomationSections';
+import {
+    SaasPanelConfigAndGovernanceSections,
+    SaasPanelEntitySections,
+    SaasPanelFrame,
+    SaasPanelNoAccess,
+    SaasPanelOpsAndAutomationSections
+} from './panel';
 import {
     useAiAssistantsAdminActions,
     useCatalogAdminActions,
