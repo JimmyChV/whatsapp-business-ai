@@ -1,5 +1,5 @@
 import useModuleConfigActions from './useModuleConfigActions';
-import useSaasPanelSectionChange from './useSaasPanelSectionChange';
+import useSaasPanelSectionChange from './panel/useSaasPanelSectionChange';
 import useSaasWaModuleEditor from './useSaasWaModuleEditor';
 
 export default function useSaasModuleSectionActions({

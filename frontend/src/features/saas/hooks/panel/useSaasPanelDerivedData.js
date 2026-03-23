@@ -4,7 +4,7 @@ import {
     normalizeTenantLabelItem,
     normalizeTenantCatalogItem,
     normalizeTenantAiAssistantItem
-} from '../helpers';
+} from '../../helpers';
 
 export default function useSaasPanelDerivedData({
     customerSearch = '',

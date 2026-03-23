@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { uploadImageAsset } from '../helpers';
+import { uploadImageAsset } from '../../helpers';
 
 export default function useSaasPanelActions({
     requestJson,
