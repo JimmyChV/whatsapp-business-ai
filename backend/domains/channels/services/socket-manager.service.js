@@ -101,6 +101,10 @@ const { createSenderMetaHelpers } = require('../helpers/sender-meta.helpers');
 const { createOutgoingAgentMetaCache } = require('../helpers/socket-agent-meta-cache.helpers');
 const { createSocketOrderDebugHelpers } = require('../helpers/socket-order-debug.helpers');
 const { createSocketModuleContextResolver } = require('../helpers/socket-module-context.helpers');
+const {
+    createGuardRateLimit,
+    createLazySharpLoader
+} = require('../helpers/socket-runtime-bootstrap.helpers');
 const { buildWebjsSessionNamespaceFromIds } = require('../helpers/socket-session.helpers');
 const fs = require('fs');
 const path = require('path');
@@ -121,31 +125,10 @@ const QUICK_REPLY_MEDIA_TIMEOUT_MS = Math.max(
     2000,
     Number(process.env.QUICK_REPLY_MEDIA_TIMEOUT_MS || 15000)
 );
-let sharpImageProcessor = null;
-let sharpLoadAttempted = false;
 const DEFAULT_SAAS_UPLOADS_ROOT = path.resolve(__dirname, '../../../uploads');
 const SAAS_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || DEFAULT_SAAS_UPLOADS_ROOT).trim() || DEFAULT_SAAS_UPLOADS_ROOT);
-
-function guardRateLimit(socket, eventName) {
-    const key = `${socket.id}:${eventName}`;
-    const result = eventRateLimiter.check(key);
-    if (!result.allowed) {
-        socket.emit('error', `Rate limit excedido para ${eventName}. Intenta en unos segundos.`);
-        return false;
-    }
-    return true;
-}
-
-function getSharpImageProcessor() {
-    if (sharpLoadAttempted) return sharpImageProcessor;
-    sharpLoadAttempted = true;
-    try {
-        sharpImageProcessor = require('sharp');
-    } catch (error) {
-        sharpImageProcessor = null;
-    }
-    return sharpImageProcessor;
-}
+const guardRateLimit = createGuardRateLimit(eventRateLimiter);
+const getSharpImageProcessor = createLazySharpLoader();
 
 const {
     slugifyFileName,
