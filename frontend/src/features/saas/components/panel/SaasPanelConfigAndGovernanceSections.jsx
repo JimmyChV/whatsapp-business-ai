@@ -5,7 +5,9 @@ import {
     RoleProfilesSection
 } from '../../sections';
 
-export default function SaasPanelConfigAndGovernanceSections({
+export default function SaasPanelConfigAndGovernanceSections(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     isGeneralConfigSection = false,
     isModulesSection = false,
     settingsTenantId = '',
@@ -126,7 +128,7 @@ export default function SaasPanelConfigAndGovernanceSections({
     chunkItems,
     setPlanPanelMode,
     cancelPlanEdit
-}) {
+    } = context;
     return (
         <>
             <ModulesConfigSection

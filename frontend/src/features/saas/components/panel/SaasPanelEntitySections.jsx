@@ -5,7 +5,9 @@ import {
     UsersSection
 } from '../../sections';
 
-export default function SaasPanelEntitySections({
+export default function SaasPanelEntitySections(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     selectedSectionId = 'saas_resumen',
     currentUserAvatarUrl = '',
     buildInitials,
@@ -100,7 +102,7 @@ export default function SaasPanelEntitySections({
     setCustomerImportModuleId,
     customerCsvText = '',
     setCustomerCsvText
-}) {
+    } = context;
     return (
         <>
             <SummarySection

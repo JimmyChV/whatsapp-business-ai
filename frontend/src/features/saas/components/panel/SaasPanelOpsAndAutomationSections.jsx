@@ -5,7 +5,9 @@ import {
     TenantLabelsSection
 } from '../../sections';
 
-export default function SaasPanelOpsAndAutomationSections({
+export default function SaasPanelOpsAndAutomationSections(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     isOperationsSection = false,
     tenantScopeLocked = false,
     busy = false,
@@ -122,7 +124,7 @@ export default function SaasPanelOpsAndAutomationSections({
     saveQuickReplyItem,
     cancelQuickReplyItemEdit,
     openQuickReplyItemCreate
-}) {
+    } = context;
     return (
         <>
             {isOperationsSection && (
