@@ -11,6 +11,7 @@ Current state:
 - upload parsing/storage helpers live in `helpers/asset-upload.helpers.js`.
 - control-plane normalizers/ID generators are isolated in `helpers/tenant-control-normalizers.helpers.js`.
 - customer normalization/CSV parsing helpers are isolated in `helpers/customers-normalizers.helpers.js`.
+- integrations normalizers/defaults/secret handlers are isolated in `helpers/integrations-normalizers.helpers.js`.
 
 Rule:
 - keep `server.js` as bootstrap/orchestration only.
