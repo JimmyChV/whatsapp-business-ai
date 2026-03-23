@@ -8,6 +8,7 @@ Canonical layout:
   - `SaasPanelConfigAndGovernanceSections`: modulos/catalogos/roles/planes.
   - `index.js`: single feature-level panel export surface.
 - `sections/`: business sections (Empresas, Usuarios, Modulos, Catalogos, etc.).
+  - `sections/modules-config/*`: detalle desacoplado de la vista Modulos/Configuracion (master pane, empty states, tenant settings detail pane).
 - `hooks/`: feature hooks grouped by responsibility.
   - `hooks/panel/*`: panel lifecycle, selection, sync effects and cross-navigation orchestration.
   - `hooks/*.js`: domain actions (plans/roles, tenants/users, catalogs, IA, quick replies, labels, customers, operation access).

@@ -1234,6 +1234,53 @@ export default function SaasAdminPanel({
 
     if (!isOpen) return null;
 
+    const handlePanelClose = () => {
+        if (typeof onLogout === 'function') {
+            onLogout();
+            return;
+        }
+        onClose?.();
+    };
+
+    const handleTenantChange = (nextTenantId) => {
+        setSettingsTenantId(nextTenantId);
+        if (nextTenantId) setSelectedTenantId(nextTenantId);
+    };
+
+    const handleTenantClear = () => {
+        setSettingsTenantId('');
+        setSelectedTenantId('');
+    };
+
+    const frameProps = {
+        embedded,
+        showHeader,
+        title: 'Control SaaS',
+        subtitle: `Empresa activa: ${activeTenantLabel}`,
+        canOpenOperation,
+        isBusy: busy,
+        onOpenOperation: handleOpenOperation,
+        currentUserAvatarUrl,
+        currentUserDisplayName,
+        currentUserRoleLabel,
+        buildInitials,
+        closeLabel,
+        onClose: handlePanelClose,
+        error,
+        showPanelLoading,
+        requiresTenantSelection,
+        settingsTenantId,
+        tenantOptions,
+        toTenantDisplayName,
+        onChangeTenant: handleTenantChange,
+        onClearTenant: handleTenantClear,
+        showNavigation,
+        adminNavItems,
+        selectedSectionId,
+        tenantScopeLocked,
+        onSectionChange: handleSectionChange
+    };
+
     if (!canManageSaas) {
         return (
             <SaasPanelNoAccess
@@ -1247,46 +1294,13 @@ export default function SaasAdminPanel({
                 currentUserRoleLabel={currentUserRoleLabel}
                 buildInitials={buildInitials}
                 closeLabel={closeLabel}
-                onClose={() => { if (typeof onLogout === "function") { onLogout(); return; } onClose?.(); }}
+                onClose={handlePanelClose}
             />
         );
     }
 
     return (
-        <SaasPanelFrame
-            embedded={embedded}
-            showHeader={showHeader}
-            title="Control SaaS"
-            subtitle={`Empresa activa: ${activeTenantLabel}`}
-            canOpenOperation={canOpenOperation}
-            isBusy={busy}
-            onOpenOperation={handleOpenOperation}
-            currentUserAvatarUrl={currentUserAvatarUrl}
-            currentUserDisplayName={currentUserDisplayName}
-            currentUserRoleLabel={currentUserRoleLabel}
-            buildInitials={buildInitials}
-            closeLabel={closeLabel}
-            onClose={() => { if (typeof onLogout === "function") { onLogout(); return; } onClose?.(); }}
-            error={error}
-            showPanelLoading={showPanelLoading}
-            requiresTenantSelection={requiresTenantSelection}
-            settingsTenantId={settingsTenantId}
-            tenantOptions={tenantOptions}
-            toTenantDisplayName={toTenantDisplayName}
-            onChangeTenant={(nextTenantId) => {
-                setSettingsTenantId(nextTenantId);
-                if (nextTenantId) setSelectedTenantId(nextTenantId);
-            }}
-            onClearTenant={() => {
-                setSettingsTenantId('');
-                setSelectedTenantId('');
-            }}
-            showNavigation={showNavigation}
-            adminNavItems={adminNavItems}
-            selectedSectionId={selectedSectionId}
-            tenantScopeLocked={tenantScopeLocked}
-            onSectionChange={handleSectionChange}
-        >
+        <SaasPanelFrame {...frameProps}>
 
             <SaasPanelEntitySections
                 selectedSectionId={selectedSectionId}

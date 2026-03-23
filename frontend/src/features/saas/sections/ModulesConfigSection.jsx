@@ -1,6 +1,8 @@
 import React from 'react';
 import ImageDropInput from '../components/panel/ImageDropInput';
 import ModulesConfigMasterPane from './modules-config/ModulesConfigMasterPane';
+import GeneralSettingsDetailPane from './modules-config/GeneralSettingsDetailPane';
+import ModulesConfigDetailEmptyState from './modules-config/ModulesConfigDetailEmptyState';
 
 function ModulesConfigSection({
     isGeneralConfigSection,
@@ -79,52 +81,22 @@ function ModulesConfigSection({
                 />
 
                 <div className="saas-admin-detail-pane">
-                                {!settingsTenantId && (
-                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
-                                        <h4>{isModulesSection ? 'Modulos por empresa' : 'Configuracion por empresa'}</h4>
-                                        <p>Selecciona una empresa en el panel izquierdo para ver el detalle.</p>
-                                    </div>
-                                )}
+                                <ModulesConfigDetailEmptyState
+                                    settingsTenantId={settingsTenantId}
+                                    isModulesSection={isModulesSection}
+                                    isGeneralConfigSection={isGeneralConfigSection}
+                                    selectedConfigKey={selectedConfigKey}
+                                    waModulePanelMode={waModulePanelMode}
+                                />
 
-                                {settingsTenantId && !selectedConfigKey && (isGeneralConfigSection || (isModulesSection && waModulePanelMode !== 'create')) && (
-                                    <div className="saas-admin-empty-state saas-admin-empty-state--detail">
-                                        <h4>Sin elemento seleccionado</h4>
-                                        <p>{isModulesSection ? 'Selecciona un modulo WhatsApp para ver su detalle.' : 'Selecciona el perfil de empresa para ver su detalle.'}</p>
-                                    </div>
-                                )}
-
-                                {settingsTenantId && isGeneralConfigSection && selectedConfigKey === 'tenant_settings' && (
-                                    <>
-                                        <div className="saas-admin-pane-header">
-                                            <div>
-                                                <h3>Perfil de empresa</h3>
-                                                <small>{tenantSettingsPanelMode === 'edit' ? 'Edicion activa' : 'Vista de solo lectura'}</small>
-                                            </div>
-                                            <div className="saas-admin-list-actions saas-admin-list-actions--row" />
-                                        </div>
-
-                                        {tenantSettingsPanelMode === 'view' && (
-                                            <>
-                                                <div className="saas-admin-detail-grid">
-                                                    <div className="saas-admin-detail-field"><span>Catalogo</span><strong>{tenantSettings.catalogMode}</strong></div>
-                                                    <div className="saas-admin-detail-field"><span>Modulos habilitados</span><strong>{MODULE_KEYS.filter((entry) => tenantSettings?.enabledModules?.[entry.key] !== false).length}</strong></div>
-                                                </div>
-                                                <div className="saas-admin-related-block">
-                                                    <h4>Estado funcional</h4>
-                                                    <div className="saas-admin-related-list">
-                                                        {MODULE_KEYS.map((entry) => (
-                                                            <div key={`cfg_enabled_${entry.key}`} className="saas-admin-related-row" role="status">
-                                                                <span>{entry.label}</span>
-                                                                <small>{tenantSettings?.enabledModules?.[entry.key] !== false ? 'Habilitado' : 'Deshabilitado'}</small>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </>
-                                        )}
-
-                                    </>
-                                )}
+                                <GeneralSettingsDetailPane
+                                    settingsTenantId={settingsTenantId}
+                                    isGeneralConfigSection={isGeneralConfigSection}
+                                    selectedConfigKey={selectedConfigKey}
+                                    tenantSettingsPanelMode={tenantSettingsPanelMode}
+                                    tenantSettings={tenantSettings}
+                                    MODULE_KEYS={MODULE_KEYS}
+                                />
 
                                 {settingsTenantId && isModulesSection && (waModulePanelMode === 'create' || selectedConfigModule) && (() => {
                                     const moduleInDetail = waModulePanelMode === 'create' ? null : selectedConfigModule;
