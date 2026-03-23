@@ -11,6 +11,7 @@ Structure:
   - scope/identity: `chat-scope.helpers.js`, `agent-meta.helpers.js`, `chat-profile.helpers.js`
   - sender/group metadata cache: `sender-meta.helpers.js`
   - message parsing: `message-location.helpers.js`, `message-file.helpers.js`, `message-media-assets.helpers.js`
+  - socket runtime support: `socket-session.helpers.js`, `socket-module-context.helpers.js`, `socket-agent-meta-cache.helpers.js`, `socket-order-debug.helpers.js`
   - runtime helpers: `chat-runtime.helpers.js`
 - `index.js`: domain barrel export (`services` + `routes`).
 

@@ -21,11 +21,7 @@ const RateLimiter = require('../../../config/rate-limiter');
 const { URL } = require('url');
 const { resolveAndValidatePublicHost } = require('../../security/helpers/security-utils');
 const {
-    parseOrderNumber,
     normalizeOrderCurrencyAmount,
-    normalizeOrderSku,
-    normalizeOrderSkuKey,
-    parseOrderLineFromObject,
     dedupeOrderProducts,
     collectProductsFromUnknownShape,
     parseProductsFromBodyText,
@@ -102,6 +98,10 @@ const {
 } = require('../helpers/chat-profile.helpers');
 const { createChatRuntimeHelpers } = require('../helpers/chat-runtime.helpers');
 const { createSenderMetaHelpers } = require('../helpers/sender-meta.helpers');
+const { createOutgoingAgentMetaCache } = require('../helpers/socket-agent-meta-cache.helpers');
+const { createSocketOrderDebugHelpers } = require('../helpers/socket-order-debug.helpers');
+const { createSocketModuleContextResolver } = require('../helpers/socket-module-context.helpers');
+const { buildWebjsSessionNamespaceFromIds } = require('../helpers/socket-session.helpers');
 const fs = require('fs');
 const path = require('path');
 
@@ -109,16 +109,7 @@ const eventRateLimiter = new RateLimiter({
     windowMs: Number(process.env.SOCKET_RATE_LIMIT_WINDOW_MS || 10000),
     max: Number(process.env.SOCKET_RATE_LIMIT_MAX || 30)
 });
-const orderDebugSeen = new Set();
-const ORDER_DEBUG_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.ORDER_DEBUG || '').trim().toLowerCase());
-const ORDER_DEBUG_VERBOSE = ['1', 'true', 'yes', 'on'].includes(String(process.env.ORDER_DEBUG_VERBOSE || '').trim().toLowerCase());
-const CATALOG_DEBUG_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.CATALOG_DEBUG || '').trim().toLowerCase());
-const ORDER_DEBUG_MISSING_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.ORDER_DEBUG_MISSING || process.env.ORDER_DEBUG || '').trim().toLowerCase());
 const HISTORY_DEBUG_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.HISTORY_DEBUG || '').trim().toLowerCase());
-const CATALOG_DEBUG_MAX_ITEMS = Math.max(1, Number(process.env.CATALOG_DEBUG_MAX_ITEMS || 120));
-let catalogDebugLastSignature = '';
-const outgoingMessageAgentMeta = new Map();
-const OUTGOING_AGENT_META_TTL_MS = Math.max(60 * 1000, Number(process.env.OUTGOING_AGENT_META_TTL_MS || (10 * 60 * 1000)));
 const SOCKET_RBAC_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAAS_AUTH_ENABLED || '').trim().toLowerCase());
 const WA_REQUIRE_SELECTED_MODULE = ['1', 'true', 'yes', 'on'].includes(String(process.env.WA_REQUIRE_SELECTED_MODULE || '').trim().toLowerCase());
 const WA_ENFORCE_WEBJS_PHONE_MATCH = ['1', 'true', 'yes', 'on'].includes(String(process.env.WA_ENFORCE_WEBJS_PHONE_MATCH || '').trim().toLowerCase());
@@ -214,260 +205,33 @@ const {
     toParticipantArray,
     normalizeGroupParticipant
 });
-
-function cleanupOutgoingAgentMeta() {
-    const now = Date.now();
-    for (const [messageId, entry] of outgoingMessageAgentMeta.entries()) {
-        if (!entry || Number(entry.expiresAt || 0) <= now) {
-            outgoingMessageAgentMeta.delete(messageId);
-        }
-    }
-}
-
-function rememberOutgoingAgentMeta(messageId = '', meta = null) {
-    const safeId = String(messageId || '').trim();
-    if (!safeId || !meta || typeof meta !== 'object') return;
-    cleanupOutgoingAgentMeta();
-    outgoingMessageAgentMeta.set(safeId, {
-        meta,
-        expiresAt: Date.now() + OUTGOING_AGENT_META_TTL_MS
-    });
-}
-
-function getOutgoingAgentMeta(messageId = '') {
-    const safeId = String(messageId || '').trim();
-    if (!safeId) return null;
-    const entry = outgoingMessageAgentMeta.get(safeId);
-    if (!entry) return null;
-    if (Number(entry.expiresAt || 0) <= Date.now()) {
-        outgoingMessageAgentMeta.delete(safeId);
-        return null;
-    }
-    return entry.meta && typeof entry.meta === 'object' ? entry.meta : null;
-}
-async function resolveSocketModuleContext(tenantId = 'default', authContext = null, requestedModuleId = '') {
-    const cleanTenantId = String(tenantId || 'default').trim() || 'default';
-    const userId = String(authContext?.userId || authContext?.id || '').trim();
-    const normalizedRole = String(authContext?.role || '').trim().toLowerCase();
-    const privilegedActor = Boolean(authContext?.isSuperAdmin) || ['superadmin', 'owner', 'admin'].includes(normalizedRole);
-    const normalizedRequestedId = String(requestedModuleId || '').trim().toLowerCase();
-
-    const modules = await waModuleService.listModules(cleanTenantId, {
-        includeInactive: false,
-        userId: privilegedActor ? '' : userId
-    });
-
-    if (!Array.isArray(modules) || modules.length === 0) {
-        return { modules: [], selected: null };
-    }
-
-    let selected = null;
-    if (normalizedRequestedId) {
-        selected = modules.find((module) => String(module?.moduleId || '').trim().toLowerCase() === normalizedRequestedId) || null;
-    }
-    if (!selected) {
-        selected = modules.find((module) => module?.isSelected) || modules.find((module) => module?.isDefault) || modules[0] || null;
-    }
-
-    return {
-        modules,
-        selected: selected || null
-    };
-}
-
-function buildWebjsSessionNamespaceFromIds(tenantId = 'default', moduleId = 'default') {
-    const cleanTenant = String(tenantId || 'default')
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]+/g, '_')
-        .replace(/^_+|_+$/g, '')
-        .slice(0, 24) || 'default';
-    const cleanModule = String(moduleId || 'default')
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]+/g, '_')
-        .replace(/^_+|_+$/g, '')
-        .slice(0, 30) || 'default';
-    return String(cleanTenant + '__' + cleanModule)
-        .replace(/[^a-z0-9_-]+/g, '_')
-        .replace(/^_+|_+$/g, '')
-        .slice(0, 60) || 'default';
-}
-function mergeAgentMeta(...candidates) {
-    const merged = {};
-    for (const candidate of candidates) {
-        if (!candidate || typeof candidate !== 'object') continue;
-        const normalized = sanitizeAgentMeta(candidate);
-        if (!normalized) continue;
-        Object.assign(merged, normalized);
-    }
-    return Object.keys(merged).length > 0 ? merged : null;
-}
-function logOrderDebug({ msg, data, orderId, products, subtotal, subtotalFrom1000, subtotalFallback, currency, rawPreview }) {
-    const key = buildOrderDebugKey(orderId, data, msg);
-    const hasLines = Array.isArray(products) && products.length > 0;
-    const seenKey = `${hasLines ? 'ok' : 'missing'}:${key}`;
-
-    if (orderDebugSeen.has(seenKey)) return;
-    orderDebugSeen.add(seenKey);
-
-    const summary = {
-        key,
-        type: msg?.type || data?.type || null,
-        orderId: orderId || null,
-        productsCount: Array.isArray(products) ? products.length : 0,
-        itemCount: rawPreview?.itemCount || null,
-        subtotalFrom1000,
-        subtotalFallback,
-        subtotal,
-        currency,
-        hasMsgOrder: Boolean(msg?.order),
-        hasMsgOrderProducts: Array.isArray(msg?.orderProducts) ? msg.orderProducts.length : Boolean(msg?.orderProducts),
-        dataKeys: Object.keys(data || {}).slice(0, 60)
-    };
-
-    if (!hasLines) {
-        if (ORDER_DEBUG_MISSING_ENABLED) {
-            console.warn('[OrderDebug] Pedido detectado SIN lineas de producto:', summary);
-        }
-    } else if (ORDER_DEBUG_ENABLED) {
-        console.log('[OrderDebug] Pedido parseado:', summary);
-    }
-
-    if (ORDER_DEBUG_VERBOSE || (!hasLines && ORDER_DEBUG_MISSING_ENABLED)) {
-        const preview = safeOrderDebugJson({
-            msgOrder: msg?.order,
-            msgOrderProducts: msg?.orderProducts,
-            data: pickOrderDebugData(data),
-            body: msg?.body || data?.body || null
-        });
-        if (preview) console.log('[OrderDebug] Payload preview:', preview);
-    }
-}
-
-function logCatalogDebugSnapshot({ catalog = [], catalogMeta = {} } = {}) {
-    if (!CATALOG_DEBUG_ENABLED) return;
-
-    const safeCatalog = Array.isArray(catalog) ? catalog : [];
-    const categories = Array.isArray(catalogMeta?.categories)
-        ? catalogMeta.categories.map((entry) => String(entry || '').trim()).filter(Boolean)
-        : [];
-
-    const signature = JSON.stringify({
-        source: String(catalogMeta?.source || 'unknown'),
-        totalProducts: safeCatalog.length,
-        categories,
-        sample: safeCatalog.slice(0, 40).map((item) => [
-            String(item?.id || ''),
-            String(item?.sku || ''),
-            extractCatalogItemCategories(item).join('|')
-        ])
-    });
-
-    if (signature === catalogDebugLastSignature) return;
-    catalogDebugLastSignature = signature;
-
-    console.log(`[CatalogDebug] source=${String(catalogMeta?.source || 'unknown')} totalProducts=${safeCatalog.length} totalCategories=${categories.length}`);
-    if (categories.length > 0) {
-        console.log(`[CatalogDebug] categories=${categories.join(' | ')}`);
-    }
-
-    const maxLines = Math.min(Math.max(1, CATALOG_DEBUG_MAX_ITEMS), safeCatalog.length);
-    for (let i = 0; i < maxLines; i += 1) {
-        console.log(buildCatalogDebugLine(safeCatalog[i], i));
-    }
-
-    if (safeCatalog.length > maxLines) {
-        console.log(`[CatalogDebug] ... +${safeCatalog.length - maxLines} productos adicionales`);
-    }
-}
-function extractOrderInfo(msg) {
-    try {
-        const data = msg?._data || {};
-        const orderTitle = data?.orderTitle || data?.title || msg?.orderTitle || msg?.title || msg?.order?.order_title || msg?.order?.catalog_name || msg?.order?.text || '';
-        let products = collectProductsFromUnknownShape({
-            msgOrder: msg?.order,
-            msgOrderProducts: msg?.orderProducts,
-            native: msg,
-            raw: data
-        });
-
-        if (!products.length) {
-            products = parseProductsFromBodyText(msg?.body || data?.body || '');
-        }
-        if (!products.length) {
-            products = parseProductsFromOrderTitle(orderTitle);
-        }
-        products = dedupeOrderProducts(products);
-
-        const orderId = msg?.orderId || msg?.order?.id || msg?.order?.order_id || data?.orderId || data?.orderToken || data?.token || null;
-        const subtotalFrom1000 = normalizeOrderCurrencyAmount(
-            msg?.totalAmount1000
-            ?? msg?.order?.total_amount_1000
-            ?? msg?.order?.subtotal_amount_1000
-            ?? msg?.order?.total_amount
-            ?? data?.totalAmount1000
-            ?? data?.total_amount_1000
-            ?? data?.subtotalAmount1000
-            ?? data?.subtotal_amount_1000
-            ?? data?.priceTotalAmount1000,
-            { scaleHint: '1000' }
-        );
-        const subtotalFallback = normalizeOrderCurrencyAmount(
-            msg?.subtotal
-            ?? msg?.order?.subtotal
-            ?? msg?.order?.total
-            ?? msg?.total
-            ?? data?.subtotal
-            ?? data?.total
-            ?? data?.totalAmount,
-            { scaleHint: 'subtotal' }
-        );
-        const subtotal = Number.isFinite(subtotalFrom1000) ? subtotalFrom1000 : subtotalFallback;
-        const currency = msg?.currency || msg?.order?.currency || msg?.order?.currency_code || data?.totalCurrencyCode || data?.currency || 'PEN';
-
-        const maybeOrderType = String(msg?.type || '').toLowerCase().includes('order')
-            || String(data?.type || '').toLowerCase().includes('order')
-            || String(msg?.type || '').toLowerCase().includes('product')
-            || String(data?.type || '').toLowerCase().includes('product')
-            || products.length > 0
-            || Boolean(orderId)
-            || Boolean(msg?.order);
-
-        if (!maybeOrderType) return null;
-
-        const rawPreview = {
-            type: msg?.type || data?.type || null,
-            body: msg?.body || data?.body || null,
-            title: orderTitle || null,
-            itemCount: data?.itemCount || data?.orderItemCount || msg?.itemCount || msg?.order?.item_count || products.length || null,
-            sellerJid: data?.sellerJid || msg?.order?.seller_jid || null,
-            token: data?.orderToken || data?.token || msg?.order?.token || null
-        };
-
-        logOrderDebug({
-            msg,
-            data,
-            orderId,
-            products,
-            subtotal: Number.isFinite(subtotal) ? subtotal : null,
-            subtotalFrom1000,
-            subtotalFallback,
-            currency,
-            rawPreview
-        });
-
-        return {
-            orderId,
-            currency,
-            subtotal: Number.isFinite(subtotal) ? subtotal : null,
-            products,
-            rawPreview
-        };
-    } catch (error) {
-        return null;
-    }
-}
+const {
+    rememberOutgoingAgentMeta,
+    getOutgoingAgentMeta,
+    mergeAgentMeta
+} = createOutgoingAgentMetaCache({
+    sanitizeAgentMeta,
+    ttlMs: Number(process.env.OUTGOING_AGENT_META_TTL_MS || (10 * 60 * 1000))
+});
+const {
+    extractOrderInfo,
+    logCatalogDebugSnapshot
+} = createSocketOrderDebugHelpers({
+    env: process.env,
+    buildOrderDebugKey,
+    pickOrderDebugData,
+    safeOrderDebugJson,
+    extractCatalogItemCategories,
+    buildCatalogDebugLine,
+    normalizeOrderCurrencyAmount,
+    dedupeOrderProducts,
+    collectProductsFromUnknownShape,
+    parseProductsFromBodyText,
+    parseProductsFromOrderTitle
+});
+const resolveSocketModuleContext = createSocketModuleContextResolver({
+    waModuleService
+});
 
 class SocketManager {
     constructor(io) {
