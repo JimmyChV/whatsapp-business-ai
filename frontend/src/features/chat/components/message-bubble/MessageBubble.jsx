@@ -16,9 +16,10 @@ import {
     renderAttachmentIcon,
     extractPhoneCandidatesFromText
 } from './helpers';
+import useMessageBubbleAttachmentActions from './hooks/useMessageBubbleAttachmentActions';
+import useMessageBubbleLinkPreview from './hooks/useMessageBubbleLinkPreview';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-const linkPreviewCache = new Map();
 
 const MessageBubble = ({
     msg,
@@ -107,8 +108,6 @@ const MessageBubble = ({
     const locationData = resolveLocationData(msg);
     const isLocationMessage = Boolean(locationData);
     const [selectedLocationText, setSelectedLocationText] = useState('');
-    const [webPreview, setWebPreview] = useState(null);
-    const [webPreviewLoading, setWebPreviewLoading] = useState(false);
     const [showForwardPicker, setShowForwardPicker] = useState(false);
     const [forwardSearch, setForwardSearch] = useState('');
     const [showActionsMenu, setShowActionsMenu] = useState(false);
@@ -121,49 +120,12 @@ const MessageBubble = ({
     const firstNonMapUrl = extractFirstNonMapUrlFromText(messageBodyText);
     const showWebPreview = Boolean(firstNonMapUrl && !isLocationMessage && !msg?.hasMedia && !hasOrder && !isCatalogItem && !isOrderActionable);
     const phoneCandidates = extractPhoneCandidatesFromText(messageTextToRender);
-
-    useEffect(() => {
-        if (!showWebPreview || !firstNonMapUrl) {
-            setWebPreview(null);
-            setWebPreviewLoading(false);
-            return;
-        }
-
-        const cached = linkPreviewCache.get(firstNonMapUrl);
-        if (cached) {
-            setWebPreview(cached);
-            setWebPreviewLoading(false);
-            return;
-        }
-
-        let cancelled = false;
-        const timer = setTimeout(async () => {
-            try {
-                setWebPreviewLoading(true);
-                const encoded = encodeURIComponent(firstNonMapUrl);
-                const response = await fetch(`${API_URL}/api/link-preview?url=${encoded}`, {
-                    headers: typeof buildApiHeaders === 'function' ? buildApiHeaders() : undefined
-                });
-                const payload = await response.json();
-                const nextPreview = payload?.ok
-                    ? payload
-                    : { ok: false, url: firstNonMapUrl, title: firstNonMapUrl };
-                linkPreviewCache.set(firstNonMapUrl, nextPreview);
-                if (!cancelled) setWebPreview(nextPreview);
-            } catch (e) {
-                const fallback = { ok: false, url: firstNonMapUrl, title: firstNonMapUrl };
-                linkPreviewCache.set(firstNonMapUrl, fallback);
-                if (!cancelled) setWebPreview(fallback);
-            } finally {
-                if (!cancelled) setWebPreviewLoading(false);
-            }
-        }, 180);
-
-        return () => {
-            cancelled = true;
-            clearTimeout(timer);
-        };
-    }, [firstNonMapUrl, showWebPreview]);
+    const { webPreview, webPreviewLoading } = useMessageBubbleLinkPreview({
+        showWebPreview,
+        firstNonMapUrl,
+        apiUrl: API_URL,
+        buildApiHeaders
+    });
 
     useEffect(() => {
         if (!showActionsMenu && !showForwardPicker) return;
@@ -241,110 +203,15 @@ const MessageBubble = ({
         && !msg.mimetype?.startsWith('audio/')
     );
     const attachmentMeta = hasBinaryAttachment ? buildAttachmentMeta(msg) : null;
-    const canOpenAttachmentAsPdf = Boolean(attachmentMeta && (((attachmentMeta.mimetype || msg?.mimetype || '').toLowerCase().includes('pdf')) || getFileExtensionFromName(attachmentMeta.downloadFilename || attachmentMeta.filename || '').toLowerCase() === 'pdf'));
-    const normalizeBase64Payload = (value = '') => {
-        const raw = String(value || '').trim();
-        if (!raw) return '';
-        const stripped = raw.replace(/^data:.*?;base64,/i, '');
-        const cleaned = stripped.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
-        const remainder = cleaned.length % 4;
-        if (remainder === 0) return cleaned;
-        if (remainder === 2) return `${cleaned}==`;
-        if (remainder === 3) return `${cleaned}=`;
-        return cleaned;
-    };
-
-    const getAttachmentObjectUrl = () => {
-        if (!attachmentMeta || !msg?.mediaData) return null;
-        try {
-            const payload = normalizeBase64Payload(msg.mediaData);
-            if (!payload) return null;
-            const binary = window.atob(payload);
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-            const blob = new Blob([bytes], {
-                type: attachmentMeta.mimetype || msg?.mimetype || 'application/octet-stream'
-            });
-            return URL.createObjectURL(blob);
-        } catch (e) {
-            return null;
-        }
-    };
-
-    const revokeObjectUrlLater = (url, delayMs = 120000) => {
-        if (!url) return;
-        window.setTimeout(() => {
-            try {
-                URL.revokeObjectURL(url);
-            } catch (e) { }
-        }, delayMs);
-    };
-
-    const handleOpenAttachment = (event) => {
-        event.preventDefault();
-        if (!canOpenAttachmentAsPdf) {
-            handleDownloadAttachment(event);
-            return;
-        }
-
-        const objectUrl = getAttachmentObjectUrl();
-        if (objectUrl) {
-            const opened = window.open(objectUrl, '_blank', 'noopener,noreferrer');
-            if (!opened) {
-                const link = document.createElement('a');
-                link.href = objectUrl;
-                link.target = '_blank';
-                link.rel = 'noreferrer';
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-            }
-            revokeObjectUrlLater(objectUrl);
-            return;
-        }
-
-        if (mediaDataUrl) {
-            const fallback = document.createElement('a');
-            fallback.href = mediaDataUrl;
-            fallback.target = '_blank';
-            fallback.rel = 'noreferrer';
-            document.body.appendChild(fallback);
-            fallback.click();
-            fallback.remove();
-        }
-    };
-
-    const handleDownloadAttachment = (event) => {
-        event.preventDefault();
-        const objectUrl = getAttachmentObjectUrl();
-        const rawDownloadName = attachmentMeta?.downloadFilename || attachmentMeta?.filename || 'documento';
-        const fallbackExt = getFileExtensionFromName(rawDownloadName) || guessExtensionFromMime(attachmentMeta?.mimetype || msg?.mimetype || '');
-        const downloadName = (isGenericAttachmentFilename(rawDownloadName) || isMachineLikeAttachmentFilename(rawDownloadName))
-            ? (fallbackExt ? `documento.${fallbackExt}` : 'documento')
-            : rawDownloadName;
-
-        if (objectUrl) {
-            const link = document.createElement('a');
-            link.href = objectUrl;
-            link.download = downloadName;
-            link.rel = 'noreferrer';
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            revokeObjectUrlLater(objectUrl, 30000);
-            return;
-        }
-
-        if (mediaDataUrl) {
-            const fallback = document.createElement('a');
-            fallback.href = mediaDataUrl;
-            fallback.download = downloadName;
-            fallback.rel = 'noreferrer';
-            document.body.appendChild(fallback);
-            fallback.click();
-            fallback.remove();
-        }
-    };
+    const {
+        canOpenAttachmentAsPdf,
+        handleOpenAttachment,
+        handleDownloadAttachment
+    } = useMessageBubbleAttachmentActions({
+        msg,
+        attachmentMeta,
+        mediaDataUrl
+    });
 
     const messageSenderName = String(senderDisplayName || msg?.notifyName || msg?.senderPushname || '').trim();
     const senderIdentityKey = String(
