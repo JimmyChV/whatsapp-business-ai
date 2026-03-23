@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Bot, Send, ShoppingCart, Clock, Sparkles, Trash2, Plus, Minus, ChevronDown, ChevronUp, Package, MessageSquare } from 'lucide-react';
+import { Bot, Send, ShoppingCart, Clock, Sparkles, Trash2, Plus, Minus, ChevronDown, ChevronUp, Package } from 'lucide-react';
 import {
     addItemToCartState,
     buildAiRuntimeContext,
@@ -16,6 +16,7 @@ import {
     normalizeCatalogItem,
     parseMoney,
     repairMojibake,
+    renderAiMessageWithSendAction,
     removeItemFromCartState,
     roundMoney,
     setCartItemDiscountEnabledState,
@@ -261,32 +262,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setActiveTab('ai');
     };
 
-    // Parse AI message to detect [MENSAJE: ...] blocks for send buttons
-    const renderAiMessage = (content) => {
-        const parts = repairMojibake(content).split(/(\[MENSAJE:[\s\S]*?\])/g);
-        return parts.map((part, i) => {
-            const match = part.match(/\[MENSAJE:\s*([\s\S]+?)\]/);
-            if (match) {
-                return (
-                    <div key={i} style={{ marginTop: '8px', background: 'rgba(0,168,132,0.12)', border: '1px solid rgba(0,168,132,0.3)', borderRadius: '8px', padding: '10px 12px' }}>
-                        <div style={{ fontSize: '0.78rem', color: '#00a884', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <MessageSquare size={11} /> MENSAJE LISTO PARA ENVIAR
-                        </div>
-                        <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>{match[1].trim()}</div>
-                        <button
-                            onClick={() => sendToClient(match[1].trim())}
-                            style={{ marginTop: '8px', background: '#00a884', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 14px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                        >
-                            <Send size={13} /> Enviar al cliente
-                        </button>
-                                </div>
-                );
-            }
-            return <span key={i} style={{ whiteSpace: 'pre-wrap' }}>{part}</span>;
-        });
-    };
-
-        // Cart functions
+    // Cart functions
     const getLineBreakdown = (item = {}) => getCartLineBreakdown(item, {
         parseMoney,
         roundMoney,
@@ -467,7 +443,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                                     fontSize: '0.82rem', color: 'var(--text-primary)', lineHeight: '1.45',
                                     position: 'relative'
                                 }}>
-                                    {msg.role === 'assistant' ? renderAiMessage(msg.content) : msg.content}
+                                    {msg.role === 'assistant'
+                                        ? renderAiMessageWithSendAction(msg.content, sendToClient, repairMojibake)
+                                        : msg.content}
                                     {msg.streaming && (
                                         <span style={{ display: 'inline-block', width: '6px', height: '12px', background: 'var(--text-primary)', marginLeft: '3px', animation: 'blink 0.8s step-end infinite' }} />
                                     )}
