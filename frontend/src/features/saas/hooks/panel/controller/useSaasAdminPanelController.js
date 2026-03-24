@@ -12,6 +12,7 @@ import useSaasCatalogController from './useSaasCatalogController';
 import useSaasOperationsController from './useSaasOperationsController';
 import useSaasPanelDataContexts from './useSaasPanelDataContexts';
 import useSaasFrameNavigationController from './useSaasFrameNavigationController';
+import useSaasPlansRolesController from './useSaasPlansRolesController';
 import useSaasQuickRepliesController from './useSaasQuickRepliesController';
 import useSaasTenantController from './useSaasTenantController';
 import useSaasUsersController from './useSaasUsersController';
@@ -163,24 +164,6 @@ export default function useSaasAdminPanelController({
         setTenantSettingsPanelMode,
         waModulePanelMode,
         setWaModulePanelMode,
-        planMatrix,
-        setPlanMatrix,
-        selectedPlanId,
-        setSelectedPlanId,
-        planForm,
-        setPlanForm,
-        planPanelMode,
-        setPlanPanelMode,
-        accessCatalog,
-        setAccessCatalog,
-        loadingAccessCatalog,
-        setLoadingAccessCatalog,
-        selectedRoleKey,
-        setSelectedRoleKey,
-        roleForm,
-        setRoleForm,
-        rolePanelMode,
-        setRolePanelMode,
         tenantLabels,
         setTenantLabels,
         selectedLabelId,
@@ -209,8 +192,6 @@ export default function useSaasAdminPanelController({
         setCustomerImportModuleId,
         busy,
         setBusy,
-        loadingPlans,
-        setLoadingPlans,
         error,
         setError,
         currentSection,
@@ -220,8 +201,8 @@ export default function useSaasAdminPanelController({
         userRole,
         isSuperAdmin,
         currentUser,
-        accessCatalog,
-        selectedRoleKey,
+        accessCatalog: panelCoreState.accessCatalog,
+        selectedRoleKey: panelCoreState.selectedRoleKey,
         baseRoleOptions: BASE_ROLE_OPTIONS,
         getRolePriority,
         permissionKeys: {
@@ -292,6 +273,13 @@ export default function useSaasAdminPanelController({
         rolePermissionOptions,
         hasAccessCatalogData
     } = saasAccessControl;
+    const {
+        plansRolesState,
+        plansRolesDerived
+    } = useSaasPlansRolesController({
+        panelCoreState,
+        saasAccessControl
+    });
     const { pendingRequests, requestJson } = useSaasApiClient({
         apiBase: API_BASE,
         buildApiHeaders
@@ -350,8 +338,8 @@ export default function useSaasAdminPanelController({
         currentUserId,
         actorRolePriority,
         canManageUsers,
-        canActorManageRoleChanges,
-        canEditOptionalAccess,
+        canActorManageRoleChanges: plansRolesDerived.canActorManageRoleChanges,
+        canEditOptionalAccess: plansRolesDerived.canEditOptionalAccess,
         userPanelMode: panelCoreState.userPanelMode,
         userFormRole: panelCoreState.userForm.role,
         canManageTenants,
@@ -363,8 +351,8 @@ export default function useSaasAdminPanelController({
         resolvePrimaryRoleFromMemberships,
         sanitizeMemberships,
         getRolePriority,
-        getOptionalPermissionKeysForRole,
-        getAllowedPackIdsForRole,
+        getOptionalPermissionKeysForRole: plansRolesDerived.getOptionalPermissionKeysForRole,
+        getAllowedPackIdsForRole: plansRolesDerived.getAllowedPackIdsForRole,
         customerSearch,
         customers,
         waModules,
@@ -380,7 +368,7 @@ export default function useSaasAdminPanelController({
         tenantLabels,
         selectedLabelId,
         labelSearch,
-        planMatrix,
+        planMatrix: plansRolesState.planMatrix,
         quickReplyDefaultMaxUploadMb: QUICK_REPLY_DEFAULT_MAX_UPLOAD_MB,
         quickReplyDefaultStorageMb: QUICK_REPLY_DEFAULT_STORAGE_MB,
         selectedConfigKey,
@@ -391,7 +379,7 @@ export default function useSaasAdminPanelController({
         selectedCatalogProductId: panelCoreState.selectedCatalogProductId,
         tenantAiAssistants: panelCoreState.tenantAiAssistants,
         selectedAiAssistantId: panelCoreState.selectedAiAssistantId,
-        selectedPlanId,
+        selectedPlanId: plansRolesState.selectedPlanId,
         planOptions: PLAN_OPTIONS,
         toUserDisplayName
     });
@@ -537,32 +525,32 @@ export default function useSaasAdminPanelController({
         setLoadingAiAssistants: aiState.setLoadingAiAssistants,
         setTenantAiAssistants: aiState.setTenantAiAssistants,
         setAiAssistantForm: aiState.setAiAssistantForm,
-        canManageRoles,
-        selectedRoleProfile,
-        selectedRoleKey,
-        roleForm,
-        rolePanelMode,
-        selectedPlanId,
-        planMatrix,
+        canManageRoles: plansRolesDerived.canManageRoles,
+        selectedRoleProfile: plansRolesDerived.selectedRoleProfile,
+        selectedRoleKey: plansRolesState.selectedRoleKey,
+        roleForm: plansRolesState.roleForm,
+        rolePanelMode: plansRolesState.rolePanelMode,
+        selectedPlanId: plansRolesState.selectedPlanId,
+        planMatrix: plansRolesState.planMatrix,
         planOptions: PLAN_OPTIONS,
         emptyRoleForm: EMPTY_ROLE_FORM,
-        setLoadingPlans,
-        setPlanMatrix,
-        setPlanForm,
-        setPlanPanelMode,
-        setRolePanelMode,
-        setLoadingAccessCatalog,
-        setAccessCatalog,
-        setRoleForm,
-        loadingAccessCatalog,
-        accessCatalog,
+        setLoadingPlans: plansRolesState.setLoadingPlans,
+        setPlanMatrix: plansRolesState.setPlanMatrix,
+        setPlanForm: plansRolesState.setPlanForm,
+        setPlanPanelMode: plansRolesState.setPlanPanelMode,
+        setRolePanelMode: plansRolesState.setRolePanelMode,
+        setLoadingAccessCatalog: plansRolesState.setLoadingAccessCatalog,
+        setAccessCatalog: plansRolesState.setAccessCatalog,
+        setRoleForm: plansRolesState.setRoleForm,
+        loadingAccessCatalog: plansRolesState.loadingAccessCatalog,
+        accessCatalog: plansRolesState.accessCatalog,
         canEditSelectedUser: usersDerived.canEditSelectedUser,
         selectedTenant: tenantDerived.selectedTenant,
         selectedUser: usersDerived.selectedUser,
         tenantScopeId: tenantDerived.tenantScopeId,
         selectedTenantId: tenantState.selectedTenantId,
         tenantOptions: tenantDerived.tenantOptions,
-        roleOptions,
+        roleOptions: plansRolesDerived.roleOptions,
         emptyTenantForm: EMPTY_TENANT_FORM,
         emptyUserForm: EMPTY_USER_FORM,
         setTenantPanelMode: tenantState.setTenantPanelMode,
@@ -600,7 +588,7 @@ export default function useSaasAdminPanelController({
         activeCatalogOptions: catalogDerived.activeCatalogOptions,
         defaultAiAssistantId: aiDerived.defaultAiAssistantId,
         setSelectedConfigKey,
-        setSelectedRoleKey,
+        setSelectedRoleKey: plansRolesState.setSelectedRoleKey,
         setSelectedWaModuleId,
         setTenantSettingsPanelMode,
         setWaModulePanelMode,
@@ -633,7 +621,7 @@ export default function useSaasAdminPanelController({
         tenantSettingsPanelMode,
         waModulePanelMode,
         catalogPanelMode: catalogState.catalogPanelMode,
-        planPanelMode,
+        planPanelMode: plansRolesState.planPanelMode,
         customerPanelMode,
         labelSearch,
         launchSource,
@@ -672,6 +660,11 @@ export default function useSaasAdminPanelController({
         usersState,
         usersDerived,
         usersActions: tenantsUsersActions
+    };
+    const plansRolesController = {
+        plansRolesState,
+        plansRolesDerived,
+        plansRolesActions
     };
     const operationsController = useSaasOperationsController({
         operationsPanelState,
@@ -725,7 +718,7 @@ export default function useSaasAdminPanelController({
         tenantLabelsAdminActions,
         catalogAdminActions,
         aiAssistantsAdminActions: aiController.aiActions,
-        plansRolesActions,
+        plansRolesActions: plansRolesController.plansRolesActions,
         tenantsUsersActions: usersController.usersActions,
         customersAdminActions,
         panelNavigation,
