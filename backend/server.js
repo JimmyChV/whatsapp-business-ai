@@ -7,6 +7,9 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ quiet: true });
 const logger = require('./config/logger');
+const { createServerLifecycleHandlers } = require('./config/bootstrap/server-lifecycle');
+const { registerHttpRoutes } = require('./config/bootstrap/http-routes');
+const { preloadRuntimeServices } = require('./config/bootstrap/runtime-preload');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./domains/security/helpers/security-utils');
 const RateLimiter = require('./config/rate-limiter');
 const { resolveRuntimeFlags, createCorsOriginChecker } = require('./config/runtime-flags');
@@ -52,6 +55,7 @@ const {
     registerOperationsUtilityHttpRoutes,
     registerOperationsHealthHttpRoutes
 } = require('./domains/operations');
+const { createRequestOpsHelpers } = require('./domains/operations/helpers/request-ops.helpers');
 const {
     waProvider: waClient,
     socketManager: SocketManager,
@@ -60,6 +64,7 @@ const {
 } = require('./domains/channels');
 const { createTenantAdminPayloadSanitizers } = require('./domains/tenant/helpers/admin-payload-sanitizers');
 const { createTenantAssetUploadHelpers } = require('./domains/tenant/helpers/asset-upload.helpers');
+const { createRequestAccessHelpers } = require('./domains/security/helpers/request-access.helpers');
 const { loadCatalog, addProduct, updateProduct } = catalogManagerService;
 const {
     isProduction,
@@ -81,6 +86,13 @@ const isCorsOriginAllowed = createCorsOriginChecker({
     allowedOrigins,
     isProduction,
     allowEmptyOriginsInProd
+});
+const {
+    resolveRequestId,
+    hasOpsAccess
+} = createRequestOpsHelpers({
+    crypto,
+    opsApiToken
 });
 
 const app = express();
@@ -112,38 +124,6 @@ app.use('/uploads', express.static(UPLOADS_ROOT, {
     fallthrough: true,
     maxAge: isProduction ? '30d' : 0
 }));
-
-function resolveRequestId(req = {}) {
-    const fromHeader = String(req.headers?.['x-request-id'] || req.headers?.['x-correlation-id'] || '').trim();
-    if (fromHeader) return fromHeader;
-    try {
-        return crypto.randomUUID();
-    } catch (_) {
-        return 'req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
-    }
-}
-
-function getOpsTokenFromRequest(req = {}) {
-    const fromHeader = String(req.headers?.['x-ops-token'] || '').trim();
-    if (fromHeader) return fromHeader;
-    const authHeader = String(req.headers?.authorization || '').trim();
-    if (/^bearer\s+/i.test(authHeader)) return authHeader.replace(/^bearer\s+/i, '').trim();
-    return '';
-}
-
-function hasOpsAccess(req = {}) {
-    if (!opsApiToken) return true;
-    const incoming = getOpsTokenFromRequest(req);
-    if (!incoming) return false;
-    const left = Buffer.from(opsApiToken, 'utf8');
-    const right = Buffer.from(incoming, 'utf8');
-    if (left.length !== right.length) return false;
-    try {
-        return crypto.timingSafeEqual(left, right);
-    } catch (_) {
-        return false;
-    }
-}
 
 app.use((req, res, next) => {
     const startedNs = process.hrtime.bigint();
@@ -363,37 +343,62 @@ const {
     quickReplyLibrariesService,
     tenantLabelService
 });
-// Platform and public runtime routes
-registerOperationsHealthHttpRoutes({
+const {
+    getAuthRole,
+    hasPermission,
+    hasAnyPermission,
+    hasSaasControlReadAccess,
+    hasSaasControlWriteAccess,
+    hasTenantAdminWriteAccess,
+    isTenantAllowedForUser,
+    hasTenantModuleReadAccess,
+    hasTenantModuleWriteAccess,
+    hasConversationEventsReadAccess,
+    hasChatAssignmentsReadAccess,
+    hasChatAssignmentsWriteAccess,
+    hasAssignmentRulesReadAccess,
+    hasAssignmentRulesWriteAccess,
+    hasOperationsKpiReadAccess,
+    normalizeScopeModuleId,
+    resolvePrimaryRoleFromMemberships,
+    canActorAssignRole,
+    hasAnyAccessOverride,
+    canActorEditOptionalAccess,
+    getUserPrimaryRole,
+    isSelfUserAction,
+    isActorSuperiorToRole,
+    canActorManageRoleChanges,
+    filterAdminOverviewByScope
+} = createRequestAccessHelpers({
+    accessPolicyService,
+    authService
+});
+registerHttpRoutes({
     app,
     hasOpsAccess,
     waClient,
     opsTelemetry,
     tenantService,
     authService,
-    opsReadyRequireWa
-});
-
-registerTenantRuntimePublicHttpRoutes({
-    app,
-    authService,
-    tenantService,
-    tenantSettingsService,
-    waModuleService,
-    saasSocketAuthRequired
-});
-
-registerSecurityAuthHttpRoutes({
-    app,
+    opsReadyRequireWa,
+    registerOperationsHealthHttpRoutes,
+    registerTenantRuntimePublicHttpRoutes,
+    registerSecurityAuthHttpRoutes,
+    registerSecurityAccessControlHttpRoutes,
+    registerTenantAssetsUploadHttpRoutes,
+    registerTenantAdminTenantsUsersHttpRoutes,
+    registerTenantWaModuleAdminHttpRoutes,
+    registerTenantCustomerHttpRoutes,
+    registerOperationsHttpRoutes,
+    registerTenantRuntimeSettingsHttpRoutes,
+    registerTenantLabelsQuickRepliesHttpRoutes,
+    registerTenantAdminConfigCatalogHttpRoutes,
+    registerOperationsUtilityHttpRoutes,
+    registerCloudWebhookHttpRoutes,
     isProduction,
-    authService,
     authRecoveryService,
     auditLogService,
-    tenantService,
-    toPublicTenant
-});
-registerSecurityAccessControlHttpRoutes({
-    app,
+    toPublicTenant,
     saasControlService,
     aiUsageService,
     accessPolicyService,
@@ -403,269 +408,13 @@ registerSecurityAccessControlHttpRoutes({
     hasSaasControlWriteAccess,
     getAuthRole,
     filterAdminOverviewByScope,
-    sanitizeObjectPayload
-});
-
-function getAuthRole(req = {}) {
-    return accessPolicyService.normalizeRole(req?.authContext?.user?.role || 'seller');
-}
-
-function getUserPermissions(req = {}) {
-    const raw = Array.isArray(req?.authContext?.user?.permissions)
-        ? req.authContext.user.permissions
-        : [];
-    return new Set(
-        raw
-            .map((entry) => String(entry || '').trim())
-            .filter(Boolean)
-    );
-}
-
-function hasPermission(req = {}, permission = '') {
-    const key = String(permission || '').trim();
-    if (!key) return false;
-    if (!authService.isAuthEnabled()) return true;
-    const authContext = req.authContext || { isAuthenticated: false, user: null };
-    if (!authContext.isAuthenticated || !authContext.user) return false;
-    if (authContext.user?.isSuperAdmin) return true;
-    return getUserPermissions(req).has(key);
-}
-
-function hasAnyPermission(req = {}, permissions = []) {
-    const source = Array.isArray(permissions) ? permissions : [];
-    return source.some((permission) => hasPermission(req, permission));
-}
-
-function getAllowedTenantIdsFromAuth(req = {}) {
-    const memberships = Array.isArray(req?.authContext?.user?.memberships)
-        ? req.authContext.user.memberships
-        : [];
-    const allowed = memberships
-        .filter((membership) => membership?.active !== false)
-        .map((membership) => String(membership?.tenantId || '').trim())
-        .filter(Boolean);
-
-    if (!allowed.length) {
-        const fallback = String(req?.authContext?.user?.tenantId || req?.tenantContext?.id || '').trim();
-        if (fallback) return [fallback];
-    }
-
-    return Array.from(new Set(allowed));
-}
-
-function hasSaasControlReadAccess(req = {}, { requireSuperAdmin = false } = {}) {
-    if (requireSuperAdmin) {
-        return Boolean(req?.authContext?.user?.isSuperAdmin);
-    }
-
-    return hasAnyPermission(req, [
-        accessPolicyService.PERMISSIONS.PLATFORM_OVERVIEW_READ,
-        accessPolicyService.PERMISSIONS.TENANT_OVERVIEW_READ
-    ]);
-}
-
-function hasSaasControlWriteAccess(req = {}, { requireSuperAdmin = false } = {}) {
-    if (!authService.isAuthEnabled()) return true;
-    const authContext = req.authContext || { isAuthenticated: false, user: null };
-    if (!authContext.isAuthenticated || !authContext.user) return false;
-
-    if (requireSuperAdmin) return Boolean(authContext.user?.isSuperAdmin);
-
-    return hasAnyPermission(req, [
-        accessPolicyService.PERMISSIONS.PLATFORM_TENANTS_MANAGE,
-        accessPolicyService.PERMISSIONS.TENANT_SETTINGS_MANAGE
-    ]);
-}
-
-function hasTenantAdminWriteAccess(req = {}) {
-    return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_USERS_MANAGE);
-}
-
-function isTenantAllowedForUser(req = {}, tenantId = '') {
-    const cleanTenantId = String(tenantId || '').trim();
-    if (!cleanTenantId) return false;
-    if (req?.authContext?.user?.isSuperAdmin) return true;
-    const allowed = getAllowedTenantIdsFromAuth(req);
-    return allowed.includes(cleanTenantId);
-}
-
-function hasTenantModuleReadAccess(req = {}, tenantId = '') {
-    if (!tenantId) return false;
-    if (!isTenantAllowedForUser(req, tenantId)) return false;
-    return hasAnyPermission(req, [
-        accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
-        accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ
-    ]);
-}
-
-function hasTenantModuleWriteAccess(req = {}, tenantId = '') {
-    if (!tenantId) return false;
-    if (!isTenantAllowedForUser(req, tenantId)) return false;
-    return hasAnyPermission(req, [
-        accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE,
-        accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE
-    ]);
-}
-
-function hasConversationEventsReadAccess(req = {}, tenantId = '') {
-    if (!tenantId) return false;
-    if (!isTenantAllowedForUser(req, tenantId)) return false;
-    return hasAnyPermission(req, [
-        accessPolicyService.PERMISSIONS.TENANT_CONVERSATION_EVENTS_READ,
-        accessPolicyService.PERMISSIONS.TENANT_CHAT_OPERATE,
-        accessPolicyService.PERMISSIONS.TENANT_RUNTIME_READ
-    ]);
-}
-
-function hasChatAssignmentsReadAccess(req = {}, tenantId = '') {
-    if (!tenantId) return false;
-    if (!isTenantAllowedForUser(req, tenantId)) return false;
-    return hasAnyPermission(req, [
-        accessPolicyService.PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_READ,
-        accessPolicyService.PERMISSIONS.TENANT_CHAT_OPERATE,
-        accessPolicyService.PERMISSIONS.TENANT_RUNTIME_READ
-    ]);
-}
-
-function hasChatAssignmentsWriteAccess(req = {}, tenantId = '') {
-    if (!tenantId) return false;
-    if (!isTenantAllowedForUser(req, tenantId)) return false;
-    return hasAnyPermission(req, [
-        accessPolicyService.PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_MANAGE,
-        accessPolicyService.PERMISSIONS.TENANT_USERS_MANAGE
-    ]);
-}
-
-function hasAssignmentRulesReadAccess(req = {}, tenantId = '') {
-    if (!tenantId) return false;
-    if (!isTenantAllowedForUser(req, tenantId)) return false;
-    return hasAnyPermission(req, [
-        accessPolicyService.PERMISSIONS.TENANT_ASSIGNMENT_RULES_READ,
-        accessPolicyService.PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_READ,
-        accessPolicyService.PERMISSIONS.TENANT_CHAT_OPERATE,
-        accessPolicyService.PERMISSIONS.TENANT_RUNTIME_READ
-    ]);
-}
-
-function hasAssignmentRulesWriteAccess(req = {}, tenantId = '') {
-    if (!tenantId) return false;
-    if (!isTenantAllowedForUser(req, tenantId)) return false;
-    return hasAnyPermission(req, [
-        accessPolicyService.PERMISSIONS.TENANT_ASSIGNMENT_RULES_MANAGE,
-        accessPolicyService.PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_MANAGE,
-        accessPolicyService.PERMISSIONS.TENANT_USERS_MANAGE
-    ]);
-}
-
-function hasOperationsKpiReadAccess(req = {}, tenantId = '') {
-    if (!tenantId) return false;
-    if (!isTenantAllowedForUser(req, tenantId)) return false;
-    return hasAnyPermission(req, [
-        accessPolicyService.PERMISSIONS.TENANT_KPIS_READ,
-        accessPolicyService.PERMISSIONS.TENANT_CONVERSATION_EVENTS_READ,
-        accessPolicyService.PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_READ,
-        accessPolicyService.PERMISSIONS.TENANT_RUNTIME_READ
-    ]);
-}
-
-function normalizeScopeModuleId(value = '') {
-    return String(value || '').trim().toLowerCase();
-}
-function resolvePrimaryRoleFromMemberships(memberships = [], fallbackRole = 'seller') {
-    const list = Array.isArray(memberships) ? memberships : [];
-    const primary = list.find((item) => item?.active !== false) || list[0] || null;
-    const role = String(primary?.role || fallbackRole || 'seller').trim().toLowerCase();
-    return accessPolicyService.normalizeRole(role);
-}
-
-function canActorAssignRole(req = {}, targetRole = 'seller') {
-    return accessPolicyService.canAssignRole({
-        actorRole: getAuthRole(req),
-        isActorSuperAdmin: Boolean(req?.authContext?.user?.isSuperAdmin),
-        targetRole
-    });
-}
-
-function canActorEditOptionalAccess(req = {}) {
-    return accessPolicyService.canEditOptionalAccess({
-        actorRole: getAuthRole(req),
-        isActorSuperAdmin: Boolean(req?.authContext?.user?.isSuperAdmin)
-    });
-}
-
-const ROLE_PRIORITY = Object.freeze({
-    seller: 1,
-    admin: 2,
-    owner: 3,
-    superadmin: 4
-});
-
-function getRolePriority(role = 'seller') {
-    const cleanRole = String(role || '').trim().toLowerCase();
-    return ROLE_PRIORITY[cleanRole] || ROLE_PRIORITY.seller;
-}
-
-function getAuthUserId(req = {}) {
-    return String(req?.authContext?.user?.userId || req?.authContext?.user?.id || '').trim();
-}
-
-function isSelfUserAction(req = {}, targetUserId = '') {
-    const actorUserId = getAuthUserId(req);
-    const cleanTargetUserId = String(targetUserId || '').trim();
-    return Boolean(actorUserId && cleanTargetUserId && actorUserId === cleanTargetUserId);
-}
-
-function getUserPrimaryRole(user = {}) {
-    const memberships = Array.isArray(user?.memberships) ? user.memberships : [];
-    return resolvePrimaryRoleFromMemberships(memberships, user?.role || 'seller');
-}
-
-function isActorSuperiorToRole(req = {}, targetRole = 'seller') {
-    if (req?.authContext?.user?.isSuperAdmin) return true;
-    const actorRole = getAuthRole(req);
-    return getRolePriority(actorRole) > getRolePriority(targetRole);
-}
-
-function canActorManageRoleChanges(req = {}) {
-    if (req?.authContext?.user?.isSuperAdmin) return true;
-    const actorRole = getAuthRole(req);
-    if (actorRole === 'owner') return true;
-    if (actorRole === 'admin') {
-        return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_USERS_OWNER_ASSIGN);
-    }
-    return false;
-}
-function hasAnyAccessOverride(payload = {}) {
-    const source = payload && typeof payload === 'object' ? payload : {};
-    const hasGrants = Object.prototype.hasOwnProperty.call(source, 'permissionGrants');
-    const hasPacks = Object.prototype.hasOwnProperty.call(source, 'permissionPacks');
-    if (!hasGrants && !hasPacks) return false;
-    const grants = Array.isArray(source.permissionGrants) ? source.permissionGrants : [];
-    const packs = Array.isArray(source.permissionPacks) ? source.permissionPacks : [];
-    return grants.length > 0 || packs.length > 0;
-}
-
-function filterAdminOverviewByScope(req = {}, overview = {}) {
-    if (req?.authContext?.user?.isSuperAdmin) return overview;
-
-    const allowed = new Set(getAllowedTenantIdsFromAuth(req));
-    const tenants = Array.isArray(overview?.tenants)
-        ? overview.tenants.filter((tenant) => allowed.has(String(tenant?.id || '').trim()))
-        : [];
-    const users = Array.isArray(overview?.users)
-        ? overview.users.filter((user) => (Array.isArray(user?.memberships) ? user.memberships : []).some((membership) => allowed.has(String(membership?.tenantId || '').trim())))
-        : [];
-    const metrics = Array.isArray(overview?.metrics)
-        ? overview.metrics.filter((item) => allowed.has(String(item?.tenantId || '').trim()))
-        : [];
-
-    return { tenants, users, metrics };
-}
-
-registerTenantAssetsUploadHttpRoutes({
-    app,
-    accessPolicyService,
+    sanitizeObjectPayload,
+    tenantLabelService,
+    quickReplyLibrariesService,
+    customerService,
+    waModuleService,
     hasPermission,
+    hasAnyPermission,
     isTenantAllowedForUser,
     normalizeAssetUploadKind,
     sanitizeStorageSegment,
@@ -676,18 +425,9 @@ registerTenantAssetsUploadHttpRoutes({
     uploadsRoot: UPLOADS_ROOT,
     path,
     saveAssetFile,
-    getRequestOrigin
-});
-
-registerTenantAdminTenantsUsersHttpRoutes({
-    app,
-    saasControlService,
-    waModuleService,
-    hasSaasControlReadAccess,
-    hasSaasControlWriteAccess,
+    getRequestOrigin,
     hasTenantAdminWriteAccess,
     hasTenantModuleReadAccess,
-    isTenantAllowedForUser,
     sanitizeTenantPayload,
     sanitizeUserPayload,
     sanitizeMembershipPayload,
@@ -698,29 +438,10 @@ registerTenantAdminTenantsUsersHttpRoutes({
     getUserPrimaryRole,
     isSelfUserAction,
     isActorSuperiorToRole,
-    canActorManageRoleChanges
-});
-
-registerTenantWaModuleAdminHttpRoutes({
-    app,
-    waModuleService,
+    canActorManageRoleChanges,
     sanitizeWaModulePayload,
     invalidateWebhookCloudRegistryCache,
-    hasTenantModuleWriteAccess
-});
-registerTenantCustomerHttpRoutes({
-    app,
-    authService,
-    accessPolicyService,
-    customerService,
-    waModuleService,
-    isTenantAllowedForUser,
-    hasPermission
-});
-registerOperationsHttpRoutes({
-    app,
-    authService,
-    auditLogService,
+    hasTenantModuleWriteAccess,
     conversationOpsService,
     assignmentRulesService,
     chatAssignmentRouterService,
@@ -731,129 +452,43 @@ registerOperationsHttpRoutes({
     hasChatAssignmentsWriteAccess,
     hasAssignmentRulesReadAccess,
     hasAssignmentRulesWriteAccess,
-    hasOperationsKpiReadAccess
-});
-registerTenantRuntimeSettingsHttpRoutes({
-    app,
-    authService,
-    tenantService,
-    tenantSettingsService,
-    auditLogService,
-    aiUsageService,
-    waClient,
-    accessPolicyService,
-    isTenantAllowedForUser,
-    hasPermission
-});
-registerTenantLabelsQuickRepliesHttpRoutes({
-    app,
-    accessPolicyService,
-    tenantLabelService,
-    quickReplyLibrariesService,
-    isTenantAllowedForUser,
-    hasAnyPermission,
-    sanitizeTenantLabelPayload,
-    sanitizeQuickReplyLibraryPayload,
-    sanitizeQuickReplyItemPayload
-});
-registerTenantAdminConfigCatalogHttpRoutes({
-    app,
-    tenantService,
+    hasOperationsKpiReadAccess,
     tenantSettingsService,
     tenantIntegrationsService,
     tenantCatalogService,
-    planLimitsService,
-    accessPolicyService,
-    isTenantAllowedForUser,
-    hasPermission,
-    hasAnyPermission,
     sanitizeAiAssistantIdPayload,
     sanitizeAiAssistantPayload,
     loadCatalog,
     addProduct,
-    updateProduct
-});
-registerOperationsUtilityHttpRoutes({
-    app,
-    authService,
-    tenantService,
+    updateProduct,
     messageHistoryService,
-    auditLogService,
-    waClient,
     parseCsvEnv,
-    resolveAndValidatePublicHost
-});
-registerCloudWebhookHttpRoutes({
-    app,
+    resolveAndValidatePublicHost,
     logger,
-    saasControlService,
-    waModuleService,
-    waClient,
-    socketManager
+    socketManager,
+    sanitizeTenantLabelPayload,
+    sanitizeQuickReplyLibraryPayload,
+    sanitizeQuickReplyItemPayload,
+    saasSocketAuthRequired
 });
-const scheduleWaInitialize = (delayMs = 0) => {
-    const safeDelay = Math.max(0, Number(delayMs) || 0);
-    setTimeout(() => {
-        waClient.initialize().catch((error) => {
-            const retryDelay = Math.max(2000, Number(process.env.WA_INIT_RESTART_DELAY_MS || 12000));
-            opsTelemetry.recordInternalError('wa_initialize', error);
-            logger.error(`[WA] initialize bootstrap error: ${String(error?.message || error)}`);
-            logger.warn(`[WA] retrying initialize in ${retryDelay}ms...`);
-            scheduleWaInitialize(retryDelay);
-        });
-    }, safeDelay);
-};
-
-function registerProcessHandlers() {
-    process.on('uncaughtException', (error) => {
-        opsTelemetry.recordInternalError('uncaught_exception', error);
-        logger.error('[Process] uncaught exception: ' + String(error?.stack || error?.message || error));
-    });
-
-    process.on('unhandledRejection', (reason) => {
-        opsTelemetry.recordInternalError('unhandled_rejection', reason);
-        logger.error('[Process] unhandled rejection: ' + String(reason?.stack || reason?.message || reason));
-    });
-
-    const graceful = async (signal) => {
-        logger.warn('[Process] graceful shutdown requested by ' + signal);
-        try {
-            if (typeof waClient.setTransportMode === 'function') {
-                await waClient.setTransportMode('idle');
-            }
-        } catch (error) {
-            logger.warn('[Process] failed to stop WA transport: ' + String(error?.message || error));
-        }
-
-        server.close(() => {
-            logger.info('[Process] HTTP server closed.');
-            process.exit(0);
-        });
-
-        setTimeout(() => {
-            logger.warn('[Process] forced shutdown timeout reached.');
-            process.exit(1);
-        }, Number(process.env.SHUTDOWN_FORCE_TIMEOUT_MS || 10000)).unref();
-    };
-
-    process.on('SIGTERM', () => graceful('SIGTERM'));
-    process.on('SIGINT', () => graceful('SIGINT'));
-}
+const { scheduleWaInitialize, registerProcessHandlers } = createServerLifecycleHandlers({
+    waClient,
+    opsTelemetry,
+    logger,
+    server,
+    waInitRestartDelayMs: Number(process.env.WA_INIT_RESTART_DELAY_MS || 12000),
+    shutdownForceTimeoutMs: Number(process.env.SHUTDOWN_FORCE_TIMEOUT_MS || 10000)
+});
 
 const PORT = process.env.PORT || 3001;
 
 registerProcessHandlers();
 
-saasControlService.ensureLoaded().catch((error) => {
-    logger.warn('[SaaS] no se pudo precargar control plane: ' + String(error?.message || error));
-});
-
-planLimitsStoreService.initializePlanLimits().catch((error) => {
-    logger.warn('[SaaS] no se pudo precargar limites de plan: ' + String(error?.message || error));
-});
-
-accessPolicyService.initializeAccessPolicy().catch((error) => {
-    logger.warn('[SaaS] no se pudo precargar catalogo de accesos: ' + String(error?.message || error));
+preloadRuntimeServices({
+    saasControlService,
+    planLimitsStoreService,
+    accessPolicyService,
+    logger
 });
 
 server.listen(PORT, () => {

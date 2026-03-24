@@ -1,6 +1,8 @@
 ﻿import React from 'react';
 
-function SummarySection({
+function SummarySection(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     selectedSectionId,
     currentUserAvatarUrl,
     buildInitials,
@@ -19,7 +21,7 @@ function SummarySection({
     busy,
     isSectionEnabled,
     handleSectionChange
-}) {
+    } = context;
     if (selectedSectionId !== 'saas_resumen') {
         return null;
     }

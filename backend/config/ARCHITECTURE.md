@@ -1,7 +1,8 @@
 # Global Backend Architecture Baseline (Phase 2)
 
 Canonical structure:
-- `server.js`: bootstrap and route registration only.
+- `server.js`: bootstrap orchestration only.
+- `config/bootstrap/*`: lifecycle/bootstrap composition (`server-lifecycle`, HTTP route registration, preload startup).
 - `domains/<domain>/routes/*`: HTTP route registrars.
 - `domains/<domain>/services/*`: domain logic and orchestration.
 - `domains/<domain>/helpers/*`: pure utilities for the domain (if needed).
@@ -30,3 +31,5 @@ Current root JS surface:
 - `config/rate-limiter.js` (shared limiter utility)
 - `config/logger.js` (shared logger utility)
 - `config/runtime-flags.js` (env/runtime flag normalization + CORS checker factory)
+- `config/bootstrap/http-routes.js` (HTTP registrar composition by dependency injection)
+- `config/bootstrap/runtime-preload.js` (startup preload jobs)

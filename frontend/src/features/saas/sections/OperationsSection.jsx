@@ -11,7 +11,9 @@ function toggleRoleInRules(prevRules, role, checked) {
     return { ...prevRules, allowedRoles: Array.from(current) };
 }
 
-function OperationsSection({
+function OperationsSection(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     tenantScopeLocked = true,
     busy = false,
     loadingAssignmentRules = false,
@@ -29,7 +31,7 @@ function OperationsSection({
     loadTenantOperationsKpis,
     triggerAutoAssignPreview,
     formatDateTimeLabel
-}) {
+    } = context;
     return (
         <section id="saas_operacion" className="saas-admin-card saas-admin-card--full">
             <div className="saas-admin-master-detail">

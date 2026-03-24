@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Minus, Package, Plus, PlusCircle, Search, Send, ShoppingCart, SlidersHorizontal } from 'lucide-react';
+import { Package, PlusCircle, Search, SlidersHorizontal } from 'lucide-react';
 import {
     buildCatalogFormDataFromProduct,
     buildCatalogProductPayloadFromForm,
@@ -9,6 +9,7 @@ import {
     normalizeCatalogCategoryKey,
     normalizeTextKey
 } from '../helpers';
+import { BusinessCatalogProductCard, BusinessCatalogProductForm } from './catalog';
 
 const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null }) => {
     const [showForm, setShowForm] = useState(false);
@@ -384,177 +385,20 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {showCatalogForm ? (
-                    <form onSubmit={handleSubmit} style={{ background: '#202c33', borderRadius: '10px', padding: '14px', border: '1px solid #00a884', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                            <div style={{ fontSize: '0.85rem', color: '#00a884', fontWeight: 700 }}>
-                                {editingProduct ? 'Editar producto local' : 'Nuevo producto local'}
-                            </div>
-                            <div style={{ fontSize: '0.67rem', color: '#8fb6c3' }}>
-                                {activeCatalogId ? `Catalogo ${activeCatalogId}` : 'Catalogo general'}
-                            </div>
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 180px)', gap: '8px' }}>
-                            <input
-                                type="text"
-                                placeholder="Titulo del producto"
-                                required
-                                value={formData.title}
-                                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                                style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                            />
-                            <input
-                                type="text"
-                                placeholder="SKU (opcional)"
-                                value={formData.sku}
-                                onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                                style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                            />
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px' }}>
-                            <input
-                                type="text"
-                                placeholder="Precio venta"
-                                required
-                                value={formData.price}
-                                onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                                style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                            />
-                            <input
-                                type="text"
-                                placeholder="Precio regular"
-                                value={formData.regularPrice}
-                                onChange={(e) => setFormData({ ...formData, regularPrice: e.target.value })}
-                                style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                            />
-                            <input
-                                type="text"
-                                placeholder="Precio oferta"
-                                value={formData.salePrice}
-                                onChange={(e) => setFormData({ ...formData, salePrice: e.target.value })}
-                                style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                            />
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 160px) minmax(0, 150px)', gap: '8px' }}>
-                            <input
-                                type="text"
-                                placeholder="Categorias (coma separada)"
-                                value={formData.categories}
-                                onChange={(e) => setFormData({ ...formData, categories: e.target.value })}
-                                style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                            />
-                            <input
-                                type="text"
-                                placeholder="Marca"
-                                value={formData.brand}
-                                onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                                style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                            />
-                            <input
-                                type="number"
-                                min="0"
-                                step="1"
-                                placeholder="Stock"
-                                value={formData.stockQuantity}
-                                onChange={(e) => setFormData({ ...formData, stockQuantity: e.target.value })}
-                                style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                            />
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 220px)', gap: '8px' }}>
-                            <input
-                                type="text"
-                                placeholder="URL de producto (opcional)"
-                                value={formData.url}
-                                onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                                style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                            />
-                            <select
-                                value={String(formData.stockStatus || 'instock')}
-                                onChange={(e) => setFormData({ ...formData, stockStatus: e.target.value })}
-                                style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                            >
-                                <option value="instock">Stock: Disponible</option>
-                                <option value="outofstock">Stock: Agotado</option>
-                                <option value="onbackorder">Stock: Backorder</option>
-                            </select>
-                        </div>
-
-                        <textarea
-                            placeholder="Descripcion detallada"
-                            rows="3"
-                            value={formData.description}
-                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                            style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '8px', fontSize: '0.82rem', outline: 'none', resize: 'vertical' }}
-                        />
-
-                        <div style={{ border: '1px solid rgba(0,168,132,0.35)', borderRadius: '10px', padding: '9px', background: '#1a252d', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
-                                <div style={{ fontSize: '0.72rem', color: '#9edfcf', fontWeight: 700 }}>Imagen del producto</div>
-                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#00a884', color: '#fff', borderRadius: '8px', padding: '5px 10px', cursor: imageUploadBusy ? 'not-allowed' : 'pointer', fontSize: '0.73rem', fontWeight: 700, opacity: imageUploadBusy ? 0.65 : 1 }}>
-                                    {imageUploadBusy ? 'Subiendo...' : 'Subir imagen'}
-                                    <input
-                                        type="file"
-                                        accept="image/jpeg,image/jpg,image/png,image/webp"
-                                        onChange={handleCatalogImageFileChange}
-                                        disabled={imageUploadBusy}
-                                        style={{ display: 'none' }}
-                                    />
-                                </label>
-                            </div>
-
-                            {imageUploadError && (
-                                <div style={{ fontSize: '0.7rem', color: '#ffb4b4' }}>{imageUploadError}</div>
-                            )}
-
-                            <input
-                                type="text"
-                                placeholder="URL de imagen (opcional)"
-                                value={formData.imageUrl}
-                                onChange={(e) => {
-                                    setImageUploadError('');
-                                    setFormData({ ...formData, imageUrl: e.target.value });
-                                }}
-                                style={{ background: '#2a3942', border: 'none', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                            />
-
-                            {formData.imageUrl && (
-                                <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr auto', gap: '8px', alignItems: 'center' }}>
-                                    <div style={{ width: '70px', height: '70px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.14)', background: '#10171c', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <img src={formData.imageUrl} alt={formData.title || 'producto'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                    </div>
-                                    <div style={{ fontSize: '0.7rem', color: '#9ab2bf', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {formData.imageUrl}
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setFormData((prev) => ({ ...prev, imageUrl: '' }))}
-                                        style={{ background: 'transparent', border: '1px solid rgba(255,120,120,0.45)', color: '#ffb4b4', borderRadius: '8px', padding: '5px 9px', fontSize: '0.72rem', cursor: 'pointer' }}
-                                    >
-                                        Quitar
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '10px', marginTop: '3px' }}>
-                            <button type="submit" style={{ flex: 1, background: '#00a884', color: 'white', border: 'none', borderRadius: '8px', padding: '9px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
-                                {editingProduct ? 'Actualizar' : 'Guardar'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setImageUploadError('');
-                                    setShowForm(false);
-                                }}
-                                style={{ flex: 1, background: 'transparent', border: '1px solid #da3633', color: '#ffb9b9', borderRadius: '8px', padding: '9px', cursor: 'pointer', fontSize: '0.8rem' }}
-                            >
-                                Cancelar
-                            </button>
-                                </div>
-                    </form>
+                    <BusinessCatalogProductForm
+                        editingProduct={editingProduct}
+                        formData={formData}
+                        setFormData={setFormData}
+                        activeCatalogId={activeCatalogId}
+                        imageUploadBusy={imageUploadBusy}
+                        imageUploadError={imageUploadError}
+                        onImageFileChange={handleCatalogImageFileChange}
+                        onSubmit={handleSubmit}
+                        onCancel={() => {
+                            setImageUploadError('');
+                            setShowForm(false);
+                        }}
+                    />
                 ) : (
                     <>
                         {visibleCatalog.length === 0 ? (
@@ -566,100 +410,22 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                 </div>
                             </div>
                         ) : (
-                            visibleCatalog.map((item, i) => {
-                                const finalPrice = Number.parseFloat(item.price || '0') || 0;
-                                const regularPrice = Number.parseFloat(item.regularPrice || item.price || '0') || finalPrice;
-                                const hasDiscount = regularPrice > 0 && finalPrice > 0 && finalPrice < regularPrice;
-                                const rawDiscount = Number.parseFloat(String(item.discountPct || 0));
-                                const effectiveDiscount = Number.isFinite(rawDiscount) && rawDiscount > 0
-                                    ? rawDiscount
-                                    : (hasDiscount ? Number((((regularPrice - finalPrice) / regularPrice) * 100).toFixed(1)) : 0);
-                                const cartLine = cartItems.find((cartItem) => String(cartItem?.id || '') === String(item?.id || ''));
-                                const cartQty = Math.max(0, Number(cartLine?.qty || 0));
-                                const inCart = cartQty > 0;
-
-                                return (
-                                    <div key={item.id || i} style={{ background: '#1b2730', borderRadius: '11px', border: '1px solid #2a3a45', padding: '8px', display: 'grid', gridTemplateColumns: '74px 1fr', gap: '8px', alignItems: 'start' }}>
-                                        <div style={{ width: '74px', height: '74px', borderRadius: '9px', background: '#2a3942', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.08)' }}>
-                                            {item.imageUrl
-                                                ? <img src={item.imageUrl} alt={item.title || 'Producto'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                : <Package size={24} color="#98adba" />}
-                                        </div>
-
-                                        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '5px', justifyContent: 'flex-start' }}>
-                                            <div style={{ fontSize: '0.84rem', color: '#eef5f9', fontWeight: 700, lineHeight: 1.24, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                                                {String(item.title || `Producto ${i + 1}`)}
-                                            </div>
-
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
-                                                {hasDiscount && (
-                                                    <span style={{ fontSize: '0.72rem', color: '#8fa1ad', textDecoration: 'line-through' }}>S/ {formatMoney(regularPrice)}</span>
-                                                )}
-                                                {hasDiscount && (
-                                                    <span style={{ fontSize: '0.7rem', color: '#d5fff4', background: 'rgba(0,168,132,0.26)', border: '1px solid rgba(0,168,132,0.44)', borderRadius: '999px', padding: '2px 7px', fontWeight: 700 }}>
-                                                        -{effectiveDiscount.toFixed(effectiveDiscount % 1 === 0 ? 0 : 1)}%
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            <div style={{ fontSize: '1rem', color: '#00d7ad', fontWeight: 800 }}>
-                                                {finalPrice > 0 ? `S/ ${formatMoney(finalPrice)}` : 'Precio: Consultar'}
-                                            </div>
-
-                                            {inCart && (
-                                                <div style={{ width: 'fit-content', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.68rem', color: '#d9fff4', background: 'rgba(0,168,132,0.22)', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '999px', padding: '3px 8px', fontWeight: 700 }}>
-                                                    <Check size={11} />
-                                                    En carrito: {cartQty}
-                                                </div>
-                                            )}
-
-                                            <div style={{ marginTop: '4px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '7px', alignItems: 'stretch' }}>
-                                                <button
-                                                    onClick={() => sendCatalogProduct(item, i)}
-                                                    style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: '#17323f', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '9px', color: '#d6f7ee', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                                                >
-                                                    <Send size={12} /> Enviar
-                                                </button>
-                                                {inCart ? (
-                                                    <div style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#0f322b', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '9px', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-                                                        <button
-                                                            onClick={() => onCatalogQtyDelta && onCatalogQtyDelta(item.id, -1)}
-                                                            style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#20423a', border: 'none', cursor: 'pointer', color: '#d6f7ee', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                                                        >
-                                                            <Minus size={11} />
-                                                        </button>
-                                                        <span style={{ minWidth: '20px', textAlign: 'center', color: '#d9fff4', fontSize: '0.78rem', fontWeight: 800 }}>{cartQty}</span>
-                                                        <button
-                                                            onClick={() => onCatalogQtyDelta && onCatalogQtyDelta(item.id, 1)}
-                                                            style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                                                        >
-                                                            <Plus size={11} />
-                                                        </button>
-                                </div>
-                                                ) : (
-                                                    <button
-                                                        onClick={() => addToCart(item, 1)}
-                                                        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: 'linear-gradient(90deg, #00a884 0%, #02c39a 100%)', border: 'none', borderRadius: '9px', color: 'white', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                                                    >
-                                                        <ShoppingCart size={12} /> Carrito
-                                                    </button>
-                                                )}
-                                            </div>
-
-                                            {!chatCatalogReadOnly && !isExternalCatalog && (
-                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', alignItems: 'stretch' }}>
-                                                    <button onClick={() => handleEditClick(item)} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#23323c', border: '1px solid rgba(255,255,255,0.13)', borderRadius: '8px', color: '#d8e6ef', cursor: 'pointer', fontSize: '0.71rem', padding: '6px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                        Editar
-                                                    </button>
-                                                    <button onClick={() => handleDelete(item.id)} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#2e1f26', border: '1px solid rgba(220,74,95,0.45)', borderRadius: '8px', color: '#ffb8c7', cursor: 'pointer', fontSize: '0.71rem', padding: '6px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                        Eliminar
-                                                    </button>
-                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })
+                            visibleCatalog.map((item, i) => (
+                                <BusinessCatalogProductCard
+                                    key={item.id || i}
+                                    item={item}
+                                    index={i}
+                                    cartItems={cartItems}
+                                    onCatalogQtyDelta={onCatalogQtyDelta}
+                                    addToCart={addToCart}
+                                    sendCatalogProduct={sendCatalogProduct}
+                                    chatCatalogReadOnly={chatCatalogReadOnly}
+                                    isExternalCatalog={isExternalCatalog}
+                                    handleEditClick={handleEditClick}
+                                    handleDelete={handleDelete}
+                                    formatMoney={formatMoney}
+                                />
+                            ))
                         )}
                     </>
                 )}

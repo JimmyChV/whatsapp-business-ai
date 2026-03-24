@@ -1,7 +1,9 @@
 ﻿import React from 'react';
 import ImageDropInput from '../components/panel/ImageDropInput';
 
-function CatalogSection({
+function CatalogSection(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     isCatalogSection,
     busy,
     settingsTenantId,
@@ -44,7 +46,7 @@ function CatalogSection({
     cancelCatalogProductEdit,
     setSelectedCatalogId,
     tenantCatalogForm
-}) {
+    } = context;
     if (!isCatalogSection) {
         return null;
     }

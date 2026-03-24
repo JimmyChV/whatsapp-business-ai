@@ -1,0 +1,847 @@
+import {
+    ADMIN_NAV_ITEMS,
+    AI_MODEL_OPTIONS,
+    API_BASE,
+    BASE_ROLE_OPTIONS,
+    CATALOG_MODE_OPTIONS,
+    DEFAULT_LABEL_COLORS,
+    EMPTY_ACCESS_CATALOG,
+    EMPTY_AI_ASSISTANT_FORM,
+    EMPTY_CATALOG_PRODUCT_FORM,
+    EMPTY_CUSTOMER_FORM,
+    EMPTY_INTEGRATIONS_FORM,
+    EMPTY_LABEL_FORM,
+    EMPTY_QUICK_REPLY_ITEM_FORM,
+    EMPTY_QUICK_REPLY_LIBRARY_FORM,
+    EMPTY_ROLE_FORM,
+    EMPTY_SETTINGS,
+    EMPTY_TENANT_CATALOG_FORM,
+    EMPTY_TENANT_FORM,
+    EMPTY_USER_FORM,
+    EMPTY_WA_MODULE_FORM,
+    MODULE_KEYS,
+    PERMISSION_OWNER_ASSIGN,
+    PERMISSION_PLATFORM_OVERVIEW_READ,
+    PERMISSION_PLATFORM_PLANS_MANAGE,
+    PERMISSION_PLATFORM_TENANTS_MANAGE,
+    PERMISSION_TENANT_AI_MANAGE,
+    PERMISSION_TENANT_AI_READ,
+    PERMISSION_TENANT_CATALOGS_MANAGE,
+    PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE,
+    PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ,
+    PERMISSION_TENANT_CUSTOMERS_MANAGE,
+    PERMISSION_TENANT_CUSTOMERS_READ,
+    PERMISSION_TENANT_INTEGRATIONS_MANAGE,
+    PERMISSION_TENANT_INTEGRATIONS_READ,
+    PERMISSION_TENANT_KPIS_READ,
+    PERMISSION_TENANT_LABELS_MANAGE,
+    PERMISSION_TENANT_LABELS_READ,
+    PERMISSION_TENANT_MODULES_MANAGE,
+    PERMISSION_TENANT_MODULES_READ,
+    PERMISSION_TENANT_OVERVIEW_READ,
+    PERMISSION_TENANT_QUICK_REPLIES_MANAGE,
+    PERMISSION_TENANT_QUICK_REPLIES_READ,
+    PERMISSION_TENANT_SETTINGS_MANAGE,
+    PERMISSION_TENANT_SETTINGS_READ,
+    PERMISSION_TENANT_USERS_MANAGE,
+    PLAN_FEATURE_KEYS,
+    PLAN_LIMIT_KEYS,
+    PLAN_OPTIONS,
+    QUICK_REPLY_ACCEPT_VALUE,
+    QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL,
+    QUICK_REPLY_DEFAULT_MAX_UPLOAD_MB,
+    QUICK_REPLY_DEFAULT_STORAGE_MB,
+    buildAiAssistantFormFromItem,
+    buildCatalogProductFormFromItem,
+    buildCustomerPayloadFromForm,
+    buildInitials,
+    buildTenantCatalogFormFromItem,
+    buildTenantCatalogPayload,
+    buildTenantFormFromItem,
+    buildUserFormFromItem,
+    chunkItems,
+    formatBytes,
+    formatDateTimeLabel,
+    getQuickReplyAssetDisplayName,
+    getQuickReplyAssetTypeLabel,
+    getRolePriority,
+    isQuickReplyImageAsset,
+    normalizeCatalogIdsList,
+    normalizeCustomerFormFromItem,
+    normalizePlanForm,
+    normalizeQuickReplyMediaAssets,
+    resolvePrimaryRoleFromMemberships,
+    resolveQuickReplyAssetPreviewUrl,
+    sanitizeAiAssistantCode,
+    sanitizeMemberships,
+    sanitizeRoleCode,
+    toTenantDisplayName,
+    toUserDisplayName
+} from '../../../helpers';
+import useOperationsPanelState from '../../domains/operations/useOperationsPanelState';
+import useSaasAccessControl from '../../useSaasAccessControl';
+import useSaasApiClient from '../../useSaasApiClient';
+import useSaasPanelCoreState from '../useSaasPanelCoreState';
+import useSaasPanelLoadingState from '../useSaasPanelLoadingState';
+import useSaasPanelSectionContexts from '../useSaasPanelSectionContexts';
+import buildPanelSectionExtras from '../contexts/buildPanelSectionExtras';
+import useSaasPanelActionContexts from './useSaasPanelActionContexts';
+import useSaasAiController from './useSaasAiController';
+import useSaasCatalogController from './useSaasCatalogController';
+import useSaasCustomersController from './useSaasCustomersController';
+import useSaasOperationsController from './useSaasOperationsController';
+import useSaasPanelDataContexts from './useSaasPanelDataContexts';
+import useSaasFrameNavigationController from './useSaasFrameNavigationController';
+import useSaasLabelsController from './useSaasLabelsController';
+import useSaasModulesController from './useSaasModulesController';
+import useSaasPlansRolesController from './useSaasPlansRolesController';
+import useSaasQuickRepliesController from './useSaasQuickRepliesController';
+import useSaasTenantController from './useSaasTenantController';
+import useSaasUsersController from './useSaasUsersController';
+
+export default function useSaasAdminPanelController({
+    isOpen = false,
+    onClose,
+    onLogout,
+    onOpenWhatsAppOperation,
+    buildApiHeaders,
+    activeTenantId = '',
+    preferredTenantId = '',
+    launchSource = '',
+    canManageSaas = false,
+    initialSection = 'saas_resumen',
+    userRole = 'seller',
+    isSuperAdmin = false,
+    embedded = false,
+    activeSection = '',
+    showNavigation = true,
+    showHeader = true,
+    closeLabel = 'Cerrar sesion',
+    currentUser = null,
+}) {
+    const panelCoreState = useSaasPanelCoreState({
+        activeSection,
+        initialSection,
+        EMPTY_TENANT_FORM,
+        EMPTY_USER_FORM,
+        EMPTY_CUSTOMER_FORM,
+        EMPTY_SETTINGS,
+        EMPTY_INTEGRATIONS_FORM,
+        EMPTY_TENANT_CATALOG_FORM,
+        EMPTY_CATALOG_PRODUCT_FORM,
+        EMPTY_WA_MODULE_FORM,
+        EMPTY_AI_ASSISTANT_FORM,
+        EMPTY_ACCESS_CATALOG,
+        EMPTY_ROLE_FORM,
+        normalizePlanForm,
+        EMPTY_QUICK_REPLY_LIBRARY_FORM,
+        EMPTY_QUICK_REPLY_ITEM_FORM,
+        EMPTY_LABEL_FORM
+    });
+
+    const {
+        waModules,
+        setWaModules,
+        waModuleForm,
+        setWaModuleForm,
+        editingWaModuleId,
+        setEditingWaModuleId,
+        selectedWaModuleId,
+        setSelectedWaModuleId,
+        moduleQuickReplyLibraryDraft,
+        setModuleQuickReplyLibraryDraft,
+        selectedConfigKey,
+        setSelectedConfigKey,
+        moduleUserPickerId,
+        setModuleUserPickerId,
+        tenantSettingsPanelMode,
+        setTenantSettingsPanelMode,
+        waModulePanelMode,
+        setWaModulePanelMode,
+        tenantLabels,
+        setTenantLabels,
+        selectedLabelId,
+        setSelectedLabelId,
+        labelForm,
+        setLabelForm,
+        labelPanelMode,
+        setLabelPanelMode,
+        labelSearch,
+        setLabelSearch,
+        loadingLabels,
+        setLoadingLabels,
+        customers,
+        setCustomers,
+        selectedCustomerId,
+        setSelectedCustomerId,
+        customerForm,
+        setCustomerForm,
+        customerPanelMode,
+        setCustomerPanelMode,
+        customerSearch,
+        setCustomerSearch,
+        customerCsvText,
+        setCustomerCsvText,
+        customerImportModuleId,
+        setCustomerImportModuleId,
+        busy,
+        setBusy,
+        error,
+        setError,
+        currentSection,
+        setCurrentSection
+    } = panelCoreState;
+    const saasAccessControl = useSaasAccessControl({
+        userRole,
+        isSuperAdmin,
+        currentUser,
+        accessCatalog: panelCoreState.accessCatalog,
+        selectedRoleKey: panelCoreState.selectedRoleKey,
+        baseRoleOptions: BASE_ROLE_OPTIONS,
+        getRolePriority,
+        permissionKeys: {
+            PERMISSION_OWNER_ASSIGN,
+            PERMISSION_PLATFORM_OVERVIEW_READ,
+            PERMISSION_PLATFORM_TENANTS_MANAGE,
+            PERMISSION_PLATFORM_PLANS_MANAGE,
+            PERMISSION_TENANT_USERS_MANAGE,
+            PERMISSION_TENANT_SETTINGS_READ,
+            PERMISSION_TENANT_SETTINGS_MANAGE,
+            PERMISSION_TENANT_MODULES_READ,
+            PERMISSION_TENANT_MODULES_MANAGE,
+            PERMISSION_TENANT_QUICK_REPLIES_READ,
+            PERMISSION_TENANT_QUICK_REPLIES_MANAGE,
+            PERMISSION_TENANT_LABELS_READ,
+            PERMISSION_TENANT_LABELS_MANAGE,
+            PERMISSION_TENANT_AI_READ,
+            PERMISSION_TENANT_AI_MANAGE,
+            PERMISSION_TENANT_CUSTOMERS_READ,
+            PERMISSION_TENANT_CUSTOMERS_MANAGE,
+            PERMISSION_TENANT_CATALOGS_MANAGE,
+            PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ,
+            PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE,
+            PERMISSION_TENANT_KPIS_READ,
+            PERMISSION_TENANT_INTEGRATIONS_READ,
+            PERMISSION_TENANT_INTEGRATIONS_MANAGE
+        }
+    });
+
+    const {
+        normalizedRole,
+        actorRoleForPolicy,
+        actorRolePriority,
+        currentUserId,
+        canManageTenants,
+        canManageUsers,
+        canManageTenantSettings,
+        canViewTenantSettings,
+        canManageCatalog,
+        canManageRoles,
+        canViewSuperAdminSections,
+        canEditTenantSettings,
+        canEditModules,
+        canViewModules,
+        canManageQuickReplies,
+        canViewQuickReplies,
+        canManageLabels,
+        canViewLabels,
+        canViewAi,
+        canManageAi,
+        canViewCustomers,
+        canManageCustomers,
+        canViewOperations,
+        canManageAssignments,
+        canEditCatalog,
+        requiresTenantSelection,
+        canActorManageRoleChanges,
+        roleOptions,
+        canEditOptionalAccess,
+        accessPackOptions,
+        accessPackLabelMap,
+        getOptionalPermissionKeysForRole,
+        getAllowedPackIdsForRole,
+        roleProfiles,
+        roleLabelMap,
+        selectedRoleProfile,
+        permissionLabelMap,
+        rolePermissionOptions,
+        hasAccessCatalogData
+    } = saasAccessControl;
+    const plansRolesController = useSaasPlansRolesController({
+        panelCoreState,
+        saasAccessControl
+    });
+    // TODO(phase2): plansRolesController debe exponer flags can* como source de policy para evitar depender del controller central.
+    const {
+        plansRolesState,
+        plansRolesDerived
+    } = plansRolesController;
+    const { pendingRequests, requestJson } = useSaasApiClient({
+        apiBase: API_BASE,
+        buildApiHeaders
+    });
+
+    const operationsPanelState = useOperationsPanelState({
+        canViewOperations,
+        buildApiHeaders
+    });
+    const operationsControllerBase = useSaasOperationsController({
+        operationsPanelState
+    });
+    const panelLoadingState = useSaasPanelLoadingState({
+        busy,
+        error,
+        overview: panelCoreState.overview,
+        pendingRequests
+    });
+    const {
+        showPanelLoading,
+        aiUsageByTenant
+    } = panelLoadingState;
+
+    const {
+        tenantScopeState,
+        tenantDataLoaders,
+        panelUserScopeState,
+        panelDerivedData,
+        tenantUsersState
+    } = useSaasPanelDataContexts({
+        overviewTenants: panelCoreState.overview.tenants,
+        overviewUsers: panelCoreState.overview.users,
+        selectedTenantId: panelCoreState.selectedTenantId,
+        selectedUserId: panelCoreState.selectedUserId,
+        settingsTenantId: panelCoreState.settingsTenantId,
+        requiresTenantSelection,
+        activeTenantId,
+        toTenantDisplayName,
+        currentUser,
+        actorRoleForPolicy,
+        requestJson,
+        setOverview: panelCoreState.setOverview,
+        setSelectedTenantId: panelCoreState.setSelectedTenantId,
+        setSettingsTenantId: panelCoreState.setSettingsTenantId,
+        setSelectedUserId: panelCoreState.setSelectedUserId,
+        setLoadingSettings: panelCoreState.setLoadingSettings,
+        setTenantSettings: panelCoreState.setTenantSettings,
+        setLoadingIntegrations: panelCoreState.setLoadingIntegrations,
+        setTenantIntegrations: panelCoreState.setTenantIntegrations,
+        setWaModules,
+        setSelectedWaModuleId,
+        setCustomers,
+        setSelectedCustomerId,
+        currentUserId,
+        actorRolePriority,
+        canManageUsers,
+        canActorManageRoleChanges: plansRolesDerived.canActorManageRoleChanges,
+        canEditOptionalAccess: plansRolesDerived.canEditOptionalAccess,
+        userPanelMode: panelCoreState.userPanelMode,
+        userFormRole: panelCoreState.userForm.role,
+        canManageTenants,
+        canManageCatalog,
+        canManageLabels,
+        canManageTenantSettings,
+        canEditModules,
+        canViewSuperAdminSections,
+        resolvePrimaryRoleFromMemberships,
+        sanitizeMemberships,
+        getRolePriority,
+        getOptionalPermissionKeysForRole: plansRolesDerived.getOptionalPermissionKeysForRole,
+        getAllowedPackIdsForRole: plansRolesDerived.getAllowedPackIdsForRole,
+        customerSearch,
+        customers,
+        waModules,
+        selectedWaModuleId,
+        quickReplyModuleFilterId: panelCoreState.quickReplyModuleFilterId,
+        quickReplyLibraries: panelCoreState.quickReplyLibraries,
+        selectedQuickReplyLibraryId: panelCoreState.selectedQuickReplyLibraryId,
+        quickReplyItems: panelCoreState.quickReplyItems,
+        selectedQuickReplyItemId: panelCoreState.selectedQuickReplyItemId,
+        quickReplyItemForm: panelCoreState.quickReplyItemForm,
+        quickReplyLibrarySearch: panelCoreState.quickReplyLibrarySearch,
+        quickReplyItemSearch: panelCoreState.quickReplyItemSearch,
+        tenantLabels,
+        selectedLabelId,
+        labelSearch,
+        planMatrix: plansRolesState.planMatrix,
+        quickReplyDefaultMaxUploadMb: QUICK_REPLY_DEFAULT_MAX_UPLOAD_MB,
+        quickReplyDefaultStorageMb: QUICK_REPLY_DEFAULT_STORAGE_MB,
+        selectedConfigKey,
+        waModuleForm,
+        tenantCatalogs: panelCoreState.tenantCatalogs,
+        selectedCatalogId: panelCoreState.selectedCatalogId,
+        tenantCatalogProducts: panelCoreState.tenantCatalogProducts,
+        selectedCatalogProductId: panelCoreState.selectedCatalogProductId,
+        tenantAiAssistants: panelCoreState.tenantAiAssistants,
+        selectedAiAssistantId: panelCoreState.selectedAiAssistantId,
+        selectedPlanId: plansRolesState.selectedPlanId,
+        planOptions: PLAN_OPTIONS,
+        toUserDisplayName
+    });
+    const tenantController = useSaasTenantController({
+        panelCoreState,
+        tenantScopeState,
+        tenantDataLoaders
+    });
+    const {
+        tenantState,
+        tenantDerived,
+        tenantLoaders
+    } = tenantController;
+    const {
+        filteredCustomers,
+        selectedCustomer,
+        selectedWaModule,
+        tenantLabelItems,
+        selectedTenantLabel,
+        visibleTenantLabels,
+        selectedSettingsTenant,
+        selectedConfigModule,
+        activeQuickReplyLibraries,
+        moduleQuickReplySourceModuleId,
+        moduleQuickReplyAssignedLibraries,
+        moduleQuickReplyAssignedLibraryIds,
+        planIds,
+        selectedPlan
+    } = panelDerivedData;
+    const catalogController = useSaasCatalogController({
+        panelCoreState,
+        panelDerivedData
+    });
+    const {
+        catalogState,
+        catalogDerived
+    } = catalogController;
+    const quickRepliesController = useSaasQuickRepliesController({
+        panelCoreState,
+        panelDerivedData
+    });
+    const {
+        quickRepliesState,
+        quickRepliesDerived
+    } = quickRepliesController;
+    const aiController = useSaasAiController({
+        panelCoreState,
+        panelDerivedData
+    });
+    const {
+        aiState,
+        aiDerived
+    } = aiController;
+    const usersController = useSaasUsersController({
+        panelCoreState,
+        panelUserScopeState,
+        tenantUsersState
+    });
+    const {
+        usersState,
+        usersDerived
+    } = usersController;
+    const scrollToSection = (sectionId, behavior = 'smooth') => {
+        const cleanSection = String(sectionId || '').trim();
+        if (!cleanSection) return;
+        const node = document.getElementById(cleanSection);
+        if (node && typeof node.scrollIntoView === 'function') {
+            node.scrollIntoView({ behavior, block: 'start' });
+        }
+    };
+    const frameNavigationController = {
+        adminNavItems: ADMIN_NAV_ITEMS
+    };
+    const {
+        quickReplyAssetsUploadState,
+        quickReplyAdminActions,
+        tenantLabelsAdminActions,
+        catalogAdminActions,
+        aiAssistantsAdminActions,
+        plansRolesActions,
+        tenantsUsersActions,
+        customersAdminActions,
+        panelNavigation,
+        assignmentRoleOptions,
+        operationAccess,
+        moduleSectionActions,
+        lifecycleState
+    } = useSaasPanelActionContexts({
+        requestJson,
+        settingsTenantId: tenantController.tenantState.settingsTenantId,
+        selectedQuickReplyLibrary: quickRepliesController.quickRepliesDerived.selectedQuickReplyLibrary,
+        quickReplyUploadMaxBytes: quickRepliesController.quickRepliesDerived.quickReplyUploadMaxBytes,
+        quickReplyUploadMaxMb: quickRepliesController.quickRepliesDerived.quickReplyUploadMaxMb,
+        setQuickReplyItemForm: quickRepliesController.quickRepliesState.setQuickReplyItemForm,
+        quickReplyLibraries: quickRepliesController.quickRepliesState.quickReplyLibraries,
+        waModules,
+        selectedQuickReplyLibraryId: quickRepliesController.quickRepliesState.selectedQuickReplyLibraryId,
+        selectedQuickReplyItem: quickRepliesController.quickRepliesDerived.selectedQuickReplyItem,
+        selectedQuickReplyItemId: quickRepliesController.quickRepliesState.selectedQuickReplyItemId,
+        quickReplyScopeModuleId: quickRepliesController.quickRepliesDerived.quickReplyScopeModuleId,
+        quickReplyLibraryForm: quickRepliesController.quickRepliesState.quickReplyLibraryForm,
+        quickReplyItemForm: quickRepliesController.quickRepliesState.quickReplyItemForm,
+        quickReplyLibraryPanelMode: quickRepliesController.quickRepliesState.quickReplyLibraryPanelMode,
+        quickReplyItemPanelMode: quickRepliesController.quickRepliesState.quickReplyItemPanelMode,
+        emptyQuickReplyLibraryForm: EMPTY_QUICK_REPLY_LIBRARY_FORM,
+        emptyQuickReplyItemForm: EMPTY_QUICK_REPLY_ITEM_FORM,
+        setQuickReplyLibraries: quickRepliesController.quickRepliesState.setQuickReplyLibraries,
+        setQuickReplyItems: quickRepliesController.quickRepliesState.setQuickReplyItems,
+        setSelectedQuickReplyLibraryId: quickRepliesController.quickRepliesState.setSelectedQuickReplyLibraryId,
+        setSelectedQuickReplyItemId: quickRepliesController.quickRepliesState.setSelectedQuickReplyItemId,
+        setQuickReplyModuleFilterId: quickRepliesController.quickRepliesState.setQuickReplyModuleFilterId,
+        setQuickReplyLibraryForm: quickRepliesController.quickRepliesState.setQuickReplyLibraryForm,
+        setQuickReplyLibraryPanelMode: quickRepliesController.quickRepliesState.setQuickReplyLibraryPanelMode,
+        setQuickReplyItemPanelMode: quickRepliesController.quickRepliesState.setQuickReplyItemPanelMode,
+        setLoadingQuickReplies: quickRepliesController.quickRepliesState.setLoadingQuickReplies,
+        selectedTenantLabel: panelDerivedData.selectedTenantLabel,
+        selectedLabelId: panelCoreState.selectedLabelId,
+        labelForm: panelCoreState.labelForm,
+        labelPanelMode: panelCoreState.labelPanelMode,
+        emptyLabelForm: EMPTY_LABEL_FORM,
+        defaultLabelColors: DEFAULT_LABEL_COLORS,
+        setTenantLabels: panelCoreState.setTenantLabels,
+        setLabelForm: panelCoreState.setLabelForm,
+        setLabelPanelMode: panelCoreState.setLabelPanelMode,
+        setLoadingLabels: panelCoreState.setLoadingLabels,
+        canEditCatalog,
+        selectedTenantCatalog: catalogController.catalogDerived.selectedTenantCatalog,
+        selectedCatalogProduct: catalogController.catalogDerived.selectedCatalogProduct,
+        selectedCatalogProductId: catalogController.catalogState.selectedCatalogProductId,
+        catalogProductForm: catalogController.catalogState.catalogProductForm,
+        catalogProductPanelMode: catalogController.catalogState.catalogProductPanelMode,
+        emptyCatalogProductForm: EMPTY_CATALOG_PRODUCT_FORM,
+        emptyTenantCatalogForm: EMPTY_TENANT_CATALOG_FORM,
+        setTenantCatalogs: catalogController.catalogState.setTenantCatalogs,
+        setSelectedCatalogId: catalogController.catalogState.setSelectedCatalogId,
+        setTenantCatalogForm: catalogController.catalogState.setTenantCatalogForm,
+        setTenantCatalogProducts: catalogController.catalogState.setTenantCatalogProducts,
+        setCatalogProductForm: catalogController.catalogState.setCatalogProductForm,
+        setCatalogProductPanelMode: catalogController.catalogState.setCatalogProductPanelMode,
+        setCatalogProductImageError: catalogController.catalogState.setCatalogProductImageError,
+        setCatalogProductImageUploading: catalogController.catalogState.setCatalogProductImageUploading,
+        setLoadingTenantCatalogs: catalogController.catalogState.setLoadingTenantCatalogs,
+        setLoadingCatalogProducts: catalogController.catalogState.setLoadingCatalogProducts,
+        setCatalogPanelMode: catalogController.catalogState.setCatalogPanelMode,
+        canManageAi,
+        selectedAiAssistant: aiController.aiDerived.selectedAiAssistant,
+        selectedAiAssistantId: aiController.aiState.selectedAiAssistantId,
+        aiAssistantForm: aiController.aiState.aiAssistantForm,
+        aiAssistantPanelMode: aiController.aiState.aiAssistantPanelMode,
+        tenantIntegrations: tenantController.tenantState.tenantIntegrations,
+        emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
+        setLoadingAiAssistants: aiController.aiState.setLoadingAiAssistants,
+        setTenantAiAssistants: aiController.aiState.setTenantAiAssistants,
+        setAiAssistantForm: aiController.aiState.setAiAssistantForm,
+        canManageRoles: plansRolesController.plansRolesDerived.canManageRoles,
+        selectedRoleProfile: plansRolesController.plansRolesDerived.selectedRoleProfile,
+        selectedRoleKey: plansRolesController.plansRolesState.selectedRoleKey,
+        roleForm: plansRolesController.plansRolesState.roleForm,
+        rolePanelMode: plansRolesController.plansRolesState.rolePanelMode,
+        selectedPlanId: plansRolesController.plansRolesState.selectedPlanId,
+        planMatrix: plansRolesController.plansRolesState.planMatrix,
+        planOptions: PLAN_OPTIONS,
+        emptyRoleForm: EMPTY_ROLE_FORM,
+        setLoadingPlans: plansRolesController.plansRolesState.setLoadingPlans,
+        setPlanMatrix: plansRolesController.plansRolesState.setPlanMatrix,
+        setPlanForm: plansRolesController.plansRolesState.setPlanForm,
+        setPlanPanelMode: plansRolesController.plansRolesState.setPlanPanelMode,
+        setRolePanelMode: plansRolesController.plansRolesState.setRolePanelMode,
+        setLoadingAccessCatalog: plansRolesController.plansRolesState.setLoadingAccessCatalog,
+        setAccessCatalog: plansRolesController.plansRolesState.setAccessCatalog,
+        setRoleForm: plansRolesController.plansRolesState.setRoleForm,
+        loadingAccessCatalog: plansRolesController.plansRolesState.loadingAccessCatalog,
+        accessCatalog: plansRolesController.plansRolesState.accessCatalog,
+        canEditSelectedUser: usersController.usersDerived.canEditSelectedUser,
+        selectedTenant: tenantController.tenantDerived.selectedTenant,
+        selectedUser: usersController.usersDerived.selectedUser,
+        tenantScopeId: tenantController.tenantDerived.tenantScopeId,
+        selectedTenantId: tenantController.tenantState.selectedTenantId,
+        tenantOptions: tenantController.tenantDerived.tenantOptions,
+        roleOptions: plansRolesController.plansRolesDerived.roleOptions,
+        emptyTenantForm: EMPTY_TENANT_FORM,
+        emptyUserForm: EMPTY_USER_FORM,
+        setTenantPanelMode: tenantController.tenantState.setTenantPanelMode,
+        setSettingsTenantId: tenantController.tenantState.setSettingsTenantId,
+        setTenantForm: tenantController.tenantState.setTenantForm,
+        setUserPanelMode: usersController.usersState.setUserPanelMode,
+        setSelectedUserId: usersController.usersState.setSelectedUserId,
+        setMembershipDraft: usersController.usersState.setMembershipDraft,
+        setUserForm: usersController.usersState.setUserForm,
+        customerImportModuleId,
+        emptyCustomerForm: EMPTY_CUSTOMER_FORM,
+        setCustomerPanelMode,
+        setCustomerForm,
+        navItems: frameNavigationController.adminNavItems,
+        currentSection,
+        activeSection,
+        initialSection,
+        canManageTenants,
+        canManageUsers,
+        canViewCustomers,
+        canViewOperations,
+        canViewAi,
+        canViewLabels,
+        canViewQuickReplies,
+        canViewModules,
+        canManageCatalog,
+        canViewSuperAdminSections,
+        canViewTenantSettings,
+        requiresTenantSelection,
+        activeTenantId,
+        onOpenWhatsAppOperation,
+        canEditTenantSettings,
+        canEditModules,
+        selectedConfigModule,
+        activeCatalogOptions: catalogController.catalogDerived.activeCatalogOptions,
+        defaultAiAssistantId: aiController.aiDerived.defaultAiAssistantId,
+        setSelectedConfigKey,
+        setSelectedRoleKey: plansRolesController.plansRolesState.setSelectedRoleKey,
+        setSelectedWaModuleId,
+        setTenantSettingsPanelMode,
+        setWaModulePanelMode,
+        setModuleUserPickerId,
+        setModuleQuickReplyLibraryDraft,
+        emptyWaModuleForm: EMPTY_WA_MODULE_FORM,
+        emptyIntegrationsForm: EMPTY_INTEGRATIONS_FORM,
+        normalizePlanForm: normalizePlanForm,
+        setWaModuleForm,
+        setSelectedCustomerId,
+        setCustomerSearch,
+        setCustomerCsvText,
+        setCustomerImportModuleId,
+        setSelectedAiAssistantId: aiController.aiState.setSelectedAiAssistantId,
+        setCurrentSection,
+        isOpen,
+        canManageSaas,
+        setError,
+        setBusy,
+        refreshOverview: tenantController.tenantLoaders.refreshOverview,
+        loadTenantSettings: tenantController.tenantLoaders.loadTenantSettings,
+        loadWaModules: tenantController.tenantLoaders.loadWaModules,
+        loadTenantIntegrations: tenantController.tenantLoaders.loadTenantIntegrations,
+        loadCustomers: tenantController.tenantLoaders.loadCustomers,
+        loadTenantAssignmentRules: operationsController.operationsActions.loadTenantAssignmentRules,
+        loadTenantOperationsKpis: operationsController.operationsActions.loadTenantOperationsKpis,
+        selectedWaModuleId,
+        selectedConfigKey,
+        selectedCatalogId: catalogController.catalogState.selectedCatalogId,
+        tenantSettingsPanelMode,
+        waModulePanelMode,
+        catalogPanelMode: catalogController.catalogState.catalogPanelMode,
+        planPanelMode: plansRolesController.plansRolesState.planPanelMode,
+        customerPanelMode,
+        labelSearch: panelCoreState.labelSearch,
+        launchSource,
+        preferredTenantId,
+        resetOperationsState: operationsController.operationsActions.resetOperationsState,
+        setLabelSearch: panelCoreState.setLabelSearch,
+        catalogProductImageError: catalogController.catalogState.catalogProductImageError,
+        editingWaModuleId,
+        buildTenantFormFromItem: buildTenantFormFromItem,
+        buildUserFormFromItem: buildUserFormFromItem,
+        normalizeCustomerFormFromItem: normalizeCustomerFormFromItem,
+        buildAiAssistantFormFromItem: buildAiAssistantFormFromItem,
+        buildTenantCatalogFormFromItem: buildTenantCatalogFormFromItem,
+        normalizeQuickReplyMediaAssets: normalizeQuickReplyMediaAssets,
+        scrollToSection
+    });
+    const {
+        runAction,
+        handleOpenOperation,
+        handleFormImageUpload,
+        openTenantFromUserMembership,
+        openUserFromTenant
+    } = lifecycleState;
+    const labelsController = useSaasLabelsController({
+        panelCoreState,
+        panelDerivedData,
+        tenantLabelsAdminActions,
+        settingsTenantId: tenantState.settingsTenantId,
+        waModules,
+        canManageLabels,
+        runAction,
+        requestJson,
+        setError,
+        busy
+    });
+    const customersController = useSaasCustomersController({
+        panelCoreState,
+        panelDerivedData,
+        customersAdminActions,
+        loadCustomers: tenantController.tenantLoaders.loadCustomers,
+        tenantScopeId: tenantController.tenantDerived.tenantScopeId,
+        waModules,
+        busy,
+        runAction,
+        requestJson,
+        setError,
+        formatDateTimeLabel
+    });
+    const quickRepliesSectionController = {
+        quickRepliesState,
+        quickRepliesDerived,
+        quickRepliesActions: quickReplyAdminActions,
+        quickRepliesUploadState: quickReplyAssetsUploadState
+    };
+    const aiSectionController = {
+        aiState,
+        aiDerived,
+        aiActions: aiAssistantsAdminActions
+    };
+    const usersSectionController = {
+        usersState,
+        usersDerived,
+        usersActions: tenantsUsersActions
+    };
+    const plansRolesSectionController = {
+        plansRolesState,
+        plansRolesDerived,
+        plansRolesActions
+    };
+    const operationsController = {
+        ...operationsControllerBase,
+        operationsDerived: {
+            ...operationsControllerBase.operationsDerived,
+            operationAccess
+        },
+        assignmentRoleOptions
+    };
+    Object.assign(frameNavigationController, useSaasFrameNavigationController({
+        panelNavigation,
+        operationAccess: operationsController.operationsDerived.operationAccess,
+        handleSectionChange: moduleSectionActions.handleSectionChange,
+        lifecycleState,
+        onLogout,
+        onClose,
+        setSettingsTenantId: tenantState.setSettingsTenantId,
+        setSelectedTenantId: tenantState.setSelectedTenantId,
+        embedded,
+        showHeader,
+        busy,
+        currentUserAvatarUrl: tenantDerived.currentUserAvatarUrl,
+        currentUserDisplayName: tenantDerived.currentUserDisplayName,
+        currentUserRoleLabel: tenantDerived.currentUserRoleLabel,
+        buildInitials,
+        closeLabel,
+        activeTenantLabel: tenantDerived.activeTenantLabel,
+        error,
+        showPanelLoading,
+        requiresTenantSelection,
+        settingsTenantId: tenantState.settingsTenantId,
+        tenantOptions: tenantDerived.tenantOptions,
+        toTenantDisplayName,
+        showNavigation,
+        tenantScopeLocked: tenantDerived.tenantScopeLocked
+    }));
+    const {
+        selectedSectionId,
+        sharedHeaderProps,
+        frameProps
+    } = frameNavigationController;
+    const modulesController = useSaasModulesController({
+        panelCoreState,
+        panelDerivedData,
+        moduleSectionActions,
+        tenantController,
+        usersController,
+        catalogController,
+        aiController,
+        quickRepliesController,
+        canEditModules,
+        canEditTenantSettings,
+        busy,
+        runAction,
+        requestJson,
+        setError,
+        handleFormImageUpload,
+        handleOpenOperation,
+        loadWaModules: tenantController.tenantLoaders.loadWaModules,
+        handleSectionChange: frameNavigationController.handleSectionChange
+    });
+
+    const sectionContextsInput = {
+        handleSectionChange: frameNavigationController.handleSectionChange,
+        panelCoreState,
+        saasAccessControl,
+        operationsPanelState: {
+            ...operationsController.operationsState,
+            ...operationsController.operationsDerived,
+            ...operationsController.operationsActions
+        },
+        panelLoadingState,
+        tenantScopeState: tenantController.tenantDerived,
+        tenantDataLoaders: tenantController.tenantLoaders,
+        panelUserScopeState: usersController.usersDerived,
+        panelDerivedData,
+        tenantUsersState: usersController.usersDerived,
+        quickReplyAssetsUploadState: quickRepliesController.quickRepliesUploadState,
+        quickReplyAdminActions: quickRepliesController.quickRepliesActions,
+        tenantLabelsAdminActions: labelsController.labelsActions,
+        catalogAdminActions: catalogController.catalogActions,
+        aiAssistantsAdminActions: aiController.aiActions,
+        plansRolesActions: plansRolesController.plansRolesActions,
+        tenantsUsersActions: usersController.usersActions,
+        customersAdminActions: customersController.customersActions,
+        panelNavigation,
+        operationAccess: operationsController.operationsDerived.operationAccess,
+        moduleSectionActions: modulesController.modulesActions,
+        lifecycleState,
+        extras: buildPanelSectionExtras({
+            selectedSectionId,
+            requestJson,
+            runAction,
+            activeTenantId,
+            assignmentRoleOptions: operationsController.assignmentRoleOptions,
+            handleOpenOperation,
+            handleFormImageUpload,
+            openTenantFromUserMembership,
+            openUserFromTenant,
+            buildInitials,
+            toTenantDisplayName,
+            toUserDisplayName,
+            formatDateTimeLabel,
+            normalizeCatalogIdsList,
+            sanitizeAiAssistantCode,
+            normalizeQuickReplyMediaAssets,
+            resolveQuickReplyAssetPreviewUrl,
+            isQuickReplyImageAsset,
+            getQuickReplyAssetTypeLabel,
+            getQuickReplyAssetDisplayName,
+            formatBytes,
+            chunkItems,
+            PLAN_OPTIONS,
+            AI_MODEL_OPTIONS,
+            EMPTY_AI_ASSISTANT_FORM,
+            DEFAULT_LABEL_COLORS,
+            QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL,
+            QUICK_REPLY_ACCEPT_VALUE,
+            MODULE_KEYS,
+            CATALOG_MODE_OPTIONS,
+            EMPTY_TENANT_CATALOG_FORM,
+            buildTenantCatalogPayload,
+            buildCatalogProductFormFromItem,
+            PLAN_LIMIT_KEYS,
+            PLAN_FEATURE_KEYS,
+            sanitizeRoleCode,
+            buildCustomerPayloadFromForm
+        })
+    };
+
+    const {
+        entitySectionsContext,
+        opsAndAutomationSectionsContext,
+        configAndGovernanceSectionsContext
+    } = useSaasPanelSectionContexts(sectionContextsInput);
+
+    return {
+        isOpen,
+        canManageSaas,
+        selectedSectionId,
+        sharedHeaderProps,
+        frameProps,
+        entitySectionsContext,
+        opsAndAutomationSectionsContext,
+        configAndGovernanceSectionsContext
+    };
+}
+
+
+
+
+

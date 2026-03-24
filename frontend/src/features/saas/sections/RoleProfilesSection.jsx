@@ -1,6 +1,8 @@
 import React from 'react';
 
-function RoleProfilesSection({
+function RoleProfilesSection(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     isRolesSection,
     busy,
     canManageRoles,
@@ -19,7 +21,7 @@ function RoleProfilesSection({
     toggleRolePermission,
     saveRoleProfile,
     cancelRoleEdit
-}) {
+    } = context;
     if (!isRolesSection) {
         return null;
     }

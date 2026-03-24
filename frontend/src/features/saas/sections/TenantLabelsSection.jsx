@@ -1,6 +1,8 @@
 import React from 'react';
 
-export default function TenantLabelsSection({
+export default function TenantLabelsSection(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
     busy,
     loadingLabels,
     settingsTenantId,
@@ -28,7 +30,7 @@ export default function TenantLabelsSection({
     toggleModuleInLabelForm,
     saveTenantLabel,
     cancelTenantLabelEdit
-}) {
+    } = context;
     return (
                     <section id="saas_etiquetas" className="saas-admin-card saas-admin-card--full">
                         <div className="saas-admin-master-detail">
