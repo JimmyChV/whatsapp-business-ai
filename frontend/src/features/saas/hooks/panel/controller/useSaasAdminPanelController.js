@@ -289,6 +289,9 @@ export default function useSaasAdminPanelController({
         canViewOperations,
         buildApiHeaders
     });
+    const operationsControllerBase = useSaasOperationsController({
+        operationsPanelState
+    });
     const panelLoadingState = useSaasPanelLoadingState({
         busy,
         error,
@@ -608,8 +611,8 @@ export default function useSaasAdminPanelController({
         loadWaModules: tenantLoaders.loadWaModules,
         loadTenantIntegrations: tenantLoaders.loadTenantIntegrations,
         loadCustomers: tenantLoaders.loadCustomers,
-        loadTenantAssignmentRules: operationsPanelState.loadTenantAssignmentRules,
-        loadTenantOperationsKpis: operationsPanelState.loadTenantOperationsKpis,
+        loadTenantAssignmentRules: operationsControllerBase.operationsActions.loadTenantAssignmentRules,
+        loadTenantOperationsKpis: operationsControllerBase.operationsActions.loadTenantOperationsKpis,
         selectedWaModuleId,
         selectedConfigKey,
         selectedCatalogId: catalogState.selectedCatalogId,
@@ -621,7 +624,7 @@ export default function useSaasAdminPanelController({
         labelSearch,
         launchSource,
         preferredTenantId,
-        resetOperationsState: operationsPanelState.resetOperationsState,
+        resetOperationsState: operationsControllerBase.operationsActions.resetOperationsState,
         setLabelSearch,
         catalogProductImageError: catalogState.catalogProductImageError,
         editingWaModuleId,
@@ -661,11 +664,14 @@ export default function useSaasAdminPanelController({
         plansRolesDerived,
         plansRolesActions
     };
-    const operationsController = useSaasOperationsController({
-        operationsPanelState,
-        operationAccess,
+    const operationsController = {
+        ...operationsControllerBase,
+        operationsDerived: {
+            ...operationsControllerBase.operationsDerived,
+            operationAccess
+        },
         assignmentRoleOptions
-    });
+    };
     const {
         selectedSectionId,
         sharedHeaderProps,
