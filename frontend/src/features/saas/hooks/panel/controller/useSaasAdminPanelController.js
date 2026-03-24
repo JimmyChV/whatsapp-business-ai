@@ -455,6 +455,7 @@ export default function useSaasAdminPanelController({
         quickReplyUploadMaxBytes: quickRepliesDerived.quickReplyUploadMaxBytes,
         quickReplyUploadMaxMb: quickRepliesDerived.quickReplyUploadMaxMb,
         setQuickReplyItemForm: quickRepliesState.setQuickReplyItemForm,
+        quickReplyLibraries: quickRepliesState.quickReplyLibraries,
         waModules,
         selectedQuickReplyLibraryId: quickRepliesState.selectedQuickReplyLibraryId,
         selectedQuickReplyItem: quickRepliesDerived.selectedQuickReplyItem,
