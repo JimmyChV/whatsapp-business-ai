@@ -88,6 +88,7 @@ import buildPanelSectionExtras from '../contexts/buildPanelSectionExtras';
 import useSaasPanelActionContexts from './useSaasPanelActionContexts';
 import useSaasAiController from './useSaasAiController';
 import useSaasCatalogController from './useSaasCatalogController';
+import useSaasCustomersController from './useSaasCustomersController';
 import useSaasOperationsController from './useSaasOperationsController';
 import useSaasPanelDataContexts from './useSaasPanelDataContexts';
 import useSaasFrameNavigationController from './useSaasFrameNavigationController';
@@ -658,6 +659,19 @@ export default function useSaasAdminPanelController({
         setError,
         busy
     });
+    const customersController = useSaasCustomersController({
+        panelCoreState,
+        panelDerivedData,
+        customersAdminActions,
+        loadCustomers: tenantController.tenantLoaders.loadCustomers,
+        tenantScopeId: tenantController.tenantDerived.tenantScopeId,
+        waModules,
+        busy,
+        runAction,
+        requestJson,
+        setError,
+        formatDateTimeLabel
+    });
     const quickRepliesSectionController = {
         quickRepliesState,
         quickRepliesDerived,
@@ -741,7 +755,7 @@ export default function useSaasAdminPanelController({
         aiAssistantsAdminActions: aiController.aiActions,
         plansRolesActions: plansRolesController.plansRolesActions,
         tenantsUsersActions: usersController.usersActions,
-        customersAdminActions,
+        customersAdminActions: customersController.customersActions,
         panelNavigation,
         operationAccess: operationsController.operationsDerived.operationAccess,
         moduleSectionActions,
