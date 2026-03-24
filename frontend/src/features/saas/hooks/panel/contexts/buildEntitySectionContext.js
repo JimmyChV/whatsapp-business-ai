@@ -80,6 +80,7 @@ export default function buildEntitySectionContext(c) {
         customerSearch: c.customerSearch,
         setCustomerSearch: c.setCustomerSearch,
         selectedCustomerId: c.selectedCustomerId,
+        setSelectedCustomerId: c.setSelectedCustomerId,
         customerPanelMode: c.customerPanelMode,
         openCustomerView: c.openCustomerView,
         selectedCustomer: c.selectedCustomer,
