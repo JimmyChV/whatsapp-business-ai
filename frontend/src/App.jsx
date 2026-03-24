@@ -34,7 +34,8 @@ import useSaasSessionAutoRefresh from './features/auth/hooks/useSaasSessionAutoR
 import { useSaasSessionActions } from './features/auth/hooks/useSaasSessionActions';
 import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHelpers';
 import OperationPage from './pages/OperationPage';
-import { useSaasPanelVisibilityController, useSaasTenantScopeContext } from './features/saas/hooks';
+import { useSaasPanelVisibilityController } from './features/saas/hooks';
+import { useSaasTenantScopeContext } from './features/saas/hooks/domains/tenants/useSaasTenantScopeContext';
 import { buildOperationPageProps } from './app/helpers/operationPageProps';
 import { APP_RUNTIME_GATES } from './app/helpers/runtimeGate.helpers';
 import { useAppSessionTransportState, useAppRuntimeGate, useAppChatSocketRuntime } from './app/hooks';
