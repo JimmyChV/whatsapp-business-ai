@@ -6,6 +6,7 @@
 - `sections/`: business-facing views by tab.
 - `hooks/panel/*`: lifecycle/sync/selection/bootstrap helpers.
 - `hooks/panel/controller/*`: orchestration hooks for panel assembly (action/data/frame composition + panel controller).
+- `hooks/panel/controller/useSaasPanelAdminDomainActions.js`: aggregates admin domain actions to keep controller wiring thin.
 - `hooks/domains/*`: domain actions organized by bounded context (`ai`, `catalogs`, `customers`, `labels`, `modules`, `operations`, `quickReplies`, `tenants`).
 - `hooks/*.js`: compatibility wrappers while consumers migrate to `hooks/domains/*`.
 - `services/`: HTTP contracts per SaaS domain.
