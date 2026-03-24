@@ -289,11 +289,6 @@ export default function useSaasAdminPanelController({
         canViewOperations,
         buildApiHeaders
     });
-    const {
-        operationsActions
-    } = useSaasOperationsController({
-        operationsPanelState
-    });
     const panelLoadingState = useSaasPanelLoadingState({
         busy,
         error,
@@ -613,8 +608,8 @@ export default function useSaasAdminPanelController({
         loadWaModules: tenantLoaders.loadWaModules,
         loadTenantIntegrations: tenantLoaders.loadTenantIntegrations,
         loadCustomers: tenantLoaders.loadCustomers,
-        loadTenantAssignmentRules: operationsActions.loadTenantAssignmentRules,
-        loadTenantOperationsKpis: operationsActions.loadTenantOperationsKpis,
+        loadTenantAssignmentRules: operationsPanelState.loadTenantAssignmentRules,
+        loadTenantOperationsKpis: operationsPanelState.loadTenantOperationsKpis,
         selectedWaModuleId,
         selectedConfigKey,
         selectedCatalogId: catalogState.selectedCatalogId,
@@ -626,7 +621,7 @@ export default function useSaasAdminPanelController({
         labelSearch,
         launchSource,
         preferredTenantId,
-        resetOperationsState: operationsActions.resetOperationsState,
+        resetOperationsState: operationsPanelState.resetOperationsState,
         setLabelSearch,
         catalogProductImageError: catalogState.catalogProductImageError,
         editingWaModuleId,
