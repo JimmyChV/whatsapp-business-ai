@@ -13,6 +13,7 @@ import useSaasOperationsController from './useSaasOperationsController';
 import useSaasPanelDataContexts from './useSaasPanelDataContexts';
 import useSaasFrameNavigationController from './useSaasFrameNavigationController';
 import useSaasQuickRepliesController from './useSaasQuickRepliesController';
+import useSaasUsersController from './useSaasUsersController';
 const {
     API_BASE,
     EMPTY_TENANT_FORM,
@@ -147,14 +148,10 @@ export default function useSaasAdminPanelController({
         setOverview,
         tenantForm,
         setTenantForm,
-        userForm,
-        setUserForm,
         settingsTenantId,
         setSettingsTenantId,
         tenantSettings,
         setTenantSettings,
-        membershipDraft,
-        setMembershipDraft,
         waModules,
         setWaModules,
         waModuleForm,
@@ -163,8 +160,6 @@ export default function useSaasAdminPanelController({
         setEditingWaModuleId,
         selectedTenantId,
         setSelectedTenantId,
-        selectedUserId,
-        setSelectedUserId,
         selectedWaModuleId,
         setSelectedWaModuleId,
         moduleQuickReplyLibraryDraft,
@@ -175,8 +170,6 @@ export default function useSaasAdminPanelController({
         setModuleUserPickerId,
         tenantPanelMode,
         setTenantPanelMode,
-        userPanelMode,
-        setUserPanelMode,
         tenantSettingsPanelMode,
         setTenantSettingsPanelMode,
         waModulePanelMode,
@@ -351,6 +344,7 @@ export default function useSaasAdminPanelController({
         overviewTenants: overview.tenants,
         overviewUsers: overview.users,
         selectedTenantId,
+        selectedUserId: panelCoreState.selectedUserId,
         settingsTenantId,
         requiresTenantSelection,
         activeTenantId,
@@ -361,7 +355,7 @@ export default function useSaasAdminPanelController({
         setOverview,
         setSelectedTenantId,
         setSettingsTenantId,
-        setSelectedUserId,
+        setSelectedUserId: panelCoreState.setSelectedUserId,
         setLoadingSettings,
         setTenantSettings,
         setLoadingIntegrations,
@@ -375,8 +369,8 @@ export default function useSaasAdminPanelController({
         canManageUsers,
         canActorManageRoleChanges,
         canEditOptionalAccess,
-        userPanelMode,
-        userFormRole: userForm.role,
+        userPanelMode: panelCoreState.userPanelMode,
+        userFormRole: panelCoreState.userForm.role,
         canManageTenants,
         canManageCatalog,
         canManageLabels,
@@ -439,23 +433,6 @@ export default function useSaasAdminPanelController({
         loadCustomers
     } = tenantDataLoaders;
     const {
-        currentUserCapabilities,
-        scopedUsers,
-        selectedUser,
-        selectedUserRole,
-        selectedUserRolePriority,
-        selectedUserIsSelf,
-        canEditSelectedUser,
-        canEditSelectedUserRole,
-        canToggleSelectedUserStatus,
-        canEditSelectedUserOptionalAccess,
-        canEditRoleInUserForm,
-        canEditScopeInUserForm,
-        canConfigureOptionalAccessInUserForm,
-        allowedOptionalPermissionsForUserFormRole,
-        allowedPackIdsForUserFormRole
-    } = panelUserScopeState;
-    const {
         filteredCustomers,
         selectedCustomer,
         selectedWaModule,
@@ -471,12 +448,6 @@ export default function useSaasAdminPanelController({
         planIds,
         selectedPlan
     } = panelDerivedData;
-    const {
-        usersByTenant,
-        usersForSettingsTenant,
-        assignedModuleUsers,
-        availableUsersForModulePicker
-    } = tenantUsersState;
     const {
         catalogState,
         catalogDerived
@@ -497,6 +468,14 @@ export default function useSaasAdminPanelController({
     } = useSaasAiController({
         panelCoreState,
         panelDerivedData
+    });
+    const {
+        usersState,
+        usersDerived
+    } = useSaasUsersController({
+        panelCoreState,
+        panelUserScopeState,
+        tenantUsersState
     });
     const scrollToSection = (sectionId, behavior = 'smooth') => {
         const cleanSection = String(sectionId || '').trim();
@@ -605,9 +584,9 @@ export default function useSaasAdminPanelController({
         setRoleForm,
         loadingAccessCatalog,
         accessCatalog,
-        canEditSelectedUser,
+        canEditSelectedUser: usersDerived.canEditSelectedUser,
         selectedTenant,
-        selectedUser,
+        selectedUser: usersDerived.selectedUser,
         tenantScopeId,
         selectedTenantId,
         tenantOptions,
@@ -617,10 +596,10 @@ export default function useSaasAdminPanelController({
         setTenantPanelMode,
         setSettingsTenantId,
         setTenantForm,
-        setUserPanelMode,
-        setSelectedUserId,
-        setMembershipDraft,
-        setUserForm,
+        setUserPanelMode: usersState.setUserPanelMode,
+        setSelectedUserId: usersState.setSelectedUserId,
+        setMembershipDraft: usersState.setMembershipDraft,
+        setUserForm: usersState.setUserForm,
         customerImportModuleId,
         emptyCustomerForm: EMPTY_CUSTOMER_FORM,
         setCustomerPanelMode,
@@ -717,6 +696,11 @@ export default function useSaasAdminPanelController({
         aiDerived,
         aiActions: aiAssistantsAdminActions
     };
+    const usersController = {
+        usersState,
+        usersDerived,
+        usersActions: tenantsUsersActions
+    };
     const operationsController = useSaasOperationsController({
         operationsPanelState,
         operationAccess,
@@ -770,7 +754,7 @@ export default function useSaasAdminPanelController({
         catalogAdminActions,
         aiAssistantsAdminActions: aiController.aiActions,
         plansRolesActions,
-        tenantsUsersActions,
+        tenantsUsersActions: usersController.usersActions,
         customersAdminActions,
         panelNavigation,
         operationAccess: operationsController.operationsDerived.operationAccess,
