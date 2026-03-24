@@ -268,6 +268,7 @@ export default function useSaasAdminPanelController({
         panelCoreState,
         saasAccessControl
     });
+    // TODO(phase2): plansRolesController debe exponer flags can* como source de policy para evitar depender del controller central.
     const {
         plansRolesState,
         plansRolesDerived
@@ -440,6 +441,9 @@ export default function useSaasAdminPanelController({
             node.scrollIntoView({ behavior, block: 'start' });
         }
     };
+    const frameNavigationController = {
+        adminNavItems: ADMIN_NAV_ITEMS
+    };
     const {
         quickReplyAssetsUploadState,
         quickReplyAdminActions,
@@ -482,16 +486,16 @@ export default function useSaasAdminPanelController({
         setQuickReplyLibraryPanelMode: quickRepliesController.quickRepliesState.setQuickReplyLibraryPanelMode,
         setQuickReplyItemPanelMode: quickRepliesController.quickRepliesState.setQuickReplyItemPanelMode,
         setLoadingQuickReplies: quickRepliesController.quickRepliesState.setLoadingQuickReplies,
-        selectedTenantLabel,
-        selectedLabelId,
-        labelForm,
-        labelPanelMode,
+        selectedTenantLabel: panelDerivedData.selectedTenantLabel,
+        selectedLabelId: panelCoreState.selectedLabelId,
+        labelForm: panelCoreState.labelForm,
+        labelPanelMode: panelCoreState.labelPanelMode,
         emptyLabelForm: EMPTY_LABEL_FORM,
         defaultLabelColors: DEFAULT_LABEL_COLORS,
-        setTenantLabels,
-        setLabelForm,
-        setLabelPanelMode,
-        setLoadingLabels,
+        setTenantLabels: panelCoreState.setTenantLabels,
+        setLabelForm: panelCoreState.setLabelForm,
+        setLabelPanelMode: panelCoreState.setLabelPanelMode,
+        setLoadingLabels: panelCoreState.setLoadingLabels,
         canEditCatalog,
         selectedTenantCatalog: catalogController.catalogDerived.selectedTenantCatalog,
         selectedCatalogProduct: catalogController.catalogDerived.selectedCatalogProduct,
@@ -560,7 +564,7 @@ export default function useSaasAdminPanelController({
         emptyCustomerForm: EMPTY_CUSTOMER_FORM,
         setCustomerPanelMode,
         setCustomerForm,
-        navItems: ADMIN_NAV_ITEMS,
+        navItems: frameNavigationController.adminNavItems,
         currentSection,
         activeSection,
         initialSection,
@@ -592,7 +596,7 @@ export default function useSaasAdminPanelController({
         setModuleQuickReplyLibraryDraft,
         emptyWaModuleForm: EMPTY_WA_MODULE_FORM,
         emptyIntegrationsForm: EMPTY_INTEGRATIONS_FORM,
-        normalizePlanForm,
+        normalizePlanForm: normalizePlanForm,
         setWaModuleForm,
         setSelectedCustomerId,
         setCustomerSearch,
@@ -619,19 +623,19 @@ export default function useSaasAdminPanelController({
         catalogPanelMode: catalogController.catalogState.catalogPanelMode,
         planPanelMode: plansRolesController.plansRolesState.planPanelMode,
         customerPanelMode,
-        labelSearch,
+        labelSearch: panelCoreState.labelSearch,
         launchSource,
         preferredTenantId,
         resetOperationsState: operationsController.operationsActions.resetOperationsState,
-        setLabelSearch,
+        setLabelSearch: panelCoreState.setLabelSearch,
         catalogProductImageError: catalogController.catalogState.catalogProductImageError,
         editingWaModuleId,
-        buildTenantFormFromItem,
-        buildUserFormFromItem,
-        normalizeCustomerFormFromItem,
-        buildAiAssistantFormFromItem,
-        buildTenantCatalogFormFromItem,
-        normalizeQuickReplyMediaAssets,
+        buildTenantFormFromItem: buildTenantFormFromItem,
+        buildUserFormFromItem: buildUserFormFromItem,
+        normalizeCustomerFormFromItem: normalizeCustomerFormFromItem,
+        buildAiAssistantFormFromItem: buildAiAssistantFormFromItem,
+        buildTenantCatalogFormFromItem: buildTenantCatalogFormFromItem,
+        normalizeQuickReplyMediaAssets: normalizeQuickReplyMediaAssets,
         scrollToSection
     });
     const {
@@ -670,11 +674,7 @@ export default function useSaasAdminPanelController({
         },
         assignmentRoleOptions
     };
-    const {
-        selectedSectionId,
-        sharedHeaderProps,
-        frameProps
-    } = useSaasFrameNavigationController({
+    Object.assign(frameNavigationController, useSaasFrameNavigationController({
         panelNavigation,
         operationAccess: operationsController.operationsDerived.operationAccess,
         moduleSectionActions,
@@ -700,7 +700,12 @@ export default function useSaasAdminPanelController({
         toTenantDisplayName,
         showNavigation,
         tenantScopeLocked: tenantDerived.tenantScopeLocked
-    });
+    }));
+    const {
+        selectedSectionId,
+        sharedHeaderProps,
+        frameProps
+    } = frameNavigationController;
 
     const sectionContextsInput = {
         panelCoreState,
