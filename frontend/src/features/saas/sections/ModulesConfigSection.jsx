@@ -33,8 +33,7 @@ function ModulesConfigSection(props = {}) {
     aiAssistantLabelMap,
     handleOpenOperation,
     openConfigModuleEdit,
-    runAction,
-    requestJson,
+    toggleWaModuleActive,
     tenantSettingsPanelMode,
     CATALOG_MODE_OPTIONS,
     formatDateTimeLabel,
@@ -51,11 +50,8 @@ function ModulesConfigSection(props = {}) {
     toggleQuickReplyLibraryForModuleDraft,
     moduleUserPickerId,
     setModuleUserPickerId,
-    syncQuickReplyLibrariesForModule,
-    handleFormImageUpload,
-    setWaModulePanelMode,
-    setSelectedWaModuleId,
-    setSelectedConfigKey
+    saveWaModule,
+    handleFormImageUpload
     } = context;
     if (!(isGeneralConfigSection || isModulesSection)) {
         return null;
@@ -115,8 +111,7 @@ function ModulesConfigSection(props = {}) {
                             aiAssistantLabelMap,
                             handleOpenOperation,
                             openConfigModuleEdit,
-                            runAction,
-                            requestJson,
+                            toggleWaModuleActive,
                             busy,
                             canEditModules,
                             buildInitials,
@@ -134,11 +129,8 @@ function ModulesConfigSection(props = {}) {
                             toggleQuickReplyLibraryForModuleDraft,
                             moduleUserPickerId,
                             setModuleUserPickerId,
-                            syncQuickReplyLibrariesForModule,
+                            saveWaModule,
                             handleFormImageUpload,
-                            setWaModulePanelMode,
-                            setSelectedWaModuleId,
-                            setSelectedConfigKey,
                             openConfigModuleView,
                             clearConfigSelection
                         }}

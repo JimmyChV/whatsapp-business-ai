@@ -4,7 +4,7 @@ export default function useSaasFrameNavigationController(input = {}) {
     const {
         panelNavigation,
         operationAccess,
-        moduleSectionActions,
+        handleSectionChange,
         lifecycleState,
         onLogout,
         onClose,
@@ -36,9 +36,6 @@ export default function useSaasFrameNavigationController(input = {}) {
     const {
         canOpenOperation
     } = operationAccess;
-    const {
-        handleSectionChange
-    } = moduleSectionActions;
     const {
         handleOpenOperation
     } = lifecycleState;

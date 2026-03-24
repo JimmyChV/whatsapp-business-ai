@@ -23,14 +23,9 @@ export default function ModulesConfigModuleEditForm({
     toUserDisplayName,
     toggleAssignedUserForModule,
     assignedModuleUsers,
-    runAction,
     waModulePanelMode,
     moduleInDetail,
-    requestJson,
-    syncQuickReplyLibrariesForModule,
-    setWaModulePanelMode,
-    setSelectedConfigKey,
-    setSelectedWaModuleId,
+    saveWaModule,
     openConfigModuleView,
     clearConfigSelection
 }) {
@@ -375,83 +370,7 @@ export default function ModulesConfigModuleEditForm({
                 <button
                     type="button"
                     disabled={busy || !settingsTenantId || !waModuleForm.name.trim() || !canEditModules}
-                    onClick={() => runAction(waModulePanelMode === 'create' ? 'Modulo WA creado' : 'Modulo WA actualizado', async () => {
-                        const existingMetadata = moduleInDetail?.metadata && typeof moduleInDetail.metadata === 'object'
-                            ? moduleInDetail.metadata
-                            : {};
-                        const existingCloudConfig = existingMetadata?.cloudConfig && typeof existingMetadata.cloudConfig === 'object'
-                            ? existingMetadata.cloudConfig
-                            : {};
-                        const payload = {
-                            name: waModuleForm.name,
-                            phoneNumber: waModuleForm.phoneNumber,
-                            transportMode: 'cloud',
-                            imageUrl: waModuleForm.imageUrl || null,
-                            assignedUserIds: (Array.isArray(waModuleForm.assignedUserIds) ? waModuleForm.assignedUserIds : [])
-                                .map((entry) => String(entry || '').trim())
-                                .filter(Boolean),
-                            catalogIds: (Array.isArray(waModuleForm.catalogIds) ? waModuleForm.catalogIds : [])
-                                .map((entry) => String(entry || '').trim().toUpperCase())
-                                .filter((entry) => /^CAT-[A-Z0-9]{4,}$/.test(entry)),
-                            metadata: {
-                                ...existingMetadata,
-                                moduleSettings: {
-                                    catalogMode: waModuleForm.moduleCatalogMode || 'inherit',
-                                    catalogIds: (Array.isArray(waModuleForm.catalogIds) ? waModuleForm.catalogIds : [])
-                                        .map((entry) => String(entry || '').trim().toUpperCase())
-                                        .filter((entry) => /^CAT-[A-Z0-9]{4,}$/.test(entry)),
-                                    aiAssistantId: sanitizeAiAssistantCode(waModuleForm.aiAssistantId || '') || null,
-                                    enabledModules: {
-                                        aiPro: waModuleForm.moduleAiEnabled !== false,
-                                        catalog: waModuleForm.moduleCatalogEnabled !== false,
-                                        cart: waModuleForm.moduleCartEnabled !== false,
-                                        quickReplies: waModuleForm.moduleQuickRepliesEnabled !== false
-                                    }
-                                },
-                                cloudConfig: {
-                                    ...existingCloudConfig,
-                                    appId: waModuleForm.cloudAppId || undefined,
-                                    wabaId: waModuleForm.cloudWabaId || undefined,
-                                    phoneNumberId: waModuleForm.cloudPhoneNumberId || undefined,
-                                    verifyToken: waModuleForm.cloudVerifyToken || undefined,
-                                    graphVersion: waModuleForm.cloudGraphVersion || undefined,
-                                    displayPhoneNumber: waModuleForm.cloudDisplayPhoneNumber || undefined,
-                                    businessName: waModuleForm.cloudBusinessName || undefined,
-                                    appSecret: waModuleForm.cloudAppSecret || undefined,
-                                    systemUserToken: waModuleForm.cloudSystemUserToken || undefined,
-                                    enforceSignature: waModuleForm.cloudEnforceSignature !== false
-                                }
-                            }
-                        };
-                        const quickReplyLibraryIds = Array.from(new Set(
-                            (Array.isArray(moduleQuickReplyLibraryDraft) ? moduleQuickReplyLibraryDraft : [])
-                                .map((entry) => String(entry || '').trim().toUpperCase())
-                                .filter(Boolean)
-                        ));
-
-                        if (waModulePanelMode === 'edit' && moduleInDetail?.moduleId) {
-                            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/wa-modules/${encodeURIComponent(moduleInDetail.moduleId)}`, {
-                                method: 'PUT',
-                                body: payload
-                            });
-                            await syncQuickReplyLibrariesForModule(moduleInDetail.moduleId, quickReplyLibraryIds);
-                            setWaModulePanelMode('view');
-                            setSelectedConfigKey(`wa_module:${moduleInDetail.moduleId}`);
-                            return;
-                        }
-
-                        const createPayload = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/wa-modules`, {
-                            method: 'POST',
-                            body: payload
-                        });
-                        const createdModuleId = String(createPayload?.item?.moduleId || '').trim();
-                        if (createdModuleId) {
-                            await syncQuickReplyLibrariesForModule(createdModuleId, quickReplyLibraryIds);
-                            setSelectedWaModuleId(createdModuleId);
-                            setSelectedConfigKey(`wa_module:${createdModuleId}`);
-                        }
-                        setWaModulePanelMode('view');
-                    })}
+                    onClick={saveWaModule}
                 >
                     {waModulePanelMode === 'create' ? 'Guardar modulo' : 'Actualizar modulo'}
                 </button>

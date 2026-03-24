@@ -93,6 +93,7 @@ import useSaasOperationsController from './useSaasOperationsController';
 import useSaasPanelDataContexts from './useSaasPanelDataContexts';
 import useSaasFrameNavigationController from './useSaasFrameNavigationController';
 import useSaasLabelsController from './useSaasLabelsController';
+import useSaasModulesController from './useSaasModulesController';
 import useSaasPlansRolesController from './useSaasPlansRolesController';
 import useSaasQuickRepliesController from './useSaasQuickRepliesController';
 import useSaasTenantController from './useSaasTenantController';
@@ -704,7 +705,7 @@ export default function useSaasAdminPanelController({
     Object.assign(frameNavigationController, useSaasFrameNavigationController({
         panelNavigation,
         operationAccess: operationsController.operationsDerived.operationAccess,
-        moduleSectionActions,
+        handleSectionChange: moduleSectionActions.handleSectionChange,
         lifecycleState,
         onLogout,
         onClose,
@@ -733,8 +734,29 @@ export default function useSaasAdminPanelController({
         sharedHeaderProps,
         frameProps
     } = frameNavigationController;
+    const modulesController = useSaasModulesController({
+        panelCoreState,
+        panelDerivedData,
+        moduleSectionActions,
+        tenantController,
+        usersController,
+        catalogController,
+        aiController,
+        quickRepliesController,
+        canEditModules,
+        canEditTenantSettings,
+        busy,
+        runAction,
+        requestJson,
+        setError,
+        handleFormImageUpload,
+        handleOpenOperation,
+        loadWaModules: tenantController.tenantLoaders.loadWaModules,
+        handleSectionChange: frameNavigationController.handleSectionChange
+    });
 
     const sectionContextsInput = {
+        handleSectionChange: frameNavigationController.handleSectionChange,
         panelCoreState,
         saasAccessControl,
         operationsPanelState: {
@@ -758,7 +780,7 @@ export default function useSaasAdminPanelController({
         customersAdminActions: customersController.customersActions,
         panelNavigation,
         operationAccess: operationsController.operationsDerived.operationAccess,
-        moduleSectionActions,
+        moduleSectionActions: modulesController.modulesActions,
         lifecycleState,
         extras: buildPanelSectionExtras({
             selectedSectionId,

@@ -17,8 +17,7 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
         aiAssistantLabelMap,
         handleOpenOperation,
         openConfigModuleEdit,
-        runAction,
-        requestJson,
+        toggleWaModuleActive,
         busy,
         canEditModules,
         buildInitials,
@@ -36,11 +35,8 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
         toggleQuickReplyLibraryForModuleDraft,
         moduleUserPickerId,
         setModuleUserPickerId,
-        syncQuickReplyLibrariesForModule,
+        saveWaModule,
         handleFormImageUpload,
-        setWaModulePanelMode,
-        setSelectedWaModuleId,
-        setSelectedConfigKey,
         openConfigModuleView,
         clearConfigSelection
     } = context;
@@ -95,15 +91,7 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
                             <button
                                 type="button"
                                 disabled={busy || !canEditModules}
-                                onClick={() => runAction('Estado de modulo actualizado', async () => {
-                                    await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/wa-modules/${encodeURIComponent(moduleInDetail.moduleId)}`, {
-                                        method: 'PUT',
-                                        body: {
-                                            isActive: moduleInDetail.isActive === false,
-                                            imageUrl: moduleInDetail.imageUrl || null
-                                        }
-                                    });
-                                })}
+                                onClick={() => toggleWaModuleActive(moduleInDetail)}
                             >
                                 {moduleInDetail.isActive ? 'Desactivar' : 'Activar'}
                             </button>
@@ -147,14 +135,9 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
                     toUserDisplayName={toUserDisplayName}
                     toggleAssignedUserForModule={toggleAssignedUserForModule}
                     assignedModuleUsers={assignedModuleUsers}
-                    runAction={runAction}
                     waModulePanelMode={waModulePanelMode}
                     moduleInDetail={moduleInDetail}
-                    requestJson={requestJson}
-                    syncQuickReplyLibrariesForModule={syncQuickReplyLibrariesForModule}
-                    setWaModulePanelMode={setWaModulePanelMode}
-                    setSelectedConfigKey={setSelectedConfigKey}
-                    setSelectedWaModuleId={setSelectedWaModuleId}
+                    saveWaModule={saveWaModule}
                     openConfigModuleView={openConfigModuleView}
                     clearConfigSelection={clearConfigSelection}
                 />
