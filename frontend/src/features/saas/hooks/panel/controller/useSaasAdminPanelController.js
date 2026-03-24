@@ -91,6 +91,7 @@ import useSaasCatalogController from './useSaasCatalogController';
 import useSaasOperationsController from './useSaasOperationsController';
 import useSaasPanelDataContexts from './useSaasPanelDataContexts';
 import useSaasFrameNavigationController from './useSaasFrameNavigationController';
+import useSaasLabelsController from './useSaasLabelsController';
 import useSaasPlansRolesController from './useSaasPlansRolesController';
 import useSaasQuickRepliesController from './useSaasQuickRepliesController';
 import useSaasTenantController from './useSaasTenantController';
@@ -645,6 +646,18 @@ export default function useSaasAdminPanelController({
         openTenantFromUserMembership,
         openUserFromTenant
     } = lifecycleState;
+    const labelsController = useSaasLabelsController({
+        panelCoreState,
+        panelDerivedData,
+        tenantLabelsAdminActions,
+        settingsTenantId: tenantState.settingsTenantId,
+        waModules,
+        canManageLabels,
+        runAction,
+        requestJson,
+        setError,
+        busy
+    });
     const quickRepliesSectionController = {
         quickRepliesState,
         quickRepliesDerived,
@@ -723,7 +736,7 @@ export default function useSaasAdminPanelController({
         tenantUsersState: usersController.usersDerived,
         quickReplyAssetsUploadState: quickRepliesController.quickRepliesUploadState,
         quickReplyAdminActions: quickRepliesController.quickRepliesActions,
-        tenantLabelsAdminActions,
+        tenantLabelsAdminActions: labelsController.labelsActions,
         catalogAdminActions: catalogController.catalogActions,
         aiAssistantsAdminActions: aiController.aiActions,
         plansRolesActions: plansRolesController.plansRolesActions,
