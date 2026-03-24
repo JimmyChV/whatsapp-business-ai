@@ -13,6 +13,7 @@ import useSaasOperationsController from './useSaasOperationsController';
 import useSaasPanelDataContexts from './useSaasPanelDataContexts';
 import useSaasFrameNavigationController from './useSaasFrameNavigationController';
 import useSaasQuickRepliesController from './useSaasQuickRepliesController';
+import useSaasTenantController from './useSaasTenantController';
 import useSaasUsersController from './useSaasUsersController';
 const {
     API_BASE,
@@ -144,22 +145,12 @@ export default function useSaasAdminPanelController({
     });
 
     const {
-        overview,
-        setOverview,
-        tenantForm,
-        setTenantForm,
-        settingsTenantId,
-        setSettingsTenantId,
-        tenantSettings,
-        setTenantSettings,
         waModules,
         setWaModules,
         waModuleForm,
         setWaModuleForm,
         editingWaModuleId,
         setEditingWaModuleId,
-        selectedTenantId,
-        setSelectedTenantId,
         selectedWaModuleId,
         setSelectedWaModuleId,
         moduleQuickReplyLibraryDraft,
@@ -168,14 +159,10 @@ export default function useSaasAdminPanelController({
         setSelectedConfigKey,
         moduleUserPickerId,
         setModuleUserPickerId,
-        tenantPanelMode,
-        setTenantPanelMode,
         tenantSettingsPanelMode,
         setTenantSettingsPanelMode,
         waModulePanelMode,
         setWaModulePanelMode,
-        tenantIntegrations,
-        setTenantIntegrations,
         planMatrix,
         setPlanMatrix,
         selectedPlanId,
@@ -222,10 +209,6 @@ export default function useSaasAdminPanelController({
         setCustomerImportModuleId,
         busy,
         setBusy,
-        loadingSettings,
-        setLoadingSettings,
-        loadingIntegrations,
-        setLoadingIntegrations,
         loadingPlans,
         setLoadingPlans,
         error,
@@ -326,7 +309,7 @@ export default function useSaasAdminPanelController({
     const panelLoadingState = useSaasPanelLoadingState({
         busy,
         error,
-        overview,
+        overview: panelCoreState.overview,
         pendingRequests
     });
     const {
@@ -341,25 +324,25 @@ export default function useSaasAdminPanelController({
         panelDerivedData,
         tenantUsersState
     } = useSaasPanelDataContexts({
-        overviewTenants: overview.tenants,
-        overviewUsers: overview.users,
-        selectedTenantId,
+        overviewTenants: panelCoreState.overview.tenants,
+        overviewUsers: panelCoreState.overview.users,
+        selectedTenantId: panelCoreState.selectedTenantId,
         selectedUserId: panelCoreState.selectedUserId,
-        settingsTenantId,
+        settingsTenantId: panelCoreState.settingsTenantId,
         requiresTenantSelection,
         activeTenantId,
         toTenantDisplayName,
         currentUser,
         actorRoleForPolicy,
         requestJson,
-        setOverview,
-        setSelectedTenantId,
-        setSettingsTenantId,
+        setOverview: panelCoreState.setOverview,
+        setSelectedTenantId: panelCoreState.setSelectedTenantId,
+        setSettingsTenantId: panelCoreState.setSettingsTenantId,
         setSelectedUserId: panelCoreState.setSelectedUserId,
-        setLoadingSettings,
-        setTenantSettings,
-        setLoadingIntegrations,
-        setTenantIntegrations,
+        setLoadingSettings: panelCoreState.setLoadingSettings,
+        setTenantSettings: panelCoreState.setTenantSettings,
+        setLoadingIntegrations: panelCoreState.setLoadingIntegrations,
+        setTenantIntegrations: panelCoreState.setTenantIntegrations,
         setWaModules,
         setSelectedWaModuleId,
         setCustomers,
@@ -413,25 +396,14 @@ export default function useSaasAdminPanelController({
         toUserDisplayName
     });
     const {
-        tenantOptions,
-        selectedTenant,
-        tenantScopeId,
-        tenantScopeLocked,
-        activeTenantLabel,
-        currentUserDisplayName,
-        currentUserEmail,
-        currentUserAvatarUrl,
-        currentUserRole,
-        currentUserRoleLabel,
-        currentUserTenantCount
-    } = tenantScopeState;
-    const {
-        refreshOverview,
-        loadTenantSettings,
-        loadTenantIntegrations,
-        loadWaModules,
-        loadCustomers
-    } = tenantDataLoaders;
+        tenantState,
+        tenantDerived,
+        tenantLoaders
+    } = useSaasTenantController({
+        panelCoreState,
+        tenantScopeState,
+        tenantDataLoaders
+    });
     const {
         filteredCustomers,
         selectedCustomer,
@@ -501,7 +473,7 @@ export default function useSaasAdminPanelController({
         lifecycleState
     } = useSaasPanelActionContexts({
         requestJson,
-        settingsTenantId,
+        settingsTenantId: tenantState.settingsTenantId,
         selectedQuickReplyLibrary: quickRepliesDerived.selectedQuickReplyLibrary,
         quickReplyUploadMaxBytes: quickRepliesDerived.quickReplyUploadMaxBytes,
         quickReplyUploadMaxMb: quickRepliesDerived.quickReplyUploadMaxMb,
@@ -560,7 +532,7 @@ export default function useSaasAdminPanelController({
         selectedAiAssistantId: aiState.selectedAiAssistantId,
         aiAssistantForm: aiState.aiAssistantForm,
         aiAssistantPanelMode: aiState.aiAssistantPanelMode,
-        tenantIntegrations,
+        tenantIntegrations: tenantState.tenantIntegrations,
         emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
         setLoadingAiAssistants: aiState.setLoadingAiAssistants,
         setTenantAiAssistants: aiState.setTenantAiAssistants,
@@ -585,17 +557,17 @@ export default function useSaasAdminPanelController({
         loadingAccessCatalog,
         accessCatalog,
         canEditSelectedUser: usersDerived.canEditSelectedUser,
-        selectedTenant,
+        selectedTenant: tenantDerived.selectedTenant,
         selectedUser: usersDerived.selectedUser,
-        tenantScopeId,
-        selectedTenantId,
-        tenantOptions,
+        tenantScopeId: tenantDerived.tenantScopeId,
+        selectedTenantId: tenantState.selectedTenantId,
+        tenantOptions: tenantDerived.tenantOptions,
         roleOptions,
         emptyTenantForm: EMPTY_TENANT_FORM,
         emptyUserForm: EMPTY_USER_FORM,
-        setTenantPanelMode,
-        setSettingsTenantId,
-        setTenantForm,
+        setTenantPanelMode: tenantState.setTenantPanelMode,
+        setSettingsTenantId: tenantState.setSettingsTenantId,
+        setTenantForm: tenantState.setTenantForm,
         setUserPanelMode: usersState.setUserPanelMode,
         setSelectedUserId: usersState.setSelectedUserId,
         setMembershipDraft: usersState.setMembershipDraft,
@@ -648,11 +620,11 @@ export default function useSaasAdminPanelController({
         canManageSaas,
         setError,
         setBusy,
-        refreshOverview,
-        loadTenantSettings,
-        loadWaModules,
-        loadTenantIntegrations,
-        loadCustomers,
+        refreshOverview: tenantLoaders.refreshOverview,
+        loadTenantSettings: tenantLoaders.loadTenantSettings,
+        loadWaModules: tenantLoaders.loadWaModules,
+        loadTenantIntegrations: tenantLoaders.loadTenantIntegrations,
+        loadCustomers: tenantLoaders.loadCustomers,
         loadTenantAssignmentRules: operationsActions.loadTenantAssignmentRules,
         loadTenantOperationsKpis: operationsActions.loadTenantOperationsKpis,
         selectedWaModuleId,
@@ -717,25 +689,25 @@ export default function useSaasAdminPanelController({
         lifecycleState,
         onLogout,
         onClose,
-        setSettingsTenantId,
-        setSelectedTenantId,
+        setSettingsTenantId: tenantState.setSettingsTenantId,
+        setSelectedTenantId: tenantState.setSelectedTenantId,
         embedded,
         showHeader,
         busy,
-        currentUserAvatarUrl,
-        currentUserDisplayName,
-        currentUserRoleLabel,
+        currentUserAvatarUrl: tenantDerived.currentUserAvatarUrl,
+        currentUserDisplayName: tenantDerived.currentUserDisplayName,
+        currentUserRoleLabel: tenantDerived.currentUserRoleLabel,
         buildInitials,
         closeLabel,
-        activeTenantLabel,
+        activeTenantLabel: tenantDerived.activeTenantLabel,
         error,
         showPanelLoading,
         requiresTenantSelection,
-        settingsTenantId,
-        tenantOptions,
+        settingsTenantId: tenantState.settingsTenantId,
+        tenantOptions: tenantDerived.tenantOptions,
         toTenantDisplayName,
         showNavigation,
-        tenantScopeLocked
+        tenantScopeLocked: tenantDerived.tenantScopeLocked
     });
 
     const sectionContextsInput = {
