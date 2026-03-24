@@ -8,7 +8,7 @@ import useSaasPanelSectionContexts from '../useSaasPanelSectionContexts';
 import buildPanelSectionExtras from '../contexts/buildPanelSectionExtras';
 import useSaasPanelActionContexts from './useSaasPanelActionContexts';
 import useSaasPanelDataContexts from './useSaasPanelDataContexts';
-import useSaasPanelFrameProps from './useSaasPanelFrameProps';
+import useSaasFrameNavigationController from './useSaasFrameNavigationController';
 const {
     API_BASE,
     EMPTY_TENANT_FORM,
@@ -765,53 +765,33 @@ export default function useSaasAdminPanelController({
         scrollToSection
     });
     const {
-        adminNavItems,
-        selectedSectionId
-    } = panelNavigation;
-    const {
-        canOpenOperation
-    } = operationAccess;
-    const {
-        handleSectionChange
-    } = moduleSectionActions;
-    const {
         runAction,
         handleOpenOperation,
         handleFormImageUpload,
         openTenantFromUserMembership,
         openUserFromTenant
     } = lifecycleState;
-
-    const handlePanelClose = () => {
-        if (typeof onLogout === 'function') {
-            onLogout();
-            return;
-        }
-        onClose?.();
-    };
-
-    const handleTenantChange = (nextTenantId) => {
-        setSettingsTenantId(nextTenantId);
-        if (nextTenantId) setSelectedTenantId(nextTenantId);
-    };
-
-    const handleTenantClear = () => {
-        setSettingsTenantId('');
-        setSelectedTenantId('');
-    };
-
-    const { sharedHeaderProps, frameProps } = useSaasPanelFrameProps({
+    const {
+        selectedSectionId,
+        sharedHeaderProps,
+        frameProps
+    } = useSaasFrameNavigationController({
+        panelNavigation,
+        operationAccess,
+        moduleSectionActions,
+        lifecycleState,
+        onLogout,
+        onClose,
+        setSettingsTenantId,
+        setSelectedTenantId,
         embedded,
         showHeader,
-        canOpenOperation,
         busy,
-        handleOpenOperation,
         currentUserAvatarUrl,
         currentUserDisplayName,
         currentUserRoleLabel,
         buildInitials,
         closeLabel,
-        handlePanelClose,
         activeTenantLabel,
         error,
         showPanelLoading,
@@ -819,13 +799,8 @@ export default function useSaasAdminPanelController({
         settingsTenantId,
         tenantOptions,
         toTenantDisplayName,
-        handleTenantChange,
-        handleTenantClear,
         showNavigation,
-        adminNavItems,
-        selectedSectionId,
-        tenantScopeLocked,
-        handleSectionChange
+        tenantScopeLocked
     });
 
     const sectionContextsInput = {
