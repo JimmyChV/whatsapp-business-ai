@@ -35,20 +35,9 @@ export default function useSaasLabelsController(input = {}) {
 
     const labelsActions = tenantLabelsAdminActions;
 
-    const labelsRuntime = {
-        settingsTenantId,
-        waModules,
-        canManageLabels,
-        runAction,
-        requestJson,
-        setError,
-        busy
-    };
-
     return {
         labelsState,
         labelsActions,
-        labelsDerived,
-        labelsRuntime
+        labelsDerived
     };
 }
