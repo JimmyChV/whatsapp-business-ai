@@ -9,6 +9,7 @@ import buildPanelSectionExtras from '../contexts/buildPanelSectionExtras';
 import useSaasPanelActionContexts from './useSaasPanelActionContexts';
 import useSaasAiController from './useSaasAiController';
 import useSaasCatalogController from './useSaasCatalogController';
+import useSaasOperationsController from './useSaasOperationsController';
 import useSaasPanelDataContexts from './useSaasPanelDataContexts';
 import useSaasFrameNavigationController from './useSaasFrameNavigationController';
 import useSaasQuickRepliesController from './useSaasQuickRepliesController';
@@ -325,19 +326,10 @@ export default function useSaasAdminPanelController({
         buildApiHeaders
     });
     const {
-        assignmentRules,
-        setAssignmentRules,
-        loadingAssignmentRules,
-        operationsKpis,
-        loadingOperationsKpis,
-        unassignedCandidates,
-        operationsSnapshot,
-        loadTenantAssignmentRules,
-        loadTenantOperationsKpis,
-        saveAssignmentRules,
-        triggerAutoAssignPreview,
-        resetOperationsState
-    } = operationsPanelState;
+        operationsActions
+    } = useSaasOperationsController({
+        operationsPanelState
+    });
     const panelLoadingState = useSaasPanelLoadingState({
         busy,
         error,
@@ -682,8 +674,8 @@ export default function useSaasAdminPanelController({
         loadWaModules,
         loadTenantIntegrations,
         loadCustomers,
-        loadTenantAssignmentRules,
-        loadTenantOperationsKpis,
+        loadTenantAssignmentRules: operationsActions.loadTenantAssignmentRules,
+        loadTenantOperationsKpis: operationsActions.loadTenantOperationsKpis,
         selectedWaModuleId,
         selectedConfigKey,
         selectedCatalogId: catalogState.selectedCatalogId,
@@ -695,7 +687,7 @@ export default function useSaasAdminPanelController({
         labelSearch,
         launchSource,
         preferredTenantId,
-        resetOperationsState,
+        resetOperationsState: operationsActions.resetOperationsState,
         setLabelSearch,
         catalogProductImageError: catalogState.catalogProductImageError,
         editingWaModuleId,
@@ -725,13 +717,18 @@ export default function useSaasAdminPanelController({
         aiDerived,
         aiActions: aiAssistantsAdminActions
     };
+    const operationsController = useSaasOperationsController({
+        operationsPanelState,
+        operationAccess,
+        assignmentRoleOptions
+    });
     const {
         selectedSectionId,
         sharedHeaderProps,
         frameProps
     } = useSaasFrameNavigationController({
         panelNavigation,
-        operationAccess,
+        operationAccess: operationsController.operationsDerived.operationAccess,
         moduleSectionActions,
         lifecycleState,
         onLogout,
@@ -776,7 +773,7 @@ export default function useSaasAdminPanelController({
         tenantsUsersActions,
         customersAdminActions,
         panelNavigation,
-        operationAccess,
+        operationAccess: operationsController.operationsDerived.operationAccess,
         moduleSectionActions,
         lifecycleState,
         extras: buildPanelSectionExtras({
@@ -784,7 +781,7 @@ export default function useSaasAdminPanelController({
             requestJson,
             runAction,
             activeTenantId,
-            assignmentRoleOptions,
+            assignmentRoleOptions: operationsController.assignmentRoleOptions,
             handleOpenOperation,
             handleFormImageUpload,
             openTenantFromUserMembership,
