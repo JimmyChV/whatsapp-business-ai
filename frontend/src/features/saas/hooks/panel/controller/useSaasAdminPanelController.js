@@ -7,6 +7,7 @@ import useSaasPanelLoadingState from '../useSaasPanelLoadingState';
 import useSaasPanelSectionContexts from '../useSaasPanelSectionContexts';
 import buildPanelSectionExtras from '../contexts/buildPanelSectionExtras';
 import useSaasPanelActionContexts from './useSaasPanelActionContexts';
+import useSaasAiController from './useSaasAiController';
 import useSaasCatalogController from './useSaasCatalogController';
 import useSaasPanelDataContexts from './useSaasPanelDataContexts';
 import useSaasFrameNavigationController from './useSaasFrameNavigationController';
@@ -181,16 +182,6 @@ export default function useSaasAdminPanelController({
         setWaModulePanelMode,
         tenantIntegrations,
         setTenantIntegrations,
-        tenantAiAssistants,
-        setTenantAiAssistants,
-        selectedAiAssistantId,
-        setSelectedAiAssistantId,
-        aiAssistantForm,
-        setAiAssistantForm,
-        aiAssistantPanelMode,
-        setAiAssistantPanelMode,
-        loadingAiAssistants,
-        setLoadingAiAssistants,
         planMatrix,
         setPlanMatrix,
         selectedPlanId,
@@ -429,8 +420,8 @@ export default function useSaasAdminPanelController({
         selectedCatalogId: panelCoreState.selectedCatalogId,
         tenantCatalogProducts: panelCoreState.tenantCatalogProducts,
         selectedCatalogProductId: panelCoreState.selectedCatalogProductId,
-        tenantAiAssistants,
-        selectedAiAssistantId,
+        tenantAiAssistants: panelCoreState.tenantAiAssistants,
+        selectedAiAssistantId: panelCoreState.selectedAiAssistantId,
         selectedPlanId,
         planOptions: PLAN_OPTIONS,
         toUserDisplayName
@@ -485,11 +476,6 @@ export default function useSaasAdminPanelController({
         moduleQuickReplySourceModuleId,
         moduleQuickReplyAssignedLibraries,
         moduleQuickReplyAssignedLibraryIds,
-        tenantAiAssistantItems,
-        activeAiAssistantOptions,
-        selectedAiAssistant,
-        defaultAiAssistantId,
-        aiAssistantLabelMap,
         planIds,
         selectedPlan
     } = panelDerivedData;
@@ -510,6 +496,13 @@ export default function useSaasAdminPanelController({
         quickRepliesState,
         quickRepliesDerived
     } = useSaasQuickRepliesController({
+        panelCoreState,
+        panelDerivedData
+    });
+    const {
+        aiState,
+        aiDerived
+    } = useSaasAiController({
         panelCoreState,
         panelDerivedData
     });
@@ -592,15 +585,15 @@ export default function useSaasAdminPanelController({
         setLoadingCatalogProducts: catalogState.setLoadingCatalogProducts,
         setCatalogPanelMode: catalogState.setCatalogPanelMode,
         canManageAi,
-        selectedAiAssistant,
-        selectedAiAssistantId,
-        aiAssistantForm,
-        aiAssistantPanelMode,
+        selectedAiAssistant: aiDerived.selectedAiAssistant,
+        selectedAiAssistantId: aiState.selectedAiAssistantId,
+        aiAssistantForm: aiState.aiAssistantForm,
+        aiAssistantPanelMode: aiState.aiAssistantPanelMode,
         tenantIntegrations,
         emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
-        setLoadingAiAssistants,
-        setTenantAiAssistants,
-        setAiAssistantForm,
+        setLoadingAiAssistants: aiState.setLoadingAiAssistants,
+        setTenantAiAssistants: aiState.setTenantAiAssistants,
+        setAiAssistantForm: aiState.setAiAssistantForm,
         canManageRoles,
         selectedRoleProfile,
         selectedRoleKey,
@@ -662,7 +655,7 @@ export default function useSaasAdminPanelController({
         canEditModules,
         selectedConfigModule,
         activeCatalogOptions: catalogDerived.activeCatalogOptions,
-        defaultAiAssistantId,
+        defaultAiAssistantId: aiDerived.defaultAiAssistantId,
         setSelectedConfigKey,
         setSelectedRoleKey,
         setSelectedWaModuleId,
@@ -678,7 +671,7 @@ export default function useSaasAdminPanelController({
         setCustomerSearch,
         setCustomerCsvText,
         setCustomerImportModuleId,
-        setSelectedAiAssistantId,
+        setSelectedAiAssistantId: aiState.setSelectedAiAssistantId,
         setCurrentSection,
         isOpen,
         canManageSaas,
@@ -727,6 +720,11 @@ export default function useSaasAdminPanelController({
         quickRepliesActions: quickReplyAdminActions,
         quickRepliesUploadState: quickReplyAssetsUploadState
     };
+    const aiController = {
+        aiState,
+        aiDerived,
+        aiActions: aiAssistantsAdminActions
+    };
     const {
         selectedSectionId,
         sharedHeaderProps,
@@ -773,7 +771,7 @@ export default function useSaasAdminPanelController({
         quickReplyAdminActions: quickRepliesController.quickRepliesActions,
         tenantLabelsAdminActions,
         catalogAdminActions,
-        aiAssistantsAdminActions,
+        aiAssistantsAdminActions: aiController.aiActions,
         plansRolesActions,
         tenantsUsersActions,
         customersAdminActions,
