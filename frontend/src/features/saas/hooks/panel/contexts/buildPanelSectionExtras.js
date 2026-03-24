@@ -1,15 +1,9 @@
 export default function buildPanelSectionExtras(input = {}) {
     const p = input;
     return {
-        selectedSectionId: p.selectedSectionId,
         requestJson: p.requestJson,
-        runAction: p.runAction,
         activeTenantId: p.activeTenantId,
         assignmentRoleOptions: p.assignmentRoleOptions,
-        handleOpenOperation: p.handleOpenOperation,
-        handleFormImageUpload: p.handleFormImageUpload,
-        openTenantFromUserMembership: p.openTenantFromUserMembership,
-        openUserFromTenant: p.openUserFromTenant,
         buildInitials: p.buildInitials,
         toTenantDisplayName: p.toTenantDisplayName,
         toUserDisplayName: p.toUserDisplayName,
