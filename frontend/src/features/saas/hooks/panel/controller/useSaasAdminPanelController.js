@@ -264,13 +264,14 @@ export default function useSaasAdminPanelController({
         rolePermissionOptions,
         hasAccessCatalogData
     } = saasAccessControl;
-    const {
-        plansRolesState,
-        plansRolesDerived
-    } = useSaasPlansRolesController({
+    const plansRolesController = useSaasPlansRolesController({
         panelCoreState,
         saasAccessControl
     });
+    const {
+        plansRolesState,
+        plansRolesDerived
+    } = plansRolesController;
     const { pendingRequests, requestJson } = useSaasApiClient({
         apiBase: API_BASE,
         buildApiHeaders
@@ -372,15 +373,16 @@ export default function useSaasAdminPanelController({
         planOptions: PLAN_OPTIONS,
         toUserDisplayName
     });
-    const {
-        tenantState,
-        tenantDerived,
-        tenantLoaders
-    } = useSaasTenantController({
+    const tenantController = useSaasTenantController({
         panelCoreState,
         tenantScopeState,
         tenantDataLoaders
     });
+    const {
+        tenantState,
+        tenantDerived,
+        tenantLoaders
+    } = tenantController;
     const {
         filteredCustomers,
         selectedCustomer,
@@ -397,35 +399,39 @@ export default function useSaasAdminPanelController({
         planIds,
         selectedPlan
     } = panelDerivedData;
+    const catalogController = useSaasCatalogController({
+        panelCoreState,
+        panelDerivedData
+    });
     const {
         catalogState,
         catalogDerived
-    } = useSaasCatalogController({
+    } = catalogController;
+    const quickRepliesController = useSaasQuickRepliesController({
         panelCoreState,
         panelDerivedData
     });
     const {
         quickRepliesState,
         quickRepliesDerived
-    } = useSaasQuickRepliesController({
+    } = quickRepliesController;
+    const aiController = useSaasAiController({
         panelCoreState,
         panelDerivedData
     });
     const {
         aiState,
         aiDerived
-    } = useSaasAiController({
-        panelCoreState,
-        panelDerivedData
-    });
-    const {
-        usersState,
-        usersDerived
-    } = useSaasUsersController({
+    } = aiController;
+    const usersController = useSaasUsersController({
         panelCoreState,
         panelUserScopeState,
         tenantUsersState
     });
+    const {
+        usersState,
+        usersDerived
+    } = usersController;
     const scrollToSection = (sectionId, behavior = 'smooth') => {
         const cleanSection = String(sectionId || '').trim();
         if (!cleanSection) return;
@@ -450,32 +456,32 @@ export default function useSaasAdminPanelController({
         lifecycleState
     } = useSaasPanelActionContexts({
         requestJson,
-        settingsTenantId: tenantState.settingsTenantId,
-        selectedQuickReplyLibrary: quickRepliesDerived.selectedQuickReplyLibrary,
-        quickReplyUploadMaxBytes: quickRepliesDerived.quickReplyUploadMaxBytes,
-        quickReplyUploadMaxMb: quickRepliesDerived.quickReplyUploadMaxMb,
-        setQuickReplyItemForm: quickRepliesState.setQuickReplyItemForm,
-        quickReplyLibraries: quickRepliesState.quickReplyLibraries,
+        settingsTenantId: tenantController.tenantState.settingsTenantId,
+        selectedQuickReplyLibrary: quickRepliesController.quickRepliesDerived.selectedQuickReplyLibrary,
+        quickReplyUploadMaxBytes: quickRepliesController.quickRepliesDerived.quickReplyUploadMaxBytes,
+        quickReplyUploadMaxMb: quickRepliesController.quickRepliesDerived.quickReplyUploadMaxMb,
+        setQuickReplyItemForm: quickRepliesController.quickRepliesState.setQuickReplyItemForm,
+        quickReplyLibraries: quickRepliesController.quickRepliesState.quickReplyLibraries,
         waModules,
-        selectedQuickReplyLibraryId: quickRepliesState.selectedQuickReplyLibraryId,
-        selectedQuickReplyItem: quickRepliesDerived.selectedQuickReplyItem,
-        selectedQuickReplyItemId: quickRepliesState.selectedQuickReplyItemId,
-        quickReplyScopeModuleId: quickRepliesDerived.quickReplyScopeModuleId,
-        quickReplyLibraryForm: quickRepliesState.quickReplyLibraryForm,
-        quickReplyItemForm: quickRepliesState.quickReplyItemForm,
-        quickReplyLibraryPanelMode: quickRepliesState.quickReplyLibraryPanelMode,
-        quickReplyItemPanelMode: quickRepliesState.quickReplyItemPanelMode,
+        selectedQuickReplyLibraryId: quickRepliesController.quickRepliesState.selectedQuickReplyLibraryId,
+        selectedQuickReplyItem: quickRepliesController.quickRepliesDerived.selectedQuickReplyItem,
+        selectedQuickReplyItemId: quickRepliesController.quickRepliesState.selectedQuickReplyItemId,
+        quickReplyScopeModuleId: quickRepliesController.quickRepliesDerived.quickReplyScopeModuleId,
+        quickReplyLibraryForm: quickRepliesController.quickRepliesState.quickReplyLibraryForm,
+        quickReplyItemForm: quickRepliesController.quickRepliesState.quickReplyItemForm,
+        quickReplyLibraryPanelMode: quickRepliesController.quickRepliesState.quickReplyLibraryPanelMode,
+        quickReplyItemPanelMode: quickRepliesController.quickRepliesState.quickReplyItemPanelMode,
         emptyQuickReplyLibraryForm: EMPTY_QUICK_REPLY_LIBRARY_FORM,
         emptyQuickReplyItemForm: EMPTY_QUICK_REPLY_ITEM_FORM,
-        setQuickReplyLibraries: quickRepliesState.setQuickReplyLibraries,
-        setQuickReplyItems: quickRepliesState.setQuickReplyItems,
-        setSelectedQuickReplyLibraryId: quickRepliesState.setSelectedQuickReplyLibraryId,
-        setSelectedQuickReplyItemId: quickRepliesState.setSelectedQuickReplyItemId,
-        setQuickReplyModuleFilterId: quickRepliesState.setQuickReplyModuleFilterId,
-        setQuickReplyLibraryForm: quickRepliesState.setQuickReplyLibraryForm,
-        setQuickReplyLibraryPanelMode: quickRepliesState.setQuickReplyLibraryPanelMode,
-        setQuickReplyItemPanelMode: quickRepliesState.setQuickReplyItemPanelMode,
-        setLoadingQuickReplies: quickRepliesState.setLoadingQuickReplies,
+        setQuickReplyLibraries: quickRepliesController.quickRepliesState.setQuickReplyLibraries,
+        setQuickReplyItems: quickRepliesController.quickRepliesState.setQuickReplyItems,
+        setSelectedQuickReplyLibraryId: quickRepliesController.quickRepliesState.setSelectedQuickReplyLibraryId,
+        setSelectedQuickReplyItemId: quickRepliesController.quickRepliesState.setSelectedQuickReplyItemId,
+        setQuickReplyModuleFilterId: quickRepliesController.quickRepliesState.setQuickReplyModuleFilterId,
+        setQuickReplyLibraryForm: quickRepliesController.quickRepliesState.setQuickReplyLibraryForm,
+        setQuickReplyLibraryPanelMode: quickRepliesController.quickRepliesState.setQuickReplyLibraryPanelMode,
+        setQuickReplyItemPanelMode: quickRepliesController.quickRepliesState.setQuickReplyItemPanelMode,
+        setLoadingQuickReplies: quickRepliesController.quickRepliesState.setLoadingQuickReplies,
         selectedTenantLabel,
         selectedLabelId,
         labelForm,
@@ -487,69 +493,69 @@ export default function useSaasAdminPanelController({
         setLabelPanelMode,
         setLoadingLabels,
         canEditCatalog,
-        selectedTenantCatalog: catalogDerived.selectedTenantCatalog,
-        selectedCatalogProduct: catalogDerived.selectedCatalogProduct,
-        selectedCatalogProductId: catalogState.selectedCatalogProductId,
-        catalogProductForm: catalogState.catalogProductForm,
-        catalogProductPanelMode: catalogState.catalogProductPanelMode,
+        selectedTenantCatalog: catalogController.catalogDerived.selectedTenantCatalog,
+        selectedCatalogProduct: catalogController.catalogDerived.selectedCatalogProduct,
+        selectedCatalogProductId: catalogController.catalogState.selectedCatalogProductId,
+        catalogProductForm: catalogController.catalogState.catalogProductForm,
+        catalogProductPanelMode: catalogController.catalogState.catalogProductPanelMode,
         emptyCatalogProductForm: EMPTY_CATALOG_PRODUCT_FORM,
         emptyTenantCatalogForm: EMPTY_TENANT_CATALOG_FORM,
-        setTenantCatalogs: catalogState.setTenantCatalogs,
-        setSelectedCatalogId: catalogState.setSelectedCatalogId,
-        setTenantCatalogForm: catalogState.setTenantCatalogForm,
-        setTenantCatalogProducts: catalogState.setTenantCatalogProducts,
-        setCatalogProductForm: catalogState.setCatalogProductForm,
-        setCatalogProductPanelMode: catalogState.setCatalogProductPanelMode,
-        setCatalogProductImageError: catalogState.setCatalogProductImageError,
-        setCatalogProductImageUploading: catalogState.setCatalogProductImageUploading,
-        setLoadingTenantCatalogs: catalogState.setLoadingTenantCatalogs,
-        setLoadingCatalogProducts: catalogState.setLoadingCatalogProducts,
-        setCatalogPanelMode: catalogState.setCatalogPanelMode,
+        setTenantCatalogs: catalogController.catalogState.setTenantCatalogs,
+        setSelectedCatalogId: catalogController.catalogState.setSelectedCatalogId,
+        setTenantCatalogForm: catalogController.catalogState.setTenantCatalogForm,
+        setTenantCatalogProducts: catalogController.catalogState.setTenantCatalogProducts,
+        setCatalogProductForm: catalogController.catalogState.setCatalogProductForm,
+        setCatalogProductPanelMode: catalogController.catalogState.setCatalogProductPanelMode,
+        setCatalogProductImageError: catalogController.catalogState.setCatalogProductImageError,
+        setCatalogProductImageUploading: catalogController.catalogState.setCatalogProductImageUploading,
+        setLoadingTenantCatalogs: catalogController.catalogState.setLoadingTenantCatalogs,
+        setLoadingCatalogProducts: catalogController.catalogState.setLoadingCatalogProducts,
+        setCatalogPanelMode: catalogController.catalogState.setCatalogPanelMode,
         canManageAi,
-        selectedAiAssistant: aiDerived.selectedAiAssistant,
-        selectedAiAssistantId: aiState.selectedAiAssistantId,
-        aiAssistantForm: aiState.aiAssistantForm,
-        aiAssistantPanelMode: aiState.aiAssistantPanelMode,
-        tenantIntegrations: tenantState.tenantIntegrations,
+        selectedAiAssistant: aiController.aiDerived.selectedAiAssistant,
+        selectedAiAssistantId: aiController.aiState.selectedAiAssistantId,
+        aiAssistantForm: aiController.aiState.aiAssistantForm,
+        aiAssistantPanelMode: aiController.aiState.aiAssistantPanelMode,
+        tenantIntegrations: tenantController.tenantState.tenantIntegrations,
         emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
-        setLoadingAiAssistants: aiState.setLoadingAiAssistants,
-        setTenantAiAssistants: aiState.setTenantAiAssistants,
-        setAiAssistantForm: aiState.setAiAssistantForm,
-        canManageRoles: plansRolesDerived.canManageRoles,
-        selectedRoleProfile: plansRolesDerived.selectedRoleProfile,
-        selectedRoleKey: plansRolesState.selectedRoleKey,
-        roleForm: plansRolesState.roleForm,
-        rolePanelMode: plansRolesState.rolePanelMode,
-        selectedPlanId: plansRolesState.selectedPlanId,
-        planMatrix: plansRolesState.planMatrix,
+        setLoadingAiAssistants: aiController.aiState.setLoadingAiAssistants,
+        setTenantAiAssistants: aiController.aiState.setTenantAiAssistants,
+        setAiAssistantForm: aiController.aiState.setAiAssistantForm,
+        canManageRoles: plansRolesController.plansRolesDerived.canManageRoles,
+        selectedRoleProfile: plansRolesController.plansRolesDerived.selectedRoleProfile,
+        selectedRoleKey: plansRolesController.plansRolesState.selectedRoleKey,
+        roleForm: plansRolesController.plansRolesState.roleForm,
+        rolePanelMode: plansRolesController.plansRolesState.rolePanelMode,
+        selectedPlanId: plansRolesController.plansRolesState.selectedPlanId,
+        planMatrix: plansRolesController.plansRolesState.planMatrix,
         planOptions: PLAN_OPTIONS,
         emptyRoleForm: EMPTY_ROLE_FORM,
-        setLoadingPlans: plansRolesState.setLoadingPlans,
-        setPlanMatrix: plansRolesState.setPlanMatrix,
-        setPlanForm: plansRolesState.setPlanForm,
-        setPlanPanelMode: plansRolesState.setPlanPanelMode,
-        setRolePanelMode: plansRolesState.setRolePanelMode,
-        setLoadingAccessCatalog: plansRolesState.setLoadingAccessCatalog,
-        setAccessCatalog: plansRolesState.setAccessCatalog,
-        setRoleForm: plansRolesState.setRoleForm,
-        loadingAccessCatalog: plansRolesState.loadingAccessCatalog,
-        accessCatalog: plansRolesState.accessCatalog,
-        canEditSelectedUser: usersDerived.canEditSelectedUser,
-        selectedTenant: tenantDerived.selectedTenant,
-        selectedUser: usersDerived.selectedUser,
-        tenantScopeId: tenantDerived.tenantScopeId,
-        selectedTenantId: tenantState.selectedTenantId,
-        tenantOptions: tenantDerived.tenantOptions,
-        roleOptions: plansRolesDerived.roleOptions,
+        setLoadingPlans: plansRolesController.plansRolesState.setLoadingPlans,
+        setPlanMatrix: plansRolesController.plansRolesState.setPlanMatrix,
+        setPlanForm: plansRolesController.plansRolesState.setPlanForm,
+        setPlanPanelMode: plansRolesController.plansRolesState.setPlanPanelMode,
+        setRolePanelMode: plansRolesController.plansRolesState.setRolePanelMode,
+        setLoadingAccessCatalog: plansRolesController.plansRolesState.setLoadingAccessCatalog,
+        setAccessCatalog: plansRolesController.plansRolesState.setAccessCatalog,
+        setRoleForm: plansRolesController.plansRolesState.setRoleForm,
+        loadingAccessCatalog: plansRolesController.plansRolesState.loadingAccessCatalog,
+        accessCatalog: plansRolesController.plansRolesState.accessCatalog,
+        canEditSelectedUser: usersController.usersDerived.canEditSelectedUser,
+        selectedTenant: tenantController.tenantDerived.selectedTenant,
+        selectedUser: usersController.usersDerived.selectedUser,
+        tenantScopeId: tenantController.tenantDerived.tenantScopeId,
+        selectedTenantId: tenantController.tenantState.selectedTenantId,
+        tenantOptions: tenantController.tenantDerived.tenantOptions,
+        roleOptions: plansRolesController.plansRolesDerived.roleOptions,
         emptyTenantForm: EMPTY_TENANT_FORM,
         emptyUserForm: EMPTY_USER_FORM,
-        setTenantPanelMode: tenantState.setTenantPanelMode,
-        setSettingsTenantId: tenantState.setSettingsTenantId,
-        setTenantForm: tenantState.setTenantForm,
-        setUserPanelMode: usersState.setUserPanelMode,
-        setSelectedUserId: usersState.setSelectedUserId,
-        setMembershipDraft: usersState.setMembershipDraft,
-        setUserForm: usersState.setUserForm,
+        setTenantPanelMode: tenantController.tenantState.setTenantPanelMode,
+        setSettingsTenantId: tenantController.tenantState.setSettingsTenantId,
+        setTenantForm: tenantController.tenantState.setTenantForm,
+        setUserPanelMode: usersController.usersState.setUserPanelMode,
+        setSelectedUserId: usersController.usersState.setSelectedUserId,
+        setMembershipDraft: usersController.usersState.setMembershipDraft,
+        setUserForm: usersController.usersState.setUserForm,
         customerImportModuleId,
         emptyCustomerForm: EMPTY_CUSTOMER_FORM,
         setCustomerPanelMode,
@@ -575,10 +581,10 @@ export default function useSaasAdminPanelController({
         canEditTenantSettings,
         canEditModules,
         selectedConfigModule,
-        activeCatalogOptions: catalogDerived.activeCatalogOptions,
-        defaultAiAssistantId: aiDerived.defaultAiAssistantId,
+        activeCatalogOptions: catalogController.catalogDerived.activeCatalogOptions,
+        defaultAiAssistantId: aiController.aiDerived.defaultAiAssistantId,
         setSelectedConfigKey,
-        setSelectedRoleKey: plansRolesState.setSelectedRoleKey,
+        setSelectedRoleKey: plansRolesController.plansRolesState.setSelectedRoleKey,
         setSelectedWaModuleId,
         setTenantSettingsPanelMode,
         setWaModulePanelMode,
@@ -592,33 +598,33 @@ export default function useSaasAdminPanelController({
         setCustomerSearch,
         setCustomerCsvText,
         setCustomerImportModuleId,
-        setSelectedAiAssistantId: aiState.setSelectedAiAssistantId,
+        setSelectedAiAssistantId: aiController.aiState.setSelectedAiAssistantId,
         setCurrentSection,
         isOpen,
         canManageSaas,
         setError,
         setBusy,
-        refreshOverview: tenantLoaders.refreshOverview,
-        loadTenantSettings: tenantLoaders.loadTenantSettings,
-        loadWaModules: tenantLoaders.loadWaModules,
-        loadTenantIntegrations: tenantLoaders.loadTenantIntegrations,
-        loadCustomers: tenantLoaders.loadCustomers,
+        refreshOverview: tenantController.tenantLoaders.refreshOverview,
+        loadTenantSettings: tenantController.tenantLoaders.loadTenantSettings,
+        loadWaModules: tenantController.tenantLoaders.loadWaModules,
+        loadTenantIntegrations: tenantController.tenantLoaders.loadTenantIntegrations,
+        loadCustomers: tenantController.tenantLoaders.loadCustomers,
         loadTenantAssignmentRules: operationsControllerBase.operationsActions.loadTenantAssignmentRules,
         loadTenantOperationsKpis: operationsControllerBase.operationsActions.loadTenantOperationsKpis,
         selectedWaModuleId,
         selectedConfigKey,
-        selectedCatalogId: catalogState.selectedCatalogId,
+        selectedCatalogId: catalogController.catalogState.selectedCatalogId,
         tenantSettingsPanelMode,
         waModulePanelMode,
-        catalogPanelMode: catalogState.catalogPanelMode,
-        planPanelMode: plansRolesState.planPanelMode,
+        catalogPanelMode: catalogController.catalogState.catalogPanelMode,
+        planPanelMode: plansRolesController.plansRolesState.planPanelMode,
         customerPanelMode,
         labelSearch,
         launchSource,
         preferredTenantId,
         resetOperationsState: operationsControllerBase.operationsActions.resetOperationsState,
         setLabelSearch,
-        catalogProductImageError: catalogState.catalogProductImageError,
+        catalogProductImageError: catalogController.catalogState.catalogProductImageError,
         editingWaModuleId,
         buildTenantFormFromItem,
         buildUserFormFromItem,
@@ -635,23 +641,23 @@ export default function useSaasAdminPanelController({
         openTenantFromUserMembership,
         openUserFromTenant
     } = lifecycleState;
-    const quickRepliesController = {
+    const quickRepliesSectionController = {
         quickRepliesState,
         quickRepliesDerived,
         quickRepliesActions: quickReplyAdminActions,
         quickRepliesUploadState: quickReplyAssetsUploadState
     };
-    const aiController = {
+    const aiSectionController = {
         aiState,
         aiDerived,
         aiActions: aiAssistantsAdminActions
     };
-    const usersController = {
+    const usersSectionController = {
         usersState,
         usersDerived,
         usersActions: tenantsUsersActions
     };
-    const plansRolesController = {
+    const plansRolesSectionController = {
         plansRolesState,
         plansRolesDerived,
         plansRolesActions
@@ -706,13 +712,13 @@ export default function useSaasAdminPanelController({
         panelUserScopeState,
         panelDerivedData,
         tenantUsersState,
-        quickReplyAssetsUploadState: quickRepliesController.quickRepliesUploadState,
-        quickReplyAdminActions: quickRepliesController.quickRepliesActions,
+        quickReplyAssetsUploadState: quickRepliesSectionController.quickRepliesUploadState,
+        quickReplyAdminActions: quickRepliesSectionController.quickRepliesActions,
         tenantLabelsAdminActions,
         catalogAdminActions,
-        aiAssistantsAdminActions: aiController.aiActions,
-        plansRolesActions: plansRolesController.plansRolesActions,
-        tenantsUsersActions: usersController.usersActions,
+        aiAssistantsAdminActions: aiSectionController.aiActions,
+        plansRolesActions: plansRolesSectionController.plansRolesActions,
+        tenantsUsersActions: usersSectionController.usersActions,
         customersAdminActions,
         panelNavigation,
         operationAccess: operationsController.operationsDerived.operationAccess,
