@@ -1,12 +1,9 @@
-import { lazy, useState, useEffect } from 'react';
+import { lazy, useState, useEffect, useRef } from 'react';
 
-import { API_URL, CHAT_PAGE_SIZE, SOCKET_AUTH_TOKEN, TRANSPORT_STORAGE_KEY } from './config/runtime';
+import { API_URL } from './config/runtime';
 import { persistSaasSession } from './features/auth/helpers/saasSessionStorage';
 import {
-  createSocketClient,
   useNewChatDialog,
-  useScopedBusinessRequests,
-  useSocketConnectionAuthEffect,
   useWorkspaceNavigation,
   useTransportSelectionActions,
   useChatMessageActions,
@@ -37,14 +34,17 @@ import OperationPage from './pages/OperationPage';
 import { useSaasPanelVisibilityController } from './features/saas/hooks';
 import { useSaasTenantScopeContext } from './features/saas/hooks/domains/tenants/useSaasTenantScopeContext';
 import { APP_RUNTIME_GATES } from './app/helpers/runtimeGate.helpers';
-import { useAppSessionTransportState, useAppRuntimeGate, useAppChatSocketRuntime, useAppPagePropsComposer } from './app/hooks';
+import {
+  useAppSessionTransportState,
+  useAppRuntimeGate,
+  useAppPagePropsComposer,
+  useAppSocketChatController
+} from './app/hooks';
 import AppRuntimeGate from './app/components/AppRuntimeGate';
 
 import './index.css';
 
 const SaasPanelPage = lazy(() => import('./pages/SaasPanelPage'));
-const socket = createSocketClient(API_URL, SOCKET_AUTH_TOKEN);
-
 
 function App() {
   const {
@@ -203,6 +203,7 @@ function App() {
     requestedWaTenantFromUrl,
     tenantScopeId
   });
+  const handleChatSelectRef = useRef(null);
 
   // --------------------------------------------------------------
   // Notifications
@@ -256,20 +257,6 @@ function App() {
     buildApiHeaders
   });
 
-  const {
-    requestQuickRepliesForModule,
-    emitScopedBusinessDataRequest
-  } = useScopedBusinessRequests({
-    socket,
-    selectedCatalogModuleIdRef,
-    selectedWaModuleRef,
-    selectedCatalogIdRef,
-    quickRepliesRequestRef,
-    businessDataRequestDebounceRef,
-    businessDataScopeCacheRef,
-    businessDataRequestSeqRef,
-    setBusinessData
-  });
   useSaasRuntimeBootstrap({
     apiUrl: API_URL,
     buildApiHeaders,
@@ -296,31 +283,32 @@ function App() {
     setSaasSession,
     setSaasAuthError
   });
-
-
-  useSocketConnectionAuthEffect({
-    socket,
+  const runtimeBlock = {
     saasRuntime,
     saasSession,
-    selectedWaModuleRef,
-    selectedWaModuleId: selectedWaModule?.moduleId,
-    socketAuthToken: SOCKET_AUTH_TOKEN,
     setIsConnected,
-    setIsClientReady
-  });
+    setIsClientReady,
+    setIsSwitchingTransport,
+    setTransportError
+  };
 
-  const { requestChatsPage } = useAppChatSocketRuntime({
-    socket,
-    chatPageSize: CHAT_PAGE_SIZE,
-    requestQuickRepliesForModule,
-    emitScopedBusinessDataRequest,
+  const businessScopeBlock = {
+    selectedCatalogModuleIdRef,
+    selectedWaModuleRef,
+    selectedCatalogIdRef,
+    quickRepliesRequestRef,
+    businessDataRequestDebounceRef,
+    businessDataScopeCacheRef,
+    businessDataRequestSeqRef,
+    setBusinessData
+  };
 
+  const chatRuntimeBlock = {
     messages,
     messagesEndRef,
     prevMessagesMetaRef,
     shouldInstantScrollRef,
     suppressSmoothScrollUntilRef,
-
     activeChatId,
     activeChatIdRef,
     chats,
@@ -331,7 +319,6 @@ function App() {
     chatFiltersRef,
     selectedTransport,
     selectedTransportRef,
-    transportStorageKey: TRANSPORT_STORAGE_KEY,
     selectedWaModule,
     selectedWaModuleRef,
     waModules,
@@ -348,19 +335,13 @@ function App() {
     forceOperationLaunch,
     forceOperationLaunchRef,
     waRuntime,
-    setIsConnected,
-    setIsSwitchingTransport,
-    setIsClientReady,
-    setTransportError,
     showClientProfile,
     clientProfilePanelRef,
     setShowClientProfile,
-
-    socketPagingRef: chatPagingRef,
+    chatPagingRef,
     setChatsHasMore,
     setChatsTotal,
     setIsLoadingMoreChats,
-
     setWaModules,
     setSelectedWaModule,
     setWaModuleError,
@@ -369,11 +350,9 @@ function App() {
     setSelectedTransport,
     requestedWaModuleFromUrlRef,
     canManageSaasRef,
-
     setMyProfile,
     setWaCapabilities,
     setWaRuntime,
-
     businessDataRequestSeqRef,
     businessDataResponseSeqRef,
     businessDataScopeCacheRef,
@@ -381,22 +360,37 @@ function App() {
     setLabelDefinitions,
     businessData,
     setQuickReplies,
-
     setMessages,
     setEditingMessage,
     setChats,
     chatIdsReferSameScope,
-
     setAiSuggestion,
     setIsAiLoading,
     setQrCode,
     setReplyingMessage,
     setActiveChatId,
+    fileInputRef
+  };
 
-    handleChatSelect,
+  const callbacksBlock = {
     resolveSessionSenderIdentity,
     setClientContact,
     setToasts
+  };
+
+  const {
+    socket,
+    fileInputRef: socketFileInputRef,
+    messagesEndRef: socketMessagesEndRef,
+    clientProfilePanelRef: socketClientProfilePanelRef,
+    requestChatsPage,
+    emitScopedBusinessDataRequest
+  } = useAppSocketChatController({
+    runtimeBlock,
+    businessScopeBlock,
+    chatRuntimeBlock,
+    callbacksBlock,
+    handleChatSelectRef
   });
 
   // --------------------------------------------------------------
@@ -492,7 +486,6 @@ function App() {
     setSelectedCatalogModuleId,
     setSelectedCatalogId,
     isConnected,
-    requestQuickRepliesForModule,
     socket,
     emitScopedBusinessDataRequest,
     activeChatIdRef,
@@ -509,6 +502,9 @@ function App() {
     setChats,
     chatIdsReferSameScope
   });
+  useEffect(() => {
+    handleChatSelectRef.current = handleChatSelect;
+  }, [handleChatSelect]);
 
   const {
     removeAttachment,
@@ -624,7 +620,6 @@ function App() {
     setSelectedTransport,
     setTransportError,
     isConnected,
-    requestQuickRepliesForModule,
     socket,
     emitScopedBusinessDataRequest,
     selectedCatalogModuleIdRef,
@@ -821,9 +816,9 @@ function App() {
   const socketBlock = {
     // TODO: mover a socketBlock desde useAppSocketChatController en el siguiente corte
     socket,
-    fileInputRef,
-    messagesEndRef,
-    clientProfilePanelRef
+    fileInputRef: socketFileInputRef,
+    messagesEndRef: socketMessagesEndRef,
+    clientProfilePanelRef: socketClientProfilePanelRef
   };
 
   const handlersBlock = {
