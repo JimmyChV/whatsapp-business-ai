@@ -1016,6 +1016,7 @@ export default function useSaasAdminPanelController({
         panelUserScopeState: usersController.usersDerived,
         panelDerivedData,
         tenantUsersState: usersController.usersDerived,
+        sanitizeMemberships,
         quickReplyAssetsUploadState: quickRepliesController.quickRepliesUploadState,
         quickReplyAdminActions: quickRepliesController.quickRepliesActions,
         tenantLabelsAdminActions: labelsController.labelsActions,
