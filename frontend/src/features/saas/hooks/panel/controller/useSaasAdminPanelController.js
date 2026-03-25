@@ -288,6 +288,7 @@ export default function useSaasAdminPanelController({
     const operationsControllerBase = useSaasOperationsController({
         operationsPanelState
     });
+    let operationsController = operationsControllerBase;
     const panelLoadingState = useSaasPanelLoadingState({
         busy,
         error,
@@ -694,7 +695,7 @@ export default function useSaasAdminPanelController({
         plansRolesDerived,
         plansRolesActions
     };
-    const operationsController = {
+    operationsController = {
         ...operationsControllerBase,
         operationsDerived: {
             ...operationsControllerBase.operationsDerived,
