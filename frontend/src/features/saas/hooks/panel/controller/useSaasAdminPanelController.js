@@ -1,3 +1,4 @@
+import { useCallback, useRef } from 'react';
 import {
     ADMIN_NAV_ITEMS,
     AI_MODEL_OPTIONS,
@@ -527,6 +528,155 @@ export default function useSaasAdminPanelController({
         setModuleUserPickerId,
         setModuleQuickReplyLibraryDraft
     };
+    // TODO(phase7/A): eliminar estos bridges cuando modules/catalog/users expongan acciones canónicas antes de lifecycle.
+    const resetWaModuleFormRef = useRef(null);
+    const openWaModuleEditorRef = useRef(null);
+    const loadTenantCatalogProductsRef = useRef(null);
+    const openTenantViewRef = useRef(null);
+    const openUserViewRef = useRef(null);
+
+    const resetWaModuleFormBridge = useCallback((...args) => resetWaModuleFormRef.current?.(...args), []);
+    const openWaModuleEditorBridge = useCallback((...args) => openWaModuleEditorRef.current?.(...args), []);
+    const loadTenantCatalogProductsBridge = useCallback((...args) => loadTenantCatalogProductsRef.current?.(...args), []);
+    const openTenantViewBridge = useCallback((...args) => openTenantViewRef.current?.(...args), []);
+    const openUserViewBridge = useCallback((...args) => openUserViewRef.current?.(...args), []);
+
+    const tenantScopeEffects = {
+        isOpen,
+        tenantScopeId: tenantController.tenantDerived.tenantScopeId,
+        requiresTenantSelection,
+        settingsTenantId: tenantController.tenantState.settingsTenantId,
+        activeTenantId,
+        tenantOptions: tenantController.tenantDerived.tenantOptions,
+        launchSource,
+        preferredTenantId,
+        emptyTenantCatalogForm: EMPTY_TENANT_CATALOG_FORM,
+        emptyCatalogProductForm: EMPTY_CATALOG_PRODUCT_FORM,
+        emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
+        emptyQuickReplyLibraryForm: EMPTY_QUICK_REPLY_LIBRARY_FORM,
+        emptyQuickReplyItemForm: EMPTY_QUICK_REPLY_ITEM_FORM,
+        emptyLabelForm: EMPTY_LABEL_FORM,
+        resetOperationsState: operationsController.operationsActions.resetOperationsState,
+        setWaModules,
+        setSelectedWaModuleId,
+        setTenantCatalogs: catalogController.catalogState.setTenantCatalogs,
+        setSelectedCatalogId: catalogController.catalogState.setSelectedCatalogId,
+        setTenantCatalogForm: catalogController.catalogState.setTenantCatalogForm,
+        setTenantCatalogProducts: catalogController.catalogState.setTenantCatalogProducts,
+        setSelectedCatalogProductId: catalogController.catalogState.setSelectedCatalogProductId,
+        setCatalogProductForm: catalogController.catalogState.setCatalogProductForm,
+        setCatalogProductPanelMode: catalogController.catalogState.setCatalogProductPanelMode,
+        setCatalogProductImageError: catalogController.catalogState.setCatalogProductImageError,
+        setTenantAiAssistants: aiController.aiState.setTenantAiAssistants,
+        setSelectedAiAssistantId: aiController.aiState.setSelectedAiAssistantId,
+        setAiAssistantForm: aiController.aiState.setAiAssistantForm,
+        setAiAssistantPanelMode: aiController.aiState.setAiAssistantPanelMode,
+        setQuickReplyLibraries: quickRepliesController.quickRepliesState.setQuickReplyLibraries,
+        setQuickReplyItems: quickRepliesController.quickRepliesState.setQuickReplyItems,
+        setSelectedQuickReplyLibraryId: quickRepliesController.quickRepliesState.setSelectedQuickReplyLibraryId,
+        setSelectedQuickReplyItemId: quickRepliesController.quickRepliesState.setSelectedQuickReplyItemId,
+        setQuickReplyModuleFilterId: quickRepliesController.quickRepliesState.setQuickReplyModuleFilterId,
+        setQuickReplyLibraryForm: quickRepliesController.quickRepliesState.setQuickReplyLibraryForm,
+        setQuickReplyItemForm: quickRepliesController.quickRepliesState.setQuickReplyItemForm,
+        setQuickReplyLibraryPanelMode: quickRepliesController.quickRepliesState.setQuickReplyLibraryPanelMode,
+        setQuickReplyItemPanelMode: quickRepliesController.quickRepliesState.setQuickReplyItemPanelMode,
+        setTenantLabels,
+        setSelectedLabelId,
+        setLabelForm,
+        setLabelPanelMode,
+        setSelectedConfigKey,
+        setSelectedRoleKey: plansRolesController.plansRolesState.setSelectedRoleKey,
+        setTenantSettingsPanelMode,
+        setWaModulePanelMode,
+        setCatalogPanelMode: catalogController.catalogState.setCatalogPanelMode,
+        setModuleUserPickerId,
+        setSelectedCustomerId,
+        setCustomerPanelMode,
+        setCustomerSearch,
+        setCustomerCsvText,
+        setLabelSearch,
+        setSettingsTenantId: tenantController.tenantState.setSettingsTenantId,
+        setSelectedTenantId: tenantController.tenantState.setSelectedTenantId,
+        setCurrentSection
+    };
+
+    const sectionSyncEffects = {
+        isOpen,
+        canManageSaas,
+        initialSection,
+        activeSection,
+        selectedPlanId: plansRolesController.plansRolesState.selectedPlanId,
+        planMatrix: plansRolesController.plansRolesState.planMatrix,
+        selectedConfigKey,
+        selectedConfigModule,
+        normalizePlanForm,
+        setPlanForm: plansRolesController.plansRolesState.setPlanForm,
+        setCurrentSection,
+        setSelectedConfigKey,
+        setSelectedRoleKey: plansRolesController.plansRolesState.setSelectedRoleKey,
+        setSelectedWaModuleId,
+        setWaModulePanelMode,
+        resetWaModuleForm: resetWaModuleFormBridge
+    };
+
+    const formSyncEffects = {
+        isOpen,
+        settingsTenantId: tenantController.tenantState.settingsTenantId,
+        selectedTenant: tenantController.tenantDerived.selectedTenant,
+        tenantPanelMode: tenantController.tenantState.tenantPanelMode,
+        selectedUser: usersController.usersDerived.selectedUser,
+        userPanelMode: usersController.usersState.userPanelMode,
+        selectedCustomer: customersController.customersDerived.selectedCustomer,
+        customerPanelMode,
+        selectedAiAssistant: aiController.aiDerived.selectedAiAssistant,
+        aiAssistantPanelMode: aiController.aiState.aiAssistantPanelMode,
+        selectedTenantCatalog: catalogController.catalogDerived.selectedTenantCatalog,
+        catalogPanelMode: catalogController.catalogState.catalogPanelMode,
+        selectedWaModule,
+        selectedQuickReplyLibrary: quickRepliesController.quickRepliesDerived.selectedQuickReplyLibrary,
+        selectedQuickReplyLibraryEntity: quickRepliesController.quickRepliesDerived.selectedQuickReplyLibrary,
+        quickReplyLibraryPanelMode: quickRepliesController.quickRepliesState.quickReplyLibraryPanelMode,
+        selectedQuickReplyItem: quickRepliesController.quickRepliesDerived.selectedQuickReplyItem,
+        quickReplyItemPanelMode: quickRepliesController.quickRepliesState.quickReplyItemPanelMode,
+        quickReplyScopeModuleId: quickRepliesController.quickRepliesDerived.quickReplyScopeModuleId,
+        emptyTenantForm: EMPTY_TENANT_FORM,
+        emptyUserForm: EMPTY_USER_FORM,
+        emptyCustomerForm: EMPTY_CUSTOMER_FORM,
+        emptyAiAssistantForm: EMPTY_AI_ASSISTANT_FORM,
+        emptyTenantCatalogForm: EMPTY_TENANT_CATALOG_FORM,
+        emptyCatalogProductForm: EMPTY_CATALOG_PRODUCT_FORM,
+        emptyQuickReplyLibraryForm: EMPTY_QUICK_REPLY_LIBRARY_FORM,
+        emptyQuickReplyItemForm: EMPTY_QUICK_REPLY_ITEM_FORM,
+        buildTenantFormFromItem,
+        buildUserFormFromItem,
+        normalizeCustomerFormFromItem,
+        buildAiAssistantFormFromItem,
+        buildTenantCatalogFormFromItem,
+        normalizeQuickReplyMediaAssets,
+        loadTenantCatalogProducts: loadTenantCatalogProductsBridge,
+        setError,
+        resetWaModuleForm: resetWaModuleFormBridge,
+        openWaModuleEditor: openWaModuleEditorBridge,
+        setTenantForm: tenantController.tenantState.setTenantForm,
+        setUserForm: usersController.usersState.setUserForm,
+        setCustomerForm,
+        setAiAssistantForm: aiController.aiState.setAiAssistantForm,
+        setTenantCatalogForm: catalogController.catalogState.setTenantCatalogForm,
+        setTenantCatalogProducts: catalogController.catalogState.setTenantCatalogProducts,
+        setSelectedCatalogProductId: catalogController.catalogState.setSelectedCatalogProductId,
+        setCatalogProductForm: catalogController.catalogState.setCatalogProductForm,
+        setCatalogProductPanelMode: catalogController.catalogState.setCatalogProductPanelMode,
+        setCatalogProductImageError: catalogController.catalogState.setCatalogProductImageError,
+        setQuickReplyLibraryForm: quickRepliesController.quickRepliesState.setQuickReplyLibraryForm,
+        setQuickReplyItemForm: quickRepliesController.quickRepliesState.setQuickReplyItemForm
+    };
+
+    const crossNavigation = {
+        openTenantView: openTenantViewBridge,
+        openUserView: openUserViewBridge,
+        setCurrentSection,
+        scrollToSection
+    };
     const {
         quickReplyAssetsUploadState,
         quickReplyAdminActions,
@@ -543,6 +693,10 @@ export default function useSaasAdminPanelController({
         lifecycleState
     } = useSaasPanelActionContexts({
         selection,
+        tenantScopeEffects,
+        sectionSyncEffects,
+        formSyncEffects,
+        crossNavigation,
         requestJson,
         settingsTenantId: tenantController.tenantState.settingsTenantId,
         selectedQuickReplyLibrary: quickRepliesController.quickRepliesDerived.selectedQuickReplyLibrary,
@@ -722,6 +876,11 @@ export default function useSaasAdminPanelController({
         normalizeQuickReplyMediaAssets: normalizeQuickReplyMediaAssets,
         scrollToSection
     });
+    resetWaModuleFormRef.current = moduleSectionActions?.resetWaModuleForm || null;
+    openWaModuleEditorRef.current = moduleSectionActions?.openWaModuleEditor || null;
+    loadTenantCatalogProductsRef.current = catalogAdminActions?.loadTenantCatalogProducts || null;
+    openTenantViewRef.current = tenantsUsersActions?.openTenantView || null;
+    openUserViewRef.current = tenantsUsersActions?.openUserView || null;
     const {
         runAction,
         handleOpenOperation,
