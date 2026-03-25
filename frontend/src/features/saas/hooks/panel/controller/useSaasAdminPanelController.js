@@ -1002,7 +1002,6 @@ export default function useSaasAdminPanelController({
     });
 
     const sectionContextsInput = {
-        handleSectionChange: frameNavigationController.handleSectionChange,
         panelCoreState,
         saasAccessControl,
         operationsPanelState: {
@@ -1025,10 +1024,36 @@ export default function useSaasAdminPanelController({
         plansRolesActions: plansRolesController.plansRolesActions,
         tenantsUsersActions: usersController.usersActions,
         customersAdminActions: customersController.customersActions,
+        // tenantsUsers (8) - fuente canónica: useSaasPanelActionContexts -> tenantsUsersActions
+        ...usersController.usersActions,
+        // catalog (10) - fuente canónica: useSaasPanelActionContexts -> catalogAdminActions
+        ...catalogController.catalogActions,
+        // quickReplies (12) - fuente canónica: quickReplyAdminActions + upload state
+        ...quickRepliesController.quickRepliesActions,
+        handleQuickReplyAssetSelection: quickRepliesController.quickRepliesUploadState.handleQuickReplyAssetSelection,
+        // ai (6) - fuente canónica: useSaasPanelActionContexts -> aiAssistantsAdminActions
+        ...aiController.aiActions,
+        // plansRoles (9) - fuente canónica: useSaasPanelActionContexts -> plansRolesActions
+        ...plansRolesController.plansRolesActions,
+        // labels (6) - fuente canónica: useSaasPanelActionContexts -> tenantLabelsAdminActions
+        ...labelsController.labelsActions,
+        // customers (4) - fuente canónica: useSaasPanelActionContexts -> customersAdminActions
+        ...customersController.customersActions,
+        // modules (9) - fuente canónica: modulesController.modulesActions
+        ...modulesController.modulesActions,
+        // operations (1) - fuente canónica: operationsController.operationsActions
+        saveAssignmentRules: operationsController.operationsActions.saveAssignmentRules,
         panelNavigation,
         operationAccess: operationsController.operationsDerived.operationAccess,
         moduleSectionActions: modulesController.modulesActions,
         lifecycleState,
+        // frame/shared (4) - fuente canónica: lifecycleState
+        handleFormImageUpload: lifecycleState.handleFormImageUpload,
+        handleOpenOperation: lifecycleState.handleOpenOperation,
+        openTenantFromUserMembership: lifecycleState.openTenantFromUserMembership,
+        openUserFromTenant: lifecycleState.openUserFromTenant,
+        // prioridad explícita sobre posibles colisiones de spreads
+        handleSectionChange: frameNavigationController.handleSectionChange,
         extras: buildPanelSectionExtras({
             selectedSectionId,
             requestJson,
