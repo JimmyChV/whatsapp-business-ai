@@ -1025,20 +1025,20 @@ export default function useSaasAdminPanelController({
         tenantsUsersActions: usersController.usersActions,
         customersAdminActions: customersController.customersActions,
         // tenantsUsers (8) - fuente canónica: useSaasPanelActionContexts -> tenantsUsersActions
-        ...usersController.usersActions,
+        ...tenantsUsersActions,
         // catalog (10) - fuente canónica: useSaasPanelActionContexts -> catalogAdminActions
-        ...catalogController.catalogActions,
+        ...catalogAdminActions,
         // quickReplies (12) - fuente canónica: quickReplyAdminActions + upload state
-        ...quickRepliesController.quickRepliesActions,
+        ...quickReplyAdminActions,
         handleQuickReplyAssetSelection: quickReplyAssetsUploadState.handleQuickReplyAssetSelection,
         // ai (6) - fuente canónica: useSaasPanelActionContexts -> aiAssistantsAdminActions
-        ...aiController.aiActions,
+        ...aiAssistantsAdminActions,
         // plansRoles (9) - fuente canónica: useSaasPanelActionContexts -> plansRolesActions
-        ...plansRolesController.plansRolesActions,
+        ...plansRolesActions,
         // labels (6) - fuente canónica: useSaasPanelActionContexts -> tenantLabelsAdminActions
-        ...labelsController.labelsActions,
+        ...tenantLabelsAdminActions,
         // customers (4) - fuente canónica: useSaasPanelActionContexts -> customersAdminActions
-        ...customersController.customersActions,
+        ...customersAdminActions,
         // modules (9) - fuente canónica: modulesController.modulesActions
         ...modulesController.modulesActions,
         // operations (1) - fuente canónica: operationsController.operationsActions
