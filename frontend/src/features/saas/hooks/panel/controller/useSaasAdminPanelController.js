@@ -626,7 +626,7 @@ export default function useSaasAdminPanelController({
         tenantPanelMode: tenantController.tenantState.tenantPanelMode,
         selectedUser: usersController.usersDerived.selectedUser,
         userPanelMode: usersController.usersState.userPanelMode,
-        selectedCustomer: customersController.customersDerived.selectedCustomer,
+        selectedCustomer,
         customerPanelMode,
         selectedAiAssistant: aiController.aiDerived.selectedAiAssistant,
         aiAssistantPanelMode: aiController.aiState.aiAssistantPanelMode,
