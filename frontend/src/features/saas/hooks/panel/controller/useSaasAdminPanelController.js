@@ -1030,7 +1030,7 @@ export default function useSaasAdminPanelController({
         ...catalogController.catalogActions,
         // quickReplies (12) - fuente canónica: quickReplyAdminActions + upload state
         ...quickRepliesController.quickRepliesActions,
-        handleQuickReplyAssetSelection: quickRepliesController.quickRepliesUploadState.handleQuickReplyAssetSelection,
+        handleQuickReplyAssetSelection: quickReplyAssetsUploadState.handleQuickReplyAssetSelection,
         // ai (6) - fuente canónica: useSaasPanelActionContexts -> aiAssistantsAdminActions
         ...aiController.aiActions,
         // plansRoles (9) - fuente canónica: useSaasPanelActionContexts -> plansRolesActions
