@@ -36,9 +36,8 @@ import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHel
 import OperationPage from './pages/OperationPage';
 import { useSaasPanelVisibilityController } from './features/saas/hooks';
 import { useSaasTenantScopeContext } from './features/saas/hooks/domains/tenants/useSaasTenantScopeContext';
-import { buildOperationPageProps } from './app/helpers/operationPageProps';
 import { APP_RUNTIME_GATES } from './app/helpers/runtimeGate.helpers';
-import { useAppSessionTransportState, useAppRuntimeGate, useAppChatSocketRuntime } from './app/hooks';
+import { useAppSessionTransportState, useAppRuntimeGate, useAppChatSocketRuntime, useAppPagePropsComposer } from './app/hooks';
 import AppRuntimeGate from './app/components/AppRuntimeGate';
 
 import './index.css';
@@ -764,116 +763,7 @@ function App() {
     launchTenantAppliedRef,
   });
 
-  const operationPageProps = buildOperationPageProps({
-    forceOperationLaunch,
-    socket,
-    fileInputRef,
-    handleFileChange,
-    chats,
-    activeChatId,
-    handleChatSelect,
-    myProfile,
-    businessData,
-    handleLogoutWhatsapp,
-    handleRefreshChats,
-    handleStartNewChat,
-    labelDefinitions,
-    handleCreateLabel,
-    handleLoadMoreChats,
-    chatsHasMore,
-    isLoadingMoreChats,
-    chatsTotal,
-    chatSearchQuery,
-    handleChatSearchChange,
-    chatFilters,
-    handleChatFiltersChange,
-    handleOpenCompanyProfile,
-    saasAuthEnabled,
-    availableTenantOptions,
-    tenantScopeId,
-    tenantSwitchError,
-    handleSaasLogout,
-    canManageSaas,
-    handleOpenSaasAdminWorkspace,
-    availableWaModules,
-    clientContact,
-    messages,
-    messagesEndRef,
-    isDragOver,
-    handleDragOver,
-    handleDragLeave,
-    handleDrop,
-    showClientProfile,
-    setShowClientProfile,
-    inputText,
-    setInputText,
-    handleSendMessage,
-    attachment,
-    attachmentPreview,
-    removeAttachment,
-    isAiLoading,
-    requestAiSuggestion,
-    aiPrompt,
-    setAiPrompt,
-    isCopilotMode,
-    setIsCopilotMode,
-    handleToggleChatLabel,
-    handleToggleChatPinned,
-    handleEditMessage,
-    waCapabilities,
-    handleReplyMessage,
-    handleForwardMessage,
-    handleDeleteMessage,
-    quickReplies,
-    handleSendQuickReply,
-    quickReplyDraft,
-    setQuickReplyDraft,
-    handleLoadOrderToCart,
-    handleCancelEditMessage,
-    handleCancelReplyMessage,
-    editingMessage,
-    replyingMessage,
-    buildApiHeaders,
-    clientProfilePanelRef,
-    toasts,
-    setToasts,
-    pendingOrderCartLoad,
-    openCompanyProfileToken,
-    selectedCatalogModuleId: activeCatalogModuleId,
-    activeCatalogId,
-    selectedWaModule,
-    handleSelectCatalogModule,
-    handleSelectCatalog,
-    handleUploadCatalogImage,
-    handleCartSnapshotChange,
-    newChatDialog,
-    setNewChatDialog,
-    newChatAvailableModules,
-    handleConfirmNewChat,
-    handleCancelNewChatDialog,
-    showSaasAdminPanel,
-    setShowSaasAdminPanel,
-    handleOpenWhatsAppOperation,
-    saasUserRole,
-    saasSession,
-    requestedWaTenantFromUrl,
-    requestedLaunchSource,
-    requestedWaSectionFromUrl,
-    SaasPanelComponent: SaasPanelPage
-  });
-
-  const runtimeGate = useAppRuntimeGate({
-    saasRuntimeLoaded: Boolean(saasRuntime?.loaded),
-    saasAuthEnabled,
-    isSaasAuthenticated,
-    isConnected,
-    selectedTransport,
-    canManageSaas,
-    forceOperationLaunch,
-    isClientReady
-  });
-
-  const loginScreenProps = {
+  const sessionBlock = {
     loginEmail,
     setLoginEmail,
     loginPassword,
@@ -883,6 +773,24 @@ function App() {
     saasAuthBusy,
     saasAuthError,
     saasAuthNotice,
+    tenantSwitchError,
+    showSaasAdminPanel,
+    setShowSaasAdminPanel,
+    requestedWaTenantFromUrl,
+    requestedLaunchSource,
+    requestedWaSectionFromUrl,
+    forceOperationLaunch,
+    transportError,
+    waModuleError,
+    saasRuntime,
+    availableTenantOptions,
+    canSwitchTenant,
+    saasUserRole,
+    canManageSaas,
+    buildApiHeaders,
+    handleSaasLogin,
+    handleSaasLogout,
+    handleSwitchTenant,
     recoveryStep,
     recoveryBusy,
     recoveryError,
@@ -898,41 +806,137 @@ function App() {
     setRecoveryPasswordConfirm,
     showRecoveryPassword,
     setShowRecoveryPassword,
-    handleSaasLogin,
     openRecoveryFlow,
     handleRecoveryRequest,
     handleRecoveryVerify,
     handleRecoveryReset,
-    resetRecoveryFlow
+    resetRecoveryFlow,
+    saasAuthEnabled,
+    isSaasAuthenticated,
+    saasSession,
+    tenantScopeId,
+    SaasPanelComponent: SaasPanelPage
   };
 
-  const saasPanelGateNode = (
-    <SaasPanelPage
-      isOpen
-      onClose={handleSaasLogout}
-      onLogout={handleSaasLogout}
-      onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
-      buildApiHeaders={buildApiHeaders}
-      activeTenantId={tenantScopeId}
-      canManageSaas={canManageSaas}
-      userRole={saasUserRole}
-      isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
-      currentUser={saasSession?.user || null}
-      preferredTenantId={requestedWaTenantFromUrl || ''}
-      launchSource={requestedLaunchSource || ''}
-      initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
-      resetKeys={[tenantScopeId, saasSession?.user?.userId, requestedWaTenantFromUrl, requestedLaunchSource]}
-    />
-  );
+  const socketBlock = {
+    // TODO: mover a socketBlock desde useAppSocketChatController en el siguiente corte
+    socket,
+    fileInputRef,
+    messagesEndRef,
+    clientProfilePanelRef
+  };
 
-  const transportBootstrapProps = {
-    selectedModeLabel,
-    isSwitchingTransport,
+  const handlersBlock = {
+    handleChatSelect,
+    handleSendMessage,
+    handleExitActiveChat,
+    handleEditMessage,
+    handleCancelEditMessage,
+    handleReplyMessage,
+    handleCancelReplyMessage,
+    handleForwardMessage,
+    handleDeleteMessage,
+    handleSendQuickReply,
+    requestAiSuggestion,
+    handleRefreshChats,
+    handleStartNewChat,
+    handleConfirmNewChat,
+    handleCancelNewChatDialog,
+    handleChatSearchChange,
+    handleChatFiltersChange,
+    handleLoadMoreChats,
+    handleOpenCompanyProfile,
+    handleToggleChatLabel,
+    handleToggleChatPinned,
+    handleSelectCatalogModule,
+    handleSelectCatalog,
+    handleUploadCatalogImage,
+    handleCreateLabel,
+    handleLoadOrderToCart,
+    handleOpenWhatsAppOperation,
+    handleOpenSaasAdminWorkspace,
+    handleLogoutWhatsapp,
+    handleFileChange,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    removeAttachment,
+    handleCartSnapshotChange
+  };
+
+  const uiStateBlock = {
+    chats,
+    chatsTotal,
+    chatsHasMore,
+    isLoadingMoreChats,
+    chatSearchQuery,
+    chatFilters,
+    activeChatId,
+    messages,
+    inputText,
+    setInputText,
+    editingMessage,
+    replyingMessage,
+    myProfile,
+    showClientProfile,
+    setShowClientProfile,
+    clientContact,
+    openCompanyProfileToken,
+    attachment,
+    attachmentPreview,
+    isAiLoading,
+    aiPrompt,
+    setAiPrompt,
+    isCopilotMode,
+    setIsCopilotMode,
+    businessData,
+    labelDefinitions,
+    quickReplies,
+    quickReplyDraft,
+    setQuickReplyDraft,
+    waModules,
+    selectedWaModule,
+    selectedCatalogModuleId,
+    selectedCatalogId,
+    waCapabilities,
+    toasts,
+    setToasts,
+    pendingOrderCartLoad,
+    isDragOver,
+    newChatDialog,
+    setNewChatDialog,
+    newChatAvailableModules,
+    availableWaModules,
+    activeCatalogModuleId,
+    activeCatalogId,
     activeTransport,
     cloudConfigured,
-    waModuleError,
-    transportError
+    selectedModeLabel,
+    isSwitchingTransport
   };
+
+  const {
+    operationPageProps,
+    loginScreenProps,
+    transportBootstrapProps,
+    saasPanelGateNode
+  } = useAppPagePropsComposer({
+    sessionBlock,
+    socketBlock,
+    handlersBlock,
+    uiStateBlock
+  });
+
+  const runtimeGate = useAppRuntimeGate({
+    saasRuntimeLoaded: Boolean(saasRuntime?.loaded),
+    saasAuthEnabled,
+    isSaasAuthenticated,
+    isConnected,
+    selectedTransport,
+    canManageSaas,
+    forceOperationLaunch,
+    isClientReady
+  });
 
   if (runtimeGate !== APP_RUNTIME_GATES.MAIN) {
     return (
