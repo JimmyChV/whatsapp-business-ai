@@ -286,6 +286,7 @@ function App() {
   const runtimeBlock = {
     saasRuntime,
     saasSession,
+    isClientReady,
     setIsConnected,
     setIsClientReady,
     setIsSwitchingTransport,

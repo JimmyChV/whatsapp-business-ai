@@ -82,6 +82,7 @@ export default function useAppChatSocketRuntime({
   forceOperationLaunch,
   forceOperationLaunchRef,
   waRuntime,
+  isClientReady,
   setIsConnected,
   setIsSwitchingTransport,
   setIsClientReady,

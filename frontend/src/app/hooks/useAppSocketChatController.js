@@ -78,6 +78,7 @@ export default function useAppSocketChatController({
     forceOperationLaunch: chatRuntimeBlock.forceOperationLaunch,
     forceOperationLaunchRef: chatRuntimeBlock.forceOperationLaunchRef,
     waRuntime: chatRuntimeBlock.waRuntime,
+    isClientReady: runtimeBlock.isClientReady,
     setIsConnected: runtimeBlock.setIsConnected,
     setIsSwitchingTransport: runtimeBlock.setIsSwitchingTransport,
     setIsClientReady: runtimeBlock.setIsClientReady,
