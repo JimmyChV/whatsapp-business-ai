@@ -1125,7 +1125,7 @@ export default function useSaasAdminPanelController({
         tenantLabelsAdminActions: labelsController.labelsActions,
         catalogAdminActions: catalogController.catalogActions,
         aiAssistantsAdminActions: aiController.aiActions,
-        plansRolesActions: plansRolesController.plansRolesActions,
+        plansRolesActions,
         tenantsUsersActions: usersController.usersActions,
         customersAdminActions: customersController.customersActions,
         // tenantsUsers (8)
