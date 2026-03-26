@@ -230,14 +230,33 @@ function registerTenantAdminConfigCatalogHttpRoutes({
 
     app.get('/api/admin/saas/tenants/:tenantId/catalogs', async (req, res) => {
         const tenantId = String(req.params?.tenantId || '').trim();
+        console.log('[Route][GET /catalogs] hit, tenantId:', req.params?.tenantId, 'user:', req.authContext?.user?.userId);
         if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-        if (!isTenantAllowedForUser(req, tenantId)
-            || !hasAnyPermission(req, [
-                accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE,
-                accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ,
-                accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
-                accessPolicyService.PERMISSIONS.TENANT_MODULES_READ
-            ])) {
+        const requiredCatalogPermissions = [
+            accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE,
+            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ,
+            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
+            accessPolicyService.PERMISSIONS.TENANT_MODULES_READ
+        ];
+        const tenantAllowed = isTenantAllowedForUser(req, tenantId);
+        const hasRequiredPermission = hasAnyPermission(req, requiredCatalogPermissions);
+        if (!tenantAllowed || !hasRequiredPermission) {
+            const memberships = Array.isArray(req?.authContext?.user?.memberships)
+                ? req.authContext.user.memberships
+                : [];
+            const permissions = Array.isArray(req?.authContext?.user?.permissions)
+                ? req.authContext.user.permissions
+                : [];
+            console.log('[Route][GET /catalogs][guard-result]', {
+                tenantId,
+                userId: String(req?.authContext?.user?.userId || '').trim() || null,
+                tenantAllowed,
+                hasRequiredPermission,
+                membershipCount: memberships.length,
+                permissionsCount: permissions.length,
+                requiredPermissions: requiredCatalogPermissions,
+                permissions
+            });
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
