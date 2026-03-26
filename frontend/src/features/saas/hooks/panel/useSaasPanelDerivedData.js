@@ -6,9 +6,21 @@ import {
     normalizeTenantAiAssistantItem
 } from '../../helpers';
 
+const CUSTOMER_TRACE = Boolean(import.meta.env?.DEV);
+
 function resolveCustomerId(value = null) {
     if (!value || typeof value !== 'object') return '';
-    return String(value.customerId || value.customer_id || value.id || '').trim();
+    return String(
+        value.customerId
+        || value.customer_id
+        || value.customerid
+        || value.id
+        || ''
+    ).trim();
+}
+
+function normalizeCustomerMatchId(value = '') {
+    return String(value || '').trim().toUpperCase();
 }
 
 export default function useSaasPanelDerivedData({
@@ -68,15 +80,77 @@ export default function useSaasPanelDerivedData({
         });
     }, [customers, customerSearch]);
 
-    const selectedCustomer = useMemo(
-        () => {
-            const cleanSelectedId = String(selectedCustomerId || '').trim();
-            if (!cleanSelectedId) return null;
-            return (Array.isArray(customers) ? customers : [])
-                .find((item) => resolveCustomerId(item) === cleanSelectedId) || null;
-        },
-        [customers, selectedCustomerId]
-    );
+    const selectedCustomer = useMemo(() => {
+        const cleanSelectedId = String(selectedCustomerId || '').trim();
+        const normalizedSelectedId = normalizeCustomerMatchId(cleanSelectedId);
+        const source = Array.isArray(customers) ? customers : [];
+
+        if (CUSTOMER_TRACE) {
+            // eslint-disable-next-line no-console
+            console.log('[Derived][Customers][selectedCustomer][input]', {
+                selectedCustomerId: cleanSelectedId,
+                normalizedSelectedCustomerId: normalizedSelectedId,
+                customersLength: source.length,
+                first3Items: source.slice(0, 3).map((item) => ({
+                    customerId: item?.customerId ?? null,
+                    customer_id: item?.customer_id ?? null,
+                    id: item?.id ?? null,
+                    contactName: item?.contactName ?? null,
+                    firstName: item?.firstName ?? null,
+                    lastName: item?.lastName ?? null,
+                    phone: item?.phone ?? item?.phoneE164 ?? null,
+                    tenantId: item?.tenantId ?? item?.tenant_id ?? null,
+                    resolvedId: resolveCustomerId(item),
+                    normalizedResolvedId: normalizeCustomerMatchId(resolveCustomerId(item))
+                }))
+            });
+        }
+
+        if (!normalizedSelectedId) {
+            if (CUSTOMER_TRACE) {
+                // eslint-disable-next-line no-console
+                console.log('[Derived][Customers][selectedCustomer][result]', {
+                    selectedCustomerId: cleanSelectedId,
+                    matched: false,
+                    reason: 'selected-id-empty'
+                });
+            }
+            return null;
+        }
+
+        const match = source.find((item, index) => {
+            const resolvedId = resolveCustomerId(item);
+            const normalizedResolvedId = normalizeCustomerMatchId(resolvedId);
+            const isMatch = normalizedResolvedId === normalizedSelectedId;
+            if (CUSTOMER_TRACE) {
+                // eslint-disable-next-line no-console
+                console.log('[Derived][Customers][selectedCustomer][matcher]', {
+                    index,
+                    customerId: item?.customerId ?? null,
+                    customer_id: item?.customer_id ?? null,
+                    id: item?.id ?? null,
+                    resolvedId,
+                    normalizedResolvedId,
+                    target: normalizedSelectedId,
+                    isMatch
+                });
+            }
+            return isMatch;
+        }) || null;
+
+        if (CUSTOMER_TRACE) {
+            // eslint-disable-next-line no-console
+            console.log('[Derived][Customers][selectedCustomer][result]', {
+                selectedCustomerId: cleanSelectedId,
+                normalizedSelectedCustomerId: normalizedSelectedId,
+                matched: Boolean(match),
+                matchedResolvedId: match ? resolveCustomerId(match) : '',
+                matchedContactName: match?.contactName || null
+            });
+        }
+
+        return match;
+    }, [customers, selectedCustomerId]);
 
     const selectedWaModule = useMemo(
         () => (waModules || []).find((item) => String(item?.moduleId || '') === String(selectedWaModuleId || '')) || null,
