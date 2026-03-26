@@ -30,6 +30,16 @@ export default function useChatSidebarActions({
   chats = [],
   setPendingOrderCartLoad
 } = {}) {
+  const emitQuickRepliesRequest = (moduleId = '') => {
+    const cleanModuleId = String(moduleId || '').trim().toLowerCase();
+    if (typeof requestQuickRepliesForModule === 'function') {
+      requestQuickRepliesForModule(cleanModuleId);
+      return;
+    }
+    if (!socket?.connected) return;
+    socket.emit('get_quick_replies', cleanModuleId ? { moduleId: cleanModuleId } : {});
+  };
+
   const handleSelectWaModule = (moduleId = '') => {
     const safeModuleId = String(moduleId || '').trim();
     if (!safeModuleId) return;
@@ -50,7 +60,7 @@ export default function useChatSidebarActions({
     setWaModuleError('');
 
     if (isConnected) {
-      requestQuickRepliesForModule(nextModule.moduleId);
+      emitQuickRepliesRequest(nextModule.moduleId);
       socket.emit('set_wa_module', { moduleId: nextModule.moduleId });
       return;
     }
@@ -86,7 +96,7 @@ export default function useChatSidebarActions({
       }
     }));
     if (isConnected) {
-      requestQuickRepliesForModule(safeModuleId);
+      emitQuickRepliesRequest(safeModuleId);
       emitScopedBusinessDataRequest({ moduleId: safeModuleId, catalogId: '' });
     }
   };

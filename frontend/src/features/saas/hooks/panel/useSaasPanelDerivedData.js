@@ -6,6 +6,21 @@ import {
     normalizeTenantAiAssistantItem
 } from '../../helpers';
 
+function resolveCustomerId(value = null) {
+    if (!value || typeof value !== 'object') return '';
+    return String(
+        value.customerId
+        || value.customer_id
+        || value.customerid
+        || value.id
+        || ''
+    ).trim();
+}
+
+function normalizeCustomerMatchId(value = '') {
+    return String(value || '').trim().toUpperCase();
+}
+
 export default function useSaasPanelDerivedData({
     customerSearch = '',
     customers = [],
@@ -48,7 +63,7 @@ export default function useSaasPanelDerivedData({
         return sorted.filter((item) => {
             const profile = item?.profile && typeof item.profile === 'object' ? item.profile : {};
             const haystack = [
-                item?.customerId,
+                resolveCustomerId(item),
                 item?.contactName,
                 item?.phoneE164,
                 item?.phoneAlt,
@@ -63,10 +78,20 @@ export default function useSaasPanelDerivedData({
         });
     }, [customers, customerSearch]);
 
-    const selectedCustomer = useMemo(
-        () => (Array.isArray(customers) ? customers : []).find((item) => String(item?.customerId || '').trim() === String(selectedCustomerId || '').trim()) || null,
-        [customers, selectedCustomerId]
-    );
+    const selectedCustomer = useMemo(() => {
+        const cleanSelectedId = String(selectedCustomerId || '').trim();
+        const normalizedSelectedId = normalizeCustomerMatchId(cleanSelectedId);
+        const source = Array.isArray(customers) ? customers : [];
+        if (!normalizedSelectedId) return null;
+
+        const match = source.find((item) => {
+            const resolvedId = resolveCustomerId(item);
+            const normalizedResolvedId = normalizeCustomerMatchId(resolvedId);
+            return normalizedResolvedId === normalizedSelectedId;
+        }) || null;
+
+        return match;
+    }, [customers, selectedCustomerId]);
 
     const selectedWaModule = useMemo(
         () => (waModules || []).find((item) => String(item?.moduleId || '') === String(selectedWaModuleId || '')) || null,

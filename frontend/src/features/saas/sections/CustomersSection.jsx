@@ -1,5 +1,10 @@
 import React from 'react';
 
+function resolveCustomerId(value = null) {
+    if (!value || typeof value !== 'object') return '';
+    return String(value.customerId || value.customer_id || value.id || '').trim();
+}
+
 function CustomersSection(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const {
@@ -32,6 +37,7 @@ function CustomersSection(props = {}) {
     customerCsvText,
     setCustomerCsvText
     } = context;
+
     if (!isCustomersSection) {
         return null;
     }
@@ -68,18 +74,21 @@ function CustomersSection(props = {}) {
                                             <p>No hay clientes para esta empresa.</p>
                                         </div>
                                     )}
-                                    {!tenantScopeLocked && filteredCustomers.map((customer) => (
-                                        <button
-                                            key={customer.customerId}
-                                            type="button"
-                                            className={("saas-admin-list-item saas-admin-list-item--button " + ((selectedCustomerId === customer.customerId && customerPanelMode !== 'create') ? 'active' : '')).trim()}
-                                            onClick={() => openCustomerView(customer.customerId)}
-                                        >
-                                            <strong>{customer.contactName || customer.customerId}</strong>
-                                            <small>{customer.phoneE164 || customer.email || '-'}</small>
-                                            <small>{customer.moduleId ? ('Modulo: ' + customer.moduleId) : 'Sin modulo'} | {customer.isActive === false ? 'inactivo' : 'activo'}</small>
-                                        </button>
-                                    ))}
+                                    {!tenantScopeLocked && filteredCustomers.map((customer, index) => {
+                                        const customerId = resolveCustomerId(customer);
+                                        return (
+                                            <button
+                                                key={customerId || customer.phoneE164 || customer.email || customer.contactName || `customer-item-${index}`}
+                                                type="button"
+                                                className={("saas-admin-list-item saas-admin-list-item--button " + ((selectedCustomerId === customerId && customerPanelMode !== 'create') ? 'active' : '')).trim()}
+                                                onClick={() => openCustomerView(customerId || customer)}
+                                            >
+                                                <strong>{customer.contactName || customerId || '-'}</strong>
+                                                <small>{customer.phoneE164 || customer.email || '-'}</small>
+                                                <small>{customer.moduleId ? ('Modulo: ' + customer.moduleId) : 'Sin modulo'} | {customer.isActive === false ? 'inactivo' : 'activo'}</small>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </aside>
 

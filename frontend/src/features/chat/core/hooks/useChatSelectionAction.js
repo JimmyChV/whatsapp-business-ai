@@ -27,6 +27,16 @@ export default function useChatSelectionAction({
   setChats,
   chatIdsReferSameScope
 } = {}) {
+  const emitQuickRepliesRequest = (moduleId = '') => {
+    const cleanModuleId = String(moduleId || '').trim().toLowerCase();
+    if (typeof requestQuickRepliesForModule === 'function') {
+      requestQuickRepliesForModule(cleanModuleId);
+      return;
+    }
+    if (!socket?.connected) return;
+    socket.emit('get_quick_replies', cleanModuleId ? { moduleId: cleanModuleId } : {});
+  };
+
   const handleChatSelect = (chatId, options = {}) => {
     if (!chatId) return;
     const clearSearch = Boolean(options?.clearSearch);
@@ -78,7 +88,7 @@ export default function useChatSelectionAction({
       }
 
       if (isConnected) {
-        requestQuickRepliesForModule(resolvedScopeModuleId);
+        emitQuickRepliesRequest(resolvedScopeModuleId);
         if (resolvedScopeModuleId !== currentWaModuleId) {
           socket.emit('set_wa_module', { moduleId: resolvedScopeModuleId });
         } else {

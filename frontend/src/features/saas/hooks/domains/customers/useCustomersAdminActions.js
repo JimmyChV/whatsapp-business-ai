@@ -1,5 +1,12 @@
 import { normalizeCustomerFormFromItem } from '../../../helpers';
 
+function resolveCustomerId(value = '') {
+    if (value && typeof value === 'object') {
+        return String(value.customerId || value.customer_id || value.id || '').trim();
+    }
+    return String(value || '').trim();
+}
+
 export default function useCustomersAdminActions({
     selectedCustomer = null,
     customerImportModuleId = '',
@@ -18,7 +25,7 @@ export default function useCustomersAdminActions({
     };
 
     const openCustomerView = (customerId) => {
-        const cleanCustomerId = String(customerId || '').trim();
+        const cleanCustomerId = resolveCustomerId(customerId);
         if (!cleanCustomerId) return;
         setSelectedCustomerId(cleanCustomerId);
         setCustomerPanelMode('view');

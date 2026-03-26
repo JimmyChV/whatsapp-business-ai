@@ -1,4 +1,4 @@
-﻿function registerTenantWaModuleAdminHttpRoutes({
+function registerTenantWaModuleAdminHttpRoutes({
     app,
     waModuleService,
     sanitizeWaModulePayload,
@@ -71,4 +71,3 @@
 module.exports = {
     registerTenantWaModuleAdminHttpRoutes
 };
-

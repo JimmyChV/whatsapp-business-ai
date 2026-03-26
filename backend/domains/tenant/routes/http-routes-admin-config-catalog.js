@@ -231,13 +231,15 @@ function registerTenantAdminConfigCatalogHttpRoutes({
     app.get('/api/admin/saas/tenants/:tenantId/catalogs', async (req, res) => {
         const tenantId = String(req.params?.tenantId || '').trim();
         if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-        if (!isTenantAllowedForUser(req, tenantId)
-            || !hasAnyPermission(req, [
-                accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE,
-                accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ,
-                accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
-                accessPolicyService.PERMISSIONS.TENANT_MODULES_READ
-            ])) {
+        const requiredCatalogPermissions = [
+            accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE,
+            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ,
+            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
+            accessPolicyService.PERMISSIONS.TENANT_MODULES_READ
+        ];
+        const tenantAllowed = isTenantAllowedForUser(req, tenantId);
+        const hasRequiredPermission = hasAnyPermission(req, requiredCatalogPermissions);
+        if (!tenantAllowed || !hasRequiredPermission) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 

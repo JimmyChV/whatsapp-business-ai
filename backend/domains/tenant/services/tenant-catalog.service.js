@@ -402,11 +402,18 @@ async function saveStoreToPostgres(tenantId = DEFAULT_TENANT_ID, store = {}, { s
 
 async function loadStore(tenantId = DEFAULT_TENANT_ID) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
-    if (getStorageDriver() === 'postgres') {
-        await ensurePostgresSchema();
-        return loadStoreFromPostgres(cleanTenantId);
+    const driver = getStorageDriver();
+    try {
+        if (driver === 'postgres') {
+            await ensurePostgresSchema();
+            const store = await loadStoreFromPostgres(cleanTenantId);
+            return store;
+        }
+        const store = await loadStoreFromFile(cleanTenantId);
+        return store;
+    } catch (error) {
+        throw error;
     }
-    return loadStoreFromFile(cleanTenantId);
 }
 
 async function saveStore(tenantId = DEFAULT_TENANT_ID, store = {}) {
@@ -426,47 +433,60 @@ async function listCatalogs(tenantId = DEFAULT_TENANT_ID, {
     includeInactive = true,
     runtime = false
 } = {}) {
-    const store = await loadStore(tenantId);
-    return (Array.isArray(store.catalogs) ? store.catalogs : [])
-        .filter((catalog) => includeInactive || catalog.isActive !== false)
-        .sort((a, b) => {
-            if (a.isDefault && !b.isDefault) return -1;
-            if (!a.isDefault && b.isDefault) return 1;
-            return String(a.name || a.catalogId).localeCompare(String(b.name || b.catalogId), 'es', { sensitivity: 'base' });
-        })
-        .map((catalog) => applyRuntimeView(catalog, runtime));
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    try {
+        const store = await loadStore(cleanTenantId);
+        const result = (Array.isArray(store.catalogs) ? store.catalogs : [])
+            .filter((catalog) => includeInactive || catalog.isActive !== false)
+            .sort((a, b) => {
+                if (a.isDefault && !b.isDefault) return -1;
+                if (!a.isDefault && b.isDefault) return 1;
+                return String(a.name || a.catalogId).localeCompare(String(b.name || b.catalogId), 'es', { sensitivity: 'base' });
+            })
+            .map((catalog) => applyRuntimeView(catalog, runtime));
+        return result;
+    } catch (error) {
+        throw error;
+    }
 }
 
 async function ensureDefaultCatalog(tenantId = DEFAULT_TENANT_ID) {
-    const store = await loadStore(tenantId);
-    const catalogs = Array.isArray(store.catalogs) ? [...store.catalogs] : [];
-    if (catalogs.length > 0) {
-        const hasDefault = catalogs.some((entry) => entry?.isDefault === true);
-        if (!hasDefault) {
-            catalogs[0].isDefault = true;
-            await saveStore(tenantId, { catalogs });
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    try {
+        const store = await loadStore(cleanTenantId);
+        const catalogs = Array.isArray(store.catalogs) ? [...store.catalogs] : [];
+        if (catalogs.length > 0) {
+            const hasDefault = catalogs.some((entry) => entry?.isDefault === true);
+            if (!hasDefault) {
+                catalogs[0].isDefault = true;
+                await saveStore(cleanTenantId, { catalogs });
+            }
+            const items = await listCatalogs(cleanTenantId, { includeInactive: true, runtime: false });
+            return items;
         }
-        return listCatalogs(tenantId, { includeInactive: true, runtime: false });
+
+        const defaultCatalogId = createUniqueCatalogId(catalogs);
+        const created = normalizeCatalog({
+            catalogId: defaultCatalogId,
+            name: 'Catalogo principal',
+            sourceType: 'local',
+            isActive: true,
+            isDefault: true,
+            config: {
+                local: { enabled: true }
+            }
+        }, {
+            fallbackId: defaultCatalogId,
+            previousConfig: {}
+        });
+
+        catalogs.push(created);
+        await saveStore(cleanTenantId, { catalogs });
+        const items = await listCatalogs(cleanTenantId, { includeInactive: true, runtime: false });
+        return items;
+    } catch (error) {
+        throw error;
     }
-
-    const defaultCatalogId = createUniqueCatalogId(catalogs);
-    const created = normalizeCatalog({
-        catalogId: defaultCatalogId,
-        name: 'Catalogo principal',
-        sourceType: 'local',
-        isActive: true,
-        isDefault: true,
-        config: {
-            local: { enabled: true }
-        }
-    }, {
-        fallbackId: defaultCatalogId,
-        previousConfig: {}
-    });
-
-    catalogs.push(created);
-    await saveStore(tenantId, { catalogs });
-    return listCatalogs(tenantId, { includeInactive: true, runtime: false });
 }
 
 async function getCatalog(tenantId = DEFAULT_TENANT_ID, catalogId = '', { runtime = false } = {}) {

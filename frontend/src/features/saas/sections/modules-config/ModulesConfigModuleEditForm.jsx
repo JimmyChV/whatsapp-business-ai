@@ -29,6 +29,11 @@ export default function ModulesConfigModuleEditForm({
     openConfigModuleView,
     clearConfigSelection
 }) {
+    const handleModuleSave = () => {
+        if (typeof saveWaModule !== 'function') return;
+        saveWaModule();
+    };
+
     return (
         <>
             <div className="saas-admin-form-row">
@@ -370,7 +375,7 @@ export default function ModulesConfigModuleEditForm({
                 <button
                     type="button"
                     disabled={busy || !settingsTenantId || !waModuleForm.name.trim() || !canEditModules}
-                    onClick={saveWaModule}
+                    onClick={handleModuleSave}
                 >
                     {waModulePanelMode === 'create' ? 'Guardar modulo' : 'Actualizar modulo'}
                 </button>

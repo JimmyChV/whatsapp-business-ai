@@ -1,51 +1,29 @@
-import { lazy, useState, useEffect } from 'react';
+import { lazy, useEffect, useRef, useCallback } from 'react';
 
-import { API_URL, CHAT_PAGE_SIZE, SOCKET_AUTH_TOKEN, TRANSPORT_STORAGE_KEY } from './config/runtime';
+import { API_URL } from './config/runtime';
 import { persistSaasSession } from './features/auth/helpers/saasSessionStorage';
 import {
-  createSocketClient,
-  useNewChatDialog,
-  useScopedBusinessRequests,
-  useSocketConnectionAuthEffect,
-  useWorkspaceNavigation,
-  useTransportSelectionActions,
-  useChatMessageActions,
-  useAttachmentActions,
-  useChatSidebarActions,
-  useChatMessageUiActions,
-  useChatSelectionAction,
-  useWorkspaceResetOnTenantChange,
-  useAppDerivedChatState,
-  useGlobalEscapeToCloseChat,
   useOperationWorkspaceState,
-  requestAiSuggestionForChat,
   normalizeWaModules,
   resolveSelectedWaModule,
-  normalizeDigits,
-  parseScopedChatId,
-  chatIdsReferSameScope,
-  sanitizeDisplayText,
-  normalizeChatFilters,
-  normalizeQuickReplyDraft
+  chatIdsReferSameScope
 } from './features/chat/core';
-import { useSaasRecoveryFlow } from './features/auth/hooks/useSaasRecoveryFlow';
-import useSaasRuntimeBootstrap from './features/auth/hooks/useSaasRuntimeBootstrap';
-import useSaasSessionAutoRefresh from './features/auth/hooks/useSaasSessionAutoRefresh';
-import { useSaasSessionActions } from './features/auth/hooks/useSaasSessionActions';
-import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHelpers';
 import OperationPage from './pages/OperationPage';
-import { useSaasPanelVisibilityController } from './features/saas/hooks';
-import { useSaasTenantScopeContext } from './features/saas/hooks/domains/tenants/useSaasTenantScopeContext';
-import { buildOperationPageProps } from './app/helpers/operationPageProps';
 import { APP_RUNTIME_GATES } from './app/helpers/runtimeGate.helpers';
-import { useAppSessionTransportState, useAppRuntimeGate, useAppChatSocketRuntime } from './app/hooks';
+import {
+  useAppSessionTransportState,
+  useAppRuntimeGate,
+  useAppPagePropsComposer,
+  useAppSocketChatController,
+  useAppOperationHandlers,
+  useAppRuntimeSessionController
+} from './app/hooks';
+import { appSocketSingleton } from './app/hooks/useAppSocketChatController';
 import AppRuntimeGate from './app/components/AppRuntimeGate';
 
 import './index.css';
 
 const SaasPanelPage = lazy(() => import('./pages/SaasPanelPage'));
-const socket = createSocketClient(API_URL, SOCKET_AUTH_TOKEN);
-
 
 function App() {
   const {
@@ -204,6 +182,13 @@ function App() {
     requestedWaTenantFromUrl,
     tenantScopeId
   });
+  const handleChatSelectRef = useRef(null);
+  const resetWorkspaceStateRef = useRef(() => {});
+  const resetWorkspaceState = useCallback((...args) => {
+    if (typeof resetWorkspaceStateRef.current === 'function') {
+      resetWorkspaceStateRef.current(...args);
+    }
+  }, []);
 
   // --------------------------------------------------------------
   // Notifications
@@ -214,54 +199,87 @@ function App() {
     }
   }, []);
 
-
-  const {
-    buildApiHeaders,
-    resolveSessionSenderIdentity,
-    normalizeSaasSessionPayload,
-    refreshSaasSession
-  } = useSaasApiSessionHelpers({
-    apiUrl: API_URL,
-    saasSessionRef,
-    saasRuntimeRef,
-    setSaasSession
-  });
-
-  const {
-    recoveryStep,
-    recoveryEmail,
-    setRecoveryEmail,
-    recoveryCode,
-    setRecoveryCode,
-    recoveryPassword,
-    setRecoveryPassword,
-    recoveryPasswordConfirm,
-    setRecoveryPasswordConfirm,
-    showRecoveryPassword,
-    setShowRecoveryPassword,
-    recoveryBusy,
-    recoveryError,
-    setRecoveryError,
-    recoveryNotice,
-    recoveryDebugCode,
-    resetRecoveryFlow,
-    openRecoveryFlow,
-    handleRecoveryRequest,
-    handleRecoveryVerify,
-    handleRecoveryReset
-  } = useSaasRecoveryFlow({
+  const sessionStateBlock = {
+    isConnected,
+    setIsConnected,
+    setQrCode,
+    isClientReady,
+    setIsClientReady,
+    selectedTransport,
+    setSelectedTransport,
+    waRuntime,
+    setWaRuntime,
+    setTransportError,
+    setIsSwitchingTransport,
+    saasRuntime,
+    setSaasRuntime,
+    saasSession,
+    setSaasSession,
+    setSaasAuthBusy,
+    setSaasAuthError,
+    setTenantSwitchBusy,
+    setTenantSwitchError,
+    showSaasAdminPanel,
+    setShowSaasAdminPanel,
     loginEmail,
     setLoginEmail,
+    loginPassword,
     setLoginPassword,
     setSaasAuthNotice,
-    buildApiHeaders
-  });
+    setForceOperationLaunchBypass,
+    forceOperationLaunch,
+    requestedWaTenantFromUrl,
+    tenantScopeId
+  };
+
+  const workspaceSessionRefsBlock = {
+    setWaModules,
+    setSelectedWaModule,
+    setSelectedCatalogModuleId,
+    setWaModuleError,
+    setAiSuggestion,
+    setIsAiLoading,
+    saasSessionRef,
+    saasRuntimeRef,
+    canManageSaasRef,
+    requestedWaTenantFromUrlRef,
+    launchTenantAppliedRef,
+    saasAdminAutoOpenRef,
+    tenantScopeRef
+  };
+
+  const sessionControllerInput = {
+    sessionStateBlock,
+    workspaceSessionRefsBlock,
+    socketLifecycleBlock: {
+      socket: appSocketSingleton,
+      resetWorkspaceState
+    },
+    normalizersBlock: {
+      apiUrl: API_URL,
+      normalizeWaModules,
+      resolveSelectedWaModule
+    }
+  };
 
   const {
-    requestQuickRepliesForModule,
-    emitScopedBusinessDataRequest
-  } = useScopedBusinessRequests({
-    socket,
+    apiSessionExports,
+    sessionActions,
+    tenantScopeExports,
+    recoveryExports,
+    sessionRuntimeBlock: appSessionRuntimeBlock
+  } = useAppRuntimeSessionController(sessionControllerInput);
+  const runtimeBlock = {
+    saasRuntime,
+    saasSession,
+    isClientReady,
+    setIsConnected,
+    setIsClientReady,
+    setIsSwitchingTransport,
+    setTransportError
+  };
+
+  const businessScopeBlock = {
     selectedCatalogModuleIdRef,
     selectedWaModuleRef,
     selectedCatalogIdRef,
@@ -270,58 +288,14 @@ function App() {
     businessDataScopeCacheRef,
     businessDataRequestSeqRef,
     setBusinessData
-  });
-  useSaasRuntimeBootstrap({
-    apiUrl: API_URL,
-    buildApiHeaders,
-    refreshSaasSession,
-    saasSessionRef,
-    normalizeWaModules,
-    resolveSelectedWaModule,
-    setSaasSession,
-    setWaModules,
-    setSelectedWaModule,
-    setWaModuleError,
-    setSaasRuntime,
-    setLoginEmail,
-    setSaasAuthBusy,
-    setSaasAuthError
-  });
+  };
 
-  useSaasSessionAutoRefresh({
-    authEnabled: Boolean(saasRuntime?.authEnabled),
-    refreshToken: String(saasSession?.refreshToken || ''),
-    accessExpiresAtUnix: Number(saasSession?.accessExpiresAtUnix || 0),
-    saasSessionRef,
-    refreshSaasSession,
-    setSaasSession,
-    setSaasAuthError
-  });
-
-
-  useSocketConnectionAuthEffect({
-    socket,
-    saasRuntime,
-    saasSession,
-    selectedWaModuleRef,
-    selectedWaModuleId: selectedWaModule?.moduleId,
-    socketAuthToken: SOCKET_AUTH_TOKEN,
-    setIsConnected,
-    setIsClientReady
-  });
-
-  const { requestChatsPage } = useAppChatSocketRuntime({
-    socket,
-    chatPageSize: CHAT_PAGE_SIZE,
-    requestQuickRepliesForModule,
-    emitScopedBusinessDataRequest,
-
+  const chatRuntimeBlock = {
     messages,
     messagesEndRef,
     prevMessagesMetaRef,
     shouldInstantScrollRef,
     suppressSmoothScrollUntilRef,
-
     activeChatId,
     activeChatIdRef,
     chats,
@@ -332,7 +306,6 @@ function App() {
     chatFiltersRef,
     selectedTransport,
     selectedTransportRef,
-    transportStorageKey: TRANSPORT_STORAGE_KEY,
     selectedWaModule,
     selectedWaModuleRef,
     waModules,
@@ -349,19 +322,13 @@ function App() {
     forceOperationLaunch,
     forceOperationLaunchRef,
     waRuntime,
-    setIsConnected,
-    setIsSwitchingTransport,
-    setIsClientReady,
-    setTransportError,
     showClientProfile,
     clientProfilePanelRef,
     setShowClientProfile,
-
-    socketPagingRef: chatPagingRef,
+    chatPagingRef,
     setChatsHasMore,
     setChatsTotal,
     setIsLoadingMoreChats,
-
     setWaModules,
     setSelectedWaModule,
     setWaModuleError,
@@ -370,11 +337,9 @@ function App() {
     setSelectedTransport,
     requestedWaModuleFromUrlRef,
     canManageSaasRef,
-
     setMyProfile,
     setWaCapabilities,
     setWaRuntime,
-
     businessDataRequestSeqRef,
     businessDataResponseSeqRef,
     businessDataScopeCacheRef,
@@ -382,22 +347,37 @@ function App() {
     setLabelDefinitions,
     businessData,
     setQuickReplies,
-
     setMessages,
     setEditingMessage,
     setChats,
     chatIdsReferSameScope,
-
     setAiSuggestion,
     setIsAiLoading,
     setQrCode,
     setReplyingMessage,
     setActiveChatId,
+    fileInputRef
+  };
 
-    handleChatSelect,
-    resolveSessionSenderIdentity,
+  const callbacksBlock = {
+    resolveSessionSenderIdentity: apiSessionExports.resolveSessionSenderIdentity,
     setClientContact,
     setToasts
+  };
+
+  const {
+    socket,
+    fileInputRef: socketFileInputRef,
+    messagesEndRef: socketMessagesEndRef,
+    clientProfilePanelRef: socketClientProfilePanelRef,
+    requestChatsPage,
+    emitScopedBusinessDataRequest
+  } = useAppSocketChatController({
+    runtimeBlock,
+    businessScopeBlock,
+    chatRuntimeBlock,
+    callbacksBlock,
+    handleChatSelectRef
   });
 
   // --------------------------------------------------------------
@@ -410,456 +390,254 @@ function App() {
     }
   }, [isAiLoading, aiSuggestion]);
 
-  // --------------------------------------------------------------
-  // Handlers
-  // --------------------------------------------------------------
-  const { resetWorkspaceState } = useWorkspaceResetOnTenantChange({
-    tenantScopeId,
-    tenantScopeRef,
-    setIsClientReady,
-    setQrCode,
-    setSelectedTransport,
-    setWaModules,
-    setSelectedWaModule,
-    setSelectedCatalogModuleId,
-    setSelectedCatalogId,
-    setChats,
-    setChatsTotal,
-    setChatsHasMore,
-    chatPagingRef,
-    setIsLoadingMoreChats,
-    setMessages,
-    setActiveChatId,
-    activeChatIdRef,
-    setEditingMessage,
-    setReplyingMessage,
-    setShowClientProfile,
-    setClientContact,
-    setBusinessData,
-    setQuickReplies,
-    setWaModuleError,
-    setPendingOrderCartLoad,
-    setToasts,
-    setInputText,
-    setAttachment,
-    setAttachmentPreview,
-    setIsDragOver
-  });
-
-  const {
-    handleSaasLogin,
-    handleSaasLogout,
-    handleSwitchTenant
-  } = useSaasSessionActions({
-    recoveryStep,
-    loginEmail,
-    loginPassword,
-    buildApiHeaders,
-    normalizeSaasSessionPayload,
-    setSaasAuthBusy,
-    setSaasAuthError,
-    setSaasAuthNotice,
-    setTenantSwitchError,
-    setRecoveryError,
-    setSaasSession,
-    setForceOperationLaunchBypass,
-    setSelectedTransport,
-    setShowSaasAdminPanel,
-    setLoginPassword,
-    setLoginEmail,
-    resetRecoveryFlow,
-    saasSessionRef,
-    saasRuntimeRef,
-    setTenantSwitchBusy,
-    setWaModules,
-    setSelectedWaModule,
-    setSelectedCatalogModuleId,
-    socket,
-    setIsConnected,
-    resetWorkspaceState,
-    setWaModuleError,
-    setSaasRuntime
-  });
-
-  const { handleChatSelect } = useChatSelectionAction({
-    chatsRef,
-    chatSearchRef,
-    setChatSearchQuery,
-    requestChatsPage,
-    parseScopedChatId,
-    selectedCatalogModuleIdRef,
-    selectedCatalogIdRef,
-    selectedWaModuleRef,
-    setSelectedCatalogModuleId,
-    setSelectedCatalogId,
-    isConnected,
-    requestQuickRepliesForModule,
-    socket,
-    emitScopedBusinessDataRequest,
-    activeChatIdRef,
-    setActiveChatId,
-    shouldInstantScrollRef,
-    suppressSmoothScrollUntilRef,
-    prevMessagesMetaRef,
-    setMessages,
-    setEditingMessage,
-    setReplyingMessage,
-    setShowClientProfile,
-    setClientContact,
-    setQuickReplyDraft,
-    setChats,
-    chatIdsReferSameScope
-  });
-
-  const {
-    removeAttachment,
-    handleFileChange,
-    handleDragOver,
-    handleDragLeave,
-    handleDrop
-  } = useAttachmentActions({
-    setAttachment,
-    setAttachmentPreview,
-    setIsDragOver
-  });
-
-  const {
-    handleExitActiveChat,
-    handleSendMessage
-  } = useChatMessageActions({
-    socket,
-    activeChatId,
-    activeChatIdRef,
-    chatsRef,
-    inputText,
-    editingMessage,
-    waCapabilities,
-    attachment,
-    quickReplyDraft,
-    replyingMessage,
-    requestAiSuggestion,
-    normalizeDigits,
-    normalizeQuickReplyDraft,
-    prevMessagesMetaRef,
-    suppressSmoothScrollUntilRef,
-    setActiveChatId,
-    setMessages,
-    setEditingMessage,
-    setReplyingMessage,
-    setShowClientProfile,
-    setClientContact,
-    setPendingOrderCartLoad,
-    setQuickReplyDraft,
-    setInputText,
-    removeAttachment
-  });
-
-  const handleLogoutWhatsapp = () => {
-    if (!window.confirm('Cerrar sesion de WhatsApp en este equipo?')) return;
-    socket.emit('logout_whatsapp');
-  };
-
-  const {
-    openWhatsAppOperation: handleOpenWhatsAppOperation,
-    openSaasAdminWorkspace: handleOpenSaasAdminWorkspace
-  } = useWorkspaceNavigation({
-    tenantScopeId,
-    setShowSaasAdminPanel
-  });
   const saasAuthEnabled = Boolean(saasRuntime?.authEnabled);
   const isSaasAuthenticated = !saasAuthEnabled || Boolean(saasSession?.accessToken);
   const {
     availableTenantOptions,
     canSwitchTenant,
     saasUserRole,
-    canManageSaas,
-  } = useSaasTenantScopeContext({
-    saasRuntime,
-    saasSession,
-    saasAuthEnabled,
-    isSaasAuthenticated,
-  });
+    canManageSaas
+  } = tenantScopeExports;
 
-  const {
-    handleSelectTransport,
-    handleResetTransportSelection
-  } = useTransportSelectionActions({
+  const socketOpsBlock = {
     socket,
-    isConnected,
-    chatPagingRef,
-    setSelectedTransport,
-    setTransportError,
-    setIsSwitchingTransport,
-    setIsClientReady,
-    setQrCode,
-    setChats,
-    setChatsTotal,
-    setChatsHasMore,
-    setMessages,
-    setActiveChatId,
-    setEditingMessage,
-    setReplyingMessage,
-    setShowClientProfile,
-    setClientContact,
-    setWaModuleError,
-    setWaRuntime
-  });
-  const {
-    handleSelectWaModule,
-    handleSelectCatalogModule,
-    handleSelectCatalog,
-    handleUploadCatalogImage,
-    handleRefreshChats,
-    handleChatSearchChange,
-    handleChatFiltersChange,
-    handleLoadMoreChats,
-    handleCreateLabel,
-    handleOpenCompanyProfile,
-    handleToggleChatLabel,
-    handleToggleChatPinned,
-    handleLoadOrderToCart: loadOrderToCartForActiveChat
-  } = useChatSidebarActions({
-    waModules,
-    setWaModuleError,
-    setSelectedWaModule,
-    setSelectedTransport,
-    setTransportError,
-    isConnected,
-    requestQuickRepliesForModule,
-    socket,
-    emitScopedBusinessDataRequest,
-    selectedCatalogModuleIdRef,
-    selectedCatalogIdRef,
-    selectedWaModuleRef,
-    setSelectedCatalogModuleId,
-    setSelectedCatalogId,
-    setBusinessData,
-    handleSelectTransport,
-    saasSessionRef,
-    saasRuntimeRef,
-    tenantScopeId,
-    apiUrl: API_URL,
-    buildApiHeaders,
     requestChatsPage,
-    setChatSearchQuery,
-    setChatFilters,
-    normalizeChatFilters,
-    canManageSaas,
-    handleOpenSaasAdminWorkspace,
-    setOpenCompanyProfileToken,
+    emitScopedBusinessDataRequest,
+    handleChatSelectRef
+  };
+
+  const workspaceStateBlock = {
     chats,
-    setPendingOrderCartLoad
-  });
-
-  const {
-    newChatDialog,
-    setNewChatDialog,
-    newChatAvailableModules,
-    handleStartNewChat,
-    handleCancelNewChatDialog,
-    handleConfirmNewChat
-  } = useNewChatDialog({
-    waModulesRef,
-    selectedWaModuleRef,
-    chatsRef,
-    handleChatSelect,
-    socket
-  });
-
-  const {
-    handleEditMessage,
-    handleCancelEditMessage,
-    handleReplyMessage,
-    handleCancelReplyMessage,
-    handleForwardMessage,
-    handleDeleteMessage,
-    handleSendQuickReply: applyQuickReplyDraft
-  } = useChatMessageUiActions({
-    waCapabilities,
-    removeAttachment,
-    setQuickReplyDraft,
-    setEditingMessage,
-    setReplyingMessage,
-    setInputText,
-    setAttachment,
-    setAttachmentPreview,
-    sanitizeDisplayText,
-    socket,
-    activeChatIdRef
-  });
-  const handleLoadOrderToCart = (orderPayload) => {
-    loadOrderToCartForActiveChat(activeChatIdRef.current, orderPayload);
-  };
-
-  const handleSendQuickReply = (quickReply = null) => {
-    applyQuickReplyDraft(quickReply, activeChatIdRef.current, normalizeQuickReplyDraft);
-  };
-  const {
-    activeTransport,
-    cloudConfigured,
-    selectedModeLabel,
-    availableWaModules,
-    hasModuleCatalog,
-    activeCatalogModuleId,
-    activeCatalogId,
-    activeChatDetails
-  } = useAppDerivedChatState({
-    waRuntime,
-    waModules,
-    selectedCatalogModuleId,
-    selectedCatalogId,
-    selectedTransport,
-    activeChatId,
-    activeChatIdRef,
-    chats
-  });
-
-  useGlobalEscapeToCloseChat({
-    activeChatIdRef,
-    handleExitActiveChat
-  });
-
-  function requestAiSuggestion(customPromptArg) {
-    requestAiSuggestionForChat({
-      socket,
-      activeChatId,
-      activeChatDetails,
-      clientContact,
-      selectedWaModuleRef,
-      selectedCatalogModuleIdRef,
-      selectedCatalogIdRef,
-      waModulesRef,
-      businessData,
-      messages,
-      activeCartSnapshot,
-      tenantScopeRef,
-      saasRuntimeRef,
-      aiPrompt,
-      customPromptArg,
-      setAiSuggestion,
-      setIsAiLoading
-    });
-  };
-
-  useSaasPanelVisibilityController({
-    canManageSaasRef,
-    canManageSaas,
-    showSaasAdminPanel,
-    setShowSaasAdminPanel,
-    saasRuntimeLoaded: saasRuntime?.loaded,
-    saasRuntimeTenantId: saasRuntime?.tenant?.id,
-    saasAuthEnabled,
-    isSaasAuthenticated,
-    forceOperationLaunch,
-    selectedTransport,
-    setSelectedTransport,
-    saasSessionUserTenantId: saasSession?.user?.tenantId,
-    saasSessionUserId: saasSession?.user?.id,
-    saasSessionUserEmail: saasSession?.user?.email,
-    saasAdminAutoOpenRef,
-    requestedWaTenantFromUrlRef,
-    tenantScopeId,
-    availableTenantOptions,
-    handleSwitchTenant,
-    launchTenantAppliedRef,
-  });
-
-  const operationPageProps = buildOperationPageProps({
-    forceOperationLaunch,
-    socket,
-    fileInputRef,
-    handleFileChange,
-    chats,
-    activeChatId,
-    handleChatSelect,
-    myProfile,
-    businessData,
-    handleLogoutWhatsapp,
-    handleRefreshChats,
-    handleStartNewChat,
-    labelDefinitions,
-    handleCreateLabel,
-    handleLoadMoreChats,
-    chatsHasMore,
-    isLoadingMoreChats,
+    setChats,
     chatsTotal,
+    setChatsTotal,
+    chatsHasMore,
+    setChatsHasMore,
+    isLoadingMoreChats,
+    setIsLoadingMoreChats,
     chatSearchQuery,
-    handleChatSearchChange,
+    setChatSearchQuery,
     chatFilters,
-    handleChatFiltersChange,
-    handleOpenCompanyProfile,
-    saasAuthEnabled,
-    availableTenantOptions,
-    tenantScopeId,
-    tenantSwitchError,
-    handleSaasLogout,
-    canManageSaas,
-    handleOpenSaasAdminWorkspace,
-    availableWaModules,
-    clientContact,
+    setChatFilters,
+    activeChatId,
+    setActiveChatId,
     messages,
-    messagesEndRef,
-    isDragOver,
-    handleDragOver,
-    handleDragLeave,
-    handleDrop,
-    showClientProfile,
-    setShowClientProfile,
+    setMessages,
     inputText,
     setInputText,
-    handleSendMessage,
+    editingMessage,
+    setEditingMessage,
+    replyingMessage,
+    setReplyingMessage,
+    myProfile,
+    showClientProfile,
+    setShowClientProfile,
+    clientContact,
+    setClientContact,
+    openCompanyProfileToken,
+    setOpenCompanyProfileToken,
     attachment,
+    setAttachment,
     attachmentPreview,
-    removeAttachment,
-    isAiLoading,
-    requestAiSuggestion,
+    setAttachmentPreview,
     aiPrompt,
     setAiPrompt,
     isCopilotMode,
     setIsCopilotMode,
-    handleToggleChatLabel,
-    handleToggleChatPinned,
-    handleEditMessage,
-    waCapabilities,
-    handleReplyMessage,
-    handleForwardMessage,
-    handleDeleteMessage,
+    businessData,
+    setBusinessData,
+    activeCartSnapshot,
+    labelDefinitions,
+    setLabelDefinitions,
     quickReplies,
-    handleSendQuickReply,
+    setQuickReplies,
     quickReplyDraft,
     setQuickReplyDraft,
-    handleLoadOrderToCart,
-    handleCancelEditMessage,
-    handleCancelReplyMessage,
-    editingMessage,
-    replyingMessage,
-    buildApiHeaders,
-    clientProfilePanelRef,
+    waModules,
+    setWaModules,
+    selectedWaModule,
+    setSelectedWaModule,
+    selectedCatalogModuleId,
+    setSelectedCatalogModuleId,
+    selectedCatalogId,
+    setSelectedCatalogId,
+    waModuleError,
+    setWaModuleError,
+    waCapabilities,
+    setWaCapabilities,
     toasts,
     setToasts,
     pendingOrderCartLoad,
-    openCompanyProfileToken,
-    selectedCatalogModuleId: activeCatalogModuleId,
-    activeCatalogId,
-    selectedWaModule,
-    handleSelectCatalogModule,
-    handleSelectCatalog,
-    handleUploadCatalogImage,
+    setPendingOrderCartLoad,
     handleCartSnapshotChange,
-    newChatDialog,
-    setNewChatDialog,
-    newChatAvailableModules,
-    handleConfirmNewChat,
-    handleCancelNewChatDialog,
+    isDragOver,
+    setIsDragOver,
+    activeChatIdRef,
+    chatsRef,
+    chatSearchRef,
+    chatFiltersRef,
+    chatPagingRef,
+    shouldInstantScrollRef,
+    prevMessagesMetaRef,
+    suppressSmoothScrollUntilRef,
+    selectedWaModuleRef,
+    waModulesRef,
+    selectedCatalogModuleIdRef,
+    selectedCatalogIdRef
+  };
+
+  const navigationHelpersBlock = {
+    buildApiHeaders: apiSessionExports.buildApiHeaders
+  };
+
+  const recoveryBlock = {
+    openRecoveryFlow: recoveryExports.openRecoveryFlow,
+    handleRecoveryRequest: recoveryExports.handleRecoveryRequest,
+    handleRecoveryVerify: recoveryExports.handleRecoveryVerify,
+    handleRecoveryReset: recoveryExports.handleRecoveryReset,
+    resetRecoveryFlow: recoveryExports.resetRecoveryFlow
+  };
+
+  const {
+    handlersBlock: operationHandlersBlock,
+    sessionActionExports,
+    uiDerivedExports
+  } = useAppOperationHandlers({
+    socketOpsBlock,
+    sessionRuntimeBlock: appSessionRuntimeBlock,
+    workspaceStateBlock,
+    navigationHelpersBlock,
+    recoveryBlock
+  });
+
+  useEffect(() => {
+    resetWorkspaceStateRef.current = uiDerivedExports.resetWorkspaceState;
+  }, [uiDerivedExports.resetWorkspaceState]);
+
+  const sessionBlock = {
+    loginEmail,
+    setLoginEmail,
+    loginPassword,
+    setLoginPassword,
+    showLoginPassword,
+    setShowLoginPassword,
+    saasAuthBusy,
+    saasAuthError,
+    saasAuthNotice,
+    tenantSwitchError,
     showSaasAdminPanel,
     setShowSaasAdminPanel,
-    handleOpenWhatsAppOperation,
-    saasUserRole,
-    saasSession,
     requestedWaTenantFromUrl,
     requestedLaunchSource,
     requestedWaSectionFromUrl,
+    forceOperationLaunch,
+    transportError,
+    waModuleError,
+    saasRuntime,
+    availableTenantOptions,
+    canSwitchTenant,
+    saasUserRole,
+    canManageSaas,
+    buildApiHeaders: apiSessionExports.buildApiHeaders,
+    handleSaasLogin: sessionActionExports.handleSaasLogin,
+    handleSaasLogout: sessionActionExports.handleSaasLogout,
+    handleSwitchTenant: sessionActionExports.handleSwitchTenant,
+    recoveryStep: recoveryExports.recoveryStep,
+    recoveryBusy: recoveryExports.recoveryBusy,
+    recoveryError: recoveryExports.recoveryError,
+    recoveryNotice: recoveryExports.recoveryNotice,
+    recoveryDebugCode: recoveryExports.recoveryDebugCode,
+    recoveryEmail: recoveryExports.recoveryEmail,
+    setRecoveryEmail: recoveryExports.setRecoveryEmail,
+    recoveryCode: recoveryExports.recoveryCode,
+    setRecoveryCode: recoveryExports.setRecoveryCode,
+    recoveryPassword: recoveryExports.recoveryPassword,
+    setRecoveryPassword: recoveryExports.setRecoveryPassword,
+    recoveryPasswordConfirm: recoveryExports.recoveryPasswordConfirm,
+    setRecoveryPasswordConfirm: recoveryExports.setRecoveryPasswordConfirm,
+    showRecoveryPassword: recoveryExports.showRecoveryPassword,
+    setShowRecoveryPassword: recoveryExports.setShowRecoveryPassword,
+    openRecoveryFlow: recoveryExports.openRecoveryFlow,
+    handleRecoveryRequest: recoveryExports.handleRecoveryRequest,
+    handleRecoveryVerify: recoveryExports.handleRecoveryVerify,
+    handleRecoveryReset: recoveryExports.handleRecoveryReset,
+    resetRecoveryFlow: recoveryExports.resetRecoveryFlow,
+    saasAuthEnabled,
+    isSaasAuthenticated,
+    saasSession,
+    tenantScopeId,
     SaasPanelComponent: SaasPanelPage
+  };
+
+  const socketBlock = {
+    // TODO: mover a socketBlock desde useAppSocketChatController en el siguiente corte
+    socket,
+    fileInputRef: socketFileInputRef,
+    messagesEndRef: socketMessagesEndRef,
+    clientProfilePanelRef: socketClientProfilePanelRef
+  };
+
+  const uiStateBlock = {
+    chats,
+    chatsTotal,
+    chatsHasMore,
+    isLoadingMoreChats,
+    chatSearchQuery,
+    chatFilters,
+    activeChatId,
+    messages,
+    inputText,
+    setInputText,
+    editingMessage,
+    replyingMessage,
+    myProfile,
+    showClientProfile,
+    setShowClientProfile,
+    clientContact,
+    openCompanyProfileToken,
+    attachment,
+    attachmentPreview,
+    isAiLoading,
+    aiPrompt,
+    setAiPrompt,
+    isCopilotMode,
+    setIsCopilotMode,
+    businessData,
+    labelDefinitions,
+    quickReplies,
+    quickReplyDraft,
+    setQuickReplyDraft,
+    waModules,
+    selectedWaModule,
+    selectedCatalogModuleId,
+    selectedCatalogId,
+    waCapabilities,
+    toasts,
+    setToasts,
+    pendingOrderCartLoad,
+    isDragOver,
+    newChatDialog: uiDerivedExports.newChatDialog,
+    setNewChatDialog: uiDerivedExports.setNewChatDialog,
+    newChatAvailableModules: uiDerivedExports.newChatAvailableModules,
+    availableWaModules: uiDerivedExports.availableWaModules,
+    activeCatalogModuleId: uiDerivedExports.activeCatalogModuleId,
+    activeCatalogId: uiDerivedExports.activeCatalogId,
+    activeTransport: uiDerivedExports.activeTransport,
+    cloudConfigured: uiDerivedExports.cloudConfigured,
+    selectedModeLabel: uiDerivedExports.selectedModeLabel,
+    isSwitchingTransport
+  };
+
+  const {
+    operationPageProps,
+    loginScreenProps,
+    transportBootstrapProps,
+    saasPanelGateNode
+  } = useAppPagePropsComposer({
+    sessionBlock,
+    socketBlock,
+    handlersBlock: operationHandlersBlock,
+    uiStateBlock
   });
 
   const runtimeGate = useAppRuntimeGate({
@@ -872,67 +650,6 @@ function App() {
     forceOperationLaunch,
     isClientReady
   });
-
-  const loginScreenProps = {
-    loginEmail,
-    setLoginEmail,
-    loginPassword,
-    setLoginPassword,
-    showLoginPassword,
-    setShowLoginPassword,
-    saasAuthBusy,
-    saasAuthError,
-    saasAuthNotice,
-    recoveryStep,
-    recoveryBusy,
-    recoveryError,
-    recoveryNotice,
-    recoveryDebugCode,
-    recoveryEmail,
-    setRecoveryEmail,
-    recoveryCode,
-    setRecoveryCode,
-    recoveryPassword,
-    setRecoveryPassword,
-    recoveryPasswordConfirm,
-    setRecoveryPasswordConfirm,
-    showRecoveryPassword,
-    setShowRecoveryPassword,
-    handleSaasLogin,
-    openRecoveryFlow,
-    handleRecoveryRequest,
-    handleRecoveryVerify,
-    handleRecoveryReset,
-    resetRecoveryFlow
-  };
-
-  const saasPanelGateNode = (
-    <SaasPanelPage
-      isOpen
-      onClose={handleSaasLogout}
-      onLogout={handleSaasLogout}
-      onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
-      buildApiHeaders={buildApiHeaders}
-      activeTenantId={tenantScopeId}
-      canManageSaas={canManageSaas}
-      userRole={saasUserRole}
-      isSuperAdmin={Boolean(saasSession?.user?.isSuperAdmin)}
-      currentUser={saasSession?.user || null}
-      preferredTenantId={requestedWaTenantFromUrl || ''}
-      launchSource={requestedLaunchSource || ''}
-      initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
-      resetKeys={[tenantScopeId, saasSession?.user?.userId, requestedWaTenantFromUrl, requestedLaunchSource]}
-    />
-  );
-
-  const transportBootstrapProps = {
-    selectedModeLabel,
-    isSwitchingTransport,
-    activeTransport,
-    cloudConfigured,
-    waModuleError,
-    transportError
-  };
 
   if (runtimeGate !== APP_RUNTIME_GATES.MAIN) {
     return (

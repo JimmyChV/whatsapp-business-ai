@@ -24,11 +24,15 @@ function createRequestAccessHelpers({
     function hasPermission(req = {}, permission = '') {
         const key = String(permission || '').trim();
         if (!key) return false;
-        if (!authService.isAuthEnabled()) return true;
+        if (!authService.isAuthEnabled()) {
+            return true;
+        }
         const authContext = req.authContext || { isAuthenticated: false, user: null };
-        if (!authContext.isAuthenticated || !authContext.user) return false;
-        if (authContext.user?.isSuperAdmin) return true;
-        return getUserPermissions(req).has(key);
+        const user = authContext?.user && typeof authContext.user === 'object' ? authContext.user : null;
+        const userPermissions = Array.from(getUserPermissions(req));
+        const hasAuthUser = Boolean(authContext.isAuthenticated && user);
+        const isSuperAdmin = Boolean(user?.isSuperAdmin);
+        return hasAuthUser && (isSuperAdmin || userPermissions.includes(key));
     }
 
     function hasAnyPermission(req = {}, permissions = []) {
