@@ -8,6 +8,7 @@ export default function useSaasApiClient({ apiBase, buildApiHeaders }) {
         try {
             const response = await fetch(`${apiBase}${path}`, {
                 method,
+                cache: 'no-store',
                 headers: buildApiHeaders?.({ includeJson: body !== null }) || (body !== null ? { 'Content-Type': 'application/json' } : {}),
                 body: body !== null ? JSON.stringify(body) : undefined
             });
