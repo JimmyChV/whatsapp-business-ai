@@ -8,22 +8,17 @@ import {
   resolveSelectedWaModule,
   chatIdsReferSameScope
 } from './features/chat/core';
-import { useSaasRecoveryFlow } from './features/auth/hooks/useSaasRecoveryFlow';
-import useSaasRuntimeBootstrap from './features/auth/hooks/useSaasRuntimeBootstrap';
-import useSaasSessionAutoRefresh from './features/auth/hooks/useSaasSessionAutoRefresh';
-import { useSaasSessionActions } from './features/auth/hooks/useSaasSessionActions';
-import useSaasApiSessionHelpers from './features/auth/hooks/useSaasApiSessionHelpers';
 import OperationPage from './pages/OperationPage';
-import { useSaasPanelVisibilityController } from './features/saas/hooks';
-import { useSaasTenantScopeContext } from './features/saas/hooks/domains/tenants/useSaasTenantScopeContext';
 import { APP_RUNTIME_GATES } from './app/helpers/runtimeGate.helpers';
 import {
   useAppSessionTransportState,
   useAppRuntimeGate,
   useAppPagePropsComposer,
   useAppSocketChatController,
-  useAppOperationHandlers
+  useAppOperationHandlers,
+  useAppRuntimeSessionController
 } from './app/hooks';
+import { appSocketSingleton } from './app/hooks/useAppSocketChatController';
 import AppRuntimeGate from './app/components/AppRuntimeGate';
 
 import './index.css';
@@ -204,75 +199,76 @@ function App() {
     }
   }, []);
 
-
-  const {
-    buildApiHeaders,
-    resolveSessionSenderIdentity,
-    normalizeSaasSessionPayload,
-    refreshSaasSession
-  } = useSaasApiSessionHelpers({
-    apiUrl: API_URL,
-    saasSessionRef,
-    saasRuntimeRef,
-    setSaasSession
-  });
-
-  const {
-    recoveryStep,
-    recoveryEmail,
-    setRecoveryEmail,
-    recoveryCode,
-    setRecoveryCode,
-    recoveryPassword,
-    setRecoveryPassword,
-    recoveryPasswordConfirm,
-    setRecoveryPasswordConfirm,
-    showRecoveryPassword,
-    setShowRecoveryPassword,
-    recoveryBusy,
-    recoveryError,
-    setRecoveryError,
-    recoveryNotice,
-    recoveryDebugCode,
-    resetRecoveryFlow,
-    openRecoveryFlow,
-    handleRecoveryRequest,
-    handleRecoveryVerify,
-    handleRecoveryReset
-  } = useSaasRecoveryFlow({
+  const sessionStateBlock = {
+    isConnected,
+    setIsConnected,
+    setQrCode,
+    isClientReady,
+    setIsClientReady,
+    selectedTransport,
+    setSelectedTransport,
+    waRuntime,
+    setWaRuntime,
+    setTransportError,
+    setIsSwitchingTransport,
+    saasRuntime,
+    setSaasRuntime,
+    saasSession,
+    setSaasSession,
+    setSaasAuthBusy,
+    setSaasAuthError,
+    setTenantSwitchBusy,
+    setTenantSwitchError,
+    showSaasAdminPanel,
+    setShowSaasAdminPanel,
     loginEmail,
     setLoginEmail,
+    loginPassword,
     setLoginPassword,
     setSaasAuthNotice,
-    buildApiHeaders
-  });
+    setForceOperationLaunchBypass,
+    forceOperationLaunch,
+    requestedWaTenantFromUrl,
+    tenantScopeId
+  };
 
-  useSaasRuntimeBootstrap({
-    apiUrl: API_URL,
-    buildApiHeaders,
-    refreshSaasSession,
-    saasSessionRef,
-    normalizeWaModules,
-    resolveSelectedWaModule,
-    setSaasSession,
+  const workspaceSessionRefsBlock = {
     setWaModules,
     setSelectedWaModule,
+    setSelectedCatalogModuleId,
     setWaModuleError,
-    setSaasRuntime,
-    setLoginEmail,
-    setSaasAuthBusy,
-    setSaasAuthError
-  });
-
-  useSaasSessionAutoRefresh({
-    authEnabled: Boolean(saasRuntime?.authEnabled),
-    refreshToken: String(saasSession?.refreshToken || ''),
-    accessExpiresAtUnix: Number(saasSession?.accessExpiresAtUnix || 0),
+    setAiSuggestion,
+    setIsAiLoading,
     saasSessionRef,
-    refreshSaasSession,
-    setSaasSession,
-    setSaasAuthError
-  });
+    saasRuntimeRef,
+    canManageSaasRef,
+    requestedWaTenantFromUrlRef,
+    launchTenantAppliedRef,
+    saasAdminAutoOpenRef,
+    tenantScopeRef
+  };
+
+  const sessionControllerInput = {
+    sessionStateBlock,
+    workspaceSessionRefsBlock,
+    socketLifecycleBlock: {
+      socket: appSocketSingleton,
+      resetWorkspaceState
+    },
+    normalizersBlock: {
+      apiUrl: API_URL,
+      normalizeWaModules,
+      resolveSelectedWaModule
+    }
+  };
+
+  const {
+    apiSessionExports,
+    sessionActions,
+    tenantScopeExports,
+    recoveryExports,
+    sessionRuntimeBlock: appSessionRuntimeBlock
+  } = useAppRuntimeSessionController(sessionControllerInput);
   const runtimeBlock = {
     saasRuntime,
     saasSession,
@@ -364,7 +360,7 @@ function App() {
   };
 
   const callbacksBlock = {
-    resolveSessionSenderIdentity,
+    resolveSessionSenderIdentity: apiSessionExports.resolveSessionSenderIdentity,
     setClientContact,
     setToasts
   };
@@ -394,87 +390,20 @@ function App() {
     }
   }, [isAiLoading, aiSuggestion]);
 
-  // --------------------------------------------------------------
-  // Handlers
-  // --------------------------------------------------------------
-  const {
-    handleSaasLogin,
-    handleSaasLogout,
-    handleSwitchTenant
-  } = useSaasSessionActions({
-    recoveryStep,
-    loginEmail,
-    loginPassword,
-    buildApiHeaders,
-    normalizeSaasSessionPayload,
-    setSaasAuthBusy,
-    setSaasAuthError,
-    setSaasAuthNotice,
-    setTenantSwitchError,
-    setRecoveryError,
-    setSaasSession,
-    setForceOperationLaunchBypass,
-    setSelectedTransport,
-    setShowSaasAdminPanel,
-    setLoginPassword,
-    setLoginEmail,
-    resetRecoveryFlow,
-    saasSessionRef,
-    saasRuntimeRef,
-    setTenantSwitchBusy,
-    setWaModules,
-    setSelectedWaModule,
-    setSelectedCatalogModuleId,
-    socket,
-    setIsConnected,
-    resetWorkspaceState,
-    setWaModuleError,
-    setSaasRuntime
-  });
-
   const saasAuthEnabled = Boolean(saasRuntime?.authEnabled);
   const isSaasAuthenticated = !saasAuthEnabled || Boolean(saasSession?.accessToken);
   const {
     availableTenantOptions,
     canSwitchTenant,
     saasUserRole,
-    canManageSaas,
-  } = useSaasTenantScopeContext({
-    saasRuntime,
-    saasSession,
-    saasAuthEnabled,
-    isSaasAuthenticated,
-  });
+    canManageSaas
+  } = tenantScopeExports;
 
   const socketOpsBlock = {
     socket,
     requestChatsPage,
     emitScopedBusinessDataRequest,
     handleChatSelectRef
-  };
-
-  const sessionRuntimeBlock = {
-    tenantScopeId,
-    tenantScopeRef,
-    isConnected,
-    selectedTransport,
-    waRuntime,
-    setIsConnected,
-    setIsClientReady,
-    setQrCode,
-    setSelectedTransport,
-    setTransportError,
-    setIsSwitchingTransport,
-    setWaRuntime,
-    setShowSaasAdminPanel,
-    canManageSaas,
-    saasSessionRef,
-    saasRuntimeRef,
-    setAiSuggestion,
-    setIsAiLoading,
-    handleSaasLogin,
-    handleSaasLogout,
-    handleSwitchTenant
   };
 
   const workspaceStateBlock = {
@@ -558,15 +487,15 @@ function App() {
   };
 
   const navigationHelpersBlock = {
-    buildApiHeaders
+    buildApiHeaders: apiSessionExports.buildApiHeaders
   };
 
   const recoveryBlock = {
-    openRecoveryFlow,
-    handleRecoveryRequest,
-    handleRecoveryVerify,
-    handleRecoveryReset,
-    resetRecoveryFlow
+    openRecoveryFlow: recoveryExports.openRecoveryFlow,
+    handleRecoveryRequest: recoveryExports.handleRecoveryRequest,
+    handleRecoveryVerify: recoveryExports.handleRecoveryVerify,
+    handleRecoveryReset: recoveryExports.handleRecoveryReset,
+    resetRecoveryFlow: recoveryExports.resetRecoveryFlow
   };
 
   const {
@@ -575,7 +504,7 @@ function App() {
     uiDerivedExports
   } = useAppOperationHandlers({
     socketOpsBlock,
-    sessionRuntimeBlock,
+    sessionRuntimeBlock: appSessionRuntimeBlock,
     workspaceStateBlock,
     navigationHelpersBlock,
     recoveryBlock
@@ -584,29 +513,6 @@ function App() {
   useEffect(() => {
     resetWorkspaceStateRef.current = uiDerivedExports.resetWorkspaceState;
   }, [uiDerivedExports.resetWorkspaceState]);
-
-  useSaasPanelVisibilityController({
-    canManageSaasRef,
-    canManageSaas,
-    showSaasAdminPanel,
-    setShowSaasAdminPanel,
-    saasRuntimeLoaded: saasRuntime?.loaded,
-    saasRuntimeTenantId: saasRuntime?.tenant?.id,
-    saasAuthEnabled,
-    isSaasAuthenticated,
-    forceOperationLaunch,
-    selectedTransport,
-    setSelectedTransport,
-    saasSessionUserTenantId: saasSession?.user?.tenantId,
-    saasSessionUserId: saasSession?.user?.id,
-    saasSessionUserEmail: saasSession?.user?.email,
-    saasAdminAutoOpenRef,
-    requestedWaTenantFromUrlRef,
-    tenantScopeId,
-    availableTenantOptions,
-    handleSwitchTenant: sessionActionExports.handleSwitchTenant,
-    launchTenantAppliedRef,
-  });
 
   const sessionBlock = {
     loginEmail,
@@ -632,30 +538,30 @@ function App() {
     canSwitchTenant,
     saasUserRole,
     canManageSaas,
-    buildApiHeaders,
+    buildApiHeaders: apiSessionExports.buildApiHeaders,
     handleSaasLogin: sessionActionExports.handleSaasLogin,
     handleSaasLogout: sessionActionExports.handleSaasLogout,
     handleSwitchTenant: sessionActionExports.handleSwitchTenant,
-    recoveryStep,
-    recoveryBusy,
-    recoveryError,
-    recoveryNotice,
-    recoveryDebugCode,
-    recoveryEmail,
-    setRecoveryEmail,
-    recoveryCode,
-    setRecoveryCode,
-    recoveryPassword,
-    setRecoveryPassword,
-    recoveryPasswordConfirm,
-    setRecoveryPasswordConfirm,
-    showRecoveryPassword,
-    setShowRecoveryPassword,
-    openRecoveryFlow,
-    handleRecoveryRequest,
-    handleRecoveryVerify,
-    handleRecoveryReset,
-    resetRecoveryFlow,
+    recoveryStep: recoveryExports.recoveryStep,
+    recoveryBusy: recoveryExports.recoveryBusy,
+    recoveryError: recoveryExports.recoveryError,
+    recoveryNotice: recoveryExports.recoveryNotice,
+    recoveryDebugCode: recoveryExports.recoveryDebugCode,
+    recoveryEmail: recoveryExports.recoveryEmail,
+    setRecoveryEmail: recoveryExports.setRecoveryEmail,
+    recoveryCode: recoveryExports.recoveryCode,
+    setRecoveryCode: recoveryExports.setRecoveryCode,
+    recoveryPassword: recoveryExports.recoveryPassword,
+    setRecoveryPassword: recoveryExports.setRecoveryPassword,
+    recoveryPasswordConfirm: recoveryExports.recoveryPasswordConfirm,
+    setRecoveryPasswordConfirm: recoveryExports.setRecoveryPasswordConfirm,
+    showRecoveryPassword: recoveryExports.showRecoveryPassword,
+    setShowRecoveryPassword: recoveryExports.setShowRecoveryPassword,
+    openRecoveryFlow: recoveryExports.openRecoveryFlow,
+    handleRecoveryRequest: recoveryExports.handleRecoveryRequest,
+    handleRecoveryVerify: recoveryExports.handleRecoveryVerify,
+    handleRecoveryReset: recoveryExports.handleRecoveryReset,
+    resetRecoveryFlow: recoveryExports.resetRecoveryFlow,
     saasAuthEnabled,
     isSaasAuthenticated,
     saasSession,

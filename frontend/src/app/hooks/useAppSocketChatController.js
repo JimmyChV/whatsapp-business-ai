@@ -7,7 +7,7 @@ import {
 import useAppChatSocketRuntime from './useAppChatSocketRuntime';
 
 // TODO: migrar este singleton al siguiente corte para aislar socket fuera del hook.
-const socket = createSocketClient(API_URL, SOCKET_AUTH_TOKEN);
+export const appSocketSingleton = createSocketClient(API_URL, SOCKET_AUTH_TOKEN);
 
 export default function useAppSocketChatController({
   runtimeBlock = {},
@@ -17,7 +17,7 @@ export default function useAppSocketChatController({
   handleChatSelectRef
 } = {}) {
   const { requestQuickRepliesForModule, emitScopedBusinessDataRequest } = useScopedBusinessRequests({
-    socket,
+    socket: appSocketSingleton,
     selectedCatalogModuleIdRef: businessScopeBlock.selectedCatalogModuleIdRef,
     selectedWaModuleRef: businessScopeBlock.selectedWaModuleRef,
     selectedCatalogIdRef: businessScopeBlock.selectedCatalogIdRef,
@@ -29,7 +29,7 @@ export default function useAppSocketChatController({
   });
 
   useSocketConnectionAuthEffect({
-    socket,
+    socket: appSocketSingleton,
     saasRuntime: runtimeBlock.saasRuntime,
     saasSession: runtimeBlock.saasSession,
     selectedWaModuleRef: chatRuntimeBlock.selectedWaModuleRef,
@@ -40,7 +40,7 @@ export default function useAppSocketChatController({
   });
 
   const { requestChatsPage } = useAppChatSocketRuntime({
-    socket,
+    socket: appSocketSingleton,
     chatPageSize: CHAT_PAGE_SIZE,
     requestQuickRepliesForModule,
     emitScopedBusinessDataRequest,
@@ -131,7 +131,7 @@ export default function useAppSocketChatController({
   });
 
   return {
-    socket,
+    socket: appSocketSingleton,
     fileInputRef: chatRuntimeBlock.fileInputRef,
     messagesEndRef: chatRuntimeBlock.messagesEndRef,
     clientProfilePanelRef: chatRuntimeBlock.clientProfilePanelRef,
