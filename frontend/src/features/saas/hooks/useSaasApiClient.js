@@ -6,10 +6,12 @@ export default function useSaasApiClient({ apiBase, buildApiHeaders }) {
     const requestJson = useCallback(async (path, { method = 'GET', body = null } = {}) => {
         setPendingRequests((prev) => prev + 1);
         try {
-            const response = await fetch(`${apiBase}${path}`, {
+            const url = `${apiBase}${path}`;
+            const headers = buildApiHeaders?.({ includeJson: body !== null }) || (body !== null ? { 'Content-Type': 'application/json' } : {});
+            const response = await fetch(url, {
                 method,
                 cache: 'no-store',
-                headers: buildApiHeaders?.({ includeJson: body !== null }) || (body !== null ? { 'Content-Type': 'application/json' } : {}),
+                headers,
                 body: body !== null ? JSON.stringify(body) : undefined
             });
             const payload = await response.json().catch(() => ({}));

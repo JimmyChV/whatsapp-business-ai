@@ -60,24 +60,6 @@
         source: 'local'
     };
 }
-function summarizeErrorForLog(error) {
-    const source = error && typeof error === 'object' ? error : {};
-    return {
-        name: source.name || null,
-        message: source.message || String(error || ''),
-        status: source.status ?? source.statusCode ?? null,
-        stackPreview: typeof source.stack === 'string'
-            ? source.stack.split('\n').slice(0, 4).join(' | ')
-            : null,
-        payload: source && typeof source === 'object'
-            ? Object.fromEntries(
-                Object.entries(source)
-                    .filter(([key, value]) => !['stack', 'message', 'name'].includes(key) && value !== undefined && typeof value !== 'function')
-            )
-            : null
-    };
-}
-
 function registerTenantAdminConfigCatalogHttpRoutes({
     app,
     tenantService,
@@ -248,7 +230,6 @@ function registerTenantAdminConfigCatalogHttpRoutes({
 
     app.get('/api/admin/saas/tenants/:tenantId/catalogs', async (req, res) => {
         const tenantId = String(req.params?.tenantId || '').trim();
-        console.log('[Route][GET /catalogs] hit, tenantId:', req.params?.tenantId, 'user:', req.authContext?.user?.userId);
         if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
         const requiredCatalogPermissions = [
             accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE,
@@ -259,59 +240,13 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         const tenantAllowed = isTenantAllowedForUser(req, tenantId);
         const hasRequiredPermission = hasAnyPermission(req, requiredCatalogPermissions);
         if (!tenantAllowed || !hasRequiredPermission) {
-            const memberships = Array.isArray(req?.authContext?.user?.memberships)
-                ? req.authContext.user.memberships
-                : [];
-            const permissions = Array.isArray(req?.authContext?.user?.permissions)
-                ? req.authContext.user.permissions
-                : [];
-            console.log('[Route][GET /catalogs][guard-result]', {
-                tenantId,
-                userId: String(req?.authContext?.user?.userId || '').trim() || null,
-                tenantAllowed,
-                hasRequiredPermission,
-                membershipCount: memberships.length,
-                permissionsCount: permissions.length,
-                requiredPermissions: requiredCatalogPermissions,
-                permissions
-            });
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
         try {
-            console.log('[Route][GET /catalogs][after-guard]', {
-                tenantId,
-                userId: String(req?.authContext?.user?.userId || '').trim() || null
-            });
-            console.log('[Service][Catalogs][start]', {
-                tenantId,
-                operation: 'ensureDefaultCatalog'
-            });
             const items = await tenantCatalogService.ensureDefaultCatalog(tenantId);
-            console.log('[Service][Catalogs][result]', {
-                tenantId,
-                itemsCount: Array.isArray(items) ? items.length : 0
-            });
-            console.log('[Route][GET /catalogs][response]', {
-                tenantId,
-                status: 200,
-                ok: true,
-                itemsCount: Array.isArray(items) ? items.length : 0
-            });
             return res.json({ ok: true, tenantId, items });
         } catch (error) {
-            const errorLog = summarizeErrorForLog(error);
-            const statusCode = Number(error?.statusCode || error?.status);
-            console.log('[Service][Catalogs][error]', {
-                tenantId,
-                ...errorLog
-            });
-            console.log('[Route][GET /catalogs][response]', {
-                tenantId,
-                status: Number.isFinite(statusCode) ? statusCode : 500,
-                ok: false,
-                error: errorLog.message
-            });
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar catalogos del tenant.') });
         }
     });

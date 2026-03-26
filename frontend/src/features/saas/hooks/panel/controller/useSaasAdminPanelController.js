@@ -104,13 +104,6 @@ import useSaasQuickRepliesController from './useSaasQuickRepliesController';
 import useSaasTenantController from './useSaasTenantController';
 import useSaasUsersController from './useSaasUsersController';
 
-const CUSTOMER_TRACE = Boolean(import.meta.env?.DEV);
-
-function resolveCustomerId(value = null) {
-    if (!value || typeof value !== 'object') return '';
-    return String(value.customerId || value.customer_id || value.customerid || value.id || '').trim();
-}
-
 export default function useSaasAdminPanelController({
     isOpen = false,
     onClose,
@@ -203,15 +196,6 @@ export default function useSaasAdminPanelController({
         currentSection,
         setCurrentSection
     } = panelCoreState;
-    if (CUSTOMER_TRACE) {
-        // eslint-disable-next-line no-console
-        console.log('[Controller][Customers][state-source]', {
-            selectedCustomerId: panelCoreState.selectedCustomerId,
-            selectedCustomerIdType: typeof panelCoreState.selectedCustomerId,
-            sourceObject: 'panelCoreState',
-            customersLength: Array.isArray(panelCoreState.customers) ? panelCoreState.customers.length : 0
-        });
-    }
     const saasAccessControl = useSaasAccessControl({
         userRole,
         isSuperAdmin,
@@ -426,17 +410,6 @@ export default function useSaasAdminPanelController({
         planIds,
         selectedPlan
     } = panelDerivedData;
-    if (CUSTOMER_TRACE) {
-        // eslint-disable-next-line no-console
-        console.log('[Controller][Customers][derived-source]', {
-            selectedCustomerIdInput: panelCoreState.selectedCustomerId,
-            selectedCustomerIdInputType: typeof panelCoreState.selectedCustomerId,
-            selectedCustomerResolvedId: resolveCustomerId(panelDerivedData.selectedCustomer),
-            hasSelectedCustomer: Boolean(panelDerivedData.selectedCustomer),
-            filteredCustomersCount: Array.isArray(panelDerivedData.filteredCustomers) ? panelDerivedData.filteredCustomers.length : 0,
-            sourceObject: 'panelDerivedData'
-        });
-    }
     const catalogController = useSaasCatalogController({
         panelCoreState,
         panelDerivedData

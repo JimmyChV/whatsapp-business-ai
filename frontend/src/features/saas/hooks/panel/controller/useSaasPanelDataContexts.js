@@ -6,16 +6,6 @@ import useSaasTenantUsers from '../../domains/tenants/useSaasTenantUsers';
 
 export default function useSaasPanelDataContexts(input = {}) {
     const c = input;
-    if (import.meta.env?.DEV) {
-        // eslint-disable-next-line no-console
-        console.log('[Controller][Customers][derived-source]', {
-            stage: 'useSaasPanelDataContexts:input',
-            selectedCustomerId: c.selectedCustomerId,
-            selectedCustomerIdType: typeof c.selectedCustomerId,
-            customersLength: Array.isArray(c.customers) ? c.customers.length : 0,
-            sourceObject: 'useSaasPanelDataContexts.input'
-        });
-    }
 
     const tenantScopeState = useSaasTenantScope({
         overviewTenants: c.overviewTenants,
@@ -104,17 +94,6 @@ export default function useSaasPanelDataContexts(input = {}) {
         selectedPlanId: c.selectedPlanId,
         planOptions: c.planOptions
     });
-    if (import.meta.env?.DEV) {
-        // eslint-disable-next-line no-console
-        console.log('[Controller][Customers][derived-source]', {
-            stage: 'useSaasPanelDataContexts:output',
-            selectedCustomerId: c.selectedCustomerId,
-            selectedCustomerIdType: typeof c.selectedCustomerId,
-            selectedCustomerResolvedId: String(panelDerivedData?.selectedCustomer?.customerId || panelDerivedData?.selectedCustomer?.customer_id || panelDerivedData?.selectedCustomer?.customerid || panelDerivedData?.selectedCustomer?.id || '').trim(),
-            hasSelectedCustomer: Boolean(panelDerivedData?.selectedCustomer),
-            filteredCustomersCount: Array.isArray(panelDerivedData?.filteredCustomers) ? panelDerivedData.filteredCustomers.length : 0
-        });
-    }
 
     const tenantUsersState = useSaasTenantUsers({
         overviewUsers: c.overviewUsers,

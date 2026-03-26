@@ -514,13 +514,11 @@ class WhatsAppClient extends EventEmitter {
             try {
                 const products = await attempt.fn();
                 if (products.length > 0) {
-                    console.log(`[Catalog] ${attempt.label} returned ${products.length} products`);
                     return products;
                 }
             } catch (e) {
                 const message = String(e?.message || e || '');
                 if (/not available|not a function|missing/i.test(message)) continue;
-                console.log(`[Catalog] ${attempt.label} failed: ${message}`);
             }
         }
 

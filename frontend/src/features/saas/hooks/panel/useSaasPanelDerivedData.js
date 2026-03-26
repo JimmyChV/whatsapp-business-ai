@@ -6,8 +6,6 @@ import {
     normalizeTenantAiAssistantItem
 } from '../../helpers';
 
-const CUSTOMER_TRACE = Boolean(import.meta.env?.DEV);
-
 function resolveCustomerId(value = null) {
     if (!value || typeof value !== 'object') return '';
     return String(
@@ -84,70 +82,13 @@ export default function useSaasPanelDerivedData({
         const cleanSelectedId = String(selectedCustomerId || '').trim();
         const normalizedSelectedId = normalizeCustomerMatchId(cleanSelectedId);
         const source = Array.isArray(customers) ? customers : [];
+        if (!normalizedSelectedId) return null;
 
-        if (CUSTOMER_TRACE) {
-            // eslint-disable-next-line no-console
-            console.log('[Derived][Customers][selectedCustomer][input]', {
-                selectedCustomerId: cleanSelectedId,
-                normalizedSelectedCustomerId: normalizedSelectedId,
-                customersLength: source.length,
-                first3Items: source.slice(0, 3).map((item) => ({
-                    customerId: item?.customerId ?? null,
-                    customer_id: item?.customer_id ?? null,
-                    id: item?.id ?? null,
-                    contactName: item?.contactName ?? null,
-                    firstName: item?.firstName ?? null,
-                    lastName: item?.lastName ?? null,
-                    phone: item?.phone ?? item?.phoneE164 ?? null,
-                    tenantId: item?.tenantId ?? item?.tenant_id ?? null,
-                    resolvedId: resolveCustomerId(item),
-                    normalizedResolvedId: normalizeCustomerMatchId(resolveCustomerId(item))
-                }))
-            });
-        }
-
-        if (!normalizedSelectedId) {
-            if (CUSTOMER_TRACE) {
-                // eslint-disable-next-line no-console
-                console.log('[Derived][Customers][selectedCustomer][result]', {
-                    selectedCustomerId: cleanSelectedId,
-                    matched: false,
-                    reason: 'selected-id-empty'
-                });
-            }
-            return null;
-        }
-
-        const match = source.find((item, index) => {
+        const match = source.find((item) => {
             const resolvedId = resolveCustomerId(item);
             const normalizedResolvedId = normalizeCustomerMatchId(resolvedId);
-            const isMatch = normalizedResolvedId === normalizedSelectedId;
-            if (CUSTOMER_TRACE) {
-                // eslint-disable-next-line no-console
-                console.log('[Derived][Customers][selectedCustomer][matcher]', {
-                    index,
-                    customerId: item?.customerId ?? null,
-                    customer_id: item?.customer_id ?? null,
-                    id: item?.id ?? null,
-                    resolvedId,
-                    normalizedResolvedId,
-                    target: normalizedSelectedId,
-                    isMatch
-                });
-            }
-            return isMatch;
+            return normalizedResolvedId === normalizedSelectedId;
         }) || null;
-
-        if (CUSTOMER_TRACE) {
-            // eslint-disable-next-line no-console
-            console.log('[Derived][Customers][selectedCustomer][result]', {
-                selectedCustomerId: cleanSelectedId,
-                normalizedSelectedCustomerId: normalizedSelectedId,
-                matched: Boolean(match),
-                matchedResolvedId: match ? resolveCustomerId(match) : '',
-                matchedContactName: match?.contactName || null
-            });
-        }
 
         return match;
     }, [customers, selectedCustomerId]);

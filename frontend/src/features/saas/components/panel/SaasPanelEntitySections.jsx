@@ -8,17 +8,6 @@ import {
 export default function SaasPanelEntitySections(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const selectedSectionId = context?.selectedSectionId || 'saas_resumen';
-    if (import.meta.env?.DEV) {
-        // eslint-disable-next-line no-console
-        console.log('[SectionContext][Customers]', {
-            selectedCustomerId: context.selectedCustomerId,
-            selectedCustomerIdType: typeof context.selectedCustomerId,
-            selectedCustomerResolvedId: String(context?.selectedCustomer?.customerId || context?.selectedCustomer?.customer_id || context?.selectedCustomer?.customerid || context?.selectedCustomer?.id || '').trim(),
-            hasSelectedCustomer: Boolean(context.selectedCustomer),
-            filteredCustomersCount: Array.isArray(context.filteredCustomers) ? context.filteredCustomers.length : 0,
-            sourceObject: 'entitySectionsContext'
-        });
-    }
     const summaryContext = {
         selectedSectionId: context.selectedSectionId,
         currentUserAvatarUrl: context.currentUserAvatarUrl,

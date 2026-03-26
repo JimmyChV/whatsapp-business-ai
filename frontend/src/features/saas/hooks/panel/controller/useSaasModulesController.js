@@ -149,36 +149,12 @@ export default function useSaasModulesController({
         const cleanTenantId = String(modulesDerived.settingsTenantId || '').trim();
         const mode = String(modulesState.waModulePanelMode || '').trim().toLowerCase();
         const moduleInDetail = modulesDerived.selectedConfigModule;
-        console.log('[Action][ModuleCreate][start]', {
-            mode,
-            tenantId: cleanTenantId || null,
-            canEditModules,
-            hasRequestJson: typeof requestJson === 'function',
-            hasRunAction: typeof runAction === 'function',
-            selectedModuleId: String(moduleInDetail?.moduleId || '').trim() || null
-        });
         if (!cleanTenantId || !canEditModules || typeof requestJson !== 'function') {
-            console.warn('[Action][ModuleCreate][skip]', {
-                mode,
-                tenantId: cleanTenantId || null,
-                canEditModules,
-                hasRequestJson: typeof requestJson === 'function'
-            });
             return;
         }
         const payload = buildWaModulePayload({
             waModuleForm: modulesState.waModuleForm,
             selectedConfigModule: moduleInDetail
-        });
-        console.log('[Action][ModuleCreate][payload]', {
-            mode,
-            tenantId: cleanTenantId,
-            payloadPreview: {
-                name: String(payload?.name || '').trim(),
-                phoneNumber: String(payload?.phoneNumber || '').trim(),
-                catalogIdsCount: Array.isArray(payload?.catalogIds) ? payload.catalogIds.length : 0,
-                assignedUserIdsCount: Array.isArray(payload?.assignedUserIds) ? payload.assignedUserIds.length : 0
-            }
         });
         const quickReplyLibraryIds = normalizeQuickReplyLibraryDraft(modulesState.moduleQuickReplyLibraryDraft);
         const label = mode === 'create' ? 'Modulo WA creado' : 'Modulo WA actualizado';
@@ -187,19 +163,9 @@ export default function useSaasModulesController({
             await runWithFallback(runAction, label, async () => {
                 if (mode === 'edit' && moduleInDetail?.moduleId) {
                     const updateUrl = `/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/wa-modules/${encodeURIComponent(moduleInDetail.moduleId)}`;
-                    console.log('[API][ModuleCreate][request]', {
-                        mode,
-                        method: 'PUT',
-                        url: updateUrl
-                    });
                     const updatePayload = await requestJson(updateUrl, {
                         method: 'PUT',
                         body: payload
-                    });
-                    console.log('[API][ModuleCreate][response]', {
-                        mode,
-                        method: 'PUT',
-                        moduleId: String(updatePayload?.item?.moduleId || moduleInDetail.moduleId || '').trim() || null
                     });
                     if (typeof moduleActionsBase.syncQuickReplyLibrariesForModule === 'function') {
                         await moduleActionsBase.syncQuickReplyLibrariesForModule(moduleInDetail.moduleId, quickReplyLibraryIds);
@@ -207,28 +173,13 @@ export default function useSaasModulesController({
                     modulesState.setWaModulePanelMode('view');
                     modulesState.setSelectedConfigKey(`wa_module:${moduleInDetail.moduleId}`);
                     if (typeof loadWaModules === 'function') await loadWaModules(cleanTenantId);
-                    console.log('[Action][ModuleCreate][result]', {
-                        mode,
-                        status: 'ok',
-                        moduleId: String(moduleInDetail.moduleId || '').trim() || null
-                    });
                     return;
                 }
 
                 const createUrl = `/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/wa-modules`;
-                console.log('[API][ModuleCreate][request]', {
-                    mode,
-                    method: 'POST',
-                    url: createUrl
-                });
                 const createPayload = await requestJson(createUrl, {
                     method: 'POST',
                     body: payload
-                });
-                console.log('[API][ModuleCreate][response]', {
-                    mode,
-                    method: 'POST',
-                    moduleId: String(createPayload?.item?.moduleId || '').trim() || null
                 });
                 const createdModuleId = String(createPayload?.item?.moduleId || '').trim();
                 if (createdModuleId) {
@@ -240,18 +191,8 @@ export default function useSaasModulesController({
                 }
                 modulesState.setWaModulePanelMode('view');
                 if (typeof loadWaModules === 'function') await loadWaModules(cleanTenantId);
-                console.log('[Action][ModuleCreate][result]', {
-                    mode,
-                    status: 'ok',
-                    moduleId: createdModuleId || null
-                });
             });
         } catch (error) {
-            console.error('[Action][ModuleCreate][error]', {
-                mode,
-                tenantId: cleanTenantId || null,
-                message: String(error?.message || error || 'Error desconocido al guardar modulo.')
-            });
             throw error;
         }
     }, [

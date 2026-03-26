@@ -21,20 +21,6 @@ function createRequestAccessHelpers({
         );
     }
 
-    function shouldDebugCatalogGuard(req = {}) {
-        const path = String(req?.path || req?.originalUrl || '').trim();
-        return path.includes('/api/admin/saas/tenants/') && path.includes('/catalogs');
-    }
-
-    function summarizeMembershipsForLog(user = null) {
-        const source = Array.isArray(user?.memberships) ? user.memberships : [];
-        return source.map((membership) => ({
-            tenantId: String(membership?.tenantId || '').trim(),
-            role: String(membership?.role || '').trim().toLowerCase(),
-            active: membership?.active !== false
-        }));
-    }
-
     function hasPermission(req = {}, permission = '') {
         const key = String(permission || '').trim();
         if (!key) return false;
@@ -46,49 +32,12 @@ function createRequestAccessHelpers({
         const userPermissions = Array.from(getUserPermissions(req));
         const hasAuthUser = Boolean(authContext.isAuthenticated && user);
         const isSuperAdmin = Boolean(user?.isSuperAdmin);
-        const result = hasAuthUser && (isSuperAdmin || userPermissions.includes(key));
-
-        if (shouldDebugCatalogGuard(req)) {
-            console.log('[AuthGuard][hasPermission]', {
-                path: req?.path || req?.originalUrl || '',
-                permission: key,
-                isAuthenticated: Boolean(authContext?.isAuthenticated),
-                hasUserObject: Boolean(user),
-                userId: String(user?.userId || '').trim() || null,
-                userTenantId: String(user?.tenantId || '').trim() || null,
-                isSuperAdmin,
-                requiredPermissions: [key],
-                userPermissions,
-                result
-            });
-        }
-
-        return result;
+        return hasAuthUser && (isSuperAdmin || userPermissions.includes(key));
     }
 
     function hasAnyPermission(req = {}, permissions = []) {
         const source = Array.isArray(permissions) ? permissions : [];
-        const permissionChecks = source.map((permission) => ({
-            permission: String(permission || '').trim(),
-            allowed: hasPermission(req, permission)
-        }));
-        const result = permissionChecks.some((entry) => entry.allowed);
-        const userPermissions = Array.from(getUserPermissions(req));
-        const user = req?.authContext?.user && typeof req.authContext.user === 'object' ? req.authContext.user : null;
-
-        if (shouldDebugCatalogGuard(req)) {
-            console.log('[AuthGuard][hasAnyPermission]', {
-                path: req?.path || req?.originalUrl || '',
-                requiredPermissions: source.map((entry) => String(entry || '').trim()).filter(Boolean),
-                userPermissions,
-                permissionChecks,
-                userId: String(user?.userId || '').trim() || null,
-                userTenantId: String(user?.tenantId || '').trim() || null,
-                result
-            });
-        }
-
-        return result;
+        return source.some((permission) => hasPermission(req, permission));
     }
 
     function getAllowedTenantIdsFromAuth(req = {}) {
@@ -139,43 +88,9 @@ function createRequestAccessHelpers({
     function isTenantAllowedForUser(req = {}, tenantId = '') {
         const cleanTenantId = String(tenantId || '').trim();
         if (!cleanTenantId) return false;
-        if (req?.authContext?.user?.isSuperAdmin) {
-            if (shouldDebugCatalogGuard(req)) {
-                const user = req?.authContext?.user && typeof req.authContext.user === 'object' ? req.authContext.user : null;
-                console.log('[AuthGuard][isTenantAllowedForUser]', {
-                    path: req?.path || req?.originalUrl || '',
-                    tenantIdEvaluated: cleanTenantId,
-                    userId: String(user?.userId || '').trim() || null,
-                    userTenantId: String(user?.tenantId || '').trim() || null,
-                    memberships: summarizeMembershipsForLog(user),
-                    membershipCount: Array.isArray(user?.memberships) ? user.memberships.length : 0,
-                    tenantMatchFound: true,
-                    isSuperAdmin: true,
-                    result: true
-                });
-            }
-            return true;
-        }
+        if (req?.authContext?.user?.isSuperAdmin) return true;
         const allowed = getAllowedTenantIdsFromAuth(req);
-        const result = allowed.includes(cleanTenantId);
-
-        if (shouldDebugCatalogGuard(req)) {
-            const user = req?.authContext?.user && typeof req.authContext.user === 'object' ? req.authContext.user : null;
-            console.log('[AuthGuard][isTenantAllowedForUser]', {
-                path: req?.path || req?.originalUrl || '',
-                tenantIdEvaluated: cleanTenantId,
-                userId: String(user?.userId || '').trim() || null,
-                userTenantId: String(user?.tenantId || '').trim() || null,
-                memberships: summarizeMembershipsForLog(user),
-                membershipCount: Array.isArray(user?.memberships) ? user.memberships.length : 0,
-                allowedTenantIds: allowed,
-                tenantMatchFound: result,
-                isSuperAdmin: false,
-                result
-            });
-        }
-
-        return result;
+        return allowed.includes(cleanTenantId);
     }
 
     function hasTenantModuleReadAccess(req = {}, tenantId = '') {

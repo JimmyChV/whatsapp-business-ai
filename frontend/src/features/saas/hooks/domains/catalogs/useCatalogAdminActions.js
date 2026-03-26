@@ -40,7 +40,6 @@ export default function useCatalogAdminActions({
 } = {}) {
     const loadTenantCatalogs = async (tenantId) => {
         const cleanTenantId = String(tenantId || '').trim();
-        console.log('[Catalog][loadTenantCatalogs] requestJson:', typeof requestJson, 'tenantId:', cleanTenantId);
         if (!cleanTenantId) {
             setTenantCatalogs([]);
             setSelectedCatalogId('');
@@ -205,13 +204,6 @@ export default function useCatalogAdminActions({
     };
 
     const openCatalogCreate = () => {
-        console.log('[Catalog][openCatalogCreate][deps]', {
-            canEditCatalog,
-            hasSetSelectedCatalogId: typeof setSelectedCatalogId === 'function',
-            hasSetSelectedCatalogProductId: typeof setSelectedCatalogProductId === 'function',
-            hasSetCatalogPanelMode: typeof setCatalogPanelMode === 'function',
-            hasSetTenantCatalogForm: typeof setTenantCatalogForm === 'function'
-        });
         if (!canEditCatalog) return;
         setSelectedCatalogId('');
         setSelectedCatalogProductId('');
