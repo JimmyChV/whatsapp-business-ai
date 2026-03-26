@@ -153,14 +153,14 @@ export default function useSaasPanelTenantScopeEffects({
 
         setModules([]);
         setModuleId('');
-        setCatalogs([]);
-        setCatalogId('');
-        setCatalogForm(emptyCatalogForm);
-        setCatalogProducts([]);
-        setCatalogProductId('');
-        setProductForm(emptyProductForm);
-        setProductMode('view');
-        setProductError('');
+        setCatalogs?.([]);
+        setCatalogId?.('');
+        setCatalogForm?.(emptyCatalogForm);
+        setCatalogProducts?.([]);
+        setCatalogProductId?.('');
+        setProductForm?.(emptyProductForm);
+        setProductMode?.('view');
+        setProductError?.('');
         setAssistants([]);
         setAssistantId('');
         setAssistantForm(emptyAiForm);
@@ -217,7 +217,7 @@ export default function useSaasPanelTenantScopeEffects({
         setModuleId('');
         setTenantSettingsMode('view');
         setModuleMode('view');
-        setCatalogMode('view');
+        setCatalogMode?.('view');
         setUserPicker('');
         setCustomerId('');
         setCustomerMode('view');
