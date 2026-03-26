@@ -182,45 +182,10 @@ app.use(cors({
 
 app.use(async (req, res, next) => {
     try {
-        const isCatalogRoute = String(req.path || '').includes('/api/admin/saas/tenants/')
-            && String(req.path || '').includes('/catalogs');
-        if (isCatalogRoute) {
-            const authHeader = String(req.headers?.authorization || '').trim();
-            const authPreview = authHeader ? `${authHeader.slice(0, 28)}...` : '';
-            console.log('[AuthMW][before-verify]', {
-                method: req.method,
-                path: req.path,
-                hasAuthorization: Boolean(authHeader),
-                authorizationPreview: authPreview,
-                cookies: String(req.headers?.cookie || '').trim() || null
-            });
-        }
         const authContext = await authService.getRequestAuthContextAsync(req);
-        if (isCatalogRoute) {
-            console.log('[AuthMW][after-verify]', {
-                isAuthenticated: Boolean(authContext?.isAuthenticated),
-                tokenPresent: Boolean(authContext?.tokenPresent),
-                userId: authContext?.user?.userId || null,
-                userEmail: authContext?.user?.email || null,
-                tenantId: authContext?.user?.tenantId || null
-            });
-        }
         const tenant = tenantService.resolveTenantForRequest(req, authContext?.user || null);
         req.authContext = authContext;
         req.tenantContext = tenant;
-        if (isCatalogRoute) {
-            console.log('[AuthMW][final-context]', {
-                authContext: req.authContext
-                    ? {
-                        enabled: Boolean(req.authContext.enabled),
-                        tokenPresent: Boolean(req.authContext.tokenPresent),
-                        isAuthenticated: Boolean(req.authContext.isAuthenticated),
-                        userId: req.authContext?.user?.userId || null
-                    }
-                    : null,
-                tenantContextId: req.tenantContext?.id || null
-            });
-        }
         res.setHeader('X-Tenant-Id', String(tenant?.id || 'default'));
         next();
     } catch (error) {
