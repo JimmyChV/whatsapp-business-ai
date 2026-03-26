@@ -6,6 +6,11 @@ import {
     normalizeTenantAiAssistantItem
 } from '../../helpers';
 
+function resolveCustomerId(value = null) {
+    if (!value || typeof value !== 'object') return '';
+    return String(value.customerId || value.customer_id || value.id || '').trim();
+}
+
 export default function useSaasPanelDerivedData({
     customerSearch = '',
     customers = [],
@@ -48,7 +53,7 @@ export default function useSaasPanelDerivedData({
         return sorted.filter((item) => {
             const profile = item?.profile && typeof item.profile === 'object' ? item.profile : {};
             const haystack = [
-                item?.customerId,
+                resolveCustomerId(item),
                 item?.contactName,
                 item?.phoneE164,
                 item?.phoneAlt,
@@ -64,7 +69,12 @@ export default function useSaasPanelDerivedData({
     }, [customers, customerSearch]);
 
     const selectedCustomer = useMemo(
-        () => (Array.isArray(customers) ? customers : []).find((item) => String(item?.customerId || '').trim() === String(selectedCustomerId || '').trim()) || null,
+        () => {
+            const cleanSelectedId = String(selectedCustomerId || '').trim();
+            if (!cleanSelectedId) return null;
+            return (Array.isArray(customers) ? customers : [])
+                .find((item) => resolveCustomerId(item) === cleanSelectedId) || null;
+        },
         [customers, selectedCustomerId]
     );
 

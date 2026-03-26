@@ -15,6 +15,11 @@ import {
     fetchTenantWaModules
 } from '../../../services';
 
+function resolveCustomerId(value = null) {
+    if (!value || typeof value !== 'object') return '';
+    return String(value.customerId || value.customer_id || value.id || '').trim();
+}
+
 export default function useSaasTenantDataLoaders({
     requestJson,
     requiresTenantSelection = false,
@@ -146,7 +151,7 @@ export default function useSaasTenantDataLoaders({
         setSelectedCustomerId((prev) => {
             const cleanPrev = String(prev || '').trim();
             if (!cleanPrev) return '';
-            const exists = items.some((item) => String(item?.customerId || '').trim() === cleanPrev);
+            const exists = items.some((item) => resolveCustomerId(item) === cleanPrev);
             return exists ? cleanPrev : '';
         });
     }, [requestJson, setCustomers, setSelectedCustomerId]);

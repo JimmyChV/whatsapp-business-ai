@@ -1,5 +1,18 @@
 import React from 'react';
 
+const CUSTOMER_TRACE = Boolean(import.meta.env?.DEV);
+
+function traceCustomer(...args) {
+    if (!CUSTOMER_TRACE) return;
+    // eslint-disable-next-line no-console
+    console.log(...args);
+}
+
+function resolveCustomerId(value = null) {
+    if (!value || typeof value !== 'object') return '';
+    return String(value.customerId || value.customer_id || value.id || '').trim();
+}
+
 function CustomersSection(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const {
@@ -32,6 +45,37 @@ function CustomersSection(props = {}) {
     customerCsvText,
     setCustomerCsvText
     } = context;
+
+    React.useEffect(() => {
+        const selectedId = String(selectedCustomerId || '').trim();
+        traceCustomer('[UI][Customers][detail-pane][render]', {
+            selectedCustomerId: selectedId,
+            customerPanelMode,
+            hasSelectedCustomer: Boolean(selectedCustomer),
+            selectedCustomerResolvedId: resolveCustomerId(selectedCustomer),
+            filteredCount: Array.isArray(filteredCustomers) ? filteredCustomers.length : 0
+        });
+        if (!selectedId) return;
+        traceCustomer('[Action][Customers][load-detail][start]', { selectedCustomerId: selectedId });
+        if (selectedCustomer) {
+            traceCustomer('[Action][Customers][load-detail][result]', {
+                selectedCustomerId: selectedId,
+                contactName: selectedCustomer?.contactName || null
+            });
+            traceCustomer('[API][Customers][detail][request]', { mode: 'skipped-derived-from-list' });
+            traceCustomer('[API][Customers][detail][response]', { mode: 'skipped-derived-from-list', ok: true });
+            return;
+        }
+        traceCustomer('[Action][Customers][load-detail][error]', {
+            selectedCustomerId: selectedId,
+            reason: 'selectedCustomer-null-after-selection'
+        });
+        traceCustomer('[API][Customers][detail][error]', {
+            mode: 'skipped-derived-from-list',
+            reason: 'selectedCustomer-null-after-selection'
+        });
+    }, [customerPanelMode, filteredCustomers, selectedCustomer, selectedCustomerId]);
+
     if (!isCustomersSection) {
         return null;
     }
@@ -68,18 +112,30 @@ function CustomersSection(props = {}) {
                                             <p>No hay clientes para esta empresa.</p>
                                         </div>
                                     )}
-                                    {!tenantScopeLocked && filteredCustomers.map((customer) => (
-                                        <button
-                                            key={customer.customerId}
-                                            type="button"
-                                            className={("saas-admin-list-item saas-admin-list-item--button " + ((selectedCustomerId === customer.customerId && customerPanelMode !== 'create') ? 'active' : '')).trim()}
-                                            onClick={() => openCustomerView(customer.customerId)}
-                                        >
-                                            <strong>{customer.contactName || customer.customerId}</strong>
-                                            <small>{customer.phoneE164 || customer.email || '-'}</small>
-                                            <small>{customer.moduleId ? ('Modulo: ' + customer.moduleId) : 'Sin modulo'} | {customer.isActive === false ? 'inactivo' : 'activo'}</small>
-                                        </button>
-                                    ))}
+                                    {!tenantScopeLocked && filteredCustomers.map((customer, index) => {
+                                        const customerId = resolveCustomerId(customer);
+                                        return (
+                                            <button
+                                                key={customerId || customer.phoneE164 || customer.email || customer.contactName || `customer-item-${index}`}
+                                                type="button"
+                                                className={("saas-admin-list-item saas-admin-list-item--button " + ((selectedCustomerId === customerId && customerPanelMode !== 'create') ? 'active' : '')).trim()}
+                                                onClick={() => {
+                                                    traceCustomer('[UI][Customers][row-click]', {
+                                                        rawCustomerId: customer?.customerId,
+                                                        rawCustomerIdSnake: customer?.customer_id,
+                                                        rawCustomerIdAlt: customer?.id,
+                                                        resolvedCustomerId: customerId,
+                                                        contactName: customer?.contactName || null
+                                                    });
+                                                    openCustomerView(customerId || customer);
+                                                }}
+                                            >
+                                                <strong>{customer.contactName || customerId || '-'}</strong>
+                                                <small>{customer.phoneE164 || customer.email || '-'}</small>
+                                                <small>{customer.moduleId ? ('Modulo: ' + customer.moduleId) : 'Sin modulo'} | {customer.isActive === false ? 'inactivo' : 'activo'}</small>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </aside>
 
