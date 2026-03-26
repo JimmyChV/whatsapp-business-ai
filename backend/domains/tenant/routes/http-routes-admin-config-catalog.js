@@ -60,6 +60,24 @@
         source: 'local'
     };
 }
+function summarizeErrorForLog(error) {
+    const source = error && typeof error === 'object' ? error : {};
+    return {
+        name: source.name || null,
+        message: source.message || String(error || ''),
+        status: source.status ?? source.statusCode ?? null,
+        stackPreview: typeof source.stack === 'string'
+            ? source.stack.split('\n').slice(0, 4).join(' | ')
+            : null,
+        payload: source && typeof source === 'object'
+            ? Object.fromEntries(
+                Object.entries(source)
+                    .filter(([key, value]) => !['stack', 'message', 'name'].includes(key) && value !== undefined && typeof value !== 'function')
+            )
+            : null
+    };
+}
+
 function registerTenantAdminConfigCatalogHttpRoutes({
     app,
     tenantService,
@@ -261,9 +279,39 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         }
 
         try {
+            console.log('[Route][GET /catalogs][after-guard]', {
+                tenantId,
+                userId: String(req?.authContext?.user?.userId || '').trim() || null
+            });
+            console.log('[Service][Catalogs][start]', {
+                tenantId,
+                operation: 'ensureDefaultCatalog'
+            });
             const items = await tenantCatalogService.ensureDefaultCatalog(tenantId);
+            console.log('[Service][Catalogs][result]', {
+                tenantId,
+                itemsCount: Array.isArray(items) ? items.length : 0
+            });
+            console.log('[Route][GET /catalogs][response]', {
+                tenantId,
+                status: 200,
+                ok: true,
+                itemsCount: Array.isArray(items) ? items.length : 0
+            });
             return res.json({ ok: true, tenantId, items });
         } catch (error) {
+            const errorLog = summarizeErrorForLog(error);
+            const statusCode = Number(error?.statusCode || error?.status);
+            console.log('[Service][Catalogs][error]', {
+                tenantId,
+                ...errorLog
+            });
+            console.log('[Route][GET /catalogs][response]', {
+                tenantId,
+                status: Number.isFinite(statusCode) ? statusCode : 500,
+                ok: false,
+                error: errorLog.message
+            });
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar catalogos del tenant.') });
         }
     });
