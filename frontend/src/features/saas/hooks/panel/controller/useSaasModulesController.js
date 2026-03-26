@@ -147,47 +147,113 @@ export default function useSaasModulesController({
 
     const saveWaModule = useCallback(async () => {
         const cleanTenantId = String(modulesDerived.settingsTenantId || '').trim();
-        if (!cleanTenantId || !canEditModules || typeof requestJson !== 'function') return;
-
         const mode = String(modulesState.waModulePanelMode || '').trim().toLowerCase();
         const moduleInDetail = modulesDerived.selectedConfigModule;
+        console.log('[Action][ModuleCreate][start]', {
+            mode,
+            tenantId: cleanTenantId || null,
+            canEditModules,
+            hasRequestJson: typeof requestJson === 'function',
+            hasRunAction: typeof runAction === 'function',
+            selectedModuleId: String(moduleInDetail?.moduleId || '').trim() || null
+        });
+        if (!cleanTenantId || !canEditModules || typeof requestJson !== 'function') {
+            console.warn('[Action][ModuleCreate][skip]', {
+                mode,
+                tenantId: cleanTenantId || null,
+                canEditModules,
+                hasRequestJson: typeof requestJson === 'function'
+            });
+            return;
+        }
         const payload = buildWaModulePayload({
             waModuleForm: modulesState.waModuleForm,
             selectedConfigModule: moduleInDetail
         });
+        console.log('[Action][ModuleCreate][payload]', {
+            mode,
+            tenantId: cleanTenantId,
+            payloadPreview: {
+                name: String(payload?.name || '').trim(),
+                phoneNumber: String(payload?.phoneNumber || '').trim(),
+                catalogIdsCount: Array.isArray(payload?.catalogIds) ? payload.catalogIds.length : 0,
+                assignedUserIdsCount: Array.isArray(payload?.assignedUserIds) ? payload.assignedUserIds.length : 0
+            }
+        });
         const quickReplyLibraryIds = normalizeQuickReplyLibraryDraft(modulesState.moduleQuickReplyLibraryDraft);
         const label = mode === 'create' ? 'Modulo WA creado' : 'Modulo WA actualizado';
 
-        await runWithFallback(runAction, label, async () => {
-            if (mode === 'edit' && moduleInDetail?.moduleId) {
-                await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/wa-modules/${encodeURIComponent(moduleInDetail.moduleId)}`, {
-                    method: 'PUT',
+        try {
+            await runWithFallback(runAction, label, async () => {
+                if (mode === 'edit' && moduleInDetail?.moduleId) {
+                    const updateUrl = `/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/wa-modules/${encodeURIComponent(moduleInDetail.moduleId)}`;
+                    console.log('[API][ModuleCreate][request]', {
+                        mode,
+                        method: 'PUT',
+                        url: updateUrl
+                    });
+                    const updatePayload = await requestJson(updateUrl, {
+                        method: 'PUT',
+                        body: payload
+                    });
+                    console.log('[API][ModuleCreate][response]', {
+                        mode,
+                        method: 'PUT',
+                        moduleId: String(updatePayload?.item?.moduleId || moduleInDetail.moduleId || '').trim() || null
+                    });
+                    if (typeof moduleActionsBase.syncQuickReplyLibrariesForModule === 'function') {
+                        await moduleActionsBase.syncQuickReplyLibrariesForModule(moduleInDetail.moduleId, quickReplyLibraryIds);
+                    }
+                    modulesState.setWaModulePanelMode('view');
+                    modulesState.setSelectedConfigKey(`wa_module:${moduleInDetail.moduleId}`);
+                    if (typeof loadWaModules === 'function') await loadWaModules(cleanTenantId);
+                    console.log('[Action][ModuleCreate][result]', {
+                        mode,
+                        status: 'ok',
+                        moduleId: String(moduleInDetail.moduleId || '').trim() || null
+                    });
+                    return;
+                }
+
+                const createUrl = `/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/wa-modules`;
+                console.log('[API][ModuleCreate][request]', {
+                    mode,
+                    method: 'POST',
+                    url: createUrl
+                });
+                const createPayload = await requestJson(createUrl, {
+                    method: 'POST',
                     body: payload
                 });
-                if (typeof moduleActionsBase.syncQuickReplyLibrariesForModule === 'function') {
-                    await moduleActionsBase.syncQuickReplyLibrariesForModule(moduleInDetail.moduleId, quickReplyLibraryIds);
+                console.log('[API][ModuleCreate][response]', {
+                    mode,
+                    method: 'POST',
+                    moduleId: String(createPayload?.item?.moduleId || '').trim() || null
+                });
+                const createdModuleId = String(createPayload?.item?.moduleId || '').trim();
+                if (createdModuleId) {
+                    if (typeof moduleActionsBase.syncQuickReplyLibrariesForModule === 'function') {
+                        await moduleActionsBase.syncQuickReplyLibrariesForModule(createdModuleId, quickReplyLibraryIds);
+                    }
+                    modulesState.setSelectedWaModuleId(createdModuleId);
+                    modulesState.setSelectedConfigKey(`wa_module:${createdModuleId}`);
                 }
                 modulesState.setWaModulePanelMode('view');
-                modulesState.setSelectedConfigKey(`wa_module:${moduleInDetail.moduleId}`);
                 if (typeof loadWaModules === 'function') await loadWaModules(cleanTenantId);
-                return;
-            }
-
-            const createPayload = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/wa-modules`, {
-                method: 'POST',
-                body: payload
+                console.log('[Action][ModuleCreate][result]', {
+                    mode,
+                    status: 'ok',
+                    moduleId: createdModuleId || null
+                });
             });
-            const createdModuleId = String(createPayload?.item?.moduleId || '').trim();
-            if (createdModuleId) {
-                if (typeof moduleActionsBase.syncQuickReplyLibrariesForModule === 'function') {
-                    await moduleActionsBase.syncQuickReplyLibrariesForModule(createdModuleId, quickReplyLibraryIds);
-                }
-                modulesState.setSelectedWaModuleId(createdModuleId);
-                modulesState.setSelectedConfigKey(`wa_module:${createdModuleId}`);
-            }
-            modulesState.setWaModulePanelMode('view');
-            if (typeof loadWaModules === 'function') await loadWaModules(cleanTenantId);
-        });
+        } catch (error) {
+            console.error('[Action][ModuleCreate][error]', {
+                mode,
+                tenantId: cleanTenantId || null,
+                message: String(error?.message || error || 'Error desconocido al guardar modulo.')
+            });
+            throw error;
+        }
     }, [
         canEditModules,
         loadWaModules,

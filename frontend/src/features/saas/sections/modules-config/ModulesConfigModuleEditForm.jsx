@@ -29,6 +29,36 @@ export default function ModulesConfigModuleEditForm({
     openConfigModuleView,
     clearConfigSelection
 }) {
+    const handleModuleSave = () => {
+        console.log('[UI][ModuleCreate][submit]', {
+            mode: waModulePanelMode,
+            hasSaveWaModule: typeof saveWaModule === 'function',
+            settingsTenantId: String(settingsTenantId || '').trim() || null,
+            moduleName: String(waModuleForm?.name || '').trim()
+        });
+        if (typeof saveWaModule !== 'function') {
+            console.error('[UI][ModuleCreate][error]', {
+                reason: 'saveWaModule is not a function',
+                receivedType: typeof saveWaModule
+            });
+            return;
+        }
+        Promise.resolve(saveWaModule())
+            .then(() => {
+                console.log('[UI][ModuleCreate][result]', {
+                    status: 'ok',
+                    mode: waModulePanelMode
+                });
+            })
+            .catch((error) => {
+                console.error('[UI][ModuleCreate][error]', {
+                    status: 'failed',
+                    mode: waModulePanelMode,
+                    message: String(error?.message || error || 'Error desconocido al guardar modulo.')
+                });
+            });
+    };
+
     return (
         <>
             <div className="saas-admin-form-row">
@@ -370,7 +400,7 @@ export default function ModulesConfigModuleEditForm({
                 <button
                     type="button"
                     disabled={busy || !settingsTenantId || !waModuleForm.name.trim() || !canEditModules}
-                    onClick={saveWaModule}
+                    onClick={handleModuleSave}
                 >
                     {waModulePanelMode === 'create' ? 'Guardar modulo' : 'Actualizar modulo'}
                 </button>

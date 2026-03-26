@@ -34,6 +34,7 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         aiAssistantLabelMap: context.aiAssistantLabelMap,
         handleOpenOperation: context.handleOpenOperation,
         openConfigModuleEdit: context.openConfigModuleEdit,
+        toggleWaModuleActive: context.toggleWaModuleActive,
         runAction: context.runAction,
         requestJson: context.requestJson,
         tenantSettingsPanelMode: context.tenantSettingsPanelMode,
@@ -56,7 +57,8 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         handleFormImageUpload: context.handleFormImageUpload,
         setWaModulePanelMode: context.setWaModulePanelMode,
         setSelectedWaModuleId: context.setSelectedWaModuleId,
-        setSelectedConfigKey: context.setSelectedConfigKey
+        setSelectedConfigKey: context.setSelectedConfigKey,
+        saveWaModule: context.saveWaModule
     };
 
     const catalogContext = {

@@ -751,6 +751,7 @@ export default function useSaasAdminPanelController({
         setSelectedCatalogId: catalogController.catalogState.setSelectedCatalogId,
         setTenantCatalogForm: catalogController.catalogState.setTenantCatalogForm,
         setTenantCatalogProducts: catalogController.catalogState.setTenantCatalogProducts,
+        setSelectedCatalogProductId: catalogController.catalogState.setSelectedCatalogProductId,
         setCatalogProductForm: catalogController.catalogState.setCatalogProductForm,
         setCatalogProductPanelMode: catalogController.catalogState.setCatalogProductPanelMode,
         setCatalogProductImageError: catalogController.catalogState.setCatalogProductImageError,
