@@ -104,6 +104,7 @@ const { createSocketModuleContextResolver } = require('../helpers/socket-module-
 const { createSocketRuntimeContextStore } = require('./socket-runtime-context.service');
 const { createSocketAuthzAuditService } = require('./socket-authz-audit.service');
 const { createSocketTransportOrchestrator } = require('./socket-transport-orchestrator.service');
+const { createSocketWaEventsBridgeService } = require('./socket-wa-events-bridge.service');
 const {
     createGuardRateLimit,
     createLazySharpLoader
@@ -3844,295 +3845,38 @@ class SocketManager {
     }
 
     setupWAClientEvents() {
-        waClient.on('qr', (qr) => this.emitToRuntimeContext('qr', qr));
-        waClient.on('ready', async () => {
-            const policyOk = await this.enforceRuntimeWebjsPhonePolicy();
-            if (!policyOk) return;
-
-            this.emitToRuntimeContext('ready', { message: 'WhatsApp Ready' });
-            this.emitToRuntimeContext('wa_capabilities', this.getWaCapabilities());
-            this.emitToRuntimeContext('wa_runtime', this.getWaRuntime());
+        const waEventsBridge = createSocketWaEventsBridgeService({
+            waClient,
+            mediaManager,
+            emitToRuntimeContext: this.emitToRuntimeContext.bind(this),
+            getWaCapabilities: this.getWaCapabilities.bind(this),
+            getWaRuntime: this.getWaRuntime.bind(this),
+            enforceRuntimeWebjsPhonePolicy: this.enforceRuntimeWebjsPhonePolicy.bind(this),
+            resolveHistoryTenantId: this.resolveHistoryTenantId.bind(this),
+            resolveHistoryModuleContext: this.resolveHistoryModuleContext.bind(this),
+            persistMessageHistory: this.persistMessageHistory.bind(this),
+            persistMessageEdit: this.persistMessageEdit.bind(this),
+            persistMessageAck: this.persistMessageAck.bind(this),
+            invalidateChatListCache: this.invalidateChatListCache.bind(this),
+            toChatSummary: this.toChatSummary.bind(this),
+            emitMessageEditability: this.emitMessageEditability.bind(this),
+            scheduleEditabilityRefresh: this.scheduleEditabilityRefresh.bind(this),
+            isStatusOrSystemMessage,
+            isVisibleChatId,
+            getSerializedMessageId,
+            mergeAgentMeta,
+            getOutgoingAgentMeta,
+            buildEffectiveModuleContext,
+            buildModuleAttributionMeta,
+            normalizeScopedModuleId,
+            buildScopedChatId,
+            resolveMessageSenderMeta,
+            extractMessageFileMeta,
+            extractQuotedMessageInfo,
+            extractOrderInfo,
+            extractLocationInfo
         });
-        waClient.on('authenticated', () => this.emitToRuntimeContext('authenticated'));
-        waClient.on('auth_failure', (msg) => this.emitToRuntimeContext('auth_failure', msg));
-        waClient.on('disconnected', (reason) => this.emitToRuntimeContext('disconnected', reason));
-
-        waClient.on('message', async (msg) => {
-            if (isStatusOrSystemMessage(msg)) return;
-
-            const historyTenantId = this.resolveHistoryTenantId();
-            const runtimeModuleContext = this.resolveHistoryModuleContext();
-            const relatedChatIdBase = String(msg?.fromMe ? msg?.to : msg?.from || '').trim();
-            const messageId = getSerializedMessageId(msg);
-            const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId)) : null;
-            const effectiveModuleContext = buildEffectiveModuleContext(runtimeModuleContext, agentMeta);
-            const moduleAttributionMeta = buildModuleAttributionMeta(effectiveModuleContext);
-            const scopeModuleId = normalizeScopedModuleId(
-                effectiveModuleContext?.moduleId
-                || moduleAttributionMeta?.sentViaModuleId
-                || ''
-            );
-            const scopedChatId = buildScopedChatId(relatedChatIdBase, scopeModuleId || '');
-            const media = await mediaManager.processMessageMedia(msg, {
-                tenantId: historyTenantId,
-                moduleId: scopeModuleId || '',
-                contactId: relatedChatIdBase,
-                timestampUnix: Number(msg?.timestamp || 0) || null
-            });
-            const senderMeta = await resolveMessageSenderMeta(msg);
-            const fileMeta = extractMessageFileMeta(msg, media);
-            const quotedMessage = await extractQuotedMessageInfo(msg);
-            const order = extractOrderInfo(msg);
-            const location = extractLocationInfo(msg);
-            await this.persistMessageHistory(historyTenantId, {
-                msg,
-                senderMeta,
-                fileMeta,
-                order,
-                location,
-                quotedMessage,
-                agentMeta,
-                moduleContext: effectiveModuleContext
-            });
-
-            this.emitToRuntimeContext('message', {
-                id: messageId,
-                chatId: scopedChatId || relatedChatIdBase,
-                baseChatId: relatedChatIdBase || null,
-                scopeModuleId: scopeModuleId || null,
-                from: String(msg?.from || '').trim() || null,
-                to: String(msg?.fromMe ? (scopedChatId || msg?.to) : msg?.to || '').trim() || null,
-                body: msg?.body,
-                timestamp: msg?.timestamp,
-                fromMe: msg?.fromMe,
-                hasMedia: msg?.hasMedia,
-                mediaData: media ? media.data : null,
-                mimetype: media ? media.mimetype : null,
-                filename: fileMeta.filename,
-                fileSizeBytes: fileMeta.fileSizeBytes,
-                mediaUrl: fileMeta.mediaUrl || null,
-                mediaPath: fileMeta.mediaPath || null,
-                ack: msg?.ack,
-                type: msg?.type,
-                author: msg?.author || msg?._data?.author || null,
-                notifyName: senderMeta.notifyName,
-                senderPhone: senderMeta.senderPhone,
-                senderId: senderMeta.senderId,
-                senderPushname: senderMeta.senderPushname,
-                isGroupMessage: senderMeta.isGroupMessage,
-                canEdit: false,
-                order,
-                location,
-                quotedMessage,
-                sentViaModuleId: moduleAttributionMeta?.sentViaModuleId || null,
-                sentViaModuleName: moduleAttributionMeta?.sentViaModuleName || null,
-                sentViaModuleImageUrl: moduleAttributionMeta?.sentViaModuleImageUrl || null,
-                sentViaTransport: moduleAttributionMeta?.sentViaTransport || null,
-                sentViaPhoneNumber: moduleAttributionMeta?.sentViaPhoneNumber || null,
-                sentViaChannelType: moduleAttributionMeta?.sentViaChannelType || null,
-                ...(agentMeta || {})
-            });
-
-            try {
-                if (isVisibleChatId(relatedChatIdBase)) {
-                    this.invalidateChatListCache();
-                    const chat = await waClient.client.getChatById(relatedChatIdBase);
-                    const summary = await this.toChatSummary(chat, {
-                        includeHeavyMeta: false,
-                        tenantId: historyTenantId,
-                        scopeModuleId: String(effectiveModuleContext?.moduleId || '').trim().toLowerCase() || '',
-                        scopeModuleName: String(effectiveModuleContext?.name || '').trim() || null,
-                        scopeModuleImageUrl: String(effectiveModuleContext?.imageUrl || effectiveModuleContext?.logoUrl || '').trim() || null,
-                        scopeChannelType: String(effectiveModuleContext?.channelType || '').trim().toLowerCase() || null,
-                        scopeTransport: String(effectiveModuleContext?.transportMode || '').trim().toLowerCase() || null
-                    });
-                    if (summary) this.emitToRuntimeContext('chat_updated', summary);
-                }
-            } catch (e) {
-                // silent: message delivery should not fail by chat refresh issues
-            }
-        });
-
-        waClient.on('message_sent', async (msg) => {
-            if (isStatusOrSystemMessage(msg)) return;
-            const historyTenantId = this.resolveHistoryTenantId();
-            const runtimeModuleContext = this.resolveHistoryModuleContext();
-            const relatedChatIdBase = String(msg?.to || msg?.from || '').trim();
-            const messageId = getSerializedMessageId(msg);
-            const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId)) : null;
-            const effectiveModuleContext = buildEffectiveModuleContext(runtimeModuleContext, agentMeta);
-            const moduleAttributionMeta = buildModuleAttributionMeta(effectiveModuleContext);
-            const scopeModuleId = normalizeScopedModuleId(
-                effectiveModuleContext?.moduleId
-                || moduleAttributionMeta?.sentViaModuleId
-                || ''
-            );
-            const scopedChatId = buildScopedChatId(relatedChatIdBase, scopeModuleId || '');
-            const media = await mediaManager.processMessageMedia(msg, {
-                tenantId: historyTenantId,
-                moduleId: scopeModuleId || '',
-                contactId: relatedChatIdBase,
-                timestampUnix: Number(msg?.timestamp || 0) || null
-            });
-            const fileMeta = extractMessageFileMeta(msg, media);
-            const quotedMessage = await extractQuotedMessageInfo(msg);
-            const order = extractOrderInfo(msg);
-            const location = extractLocationInfo(msg);
-            await this.persistMessageHistory(historyTenantId, {
-                msg,
-                senderMeta: null,
-                fileMeta,
-                order,
-                location,
-                quotedMessage,
-                agentMeta,
-                moduleContext: effectiveModuleContext
-            });
-            this.emitToRuntimeContext('message', {
-                id: messageId,
-                chatId: scopedChatId || relatedChatIdBase,
-                baseChatId: relatedChatIdBase || null,
-                scopeModuleId: scopeModuleId || null,
-                from: String(msg?.from || '').trim() || null,
-                to: String(scopedChatId || msg?.to || '').trim() || null,
-                body: msg?.body,
-                timestamp: msg?.timestamp,
-                fromMe: true,
-                hasMedia: msg?.hasMedia,
-                mediaData: media ? media.data : null,
-                mimetype: media ? media.mimetype : null,
-                filename: fileMeta.filename,
-                fileSizeBytes: fileMeta.fileSizeBytes,
-                mediaUrl: fileMeta.mediaUrl || null,
-                mediaPath: fileMeta.mediaPath || null,
-                ack: msg?.ack,
-                type: msg?.type,
-                author: msg?.author || msg?._data?.author || null,
-                notifyName: null,
-                senderPhone: null,
-                senderId: null,
-                senderPushname: null,
-                isGroupMessage: String(msg?.to || msg?.from || '').includes('@g.us'),
-                canEdit: false,
-                order,
-                location,
-                quotedMessage,
-                sentViaModuleId: moduleAttributionMeta?.sentViaModuleId || null,
-                sentViaModuleName: moduleAttributionMeta?.sentViaModuleName || null,
-                sentViaModuleImageUrl: moduleAttributionMeta?.sentViaModuleImageUrl || null,
-                sentViaTransport: moduleAttributionMeta?.sentViaTransport || null,
-                sentViaPhoneNumber: moduleAttributionMeta?.sentViaPhoneNumber || null,
-                sentViaChannelType: moduleAttributionMeta?.sentViaChannelType || null,
-                ...(agentMeta || {})
-            });
-
-            if (messageId) {
-                this.emitMessageEditability(messageId, scopedChatId || relatedChatIdBase);
-                this.scheduleEditabilityRefresh(messageId, scopedChatId || relatedChatIdBase);
-            }
-
-            try {
-                if (isVisibleChatId(relatedChatIdBase)) {
-                    this.invalidateChatListCache();
-                    const chat = await waClient.client.getChatById(relatedChatIdBase);
-                    const summary = await this.toChatSummary(chat, {
-                        includeHeavyMeta: false,
-                        tenantId: historyTenantId,
-                        scopeModuleId: String(effectiveModuleContext?.moduleId || '').trim().toLowerCase() || '',
-                        scopeModuleName: String(effectiveModuleContext?.name || '').trim() || null,
-                        scopeModuleImageUrl: String(effectiveModuleContext?.imageUrl || effectiveModuleContext?.logoUrl || '').trim() || null,
-                        scopeChannelType: String(effectiveModuleContext?.channelType || '').trim().toLowerCase() || null,
-                        scopeTransport: String(effectiveModuleContext?.transportMode || '').trim().toLowerCase() || null
-                    });
-                    if (summary) this.emitToRuntimeContext('chat_updated', summary);
-                }
-            } catch (e) { }
-        });
-
-        waClient.on('message_edit', async ({ message, newBody, prevBody }) => {
-            if (!message || isStatusOrSystemMessage(message)) return;
-            const chatId = message.fromMe ? message.to : message.from;
-
-            const messageId = getSerializedMessageId(message);
-            if (!messageId) return;
-
-            let canEdit = false;
-            try {
-                canEdit = await waClient.canEditMessageById(messageId);
-            } catch (e) { }
-
-            const editedAtMs = Number(message?.latestEditSenderTimestampMs || message?._data?.latestEditSenderTimestampMs || 0);
-            const editedAt = editedAtMs > 0 ? Math.floor(editedAtMs / 1000) : Math.floor(Date.now() / 1000);
-            await this.persistMessageEdit(this.resolveHistoryTenantId(), {
-                messageId,
-                chatId,
-                body: String(newBody ?? message.body ?? ''),
-                editedAtUnix: editedAt
-            });
-
-            if (!isVisibleChatId(chatId)) return;
-
-            this.emitToRuntimeContext('message_edited', {
-                chatId,
-                messageId,
-                body: String(newBody ?? message.body ?? ''),
-                prevBody: String(prevBody ?? ''),
-                edited: true,
-                editedAt,
-                fromMe: Boolean(message.fromMe),
-                canEdit
-            });
-
-            try {
-                this.invalidateChatListCache();
-                const refreshedChat = await waClient.client.getChatById(chatId);
-                const runtimeModuleContext = this.resolveHistoryModuleContext();
-                const summary = await this.toChatSummary(refreshedChat, {
-                    includeHeavyMeta: false,
-                    tenantId: this.resolveHistoryTenantId(),
-                    scopeModuleId: String(runtimeModuleContext?.moduleId || '').trim().toLowerCase() || '',
-                    scopeModuleName: String(runtimeModuleContext?.name || '').trim() || null,
-                    scopeModuleImageUrl: String(runtimeModuleContext?.imageUrl || runtimeModuleContext?.logoUrl || '').trim() || null,
-                    scopeChannelType: String(runtimeModuleContext?.channelType || '').trim().toLowerCase() || null,
-                    scopeTransport: String(runtimeModuleContext?.transportMode || '').trim().toLowerCase() || null
-                });
-                if (summary) this.emitToRuntimeContext('chat_updated', summary);
-            } catch (e) { }
-        });
-
-        waClient.on('message_ack', async ({ message, ack }) => {
-            const messageId = getSerializedMessageId(message);
-            const baseChatId = String(message?.to || message?.from || '').trim();
-            const isFromMe = Boolean(message?.fromMe);
-            const runtimeModuleContext = this.resolveHistoryModuleContext();
-            const scopeModuleId = normalizeScopedModuleId(runtimeModuleContext?.moduleId || '');
-            const scopedChatId = buildScopedChatId(baseChatId, scopeModuleId || '');
-            await this.persistMessageAck(this.resolveHistoryTenantId(), {
-                messageId,
-                chatId: baseChatId,
-                ack
-            });
-
-            let canEdit;
-            if (isFromMe && messageId) {
-                try {
-                    canEdit = await waClient.canEditMessageById(messageId);
-                } catch (e) { }
-            }
-
-            this.emitToRuntimeContext('message_ack', {
-                id: messageId,
-                chatId: scopedChatId || baseChatId,
-                baseChatId: baseChatId || null,
-                scopeModuleId: scopeModuleId || null,
-                ack: ack,
-                canEdit
-            });
-
-            if (isFromMe && messageId) {
-                this.scheduleEditabilityRefresh(messageId, scopedChatId || baseChatId, [900, 2600]);
-            }
-        });
+        waEventsBridge.registerWaProviderEvents();
     }
 }
 
