@@ -3,21 +3,16 @@ import moment from 'moment';
 import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, Download } from 'lucide-react';
 import {
     renderWhatsAppFormattedText,
-    parseOrderMoneyValue,
     formatOrderMoney,
     isLikelyBinaryBody,
     normalizeSearchText,
-    parseQuoteItemsFromBody,
-    parseQuotePaymentFromBody,
-    resolveLocationData,
     extractFirstNonMapUrlFromText,
-    getGroupSenderColor,
-    buildAttachmentMeta,
     renderAttachmentIcon,
     extractPhoneCandidatesFromText
 } from './helpers';
 import useMessageBubbleAttachmentActions from './hooks/useMessageBubbleAttachmentActions';
 import useMessageBubbleLinkPreview from './hooks/useMessageBubbleLinkPreview';
+import useMessageBubbleDerivedModel from './hooks/useMessageBubbleDerivedModel';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -40,73 +35,64 @@ const MessageBubble = ({
     senderDisplayName = '',
     buildApiHeaders,
 }) => {
-    const isOut = msg.fromMe;
+    const {
+        isOut,
+        isCatalogItem,
+        messageBodyText,
+        hasOrder,
+        actionOrder,
+        isOrderActionable,
+        orderActionLabel,
+        orderItems,
+        reportedItemCount,
+        isProductPayload,
+        isOrderPayload,
+        isQuotePayload,
+        rawOrderNote,
+        safeOrderNote,
+        orderSubtotalLabel,
+        quoteSummaryRaw,
+        quoteCurrency,
+        quoteSubtotal,
+        quoteDiscount,
+        quoteTotalAfterDiscount,
+        quoteDelivery,
+        quoteTotalPayable,
+        quoteSubtotalLabel,
+        quoteDiscountLabel,
+        quoteTotalAfterDiscountLabel,
+        quoteDeliveryLabel,
+        quoteTotalPayableLabel,
+        quoteOrderPayload,
+        quoteItemsFromBody,
+        quotePaymentFromBody,
+        mediaUrl,
+        mediaImageSrc,
+        isImageMedia,
+        hasBinaryAttachment,
+        attachmentMeta,
+        locationData,
+        isLocationMessage,
+        messageSenderName,
+        senderNameColor,
+        displaySentByName,
+        safeRoleLabel,
+        safeSentViaLabel,
+        showOutgoingAttribution,
+        canEditMessage,
+        canReplyMessage: canReplyMessageBase,
+        canForwardMessage: canForwardMessageBase
+    } = useMessageBubbleDerivedModel({
+        msg,
+        senderDisplayName,
+        canEditMessages,
+        activeChatId
+    });
 
-    const isCatalogItem = msg.body && msg.body.includes('REF:');
-    const catalogMatch = isCatalogItem ? msg.body.match(/REF: (.*)\nPrecio: (.*)/) : null;
+    const catalogMatch = isCatalogItem ? messageBodyText.match(/REF: (.*)\nPrecio: (.*)/) : null;
     const productTitle = catalogMatch ? catalogMatch[1] : null;
     const productPrice = catalogMatch ? catalogMatch[2] : null;
-
-    const messageBodyText = String(msg?.body || '');
-    const quoteItemsFromBody = parseQuoteItemsFromBody(messageBodyText);
-    const quotePaymentFromBody = parseQuotePaymentFromBody(messageBodyText);
-    const quoteOrderPayload = quoteItemsFromBody.length > 0
-        ? {
-            orderId: null,
-            currency: 'PEN',
-            subtotal: Number.isFinite(quotePaymentFromBody?.subtotal)
-                ? quotePaymentFromBody.subtotal
-                : (Number.isFinite(quotePaymentFromBody?.totalAfterDiscount) ? quotePaymentFromBody.totalAfterDiscount : null),
-            products: quoteItemsFromBody,
-            rawPreview: {
-                type: 'quote',
-                itemCount: quoteItemsFromBody.length,
-                title: 'Cotizacion',
-                quoteSummary: quotePaymentFromBody || null
-            }
-        }
-        : null;
-
-    const hasOrder = Boolean(msg?.order);
-    const actionOrder = hasOrder ? msg.order : quoteOrderPayload;
-    const orderRawType = String(actionOrder?.rawPreview?.type || msg?.type || '').toLowerCase();
-    const orderItems = Array.isArray(actionOrder?.products) ? actionOrder.products : [];
     const firstOrderItem = orderItems[0] || null;
-    const rawItemCount = parseOrderMoneyValue(actionOrder?.rawPreview?.itemCount);
-    const reportedItemCount = Number.isFinite(rawItemCount) ? Math.max(0, Math.round(rawItemCount)) : orderItems.length;
-    const isProductPayload = orderRawType.includes('product');
-    const isOrderPayload = orderRawType.includes('order') || Boolean(actionOrder?.orderId);
-    const bodyNormalized = normalizeSearchText(messageBodyText);
-    const isQuotePayload = orderRawType.includes('quote') || (bodyNormalized.includes('cotizacion') && orderItems.length > 0);
-    const isOrderActionable = Boolean(actionOrder) && (isOrderPayload || isQuotePayload || isProductPayload);
-    const orderActionLabel = isProductPayload ? 'Anadir al carrito' : 'Ver en carrito';
-    const rawOrderNote = String(actionOrder?.rawPreview?.body || '').trim();
-    const safeOrderNote = isLikelyBinaryBody(rawOrderNote) ? '' : rawOrderNote;
-    const orderSubtotalLabel = formatOrderMoney(actionOrder?.subtotal, actionOrder?.currency || 'PEN');
-    const quoteSummaryRaw = isQuotePayload
-        ? (actionOrder?.rawPreview?.quoteSummary || quotePaymentFromBody || null)
-        : null;
-    const quoteCurrency = actionOrder?.currency || 'PEN';
-    const quoteSubtotal = parseOrderMoneyValue(quoteSummaryRaw?.subtotal ?? actionOrder?.subtotal);
-    const quoteDiscount = parseOrderMoneyValue(quoteSummaryRaw?.discount);
-    const quoteTotalAfterDiscount = parseOrderMoneyValue(quoteSummaryRaw?.totalAfterDiscount)
-        ?? ((Number.isFinite(quoteSubtotal) && Number.isFinite(quoteDiscount))
-            ? Math.max(0, Math.round((quoteSubtotal - quoteDiscount) * 100) / 100)
-            : null);
-    const quoteDelivery = parseOrderMoneyValue(quoteSummaryRaw?.deliveryAmount);
-    const quoteTotalPayable = parseOrderMoneyValue(quoteSummaryRaw?.totalPayable)
-        ?? ((Number.isFinite(quoteTotalAfterDiscount) && Number.isFinite(quoteDelivery))
-            ? Math.max(0, Math.round((quoteTotalAfterDiscount + quoteDelivery) * 100) / 100)
-            : null);
-    const quoteSubtotalLabel = formatOrderMoney(quoteSubtotal, quoteCurrency);
-    const quoteDiscountLabel = formatOrderMoney(quoteDiscount, quoteCurrency);
-    const quoteTotalAfterDiscountLabel = formatOrderMoney(quoteTotalAfterDiscount, quoteCurrency);
-    const quoteDeliveryLabel = quoteSummaryRaw?.deliveryFree
-        ? 'Gratuito'
-        : formatOrderMoney(quoteDelivery, quoteCurrency);
-    const quoteTotalPayableLabel = formatOrderMoney(quoteTotalPayable, quoteCurrency);
-    const locationData = resolveLocationData(msg);
-    const isLocationMessage = Boolean(locationData);
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [showForwardPicker, setShowForwardPicker] = useState(false);
     const [forwardSearch, setForwardSearch] = useState('');
@@ -184,25 +170,6 @@ const MessageBubble = ({
     const mediaDataUrl = msg.hasMedia && msg.mediaData
         ? `data:${msg.mimetype || 'application/octet-stream'};base64,${msg.mediaData}`
         : null;
-    const rawMediaUrl = msg.hasMedia ? String(msg?.mediaUrl || '').trim() : '';
-    const mediaUrl = (() => {
-        if (!rawMediaUrl) return '';
-        if (/^https?:\/\//i.test(rawMediaUrl)) return rawMediaUrl;
-        if (/^data:/i.test(rawMediaUrl)) return rawMediaUrl;
-        const normalizedPath = rawMediaUrl.startsWith('/') ? rawMediaUrl : `/${rawMediaUrl}`;
-        return `${String(API_URL || '').replace(/\/+$/, '')}${normalizedPath}`;
-    })();
-    const mediaImageSrc = mediaDataUrl || (mediaUrl || null);
-    const mediaLooksImageByUrl = Boolean(mediaUrl && /\.(png|jpe?g|webp|gif|avif)(?:$|[?#])/i.test(mediaUrl));
-    const isImageMedia = Boolean(String(msg?.mimetype || '').trim().toLowerCase().startsWith('image/')) || mediaLooksImageByUrl;
-
-    const hasBinaryAttachment = Boolean(
-        msg.hasMedia
-        && msg.mediaData
-        && !msg.mimetype?.startsWith('image/')
-        && !msg.mimetype?.startsWith('audio/')
-    );
-    const attachmentMeta = hasBinaryAttachment ? buildAttachmentMeta(msg) : null;
     const {
         canOpenAttachmentAsPdf,
         handleOpenAttachment,
@@ -212,43 +179,8 @@ const MessageBubble = ({
         attachmentMeta,
         mediaDataUrl
     });
-
-    const messageSenderName = String(senderDisplayName || msg?.notifyName || msg?.senderPushname || '').trim();
-    const senderIdentityKey = String(
-        msg?.senderId
-        || msg?.author
-        || msg?.senderPhone
-        || messageSenderName
-        || ''
-    ).trim().toLowerCase();
-    const senderNameColor = getGroupSenderColor(senderIdentityKey);
-
-    const sentByName = String(msg?.sentByName || msg?.sentByEmail || '').trim();
-    const sentByRole = String(msg?.sentByRole || '').trim();
-    const sentViaModuleName = String(msg?.sentViaModuleName || '').trim();
-    const safeSentByName = sentByName.replace(/\s+/g, ' ').trim();
-    const roleLabelMap = {
-        superadmin: 'Superadmin',
-        owner: 'Owner',
-        admin: 'Admin',
-        seller: 'Vendedor'
-    };
-    const safeRoleLabel = roleLabelMap[String(sentByRole || '').trim().toLowerCase()] || '';
-    const fallbackSentByUserId = String(msg?.sentByUserId || '').trim();
-    const displaySentByName = String(safeSentByName || safeRoleLabel || fallbackSentByUserId || 'Operador').trim();
-    const safeSentViaLabel = String(sentViaModuleName || sentByRole || '')
-        .replace(/[\u25C6\u25C8\u2022\u00B7\uFFFD<>|]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    const showOutgoingAttribution = Boolean(isOut && (displaySentByName || safeSentViaLabel));
-
-    const canEditMessage = Boolean(
-        canEditMessages
-        && isOut
-        && !msg?.hasMedia
-        && String(msg?.body || '').trim()
-        && msg?.canEdit === true
-    );
+    const canReplyMessage = canReplyMessageBase && typeof onReplyMessage === 'function';
+    const canForwardMessage = canForwardMessageBase && typeof onForwardMessage === 'function';
 
     const handleEditClick = () => {
         if (!canEditMessage || typeof onEditMessage !== 'function') return;
@@ -265,8 +197,6 @@ const MessageBubble = ({
         }
         : null;
 
-    const canReplyMessage = Boolean(msg?.id && typeof onReplyMessage === 'function');
-    const canForwardMessage = Boolean(msg?.id && typeof onForwardMessage === 'function');
     const hasMenuActions = Boolean(canReplyMessage || canForwardMessage || canEditMessage);
     const forwardNeedle = normalizeSearchText(forwardSearch);
     const forwardCandidates = Array.isArray(forwardChatOptions)
