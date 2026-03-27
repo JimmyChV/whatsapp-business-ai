@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, MoreVertical, ChevronUp, ChevronDown, Tag, MapPin, Share2, X } from 'lucide-react';
 import MessageBubble from './message-bubble/MessageBubble';
 import moment from 'moment';
@@ -6,6 +6,7 @@ import ChannelBrandIcon from './ChannelBrandIcon';
 import ChatInput from './ChatInput';
 import { normalizeModuleImageUrl } from '../core/helpers/appChat.helpers';
 import useChatWindowMapController from './hooks/useChatWindowMapController';
+import useChatWindowSearchController from './hooks/useChatWindowSearchController';
 
 // ============================================================
 // ChatWindow - Full component with Profile Panel
@@ -37,12 +38,8 @@ const ChatWindow = ({
     ...inputProps
 }) => {
     const [showMenu, setShowMenu] = useState(false);
-    const [searchVisible, setSearchVisible] = useState(false);
-    const [chatSearch, setChatSearch] = useState('');
     const [showLabelMenu, setShowLabelMenu] = useState(false);
-    const [activeMatchIdx, setActiveMatchIdx] = useState(0);
     const [lightboxMedia, setLightboxMedia] = useState(null);
-    const messageRefs = useRef({});
     const {
         showMapModal,
         setShowMapModal,
@@ -68,28 +65,17 @@ const ChatWindow = ({
             }
         }
     });
-
-    const searchTerm = chatSearch.trim().toLowerCase();
-    const matchIndexes = searchTerm
-        ? messages.reduce((acc, msg, idx) => (String(msg.body || '').toLowerCase().includes(searchTerm) ? [...acc, idx] : acc), [])
-        : [];
-
-    const jumpToMatch = (idx) => {
-        const targetMessageIdx = matchIndexes[idx];
-        if (targetMessageIdx === undefined) return;
-        const messageId = messages[targetMessageIdx]?.id || `idx_${targetMessageIdx}`;
-        const node = messageRefs.current[messageId];
-        if (node?.scrollIntoView) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    };
-
-    useEffect(() => {
-        if (!matchIndexes.length) {
-            setActiveMatchIdx(0);
-            return;
-        }
-        setActiveMatchIdx(0);
-        setTimeout(() => jumpToMatch(0), 0);
-    }, [chatSearch, messages.length]);
+    const {
+        searchVisible,
+        setSearchVisible,
+        chatSearch,
+        setChatSearch,
+        activeMatchIdx,
+        setActiveMatchIdx,
+        messageRefs,
+        matchIndexes,
+        jumpToMatch
+    } = useChatWindowSearchController({ messages });
 
     useEffect(() => {
         const onEsc = (event) => {
