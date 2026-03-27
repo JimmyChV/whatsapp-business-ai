@@ -1,5 +1,6 @@
 import { Sidebar, BusinessSidebar, ClientProfilePanel, ChatWindow, NewChatModal } from '../features/chat/components';
 import { sanitizeDisplayText } from '../features/chat/core';
+import '../features/chat/chat.css';
 
 export default function OperationPage({
   forceOperationLaunch,
