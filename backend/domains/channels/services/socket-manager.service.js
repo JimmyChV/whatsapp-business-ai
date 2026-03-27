@@ -108,6 +108,7 @@ const { createSocketWaEventsBridgeService } = require('./socket-wa-events-bridge
 const { createSocketWaModuleContextService } = require('./socket-wa-module-context.service');
 const { createSocketChatListService } = require('./socket-chat-list.service');
 const { createSocketChatHistoryMediaService } = require('./socket-chat-history-media.service');
+const { createSocketChatStateLabelsService } = require('./socket-chat-state-labels.service');
 const {
     createGuardRateLimit,
     createLazySharpLoader
@@ -283,6 +284,17 @@ class SocketManager {
             getOutgoingAgentMeta,
             mergeAgentMeta,
             getSortedVisibleChats: this.getSortedVisibleChats.bind(this)
+        });
+        this.chatStateLabelsService = createSocketChatStateLabelsService({
+            messageHistoryService,
+            tenantLabelService,
+            normalizeScopedModuleId,
+            resolveScopedChatTarget,
+            buildScopedChatId,
+            getSortedVisibleChats: this.getSortedVisibleChats.bind(this),
+            toChatSummary: this.toChatSummary.bind(this),
+            toHistoryChatSummary: this.toHistoryChatSummary.bind(this),
+            emitToTenant: this.emitToTenant.bind(this)
         });
         this.setupSocketEvents();
         this.setupWAClientEvents();
@@ -1142,6 +1154,13 @@ class SocketManager {
                 transportOrchestrator
             });
 
+            this.chatStateLabelsService.registerChatStateLabelHandlers({
+                socket,
+                tenantId,
+                authzAudit,
+                recordConversationEvent
+            });
+
             socket.on('start_new_chat', async ({ phone, firstMessage, moduleId } = {}) => {
                 try {
                     if (!transportOrchestrator.ensureTransportReady(socket, { action: 'abrir un chat nuevo', errorEvent: 'start_new_chat_error' })) {
@@ -1284,209 +1303,6 @@ class SocketManager {
                 }
             });
 
-            socket.on('set_chat_state', async ({ chatId, pinned, archived }) => {
-                if (!authzAudit.requireRole(['owner', 'admin', 'seller'], { errorEvent: 'error', action: 'actualizar estado de chat' })) return;
-                try {
-                    const requestedChatId = String(chatId || '').trim();
-                    if (!requestedChatId) {
-                        socket.emit('error', 'Chat invalido para actualizar estado.');
-                        return;
-                    }
-
-                    const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
-                    const scopedTarget = resolveScopedChatTarget(requestedChatId, selectedScopeModuleId);
-                    const safeChatId = String(scopedTarget.baseChatId || '').trim();
-                    const scopeModuleId = normalizeScopedModuleId(scopedTarget.moduleId || selectedScopeModuleId || '');
-                    const scopedChatId = scopedTarget.scopedChatId || buildScopedChatId(safeChatId, scopeModuleId || '');
-                    if (!safeChatId) {
-                        socket.emit('error', 'Chat invalido para actualizar estado.');
-                        return;
-                    }
-
-                    const hasPinned = typeof pinned === 'boolean';
-                    const hasArchived = typeof archived === 'boolean';
-                    if (!hasPinned && !hasArchived) {
-                        socket.emit('error', 'No se detectaron cambios para el chat.');
-                        return;
-                    }
-
-                    const patch = {};
-                    if (hasPinned) patch.pinned = Boolean(pinned);
-                    if (hasArchived) patch.archived = Boolean(archived);
-
-                    const persisted = await messageHistoryService.updateChatState(tenantId, {
-                        chatId: safeChatId,
-                        pinned: hasPinned ? patch.pinned : undefined,
-                        archived: hasArchived ? patch.archived : undefined
-                    });
-
-                    const selectedModuleContext = socket?.data?.waModule || null;
-                    const summaryScopeOptions = {
-                        tenantId,
-                        scopeModuleId: scopeModuleId || '',
-                        scopeModuleName: String(selectedModuleContext?.name || '').trim() || null,
-                        scopeModuleImageUrl: String(selectedModuleContext?.imageUrl || selectedModuleContext?.logoUrl || '').trim() || null,
-                        scopeChannelType: String(selectedModuleContext?.channelType || '').trim().toLowerCase() || null,
-                        scopeTransport: String(selectedModuleContext?.transportMode || '').trim().toLowerCase() || null
-                    };
-
-                    let summary = null;
-                    try {
-                        const visibleChats = await this.getSortedVisibleChats({ forceRefresh: false });
-                        const waChat = (visibleChats || []).find((entry) => String(entry?.id?._serialized || '').trim() === safeChatId);
-                        if (waChat) {
-                            summary = await this.toChatSummary(waChat, { includeHeavyMeta: false, ...summaryScopeOptions });
-                        }
-                    } catch (_) { }
-
-                    if (!summary) {
-                        try {
-                            const rows = await messageHistoryService.listChats(tenantId, { limit: 5000, offset: 0 });
-                            const row = Array.isArray(rows)
-                                ? rows.find((entry) => String(entry?.chatId || '').trim() === safeChatId)
-                                : null;
-                            if (row) {
-                                summary = this.toHistoryChatSummary({ ...row, scopeModuleId: scopeModuleId || row?.scopeModuleId || null });
-                            }
-                        } catch (_) { }
-                    }
-
-                    if (summary) {
-                        const nextSummary = {
-                            ...summary,
-                            id: scopedChatId || summary.id || safeChatId,
-                            baseChatId: safeChatId,
-                            scopeModuleId: scopeModuleId || summary.scopeModuleId || null,
-                            archived: hasArchived ? patch.archived : Boolean(summary.archived),
-                            pinned: hasPinned ? patch.pinned : Boolean(summary.pinned)
-                        };
-                        this.emitToTenant(tenantId, 'chat_updated', nextSummary);
-                    }
-
-                    socket.emit('chat_state_saved', {
-                        ok: true,
-                        chatId: scopedChatId || safeChatId,
-                        baseChatId: safeChatId,
-                        scopeModuleId: scopeModuleId || null,
-                        pinned: hasPinned ? patch.pinned : Boolean(persisted?.pinned),
-                        archived: hasArchived ? patch.archived : Boolean(persisted?.archived)
-                    });
-
-                    await authzAudit.auditSocketAction('chat.state.updated', {
-                        resourceType: 'chat',
-                        resourceId: safeChatId,
-                        payload: {
-                            pinned: hasPinned ? patch.pinned : undefined,
-                            archived: hasArchived ? patch.archived : undefined
-                        }
-                    });
-
-                    await recordConversationEvent({
-                        chatId: safeChatId,
-                        scopeModuleId,
-                        eventType: 'chat.state.updated',
-                        eventSource: 'socket',
-                        payload: {
-                            pinned: hasPinned ? patch.pinned : undefined,
-                            archived: hasArchived ? patch.archived : undefined
-                        }
-                    });
-                } catch (e) {
-                    console.error('set_chat_state error:', e.message);
-                    socket.emit('error', String(e?.message || 'No se pudo actualizar el estado del chat.'));
-                }
-            });
-            socket.on('set_chat_labels', async ({ chatId, labelIds }) => {
-                if (!authzAudit.requireRole(['owner', 'admin', 'seller'], { errorEvent: 'chat_labels_error', action: 'gestionar etiquetas' })) return;
-                try {
-                    const requestedChatId = String(chatId || '').trim();
-                    if (!requestedChatId) {
-                        socket.emit('chat_labels_error', 'Chat invalido para etiquetar.');
-                        return;
-                    }
-
-                    const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
-                    const scopedTarget = resolveScopedChatTarget(requestedChatId, selectedScopeModuleId);
-                    const safeChatId = String(scopedTarget.baseChatId || '').trim();
-                    const scopeModuleId = normalizeScopedModuleId(scopedTarget.moduleId || selectedScopeModuleId || '');
-                    const scopedChatId = scopedTarget.scopedChatId || buildScopedChatId(safeChatId, scopeModuleId || '');
-                    if (!safeChatId) {
-                        socket.emit('chat_labels_error', 'Chat invalido para etiquetar.');
-                        return;
-                    }
-
-                    const ids = Array.isArray(labelIds)
-                        ? labelIds.map((value) => tenantLabelService.normalizeLabelId(value)).filter(Boolean)
-                        : [];
-
-                    const updatedLabels = await tenantLabelService.setChatLabels({
-                        tenantId,
-                        chatId: safeChatId,
-                        scopeModuleId,
-                        labelIds: ids
-                    });
-
-                    const payload = {
-                        chatId: scopedChatId || safeChatId,
-                        baseChatId: safeChatId,
-                        scopeModuleId: scopeModuleId || null,
-                        labels: Array.isArray(updatedLabels) ? updatedLabels : []
-                    };
-
-                    this.emitToTenant(tenantId, 'chat_labels_updated', payload);
-                    socket.emit('chat_labels_saved', {
-                        chatId: payload.chatId || safeChatId,
-                        baseChatId: safeChatId,
-                        scopeModuleId: payload.scopeModuleId || null,
-                        ok: true
-                    });
-                    await authzAudit.auditSocketAction('chat.labels.updated', {
-                        resourceType: 'chat',
-                        resourceId: safeChatId,
-                        payload: { labelIds: ids, labels: payload.labels }
-                    });
-
-                    await recordConversationEvent({
-                        chatId: safeChatId,
-                        scopeModuleId,
-                        eventType: 'chat.labels.updated',
-                        eventSource: 'socket',
-                        payload: {
-                            labelIds: ids,
-                            labels: payload.labels
-                        }
-                    });
-                } catch (e) {
-                    console.error('set_chat_labels error:', e.message);
-                    socket.emit('chat_labels_error', String(e?.message || 'No se pudieron actualizar las etiquetas del chat.'));
-                }
-            });
-
-            socket.on('create_label', async ({ name, color = '', description = '' }) => {
-                if (!authzAudit.requireRole(['owner', 'admin'], { errorEvent: 'chat_labels_error', action: 'crear etiquetas' })) return;
-                try {
-                    const cleanName = String(name || '').trim();
-                    if (!cleanName) {
-                        socket.emit('chat_labels_error', 'Nombre de etiqueta invalido.');
-                        return;
-                    }
-                    const item = await tenantLabelService.saveLabel({
-                        name: cleanName,
-                        color: String(color || '').trim(),
-                        description: String(description || '').trim(),
-                        isActive: true
-                    }, { tenantId });
-                    socket.emit('chat_label_created', { ok: true, item });
-                    const labels = await tenantLabelService.listLabels({ tenantId, includeInactive: false });
-                    this.emitToTenant(tenantId, 'business_data_labels', {
-                        labels,
-                        source: 'tenant_db'
-                    });
-                } catch (e) {
-                    console.error('create_label error:', e.message);
-                    socket.emit('chat_labels_error', String(e?.message || 'No se pudo crear la etiqueta.'));
-                }
-            });
             socket.on('get_quick_replies', async (payload = {}) => {
                 try {
                     const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
