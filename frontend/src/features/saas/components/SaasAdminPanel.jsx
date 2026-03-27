@@ -5,6 +5,7 @@ import {
     SaasPanelNoAccess,
     SaasPanelOpsAndAutomationSections
 } from './panel';
+import '../saas.css';
 import useSaasAdminPanelController from '../hooks/panel/controller/useSaasAdminPanelController';
 
 export default function SaasAdminPanel(props) {

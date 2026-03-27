@@ -1,0 +1,27 @@
+.login-screen {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, #0f1a20, #111b21);
+}
+.login-screen.login-screen--saas {
+  position: relative;
+  min-height: 100vh;
+  padding: clamp(16px, 4vw, 42px);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 10% 12%, rgba(0, 204, 153, 0.2), transparent 38%),
+    radial-gradient(circle at 92% 8%, rgba(97, 218, 255, 0.2), transparent 34%),
+    linear-gradient(155deg, #050c12 0%, #08141e 42%, #0d2330 100%);
+}
+.login-ambient {
+  position: absolute;
+  inset: -15%;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 26% at 18% 70%, rgba(0, 168, 132, 0.18), transparent 70%),
+    radial-gradient(30% 24% at 85% 72%, rgba(59, 130, 246, 0.2), transparent 72%);
+  filter: blur(2px);
+}
