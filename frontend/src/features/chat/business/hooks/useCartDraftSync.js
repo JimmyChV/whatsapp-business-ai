@@ -27,6 +27,7 @@ export const useCartDraftSync = ({
     useEffect(() => {
         setOrderImportStatus(null);
         if (!activeChatId) return;
+        // TODO(bug): carrito parpadea al cambiar de chat — revisar sincronizacion de draft/import entre chats
         cartDraftSignaturesRef.current[activeChatId] = '';
 
         const draft = cartDraftsByChat[activeChatId];

@@ -667,6 +667,7 @@ const ChatWindow = ({
                                     isHighlighted={isHighlighted}
                                     isCurrentHighlighted={isCurrentHighlighted}
                                     onPrefillMessage={(text) => inputProps?.setInputText && inputProps.setInputText(text)}
+                                    // TODO(bug): flujo de importacion al carrito desde cotizacion puede fallar — revisar cadena onLoadOrderToCart -> cart state
                                     onLoadOrderToCart={inputProps?.onLoadOrderToCart}
                                     onOpenMedia={setLightboxMedia}
                                     onOpenMap={openMapModal}
