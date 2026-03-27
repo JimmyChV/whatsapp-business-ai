@@ -105,6 +105,7 @@ const { createSocketRuntimeContextStore } = require('./socket-runtime-context.se
 const { createSocketAuthzAuditService } = require('./socket-authz-audit.service');
 const { createSocketTransportOrchestrator } = require('./socket-transport-orchestrator.service');
 const { createSocketWaEventsBridgeService } = require('./socket-wa-events-bridge.service');
+const { createSocketWaModuleContextService } = require('./socket-wa-module-context.service');
 const {
     createGuardRateLimit,
     createLazySharpLoader
@@ -1183,6 +1184,14 @@ class SocketManager {
                 socketRbacEnabled: SOCKET_RBAC_ENABLED,
                 auditLogService
             });
+            const moduleContextService = createSocketWaModuleContextService({
+                socket,
+                tenantId,
+                authContext,
+                waModuleService,
+                resolveSocketModuleContext,
+                getTenantModuleRoom: this.getTenantModuleRoom.bind(this)
+            });
             const transportOrchestrator = createSocketTransportOrchestrator({
                 socket,
                 tenantId,
@@ -1190,11 +1199,10 @@ class SocketManager {
                 authzAudit,
                 waClient,
                 waModuleService,
-                resolveSocketModuleContext,
+                moduleContextService,
                 runtimeStore: this.runtimeStore,
                 guardRateLimit,
                 getTenantRoom: this.getTenantRoom.bind(this),
-                getTenantModuleRoom: this.getTenantModuleRoom.bind(this),
                 getWaRuntime: this.getWaRuntime.bind(this),
                 emitWaCapabilities: this.emitWaCapabilities.bind(this),
                 setActiveRuntimeContext: this.setActiveRuntimeContext.bind(this),

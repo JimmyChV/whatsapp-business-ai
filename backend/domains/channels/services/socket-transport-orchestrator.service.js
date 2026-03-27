@@ -1,7 +1,3 @@
-function normalizeSocketModuleId(value = '') {
-    return String(value || '').trim().toLowerCase();
-}
-
 function createSocketTransportOrchestrator({
     socket,
     tenantId = 'default',
@@ -9,56 +5,16 @@ function createSocketTransportOrchestrator({
     authzAudit,
     waClient,
     waModuleService,
-    resolveSocketModuleContext,
+    moduleContextService,
     runtimeStore,
     guardRateLimit,
     getTenantRoom,
-    getTenantModuleRoom,
     getWaRuntime,
     emitWaCapabilities,
     setActiveRuntimeContext,
     invalidateChatListCache,
     waRequireSelectedModule = false
 } = {}) {
-    const getRequestedModuleIdFromSocket = () => normalizeSocketModuleId(
-        socket?.handshake?.auth?.waModuleId
-        || socket?.handshake?.auth?.moduleId
-        || socket?.handshake?.query?.waModuleId
-        || socket?.handshake?.query?.moduleId
-        || ''
-    );
-
-    const emitWaModuleContext = async ({ requestedModuleId = '' } = {}) => {
-        const cleanRequested = normalizeSocketModuleId(requestedModuleId || getRequestedModuleIdFromSocket());
-        const moduleContext = await resolveSocketModuleContext(tenantId, authContext, cleanRequested);
-        const selected = moduleContext?.selected || null;
-        const modules = Array.isArray(moduleContext?.modules) ? moduleContext.modules : [];
-
-        socket.data = socket.data || {};
-        socket.data.waModule = selected;
-        socket.data.waModuleId = selected?.moduleId || '';
-        socket.data.waModules = modules;
-
-        const previousModuleRoom = String(socket?.data?.waModuleRoom || '').trim();
-        const nextModuleId = selected?.moduleId || 'default';
-        const nextModuleRoom = getTenantModuleRoom(tenantId, nextModuleId);
-        if (previousModuleRoom && previousModuleRoom !== nextModuleRoom) {
-            socket.leave(previousModuleRoom);
-        }
-        if (nextModuleRoom && previousModuleRoom !== nextModuleRoom) {
-            socket.join(nextModuleRoom);
-        }
-        socket.data.waModuleRoom = nextModuleRoom;
-
-        const payload = {
-            tenantId,
-            items: modules,
-            selected
-        };
-        socket.emit('wa_module_context', payload);
-        return payload;
-    };
-
     const applyCloudConfigForModule = async (selectedModule = null) => {
         if (!selectedModule || typeof selectedModule !== 'object') return null;
         if (String(selectedModule?.transportMode || '').trim().toLowerCase() !== 'cloud') return null;
@@ -198,7 +154,9 @@ function createSocketTransportOrchestrator({
         emitWaCapabilities(socket);
 
         try {
-            const payload = await emitWaModuleContext({ requestedModuleId: getRequestedModuleIdFromSocket() });
+            const payload = await moduleContextService.emitWaModuleContext({
+                requestedModuleId: moduleContextService.getRequestedModuleIdFromSocket()
+            });
             const selectedModule = payload?.selected || null;
             if (waRequireSelectedModule && !selectedModule?.moduleId) {
                 socket.emit('wa_module_error', 'No hay un numero WhatsApp habilitado para tu usuario/empresa.');
@@ -218,7 +176,9 @@ function createSocketTransportOrchestrator({
 
         socket.on('get_wa_modules', async () => {
             try {
-                await emitWaModuleContext({ requestedModuleId: socket?.data?.waModuleId || getRequestedModuleIdFromSocket() });
+                await moduleContextService.emitWaModuleContext({
+                    requestedModuleId: socket?.data?.waModuleId || moduleContextService.getRequestedModuleIdFromSocket()
+                });
             } catch (error) {
                 socket.emit('wa_module_error', String(error?.message || 'No se pudieron cargar los modulos WhatsApp.'));
             }
@@ -227,19 +187,13 @@ function createSocketTransportOrchestrator({
         socket.on('set_wa_module', async ({ moduleId } = {}) => {
             if (!guardRateLimit(socket, 'set_wa_module')) return;
             try {
-                const requestedModuleId = normalizeSocketModuleId(moduleId);
+                const requestedModuleId = moduleContextService.normalizeModuleId(moduleId);
                 if (!requestedModuleId) {
                     socket.emit('wa_module_error', 'Selecciona un modulo valido.');
                     return;
                 }
 
-                const userId = String(authContext?.userId || authContext?.id || '').trim();
-                const allowedModules = await waModuleService.listModules(tenantId, {
-                    includeInactive: false,
-                    userId
-                });
-                const selected = (Array.isArray(allowedModules) ? allowedModules : [])
-                    .find((entry) => normalizeSocketModuleId(entry?.moduleId) === requestedModuleId);
+                const selected = await moduleContextService.resolveAllowedModuleById({ moduleId: requestedModuleId });
 
                 if (!selected) {
                     socket.emit('wa_module_error', 'No tienes acceso a ese modulo WhatsApp.');
@@ -247,7 +201,7 @@ function createSocketTransportOrchestrator({
                 }
 
                 await waModuleService.setSelectedModule(tenantId, selected.moduleId);
-                const contextPayload = await emitWaModuleContext({ requestedModuleId: selected.moduleId });
+                const contextPayload = await moduleContextService.emitWaModuleContext({ requestedModuleId: selected.moduleId });
                 socket.emit('wa_module_selected', {
                     tenantId,
                     selected: contextPayload?.selected || selected
@@ -337,7 +291,7 @@ function createSocketTransportOrchestrator({
         emitTenantContext,
         bootstrapTransportContext,
         registerTransportHandlers,
-        emitWaModuleContext,
+        emitWaModuleContext: moduleContextService.emitWaModuleContext,
         ensureTransportForSelectedModule
     };
 }
