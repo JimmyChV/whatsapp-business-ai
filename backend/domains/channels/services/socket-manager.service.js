@@ -111,6 +111,7 @@ const { createSocketChatHistoryMediaService } = require('./socket-chat-history-m
 const { createSocketChatStateLabelsService } = require('./socket-chat-state-labels.service');
 const { createSocketQuickRepliesService } = require('./socket-quick-replies.service');
 const { createSocketMessageDeliveryService } = require('./socket-message-delivery.service');
+const { createSocketCatalogDeliveryService } = require('./socket-catalog-delivery.service');
 const { createSocketBusinessDataService } = require('./socket-business-data.service');
 const {
     createGuardRateLimit,
@@ -312,10 +313,6 @@ class SocketManager {
         });
         this.messageDeliveryService = createSocketMessageDeliveryService({
             waClient,
-            fetchCatalogProductImage,
-            ensureCloudApiCompatibleCatalogImage,
-            slugifyFileName,
-            buildCatalogProductCaption,
             normalizeScopedModuleId,
             resolveScopedChatTarget,
             buildScopedChatId,
@@ -329,6 +326,17 @@ class SocketManager {
             sanitizeAgentMeta,
             rememberOutgoingAgentMeta,
             buildModuleAttributionMeta
+        });
+        this.catalogDeliveryService = createSocketCatalogDeliveryService({
+            waClient,
+            fetchCatalogProductImage,
+            ensureCloudApiCompatibleCatalogImage,
+            slugifyFileName,
+            buildCatalogProductCaption,
+            getSerializedMessageId,
+            buildSocketAgentMeta,
+            sanitizeAgentMeta,
+            rememberOutgoingAgentMeta
         });
         this.businessDataService = createSocketBusinessDataService({
             waClient,
@@ -1044,7 +1052,6 @@ class SocketManager {
                 guardRateLimit,
                 transportOrchestrator,
                 resolveSocketModuleContext,
-                isFeatureEnabledForTenant: this.isFeatureEnabledForTenant.bind(this),
                 getWaCapabilities: this.getWaCapabilities.bind(this),
                 getWaRuntime: this.getWaRuntime.bind(this),
                 emitToRuntimeContext: this.emitToRuntimeContext.bind(this),
@@ -1052,6 +1059,17 @@ class SocketManager {
                 invalidateChatListCache: this.invalidateChatListCache.bind(this),
                 toChatSummary: this.toChatSummary.bind(this),
                 emitMessageEditability: this.emitMessageEditability.bind(this),
+                recordConversationEvent
+            });
+            this.catalogDeliveryService.registerCatalogDeliveryHandlers({
+                socket,
+                tenantId,
+                authContext,
+                guardRateLimit,
+                transportOrchestrator,
+                isFeatureEnabledForTenant: this.isFeatureEnabledForTenant.bind(this),
+                resolveScopedSendTarget: (...args) => messageDeliveryRuntime.resolveScopedSendTarget(...args),
+                emitRealtimeOutgoingMessage: (...args) => messageDeliveryRuntime.emitRealtimeOutgoingMessage(...args),
                 recordConversationEvent
             });
 
