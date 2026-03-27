@@ -43,7 +43,12 @@ function createSocketWaModuleContextService({
         const payload = {
             tenantId,
             items: modules,
-            selected
+            modules,
+            waModules: modules,
+            selected,
+            selectedModule: selected,
+            moduleId: selected?.moduleId || null,
+            scopeModuleId: selected?.moduleId || null
         };
         socket.emit('wa_module_context', payload);
         return payload;
