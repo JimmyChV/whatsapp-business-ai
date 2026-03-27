@@ -101,6 +101,7 @@ const { createSenderMetaHelpers } = require('../helpers/sender-meta.helpers');
 const { createOutgoingAgentMetaCache } = require('../helpers/socket-agent-meta-cache.helpers');
 const { createSocketOrderDebugHelpers } = require('../helpers/socket-order-debug.helpers');
 const { createSocketModuleContextResolver } = require('../helpers/socket-module-context.helpers');
+const { createSocketRuntimeContextStore } = require('./socket-runtime-context.service');
 const {
     createGuardRateLimit,
     createLazySharpLoader
@@ -219,19 +220,21 @@ const resolveSocketModuleContext = createSocketModuleContextResolver({
 class SocketManager {
     constructor(io) {
         this.io = io;
-        this.chatMetaCache = new Map();
-        this.chatMetaTtlMs = Number(process.env.CHAT_META_TTL_MS || 10 * 60 * 1000);
-        this.chatListCache = { items: [], updatedAt: 0 };
-        this.chatListTtlMs = Number(process.env.CHAT_LIST_TTL_MS || 15000);
-        this.contactListCache = { items: [], updatedAt: 0 };
-        this.contactListTtlMs = Number(process.env.CONTACT_LIST_TTL_MS || 60 * 1000);
-        this.activeRuntimeContext = {
-            tenantId: 'default',
-            moduleId: 'default',
-            transportMode: 'idle',
-            webjsNamespace: typeof waClient.getWebjsSessionNamespace === 'function' ? waClient.getWebjsSessionNamespace() : null,
-            updatedAt: Date.now()
-        };
+        this.runtimeStore = createSocketRuntimeContextStore({
+            io,
+            initialRuntimeContext: {
+                tenantId: 'default',
+                moduleId: 'default',
+                transportMode: 'idle',
+                webjsNamespace: typeof waClient.getWebjsSessionNamespace === 'function' ? waClient.getWebjsSessionNamespace() : null,
+                updatedAt: Date.now()
+            },
+            cacheConfig: {
+                chatMetaTtlMs: Number(process.env.CHAT_META_TTL_MS || 10 * 60 * 1000),
+                chatListTtlMs: Number(process.env.CHAT_LIST_TTL_MS || 15000),
+                contactListTtlMs: Number(process.env.CONTACT_LIST_TTL_MS || 60 * 1000)
+            }
+        });
         this.setupSocketEvents();
         this.setupWAClientEvents();
     }
@@ -314,25 +317,22 @@ class SocketManager {
     }
 
     getTenantRoom(tenantId = 'default') {
-        const cleanTenant = String(tenantId || 'default').trim() || 'default';
-        return 'tenant:' + cleanTenant;
+        return this.runtimeStore.getTenantRoom(tenantId);
     }
 
     emitToTenant(tenantId, eventName, payload) {
-        this.io.to(this.getTenantRoom(tenantId)).emit(eventName, payload);
+        this.runtimeStore.emitToTenant(tenantId, eventName, payload);
     }
 
     getTenantModuleRoom(tenantId = 'default', moduleId = 'default') {
-        const cleanTenant = String(tenantId || 'default').trim() || 'default';
-        const cleanModule = String(moduleId || 'default').trim().toLowerCase() || 'default';
-        return 'tenant:' + cleanTenant + ':module:' + cleanModule;
+        return this.runtimeStore.getTenantModuleRoom(tenantId, moduleId);
     }
 
     emitToTenantModule(tenantId, moduleId, eventName, payload) {
-        this.io.to(this.getTenantModuleRoom(tenantId, moduleId)).emit(eventName, payload);
+        this.runtimeStore.emitToTenantModule(tenantId, moduleId, eventName, payload);
     }
 
-        setActiveRuntimeContext({
+    setActiveRuntimeContext({
         tenantId = 'default',
         moduleId = 'default',
         moduleName = null,
@@ -341,7 +341,7 @@ class SocketManager {
         transportMode = 'idle',
         webjsNamespace = null
     } = {}) {
-        this.activeRuntimeContext = {
+        return this.runtimeStore.set('runtimeContext', {
             tenantId: String(tenantId || 'default').trim() || 'default',
             moduleId: String(moduleId || 'default').trim().toLowerCase() || 'default',
             moduleName: String(moduleName || '').trim() || null,
@@ -350,44 +350,15 @@ class SocketManager {
             transportMode: String(transportMode || 'idle').trim().toLowerCase() || 'idle',
             webjsNamespace: String(webjsNamespace || '').trim() || null,
             updatedAt: Date.now()
-        };
+        });
     }
 
     resolveRuntimeEventTarget() {
-        const context = this.activeRuntimeContext && typeof this.activeRuntimeContext === 'object'
-            ? this.activeRuntimeContext
-            : null;
-
-        if (context?.tenantId && context?.moduleId) {
-            return { tenantId: context.tenantId, moduleId: context.moduleId };
-        }
-
-        const socketsMap = this.io?.sockets?.sockets;
-        const sockets = socketsMap ? Array.from(socketsMap.values()) : [];
-        const seen = new Set();
-        let candidate = null;
-        sockets.forEach((socket) => {
-            const tenant = String(socket?.data?.tenantId || '').trim();
-            const module = String(socket?.data?.waModuleId || '').trim().toLowerCase();
-            if (!tenant || !module) return;
-            const key = tenant + '::' + module;
-            seen.add(key);
-            if (!candidate) {
-                candidate = { tenantId: tenant, moduleId: module };
-            }
-        });
-
-        if (seen.size === 1 && candidate) return candidate;
-        return candidate;
+        return this.runtimeStore.resolveTarget();
     }
 
     emitToRuntimeContext(eventName, payload) {
-        const target = this.resolveRuntimeEventTarget();
-        if (target?.tenantId) {
-            this.emitToTenant(target.tenantId, eventName, payload);
-            return;
-        }
-        this.io.emit(eventName, payload);
+        this.runtimeStore.emitToRuntimeContext(eventName, payload);
     }
 
     async enforceRuntimeWebjsPhonePolicy() {
@@ -572,16 +543,15 @@ class SocketManager {
             if (!entries.length) return 'default';
             const tenants = new Set(entries.map((socket) => String(socket?.data?.tenantId || 'default').trim() || 'default'));
             if (tenants.size === 1) return Array.from(tenants)[0] || 'default';
-            return String(this.activeRuntimeContext?.tenantId || 'default').trim() || 'default';
+            const runtimeContext = this.runtimeStore.get('runtimeContext', {});
+            return String(runtimeContext?.tenantId || 'default').trim() || 'default';
         } catch (error) {
             return 'default';
         }
     }
 
     resolveHistoryModuleContext() {
-        const runtimeContext = this.activeRuntimeContext && typeof this.activeRuntimeContext === 'object'
-            ? this.activeRuntimeContext
-            : {};
+        const runtimeContext = this.runtimeStore.get('runtimeContext', {});
         const runtimeTarget = this.resolveRuntimeEventTarget();
         const moduleId = String(runtimeTarget?.moduleId || runtimeContext?.moduleId || '').trim().toLowerCase() || null;
         const phoneNumber = coerceHumanPhone(runtimeContext?.modulePhone || '') || null;
@@ -944,22 +914,25 @@ class SocketManager {
     }
 
     invalidateChatListCache() {
-        this.chatListCache = { items: [], updatedAt: 0 };
+        this.runtimeStore.set('chatListCache', { items: [], updatedAt: 0 });
     }
 
     async getSortedVisibleChats({ forceRefresh = false } = {}) {
-        const cacheAge = Date.now() - (this.chatListCache?.updatedAt || 0);
-        if (!forceRefresh && this.chatListCache.items.length > 0 && cacheAge <= this.chatListTtlMs) {
-            return this.chatListCache.items;
+        const chatListCache = this.runtimeStore.get('chatListCache', { items: [], updatedAt: 0 });
+        const ttl = this.runtimeStore.get('ttl', {});
+        const chatListTtlMs = Number(ttl?.chatListTtlMs || 15000);
+        const cacheAge = Date.now() - (chatListCache?.updatedAt || 0);
+        if (!forceRefresh && chatListCache.items.length > 0 && cacheAge <= chatListTtlMs) {
+            return chatListCache.items;
         }
 
         let chats = [];
         try {
             chats = await waClient.getChats();
         } catch (error) {
-            if (this.chatListCache.items.length > 0) {
-                console.warn(`[WA] getChats failed; using cache (${this.chatListCache.items.length} chats).`, String(error?.message || error));
-                return this.chatListCache.items;
+            if (chatListCache.items.length > 0) {
+                console.warn(`[WA] getChats failed; using cache (${chatListCache.items.length} chats).`, String(error?.message || error));
+                return chatListCache.items;
             }
             throw error;
         }
@@ -968,17 +941,20 @@ class SocketManager {
             .filter((c) => isVisibleChatId(c?.id?._serialized))
             .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-        this.chatListCache = {
+        this.runtimeStore.set('chatListCache', {
             items: sortedChats,
             updatedAt: Date.now()
-        };
+        });
         return sortedChats;
     }
     getCachedChatMeta(chatId) {
         const key = String(chatId || '');
-        const cached = this.chatMetaCache.get(key);
+        const chatMetaCache = this.runtimeStore.get('chatMetaCache', new Map());
+        const ttl = this.runtimeStore.get('ttl', {});
+        const chatMetaTtlMs = Number(ttl?.chatMetaTtlMs || 10 * 60 * 1000);
+        const cached = chatMetaCache.get(key);
         if (!cached) return null;
-        if (Date.now() - cached.updatedAt > this.chatMetaTtlMs) return null;
+        if (Date.now() - cached.updatedAt > chatMetaTtlMs) return null;
         return cached;
     }
 
@@ -997,14 +973,19 @@ class SocketManager {
             profilePicUrl,
             updatedAt: Date.now()
         };
-        this.chatMetaCache.set(chatId, normalized);
+        const chatMetaCache = this.runtimeStore.get('chatMetaCache', new Map());
+        chatMetaCache.set(chatId, normalized);
+        this.runtimeStore.set('chatMetaCache', chatMetaCache);
         return normalized;
     }
 
     async getSearchableContacts({ forceRefresh = false } = {}) {
-        const cacheAge = Date.now() - (this.contactListCache?.updatedAt || 0);
-        if (!forceRefresh && this.contactListCache.items.length > 0 && cacheAge <= this.contactListTtlMs) {
-            return this.contactListCache.items;
+        const contactListCache = this.runtimeStore.get('contactListCache', { items: [], updatedAt: 0 });
+        const ttl = this.runtimeStore.get('ttl', {});
+        const contactListTtlMs = Number(ttl?.contactListTtlMs || 60 * 1000);
+        const cacheAge = Date.now() - (contactListCache?.updatedAt || 0);
+        if (!forceRefresh && contactListCache.items.length > 0 && cacheAge <= contactListTtlMs) {
+            return contactListCache.items;
         }
 
         let contacts = [];
@@ -1058,10 +1039,10 @@ class SocketManager {
         }
         const deduped = Array.from(dedupMap.values());
 
-        this.contactListCache = {
+        this.runtimeStore.set('contactListCache', {
             items: deduped,
             updatedAt: Date.now()
-        };
+        });
         return deduped;
     }
     async getChatLabelTokenSet(chat, { tenantId = 'default', scopeModuleId = '' } = {}) {
@@ -1550,7 +1531,7 @@ class SocketManager {
                     }
 
                     this.invalidateChatListCache();
-                    this.contactListCache = { items: [], updatedAt: 0 };
+                    this.runtimeStore.set('contactListCache', { items: [], updatedAt: 0 });
                     this.emitWaCapabilities(socket);
                     socket.emit('transport_mode_set', runtime);
 
@@ -1573,7 +1554,7 @@ class SocketManager {
 
                 const nextRuntime = await waClient.setTransportMode(moduleTransport);
                 this.invalidateChatListCache();
-                this.contactListCache = { items: [], updatedAt: 0 };
+                this.runtimeStore.set('contactListCache', { items: [], updatedAt: 0 });
                 this.emitWaCapabilities(socket);
                 socket.emit('transport_mode_set', nextRuntime);
                 await auditSocketAction('wa.transport_mode.autoset_by_module', {
@@ -1715,7 +1696,7 @@ class SocketManager {
                     }
                     const runtime = await waClient.setTransportMode(nextMode);
                     this.invalidateChatListCache();
-                    this.contactListCache = { items: [], updatedAt: 0 };
+                    this.runtimeStore.set('contactListCache', { items: [], updatedAt: 0 });
                     this.emitWaCapabilities(socket);
                     socket.emit('transport_mode_set', runtime);
 
