@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Search, MoreVertical, ChevronUp, ChevronDown, Tag, MapPin, Share2, X } from 'lucide-react';
 import MessageBubble from './message-bubble/MessageBubble';
 import moment from 'moment';
@@ -7,6 +7,7 @@ import ChatInput from './ChatInput';
 import useChatWindowMapController from './hooks/useChatWindowMapController';
 import useChatWindowSearchController from './hooks/useChatWindowSearchController';
 import useChatWindowHeaderModel from './hooks/useChatWindowHeaderModel';
+import useChatWindowUiToggles from './hooks/useChatWindowUiToggles';
 
 // ============================================================
 // ChatWindow - Full component with Profile Panel
@@ -37,12 +38,17 @@ const ChatWindow = ({
     waModules = [],
     ...inputProps
 }) => {
-    const [showMenu, setShowMenu] = useState(false);
-    const [showLabelMenu, setShowLabelMenu] = useState(false);
-    const [lightboxMedia, setLightboxMedia] = useState(null);
     const {
+        showMenu,
+        setShowMenu,
+        showLabelMenu,
+        setShowLabelMenu,
+        lightboxMedia,
+        setLightboxMedia,
         showMapModal,
-        setShowMapModal,
+        setShowMapModal
+    } = useChatWindowUiToggles();
+    const {
         mapQuery,
         setMapQuery,
         mapEmbedUrl,
@@ -63,7 +69,9 @@ const ChatWindow = ({
             if (typeof inputProps?.setInputText === 'function') {
                 inputProps.setInputText(text);
             }
-        }
+        },
+        showMapModal,
+        setShowMapModal
     });
     const {
         searchVisible,
@@ -77,13 +85,6 @@ const ChatWindow = ({
         jumpToMatch
     } = useChatWindowSearchController({ messages });
 
-    useEffect(() => {
-        const onEsc = (event) => {
-            if (event.key === 'Escape') { setLightboxMedia(null); setShowMapModal(false); }
-        };
-        window.addEventListener('keydown', onEsc);
-        return () => window.removeEventListener('keydown', onEsc);
-    }, []);
     const {
         avatarColor,
         resolveGroupSenderName,

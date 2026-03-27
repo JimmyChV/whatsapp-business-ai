@@ -4,9 +4,10 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 const useChatWindowMapController = ({
   buildApiHeaders,
-  onPrefillMessage
+  onPrefillMessage,
+  showMapModal,
+  setShowMapModal
 }) => {
-  const [showMapModal, setShowMapModal] = useState(false);
   const [mapQuery, setMapQuery] = useState('');
   const [mapEmbedUrl, setMapEmbedUrl] = useState('');
   const [mapSuggestions, setMapSuggestions] = useState([]);
