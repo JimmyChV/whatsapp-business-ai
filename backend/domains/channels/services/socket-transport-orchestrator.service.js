@@ -153,12 +153,15 @@ function createSocketTransportOrchestrator({
         socket.join(getTenantRoom(tenantId));
         socket.emit('tenant_context', {
             tenantId,
+            scopeTenantId: tenantId,
             user: authContext ? {
                 userId: authContext.userId,
+                id: authContext.userId,
                 name: authContext.name || null,
                 email: authContext.email,
                 role: authContext.role,
-                tenantId: authContext.tenantId
+                tenantId: authContext.tenantId,
+                tenant_id: authContext.tenantId
             } : null
         });
     };
