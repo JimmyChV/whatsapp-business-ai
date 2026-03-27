@@ -6,6 +6,8 @@ import ChannelBrandIcon from './ChannelBrandIcon';
 import ChatInput from './ChatInput';
 import { normalizeModuleImageUrl } from '../core/helpers/appChat.helpers';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 // ============================================================
 // ChatWindow - Full component with Profile Panel
 // ============================================================
