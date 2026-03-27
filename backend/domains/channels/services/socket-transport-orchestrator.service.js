@@ -15,6 +15,22 @@ function createSocketTransportOrchestrator({
     invalidateChatListCache,
     waRequireSelectedModule = false
 } = {}) {
+    const emitTransportError = (targetSocket, errorEvent, message, action = '') => {
+        const safeMessage = String(message || '').trim();
+        if (errorEvent === 'transport_info') {
+            targetSocket.emit(errorEvent, {
+                message: safeMessage,
+                error: safeMessage,
+                detail: safeMessage,
+                action: String(action || '').trim() || null,
+                transportReady: false
+            });
+            return;
+        }
+
+        targetSocket.emit(errorEvent, safeMessage);
+    };
+
     const applyCloudConfigForModule = async (selectedModule = null) => {
         if (!selectedModule || typeof selectedModule !== 'object') return null;
         if (String(selectedModule?.transportMode || '').trim().toLowerCase() !== 'cloud') return null;
@@ -113,14 +129,19 @@ function createSocketTransportOrchestrator({
         const activeTransport = String(runtime?.activeTransport || 'idle').toLowerCase();
 
         if (activeTransport === 'idle') {
-            targetSocket.emit(errorEvent, `Selecciona un modo de transporte antes de ${action}.`);
+            emitTransportError(
+                targetSocket,
+                errorEvent,
+                `Selecciona un modo de transporte antes de ${action}.`,
+                action
+            );
             targetSocket.emit('wa_runtime', runtime);
             return false;
         }
 
         if (requireReady && !waClient.isReady) {
             const message = `Cloud API aun no esta lista para ${action}.`;
-            targetSocket.emit(errorEvent, message);
+            emitTransportError(targetSocket, errorEvent, message, action);
             targetSocket.emit('wa_runtime', runtime);
             return false;
         }
