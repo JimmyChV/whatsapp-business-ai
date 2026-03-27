@@ -103,6 +103,7 @@ const { createSocketOrderDebugHelpers } = require('../helpers/socket-order-debug
 const { createSocketModuleContextResolver } = require('../helpers/socket-module-context.helpers');
 const { createSocketRuntimeContextStore } = require('./socket-runtime-context.service');
 const { createSocketAuthzAuditService } = require('./socket-authz-audit.service');
+const { createSocketTransportOrchestrator } = require('./socket-transport-orchestrator.service');
 const {
     createGuardRateLimit,
     createLazySharpLoader
@@ -865,30 +866,6 @@ class SocketManager {
             source: 'history_fallback'
         };
     }
-    ensureTransportReady(socket, {
-        action = 'completar la operacion',
-        errorEvent = 'error',
-        requireReady = true
-    } = {}) {
-        const runtime = this.getWaRuntime();
-        const activeTransport = String(runtime?.activeTransport || 'idle').toLowerCase();
-
-        if (activeTransport === 'idle') {
-            socket.emit(errorEvent, `Selecciona un modo de transporte antes de ${action}.`);
-            socket.emit('wa_runtime', runtime);
-            return false;
-        }
-
-        if (requireReady && !waClient.isReady) {
-            const message = `Cloud API aun no esta lista para ${action}.`;
-            socket.emit(errorEvent, message);
-            socket.emit('wa_runtime', runtime);
-            return false;
-        }
-
-        return true;
-    }
-
     async emitMessageEditability(messageId, chatId) {
         const id = String(messageId || '').trim();
         if (!id) return;
@@ -1195,7 +1172,7 @@ class SocketManager {
 
     setupSocketEvents() {
 
-        this.io.on('connection', (socket) => {
+        this.io.on('connection', async (socket) => {
             const tenantId = String(socket?.data?.tenantId || 'default');
             const authContext = socket?.data?.authContext || null;
             const authzAudit = createSocketAuthzAuditService({
@@ -1205,6 +1182,26 @@ class SocketManager {
                 socketRbacEnabled: SOCKET_RBAC_ENABLED,
                 auditLogService
             });
+            const transportOrchestrator = createSocketTransportOrchestrator({
+                socket,
+                tenantId,
+                authContext,
+                authzAudit,
+                waClient,
+                waModuleService,
+                resolveSocketModuleContext,
+                runtimeStore: this.runtimeStore,
+                guardRateLimit,
+                getTenantRoom: this.getTenantRoom.bind(this),
+                getTenantModuleRoom: this.getTenantModuleRoom.bind(this),
+                getWaRuntime: this.getWaRuntime.bind(this),
+                emitWaCapabilities: this.emitWaCapabilities.bind(this),
+                setActiveRuntimeContext: this.setActiveRuntimeContext.bind(this),
+                invalidateChatListCache: this.invalidateChatListCache.bind(this),
+                waRequireSelectedModule: WA_REQUIRE_SELECTED_MODULE
+            });
+            socket.data = socket.data || {};
+            socket.data.transportOrchestrator = transportOrchestrator;
 
             const recordConversationEvent = async ({
                 chatId = '',
@@ -1244,13 +1241,6 @@ class SocketManager {
                 });
                 return out;
             };
-            const getRequestedModuleIdFromSocket = () => normalizeSocketModuleId(
-                socket?.handshake?.auth?.waModuleId
-                || socket?.handshake?.auth?.moduleId
-                || socket?.handshake?.query?.waModuleId
-                || socket?.handshake?.query?.moduleId
-                || ''
-            );
             const getCatalogIdsFromModuleContext = (moduleContext = null) => {
                 const moduleSettings = moduleContext?.metadata?.moduleSettings && typeof moduleContext.metadata.moduleSettings === 'object'
                     ? moduleContext.metadata.moduleSettings
@@ -1416,275 +1406,8 @@ class SocketManager {
                     catalogId: nextCatalogIds[0] || selection.primaryCatalogId || null
                 };
             };
-            const emitWaModuleContext = async ({ requestedModuleId = '' } = {}) => {
-                const cleanRequested = normalizeSocketModuleId(requestedModuleId || getRequestedModuleIdFromSocket());
-                const moduleContext = await resolveSocketModuleContext(tenantId, authContext, cleanRequested);
-                const selected = moduleContext?.selected || null;
-                const modules = Array.isArray(moduleContext?.modules) ? moduleContext.modules : [];
-
-                socket.data = socket.data || {};
-                socket.data.waModule = selected;
-                socket.data.waModuleId = selected?.moduleId || '';
-                socket.data.waModules = modules;
-
-                const previousModuleRoom = String(socket?.data?.waModuleRoom || '').trim();
-                const nextModuleId = selected?.moduleId || 'default';
-                const nextModuleRoom = this.getTenantModuleRoom(tenantId, nextModuleId);
-                if (previousModuleRoom && previousModuleRoom !== nextModuleRoom) {
-                    socket.leave(previousModuleRoom);
-                }
-                if (nextModuleRoom && previousModuleRoom !== nextModuleRoom) {
-                    socket.join(nextModuleRoom);
-                }
-                socket.data.waModuleRoom = nextModuleRoom;
-
-                const payload = {
-                    tenantId,
-                    items: modules,
-                    selected
-                };
-                socket.emit('wa_module_context', payload);
-                return payload;
-            };
-
-            const applyCloudConfigForModule = async (selectedModule = null) => {
-                if (!selectedModule || typeof selectedModule !== 'object') return null;
-                if (String(selectedModule?.transportMode || '').trim().toLowerCase() !== 'cloud') return null;
-                if (typeof waModuleService.resolveModuleCloudConfig !== 'function') return null;
-                if (typeof waClient.setCloudRuntimeConfig !== 'function') return null;
-
-                let moduleForRuntime = selectedModule;
-                try {
-                    const moduleId = String(selectedModule?.moduleId || '').trim();
-                    if (moduleId && typeof waModuleService.getModuleRuntime === 'function') {
-                        const runtimeModule = await waModuleService.getModuleRuntime(tenantId, moduleId);
-                        if (runtimeModule) moduleForRuntime = runtimeModule;
-                    }
-                } catch (_) {
-                    // fallback: usar modulo actual de contexto
-                }
-
-                const runtimeCloudConfig = waModuleService.resolveModuleCloudConfig(moduleForRuntime);
-                waClient.setCloudRuntimeConfig(runtimeCloudConfig || {});
-                return runtimeCloudConfig || null;
-            };
-
-            const ensureTransportForSelectedModule = async (selectedModule = null) => {
-                const moduleTransport = String(selectedModule?.transportMode || '').trim().toLowerCase();
-                if (moduleTransport !== 'cloud') return null;
-                await applyCloudConfigForModule(selectedModule);
-
-                const namespaceChanged = false;
-
-                let runtime = this.getWaRuntime();
-                const activeTransport = String(runtime?.activeTransport || 'idle').trim().toLowerCase();
-
-                if (activeTransport === moduleTransport) {
-                    if (namespaceChanged) {
-                        try {
-                            await waClient.initialize();
-                        } catch (_) { }
-                        runtime = this.getWaRuntime();
-                    }
-
-                    this.invalidateChatListCache();
-                    this.runtimeStore.set('contactListCache', { items: [], updatedAt: 0 });
-                    this.emitWaCapabilities(socket);
-                    socket.emit('transport_mode_set', runtime);
-
-                    if (waClient.isReady) {
-                        socket.emit('ready', { message: 'WhatsApp transport listo' });
-                    }
-
-                    this.setActiveRuntimeContext({
-                        tenantId,
-                        moduleId: selectedModule?.moduleId || 'default',
-                        moduleName: selectedModule?.name || null,
-                        modulePhone: selectedModule?.phoneNumber || null,
-                        channelType: selectedModule?.channelType || null,
-                        transportMode: moduleTransport,
-                        webjsNamespace: null
-                    });
-
-                    return runtime;
-                }
-
-                const nextRuntime = await waClient.setTransportMode(moduleTransport);
-                this.invalidateChatListCache();
-                this.runtimeStore.set('contactListCache', { items: [], updatedAt: 0 });
-                this.emitWaCapabilities(socket);
-                socket.emit('transport_mode_set', nextRuntime);
-                await authzAudit.auditSocketAction('wa.transport_mode.autoset_by_module', {
-                    resourceType: 'wa_module',
-                    resourceId: selectedModule?.moduleId || null,
-                    payload: { moduleTransport, runtime: nextRuntime, namespaceChanged }
-                });
-
-                if (waClient.isReady) {
-                    socket.emit('ready', { message: 'WhatsApp transport listo' });
-                }
-
-                this.setActiveRuntimeContext({
-                    tenantId,
-                    moduleId: selectedModule?.moduleId || 'default',
-                    moduleName: selectedModule?.name || null,
-                    modulePhone: selectedModule?.phoneNumber || null,
-                    channelType: selectedModule?.channelType || null,
-                    transportMode: moduleTransport,
-                    webjsNamespace: null
-                });
-
-                return nextRuntime;
-            };
-
-            console.log('Web client connected:', socket.id, '| tenant:', tenantId);
-            socket.join(this.getTenantRoom(tenantId));
-            socket.emit('tenant_context', {
-                tenantId,
-                user: authContext ? {
-                    userId: authContext.userId,
-                    name: authContext.name || null,
-                    email: authContext.email,
-                    role: authContext.role,
-                    tenantId: authContext.tenantId
-                } : null
-            });
-
-            if (!WA_REQUIRE_SELECTED_MODULE) {
-                if (waClient.isReady) {
-                    socket.emit('ready', { message: 'WhatsApp is ready' });
-                }
-            }
-            this.emitWaCapabilities(socket);
-            emitWaModuleContext({ requestedModuleId: getRequestedModuleIdFromSocket() })
-                .then(async (payload) => {
-                    const selectedModule = payload?.selected || null;
-                    if (WA_REQUIRE_SELECTED_MODULE && !selectedModule?.moduleId) {
-                        socket.emit('wa_module_error', 'No hay un numero WhatsApp habilitado para tu usuario/empresa.');
-                        socket.emit('transport_mode_set', this.getWaRuntime());
-                        return null;
-                    }
-                    return await ensureTransportForSelectedModule(selectedModule);
-                })
-                .catch(() => { });
-
-            socket.on('get_wa_capabilities', () => {
-                this.emitWaCapabilities(socket);
-            });
-
-            socket.on('get_wa_modules', async () => {
-                try {
-                    await emitWaModuleContext({ requestedModuleId: socket?.data?.waModuleId || getRequestedModuleIdFromSocket() });
-                } catch (error) {
-                    socket.emit('wa_module_error', String(error?.message || 'No se pudieron cargar los modulos WhatsApp.'));
-                }
-            });
-
-            socket.on('set_wa_module', async ({ moduleId } = {}) => {
-                if (!guardRateLimit(socket, 'set_wa_module')) return;
-                try {
-                    const requestedModuleId = normalizeSocketModuleId(moduleId);
-                    if (!requestedModuleId) {
-                        socket.emit('wa_module_error', 'Selecciona un modulo valido.');
-                        return;
-                    }
-
-                    const userId = String(authContext?.userId || authContext?.id || '').trim();
-                    const allowedModules = await waModuleService.listModules(tenantId, {
-                        includeInactive: false,
-                        userId
-                    });
-                    const selected = (Array.isArray(allowedModules) ? allowedModules : [])
-                        .find((entry) => normalizeSocketModuleId(entry?.moduleId) === requestedModuleId);
-
-                    if (!selected) {
-                        socket.emit('wa_module_error', 'No tienes acceso a ese modulo WhatsApp.');
-                        return;
-                    }
-
-                    await waModuleService.setSelectedModule(tenantId, selected.moduleId);
-                    const contextPayload = await emitWaModuleContext({ requestedModuleId: selected.moduleId });
-                    socket.emit('wa_module_selected', {
-                        tenantId,
-                        selected: contextPayload?.selected || selected
-                    });
-                    await ensureTransportForSelectedModule(contextPayload?.selected || selected);
-                    await authzAudit.auditSocketAction('wa.module.selected', {
-                        resourceType: 'wa_module',
-                        resourceId: selected.moduleId,
-                        payload: { transportMode: selected.transportMode || null }
-                    });
-                } catch (error) {
-                    socket.emit('wa_module_error', String(error?.message || 'No se pudo seleccionar el modulo WhatsApp.'));
-                }
-            });
-            socket.on('set_transport_mode', async ({ mode } = {}) => {
-                try {
-                    const nextMode = String(mode || '').trim().toLowerCase();
-                    if (!nextMode) {
-                        socket.emit('transport_mode_error', 'Debes seleccionar un modo de transporte.');
-                        return;
-                    }
-
-                    if (nextMode !== 'cloud' && nextMode !== 'idle') {
-                        socket.emit('transport_mode_error', 'Modo de transporte invalido. Solo Cloud API esta permitido.');
-                        return;
-                    }
-
-                    const selectedModule = socket?.data?.waModule || null;
-                    if (WA_REQUIRE_SELECTED_MODULE && !selectedModule?.moduleId) {
-                        socket.emit('transport_mode_error', 'Primero selecciona un numero/modulo WhatsApp permitido.');
-                        return;
-                    }
-                    const forcedMode = String(selectedModule?.transportMode || '').trim().toLowerCase();
-                    const hasForcedMode = forcedMode === 'cloud';
-
-                    if (hasForcedMode && nextMode !== forcedMode) {
-                        socket.emit('transport_mode_error', 'Este modulo exige modo ' + forcedMode + '. Cambia de modulo para usar otro transporte.');
-                        return;
-                    }
-
-                    if (!hasForcedMode) {
-                        if (!authzAudit.requireRole(['owner', 'admin'], { errorEvent: 'transport_mode_error', action: 'cambiar el modo de transporte' })) return;
-                    }
-
-                    if (nextMode === 'cloud' && selectedModule?.moduleId && typeof waModuleService.resolveModuleCloudConfig === 'function' && typeof waClient.setCloudRuntimeConfig === 'function') {
-                        await applyCloudConfigForModule(selectedModule);
-                    }
-                    const runtime = await waClient.setTransportMode(nextMode);
-                    this.invalidateChatListCache();
-                    this.runtimeStore.set('contactListCache', { items: [], updatedAt: 0 });
-                    this.emitWaCapabilities(socket);
-                    socket.emit('transport_mode_set', runtime);
-
-                    this.setActiveRuntimeContext({
-                        tenantId,
-                        moduleId: selectedModule?.moduleId || socket?.data?.waModuleId || 'default',
-                        moduleName: selectedModule?.name || null,
-                        modulePhone: selectedModule?.phoneNumber || null,
-                        channelType: selectedModule?.channelType || null,
-                        transportMode: runtime?.activeTransport || nextMode,
-                        webjsNamespace: null
-                    });
-                    await authzAudit.auditSocketAction('wa.transport_mode.changed', {
-                        resourceType: hasForcedMode ? 'wa_module' : 'wa_runtime',
-                        resourceId: hasForcedMode ? (selectedModule?.moduleId || null) : (runtime?.activeTransport || nextMode),
-                        payload: {
-                            requestedMode: nextMode,
-                            effectiveMode: runtime?.activeTransport || nextMode,
-                            selectedModuleId: selectedModule?.moduleId || null,
-                            runtime
-                        }
-                    });
-
-                    if (waClient.isReady) {
-                        socket.emit('ready', { message: 'WhatsApp transport listo' });
-                    }
-                } catch (error) {
-                    socket.emit('transport_mode_error', String(error?.message || 'No se pudo cambiar el modo de transporte.'));
-                    this.emitWaCapabilities(socket);
-                }
-            });
+            await transportOrchestrator.bootstrapTransportContext();
+            transportOrchestrator.registerTransportHandlers();
 
             // --- Chat info ---
             socket.on('get_chats', async (payload = {}) => {
@@ -1728,7 +1451,7 @@ class SocketManager {
                         ? Math.min(250, Math.max(20, Math.floor(rawLimit)))
                         : 80;
 
-                    if (!this.ensureTransportReady(socket, { action: 'cargar chats', errorEvent: 'transport_info' })) {
+                    if (!transportOrchestrator.ensureTransportReady(socket, { action: 'cargar chats', errorEvent: 'transport_info' })) {
                         const fallbackPage = await this.getHistoryChatsPage(tenantId, {
                             offset,
                             limit,
@@ -2009,7 +1732,7 @@ class SocketManager {
                         return;
                     }
 
-                    if (!this.ensureTransportReady(socket, { action: 'abrir historial', errorEvent: 'transport_info' })) {
+                    if (!transportOrchestrator.ensureTransportReady(socket, { action: 'abrir historial', errorEvent: 'transport_info' })) {
                         const fallbackHistory = await this.getHistoryChatHistory(tenantId, {
                             chatId: historyChatId,
                             limit: 60,
@@ -2216,7 +1939,7 @@ class SocketManager {
 
             socket.on('start_new_chat', async ({ phone, firstMessage, moduleId } = {}) => {
                 try {
-                    if (!this.ensureTransportReady(socket, { action: 'abrir un chat nuevo', errorEvent: 'start_new_chat_error' })) {
+                    if (!transportOrchestrator.ensureTransportReady(socket, { action: 'abrir un chat nuevo', errorEvent: 'start_new_chat_error' })) {
                         return;
                     }
 
@@ -2231,7 +1954,7 @@ class SocketManager {
                                 socket.emit('start_new_chat_error', 'No tienes acceso al modulo solicitado para abrir este chat.');
                                 return;
                             }
-                            await ensureTransportForSelectedModule(activeModuleContext);
+                            await transportOrchestrator.ensureTransportForSelectedModule(activeModuleContext);
                         }
                     }
 
@@ -2596,7 +2319,7 @@ class SocketManager {
 
             socket.on('send_quick_reply', async (payload = {}) => {
                 if (!guardRateLimit(socket, 'send_quick_reply')) return;
-                if (!this.ensureTransportReady(socket, { action: 'enviar respuestas rapidas', errorEvent: 'error' })) return;
+                if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar respuestas rapidas', errorEvent: 'error' })) return;
                 try {
                     const quickRepliesEnabled = await this.isFeatureEnabledForTenant(tenantId, 'quickReplies');
                     if (!quickRepliesEnabled) {
@@ -2901,7 +2624,7 @@ class SocketManager {
                             socket.emit(errorEvent, 'No tienes acceso al modulo solicitado para ' + action + '.');
                             return { ok: false };
                         }
-                        await ensureTransportForSelectedModule(moduleContext);
+                        await transportOrchestrator.ensureTransportForSelectedModule(moduleContext);
                     }
                 }
 
@@ -2941,7 +2664,7 @@ class SocketManager {
 
             socket.on('send_message', async ({ to, toPhone, body, quotedMessageId }) => {
                 if (!guardRateLimit(socket, 'send_message')) return;
-                if (!this.ensureTransportReady(socket, { action: 'enviar mensajes', errorEvent: 'error' })) return;
+                if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar mensajes', errorEvent: 'error' })) return;
                 try {
                     const text = String(body || '');
                     const quoted = String(quotedMessageId || '').trim();
@@ -3021,7 +2744,7 @@ class SocketManager {
             socket.on('edit_message', async ({ chatId, messageId, body }) => {
                 if (!guardRateLimit(socket, 'edit_message')) return;
                 if (!authzAudit.requireRole(['owner', 'admin', 'seller'], { errorEvent: 'edit_message_error', action: 'editar mensajes' })) return;
-                if (!this.ensureTransportReady(socket, { action: 'editar mensajes', errorEvent: 'edit_message_error' })) return;
+                if (!transportOrchestrator.ensureTransportReady(socket, { action: 'editar mensajes', errorEvent: 'edit_message_error' })) return;
                 const caps = this.getWaCapabilities();
                 if (!caps.messageEdit) {
                     socket.emit('edit_message_error', 'La edicion de mensajes no esta disponible en este transporte.');
@@ -3085,7 +2808,7 @@ class SocketManager {
             });
             socket.on('send_media_message', async (data) => {
                 if (!guardRateLimit(socket, 'send_media_message')) return;
-                if (!this.ensureTransportReady(socket, { action: 'enviar adjuntos', errorEvent: 'error' })) return;
+                if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar adjuntos', errorEvent: 'error' })) return;
                 try {
                     const { to, toPhone, body, mediaData, mimetype, filename, isPtt, quotedMessageId } = data || {};
                     if (isPtt) {
@@ -3153,7 +2876,7 @@ class SocketManager {
             socket.on('forward_message', async ({ messageId, toChatId }) => {
                 if (!guardRateLimit(socket, 'forward_message')) return;
                 if (!authzAudit.requireRole(['owner', 'admin', 'seller'], { errorEvent: 'forward_message_error', action: 'reenviar mensajes' })) return;
-                if (!this.ensureTransportReady(socket, { action: 'reenviar mensajes', errorEvent: 'forward_message_error' })) return;
+                if (!transportOrchestrator.ensureTransportReady(socket, { action: 'reenviar mensajes', errorEvent: 'forward_message_error' })) return;
                 const caps = this.getWaCapabilities();
                 if (!caps.messageForward) {
                     socket.emit('forward_message_error', 'Reenviar mensajes no esta disponible en este transporte.');
@@ -3185,7 +2908,7 @@ class SocketManager {
             socket.on('delete_message', async ({ chatId, messageId }) => {
                 if (!guardRateLimit(socket, 'delete_message')) return;
                 if (!authzAudit.requireRole(['owner', 'admin', 'seller'], { errorEvent: 'delete_message_error', action: 'eliminar mensajes' })) return;
-                if (!this.ensureTransportReady(socket, { action: 'eliminar mensajes', errorEvent: 'delete_message_error' })) return;
+                if (!transportOrchestrator.ensureTransportReady(socket, { action: 'eliminar mensajes', errorEvent: 'delete_message_error' })) return;
                 const caps = this.getWaCapabilities();
                 if (!caps.messageDelete) {
                     socket.emit('delete_message_error', 'Eliminar mensajes no esta disponible en este transporte.');
@@ -3250,7 +2973,7 @@ class SocketManager {
             });
             socket.on('send_catalog_product', async (payload = {}) => {
                 if (!guardRateLimit(socket, 'send_catalog_product')) return;
-                if (!this.ensureTransportReady(socket, { action: 'enviar productos de catalogo', errorEvent: 'error' })) return;
+                if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar productos de catalogo', errorEvent: 'error' })) return;
                 const catalogEnabled = await this.isFeatureEnabledForTenant(tenantId, 'catalog');
                 if (!catalogEnabled) {
                     socket.emit('error', 'Catalogo deshabilitado para esta empresa o plan.');
@@ -3609,7 +3332,7 @@ class SocketManager {
                         : (socket?.data?.waModule || null);
                     const resolvedCatalogSelection = await resolveCatalogSelection(catalogScope);
 
-                    if (!this.ensureTransportReady(socket, { action: 'cargar datos del negocio', errorEvent: 'error' })) {
+                    if (!transportOrchestrator.ensureTransportReady(socket, { action: 'cargar datos del negocio', errorEvent: 'error' })) {
                         const scopedLocalFallback = await loadScopedLocalCatalog(catalogScope);
                         socket.emit('business_data', {
                             profile: null,
@@ -3918,7 +3641,7 @@ class SocketManager {
             });
             socket.on('get_my_profile', async () => {
                 try {
-                    if (!this.ensureTransportReady(socket, { action: 'cargar perfil de empresa', errorEvent: 'error' })) {
+                    if (!transportOrchestrator.ensureTransportReady(socket, { action: 'cargar perfil de empresa', errorEvent: 'error' })) {
                         socket.emit('my_profile', null);
                         return;
                     }
@@ -3983,7 +3706,7 @@ class SocketManager {
 
             socket.on('get_contact_info', async (contactId) => {
                 try {
-                    if (!this.ensureTransportReady(socket, { action: 'cargar perfil de contacto', errorEvent: 'error' })) {
+                    if (!transportOrchestrator.ensureTransportReady(socket, { action: 'cargar perfil de contacto', errorEvent: 'error' })) {
                         return;
                     }
                     const requestedContactId = String(contactId || '').trim();
