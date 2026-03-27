@@ -102,6 +102,7 @@ const { createOutgoingAgentMetaCache } = require('../helpers/socket-agent-meta-c
 const { createSocketOrderDebugHelpers } = require('../helpers/socket-order-debug.helpers');
 const { createSocketModuleContextResolver } = require('../helpers/socket-module-context.helpers');
 const { createSocketRuntimeContextStore } = require('./socket-runtime-context.service');
+const { createSocketAuthzAuditService } = require('./socket-authz-audit.service');
 const {
     createGuardRateLimit,
     createLazySharpLoader
@@ -1197,57 +1198,13 @@ class SocketManager {
         this.io.on('connection', (socket) => {
             const tenantId = String(socket?.data?.tenantId || 'default');
             const authContext = socket?.data?.authContext || null;
-            const normalizeSocketRole = (role = '') => {
-                const raw = String(role || '').trim().toLowerCase();
-                if (!raw) return 'seller';
-                if (raw === 'super_admin' || raw === 'super-admin') return 'superadmin';
-                return raw;
-            };
-            const userRole = normalizeSocketRole(authContext?.role);
-            const roleWeight = { seller: 1, admin: 2, owner: 3, superadmin: 4 };
-            const isActorSuperAdmin = Boolean(authContext?.isSuperAdmin) || userRole === 'superadmin';
-            const effectiveRoleWeight = isActorSuperAdmin ? roleWeight.superadmin : (roleWeight[userRole] || 0);
-            const requireRole = (allowedRoles = [], {
-                errorEvent = 'permission_error',
-                action = 'realizar esta accion'
-            } = {}) => {
-                if (!SOCKET_RBAC_ENABLED) return true;
-                const allowSet = new Set((Array.isArray(allowedRoles) ? allowedRoles : [])
-                    .map((role) => String(role || '').trim().toLowerCase())
-                    .filter(Boolean));
-                if (allowSet.size === 0) return true;
-                if (!authContext) {
-                    socket.emit(errorEvent, 'No autorizado para ' + action + '. Inicia sesion nuevamente.');
-                    return false;
-                }
-                if (isActorSuperAdmin) return true;
-                const minimumWeight = Math.min(...Array.from(allowSet)
-                    .map((role) => roleWeight[role] || 999)
-                    .filter((weight) => Number.isFinite(weight)));
-                if (effectiveRoleWeight >= minimumWeight) return true;
-                socket.emit(errorEvent, 'No tienes permisos para ' + action + '.');
-                return false;
-            };
-
-            const auditSocketAction = async (action = '', {
-                resourceType = 'socket',
-                resourceId = null,
-                payload = {}
-            } = {}) => {
-                try {
-                    await auditLogService.writeAuditLog(tenantId, {
-                        userId: authContext?.userId || null,
-                        userEmail: authContext?.email || null,
-                        role: userRole,
-                        action: String(action || '').trim() || 'socket.action',
-                        resourceType,
-                        resourceId,
-                        source: 'socket',
-                        socketId: socket.id,
-                        payload
-                    });
-                } catch (_) { }
-            };
+            const authzAudit = createSocketAuthzAuditService({
+                socket,
+                tenantId,
+                authContext,
+                socketRbacEnabled: SOCKET_RBAC_ENABLED,
+                auditLogService
+            });
 
             const recordConversationEvent = async ({
                 chatId = '',
@@ -1265,7 +1222,7 @@ class SocketManager {
                         scopeModuleId: String(scopeModuleId || '').trim().toLowerCase(),
                         customerId: String(customerId || '').trim() || null,
                         actorUserId: authContext?.userId || null,
-                        actorRole: userRole || null,
+                        actorRole: authzAudit.actorContext.userRole || null,
                         eventType: String(eventType || '').trim() || 'chat.event',
                         eventSource: String(eventSource || 'socket').trim() || 'socket',
                         payload: payload && typeof payload === 'object' ? payload : {}
@@ -1557,7 +1514,7 @@ class SocketManager {
                 this.runtimeStore.set('contactListCache', { items: [], updatedAt: 0 });
                 this.emitWaCapabilities(socket);
                 socket.emit('transport_mode_set', nextRuntime);
-                await auditSocketAction('wa.transport_mode.autoset_by_module', {
+                await authzAudit.auditSocketAction('wa.transport_mode.autoset_by_module', {
                     resourceType: 'wa_module',
                     resourceId: selectedModule?.moduleId || null,
                     payload: { moduleTransport, runtime: nextRuntime, namespaceChanged }
@@ -1652,7 +1609,7 @@ class SocketManager {
                         selected: contextPayload?.selected || selected
                     });
                     await ensureTransportForSelectedModule(contextPayload?.selected || selected);
-                    await auditSocketAction('wa.module.selected', {
+                    await authzAudit.auditSocketAction('wa.module.selected', {
                         resourceType: 'wa_module',
                         resourceId: selected.moduleId,
                         payload: { transportMode: selected.transportMode || null }
@@ -1688,7 +1645,7 @@ class SocketManager {
                     }
 
                     if (!hasForcedMode) {
-                        if (!requireRole(['owner', 'admin'], { errorEvent: 'transport_mode_error', action: 'cambiar el modo de transporte' })) return;
+                        if (!authzAudit.requireRole(['owner', 'admin'], { errorEvent: 'transport_mode_error', action: 'cambiar el modo de transporte' })) return;
                     }
 
                     if (nextMode === 'cloud' && selectedModule?.moduleId && typeof waModuleService.resolveModuleCloudConfig === 'function' && typeof waClient.setCloudRuntimeConfig === 'function') {
@@ -1709,7 +1666,7 @@ class SocketManager {
                         transportMode: runtime?.activeTransport || nextMode,
                         webjsNamespace: null
                     });
-                    await auditSocketAction('wa.transport_mode.changed', {
+                    await authzAudit.auditSocketAction('wa.transport_mode.changed', {
                         resourceType: hasForcedMode ? 'wa_module' : 'wa_runtime',
                         resourceId: hasForcedMode ? (selectedModule?.moduleId || null) : (runtime?.activeTransport || nextMode),
                         payload: {
@@ -2400,7 +2357,7 @@ class SocketManager {
             });
 
             socket.on('set_chat_state', async ({ chatId, pinned, archived }) => {
-                if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'error', action: 'actualizar estado de chat' })) return;
+                if (!authzAudit.requireRole(['owner', 'admin', 'seller'], { errorEvent: 'error', action: 'actualizar estado de chat' })) return;
                 try {
                     const requestedChatId = String(chatId || '').trim();
                     if (!requestedChatId) {
@@ -2487,7 +2444,7 @@ class SocketManager {
                         archived: hasArchived ? patch.archived : Boolean(persisted?.archived)
                     });
 
-                    await auditSocketAction('chat.state.updated', {
+                    await authzAudit.auditSocketAction('chat.state.updated', {
                         resourceType: 'chat',
                         resourceId: safeChatId,
                         payload: {
@@ -2512,7 +2469,7 @@ class SocketManager {
                 }
             });
             socket.on('set_chat_labels', async ({ chatId, labelIds }) => {
-                if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'chat_labels_error', action: 'gestionar etiquetas' })) return;
+                if (!authzAudit.requireRole(['owner', 'admin', 'seller'], { errorEvent: 'chat_labels_error', action: 'gestionar etiquetas' })) return;
                 try {
                     const requestedChatId = String(chatId || '').trim();
                     if (!requestedChatId) {
@@ -2555,7 +2512,7 @@ class SocketManager {
                         scopeModuleId: payload.scopeModuleId || null,
                         ok: true
                     });
-                    await auditSocketAction('chat.labels.updated', {
+                    await authzAudit.auditSocketAction('chat.labels.updated', {
                         resourceType: 'chat',
                         resourceId: safeChatId,
                         payload: { labelIds: ids, labels: payload.labels }
@@ -2578,7 +2535,7 @@ class SocketManager {
             });
 
             socket.on('create_label', async ({ name, color = '', description = '' }) => {
-                if (!requireRole(['owner', 'admin'], { errorEvent: 'chat_labels_error', action: 'crear etiquetas' })) return;
+                if (!authzAudit.requireRole(['owner', 'admin'], { errorEvent: 'chat_labels_error', action: 'crear etiquetas' })) return;
                 try {
                     const cleanName = String(name || '').trim();
                     if (!cleanName) {
@@ -3063,7 +3020,7 @@ class SocketManager {
             });
             socket.on('edit_message', async ({ chatId, messageId, body }) => {
                 if (!guardRateLimit(socket, 'edit_message')) return;
-                if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'edit_message_error', action: 'editar mensajes' })) return;
+                if (!authzAudit.requireRole(['owner', 'admin', 'seller'], { errorEvent: 'edit_message_error', action: 'editar mensajes' })) return;
                 if (!this.ensureTransportReady(socket, { action: 'editar mensajes', errorEvent: 'edit_message_error' })) return;
                 const caps = this.getWaCapabilities();
                 if (!caps.messageEdit) {
@@ -3112,7 +3069,7 @@ class SocketManager {
                     }
 
                     this.emitMessageEditability(targetMessageId, targetChatId);
-                    await auditSocketAction('message.edited', {
+                    await authzAudit.auditSocketAction('message.edited', {
                         resourceType: 'message',
                         resourceId: targetMessageId,
                         payload: { chatId: targetChatId }
@@ -3195,7 +3152,7 @@ class SocketManager {
 
             socket.on('forward_message', async ({ messageId, toChatId }) => {
                 if (!guardRateLimit(socket, 'forward_message')) return;
-                if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'forward_message_error', action: 'reenviar mensajes' })) return;
+                if (!authzAudit.requireRole(['owner', 'admin', 'seller'], { errorEvent: 'forward_message_error', action: 'reenviar mensajes' })) return;
                 if (!this.ensureTransportReady(socket, { action: 'reenviar mensajes', errorEvent: 'forward_message_error' })) return;
                 const caps = this.getWaCapabilities();
                 if (!caps.messageForward) {
@@ -3215,7 +3172,7 @@ class SocketManager {
                         messageId: sourceMessageId,
                         toChatId: targetChatId
                     });
-                    await auditSocketAction('message.forwarded', {
+                    await authzAudit.auditSocketAction('message.forwarded', {
                         resourceType: 'message',
                         resourceId: sourceMessageId,
                         payload: { toChatId: targetChatId }
@@ -3227,7 +3184,7 @@ class SocketManager {
 
             socket.on('delete_message', async ({ chatId, messageId }) => {
                 if (!guardRateLimit(socket, 'delete_message')) return;
-                if (!requireRole(['owner', 'admin', 'seller'], { errorEvent: 'delete_message_error', action: 'eliminar mensajes' })) return;
+                if (!authzAudit.requireRole(['owner', 'admin', 'seller'], { errorEvent: 'delete_message_error', action: 'eliminar mensajes' })) return;
                 if (!this.ensureTransportReady(socket, { action: 'eliminar mensajes', errorEvent: 'delete_message_error' })) return;
                 const caps = this.getWaCapabilities();
                 if (!caps.messageDelete) {
@@ -3282,7 +3239,7 @@ class SocketManager {
                         chatId: targetChatId,
                         messageId: targetMessageId
                     });
-                    await auditSocketAction('message.deleted', {
+                    await authzAudit.auditSocketAction('message.deleted', {
                         resourceType: 'message',
                         resourceId: targetMessageId,
                         payload: { chatId: targetChatId }
@@ -4137,7 +4094,7 @@ class SocketManager {
             });
 
             socket.on('logout_whatsapp', async () => {
-                if (!requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'cerrar sesion de WhatsApp' })) return;
+                if (!authzAudit.requireRole(['owner', 'admin'], { errorEvent: 'error', action: 'cerrar sesion de WhatsApp' })) return;
                 try {
                     await waClient.client.logout();
                 } catch (e) {
@@ -4150,7 +4107,7 @@ class SocketManager {
                     console.error('reinitialize after logout failed:', e.message);
                 }
                 socket.emit('logout_done', { ok: true });
-                await auditSocketAction('wa.logout.requested', {
+                await authzAudit.auditSocketAction('wa.logout.requested', {
                     resourceType: 'wa_runtime',
                     resourceId: 'logout',
                     payload: {}
