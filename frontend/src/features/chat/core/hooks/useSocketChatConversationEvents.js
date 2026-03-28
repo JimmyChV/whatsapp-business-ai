@@ -91,7 +91,12 @@ export default function useSocketChatConversationEvents({
                         status: sanitizeDisplayText(chat?.status || ''),
                         phone: getBestChatPhone(chat),
                         lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
-                        labels: normalizeChatLabels(chat.labels),
+                        labels: (() => {
+                            const incoming = normalizeChatLabels(chat.labels);
+                            if (incoming.length > 0) return incoming;
+                            const existing = previous?.labels;
+                            return Array.isArray(existing) && existing.length > 0 ? existing : incoming;
+                        })(),
                         profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
                         isMyContact: chat?.isMyContact === true,
                         archived: Boolean(chat?.archived),
