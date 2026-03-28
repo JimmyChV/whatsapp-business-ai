@@ -14,11 +14,11 @@ export const repairMojibake = (value = '') => {
     return text.replace(/\uFFFD/g, '');
 };
 
-export const formatMoney = (value) => Number(value || 0).toFixed(2);
+export const formatMoney = (value) => Number(value || 0).toFixed(1);
 
 export const formatMoneyCompact = (value) => {
-    const fixed = Number(value || 0).toFixed(2);
-    return fixed.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+    const fixed = Number(value || 0).toFixed(1);
+    return fixed.replace(/\.0$/, '');
 };
 
 export const parseMoney = (value, fallback = 0) => {

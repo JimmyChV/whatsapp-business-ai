@@ -164,23 +164,23 @@ export const buildQuoteMessageFromCart = ({
     const separator = '---------------------------------------------';
     const productRows = safeCart.map((item) => {
         const line = typeof getLineBreakdown === 'function' ? getLineBreakdown(item) : { qty: Math.max(1, Number(item?.qty || 1)) };
-        return `? *${line.qty}* ${formatTitle(item?.title)}`;
+        return `\u25AA\uFE0F *${line.qty}* ${formatTitle(item?.title)}`;
     });
 
     const paymentRows = [
-        `? Subtotal: S/ ${moneyCompact(regularSubtotalTotal)}`,
+        `\uD83E\uDDFE Subtotal: S/ ${moneyCompact(regularSubtotalTotal)}`,
     ];
 
     if (Number(totalDiscountForQuote || 0) > 0) {
-        paymentRows.push(`? *DESCUENTO: S/ ${moneyCompact(totalDiscountForQuote)}*`);
-        paymentRows.push(`? Total con Descuento: S/ ${moneyCompact(subtotalAfterGlobal)}`);
+        paymentRows.push(`\uD83C\uDFF7\uFE0F *DESCUENTO: S/ ${moneyCompact(totalDiscountForQuote)}*`);
+    paymentRows.push(`💹 Total con Descuento: S/ ${moneyCompact(subtotalAfterGlobal)}`);
     }
 
-    paymentRows.push(`? Delivery: ${deliveryFee > 0 ? `S/ ${moneyCompact(deliveryFee)}` : 'Gratuito'}`);
-    paymentRows.push(`? *TOTAL A PAGAR: S/ ${moneyCompact(cartTotal)}*`);
+    paymentRows.push(`\uD83D\uDE9A Delivery: ${deliveryFee > 0 ? `S/ ${moneyCompact(deliveryFee)}` : 'Gratuito'}`);
+    paymentRows.push(`\uD83D\uDCB3 *TOTAL A PAGAR: S/ ${moneyCompact(cartTotal)}*`);
 
     return [
-        '*? COTIZACION ?*',
+        '*\uD83D\uDED2 COTIZACION \uD83D\uDED2*',
         separator,
         '*_DETALLE DE PRODUCTOS:_*',
         separator,

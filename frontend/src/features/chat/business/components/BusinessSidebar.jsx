@@ -473,6 +473,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         }
 
         socket.emit('send_structured_quote', payload);
+        setCart([]);
     };
     const addToCart = (item, qtyToAdd = 1) => {
         setCart((previous) => addItemToCartState(previous, item, qtyToAdd));
