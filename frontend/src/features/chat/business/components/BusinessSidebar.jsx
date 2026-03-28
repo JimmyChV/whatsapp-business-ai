@@ -6,6 +6,7 @@ import {
     buildBusinessContextPrompt,
     buildCartSnapshotPayload,
     buildDefaultAiThread,
+    buildStructuredQuotePayloadFromCart,
     buildQuoteMessageFromCart,
     calculateCartPricing,
     clampNumber,
@@ -401,23 +402,77 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         onCartSnapshotChangeRef.current(cartSnapshot);
     }, [cartSnapshot]);
 
+    useEffect(() => {
+        if (!socket || typeof socket.on !== 'function' || typeof socket.off !== 'function') return;
+
+        const resolveBaseChatId = (value = '') => String(value || '').split('::mod::')[0].trim();
+
+        const handleQuoteSent = (event = {}) => {
+            const incomingChatId = String(event?.chatId || event?.baseChatId || event?.to || '').trim();
+            const currentChatId = String(activeChatId || '').trim();
+            if (incomingChatId && currentChatId) {
+                const incomingBase = resolveBaseChatId(incomingChatId);
+                const currentBase = resolveBaseChatId(currentChatId);
+                if (incomingChatId !== currentChatId && incomingBase !== currentBase) return;
+            }
+
+            setOrderImportStatus({
+                level: 'ok',
+                text: 'Cotizacion enviada correctamente.'
+            });
+        };
+
+        const handleQuoteError = (event = {}) => {
+            const detail = typeof event === 'string'
+                ? event
+                : String(event?.error || event?.message || '').trim();
+            setOrderImportStatus({
+                level: 'warn',
+                text: detail || 'No se pudo enviar la cotizacion.'
+            });
+        };
+
+        socket.on('quote_sent', handleQuoteSent);
+        socket.on('quote_error', handleQuoteError);
+
+        return () => {
+            socket.off('quote_sent', handleQuoteSent);
+            socket.off('quote_error', handleQuoteError);
+        };
+    }, [socket, activeChatId]);
+
     const sendQuoteToChat = () => {
         // TODO(bug): carrito debe limpiarse solo al ENVIAR la cotización, no al agregarla al input
         // TODO(bug): al editar cotización, los descuentos por producto y globales (soles/%) deben guardarse correctamente en BD con todos los campos
         // TODO(bug): la cotización no permite editar — funcionalidad que existía antes y se perdió
-        const msg = buildQuoteMessageFromCart({
+        const payload = buildStructuredQuotePayloadFromCart({
+            activeChatId,
+            activeChatPhone,
             cart,
-            getLineBreakdown,
             regularSubtotalTotal,
             totalDiscountForQuote,
             subtotalAfterGlobal,
             deliveryFee,
             cartTotal,
+            deliveryType,
+            getLineBreakdown,
+            buildQuoteMessageFromCart,
+            formatQuoteProductTitle,
             formatMoneyCompact,
-            formatQuoteProductTitle
+            currency: 'PEN',
+            metadata: {
+                tenantScopeKey: normalizedTenantScopeKey,
+                scopeModuleId: String(activeModuleId || selectedCatalogModuleId || '').trim().toLowerCase() || null
+            }
         });
-        if (!msg) return;
-        setInputText(msg);
+        if (!payload) return;
+
+        if (!socket || typeof socket.emit !== 'function') {
+            if (payload.body) setInputText(payload.body);
+            return;
+        }
+
+        socket.emit('send_structured_quote', payload);
     };
     const addToCart = (item, qtyToAdd = 1) => {
         setCart((previous) => addItemToCartState(previous, item, qtyToAdd));
