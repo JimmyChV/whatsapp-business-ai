@@ -156,6 +156,7 @@ const useSidebarFiltersController = ({
     if (filters.archivedMode === 'active' && chat?.archived) return false;
     if (filters.pinnedMode === 'pinned' && !chat?.pinned) return false;
     if (filters.pinnedMode === 'unpinned' && chat?.pinned) return false;
+    // TODO(bug): filtro "sin etiquetas" muestra resultados invertidos — chats con etiqueta aparecen como sin etiqueta
     if (filters.unlabeledOnly && labelTokenSet.size > 0) return false;
 
     if (!filters.unlabeledOnly && filters.labelTokens.length > 0) {
@@ -177,6 +178,7 @@ const useSidebarFiltersController = ({
       return phone.includes(qDigits) || normalizePhoneDigits(subtitle).includes(qDigits);
     }
 
+    // TODO(bug): filtro sin resultados queda en estado "cargando" indefinidamente — falta estado de "sin resultados"
     return name.includes(q) || subtitle.includes(q) || status.includes(q) || lastMessage.includes(q);
   }), [chats, filters, localQuery]);
 
