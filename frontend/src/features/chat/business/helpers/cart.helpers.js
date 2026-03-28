@@ -8,7 +8,7 @@ export const getCartLineBreakdown = (
     item = {},
     {
         parseMoney = asNumber,
-        roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100,
+        roundMoney = (value) => Math.ceil((Number(value) || 0) * 10) / 10,
         clampNumber = (value, min = 0, max = 100) => Math.min(max, Math.max(min, Number(value) || 0))
     } = {}
 ) => {
@@ -59,7 +59,7 @@ export const calculateCartPricing = ({
     deliveryType = 'free',
     deliveryAmount = 0,
     parseMoney = asNumber,
-    roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100,
+    roundMoney = (value) => Math.ceil((Number(value) || 0) * 10) / 10,
     clampNumber = (value, min = 0, max = 100) => Math.min(max, Math.max(min, Number(value) || 0))
 } = {}) => {
     const safeCart = Array.isArray(cart) ? cart : [];
@@ -156,7 +156,7 @@ export const buildQuoteMessageFromCart = ({
 
     const moneyCompact = typeof formatMoneyCompact === 'function'
         ? formatMoneyCompact
-        : ((value) => Number(value || 0).toFixed(2));
+        : ((value) => Number(value || 0).toFixed(1));
     const formatTitle = typeof formatQuoteProductTitle === 'function'
         ? formatQuoteProductTitle
         : ((value) => String(value || 'Producto'));
