@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Sidebar, BusinessSidebar, ClientProfilePanel, ChatWindow, NewChatModal } from '../features/chat/components';
 import { sanitizeDisplayText } from '../features/chat/core';
 
@@ -99,6 +100,7 @@ export default function OperationPage({
   requestedWaSectionFromUrl,
   SaasPanelComponent,
 }) {
+  const [cartDraftsByChat, setCartDraftsByChat] = useState({});
   const activeChatDetails = chats.find((c) => c.id === activeChatId) || null;
   const forwardChatOptions = chats
     .filter((chat) => chat?.id && String(chat.id) !== String(activeChatId || ''))
@@ -290,6 +292,8 @@ export default function OperationPage({
             onSelectCatalog={handleSelectCatalog}
             onUploadCatalogImage={handleUploadCatalogImage}
             onCartSnapshotChange={handleCartSnapshotChange}
+            cartDraftsByChat={cartDraftsByChat}
+            setCartDraftsByChat={setCartDraftsByChat}
           />
         )}
       </div>
