@@ -276,6 +276,7 @@ const ChatWindow = ({
 
             {/* Messages Area */}
             <div className="chat-messages" onClick={() => { setShowMenu(false); setShowLabelMenu(false); }}>
+                {/* TODO(bug): historial de chat muestra a veces solo el ultimo mensaje en lugar del historial completo — intermitente, causa desconocida */}
                 {messages.length === 0 && (
                     <div className="chat-empty-state-pill">
                         No hay mensajes en esta conversacion.
