@@ -7,16 +7,7 @@ export const useTenantScopeReset = ({
     setActiveTab,
     setShowCompanyProfile,
     setAiInput,
-    setCart,
-    setShowOrderAdjustments,
-    setGlobalDiscountEnabled,
-    setGlobalDiscountType,
-    setGlobalDiscountValue,
-    setDeliveryType,
-    setDeliveryAmount,
-    setShowCartTotalsBreakdown,
     setCartDraftsByChat,
-    cartDraftSignaturesRef,
     setQuickSearch,
     setOrderImportStatus,
     lastImportedOrderRef
@@ -30,16 +21,7 @@ export const useTenantScopeReset = ({
         setShowCompanyProfile(false);
         resetAiScopeState();
         setAiInput('');
-        setCart([]);
-        setShowOrderAdjustments(false);
-        setGlobalDiscountEnabled(false);
-        setGlobalDiscountType('percent');
-        setGlobalDiscountValue(0);
-        setDeliveryType('free');
-        setDeliveryAmount(0);
-        setShowCartTotalsBreakdown(true);
         setCartDraftsByChat({});
-        if (cartDraftSignaturesRef?.current) cartDraftSignaturesRef.current = {};
         setQuickSearch('');
         setOrderImportStatus(null);
         if (lastImportedOrderRef) lastImportedOrderRef.current = '';
@@ -50,16 +32,7 @@ export const useTenantScopeReset = ({
         setActiveTab,
         setShowCompanyProfile,
         setAiInput,
-        setCart,
-        setShowOrderAdjustments,
-        setGlobalDiscountEnabled,
-        setGlobalDiscountType,
-        setGlobalDiscountValue,
-        setDeliveryType,
-        setDeliveryAmount,
-        setShowCartTotalsBreakdown,
         setCartDraftsByChat,
-        cartDraftSignaturesRef,
         setQuickSearch,
         setOrderImportStatus,
         lastImportedOrderRef

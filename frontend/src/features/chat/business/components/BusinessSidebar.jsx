@@ -202,14 +202,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setActiveTab,
         setShowCompanyProfile,
         setAiInput,
-        setCart,
-        setShowOrderAdjustments,
-        setGlobalDiscountEnabled,
-        setGlobalDiscountType,
-        setGlobalDiscountValue,
-        setDeliveryType,
-        setDeliveryAmount,
-        setShowCartTotalsBreakdown,
         setCartDraftsByChat,
         setQuickSearch,
         setOrderImportStatus,
@@ -245,6 +237,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setGlobalDiscountValue,
         setDeliveryType,
         setDeliveryAmount,
+        updateDraft,
         formatMoney
     });
     useBusinessSidebarUiSync({
@@ -409,6 +402,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     }, [cartSnapshot]);
 
     const sendQuoteToChat = () => {
+        // TODO(bug): carrito debe limpiarse solo al ENVIAR la cotización, no al agregarla al input
+        // TODO(bug): al editar cotización, los descuentos por producto y globales (soles/%) deben guardarse correctamente en BD con todos los campos
+        // TODO(bug): la cotización no permite editar — funcionalidad que existía antes y se perdió
         const msg = buildQuoteMessageFromCart({
             cart,
             getLineBreakdown,
