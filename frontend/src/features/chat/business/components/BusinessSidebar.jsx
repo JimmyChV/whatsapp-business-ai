@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Bot, ShoppingCart, Clock, Package } from 'lucide-react';
 import {
     addItemToCartState,
@@ -28,7 +28,6 @@ import {
     useAiScopeState,
     useAiSocketBridge,
     useBusinessSidebarUiSync,
-    useCartDraftSync,
     useCompanyProfileOverlay,
     usePendingOrderCartImport,
     useTenantScopeReset
@@ -85,20 +84,109 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     });
 
     // Cart State
-    const [cart, setCart] = useState([]);
-    const [showOrderAdjustments, setShowOrderAdjustments] = useState(false);
-    const [globalDiscountEnabled, setGlobalDiscountEnabled] = useState(false);
-    const [globalDiscountType, setGlobalDiscountType] = useState('percent');
-    const [globalDiscountValue, setGlobalDiscountValue] = useState(0);
-    const [deliveryType, setDeliveryType] = useState('free');
-    const [deliveryAmount, setDeliveryAmount] = useState(0);
-    const [showCartTotalsBreakdown, setShowCartTotalsBreakdown] = useState(true);
-    const [cartDraftsByChat, setCartDraftsByChat] = useState({});
+    const cartDraftsByChat = (externalCartDraftsByChat && typeof externalCartDraftsByChat === 'object')
+        ? externalCartDraftsByChat
+        : {};
+    const setCartDraftsByChat = (typeof externalSetCartDraftsByChat === 'function')
+        ? externalSetCartDraftsByChat
+        : (() => {});
+    const activeDraft = cartDraftsByChat[activeChatId] || {};
+    const cart = activeDraft.cart || [];
+    const showOrderAdjustments = activeDraft.showOrderAdjustments || false;
+    const globalDiscountEnabled = activeDraft.globalDiscountEnabled || false;
+    const globalDiscountType = activeDraft.globalDiscountType || 'percentage';
+    const globalDiscountValue = activeDraft.globalDiscountValue || 0;
+    const deliveryType = activeDraft.deliveryType || 'none';
+    const deliveryAmount = activeDraft.deliveryAmount || 0;
+    const showCartTotalsBreakdown = activeDraft.showCartTotalsBreakdown || false;
     const [quickSearch, setQuickSearch] = useState('');
     const [orderImportStatus, setOrderImportStatus] = useState(null);
     const lastImportedOrderRef = useRef('');
     const tenantScopeRef = useRef(String(tenantScopeKey || 'default').trim() || 'default');
-    const cartDraftSignaturesRef = useRef({});
+
+    const updateDraft = useCallback((patch) => {
+        if (!activeChatId || typeof setCartDraftsByChat !== 'function') return;
+        setCartDraftsByChat((prev) => {
+            const safePrev = prev && typeof prev === 'object' ? prev : {};
+            const previousDraft = safePrev[activeChatId] && typeof safePrev[activeChatId] === 'object'
+                ? safePrev[activeChatId]
+                : {};
+            const nextPatch = typeof patch === 'function' ? patch(previousDraft) : patch;
+            return {
+                ...safePrev,
+                [activeChatId]: {
+                    ...previousDraft,
+                    ...(nextPatch && typeof nextPatch === 'object' ? nextPatch : {})
+                }
+            };
+        });
+    }, [activeChatId, setCartDraftsByChat]);
+
+    const setCart = useCallback((nextCart) => {
+        updateDraft((previousDraft) => {
+            const previousCart = Array.isArray(previousDraft?.cart) ? previousDraft.cart : [];
+            const resolved = typeof nextCart === 'function' ? nextCart(previousCart) : nextCart;
+            return { cart: Array.isArray(resolved) ? resolved : [] };
+        });
+    }, [updateDraft]);
+
+    const setShowOrderAdjustments = useCallback((nextValue) => {
+        updateDraft((previousDraft) => {
+            const previous = Boolean(previousDraft?.showOrderAdjustments || false);
+            const resolved = typeof nextValue === 'function' ? nextValue(previous) : nextValue;
+            return { showOrderAdjustments: Boolean(resolved) };
+        });
+    }, [updateDraft]);
+
+    const setGlobalDiscountEnabled = useCallback((nextValue) => {
+        updateDraft((previousDraft) => {
+            const previous = Boolean(previousDraft?.globalDiscountEnabled || false);
+            const resolved = typeof nextValue === 'function' ? nextValue(previous) : nextValue;
+            return { globalDiscountEnabled: Boolean(resolved) };
+        });
+    }, [updateDraft]);
+
+    const setGlobalDiscountType = useCallback((nextValue) => {
+        updateDraft((previousDraft) => {
+            const previous = String(previousDraft?.globalDiscountType || 'percentage');
+            const resolved = typeof nextValue === 'function' ? nextValue(previous) : nextValue;
+            return { globalDiscountType: String(resolved || 'percentage') };
+        });
+    }, [updateDraft]);
+
+    const setGlobalDiscountValue = useCallback((nextValue) => {
+        updateDraft((previousDraft) => {
+            const previous = Number(previousDraft?.globalDiscountValue || 0) || 0;
+            const resolved = typeof nextValue === 'function' ? nextValue(previous) : nextValue;
+            const normalized = Number(resolved);
+            return { globalDiscountValue: Number.isFinite(normalized) ? normalized : 0 };
+        });
+    }, [updateDraft]);
+
+    const setDeliveryType = useCallback((nextValue) => {
+        updateDraft((previousDraft) => {
+            const previous = String(previousDraft?.deliveryType || 'none');
+            const resolved = typeof nextValue === 'function' ? nextValue(previous) : nextValue;
+            return { deliveryType: String(resolved || 'none') };
+        });
+    }, [updateDraft]);
+
+    const setDeliveryAmount = useCallback((nextValue) => {
+        updateDraft((previousDraft) => {
+            const previous = Number(previousDraft?.deliveryAmount || 0) || 0;
+            const resolved = typeof nextValue === 'function' ? nextValue(previous) : nextValue;
+            const normalized = Number(resolved);
+            return { deliveryAmount: Number.isFinite(normalized) ? normalized : 0 };
+        });
+    }, [updateDraft]);
+
+    const setShowCartTotalsBreakdown = useCallback((nextValue) => {
+        updateDraft((previousDraft) => {
+            const previous = Boolean(previousDraft?.showCartTotalsBreakdown || false);
+            const resolved = typeof nextValue === 'function' ? nextValue(previous) : nextValue;
+            return { showCartTotalsBreakdown: Boolean(resolved) };
+        });
+    }, [updateDraft]);
 
     const catalog = useMemo(
         () => (businessData.catalog || []).map((item, idx) => normalizeCatalogItem(item, idx)),
@@ -123,7 +211,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setDeliveryAmount,
         setShowCartTotalsBreakdown,
         setCartDraftsByChat,
-        cartDraftSignaturesRef,
         setQuickSearch,
         setOrderImportStatus,
         lastImportedOrderRef
@@ -143,30 +230,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setAiThreadsByScope,
         setAiScopeLoading,
         setAiThreadMessages
-    });
-    useCartDraftSync({
-        activeChatId,
-        cartDraftsByChat,
-        cartDraftSignaturesRef,
-        parseMoney,
-        cart,
-        showOrderAdjustments,
-        globalDiscountEnabled,
-        globalDiscountType,
-        globalDiscountValue,
-        deliveryType,
-        deliveryAmount,
-        showCartTotalsBreakdown,
-        setOrderImportStatus,
-        setCart,
-        setShowOrderAdjustments,
-        setGlobalDiscountEnabled,
-        setGlobalDiscountType,
-        setGlobalDiscountValue,
-        setDeliveryType,
-        setDeliveryAmount,
-        setShowCartTotalsBreakdown,
-        setCartDraftsByChat
     });
     usePendingOrderCartImport({
         pendingOrderCartLoad,
