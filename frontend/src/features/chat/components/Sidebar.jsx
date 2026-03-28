@@ -1,72 +1,13 @@
-import React, { useMemo, useState } from 'react';
-import { MoreVertical, Search, Check, CheckCheck, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin } from 'lucide-react';
-import moment from 'moment';
+import React from 'react';
+import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck } from 'lucide-react';
 import ChannelBrandIcon from './ChannelBrandIcon';
-
-const WA_LABEL_COLORS = ['#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#00A884', '#7D8D95'];
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-
-const normalizeModuleImageUrl = (rawUrl = '') => {
-    const value = String(rawUrl || '').trim();
-    if (!value) return null;
-    if (value.startsWith('data:') || value.startsWith('blob:')) return value;
-    if (/^https?:\/\//i.test(value)) return value;
-    if (value.startsWith('/')) return `${API_URL}${value}`;
-    return `${API_URL}/${value}`;
-};
+import useSidebarFiltersController from './hooks/useSidebarFiltersController';
+import useSidebarChatPresentationModel from './hooks/useSidebarChatPresentationModel';
+import useSidebarInfiniteScroll from './hooks/useSidebarInfiniteScroll';
+import useSidebarUiToggles from './hooks/useSidebarUiToggles';
 
 
 const normalizePhoneDigits = (value = '') => String(value || '').replace(/\D/g, '');
-const normalizeFilterToken = (value = '') => String(value || '').trim().toLowerCase();
-const CHAT_SCOPE_SEPARATOR = '::mod::';
-const normalizeModuleKey = (value = '') => String(value || '').trim().toLowerCase();
-const parseScopedChatId = (value = '') => {
-    const raw = String(value || '').trim();
-    if (!raw) return { baseChatId: '', scopeModuleId: '' };
-    const idx = raw.lastIndexOf(CHAT_SCOPE_SEPARATOR);
-    if (idx < 0) return { baseChatId: raw, scopeModuleId: '' };
-    const baseChatId = String(raw.slice(0, idx) || '').trim();
-    const scopeModuleId = normalizeModuleKey(raw.slice(idx + CHAT_SCOPE_SEPARATOR.length));
-    if (!baseChatId || !scopeModuleId) return { baseChatId: raw, scopeModuleId: '' };
-    return { baseChatId, scopeModuleId };
-};
-
-const normalizeFilters = (filters = {}) => {
-    const rawTokens = Array.isArray(filters?.labelTokens) ? filters.labelTokens : [];
-    const seen = new Set();
-    const labelTokens = [];
-    for (const token of rawTokens) {
-        const clean = normalizeFilterToken(token);
-        if (!clean || seen.has(clean)) continue;
-        seen.add(clean);
-        labelTokens.push(clean);
-    }
-
-    const contactMode = ['all', 'my', 'unknown'].includes(String(filters?.contactMode || 'all'))
-        ? String(filters?.contactMode || 'all')
-        : 'all';
-    const archivedMode = ['all', 'archived', 'active'].includes(String(filters?.archivedMode || 'all'))
-        ? String(filters?.archivedMode || 'all')
-        : 'all';
-    const pinnedMode = ['all', 'pinned', 'unpinned'].includes(String(filters?.pinnedMode || 'all'))
-        ? String(filters?.pinnedMode || 'all')
-        : 'all';
-
-    return {
-        labelTokens,
-        unreadOnly: Boolean(filters?.unreadOnly),
-        unlabeledOnly: Boolean(filters?.unlabeledOnly),
-        contactMode,
-        archivedMode,
-        pinnedMode,
-    };
-};
-
-const formatPhone = (value = '') => {
-    const digits = normalizePhoneDigits(value);
-    return digits ? `+${digits}` : '';
-};
 
 const repairMojibake = (value = '') => {
     let text = String(value || '');
@@ -88,24 +29,6 @@ const sanitizeDisplayText = (value = '') => repairMojibake(value)
     .replace(/[\u0000-\u001F]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-
-const getLabelToken = (label = {}) => {
-    const id = normalizeFilterToken(label?.id);
-    if (id) return `id:${id}`;
-    const name = normalizeFilterToken(label?.name);
-    if (name) return `name:${name}`;
-    return '';
-};
-
-const getChatLabelTokenSet = (chat = {}) => {
-    const set = new Set();
-    const labels = Array.isArray(chat?.labels) ? chat.labels : [];
-    labels.forEach((label) => {
-        const token = getLabelToken(label);
-        if (token) set.add(token);
-    });
-    return set;
-};
 
 const Sidebar = ({
     chats,
@@ -137,276 +60,54 @@ const Sidebar = ({
     showBackToPanel = false,
     onBackToPanel = null,
 }) => {
-    const [showMenu, setShowMenu] = useState(false);
-    const [showLabelPanel, setShowLabelPanel] = useState(false);
-    const [labelSearch, setLabelSearch] = useState('');
-
-    const filters = useMemo(() => normalizeFilters(activeFilters), [activeFilters]);
-
-    const updateFilters = (patch = {}) => {
-        const next = normalizeFilters({ ...filters, ...patch });
-        onFiltersChange?.(next);
-    };
+    const {
+        showMenu,
+        setShowMenu,
+        showLabelPanel,
+        setShowLabelPanel
+    } = useSidebarUiToggles();
+    const {
+        filters,
+        updateFilters,
+        visibleLabels,
+        quickStats,
+        activeFilterChips,
+        filteredChats,
+        resetFilters,
+        toggleLabel,
+        labelSearch,
+        setLabelSearch,
+        selectedLabelCount,
+        hasAnyFilter
+    } = useSidebarFiltersController({
+        chats,
+        activeFilters,
+        labelDefinitions,
+        waModules,
+        onFiltersChange,
+        searchQuery
+    });
+    const {
+        formatTime,
+        renderStatus,
+        getDisplayName,
+        getContactHint,
+        getChannelBadge,
+        getChannelMarker,
+        avatarLetter,
+        avatarColor
+    } = useSidebarChatPresentationModel();
+    const { handleChatListScroll } = useSidebarInfiniteScroll({
+        onLoadMoreChats,
+        chatsHasMore,
+        isLoadingMoreChats: chatsLoadingMore
+    });
 
     const localQuery = String(searchQuery || '');
     const normalizedPhone = normalizePhoneDigits(localQuery);
     const queryHasLetters = /[a-zA-Z]/.test(localQuery);
     const searchIsPhone = !queryHasLetters && normalizedPhone.length >= 6 && normalizedPhone.length <= 15;
-
-    const formatTime = (ts) => {
-        if (!Number.isFinite(Number(ts)) || Number(ts) <= 0) return '';
-        const m = moment.unix(ts || 0);
-        if (!m.isValid()) return '';
-        if (m.isSame(moment(), 'day')) return m.format('H:mm');
-        if (m.isSame(moment().subtract(1, 'day'), 'day')) return 'Ayer';
-        return m.format('DD/MM/YY');
-    };
-
-    const renderStatus = (chat) => {
-        if (!chat.lastMessageFromMe) return null;
-        const color = chat.ack === 3 ? '#53bdeb' : '#8696a0';
-        return (
-            <span className="chat-last-status-icon">
-                {chat.ack >= 2 ? <CheckCheck size={16} color={color} /> : <Check size={16} color="#8696a0" />}
-            </span>
-        );
-    };
-
-    const allLabels = useMemo(() => {
-        const map = new Map();
-        const counts = new Map();
-
-        const register = (label, idx = 0) => {
-            const token = getLabelToken(label);
-            if (!token) return;
-            if (!map.has(token)) {
-                const id = label?.id ?? null;
-                const fallbackName = id !== null && id !== undefined ? `Etiqueta ${id}` : 'Etiqueta';
-                map.set(token, {
-                    token,
-                    id,
-                    name: String(label?.name || fallbackName).trim(),
-                    color: label?.color || WA_LABEL_COLORS[idx % WA_LABEL_COLORS.length],
-                });
-            }
-        };
-
-        (labelDefinitions || []).forEach((label, idx) => register(label, idx));
-        chats.forEach((chat) => {
-            const chatTokens = new Set();
-            (chat?.labels || []).forEach((label, idx) => {
-                register(label, idx);
-                const token = getLabelToken(label);
-                if (token) chatTokens.add(token);
-            });
-            chatTokens.forEach((token) => counts.set(token, (counts.get(token) || 0) + 1));
-        });
-
-        return Array.from(map.values())
-            .map((label) => ({ ...label, count: counts.get(label.token) || 0 }))
-            .sort((a, b) => {
-                if (b.count !== a.count) return b.count - a.count;
-                return a.name.localeCompare(b.name);
-            });
-    }, [chats, labelDefinitions]);
-
-    const normalizedLabelSearch = String(labelSearch || '').trim().toLowerCase();
-    const visibleLabels = useMemo(() => (
-        normalizedLabelSearch
-            ? allLabels.filter((label) => `${label.name}`.toLowerCase().includes(normalizedLabelSearch))
-            : allLabels
-    ), [allLabels, normalizedLabelSearch]);
-
-    const selectedLabelCount = filters.labelTokens.length;
-    const hasActiveQuickFilters = filters.unreadOnly || filters.unlabeledOnly || filters.contactMode !== 'all' || filters.archivedMode !== 'all' || filters.pinnedMode !== 'all';
-    const hasAnyFilter = hasActiveQuickFilters || selectedLabelCount > 0;
     const hasPanelAccess = Boolean(saasAuthEnabled && canManageSaas);
-
-    const quickStats = useMemo(() => {
-        const unread = chats.filter((c) => Number(c?.unreadCount || 0) > 0).length;
-        const unlabeled = chats.filter((c) => (Array.isArray(c?.labels) ? c.labels.length : 0) === 0).length;
-        const myContacts = chats.filter((c) => c?.isMyContact === true).length;
-        const unknown = chats.filter((c) => c?.isMyContact !== true).length;
-        const archived = chats.filter((c) => Boolean(c?.archived)).length;
-        const pinned = chats.filter((c) => Boolean(c?.pinned)).length;
-        return { unread, unlabeled, myContacts, unknown, archived, pinned };
-    }, [chats]);
-    const activeFilterChips = useMemo(() => {
-        const chips = [];
-        if (!hasAnyFilter) return chips;
-        if (filters.unreadOnly) chips.push('No leidos');
-        if (filters.unlabeledOnly) chips.push('Sin etiqueta');
-        if (filters.archivedMode === 'archived') chips.push('Archivados');
-        if (filters.pinnedMode === 'pinned') chips.push('Fijados');
-        if (filters.contactMode === 'my') chips.push('Guardados');
-        if (filters.contactMode === 'unknown') chips.push('No guardados');
-        if (filters.labelTokens.length > 0) chips.push(`Etiquetas (${filters.labelTokens.length})`);
-        return chips;
-    }, [filters, hasAnyFilter]);
-
-    const filteredChats = useMemo(() => chats.filter((chat) => {
-        const labelTokenSet = getChatLabelTokenSet(chat);
-
-        if (filters.unreadOnly && Number(chat?.unreadCount || 0) <= 0) return false;
-        if (filters.contactMode === 'my' && !chat?.isMyContact) return false;
-        if (filters.contactMode === 'unknown' && chat?.isMyContact) return false;
-        if (filters.archivedMode === 'archived' && !chat?.archived) return false;
-        if (filters.archivedMode === 'active' && chat?.archived) return false;
-        if (filters.pinnedMode === 'pinned' && !chat?.pinned) return false;
-        if (filters.pinnedMode === 'unpinned' && chat?.pinned) return false;
-        if (filters.unlabeledOnly && labelTokenSet.size > 0) return false;
-
-        if (!filters.unlabeledOnly && filters.labelTokens.length > 0) {
-            const hasLabel = filters.labelTokens.some((token) => labelTokenSet.has(normalizeFilterToken(token)));
-            if (!hasLabel) return false;
-        }
-
-        const q = String(localQuery || '').trim().toLowerCase();
-        if (!q) return true;
-
-        const qDigits = normalizePhoneDigits(q);
-        const name = String(chat?.name || '').toLowerCase();
-        const subtitle = String(chat?.subtitle || '').toLowerCase();
-        const status = String(chat?.status || '').toLowerCase();
-        const lastMessage = String(chat?.lastMessage || '').toLowerCase();
-        const phone = normalizePhoneDigits(chat?.phone || chat?.id || '');
-
-        if (qDigits) {
-            return phone.includes(qDigits) || normalizePhoneDigits(subtitle).includes(qDigits);
-        }
-
-        return name.includes(q) || subtitle.includes(q) || status.includes(q) || lastMessage.includes(q);
-    }), [chats, filters, localQuery]);
-
-    const handleChatListScroll = (e) => {
-        if (!onLoadMoreChats || !chatsHasMore || chatsLoadingMore) return;
-        const el = e.currentTarget;
-        const nearBottom = (el.scrollTop + el.clientHeight) >= (el.scrollHeight - 120);
-        if (nearBottom) onLoadMoreChats();
-    };
-
-    const avatarLetter = (name) => (name ? name.charAt(0).toUpperCase() : '?');
-    const avatarColor = (name) => {
-        const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444'];
-        if (!name) return colors[0];
-        return colors[name.charCodeAt(0) % colors.length];
-    };
-
-    const isInternalIdentifier = (value = '') => {
-        const text = String(value || '').trim();
-        if (!text) return false;
-        return text.includes('@') || /^\d{14,}$/.test(text);
-    };
-
-    const getDisplayName = (chat) => {
-        const rawName = sanitizeDisplayText(chat?.name || '');
-        const phone = formatPhone(chat?.phone || chat?.id || '');
-        if (rawName && !isInternalIdentifier(rawName)) return rawName;
-        if (phone) return phone;
-        return 'Sin nombre';
-    };
-
-    const isHumanSubtitle = (value = '') => {
-        const text = String(value || '').trim();
-        if (!text) return false;
-        if (text.includes('@')) return false;
-        const onlyDigitsAndSymbols = text.replace(/[\d\s+().-]/g, '');
-        if (!onlyDigitsAndSymbols && normalizePhoneDigits(text).length >= 10) return false;
-        return true;
-    };
-
-    const getSubtitle = (chat) => {
-        const statusText = sanitizeDisplayText(chat?.status || '');
-        const subtitleText = sanitizeDisplayText(chat?.subtitle || '');
-        const phone = formatPhone(chat?.phone || chat?.id || '');
-        const displayName = getDisplayName(chat);
-
-        const candidates = [statusText, subtitleText]
-            .filter((v) => isHumanSubtitle(v) && !isInternalIdentifier(v) && v !== displayName);
-
-        if (candidates.length > 0) {
-            const primary = candidates[0];
-            if (phone && primary !== phone) return primary + ' - ' + phone;
-            return primary;
-        }
-
-        if (phone && phone !== displayName) return phone;
-        return '';
-    };
-    const getContactHint = (chat, displayName = '') => {
-        const phone = formatPhone(chat?.phone || chat?.id || '');
-        if (phone && phone !== displayName) return phone;
-        const subtitle = getSubtitle(chat);
-        if (!subtitle || subtitle === displayName) return '';
-        const normalized = subtitle.includes(' - ')
-            ? String(subtitle).split(' - ')[0].trim()
-            : subtitle;
-        return normalized !== displayName ? normalized : '';
-    };
-
-    const getChannelBadge = (chat) => {
-        const parsed = parseScopedChatId(chat?.id || '');
-        const chatModuleId = normalizeModuleKey(
-            chat?.lastMessageModuleId
-            || chat?.scopeModuleId
-            || parsed?.scopeModuleId
-            || ''
-        );
-        const rawModuleName = sanitizeDisplayText(chat?.lastMessageModuleName || '');
-        const normalizedModuleName = String(rawModuleName || '').trim().toLowerCase();
-        const moduleConfig = Array.isArray(waModules)
-            ? (
-                waModules.find((entry) => normalizeModuleKey(entry?.moduleId || entry?.id || '') === chatModuleId)
-                || waModules.find((entry) => normalizedModuleName && String(entry?.name || '').trim().toLowerCase() === normalizedModuleName)
-                || null
-            )
-            : null;
-
-        const resolvedModuleId = normalizeModuleKey(chatModuleId || moduleConfig?.moduleId || moduleConfig?.id || '');
-        const moduleName = sanitizeDisplayText(rawModuleName || moduleConfig?.name || '');
-        const moduleId = String(resolvedModuleId || '').trim().toUpperCase();
-        const channelType = String(chat?.lastMessageChannelType || moduleConfig?.channelType || '').trim().toLowerCase();
-        const channelLabel = channelType ? channelType.toUpperCase() : '';
-        const sourceRaw = moduleName || moduleId;
-        const source = String(sourceRaw || '').replace(/\s*\|\s*(whatsapp|instagram|messenger|facebook|webchat)\s*$/i, '').trim() || sourceRaw;
-        const imageUrl = normalizeModuleImageUrl(
-            chat?.lastMessageModuleImageUrl
-            || moduleConfig?.imageUrl
-            || moduleConfig?.logoUrl
-            || ''
-        );
-
-        const label = source || channelLabel || '';
-
-        if (!label) return null;
-        return {
-            label,
-            imageUrl: imageUrl || null,
-            moduleName: moduleName || null,
-            moduleId: moduleId || null,
-            channelType: channelType || null
-        };
-    };
-    const getChannelMarker = (channelType = '') => {
-        const clean = String(channelType || '').trim().toLowerCase();
-        if (!clean) return { key: 'generic', short: 'CH', label: 'Canal' };
-        if (clean === 'whatsapp') return { key: 'whatsapp', short: 'WA', label: 'WhatsApp' };
-        if (clean === 'instagram') return { key: 'instagram', short: 'IG', label: 'Instagram' };
-        if (clean === 'messenger') return { key: 'messenger', short: 'MS', label: 'Messenger' };
-        if (clean === 'facebook') return { key: 'facebook', short: 'FB', label: 'Facebook' };
-        if (clean === 'webchat') return { key: 'webchat', short: 'WEB', label: 'Webchat' };
-        return { key: 'generic', short: clean.slice(0, 3).toUpperCase(), label: clean.toUpperCase() };
-    };
-    const resetFilters = () => {
-        onFiltersChange?.(normalizeFilters({
-            labelTokens: [],
-            unreadOnly: false,
-            unlabeledOnly: false,
-            contactMode: 'all',
-            archivedMode: 'all',
-            pinnedMode: 'all',
-        }));
-    };
 
     const currentTenantId = String(activeTenantId || '').trim();
     const sortedTenantOptions = Array.isArray(tenantOptions)
@@ -414,14 +115,6 @@ const Sidebar = ({
         : [];
     const activeTenantOption = sortedTenantOptions.find((tenant) => String(tenant?.id || '').trim() === currentTenantId) || sortedTenantOptions[0] || null;
     const activeTenantLabel = activeTenantOption?.name || activeTenantOption?.id || currentTenantId || 'default';
-
-    const toggleLabel = (token) => {
-        const clean = normalizeFilterToken(token);
-        if (!clean) return;
-        const next = new Set(filters.labelTokens);
-        if (next.has(clean)) next.delete(clean); else next.add(clean);
-        updateFilters({ labelTokens: Array.from(next), unlabeledOnly: false });
-    };
 
     return (
         <div className="sidebar sidebar-pro">
@@ -702,7 +395,7 @@ const Sidebar = ({
                     filteredChats.map((chat) => {
                         const displayName = getDisplayName(chat);
                         const contactHint = getContactHint(chat, displayName);
-                        const moduleBadge = getChannelBadge(chat);
+                        const moduleBadge = getChannelBadge(chat, waModules);
                         const channelMarker = getChannelMarker(moduleBadge?.channelType || '');
                         const moduleAvatarImage = moduleBadge?.imageUrl || null;
                         const avatarFallback = moduleBadge?.moduleName
