@@ -15,6 +15,7 @@ const waModuleService = require('../../tenant/services/wa-modules.service');
 const tenantCatalogService = require('../../tenant/services/tenant-catalog.service');
 const customerService = require('../../tenant/services/customers.service');
 const tenantLabelService = require('../../tenant/services/tenant-labels.service');
+const quotesService = require('../../tenant/services/quotes.service');
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
 const auditLogService = require('../../security/services/audit-log.service');
 const RateLimiter = require('../../../config/rate-limiter');
@@ -112,6 +113,7 @@ const { createSocketChatStateLabelsService } = require('./socket-chat-state-labe
 const { createSocketQuickRepliesService } = require('./socket-quick-replies.service');
 const { createSocketMessageDeliveryService } = require('./socket-message-delivery.service');
 const { createSocketCatalogDeliveryService } = require('./socket-catalog-delivery.service');
+const { createSocketQuoteDeliveryService } = require('./socket-quote-delivery.service');
 const { createSocketAiAssistantService } = require('./socket-ai-assistant.service');
 const { createSocketProfileContactService } = require('./socket-profile-contact.service');
 const { createSocketBusinessDataService } = require('./socket-business-data.service');
@@ -340,6 +342,14 @@ class SocketManager {
             buildSocketAgentMeta,
             sanitizeAgentMeta,
             rememberOutgoingAgentMeta
+        });
+        this.quoteDeliveryService = createSocketQuoteDeliveryService({
+            waClient,
+            getSerializedMessageId,
+            buildSocketAgentMeta,
+            sanitizeAgentMeta,
+            rememberOutgoingAgentMeta,
+            quotesService
         });
         this.profileContactService = createSocketProfileContactService({
             waClient,
@@ -1095,6 +1105,16 @@ class SocketManager {
                 guardRateLimit,
                 transportOrchestrator,
                 isFeatureEnabledForTenant: this.isFeatureEnabledForTenant.bind(this),
+                resolveScopedSendTarget: (...args) => messageDeliveryRuntime.resolveScopedSendTarget(...args),
+                emitRealtimeOutgoingMessage: (...args) => messageDeliveryRuntime.emitRealtimeOutgoingMessage(...args),
+                recordConversationEvent
+            });
+            this.quoteDeliveryService.registerQuoteDeliveryHandlers({
+                socket,
+                tenantId,
+                authContext,
+                guardRateLimit,
+                transportOrchestrator,
                 resolveScopedSendTarget: (...args) => messageDeliveryRuntime.resolveScopedSendTarget(...args),
                 emitRealtimeOutgoingMessage: (...args) => messageDeliveryRuntime.emitRealtimeOutgoingMessage(...args),
                 recordConversationEvent
