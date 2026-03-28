@@ -7,6 +7,7 @@ export default function OperationPage({
   fileInputRef,
   handleFileChange,
   chats,
+  chatsLoaded,
   activeChatId,
   handleChatSelect,
   myProfile,
@@ -124,6 +125,7 @@ export default function OperationPage({
 
       <Sidebar
         chats={chats}
+        chatsLoaded={chatsLoaded}
         activeChatId={activeChatId}
         onChatSelect={handleChatSelect}
         myProfile={myProfile || businessData?.profile}

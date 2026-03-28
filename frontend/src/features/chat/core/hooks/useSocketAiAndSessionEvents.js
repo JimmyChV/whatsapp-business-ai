@@ -7,6 +7,7 @@ export default function useSocketAiAndSessionEvents({
     setIsClientReady,
     setQrCode,
     setChats,
+    setChatsLoaded,
     setChatsTotal,
     setChatsHasMore,
     chatPagingRef,
@@ -49,6 +50,7 @@ export default function useSocketAiAndSessionEvents({
             setIsClientReady(false);
             setQrCode('');
             setChats([]);
+            setChatsLoaded(false);
             setChatsTotal(0);
             setChatsHasMore(false);
             chatPagingRef.current = { offset: 0, hasMore: false, loading: false };

@@ -20,6 +20,7 @@ export default function useOperationWorkspaceState({
   tenantScopeId
 }) {
   const [chats, setChats] = useState([]);
+  const [chatsLoaded, setChatsLoaded] = useState(false);
   const [chatsTotal, setChatsTotal] = useState(0);
   const [chatsHasMore, setChatsHasMore] = useState(true);
   const [isLoadingMoreChats, setIsLoadingMoreChats] = useState(false);
@@ -117,6 +118,8 @@ export default function useOperationWorkspaceState({
   return {
     chats,
     setChats,
+    chatsLoaded,
+    setChatsLoaded,
     chatsTotal,
     setChatsTotal,
     chatsHasMore,

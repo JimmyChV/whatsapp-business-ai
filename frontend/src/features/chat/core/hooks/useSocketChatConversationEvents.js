@@ -18,6 +18,7 @@ export default function useSocketChatConversationEvents({
     normalizeModuleImageUrl,
     chatMatchesFilters,
     setChats,
+    setChatsLoaded,
     dedupeChats,
     chatPagingRef,
     setChatsTotal,
@@ -120,6 +121,9 @@ export default function useSocketChatConversationEvents({
                 }
                 return dedupeChats([...prev, ...hydrated]).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             });
+            if (pageOffset <= 0) {
+                setChatsLoaded(true);
+            }
 
             chatPagingRef.current.offset = Number.isFinite(Number(page.nextOffset)) ? Number(page.nextOffset) : (pageOffset + rawItems.length);
             chatPagingRef.current.hasMore = hasMore;

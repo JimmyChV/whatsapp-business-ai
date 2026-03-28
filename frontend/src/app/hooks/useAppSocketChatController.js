@@ -116,6 +116,7 @@ export default function useAppSocketChatController({
     setMessages: chatRuntimeBlock.setMessages,
     setEditingMessage: chatRuntimeBlock.setEditingMessage,
     setChats: chatRuntimeBlock.setChats,
+    setChatsLoaded: chatRuntimeBlock.setChatsLoaded,
     chatIdsReferSameScope: chatRuntimeBlock.chatIdsReferSameScope,
 
     setAiSuggestion: chatRuntimeBlock.setAiSuggestion,
