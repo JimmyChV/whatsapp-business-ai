@@ -1,5 +1,5 @@
 import React from 'react';
-import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin } from 'lucide-react';
+import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck } from 'lucide-react';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import useSidebarFiltersController from './hooks/useSidebarFiltersController';
 import useSidebarChatPresentationModel from './hooks/useSidebarChatPresentationModel';
