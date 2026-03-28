@@ -267,7 +267,6 @@ export default function OperationPage({
 
         {activeChatId && (
           <BusinessSidebar
-            key={activeChatId}
             tenantScopeKey={tenantScopeId}
             setInputText={setInputText}
             businessData={businessData}
