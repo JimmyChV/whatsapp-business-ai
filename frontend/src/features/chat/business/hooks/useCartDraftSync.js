@@ -25,6 +25,30 @@ export const useCartDraftSync = ({
     setCartDraftsByChat
 } = {}) => {
     useEffect(() => {
+        if (!activeChatId) return;
+        setCart([]);
+        setShowOrderAdjustments(false);
+        setGlobalDiscountEnabled(false);
+        setGlobalDiscountType('percentage');
+        setGlobalDiscountValue(0);
+        setDeliveryType('none');
+        setDeliveryAmount(0);
+        setShowCartTotalsBreakdown(false);
+        setOrderImportStatus(null);
+    }, [
+        activeChatId,
+        setCart,
+        setShowOrderAdjustments,
+        setGlobalDiscountEnabled,
+        setGlobalDiscountType,
+        setGlobalDiscountValue,
+        setDeliveryType,
+        setDeliveryAmount,
+        setShowCartTotalsBreakdown,
+        setOrderImportStatus
+    ]);
+
+    useEffect(() => {
         setOrderImportStatus(null);
         if (!activeChatId) return;
         // TODO(bug): carrito parpadea al cambiar de chat — revisar sincronizacion de draft/import entre chats
