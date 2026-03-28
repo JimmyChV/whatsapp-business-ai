@@ -11,6 +11,7 @@
   quickRepliesManagerService: require('./quick-replies-manager.service'),
   tenantIntegrationsService: require('./integrations.service'),
   quickReplyLibrariesService: require('./quick-reply-libraries.service'),
+  quotesService: require('./quotes.service'),
   woocommerceService: require('./woocommerce.service')
 };
 

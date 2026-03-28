@@ -8,7 +8,7 @@ export const getCartLineBreakdown = (
     item = {},
     {
         parseMoney = asNumber,
-        roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100,
+        roundMoney = (value) => Math.ceil((Number(value) || 0) * 10) / 10,
         clampNumber = (value, min = 0, max = 100) => Math.min(max, Math.max(min, Number(value) || 0))
     } = {}
 ) => {
@@ -59,7 +59,7 @@ export const calculateCartPricing = ({
     deliveryType = 'free',
     deliveryAmount = 0,
     parseMoney = asNumber,
-    roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100,
+    roundMoney = (value) => Math.ceil((Number(value) || 0) * 10) / 10,
     clampNumber = (value, min = 0, max = 100) => Math.min(max, Math.max(min, Number(value) || 0))
 } = {}) => {
     const safeCart = Array.isArray(cart) ? cart : [];
@@ -148,6 +148,7 @@ export const buildQuoteMessageFromCart = ({
     subtotalAfterGlobal = 0,
     deliveryFee = 0,
     cartTotal = 0,
+    quoteId = null,
     formatMoneyCompact,
     formatQuoteProductTitle
 } = {}) => {
@@ -156,7 +157,7 @@ export const buildQuoteMessageFromCart = ({
 
     const moneyCompact = typeof formatMoneyCompact === 'function'
         ? formatMoneyCompact
-        : ((value) => Number(value || 0).toFixed(2));
+        : ((value) => Number(value || 0).toFixed(1));
     const formatTitle = typeof formatQuoteProductTitle === 'function'
         ? formatQuoteProductTitle
         : ((value) => String(value || 'Producto'));
@@ -164,23 +165,23 @@ export const buildQuoteMessageFromCart = ({
     const separator = '---------------------------------------------';
     const productRows = safeCart.map((item) => {
         const line = typeof getLineBreakdown === 'function' ? getLineBreakdown(item) : { qty: Math.max(1, Number(item?.qty || 1)) };
-        return `? *${line.qty}* ${formatTitle(item?.title)}`;
+        return `\u25AA\uFE0F *${line.qty}* ${formatTitle(item?.title)}`;
     });
 
     const paymentRows = [
-        `? Subtotal: S/ ${moneyCompact(regularSubtotalTotal)}`,
+        `\uD83E\uDDFE Subtotal: S/ ${moneyCompact(regularSubtotalTotal)}`,
     ];
 
     if (Number(totalDiscountForQuote || 0) > 0) {
-        paymentRows.push(`? *DESCUENTO: S/ ${moneyCompact(totalDiscountForQuote)}*`);
-        paymentRows.push(`? Total con Descuento: S/ ${moneyCompact(subtotalAfterGlobal)}`);
+        paymentRows.push(`\uD83C\uDFF7\uFE0F *DESCUENTO: S/ ${moneyCompact(totalDiscountForQuote)}*`);
+    paymentRows.push(`💹 Total con Descuento: S/ ${moneyCompact(subtotalAfterGlobal)}`);
     }
 
-    paymentRows.push(`? Delivery: ${deliveryFee > 0 ? `S/ ${moneyCompact(deliveryFee)}` : 'Gratuito'}`);
-    paymentRows.push(`? *TOTAL A PAGAR: S/ ${moneyCompact(cartTotal)}*`);
+    paymentRows.push(`\uD83D\uDE9A Delivery: ${deliveryFee > 0 ? `S/ ${moneyCompact(deliveryFee)}` : 'Gratuito'}`);
+    paymentRows.push(`\uD83D\uDCB3 *TOTAL A PAGAR: S/ ${moneyCompact(cartTotal)}*`);
 
     return [
-        '*? COTIZACION ?*',
+        quoteId ? `*\uD83D\uDED2 COTIZACION ${String(quoteId).toUpperCase()} \uD83D\uDED2*` : `*\uD83D\uDED2 COTIZACION \uD83D\uDED2*`,
         separator,
         '*_DETALLE DE PRODUCTOS:_*',
         separator,
