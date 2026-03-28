@@ -510,7 +510,7 @@ function createSocketChatListService({
                             query,
                             filters: activeFilters,
                             filterKey,
-                            scopeModuleId: null
+                            scopeModuleId: activeScopeModuleId
                         });
 
                         historyTotalHint = Math.max(0, Number(cloudHistoryPage?.total || 0));
