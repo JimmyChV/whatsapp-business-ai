@@ -148,6 +148,7 @@ export const buildQuoteMessageFromCart = ({
     subtotalAfterGlobal = 0,
     deliveryFee = 0,
     cartTotal = 0,
+    quoteId = null,
     formatMoneyCompact,
     formatQuoteProductTitle
 } = {}) => {
@@ -180,7 +181,7 @@ export const buildQuoteMessageFromCart = ({
     paymentRows.push(`\uD83D\uDCB3 *TOTAL A PAGAR: S/ ${moneyCompact(cartTotal)}*`);
 
     return [
-        '*\uD83D\uDED2 COTIZACION \uD83D\uDED2*',
+        quoteId ? `*\uD83D\uDED2 COTIZACION ${String(quoteId).toUpperCase()} \uD83D\uDED2*` : `*\uD83D\uDED2 COTIZACION \uD83D\uDED2*`,
         separator,
         '*_DETALLE DE PRODUCTOS:_*',
         separator,

@@ -155,6 +155,7 @@ export const buildStructuredQuotePayloadFromCart = ({
             subtotalAfterGlobal,
             deliveryFee,
             cartTotal,
+            quoteId,
             formatMoneyCompact,
             formatQuoteProductTitle
         }) || '').trim()
