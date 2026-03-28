@@ -64,6 +64,7 @@ export default function useAppOperationHandlers({
   const {
     chats,
     setChats,
+    setChatsLoaded,
     chatsTotal,
     setChatsTotal,
     chatsHasMore,
@@ -155,6 +156,7 @@ export default function useAppOperationHandlers({
     setSelectedCatalogModuleId,
     setSelectedCatalogId,
     setChats,
+    setChatsLoaded,
     setChatsTotal,
     setChatsHasMore,
     chatPagingRef,
@@ -330,6 +332,7 @@ export default function useAppOperationHandlers({
     setIsClientReady,
     setQrCode,
     setChats,
+    setChatsLoaded,
     setChatsTotal,
     setChatsHasMore,
     setMessages,

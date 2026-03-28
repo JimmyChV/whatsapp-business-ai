@@ -75,6 +75,8 @@ function App() {
   const {
     chats,
     setChats,
+    chatsLoaded,
+    setChatsLoaded,
     chatsTotal,
     setChatsTotal,
     chatsHasMore,
@@ -350,6 +352,7 @@ function App() {
     setMessages,
     setEditingMessage,
     setChats,
+    setChatsLoaded,
     chatIdsReferSameScope,
     setAiSuggestion,
     setIsAiLoading,
@@ -409,6 +412,8 @@ function App() {
   const workspaceStateBlock = {
     chats,
     setChats,
+    chatsLoaded,
+    setChatsLoaded,
     chatsTotal,
     setChatsTotal,
     chatsHasMore,
@@ -579,6 +584,7 @@ function App() {
 
   const uiStateBlock = {
     chats,
+    chatsLoaded,
     chatsTotal,
     chatsHasMore,
     isLoadingMoreChats,

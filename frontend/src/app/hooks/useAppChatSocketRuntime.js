@@ -120,6 +120,7 @@ export default function useAppChatSocketRuntime({
   setMessages,
   setEditingMessage,
   setChats,
+  setChatsLoaded,
   chatIdsReferSameScope,
 
   setAiSuggestion,
@@ -276,6 +277,7 @@ export default function useAppChatSocketRuntime({
     setIsClientReady,
     setQrCode,
     setChats,
+    setChatsLoaded,
     setChatsTotal,
     setChatsHasMore,
     chatPagingRef: socketPagingRef,
@@ -302,6 +304,7 @@ export default function useAppChatSocketRuntime({
     normalizeModuleImageUrl,
     chatMatchesFilters,
     setChats,
+    setChatsLoaded,
     dedupeChats,
     chatPagingRef: socketPagingRef,
     setChatsTotal,

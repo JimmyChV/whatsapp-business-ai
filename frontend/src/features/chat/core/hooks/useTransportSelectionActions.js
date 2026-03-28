@@ -18,6 +18,7 @@ export default function useTransportSelectionActions({
   setIsClientReady,
   setQrCode,
   setChats,
+  setChatsLoaded,
   setChatsTotal,
   setChatsHasMore,
   setMessages,
@@ -31,6 +32,7 @@ export default function useTransportSelectionActions({
 } = {}) {
   const resetChatRuntime = useCallback(() => {
     setChats([]);
+    setChatsLoaded(false);
     setChatsTotal(0);
     setChatsHasMore(true);
     if (chatPagingRef?.current) {
@@ -46,6 +48,7 @@ export default function useTransportSelectionActions({
     chatPagingRef,
     setActiveChatId,
     setChats,
+    setChatsLoaded,
     setChatsHasMore,
     setChatsTotal,
     setClientContact,

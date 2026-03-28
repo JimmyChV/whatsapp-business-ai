@@ -22,6 +22,7 @@ export const usePendingOrderCartImport = ({
     setGlobalDiscountValue,
     setDeliveryType,
     setDeliveryAmount,
+    updateDraft = null,
     formatMoney
 } = {}) => {
     useEffect(() => {
@@ -32,6 +33,30 @@ export const usePendingOrderCartImport = ({
         const dedupeKey = `${activeChatId}:${token}`;
         if (token && lastImportedOrderRef?.current === dedupeKey) return;
         if (token && lastImportedOrderRef) lastImportedOrderRef.current = dedupeKey;
+
+        const applyDraftPatch = (patchOrFn) => {
+            if (typeof updateDraft !== 'function') return false;
+            updateDraft(patchOrFn);
+            return true;
+        };
+
+        const applyCartChange = (nextCart, options = {}) => {
+            const showAdjustments = options.showOrderAdjustments;
+            const patched = applyDraftPatch((previousDraft = {}) => {
+                const previousCart = Array.isArray(previousDraft?.cart) ? previousDraft.cart : [];
+                const resolvedCart = typeof nextCart === 'function' ? nextCart(previousCart) : nextCart;
+                const patch = { cart: Array.isArray(resolvedCart) ? resolvedCart : [] };
+                if (typeof showAdjustments === 'boolean') {
+                    patch.showOrderAdjustments = showAdjustments;
+                }
+                return patch;
+            });
+            if (patched) return;
+            setCart(nextCart);
+            if (typeof showAdjustments === 'boolean') {
+                setShowOrderAdjustments(showAdjustments);
+            }
+        };
 
         const order = pendingOrderCartLoad.order && typeof pendingOrderCartLoad.order === 'object'
             ? pendingOrderCartLoad.order
@@ -73,8 +98,7 @@ export const usePendingOrderCartImport = ({
                 lineDiscountValue: 0
             }];
 
-            setCart(fallbackCart);
-            setShowOrderAdjustments(true);
+            applyCartChange(fallbackCart, { showOrderAdjustments: true });
             setActiveTab('cart');
             setOrderImportStatus({
                 level: 'warn',
@@ -185,7 +209,7 @@ export const usePendingOrderCartImport = ({
         }
 
         if (isProductImport) {
-            setCart((prev) => {
+            applyCartChange((prev) => {
                 const safePrev = Array.isArray(prev) ? prev : [];
                 const map = new Map();
                 const buildMergeKey = (item, idx) => {
@@ -222,11 +246,10 @@ export const usePendingOrderCartImport = ({
                 });
 
                 return Array.from(map.values());
-            });
+            }, { showOrderAdjustments: true });
         } else {
-            setCart(importedCart);
+            applyCartChange(importedCart, { showOrderAdjustments: true });
         }
-        setShowOrderAdjustments(true);
         setActiveTab('cart');
 
         let quoteDiscountAmount = 0;
@@ -261,11 +284,21 @@ export const usePendingOrderCartImport = ({
             const quoteDeliveryAmount = Math.max(0, parseMoney(quoteSummary?.deliveryAmount ?? 0, 0));
             const quoteDeliveryFree = Boolean(quoteSummary?.deliveryFree) || quoteDeliveryAmount <= 0;
 
-            setGlobalDiscountEnabled(reconstructedGlobalDiscount > 0);
-            setGlobalDiscountType('amount');
-            setGlobalDiscountValue(reconstructedGlobalDiscount > 0 ? reconstructedGlobalDiscount : 0);
-            setDeliveryType(quoteDeliveryFree ? 'free' : 'amount');
-            setDeliveryAmount(quoteDeliveryFree ? 0 : quoteDeliveryAmount);
+            const quotePatch = {
+                globalDiscountEnabled: reconstructedGlobalDiscount > 0,
+                globalDiscountType: 'amount',
+                globalDiscountValue: reconstructedGlobalDiscount > 0 ? reconstructedGlobalDiscount : 0,
+                deliveryType: quoteDeliveryFree ? 'free' : 'amount',
+                deliveryAmount: quoteDeliveryFree ? 0 : quoteDeliveryAmount
+            };
+            const patched = applyDraftPatch(quotePatch);
+            if (!patched) {
+                setGlobalDiscountEnabled(quotePatch.globalDiscountEnabled);
+                setGlobalDiscountType(quotePatch.globalDiscountType);
+                setGlobalDiscountValue(quotePatch.globalDiscountValue);
+                setDeliveryType(quotePatch.deliveryType);
+                setDeliveryAmount(quotePatch.deliveryAmount);
+            }
         }
 
         const reportedItems = Number(order?.rawPreview?.itemCount || itemsToImport.length || importedCart.length);
@@ -301,6 +334,7 @@ export const usePendingOrderCartImport = ({
         setGlobalDiscountValue,
         setDeliveryType,
         setDeliveryAmount,
+        updateDraft,
         formatMoney
     ]);
 };

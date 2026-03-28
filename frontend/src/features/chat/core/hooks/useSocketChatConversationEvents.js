@@ -18,6 +18,7 @@ export default function useSocketChatConversationEvents({
     normalizeModuleImageUrl,
     chatMatchesFilters,
     setChats,
+    setChatsLoaded,
     dedupeChats,
     chatPagingRef,
     setChatsTotal,
@@ -91,7 +92,12 @@ export default function useSocketChatConversationEvents({
                         status: sanitizeDisplayText(chat?.status || ''),
                         phone: getBestChatPhone(chat),
                         lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
-                        labels: normalizeChatLabels(chat.labels),
+                        labels: (() => {
+                            const incoming = normalizeChatLabels(chat.labels);
+                            if (incoming.length > 0) return incoming;
+                            const existing = previous?.labels;
+                            return Array.isArray(existing) && existing.length > 0 ? existing : incoming;
+                        })(),
                         profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
                         isMyContact: chat?.isMyContact === true,
                         archived: Boolean(chat?.archived),
@@ -115,6 +121,9 @@ export default function useSocketChatConversationEvents({
                 }
                 return dedupeChats([...prev, ...hydrated]).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             });
+            if (pageOffset <= 0) {
+                setChatsLoaded(true);
+            }
 
             chatPagingRef.current.offset = Number.isFinite(Number(page.nextOffset)) ? Number(page.nextOffset) : (pageOffset + rawItems.length);
             chatPagingRef.current.hasMore = hasMore;

@@ -157,7 +157,7 @@ const useSidebarFiltersController = ({
     if (filters.pinnedMode === 'pinned' && !chat?.pinned) return false;
     if (filters.pinnedMode === 'unpinned' && chat?.pinned) return false;
     // TODO(bug): filtro "sin etiquetas" muestra resultados invertidos — chats con etiqueta aparecen como sin etiqueta
-    if (filters.unlabeledOnly && labelTokenSet.size > 0) return false;
+    if (filters.unlabeledOnly && labelTokenSet.size !== 0) return false;
 
     if (!filters.unlabeledOnly && filters.labelTokens.length > 0) {
       const hasLabel = filters.labelTokens.some((token) => labelTokenSet.has(normalizeFilterToken(token)));

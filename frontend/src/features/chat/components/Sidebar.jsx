@@ -32,6 +32,7 @@ const sanitizeDisplayText = (value = '') => repairMojibake(value)
 
 const Sidebar = ({
     chats,
+    chatsLoaded = false,
     activeChatId,
     onChatSelect,
     myProfile,
@@ -377,7 +378,7 @@ const Sidebar = ({
                         )}
                     </div>
             <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); }} onScroll={handleChatListScroll}>
-                {filteredChats.length === 0 && chats.length === 0 ? (
+                {filteredChats.length === 0 && chats.length === 0 && !chatsLoaded ? (
                     [1, 2, 3, 4, 5].map((i) => (
                         <div key={i} className="chat-item chat-item-modern">
                             <div className="chat-avatar skeleton" style={{ width: '49px', height: '49px', borderRadius: '50%', flexShrink: 0 }}></div>

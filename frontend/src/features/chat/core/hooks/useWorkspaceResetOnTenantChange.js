@@ -11,6 +11,7 @@ export default function useWorkspaceResetOnTenantChange({
   setSelectedCatalogModuleId,
   setSelectedCatalogId,
   setChats,
+  setChatsLoaded,
   setChatsTotal,
   setChatsHasMore,
   chatPagingRef,
@@ -41,6 +42,7 @@ export default function useWorkspaceResetOnTenantChange({
     setSelectedCatalogModuleId('');
     setSelectedCatalogId('');
     setChats([]);
+    setChatsLoaded(false);
     setChatsTotal(0);
     setChatsHasMore(true);
     if (chatPagingRef?.current) {
@@ -72,6 +74,7 @@ export default function useWorkspaceResetOnTenantChange({
     setSelectedCatalogModuleId,
     setSelectedCatalogId,
     setChats,
+    setChatsLoaded,
     setChatsTotal,
     setChatsHasMore,
     chatPagingRef,

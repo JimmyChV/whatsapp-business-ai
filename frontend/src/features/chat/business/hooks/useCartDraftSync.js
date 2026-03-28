@@ -4,7 +4,6 @@ export const useCartDraftSync = ({
     activeChatId = '',
     cartDraftsByChat = {},
     cartDraftSignaturesRef,
-    parseMoney,
     cart = [],
     showOrderAdjustments = false,
     globalDiscountEnabled = false,
@@ -25,36 +24,19 @@ export const useCartDraftSync = ({
     setCartDraftsByChat
 } = {}) => {
     useEffect(() => {
-        setOrderImportStatus(null);
         if (!activeChatId) return;
-        // TODO(bug): carrito parpadea al cambiar de chat — revisar sincronizacion de draft/import entre chats
+
         cartDraftSignaturesRef.current[activeChatId] = '';
 
         const draft = cartDraftsByChat[activeChatId];
         if (draft) {
-            const legacyPct = parseMoney(draft.globalDiscountPct ?? draft.discount ?? 0, 0);
-            const legacyAmount = parseMoney(draft.globalDiscountAmount ?? 0, 0);
-            const hasLegacyDiscount = legacyPct > 0 || legacyAmount > 0;
-            const resolvedDiscountType = draft.globalDiscountType || (legacyAmount > 0 ? 'amount' : 'percent');
-            const resolvedDiscountValue = parseMoney(
-                draft.globalDiscountValue ?? (resolvedDiscountType === 'amount' ? legacyAmount : legacyPct),
-                0
-            );
-
-            let resolvedDeliveryType = draft.deliveryType;
-            if (!resolvedDeliveryType) {
-                const legacyDeliveryEnabled = Boolean(draft.deliveryEnabled ?? false);
-                const legacyDeliveryAmount = parseMoney(draft.deliveryAmount ?? 0, 0);
-                resolvedDeliveryType = legacyDeliveryEnabled && legacyDeliveryAmount > 0 ? 'amount' : 'free';
-            }
-
             setCart(draft.cart || []);
-            setShowOrderAdjustments(Boolean(draft.showOrderAdjustments ?? false));
-            setGlobalDiscountEnabled(Boolean(draft.globalDiscountEnabled ?? hasLegacyDiscount));
-            setGlobalDiscountType(resolvedDiscountType === 'amount' ? 'amount' : 'percent');
-            setGlobalDiscountValue(Math.max(0, resolvedDiscountValue));
-            setDeliveryType(resolvedDeliveryType === 'amount' ? 'amount' : 'free');
-            setDeliveryAmount(Math.max(0, parseMoney(draft.deliveryAmount ?? 0, 0)));
+            setShowOrderAdjustments(Boolean(draft.showOrderAdjustments || false));
+            setGlobalDiscountEnabled(Boolean(draft.globalDiscountEnabled || false));
+            setGlobalDiscountType(draft.globalDiscountType || 'percent');
+            setGlobalDiscountValue(draft.globalDiscountValue || 0);
+            setDeliveryType(draft.deliveryType || 'free');
+            setDeliveryAmount(draft.deliveryAmount || 0);
             setShowCartTotalsBreakdown(Boolean(draft.showCartTotalsBreakdown ?? true));
         } else {
             setCart([]);
@@ -66,12 +48,11 @@ export const useCartDraftSync = ({
             setDeliveryAmount(0);
             setShowCartTotalsBreakdown(true);
         }
+        setOrderImportStatus(null);
     }, [
         activeChatId,
         cartDraftsByChat,
         cartDraftSignaturesRef,
-        parseMoney,
-        setOrderImportStatus,
         setCart,
         setShowOrderAdjustments,
         setGlobalDiscountEnabled,
@@ -79,7 +60,8 @@ export const useCartDraftSync = ({
         setGlobalDiscountValue,
         setDeliveryType,
         setDeliveryAmount,
-        setShowCartTotalsBreakdown
+        setShowCartTotalsBreakdown,
+        setOrderImportStatus
     ]);
 
     useEffect(() => {
