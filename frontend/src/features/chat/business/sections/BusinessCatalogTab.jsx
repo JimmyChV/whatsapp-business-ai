@@ -113,11 +113,11 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
         e.preventDefault();
         const payload = buildCatalogProductPayloadFromForm(formData, { activeCatalogModuleId, activeCatalogId });
         if (!payload.title) {
-            window.alert('El titulo del producto es obligatorio.');
+            notify({ type: 'warn', message: 'El titulo del producto es obligatorio.' });
             return;
         }
         if (!payload.price) {
-            window.alert('El precio del producto es obligatorio.');
+            notify({ type: 'warn', message: 'El precio del producto es obligatorio.' });
             return;
         }
 
@@ -149,7 +149,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 
     const sendCatalogProduct = (item, i) => {
         if (!activeChatId) {
-            window.alert('Selecciona un chat antes de enviar un producto.');
+            notify({ type: 'info', message: 'Selecciona un chat antes de enviar un producto.' });
             return;
         }
 
