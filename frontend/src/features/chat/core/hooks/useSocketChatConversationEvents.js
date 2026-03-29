@@ -307,7 +307,28 @@ export default function useSocketChatConversationEvents({
                     };
                 })
                 : [];
-            setMessages(sanitizedMessages);
+            setMessages((prev) => {
+                const previous = Array.isArray(prev) ? prev : [];
+                if (previous.length === 0) return sanitizedMessages;
+                if (sanitizedMessages.length === 0) return previous;
+
+                const mergedById = new Map(
+                    previous
+                        .map((m) => [String(m?.id || '').trim(), m])
+                        .filter(([id]) => Boolean(id))
+                );
+
+                sanitizedMessages.forEach((message) => {
+                    const id = String(message?.id || '').trim();
+                    if (!id) return;
+                    const existing = mergedById.get(id);
+                    mergedById.set(id, existing ? { ...existing, ...message } : message);
+                });
+
+                const merged = Array.from(mergedById.values());
+                merged.sort((a, b) => Number(a?.timestamp || 0) - Number(b?.timestamp || 0));
+                return merged;
+            });
         });
 
         socket.on('chat_media', ({ chatId, messageId, mediaData, mimetype, filename, fileSizeBytes }) => {
@@ -488,6 +509,10 @@ export default function useSocketChatConversationEvents({
                     const existingIndex = prev.findIndex((m) => String(m?.id || '').trim() === incomingId);
                     if (existingIndex >= 0) {
                         const existing = prev[existingIndex] || {};
+                        const existingOrder = existing?.order && typeof existing.order === 'object' ? existing.order : null;
+                        const incomingOrder = normalizedIncoming?.order && typeof normalizedIncoming.order === 'object'
+                            ? normalizedIncoming.order
+                            : null;
                         const merged = {
                             ...existing,
                             ...normalizedIncoming,
@@ -499,7 +524,19 @@ export default function useSocketChatConversationEvents({
                             sentViaModuleName: String(normalizedIncoming?.sentViaModuleName || existing?.sentViaModuleName || '').trim() || null,
                             sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || existing?.sentViaModuleImageUrl || '') || null,
                             sentViaTransport: String(normalizedIncoming?.sentViaTransport || existing?.sentViaTransport || '').trim() || null,
-                            quotedMessage: normalizeQuotedMessage(normalizedIncoming?.quotedMessage || existing?.quotedMessage)
+                            quotedMessage: normalizeQuotedMessage(normalizedIncoming?.quotedMessage || existing?.quotedMessage),
+                            order: incomingOrder
+                                ? {
+                                    ...(existingOrder || {}),
+                                    ...incomingOrder,
+                                    rawPreview: incomingOrder?.rawPreview && typeof incomingOrder.rawPreview === 'object'
+                                        ? {
+                                            ...((existingOrder?.rawPreview && typeof existingOrder.rawPreview === 'object') ? existingOrder.rawPreview : {}),
+                                            ...incomingOrder.rawPreview
+                                        }
+                                        : (existingOrder?.rawPreview || null)
+                                }
+                                : existingOrder
                         };
                         const next = [...prev];
                         next[existingIndex] = merged;
