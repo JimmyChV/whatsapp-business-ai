@@ -50,7 +50,7 @@ export { ClientProfilePanel };
 
 // =========================================================
 
-const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null }) => {
+const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, getMessagesSnapshot = null, activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null }) => {
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     const companyProfileRef = useRef(null);
@@ -256,40 +256,51 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setShowCompanyProfile
     });
 
-    const buildBusinessContext = () => buildBusinessContextPrompt({
-        catalog,
-        profile,
-        messages,
-        cart,
-        formatMoney
-    });
+    const resolveMessagesSnapshot = useCallback(() => {
+        const source = typeof getMessagesSnapshot === 'function' ? getMessagesSnapshot() : [];
+        return Array.isArray(source) ? source : [];
+    }, [getMessagesSnapshot]);
 
-    const buildAiRuntimeContextPayload = () => buildAiRuntimeContext({
-        activeModuleId,
-        selectedCatalogModuleId,
-        waModules,
-        businessData,
-        selectedCatalogId,
-        activeChatPhone,
-        activeChatDetails,
-        activeTenantScopeId,
-        profile,
-        catalog,
-        lineBreakdowns,
-        parseMoney,
-        subtotalProducts,
-        totalDiscountForQuote,
-        cartTotal,
-        deliveryFee,
-        deliveryType,
-        globalDiscountEnabled,
-        globalDiscountType,
-        normalizedGlobalDiscountValue,
-        messages,
-        currentAiScopeChatId,
-        activeChatId,
-        activeAiScope
-    });
+    const buildBusinessContext = () => {
+        const messages = resolveMessagesSnapshot();
+        return buildBusinessContextPrompt({
+            catalog,
+            profile,
+            messages,
+            cart,
+            formatMoney
+        });
+    };
+
+    const buildAiRuntimeContextPayload = () => {
+        const messages = resolveMessagesSnapshot();
+        return buildAiRuntimeContext({
+            activeModuleId,
+            selectedCatalogModuleId,
+            waModules,
+            businessData,
+            selectedCatalogId,
+            activeChatPhone,
+            activeChatDetails,
+            activeTenantScopeId,
+            profile,
+            catalog,
+            lineBreakdowns,
+            parseMoney,
+            subtotalProducts,
+            totalDiscountForQuote,
+            cartTotal,
+            deliveryFee,
+            deliveryType,
+            globalDiscountEnabled,
+            globalDiscountType,
+            normalizedGlobalDiscountValue,
+            messages,
+            currentAiScopeChatId,
+            activeChatId,
+            activeAiScope
+        });
+    };
 
     const sendAiMessage = () => {
         if (!aiInput.trim() || isAiLoading || !socket) return;
@@ -631,7 +642,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     );
 };
 
-export default BusinessSidebar;
+export default React.memo(BusinessSidebar);
 
 
 
