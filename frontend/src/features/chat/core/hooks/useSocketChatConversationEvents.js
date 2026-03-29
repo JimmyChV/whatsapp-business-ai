@@ -524,6 +524,42 @@ export default function useSocketChatConversationEvents({
             });
         });
 
+        socket.on('quote_sent', (event = {}) => {
+            const messageId = String(event?.messageId || '').trim();
+            const quoteId = String(event?.quoteId || '').trim();
+            if (!messageId || !quoteId) return;
+
+            const incomingChatId = String(event?.chatId || event?.baseChatId || event?.to || '').trim();
+            const activeChatId = String(activeChatIdRef.current || '').trim();
+            if (incomingChatId && activeChatId && !chatIdsReferSameScope(incomingChatId, activeChatId)) return;
+
+            setMessages((prev) => {
+                const safePrev = Array.isArray(prev) ? prev : [];
+                return safePrev.map((message) => {
+                    if (String(message?.id || '').trim() !== messageId) return message;
+                    const previousOrder = message?.order && typeof message.order === 'object' ? message.order : {};
+                    const previousRawPreview = previousOrder?.rawPreview && typeof previousOrder.rawPreview === 'object'
+                        ? previousOrder.rawPreview
+                        : {};
+                    return {
+                        ...message,
+                        order: {
+                            ...previousOrder,
+                            type: 'quote',
+                            quoteId,
+                            rawPreview: {
+                                ...previousRawPreview,
+                                type: 'quote',
+                                quoteSummary: event?.summary && typeof event.summary === 'object'
+                                    ? event.summary
+                                    : (previousRawPreview?.quoteSummary || null)
+                            }
+                        }
+                    };
+                });
+            });
+        });
+
         socket.on('error', (msg) => {
             if (typeof msg === 'string' && msg.trim()) alert(msg);
         });
@@ -545,6 +581,7 @@ export default function useSocketChatConversationEvents({
                 'chat_labels_saved',
                 'contact_info',
                 'message',
+                'quote_sent',
                 'error'
             ].forEach((eventName) => socket.off(eventName));
         };
