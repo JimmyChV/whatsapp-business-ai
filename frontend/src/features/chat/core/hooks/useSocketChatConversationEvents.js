@@ -1,4 +1,4 @@
-import { startTransition, useEffect } from 'react';
+import { useEffect } from 'react';
 import { getMessagePreviewText as getMessagePreviewTextFallback } from '../helpers/appChat.helpers';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 
@@ -493,53 +493,51 @@ export default function useSocketChatConversationEvents({
                 }, 5000);
             }
 
-            startTransition(() => {
-                setChats((prev) => {
-                    const senderDigits = normalizeDigits(msg.senderPhone || '');
-                    const idDigits = normalizeDigits(String(relatedChatId || '').split('@')[0] || '');
-                    const fallbackDigits = isLikelyPhoneDigits(senderDigits)
-                        ? senderDigits
-                        : (isLikelyPhoneDigits(idDigits) ? idDigits : '');
-                    const fallbackName = sanitizeDisplayText(msg.notifyName || '');
-                    const safeName = fallbackName && !isInternalIdentifier(fallbackName)
-                        ? fallbackName
-                        : (isLikelyPhoneDigits(fallbackDigits) ? ('+' + fallbackDigits) : 'Contacto');
+            setChats((prev) => {
+                const senderDigits = normalizeDigits(msg.senderPhone || '');
+                const idDigits = normalizeDigits(String(relatedChatId || '').split('@')[0] || '');
+                const fallbackDigits = isLikelyPhoneDigits(senderDigits)
+                    ? senderDigits
+                    : (isLikelyPhoneDigits(idDigits) ? idDigits : '');
+                const fallbackName = sanitizeDisplayText(msg.notifyName || '');
+                const safeName = fallbackName && !isInternalIdentifier(fallbackName)
+                    ? fallbackName
+                    : (isLikelyPhoneDigits(fallbackDigits) ? ('+' + fallbackDigits) : 'Contacto');
 
-                    const incomingScopeModuleId = String(msg?.scopeModuleId || msg?.sentViaModuleId || '').trim().toLowerCase();
-                    const incomingIdentity = `id:${normalizeChatScopedId(relatedChatId, incomingScopeModuleId || '')}`;
-                    const existing = prev.find((c) => chatIdsReferSameScope(String(c?.id || ''), relatedChatId));
-                    const canonicalId = normalizeChatScopedId(existing?.id || relatedChatId, incomingScopeModuleId || '');
-                    const parsedCanonicalId = parseScopedChatId(canonicalId);
-                    const canonicalScopeModuleId = String(parsedCanonicalId?.scopeModuleId || incomingScopeModuleId || existing?.scopeModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null;
-                    const baseChatId = String(parsedCanonicalId?.baseChatId || existing?.baseChatId || relatedChatId).trim() || null;
-                    const nextChat = {
-                        ...(existing || { id: canonicalId, baseChatId, scopeModuleId: canonicalScopeModuleId, name: safeName, phone: isLikelyPhoneDigits(fallbackDigits) ? fallbackDigits : null, subtitle: null, labels: [] }),
-                        id: canonicalId,
-                        baseChatId,
-                        scopeModuleId: canonicalScopeModuleId,
-                        name: sanitizeDisplayText(existing?.name || '') && !isInternalIdentifier(existing?.name || '')
-                            ? existing.name
-                            : safeName,
-                        phone: existing?.phone || (isLikelyPhoneDigits(fallbackDigits) ? fallbackDigits : null),
-                        subtitle: sanitizeDisplayText(existing?.subtitle || fallbackName || '') || existing?.subtitle || null,
-                        timestamp: msg.timestamp || Math.floor(Date.now() / 1000),
-                        lastMessage: getMessagePreviewText(msg),
-                        lastMessageFromMe: !!msg.fromMe,
-                        ack: msg.ack || 0,
-                        isMyContact: existing?.isMyContact === true,
-                        unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (chatIdsReferSameScope(canonicalId, String(activeChatIdRef.current || '')) ? 0 : (existing?.unreadCount || 0) + 1),
-                        lastMessageModuleId: String(msg?.sentViaModuleId || canonicalScopeModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null,
-                        lastMessageModuleName: String(msg?.sentViaModuleName || existing?.lastMessageModuleName || '').trim() || null,
-                        lastMessageModuleImageUrl: normalizeModuleImageUrl(msg?.sentViaModuleImageUrl || existing?.lastMessageModuleImageUrl || '') || null,
-                        lastMessageTransport: String(msg?.sentViaTransport || existing?.lastMessageTransport || '').trim().toLowerCase() || null,
-                        lastMessageChannelType: String(msg?.sentViaChannelType || existing?.lastMessageChannelType || '').trim().toLowerCase() || null
-                    };
+                const incomingScopeModuleId = String(msg?.scopeModuleId || msg?.sentViaModuleId || '').trim().toLowerCase();
+                const incomingIdentity = `id:${normalizeChatScopedId(relatedChatId, incomingScopeModuleId || '')}`;
+                const existing = prev.find((c) => chatIdsReferSameScope(String(c?.id || ''), relatedChatId));
+                const canonicalId = normalizeChatScopedId(existing?.id || relatedChatId, incomingScopeModuleId || '');
+                const parsedCanonicalId = parseScopedChatId(canonicalId);
+                const canonicalScopeModuleId = String(parsedCanonicalId?.scopeModuleId || incomingScopeModuleId || existing?.scopeModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null;
+                const baseChatId = String(parsedCanonicalId?.baseChatId || existing?.baseChatId || relatedChatId).trim() || null;
+                const nextChat = {
+                    ...(existing || { id: canonicalId, baseChatId, scopeModuleId: canonicalScopeModuleId, name: safeName, phone: isLikelyPhoneDigits(fallbackDigits) ? fallbackDigits : null, subtitle: null, labels: [] }),
+                    id: canonicalId,
+                    baseChatId,
+                    scopeModuleId: canonicalScopeModuleId,
+                    name: sanitizeDisplayText(existing?.name || '') && !isInternalIdentifier(existing?.name || '')
+                        ? existing.name
+                        : safeName,
+                    phone: existing?.phone || (isLikelyPhoneDigits(fallbackDigits) ? fallbackDigits : null),
+                    subtitle: sanitizeDisplayText(existing?.subtitle || fallbackName || '') || existing?.subtitle || null,
+                    timestamp: msg.timestamp || Math.floor(Date.now() / 1000),
+                    lastMessage: getMessagePreviewText(msg),
+                    lastMessageFromMe: !!msg.fromMe,
+                    ack: msg.ack || 0,
+                    isMyContact: existing?.isMyContact === true,
+                    unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (chatIdsReferSameScope(canonicalId, String(activeChatIdRef.current || '')) ? 0 : (existing?.unreadCount || 0) + 1),
+                    lastMessageModuleId: String(msg?.sentViaModuleId || canonicalScopeModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null,
+                    lastMessageModuleName: String(msg?.sentViaModuleName || existing?.lastMessageModuleName || '').trim() || null,
+                    lastMessageModuleImageUrl: normalizeModuleImageUrl(msg?.sentViaModuleImageUrl || existing?.lastMessageModuleImageUrl || '') || null,
+                    lastMessageTransport: String(msg?.sentViaTransport || existing?.lastMessageTransport || '').trim().toLowerCase() || null,
+                    lastMessageChannelType: String(msg?.sentViaChannelType || existing?.lastMessageChannelType || '').trim().toLowerCase() || null
+                };
 
-                    if (!chatMatchesQuery(nextChat, chatSearchRef.current) || !chatMatchesFilters(nextChat, chatFiltersRef.current)) {
-                        return prev.filter((c) => c.id !== canonicalId && chatIdentityKey(c) !== incomingIdentity);
-                    }
-                    return upsertAndSortChat(prev, nextChat);
-                });
+                if (!chatMatchesQuery(nextChat, chatSearchRef.current) || !chatMatchesFilters(nextChat, chatFiltersRef.current)) {
+                    return prev.filter((c) => c.id !== canonicalId && chatIdentityKey(c) !== incomingIdentity);
+                }
+                return upsertAndSortChat(prev, nextChat);
             });
 
             const sessionSenderIdentity = resolveSessionSenderIdentity();
