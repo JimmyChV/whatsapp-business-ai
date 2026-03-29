@@ -657,22 +657,22 @@ function App() {
     isClientReady
   });
 
-  if (runtimeGate !== APP_RUNTIME_GATES.MAIN) {
-    return (
+  const appContent = runtimeGate !== APP_RUNTIME_GATES.MAIN
+    ? (
       <AppRuntimeGate
         gateMode={runtimeGate}
         loginProps={loginScreenProps}
         saasPanelNode={saasPanelGateNode}
         transportBootstrapProps={transportBootstrapProps}
       />
+    )
+    : (
+      <OperationPage {...operationPageProps} />
     );
-  }
 
   // Render: Main App
   // --------------------------------------------------------------
-  return (
-    <OperationPage {...operationPageProps} />
-    );
+  return appContent;
 }
 
 export default App;

@@ -154,24 +154,37 @@ export const usePendingOrderCartImport = ({
                 : Math.max(1, Math.round(Number.isFinite(qtyRaw) ? qtyRaw : 1));
             const linePrice = parseMoney(line.price ?? line.unitPrice ?? 0, 0);
             const lineTotal = parseMoney(line.lineTotal ?? line.total ?? 0, 0);
-            const derivedUnitPrice = lineTotal > 0 && qty > 0 ? (lineTotal / qty) : linePrice;
+            const lineSubtotal = parseMoney(line.lineSubtotal ?? line.subtotal ?? (qty * linePrice), 0);
+            const lineDiscountAmount = Math.max(0, parseMoney(line.lineDiscountAmount ?? 0, 0));
+            const rawLineDiscountType = String(line.lineDiscountType || line.discountType || '').trim().toLowerCase();
+            const lineDiscountType = rawLineDiscountType === 'amount' ? 'amount' : 'percent';
+            let lineDiscountValue = Math.max(0, parseMoney(line.lineDiscountValue ?? 0, 0));
+            if (lineDiscountAmount > 0 && lineDiscountValue <= 0) {
+                lineDiscountValue = lineDiscountType === 'amount'
+                    ? lineDiscountAmount
+                    : Math.min(100, (lineSubtotal > 0 ? (lineDiscountAmount / lineSubtotal) * 100 : 0));
+            }
+            const lineDiscountEnabled = lineDiscountAmount > 0 || lineDiscountValue > 0;
+            const derivedUnitPrice = parseMoney(line.unitPrice, (lineTotal > 0 && qty > 0 ? (lineTotal / qty) : linePrice));
+            const derivedRegularUnitPrice = lineSubtotal > 0 && qty > 0 ? (lineSubtotal / qty) : derivedUnitPrice;
 
             const baseLine = matched
                 ? {
                     ...matched,
-                    price: parseMoney(matched.price, derivedUnitPrice > 0 ? derivedUnitPrice : 0).toFixed(2),
-                    regularPrice: parseMoney(matched.regularPrice ?? matched.price, parseMoney(matched.price, 0)).toFixed(2),
+                    price: Math.max(0, derivedUnitPrice || 0).toFixed(2),
+                    regularPrice: Math.max(0, derivedRegularUnitPrice || 0).toFixed(2),
                     sku: matched.sku || rawSku || null,
                     qty,
-                    lineDiscountEnabled: false,
-                    lineDiscountType: 'percent',
-                    lineDiscountValue: 0
+                    lineDiscountEnabled,
+                    lineDiscountType,
+                    lineDiscountValue,
+                    lineDiscountAmount: roundMoney(lineDiscountAmount)
                 }
                 : {
                     id: `meta_order_${skuKey || nameKey || idx + 1}`,
                     title: rawName || (rawSku ? `SKU ${rawSku}` : `Producto pedido ${idx + 1}`),
                     price: Math.max(0, derivedUnitPrice || 0).toFixed(2),
-                    regularPrice: Math.max(0, derivedUnitPrice || 0).toFixed(2),
+                    regularPrice: Math.max(0, derivedRegularUnitPrice || 0).toFixed(2),
                     salePrice: null,
                     discountPct: 0,
                     description: 'Producto importado desde pedido de WhatsApp.',
@@ -180,9 +193,10 @@ export const usePendingOrderCartImport = ({
                     sku: rawSku || null,
                     stockStatus: null,
                     qty,
-                    lineDiscountEnabled: false,
-                    lineDiscountType: 'percent',
-                    lineDiscountValue: 0
+                    lineDiscountEnabled,
+                    lineDiscountType,
+                    lineDiscountValue,
+                    lineDiscountAmount: roundMoney(lineDiscountAmount)
                 };
 
             if (!matched) fallbackLines += 1;
@@ -253,7 +267,7 @@ export const usePendingOrderCartImport = ({
         setActiveTab('cart');
 
         let quoteDiscountAmount = 0;
-        let includedDiscountFromCatalog = 0;
+        let importedLineDiscountTotal = 0;
         let reconstructedGlobalDiscount = 0;
 
         if (isQuoteImport && quoteSummary) {
@@ -271,23 +285,32 @@ export const usePendingOrderCartImport = ({
                     ? Math.max(0, roundMoney(summarySubtotal - summaryTotalAfterDiscount))
                     : 0);
 
-            includedDiscountFromCatalog = roundMoney(importedCart.reduce((sum, item) => {
+            importedLineDiscountTotal = roundMoney(importedCart.reduce((sum, item) => {
+                const explicit = Math.max(0, parseMoney(item?.lineDiscountAmount, 0));
+                if (explicit > 0) return sum + explicit;
+                if (!item?.lineDiscountEnabled) return sum;
                 const qty = Math.max(1, Math.round(parseMoney(item?.qty, 1) || 1));
                 const unitPrice = Math.max(0, parseMoney(item?.price, 0));
                 const regularPrice = Math.max(unitPrice, parseMoney(item?.regularPrice ?? item?.price, unitPrice));
-                const lineIncluded = Math.max(0, roundMoney((regularPrice - unitPrice) * qty));
-                return sum + lineIncluded;
+                const fallback = Math.max(0, roundMoney((regularPrice - unitPrice) * qty));
+                return sum + fallback;
             }, 0));
 
-            reconstructedGlobalDiscount = roundMoney(Math.max(0, quoteDiscountAmount - includedDiscountFromCatalog));
+            reconstructedGlobalDiscount = roundMoney(Math.max(0, quoteDiscountAmount - importedLineDiscountTotal));
 
             const quoteDeliveryAmount = Math.max(0, parseMoney(quoteSummary?.deliveryAmount ?? 0, 0));
             const quoteDeliveryFree = Boolean(quoteSummary?.deliveryFree) || quoteDeliveryAmount <= 0;
 
+            const summaryGlobalDiscountType = String(quoteSummary?.globalDiscount?.type || '').trim().toLowerCase();
+            const summaryGlobalDiscountValue = Math.max(0, parseMoney(quoteSummary?.globalDiscount?.value ?? 0, 0));
+            const hasSummaryGlobalDiscount = (summaryGlobalDiscountType === 'percent' || summaryGlobalDiscountType === 'amount')
+                && summaryGlobalDiscountValue > 0;
             const quotePatch = {
-                globalDiscountEnabled: reconstructedGlobalDiscount > 0,
-                globalDiscountType: 'amount',
-                globalDiscountValue: reconstructedGlobalDiscount > 0 ? reconstructedGlobalDiscount : 0,
+                globalDiscountEnabled: hasSummaryGlobalDiscount ? true : reconstructedGlobalDiscount > 0,
+                globalDiscountType: hasSummaryGlobalDiscount ? summaryGlobalDiscountType : 'amount',
+                globalDiscountValue: hasSummaryGlobalDiscount
+                    ? summaryGlobalDiscountValue
+                    : (reconstructedGlobalDiscount > 0 ? reconstructedGlobalDiscount : 0),
                 deliveryType: quoteDeliveryFree ? 'free' : 'amount',
                 deliveryAmount: quoteDeliveryFree ? 0 : quoteDeliveryAmount
             };
@@ -309,7 +332,7 @@ export const usePendingOrderCartImport = ({
             isProductImport ? null : `(items reportados: ${reportedItems})`,
             usedTitleFallback ? 'origen: titulo del pedido' : null,
             isQuoteImport && quoteSummary ? `descuento detectado: S/ ${formatMoney(quoteDiscountAmount)}` : null,
-            isQuoteImport && includedDiscountFromCatalog > 0 ? `descuento kit/base: S/ ${formatMoney(includedDiscountFromCatalog)}` : null,
+            isQuoteImport && importedLineDiscountTotal > 0 ? `descuento por linea: S/ ${formatMoney(importedLineDiscountTotal)}` : null,
             isQuoteImport ? `descuento global aplicado: S/ ${formatMoney(reconstructedGlobalDiscount)}` : null,
             matchedBySku > 0 ? `SKU: ${matchedBySku}` : null,
             matchedByName > 0 ? `nombre: ${matchedByName}` : null,

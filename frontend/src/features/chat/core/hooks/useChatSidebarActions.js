@@ -1,3 +1,5 @@
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
+
 export default function useChatSidebarActions({
   waModules = [],
   setWaModuleError,
@@ -30,6 +32,7 @@ export default function useChatSidebarActions({
   chats = [],
   setPendingOrderCartLoad
 } = {}) {
+  const { notify } = useUiFeedback();
   const emitQuickRepliesRequest = (moduleId = '') => {
     const cleanModuleId = String(moduleId || '').trim().toLowerCase();
     if (typeof requestQuickRepliesForModule === 'function') {
@@ -183,7 +186,7 @@ export default function useChatSidebarActions({
 
   const handleCreateLabel = () => {
     if (!canManageSaas) {
-      alert('No tienes permisos para gestionar etiquetas.');
+      notify({ type: 'warn', message: 'No tienes permisos para gestionar etiquetas.' });
       return;
     }
     handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId, section: 'saas_etiquetas' });

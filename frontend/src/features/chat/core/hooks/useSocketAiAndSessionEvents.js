@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 
 export default function useSocketAiAndSessionEvents({
     socket,
@@ -17,6 +18,7 @@ export default function useSocketAiAndSessionEvents({
     setReplyingMessage,
     setActiveChatId
 }) {
+    const { notify } = useUiFeedback();
     useEffect(() => {
         socket.on('ai_suggestion_chunk', (chunk) => {
             setAiSuggestion((prev) => prev + chunk);
@@ -28,7 +30,7 @@ export default function useSocketAiAndSessionEvents({
 
         socket.on('ai_error', (msg) => {
             setIsAiLoading(false);
-            if (msg) alert(msg);
+            if (msg) notify({ type: 'error', message: msg });
         });
 
         socket.on('authenticated', () => {
@@ -36,7 +38,7 @@ export default function useSocketAiAndSessionEvents({
         });
 
         socket.on('auth_failure', (msg) => {
-            alert('Error de autenticacion. Por favor recarga la pagina y escanea de nuevo.\n\nDetalle: ' + msg);
+            notify({ type: 'error', message: 'Error de autenticacion. Por favor recarga la pagina y escanea de nuevo.\n\nDetalle: ' + msg });
         });
 
         socket.on('disconnected', (reason) => {
@@ -59,7 +61,7 @@ export default function useSocketAiAndSessionEvents({
             setEditingMessage(null);
             setReplyingMessage(null);
             setActiveChatId(null);
-            alert('Sesion de WhatsApp cerrada. Vuelve a iniciar para reconectar Cloud API.');
+            notify({ type: 'info', message: 'Sesion de WhatsApp cerrada. Vuelve a iniciar para reconectar Cloud API.' });
         });
 
         return () => {

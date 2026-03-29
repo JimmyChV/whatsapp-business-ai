@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 
 export default function useSocketBusinessDataEvents({
     socket,
@@ -20,6 +21,7 @@ export default function useSocketBusinessDataEvents({
     normalizeQuickRepliesSocketPayload,
     setQuickReplies
 }) {
+    const { notify } = useUiFeedback();
     useEffect(() => {
         socket.on('business_data_labels', (payload = {}) => {
             const labels = Array.isArray(payload?.labels) ? payload.labels : [];
@@ -178,7 +180,7 @@ export default function useSocketBusinessDataEvents({
         });
 
         socket.on('quick_reply_error', (msg) => {
-            if (msg) alert(msg);
+            if (msg) notify({ type: 'error', message: msg });
         });
 
         return () => {

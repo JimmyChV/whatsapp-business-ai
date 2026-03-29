@@ -35,7 +35,9 @@ export const buildQuoteItemFromCartLine = ({ item = {}, line = {}, index = 0, cu
 
     const includedDiscount = parseMoney(safeLine.includedDiscount, 0);
     const additionalDiscountApplied = parseMoney(safeLine.additionalDiscountApplied, 0);
-    const lineDiscountAmount = toMoney1(Math.max(0, includedDiscount + additionalDiscountApplied));
+    const lineDiscountAmount = lineDiscountEnabled
+        ? toMoney1(Math.max(0, includedDiscount + additionalDiscountApplied))
+        : 0;
     const lineTotal = toMoney1(parseMoney(safeLine.lineFinal, 0));
 
     return {
@@ -68,21 +70,31 @@ export const buildQuoteSummaryFromCart = ({
     deliveryFee = 0,
     cartTotal = 0,
     deliveryType = 'none',
+    globalDiscountEnabled = false,
+    globalDiscountType = 'percent',
+    globalDiscountValue = 0,
     currency = 'PEN'
 } = {}) => {
     const safeCart = Array.isArray(cart) ? cart : [];
     const normalizedCurrency = String(currency || 'PEN').trim() || 'PEN';
     const normalizedDeliveryType = String(deliveryType || 'none').trim().toLowerCase() || 'none';
     const normalizedDeliveryAmount = toMoney1(parseMoney(deliveryFee, 0));
+    const discount = toMoney1(parseMoney(totalDiscountForQuote, 0));
 
     return {
         itemCount: safeCart.length,
         subtotal: toMoney1(parseMoney(regularSubtotalTotal, 0)),
-        discount: toMoney1(parseMoney(totalDiscountForQuote, 0)),
+        discount,
         totalAfterDiscount: toMoney1(parseMoney(subtotalAfterGlobal, 0)),
         deliveryAmount: normalizedDeliveryAmount,
         deliveryFree: normalizedDeliveryType !== 'amount' || normalizedDeliveryAmount <= 0,
         totalPayable: toMoney1(parseMoney(cartTotal, 0)),
+        globalDiscount: {
+            enabled: Boolean(globalDiscountEnabled),
+            type: globalDiscountEnabled ? (globalDiscountType === 'amount' ? 'amount' : 'percent') : 'none',
+            value: globalDiscountEnabled ? Math.max(0, parseMoney(globalDiscountValue, 0)) : 0,
+            applied: toMoney1(parseMoney(discount, 0))
+        },
         currency: normalizedCurrency,
         metadata: {
             deliveryType: normalizedDeliveryType,
@@ -101,6 +113,9 @@ export const buildStructuredQuotePayloadFromCart = ({
     deliveryFee = 0,
     cartTotal = 0,
     deliveryType = 'none',
+    globalDiscountEnabled = false,
+    globalDiscountType = 'percent',
+    globalDiscountValue = 0,
     getLineBreakdown = null,
     buildQuoteMessageFromCart = null,
     formatQuoteProductTitle = null,
@@ -143,6 +158,9 @@ export const buildStructuredQuotePayloadFromCart = ({
         deliveryFee,
         cartTotal,
         deliveryType,
+        globalDiscountEnabled,
+        globalDiscountType,
+        globalDiscountValue,
         currency: normalizedCurrency
     });
 
