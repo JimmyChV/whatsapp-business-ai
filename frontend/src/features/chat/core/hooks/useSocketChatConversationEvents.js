@@ -55,6 +55,52 @@ export default function useSocketChatConversationEvents({
 }) {
     const { notify } = useUiFeedback();
     useEffect(() => {
+        const comparablePrimitiveMessageKeys = [
+            'id',
+            'chatId',
+            'from',
+            'to',
+            'fromMe',
+            'type',
+            'body',
+            'timestamp',
+            'ack',
+            'hasMedia',
+            'mediaData',
+            'mimetype',
+            'filename',
+            'fileSizeBytes',
+            'edited',
+            'editedAt',
+            'canEdit',
+            'sentByUserId',
+            'sentByName',
+            'sentByEmail',
+            'sentByRole',
+            'sentViaModuleId',
+            'sentViaModuleName',
+            'sentViaModuleImageUrl',
+            'sentViaTransport'
+        ];
+
+        const sameStructuredValue = (left, right) => {
+            if (left === right) return true;
+            if (!left && !right) return true;
+            if (!left || !right) return false;
+            try { return JSON.stringify(left) === JSON.stringify(right); } catch (e) { return false; }
+        };
+
+        const hasMessageMeaningfulChanges = (previousMessage, nextMessage) => {
+            if (!previousMessage || !nextMessage) return true;
+            for (const key of comparablePrimitiveMessageKeys) {
+                if (previousMessage?.[key] !== nextMessage?.[key]) return true;
+            }
+            if (!sameStructuredValue(previousMessage?.location, nextMessage?.location)) return true;
+            if (!sameStructuredValue(previousMessage?.quotedMessage, nextMessage?.quotedMessage)) return true;
+            if (!sameStructuredValue(previousMessage?.order, nextMessage?.order)) return true;
+            return false;
+        };
+
         socket.on('chats', (payload) => {
             const isLegacy = Array.isArray(payload);
             const page = isLegacy
@@ -321,14 +367,27 @@ export default function useSocketChatConversationEvents({
                         .map((m) => [String(m?.id || '').trim(), m])
                         .filter(([id]) => Boolean(id))
                 );
+                let didMutate = false;
 
                 normalizedMessages.forEach((message) => {
                     const id = String(message?.id || '').trim();
                     if (!id) return;
                     const existing = mergedById.get(id);
-                    mergedById.set(id, existing ? { ...existing, ...message } : message);
+                    if (!existing) {
+                        mergedById.set(id, message);
+                        didMutate = true;
+                        return;
+                    }
+                    const mergedCandidate = { ...existing, ...message };
+                    if (hasMessageMeaningfulChanges(existing, mergedCandidate)) {
+                        mergedById.set(id, mergedCandidate);
+                        didMutate = true;
+                        return;
+                    }
+                    mergedById.set(id, existing);
                 });
 
+                if (!didMutate) return previous;
                 const merged = Array.from(mergedById.values());
                 merged.sort((a, b) => Number(a?.timestamp || 0) - Number(b?.timestamp || 0));
                 return merged;
@@ -542,6 +601,7 @@ export default function useSocketChatConversationEvents({
                                 }
                                 : existingOrder
                         };
+                        if (!hasMessageMeaningfulChanges(existing, merged)) return prev;
                         const next = [...prev];
                         next[existingIndex] = merged;
                         return next;
@@ -576,28 +636,35 @@ export default function useSocketChatConversationEvents({
 
             setMessages((prev) => {
                 const safePrev = Array.isArray(prev) ? prev : [];
-                return safePrev.map((message) => {
-                    if (String(message?.id || '').trim() !== messageId) return message;
-                    const previousOrder = message?.order && typeof message.order === 'object' ? message.order : {};
-                    const previousRawPreview = previousOrder?.rawPreview && typeof previousOrder.rawPreview === 'object'
-                        ? previousOrder.rawPreview
-                        : {};
-                    return {
-                        ...message,
-                        order: {
-                            ...previousOrder,
+                const targetIndex = safePrev.findIndex((message) => String(message?.id || '').trim() === messageId);
+                if (targetIndex < 0) return safePrev;
+
+                const message = safePrev[targetIndex];
+                const previousOrder = message?.order && typeof message.order === 'object' ? message.order : {};
+                const previousRawPreview = previousOrder?.rawPreview && typeof previousOrder.rawPreview === 'object'
+                    ? previousOrder.rawPreview
+                    : {};
+                const nextMessage = {
+                    ...message,
+                    order: {
+                        ...previousOrder,
+                        type: 'quote',
+                        quoteId,
+                        rawPreview: {
+                            ...previousRawPreview,
                             type: 'quote',
-                            quoteId,
-                            rawPreview: {
-                                ...previousRawPreview,
-                                type: 'quote',
-                                quoteSummary: event?.summary && typeof event.summary === 'object'
-                                    ? event.summary
-                                    : (previousRawPreview?.quoteSummary || null)
-                            }
+                            quoteSummary: event?.summary && typeof event.summary === 'object'
+                                ? event.summary
+                                : (previousRawPreview?.quoteSummary || null)
                         }
-                    };
-                });
+                    }
+                };
+                if (!hasMessageMeaningfulChanges(message, nextMessage)) {
+                    return safePrev;
+                }
+                const next = [...safePrev];
+                next[targetIndex] = nextMessage;
+                return next;
             });
         });
 
