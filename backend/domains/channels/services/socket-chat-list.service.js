@@ -21,6 +21,18 @@ function createSocketChatListService({
     runWithConcurrency,
     getWaRuntime
 } = {}) {
+    const buildLabelMapKey = (chatId = '', scopeModuleId = '') => {
+        const cleanChatId = String(chatId || '').trim();
+        const cleanScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
+        if (!cleanChatId) return '';
+        return `${cleanChatId}::${cleanScopeModuleId}`;
+    };
+
+    const getLabelsFromMap = (labelsMap = null, { chatId = '', scopeModuleId = '' } = {}) => {
+        const key = buildLabelMapKey(chatId, scopeModuleId);
+        return key && labelsMap && typeof labelsMap === 'object' ? labelsMap[key] : null;
+    };
+
     const invalidateChatListCache = () => {
         runtimeStore.set('chatListCache', { items: [], updatedAt: 0 });
     };
@@ -155,15 +167,24 @@ function createSocketChatListService({
         return deduped;
     };
 
-    const getChatLabelTokenSet = async (chat, { tenantId = 'default', scopeModuleId = '' } = {}) => {
+    const getChatLabelTokenSet = async (chat, { tenantId = 'default', scopeModuleId = '', labelsMap = null } = {}) => {
         const chatId = String(chat?.id?._serialized || '');
         if (!chatId || !isVisibleChatId(chatId)) return new Set();
+        const normalizedScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
+
+        const mappedLabels = getLabelsFromMap(labelsMap, {
+            chatId,
+            scopeModuleId: normalizedScopeModuleId
+        });
+        if (Array.isArray(mappedLabels)) {
+            return toLabelTokenSet(mappedLabels);
+        }
 
         try {
             const labels = await tenantLabelService.listChatLabels({
                 tenantId,
                 chatId,
-                scopeModuleId: normalizeScopedModuleId(scopeModuleId || ''),
+                scopeModuleId: normalizedScopeModuleId,
                 includeInactive: false
             });
             return toLabelTokenSet(labels);
@@ -172,7 +193,11 @@ function createSocketChatListService({
         }
     };
 
-    const applyAdvancedChatFilters = async (chats = [], filters = {}, { tenantId = 'default', scopeModuleId = '' } = {}) => {
+    const applyAdvancedChatFilters = async (
+        chats = [],
+        filters = {},
+        { tenantId = 'default', scopeModuleId = '', labelsMap = null } = {}
+    ) => {
         if (!Array.isArray(chats) || chats.length === 0) return [];
 
         const selectedTokens = normalizeFilterTokens(filters?.labelTokens);
@@ -212,7 +237,11 @@ function createSocketChatListService({
             if (pinnedMode === 'unpinned' && isPinned) return;
 
             if (needsLabelFiltering) {
-                const labelTokenSet = await getChatLabelTokenSet(chat, { tenantId: safeTenantId, scopeModuleId: safeScopeModuleId });
+                const labelTokenSet = await getChatLabelTokenSet(chat, {
+                    tenantId: safeTenantId,
+                    scopeModuleId: safeScopeModuleId,
+                    labelsMap
+                });
                 const hasAnyLabel = labelTokenSet.size > 0;
                 if (unlabeledOnly && hasAnyLabel) return;
                 if (!unlabeledOnly && selectedTokens.length > 0 && !matchesTokenSet(labelTokenSet, selectedTokens)) {
@@ -233,7 +262,8 @@ function createSocketChatListService({
         scopeModuleImageUrl = null,
         scopeChannelType = null,
         scopeTransport = null,
-        tenantId = 'default'
+        tenantId = 'default',
+        labelsMap = null
     } = {}) => {
         const chatId = chat?.id?._serialized;
         if (!isVisibleChatId(chatId)) return null;
@@ -267,17 +297,32 @@ function createSocketChatListService({
         const normalizedScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
         const scopedSummaryId = buildScopedChatId(chatId, normalizedScopeModuleId);
         const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
-        let labels = [];
-        try {
-            labels = await tenantLabelService.listChatLabels({
-                tenantId: resolvedTenantId,
-                chatId,
-                scopeModuleId: normalizedScopeModuleId,
-                includeInactive: false
-            });
-        } catch (error) {
+        let labels = getLabelsFromMap(labelsMap, {
+            chatId,
+            scopeModuleId: normalizedScopeModuleId
+        });
+
+        if (!Array.isArray(labels)) {
+            try {
+                labels = await tenantLabelService.listChatLabels({
+                    tenantId: resolvedTenantId,
+                    chatId,
+                    scopeModuleId: normalizedScopeModuleId,
+                    includeInactive: false
+                });
+            } catch (error) {
+                labels = [];
+            }
+        }
+
+        if (!Array.isArray(labels)) {
             labels = [];
         }
+
+        // defensivo: evitar mutaciones aguas abajo
+        labels = labels.map((entry) => ({
+            ...entry
+        }));
 
         return {
             id: scopedSummaryId || chatId,
@@ -385,11 +430,46 @@ function createSocketChatListService({
                     });
                 }
 
-                filtered = await applyAdvancedChatFilters(filtered, activeFilters, { tenantId, scopeModuleId: activeScopeModuleId });
+                const needsLabelFiltering = Boolean(activeFilters.unlabeledOnly || activeFilters.labelTokens.length > 0);
+                const buildLabelChatKeys = (source = []) => (
+                    Array.isArray(source)
+                        ? source
+                            .map((chat) => {
+                                const chatId = String(chat?.id?._serialized || '').trim();
+                                if (!chatId || !isVisibleChatId(chatId)) return null;
+                                return {
+                                    chatId,
+                                    scopeModuleId: activeScopeModuleId || ''
+                                };
+                            })
+                            .filter(Boolean)
+                        : []
+                );
+
+                // Preload batch labels once per get_chats request (evita N+1 en filtros + summaries)
+                let labelsMap = {};
+                const labelPreloadKeys = buildLabelChatKeys(filtered);
+                if (labelPreloadKeys.length > 0) {
+                    try {
+                        labelsMap = await tenantLabelService.listChatLabelsMap({
+                            tenantId,
+                            chatKeys: labelPreloadKeys,
+                            includeInactive: false
+                        });
+                    } catch (_) {
+                        labelsMap = {};
+                    }
+                }
+
+                filtered = await applyAdvancedChatFilters(filtered, activeFilters, {
+                    tenantId,
+                    scopeModuleId: activeScopeModuleId,
+                    labelsMap: needsLabelFiltering ? labelsMap : labelsMap
+                });
 
                 const page = filtered.slice(offset, offset + limit);
                 const scannedCount = page.length;
-                const formatted = await Promise.all(page.map((c) => toChatSummary(c, { includeHeavyMeta: false, ...summaryScopeOptions })));
+                const formatted = await Promise.all(page.map((c) => toChatSummary(c, { includeHeavyMeta: false, ...summaryScopeOptions, labelsMap })));
 
                 let items = formatted.filter(Boolean);
                 if (queryLower && offset === 0 && items.length < limit && !hasActiveFilters) {
@@ -449,7 +529,7 @@ function createSocketChatListService({
 
                         try {
                             const chat = await waClient.client.getChatById(canonicalChatId);
-                            const summary = await toChatSummary(chat, { includeHeavyMeta: true, ...summaryScopeOptions });
+                            const summary = await toChatSummary(chat, { includeHeavyMeta: true, ...summaryScopeOptions, labelsMap });
                             if (summary) items = [summary];
                         } catch (e) {
                             items = [{
@@ -574,7 +654,7 @@ function createSocketChatListService({
                     setImmediate(async () => {
                         for (const chat of pendingMetaChats) {
                             try {
-                                const summary = await toChatSummary(chat, { includeHeavyMeta: true, ...summaryScopeOptions });
+                                const summary = await toChatSummary(chat, { includeHeavyMeta: true, ...summaryScopeOptions, labelsMap });
                                 if (summary) socket.emit('chat_updated', summary);
                             } catch (_) { }
                         }
