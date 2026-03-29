@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Sidebar, BusinessSidebar, ClientProfilePanel, ChatWindow, NewChatModal } from '../features/chat/components';
 import { sanitizeDisplayText } from '../features/chat/core';
 
@@ -102,18 +102,16 @@ export default function OperationPage({
 }) {
   const [cartDraftsByChat, setCartDraftsByChat] = useState({});
   const activeChatDetails = chats.find((c) => c.id === activeChatId) || null;
-  const forwardChatOptions = useMemo(() => (
-    chats
-      .filter((chat) => chat?.id && String(chat.id) !== String(activeChatId || ''))
-      .map((chat) => ({
-        id: chat.id,
-        name: sanitizeDisplayText(chat?.name || '') || 'Contacto',
-        phone: sanitizeDisplayText(chat?.phone || ''),
-        subtitle: sanitizeDisplayText(chat?.subtitle || ''),
-        timestamp: Number(chat?.timestamp || 0) || 0,
-      }))
-      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-  ), [chats, activeChatId]);
+  const forwardChatOptions = chats
+    .filter((chat) => chat?.id && String(chat.id) !== String(activeChatId || ''))
+    .map((chat) => ({
+      id: chat.id,
+      name: sanitizeDisplayText(chat?.name || '') || 'Contacto',
+      phone: sanitizeDisplayText(chat?.phone || ''),
+      subtitle: sanitizeDisplayText(chat?.subtitle || ''),
+      timestamp: Number(chat?.timestamp || 0) || 0,
+    }))
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
   const appContainerClassName = forceOperationLaunch ? 'app-container app-container--operation' : 'app-container';
 
