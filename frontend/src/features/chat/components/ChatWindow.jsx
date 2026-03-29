@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import { Search, MoreVertical, ChevronUp, ChevronDown, Tag, MapPin, Share2, X } from 'lucide-react';
 import MessageBubble from './message-bubble/MessageBubble';
 import moment from 'moment';
@@ -120,68 +120,6 @@ const ChatWindow = ({
             inputProps.onStartNewChat(phone, firstMessage);
         }
     }, [inputProps?.onStartNewChat]);
-
-    const renderedMessages = useMemo(() => (
-        messages.map((msg, idx) => {
-            const currentDay = moment.unix(msg.timestamp || 0).format('YYYY-MM-DD');
-            const prevDay = idx > 0 ? moment.unix(messages[idx - 1].timestamp || 0).format('YYYY-MM-DD') : null;
-            const showDay = idx === 0 || currentDay !== prevDay;
-            const matchIdx = matchIndexes.indexOf(idx);
-            const isHighlighted = matchIdx !== -1;
-            const isCurrentHighlighted = isHighlighted && matchIdx === activeMatchIdx;
-            const messageKey = msg.id || `idx_${idx}`;
-            const senderDisplayName = resolveGroupSenderName(msg);
-            return (
-                <React.Fragment key={messageKey}>
-                    {showDay && (
-                        <div className="chat-day-separator">
-                            {formatDayLabel(msg.timestamp)}
-                        </div>
-                    )}
-                    <div ref={(el) => { if (el) messageRefs.current[messageKey] = el; }}>
-                        <MessageBubble
-                            msg={msg}
-                            isHighlighted={isHighlighted}
-                            isCurrentHighlighted={isCurrentHighlighted}
-                            onPrefillMessage={handlePrefillMessage}
-                            // TODO(bug): flujo de importacion al carrito desde cotizacion puede fallar â€” revisar cadena onLoadOrderToCart -> cart state
-                            onLoadOrderToCart={inputProps?.onLoadOrderToCart}
-                            onOpenMedia={setLightboxMedia}
-                            onOpenMap={handleOpenMapFromBubble}
-                            onOpenPhoneChat={handleOpenPhoneChat}
-                            onEditMessage={onEditMessage}
-                            onReplyMessage={onReplyMessage}
-                            onForwardMessage={onForwardMessage}
-                            onDeleteMessage={onDeleteMessage}
-                            forwardChatOptions={forwardChatOptions}
-                            activeChatId={activeChatDetails?.id}
-                            showSenderName={Boolean(activeChatDetails?.isGroup && !msg?.fromMe)}
-                            senderDisplayName={senderDisplayName}
-                            canEditMessages={canEditMessages}
-                            buildApiHeaders={buildApiHeaders}
-                        />
-                    </div>
-                </React.Fragment>
-            );
-        })
-    ), [
-        messages,
-        matchIndexes,
-        activeMatchIdx,
-        resolveGroupSenderName,
-        formatDayLabel,
-        messageRefs,
-        handlePrefillMessage,
-        inputProps?.onLoadOrderToCart,
-        setLightboxMedia,
-        handleOpenMapFromBubble,
-        handleOpenPhoneChat,
-        onEditMessage, onReplyMessage, onForwardMessage, onDeleteMessage,
-        forwardChatOptions,
-        activeChatDetails?.id, activeChatDetails?.isGroup,
-        canEditMessages,
-        buildApiHeaders
-    ]);
 
     return (
         <div
@@ -354,13 +292,54 @@ const ChatWindow = ({
 
             {/* Messages Area */}
             <div className="chat-messages" onClick={() => { setShowMenu(false); setShowLabelMenu(false); }}>
-                {/* TODO(bug): historial de chat muestra a veces solo el ultimo mensaje en lugar del historial completo â€” intermitente, causa desconocida */}
+                {/* TODO(bug): historial de chat muestra a veces solo el ultimo mensaje en lugar del historial completo — intermitente, causa desconocida */}
                 {messages.length === 0 && (
                     <div className="chat-empty-state-pill">
                         No hay mensajes en esta conversacion.
                     </div>
                 )}
-                {renderedMessages}
+                {messages.map((msg, idx) => {
+                    const currentDay = moment.unix(msg.timestamp || 0).format('YYYY-MM-DD');
+                    const prevDay = idx > 0 ? moment.unix(messages[idx - 1].timestamp || 0).format('YYYY-MM-DD') : null;
+                    const showDay = idx === 0 || currentDay !== prevDay;
+                    const matchIdx = matchIndexes.indexOf(idx);
+                    const isHighlighted = matchIdx !== -1;
+                    const isCurrentHighlighted = isHighlighted && matchIdx === activeMatchIdx;
+                    const messageKey = msg.id || `idx_${idx}`;
+                    const senderDisplayName = resolveGroupSenderName(msg);
+                    return (
+                        <React.Fragment key={messageKey}>
+                            {showDay && (
+                                <div className="chat-day-separator">
+                                    {formatDayLabel(msg.timestamp)}
+                                </div>
+                            )}
+                            <div ref={(el) => { if (el) messageRefs.current[messageKey] = el; }}>
+                                <MessageBubble
+                                    msg={msg}
+                                    isHighlighted={isHighlighted}
+                                    isCurrentHighlighted={isCurrentHighlighted}
+                                    onPrefillMessage={handlePrefillMessage}
+                                    // TODO(bug): flujo de importacion al carrito desde cotizacion puede fallar — revisar cadena onLoadOrderToCart -> cart state
+                                    onLoadOrderToCart={inputProps?.onLoadOrderToCart}
+                                    onOpenMedia={setLightboxMedia}
+                                    onOpenMap={handleOpenMapFromBubble}
+                                    onOpenPhoneChat={handleOpenPhoneChat}
+                                    onEditMessage={onEditMessage}
+                                    onReplyMessage={onReplyMessage}
+                                    onForwardMessage={onForwardMessage}
+                                    onDeleteMessage={onDeleteMessage}
+                                    forwardChatOptions={forwardChatOptions}
+                                    activeChatId={activeChatDetails?.id}
+                                    showSenderName={Boolean(activeChatDetails?.isGroup && !msg?.fromMe)}
+                                    senderDisplayName={senderDisplayName}
+                                    canEditMessages={canEditMessages}
+                                    buildApiHeaders={buildApiHeaders}
+                                />
+                            </div>
+                        </React.Fragment>
+                    );
+                })}
                 <div ref={messagesEndRef} />
             </div>
 
@@ -458,7 +437,6 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
-
 
 
 
