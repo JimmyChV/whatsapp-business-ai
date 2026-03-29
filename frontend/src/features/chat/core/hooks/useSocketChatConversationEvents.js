@@ -266,9 +266,11 @@ export default function useSocketChatConversationEvents({
             const requestedChatId = String(data?.requestedChatId || '');
             const resolvedChatId = String(data?.chatId || requestedChatId || '');
             const active = String(activeChatIdRef.current || '');
-            if (resolvedChatId !== active && requestedChatId !== active) return;
+            const matchesActiveByScope = chatIdsReferSameScope(resolvedChatId, active)
+                || chatIdsReferSameScope(requestedChatId, active);
+            if (!matchesActiveByScope) return;
 
-            if (resolvedChatId && resolvedChatId !== active) {
+            if (resolvedChatId && !chatIdsReferSameScope(resolvedChatId, active)) {
                 activeChatIdRef.current = resolvedChatId;
                 setActiveChatId(resolvedChatId);
                 socket.emit('mark_chat_read', resolvedChatId);

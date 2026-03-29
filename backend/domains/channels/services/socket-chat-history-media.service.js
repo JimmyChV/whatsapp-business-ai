@@ -209,7 +209,8 @@ function createSocketChatHistoryMediaService({
                                 return [key, {
                                     metadata,
                                     waModuleId: String(row?.waModuleId || '').trim().toLowerCase() || null,
-                                    waPhoneNumber: String(row?.waPhoneNumber || '').trim() || null
+                                    waPhoneNumber: String(row?.waPhoneNumber || '').trim() || null,
+                                    orderPayload: row?.orderPayload && typeof row.orderPayload === 'object' ? row.orderPayload : null
                                 }];
                             })
                             .filter(Boolean)
@@ -257,7 +258,7 @@ function createSocketChatHistoryMediaService({
                         edited: Boolean(m?._data?.latestEditMsgKey || m?._data?.latestEditSenderTimestampMs || m?._data?.edited),
                         editedAt: Number(m?._data?.latestEditSenderTimestampMs || 0) > 0 ? Math.floor(Number(m._data.latestEditSenderTimestampMs) / 1000) : null,
                         canEdit: Boolean(editableMap[String(m?.id?._serialized || '')]),
-                        order: extractOrderInfo(m),
+                        order: extractOrderInfo(m) || (persistedEntry?.orderPayload && typeof persistedEntry.orderPayload === 'object' ? persistedEntry.orderPayload : null),
                         location: extractLocationInfo(m),
                         quotedMessage: await extractQuotedMessageInfo(m),
                         ...(agentMeta || {}),
