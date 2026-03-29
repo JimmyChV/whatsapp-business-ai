@@ -93,6 +93,7 @@ const MessageBubble = ({
     const productTitle = catalogMatch ? catalogMatch[1] : null;
     const productPrice = catalogMatch ? catalogMatch[2] : null;
     const firstOrderItem = orderItems[0] || null;
+    const orderIdentifier = String(actionOrder?.quoteId || actionOrder?.orderId || '').trim();
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [showForwardPicker, setShowForwardPicker] = useState(false);
     const [forwardSearch, setForwardSearch] = useState('');
@@ -330,12 +331,12 @@ const MessageBubble = ({
                     <div style={{ fontSize: '0.78rem', color: '#00a884', fontWeight: 700, marginBottom: '4px' }}>
                         {isProductPayload ? 'Producto compartido' : (isQuotePayload ? 'Cotizacion' : 'Carrito/Pedido del cliente')}
                     </div>
-                    {actionOrder?.orderId && (
-                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '2px' }}>ID: {actionOrder.orderId}</div>
+                    {orderIdentifier && (
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '2px' }}>ID: {orderIdentifier}</div>
                     )}
-                    {isProductPayload && firstOrderItem?.name && (
+                    {isProductPayload && (firstOrderItem?.title || firstOrderItem?.name) && (
                         <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', marginBottom: '4px', fontWeight: 600 }}>
-                            {firstOrderItem.name}
+                            {firstOrderItem?.title || firstOrderItem?.name}
                         </div>
                     )}
                     {orderSubtotalLabel && !isQuotePayload && (
@@ -349,10 +350,12 @@ const MessageBubble = ({
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <div style={{ fontSize: '0.75rem', color: '#9bb0ba', marginTop: '1px' }}>Detalle de productos:</div>
                             {orderItems.length > 0 ? orderItems.slice(0, 40).map((item, idx) => {
-                                const itemQty = Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1;
+                                const itemQty = Number.isFinite(Number(item?.qty)) ? Number(item.qty)
+                                    : (Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1);
+                                const itemTitle = String(item?.title || item?.name || 'Producto').trim() || 'Producto';
                                 return (
                                     <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>
-                                        - {itemQty} {item?.name || 'Producto'}
+                                        - {itemQty} {itemTitle}
                                     </div>
                                 );
                             }) : (
@@ -396,10 +399,12 @@ const MessageBubble = ({
                         </div>
                     ) : orderItems.length > 0 ? orderItems.slice(0, 16).map((item, idx) => {
                         const itemAmount = formatOrderMoney(item?.lineTotal ?? item?.price, actionOrder?.currency || 'PEN');
-                        const itemQty = Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1;
+                        const itemQty = Number.isFinite(Number(item?.qty)) ? Number(item.qty)
+                            : (Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1);
+                        const itemTitle = String(item?.title || item?.name || 'Producto').trim() || 'Producto';
                         return (
                             <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>- {item?.name || 'Producto'} x{itemQty}{item?.sku ? ` (SKU: ${item.sku})` : ''}</span>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>- {itemTitle} x{itemQty}{item?.sku ? ` (SKU: ${item.sku})` : ''}</span>
                                 <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{itemAmount || ''}</span>
                             </div>
                         );

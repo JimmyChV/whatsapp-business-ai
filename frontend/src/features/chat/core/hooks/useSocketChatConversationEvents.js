@@ -266,9 +266,11 @@ export default function useSocketChatConversationEvents({
             const requestedChatId = String(data?.requestedChatId || '');
             const resolvedChatId = String(data?.chatId || requestedChatId || '');
             const active = String(activeChatIdRef.current || '');
-            if (resolvedChatId !== active && requestedChatId !== active) return;
+            const matchesActiveByScope = chatIdsReferSameScope(resolvedChatId, active)
+                || chatIdsReferSameScope(requestedChatId, active);
+            if (!matchesActiveByScope) return;
 
-            if (resolvedChatId && resolvedChatId !== active) {
+            if (resolvedChatId && !chatIdsReferSameScope(resolvedChatId, active)) {
                 activeChatIdRef.current = resolvedChatId;
                 setActiveChatId(resolvedChatId);
                 socket.emit('mark_chat_read', resolvedChatId);
@@ -307,7 +309,28 @@ export default function useSocketChatConversationEvents({
                     };
                 })
                 : [];
-            setMessages(sanitizedMessages);
+            setMessages((prev) => {
+                const previous = Array.isArray(prev) ? prev : [];
+                if (previous.length === 0) return sanitizedMessages;
+                if (sanitizedMessages.length === 0) return previous;
+
+                const mergedById = new Map(
+                    previous
+                        .map((m) => [String(m?.id || '').trim(), m])
+                        .filter(([id]) => Boolean(id))
+                );
+
+                sanitizedMessages.forEach((message) => {
+                    const id = String(message?.id || '').trim();
+                    if (!id) return;
+                    const existing = mergedById.get(id);
+                    mergedById.set(id, existing ? { ...existing, ...message } : message);
+                });
+
+                const merged = Array.from(mergedById.values());
+                merged.sort((a, b) => Number(a?.timestamp || 0) - Number(b?.timestamp || 0));
+                return merged;
+            });
         });
 
         socket.on('chat_media', ({ chatId, messageId, mediaData, mimetype, filename, fileSizeBytes }) => {
@@ -488,6 +511,10 @@ export default function useSocketChatConversationEvents({
                     const existingIndex = prev.findIndex((m) => String(m?.id || '').trim() === incomingId);
                     if (existingIndex >= 0) {
                         const existing = prev[existingIndex] || {};
+                        const existingOrder = existing?.order && typeof existing.order === 'object' ? existing.order : null;
+                        const incomingOrder = normalizedIncoming?.order && typeof normalizedIncoming.order === 'object'
+                            ? normalizedIncoming.order
+                            : null;
                         const merged = {
                             ...existing,
                             ...normalizedIncoming,
@@ -499,7 +526,19 @@ export default function useSocketChatConversationEvents({
                             sentViaModuleName: String(normalizedIncoming?.sentViaModuleName || existing?.sentViaModuleName || '').trim() || null,
                             sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || existing?.sentViaModuleImageUrl || '') || null,
                             sentViaTransport: String(normalizedIncoming?.sentViaTransport || existing?.sentViaTransport || '').trim() || null,
-                            quotedMessage: normalizeQuotedMessage(normalizedIncoming?.quotedMessage || existing?.quotedMessage)
+                            quotedMessage: normalizeQuotedMessage(normalizedIncoming?.quotedMessage || existing?.quotedMessage),
+                            order: incomingOrder
+                                ? {
+                                    ...(existingOrder || {}),
+                                    ...incomingOrder,
+                                    rawPreview: incomingOrder?.rawPreview && typeof incomingOrder.rawPreview === 'object'
+                                        ? {
+                                            ...((existingOrder?.rawPreview && typeof existingOrder.rawPreview === 'object') ? existingOrder.rawPreview : {}),
+                                            ...incomingOrder.rawPreview
+                                        }
+                                        : (existingOrder?.rawPreview || null)
+                                }
+                                : existingOrder
                         };
                         const next = [...prev];
                         next[existingIndex] = merged;
@@ -524,6 +563,42 @@ export default function useSocketChatConversationEvents({
             });
         });
 
+        socket.on('quote_sent', (event = {}) => {
+            const messageId = String(event?.messageId || '').trim();
+            const quoteId = String(event?.quoteId || '').trim();
+            if (!messageId || !quoteId) return;
+
+            const incomingChatId = String(event?.chatId || event?.baseChatId || event?.to || '').trim();
+            const activeChatId = String(activeChatIdRef.current || '').trim();
+            if (incomingChatId && activeChatId && !chatIdsReferSameScope(incomingChatId, activeChatId)) return;
+
+            setMessages((prev) => {
+                const safePrev = Array.isArray(prev) ? prev : [];
+                return safePrev.map((message) => {
+                    if (String(message?.id || '').trim() !== messageId) return message;
+                    const previousOrder = message?.order && typeof message.order === 'object' ? message.order : {};
+                    const previousRawPreview = previousOrder?.rawPreview && typeof previousOrder.rawPreview === 'object'
+                        ? previousOrder.rawPreview
+                        : {};
+                    return {
+                        ...message,
+                        order: {
+                            ...previousOrder,
+                            type: 'quote',
+                            quoteId,
+                            rawPreview: {
+                                ...previousRawPreview,
+                                type: 'quote',
+                                quoteSummary: event?.summary && typeof event.summary === 'object'
+                                    ? event.summary
+                                    : (previousRawPreview?.quoteSummary || null)
+                            }
+                        }
+                    };
+                });
+            });
+        });
+
         socket.on('error', (msg) => {
             if (typeof msg === 'string' && msg.trim()) alert(msg);
         });
@@ -545,6 +620,7 @@ export default function useSocketChatConversationEvents({
                 'chat_labels_saved',
                 'contact_info',
                 'message',
+                'quote_sent',
                 'error'
             ].forEach((eventName) => socket.off(eventName));
         };

@@ -70,6 +70,14 @@ function normalizeQuoteSummary(summary = {}, items = [], currency = 'PEN') {
         deliveryAmount,
         deliveryFree,
         totalPayable,
+        globalDiscount: isPlainObject(source.globalDiscount)
+            ? {
+                enabled: Boolean(source.globalDiscount.enabled),
+                type: String(source.globalDiscount.type || 'none').trim().toLowerCase() || 'none',
+                value: toFiniteNumberOrNull(source.globalDiscount.value) ?? 0,
+                applied: toFiniteNumberOrNull(source.globalDiscount.applied) ?? 0
+            }
+            : { enabled: false, type: 'none', value: 0, applied: 0 },
         currency: toText(source.currency || currency || 'PEN') || 'PEN',
         metadata: isPlainObject(source.metadata) ? source.metadata : {}
     };
@@ -132,6 +140,13 @@ function buildOutgoingOrderPayload(quote = {}) {
                 deliveryAmount: toFiniteNumberOrNull(summary?.deliveryAmount),
                 deliveryFree: Boolean(summary?.deliveryFree),
                 totalPayable: toFiniteNumberOrNull(summary?.totalPayable),
+                globalDiscount: summary?.globalDiscount && typeof summary.globalDiscount === 'object'
+                    ? {
+                        type: String(summary.globalDiscount.type || 'none').trim().toLowerCase() || 'none',
+                        value: toFiniteNumberOrNull(summary.globalDiscount.value) ?? 0,
+                        applied: toFiniteNumberOrNull(summary.globalDiscount.applied) ?? 0
+                    }
+                    : { type: 'none', value: 0, applied: 0 },
                 currency
             }
         },
