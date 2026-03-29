@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 
@@ -44,6 +44,7 @@ const ChatInput = ({
     const [showCommands, setShowCommands] = useState(false);
     const [linkPreview, setLinkPreview] = useState(null);
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+    const [debouncedSlashQuery, setDebouncedSlashQuery] = useState('');
     const [selectionState, setSelectionState] = useState(null);
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
@@ -223,12 +224,21 @@ const ChatInput = ({
     const normalizedSlashQuery = String(inputText || '').startsWith('/')
         ? String(inputText || '').slice(1).trim().toLowerCase()
         : '';
-    const slashTokens = normalizedSlashQuery
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSlashQuery(normalizedSlashQuery);
+        }, 140);
+        return () => clearTimeout(timer);
+    }, [normalizedSlashQuery]);
+
+    const slashTokens = debouncedSlashQuery
         ? normalizedSlashQuery.split(/\s+/).map((entry) => entry.trim()).filter(Boolean)
         : [];
 
-    const filteredQuickReplies = (Array.isArray(quickReplies) ? quickReplies : [])
-        .map((item) => {
+    const filteredQuickReplies = useMemo(() => {
+        const source = Array.isArray(quickReplies) ? quickReplies : [];
+        return source
+            .map((item) => {
             const label = String(item?.label || '').trim().toLowerCase();
             const text = String(item?.text || '').trim().toLowerCase();
             const libraryName = String(item?.libraryName || '').trim().toLowerCase();
@@ -264,6 +274,7 @@ const ChatInput = ({
         })
         .slice(0, 10)
         .map((entry) => entry.item);
+    }, [quickReplies, debouncedSlashQuery, slashTokens, normalizedSlashQuery]);
 
     const selectQuickReply = (item = {}) => {
         const entry = item && typeof item === 'object' ? item : null;
