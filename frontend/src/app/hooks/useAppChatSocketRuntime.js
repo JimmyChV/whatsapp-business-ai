@@ -220,7 +220,7 @@ export default function useAppChatSocketRuntime({
       requestChatsPage({ reset: true });
     }, debounceMs);
     return () => clearTimeout(timer);
-  }, [chatSearchQuery, chatFilters, isClientReady, requestChatsPage]);
+  }, [chatSearchQuery, chatFilters, isClientReady]);
 
   useWaModuleSocketEvents({
     socket,
@@ -249,6 +249,7 @@ export default function useAppChatSocketRuntime({
     chatPagingRef: socketPagingRef,
     setQrCode,
     setIsClientReady,
+    requestChatsPage,
     emitScopedBusinessDataRequest,
     selectedCatalogModuleIdRef,
     selectedWaModuleRef,
