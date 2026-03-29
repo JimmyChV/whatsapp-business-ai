@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import {
   useMessagesAutoScroll,
@@ -190,11 +190,35 @@ export default function useAppChatSocketRuntime({
     setIsLoadingMoreChats
   });
 
+  const lastSearchQueryRef = useRef('');
+  const lastFilterKeyRef = useRef('');
+  const wasClientReadyRef = useRef(Boolean(isClientReady));
+
   useEffect(() => {
+    const wasReady = Boolean(wasClientReadyRef.current);
+    wasClientReadyRef.current = Boolean(isClientReady);
     if (!isClientReady) return;
+
+    const normalizedQuery = String(chatSearchQuery || '').trim();
+    const normalizedFilters = normalizeChatFilters(chatFilters);
+    const nextFilterKey = buildFiltersKey(normalizedFilters);
+    const queryChanged = normalizedQuery !== lastSearchQueryRef.current;
+    const filtersChanged = nextFilterKey !== lastFilterKeyRef.current;
+    const reconnected = !wasReady && Boolean(isClientReady);
+
+    if (!queryChanged && !filtersChanged && !reconnected) return;
+
+    let debounceMs = 120;
+    if (!reconnected) {
+      if (queryChanged) debounceMs = 260;
+      else if (filtersChanged) debounceMs = 140;
+    }
+
     const timer = setTimeout(() => {
+      lastSearchQueryRef.current = normalizedQuery;
+      lastFilterKeyRef.current = nextFilterKey;
       requestChatsPage({ reset: true });
-    }, 180);
+    }, debounceMs);
     return () => clearTimeout(timer);
   }, [chatSearchQuery, chatFilters, isClientReady]);
 
