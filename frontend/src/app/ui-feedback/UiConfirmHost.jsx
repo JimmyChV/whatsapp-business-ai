@@ -30,7 +30,7 @@ export default function UiConfirmHost() {
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 3100,
+        zIndex: 4000,
         background: 'rgba(3, 10, 16, 0.62)',
         display: 'flex',
         alignItems: 'center',

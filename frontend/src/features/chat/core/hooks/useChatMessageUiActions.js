@@ -13,10 +13,10 @@ export default function useChatMessageUiActions({
   socket,
   activeChatIdRef
 } = {}) {
-  const { confirm } = useUiFeedback();
-  const handleEditMessage = (messageId, currentBody) => {
+  const { confirm, notify } = useUiFeedback();
+    const handleEditMessage = (messageId, currentBody) => {
     if (!waCapabilities.messageEdit) {
-      alert('La edicion de mensajes no esta disponible en esta sesion de WhatsApp.');
+      notify({ type: 'warn', message: 'La edicion de mensajes no esta disponible en esta sesion de WhatsApp.' });
       return;
     }
     removeAttachment();
