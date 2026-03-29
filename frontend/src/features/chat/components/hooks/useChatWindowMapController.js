@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -134,7 +134,7 @@ const useChatWindowMapController = ({
     setMapSuggestions([]);
   };
 
-  const openMapModal = async ({ query = '', mapUrl = '', latitude = null, longitude = null } = {}) => {
+  const openMapModal = useCallback(async ({ query = '', mapUrl = '', latitude = null, longitude = null } = {}) => {
     const lat = parseMapCoord(latitude);
     const lng = parseMapCoord(longitude);
     const hasCoords = isValidMapLat(lat) && isValidMapLng(lng);
@@ -171,7 +171,7 @@ const useChatWindowMapController = ({
         setMapEmbedUrl(buildMapEmbedUrl(resolvedSuggestion.seed));
       }
     }
-  };
+  }, []);
 
   const submitMapSearch = async (event) => {
     event.preventDefault();

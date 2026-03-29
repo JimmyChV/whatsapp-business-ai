@@ -777,4 +777,25 @@ const MessageBubble = ({
     );
 };
 
-export default MessageBubble;
+const areMessageBubblePropsEqual = (prevProps, nextProps) => {
+    if (prevProps.msg !== nextProps.msg) return false;
+    if (prevProps.isHighlighted !== nextProps.isHighlighted) return false;
+    if (prevProps.isCurrentHighlighted !== nextProps.isCurrentHighlighted) return false;
+    if (prevProps.activeChatId !== nextProps.activeChatId) return false;
+    if (prevProps.showSenderName !== nextProps.showSenderName) return false;
+    if (prevProps.senderDisplayName !== nextProps.senderDisplayName) return false;
+    if (prevProps.canEditMessages !== nextProps.canEditMessages) return false;
+    if (prevProps.forwardChatOptions !== nextProps.forwardChatOptions) return false;
+    if (prevProps.buildApiHeaders !== nextProps.buildApiHeaders) return false;
+
+    if (Boolean(prevProps.onReplyMessage) !== Boolean(nextProps.onReplyMessage)) return false;
+    if (Boolean(prevProps.onForwardMessage) !== Boolean(nextProps.onForwardMessage)) return false;
+    if (Boolean(prevProps.onEditMessage) !== Boolean(nextProps.onEditMessage)) return false;
+    if (Boolean(prevProps.onDeleteMessage) !== Boolean(nextProps.onDeleteMessage)) return false;
+    if (Boolean(prevProps.onLoadOrderToCart) !== Boolean(nextProps.onLoadOrderToCart)) return false;
+    if (Boolean(prevProps.onOpenPhoneChat) !== Boolean(nextProps.onOpenPhoneChat)) return false;
+
+    return true;
+};
+
+export default React.memo(MessageBubble, areMessageBubblePropsEqual);

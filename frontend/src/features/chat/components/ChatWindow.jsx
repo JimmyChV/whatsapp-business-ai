@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Search, MoreVertical, ChevronUp, ChevronDown, Tag, MapPin, Share2, X } from 'lucide-react';
 import MessageBubble from './message-bubble/MessageBubble';
 import moment from 'moment';
@@ -104,6 +104,22 @@ const ChatWindow = ({
         messages,
         waModules
     });
+
+    const handlePrefillMessage = useCallback((text) => {
+        if (typeof inputProps?.setInputText === 'function') {
+            inputProps.setInputText(text);
+        }
+    }, [inputProps?.setInputText]);
+
+    const handleOpenMapFromBubble = useCallback((payload = {}) => {
+        openMapModal(payload);
+    }, [openMapModal]);
+
+    const handleOpenPhoneChat = useCallback((phone, firstMessage = '') => {
+        if (typeof inputProps?.onStartNewChat === 'function') {
+            inputProps.onStartNewChat(phone, firstMessage);
+        }
+    }, [inputProps?.onStartNewChat]);
 
     return (
         <div
@@ -303,12 +319,12 @@ const ChatWindow = ({
                                     msg={msg}
                                     isHighlighted={isHighlighted}
                                     isCurrentHighlighted={isCurrentHighlighted}
-                                    onPrefillMessage={(text) => inputProps?.setInputText && inputProps.setInputText(text)}
+                                    onPrefillMessage={handlePrefillMessage}
                                     // TODO(bug): flujo de importacion al carrito desde cotizacion puede fallar — revisar cadena onLoadOrderToCart -> cart state
                                     onLoadOrderToCart={inputProps?.onLoadOrderToCart}
                                     onOpenMedia={setLightboxMedia}
-                                    onOpenMap={openMapModal}
-                                    onOpenPhoneChat={inputProps?.onStartNewChat}
+                                    onOpenMap={handleOpenMapFromBubble}
+                                    onOpenPhoneChat={handleOpenPhoneChat}
                                     onEditMessage={onEditMessage}
                                     onReplyMessage={onReplyMessage}
                                     onForwardMessage={onForwardMessage}
