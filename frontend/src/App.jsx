@@ -20,6 +20,7 @@ import {
 } from './app/hooks';
 import { appSocketSingleton } from './app/hooks/useAppSocketChatController';
 import AppRuntimeGate from './app/components/AppRuntimeGate';
+import { UiFeedbackProvider, UiToastHost, UiConfirmHost } from './app/ui-feedback';
 
 import './index.css';
 
@@ -657,22 +658,28 @@ function App() {
     isClientReady
   });
 
-  if (runtimeGate !== APP_RUNTIME_GATES.MAIN) {
-    return (
+  const appContent = runtimeGate !== APP_RUNTIME_GATES.MAIN
+    ? (
       <AppRuntimeGate
         gateMode={runtimeGate}
         loginProps={loginScreenProps}
         saasPanelNode={saasPanelGateNode}
         transportBootstrapProps={transportBootstrapProps}
       />
+    )
+    : (
+      <OperationPage {...operationPageProps} />
     );
-  }
 
   // Render: Main App
   // --------------------------------------------------------------
   return (
-    <OperationPage {...operationPageProps} />
-    );
+    <UiFeedbackProvider>
+      {appContent}
+      <UiToastHost />
+      <UiConfirmHost />
+    </UiFeedbackProvider>
+  );
 }
 
 export default App;
