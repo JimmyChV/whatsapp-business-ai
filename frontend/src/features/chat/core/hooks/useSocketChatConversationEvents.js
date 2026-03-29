@@ -83,7 +83,12 @@ export default function useSocketChatConversationEvents({
             'sentViaTransport'
         ];
 
-        const sameStructuredValue = (left, right) => left === right;
+        const sameStructuredValue = (left, right) => {
+            if (left === right) return true;
+            if (!left && !right) return true;
+            if (!left || !right) return false;
+            try { return JSON.stringify(left) === JSON.stringify(right); } catch (e) { return false; }
+        };
 
         const hasMessageMeaningfulChanges = (previousMessage, nextMessage) => {
             if (!previousMessage || !nextMessage) return true;
