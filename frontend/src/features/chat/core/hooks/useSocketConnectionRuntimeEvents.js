@@ -9,7 +9,6 @@ export default function useSocketConnectionRuntimeEvents({
     chatPagingRef,
     setQrCode,
     setIsClientReady,
-    requestChatsPage,
     emitScopedBusinessDataRequest,
     selectedCatalogModuleIdRef,
     selectedWaModuleRef,
@@ -41,6 +40,7 @@ export default function useSocketConnectionRuntimeEvents({
         socket.on('disconnect', () => {
             setIsConnected(false);
             setIsSwitchingTransport(false);
+            setIsClientReady(false);
             chatPagingRef.current.loading = false;
             setIsLoadingMoreChats(false);
         });
@@ -55,7 +55,6 @@ export default function useSocketConnectionRuntimeEvents({
             setIsClientReady(true);
             setIsSwitchingTransport(false);
             setQrCode('');
-            requestChatsPage({ reset: true });
             emitScopedBusinessDataRequest({
                 moduleId: selectedCatalogModuleIdRef.current || selectedWaModuleRef.current?.moduleId || '',
                 catalogId: selectedCatalogIdRef.current || ''
