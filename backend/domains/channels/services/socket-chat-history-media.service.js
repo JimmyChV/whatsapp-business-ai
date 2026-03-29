@@ -75,7 +75,10 @@ function createSocketChatHistoryMediaService({
         const filterRowsByScope = (rows = []) => {
             const source = Array.isArray(rows) ? rows : [];
             if (!normalizedScopeModuleId) return source;
-            const withScope = source.filter((row) => normalizeScopedModuleId(row?.waModuleId || row?.metadata?.sentViaModuleId || '') === normalizedScopeModuleId);
+            const withScope = source.filter((row) => {
+                const rowScope = normalizeScopedModuleId(row?.waModuleId || row?.metadata?.sentViaModuleId || '');
+                return !rowScope || rowScope === normalizedScopeModuleId;
+            });
             return withScope;
         };
 
@@ -273,35 +276,32 @@ function createSocketChatHistoryMediaService({
 
                 const formatted = scopeModuleId
                     ? (() => {
-                        const scopedOnly = formattedAll.filter((entry) => normalizeScopedModuleId(entry?.sentViaModuleId || '') === scopeModuleId);
+                        const scopedOnly = formattedAll.filter((entry) => {
+                            const entryScope = normalizeScopedModuleId(entry?.sentViaModuleId || '');
+                            return !entryScope || entryScope === scopeModuleId;
+                        });
                         return scopedOnly;
                     })()
                     : formattedAll;
 
-                if (formatted.length === 0) {
-                    const historyFallbackIfEmpty = await getHistoryChatHistory(tenantId, {
-                        chatId: historyChatId,
-                        limit: 60,
-                        scopeModuleId
-                    });
-                    if (Array.isArray(historyFallbackIfEmpty?.messages) && historyFallbackIfEmpty.messages.length > 0) {
-                        socket.emit('chat_history', {
-                            ...historyFallbackIfEmpty,
-                            chatId: requestedScopedChatId || historyFallbackIfEmpty?.chatId || historyChatId,
-                            requestedChatId: requestedRawChatId,
-                            baseChatId: historyFallbackIfEmpty?.chatId || historyChatId,
-                            scopeModuleId: scopeModuleId || null
-                        });
-                        return;
-                    }
-                }
+                const historyFallback = await getHistoryChatHistory(tenantId, {
+                    chatId: historyChatId,
+                    limit: 60,
+                    scopeModuleId
+                });
+                const fallbackMessages = Array.isArray(historyFallback?.messages) ? historyFallback.messages : [];
+                const useFallback = fallbackMessages.length > formatted.length;
+                const selectedMessages = useFallback ? fallbackMessages : formatted;
+                const selectedBaseChatId = useFallback
+                    ? (historyFallback?.chatId || historyChatId)
+                    : historyChatId;
 
                 socket.emit('chat_history', {
-                    chatId: requestedScopedChatId || historyChatId,
+                    chatId: requestedScopedChatId || selectedBaseChatId,
                     requestedChatId: requestedRawChatId,
-                    baseChatId: historyChatId,
+                    baseChatId: selectedBaseChatId,
                     scopeModuleId: scopeModuleId || null,
-                    messages: formatted
+                    messages: selectedMessages
                 });
 
                 // Avoid blocking chat open while media is downloaded/cached.

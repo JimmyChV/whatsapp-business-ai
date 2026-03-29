@@ -282,7 +282,7 @@ export default function useSocketChatConversationEvents({
             const sessionSenderName = String(sessionSenderIdentity?.name || '').trim();
             const sessionSenderEmail = String(sessionSenderIdentity?.email || '').trim();
             const sessionSenderRole = String(sessionSenderIdentity?.role || '').trim().toLowerCase();
-            const sanitizedMessages = Array.isArray(data.messages)
+            const normalizedMessages = Array.isArray(data.messages)
                 ? data.messages.map((m) => {
                     const normalizedMessage = {
                         ...m,
@@ -311,8 +311,8 @@ export default function useSocketChatConversationEvents({
                 : [];
             setMessages((prev) => {
                 const previous = Array.isArray(prev) ? prev : [];
-                if (previous.length === 0) return sanitizedMessages;
-                if (sanitizedMessages.length === 0) return previous;
+                if (previous.length === 0) return normalizedMessages;
+                if (normalizedMessages.length === 0) return previous;
 
                 const mergedById = new Map(
                     previous
@@ -320,7 +320,7 @@ export default function useSocketChatConversationEvents({
                         .filter(([id]) => Boolean(id))
                 );
 
-                sanitizedMessages.forEach((message) => {
+                normalizedMessages.forEach((message) => {
                     const id = String(message?.id || '').trim();
                     if (!id) return;
                     const existing = mergedById.get(id);
