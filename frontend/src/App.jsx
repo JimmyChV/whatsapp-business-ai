@@ -20,7 +20,6 @@ import {
 } from './app/hooks';
 import { appSocketSingleton } from './app/hooks/useAppSocketChatController';
 import AppRuntimeGate from './app/components/AppRuntimeGate';
-import { UiFeedbackProvider, UiToastHost, UiConfirmHost } from './app/ui-feedback';
 
 import './index.css';
 
@@ -673,13 +672,7 @@ function App() {
 
   // Render: Main App
   // --------------------------------------------------------------
-  return (
-    <UiFeedbackProvider>
-      {appContent}
-      <UiToastHost />
-      <UiConfirmHost />
-    </UiFeedbackProvider>
-  );
+  return appContent;
 }
 
 export default App;
