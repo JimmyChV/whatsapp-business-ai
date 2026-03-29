@@ -20,6 +20,7 @@ import {
   normalizeQuickReplyDraft,
   parseScopedChatId
 } from '../../features/chat/core';
+import useUiFeedback from '../ui-feedback/useUiFeedback';
 
 export default function useAppOperationHandlers({
   socketOpsBlock = {},
@@ -29,6 +30,7 @@ export default function useAppOperationHandlers({
   recoveryBlock = {}
 } = {}) {
   void recoveryBlock;
+  const { confirm } = useUiFeedback();
 
   const {
     socket,
@@ -435,10 +437,17 @@ export default function useAppOperationHandlers({
     loadOrderToCartForActiveChat(activeChatIdRef.current, orderPayload);
   }, [activeChatIdRef, loadOrderToCartForActiveChat]);
 
-  const handleLogoutWhatsapp = useCallback(() => {
-    if (!window.confirm('Cerrar sesion de WhatsApp en este equipo?')) return;
+  const handleLogoutWhatsapp = useCallback(async () => {
+    const confirmed = await confirm({
+      title: 'Cerrar sesion WhatsApp',
+      message: 'Cerrar sesion de WhatsApp en este equipo?',
+      confirmText: 'Cerrar sesion',
+      cancelText: 'Cancelar',
+      tone: 'danger'
+    });
+    if (!confirmed) return;
     socket.emit('logout_whatsapp');
-  }, [socket]);
+  }, [confirm, socket]);
 
   const handlersBlock = {
     handleChatSelect,

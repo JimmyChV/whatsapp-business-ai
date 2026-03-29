@@ -5,6 +5,7 @@ import {
   logoutSaas,
   switchSaasTenant
 } from '../services/saasAuthApi';
+import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 
 export function useSaasSessionActions({
   recoveryStep,
@@ -36,6 +37,7 @@ export function useSaasSessionActions({
   setWaModuleError,
   setSaasRuntime
 }) {
+  const { confirm } = useUiFeedback();
   const handleSaasLogin = useCallback(async (event) => {
     event?.preventDefault();
     if (recoveryStep !== 'idle') return;
@@ -134,7 +136,14 @@ export function useSaasSessionActions({
   ]);
 
   const handleSaasLogout = useCallback(async () => {
-    if (!window.confirm('Cerrar sesion de tu cuenta SaaS?')) return;
+    const confirmed = await confirm({
+      title: 'Cerrar sesion',
+      message: 'Cerrar sesion de tu cuenta SaaS?',
+      confirmText: 'Cerrar sesion',
+      cancelText: 'Cancelar',
+      tone: 'danger'
+    });
+    if (!confirmed) return;
     const current = saasSessionRef.current;
     try {
       if (current?.accessToken || current?.refreshToken) {
@@ -165,6 +174,7 @@ export function useSaasSessionActions({
     resetWorkspaceState();
   }, [
     buildApiHeaders,
+    confirm,
     resetWorkspaceState,
     saasSessionRef,
     setForceOperationLaunchBypass,

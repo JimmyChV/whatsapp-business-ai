@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Package, PlusCircle, Search, SlidersHorizontal } from 'lucide-react';
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import {
     buildCatalogFormDataFromProduct,
     buildCatalogProductPayloadFromForm,
@@ -12,6 +13,7 @@ import {
 import { BusinessCatalogProductCard, BusinessCatalogProductForm } from './catalog';
 
 const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null }) => {
+    const { confirm } = useUiFeedback();
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState(() => createCatalogProductEmptyForm());
@@ -133,10 +135,16 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
         setShowForm(false);
     };
 
-    const handleDelete = (id) => {
-        if (window.confirm('Eliminar este producto?')) {
-            socket.emit('delete_product', { id, moduleId: activeCatalogModuleId || null, catalogId: activeCatalogId || null });
-        }
+    const handleDelete = async (id) => {
+        const confirmed = await confirm({
+            title: 'Eliminar producto',
+            message: 'Eliminar este producto del catalogo?',
+            confirmText: 'Eliminar',
+            cancelText: 'Cancelar',
+            tone: 'danger'
+        });
+        if (!confirmed) return;
+        socket.emit('delete_product', { id, moduleId: activeCatalogModuleId || null, catalogId: activeCatalogId || null });
     };
 
     const sendCatalogProduct = (item, i) => {

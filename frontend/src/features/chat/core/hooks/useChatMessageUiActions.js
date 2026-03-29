@@ -1,3 +1,5 @@
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
+
 export default function useChatMessageUiActions({
   waCapabilities = {},
   removeAttachment,
@@ -11,6 +13,7 @@ export default function useChatMessageUiActions({
   socket,
   activeChatIdRef
 } = {}) {
+  const { confirm } = useUiFeedback();
   const handleEditMessage = (messageId, currentBody) => {
     if (!waCapabilities.messageEdit) {
       alert('La edicion de mensajes no esta disponible en esta sesion de WhatsApp.');
@@ -62,12 +65,18 @@ export default function useChatMessageUiActions({
     });
   };
 
-  const handleDeleteMessage = (payload = {}) => {
+  const handleDeleteMessage = async (payload = {}) => {
     const messageId = String(payload?.id || '').trim();
     const resolvedChatId = String(payload?.chatId || activeChatIdRef?.current || '').trim();
     if (!messageId || !resolvedChatId) return;
 
-    const ok = window.confirm('Eliminar este mensaje? WhatsApp solo lo permite en algunos casos.');
+    const ok = await confirm({
+      title: 'Eliminar mensaje',
+      message: 'WhatsApp solo permite eliminar en algunos casos.',
+      confirmText: 'Eliminar',
+      cancelText: 'Cancelar',
+      tone: 'danger'
+    });
     if (!ok) return;
 
     socket.emit('delete_message', {
