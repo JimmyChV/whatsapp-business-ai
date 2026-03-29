@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import { useMemo, useState } from 'react';
 import { Sidebar, BusinessSidebar, ClientProfilePanel, ChatWindow, NewChatModal } from '../features/chat/components';
 import { sanitizeDisplayText } from '../features/chat/core';
 
@@ -101,33 +101,7 @@ export default function OperationPage({
   SaasPanelComponent,
 }) {
   const [cartDraftsByChat, setCartDraftsByChat] = useState({});
-  const messagesRef = useRef(Array.isArray(messages) ? messages : []);
-
-  useEffect(() => {
-    messagesRef.current = Array.isArray(messages) ? messages : [];
-  }, [messages]);
-
-  const getMessagesSnapshot = useCallback(() => messagesRef.current, []);
-
-  const activeChatDetails = useMemo(
-    () => chats.find((c) => c.id === activeChatId) || null,
-    [chats, activeChatId]
-  );
-
-  const activeChatComposite = useMemo(() => {
-    const left = activeChatDetails && typeof activeChatDetails === 'object' ? activeChatDetails : null;
-    const right = clientContact && typeof clientContact === 'object' ? clientContact : null;
-    if (!left && !right) return null;
-    return { ...(left || {}), ...(right || {}) };
-  }, [activeChatDetails, clientContact]);
-
-  const handleOpenSaasAdmin = useCallback(() => {
-    handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId });
-  }, [handleOpenSaasAdminWorkspace, tenantScopeId]);
-
-  const handleClearQuickReplyDraft = useCallback(() => {
-    setQuickReplyDraft(null);
-  }, [setQuickReplyDraft]);
+  const activeChatDetails = chats.find((c) => c.id === activeChatId) || null;
   const forwardChatOptions = useMemo(() => (
     chats
       .filter((chat) => chat?.id && String(chat.id) !== String(activeChatId || ''))
@@ -179,17 +153,17 @@ export default function OperationPage({
         tenantSwitchError={tenantSwitchError}
         onSaasLogout={handleSaasLogout}
         canManageSaas={canManageSaas}
-        onOpenSaasAdmin={handleOpenSaasAdmin}
+        onOpenSaasAdmin={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
         waModules={availableWaModules}
         showBackToPanel={Boolean(forceOperationLaunch && canManageSaas)}
-        onBackToPanel={handleOpenSaasAdmin}
+        onBackToPanel={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
       />
 
       <div className="main-workspace">
         {activeChatId ? (
           <div className="conversation-pane-shell">
             <ChatWindow
-              activeChatDetails={activeChatComposite}
+              activeChatDetails={{ ...activeChatDetails, ...clientContact }}
               messages={messages}
               messagesEndRef={messagesEndRef}
               isDragOver={isDragOver}
@@ -222,7 +196,7 @@ export default function OperationPage({
               quickReplies={quickReplies}
               onSendQuickReply={handleSendQuickReply}
               quickReplyDraft={quickReplyDraft}
-              onClearQuickReplyDraft={handleClearQuickReplyDraft}
+              onClearQuickReplyDraft={() => setQuickReplyDraft(null)}
               onLoadOrderToCart={handleLoadOrderToCart}
               onStartNewChat={handleStartNewChat}
               onCancelEditMessage={handleCancelEditMessage}
@@ -236,7 +210,7 @@ export default function OperationPage({
 
             {showClientProfile && (
               <ClientProfilePanel
-                contact={activeChatComposite}
+                contact={{ ...activeChatDetails, ...clientContact }}
                 chats={chats}
                 onClose={() => setShowClientProfile(false)}
                 onQuickAiAction={requestAiSuggestion}
@@ -300,10 +274,10 @@ export default function OperationPage({
             tenantScopeKey={tenantScopeId}
             setInputText={setInputText}
             businessData={businessData}
-            getMessagesSnapshot={getMessagesSnapshot}
+            messages={messages}
             activeChatId={activeChatId}
             activeChatPhone={activeChatDetails?.phone || clientContact?.phone || ''}
-            activeChatDetails={activeChatComposite}
+            activeChatDetails={activeChatDetails ? { ...activeChatDetails, ...clientContact } : clientContact || null}
             socket={socket}
             myProfile={myProfile || businessData?.profile}
             onLogout={handleLogoutWhatsapp}
