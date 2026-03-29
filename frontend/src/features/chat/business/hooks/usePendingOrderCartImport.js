@@ -165,7 +165,7 @@ export const usePendingOrderCartImport = ({
                     : Math.min(100, (lineSubtotal > 0 ? (lineDiscountAmount / lineSubtotal) * 100 : 0));
             }
             const lineDiscountEnabled = lineDiscountAmount > 0 || lineDiscountValue > 0;
-            const derivedUnitPrice = lineTotal > 0 && qty > 0 ? (lineTotal / qty) : linePrice;
+            const derivedUnitPrice = parseMoney(line.unitPrice, (lineTotal > 0 && qty > 0 ? (lineTotal / qty) : linePrice));
             const derivedRegularUnitPrice = lineSubtotal > 0 && qty > 0 ? (lineSubtotal / qty) : derivedUnitPrice;
 
             const baseLine = matched
@@ -301,10 +301,16 @@ export const usePendingOrderCartImport = ({
             const quoteDeliveryAmount = Math.max(0, parseMoney(quoteSummary?.deliveryAmount ?? 0, 0));
             const quoteDeliveryFree = Boolean(quoteSummary?.deliveryFree) || quoteDeliveryAmount <= 0;
 
+            const summaryGlobalDiscountType = String(quoteSummary?.globalDiscount?.type || '').trim().toLowerCase();
+            const summaryGlobalDiscountValue = Math.max(0, parseMoney(quoteSummary?.globalDiscount?.value ?? 0, 0));
+            const hasSummaryGlobalDiscount = (summaryGlobalDiscountType === 'percent' || summaryGlobalDiscountType === 'amount')
+                && summaryGlobalDiscountValue > 0;
             const quotePatch = {
-                globalDiscountEnabled: reconstructedGlobalDiscount > 0,
-                globalDiscountType: 'amount',
-                globalDiscountValue: reconstructedGlobalDiscount > 0 ? reconstructedGlobalDiscount : 0,
+                globalDiscountEnabled: hasSummaryGlobalDiscount ? true : reconstructedGlobalDiscount > 0,
+                globalDiscountType: hasSummaryGlobalDiscount ? summaryGlobalDiscountType : 'amount',
+                globalDiscountValue: hasSummaryGlobalDiscount
+                    ? summaryGlobalDiscountValue
+                    : (reconstructedGlobalDiscount > 0 ? reconstructedGlobalDiscount : 0),
                 deliveryType: quoteDeliveryFree ? 'free' : 'amount',
                 deliveryAmount: quoteDeliveryFree ? 0 : quoteDeliveryAmount
             };
