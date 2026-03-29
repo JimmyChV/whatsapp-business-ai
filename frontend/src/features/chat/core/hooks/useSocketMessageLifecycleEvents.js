@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 
 export default function useSocketMessageLifecycleEvents({
     socket,
@@ -10,6 +11,7 @@ export default function useSocketMessageLifecycleEvents({
     normalizeChatScopedId,
     chatIdsReferSameScope
 }) {
+    const { notify } = useUiFeedback();
     useEffect(() => {
         socket.on('message_edited', ({ chatId, messageId, body, edited, editedAt, canEdit }) => {
             const targetChatId = String(chatId || '');
@@ -31,7 +33,7 @@ export default function useSocketMessageLifecycleEvents({
         });
 
         socket.on('edit_message_error', (msg) => {
-            if (msg) alert(msg);
+            if (msg) notify({ type: 'error', message: msg });
         });
 
         socket.on('message_forwarded', () => {
@@ -39,7 +41,7 @@ export default function useSocketMessageLifecycleEvents({
         });
 
         socket.on('forward_message_error', (msg) => {
-            if (msg) alert(msg);
+            if (msg) notify({ type: 'error', message: msg });
         });
 
         socket.on('message_deleted', ({ chatId, messageId }) => {
@@ -66,7 +68,7 @@ export default function useSocketMessageLifecycleEvents({
         });
 
         socket.on('delete_message_error', (msg) => {
-            if (msg) alert(msg);
+            if (msg) notify({ type: 'error', message: msg });
         });
 
         socket.on('message_editability', ({ id, chatId, canEdit }) => {

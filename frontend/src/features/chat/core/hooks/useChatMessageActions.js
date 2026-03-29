@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 
 export default function useChatMessageActions({
   socket,
@@ -27,6 +28,7 @@ export default function useChatMessageActions({
   setInputText,
   removeAttachment
 } = {}) {
+  const { notify } = useUiFeedback();
   const handleExitActiveChat = useCallback(() => {
     activeChatIdRef.current = null;
     setActiveChatId(null);
@@ -63,11 +65,11 @@ export default function useChatMessageActions({
 
     if (editingMessage?.id) {
       if (!waCapabilities.messageEdit) {
-        alert('La edicion de mensajes no esta disponible en esta sesion de WhatsApp.');
+        notify({ type: 'warn', message: 'La edicion de mensajes no esta disponible en esta sesion de WhatsApp.' });
         return;
       }
       if (attachment) {
-        alert('No puedes adjuntar archivos mientras editas un mensaje.');
+        notify({ type: 'warn', message: 'No puedes adjuntar archivos mientras editas un mensaje.' });
         return;
       }
       if (!text) return;

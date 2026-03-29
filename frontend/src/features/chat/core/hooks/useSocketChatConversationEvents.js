@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { getMessagePreviewText as getMessagePreviewTextFallback } from '../helpers/appChat.helpers';
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 
 export default function useSocketChatConversationEvents({
     socket,
@@ -52,6 +53,7 @@ export default function useSocketChatConversationEvents({
     isInternalIdentifier,
     setToasts
 }) {
+    const { notify } = useUiFeedback();
     useEffect(() => {
         socket.on('chats', (payload) => {
             const isLegacy = Array.isArray(payload);
@@ -228,7 +230,7 @@ export default function useSocketChatConversationEvents({
         });
 
         socket.on('start_new_chat_error', (msg) => {
-            if (msg) alert(msg);
+            if (msg) notify({ type: 'error', message: msg });
         });
 
         socket.on('chat_labels_updated', ({ chatId, baseChatId, scopeModuleId, labels }) => {
@@ -251,7 +253,7 @@ export default function useSocketChatConversationEvents({
         });
 
         socket.on('chat_labels_error', (msg) => {
-            if (msg) alert(msg);
+            if (msg) notify({ type: 'error', message: msg });
         });
 
         socket.on('chat_labels_saved', ({ chatId }) => {
@@ -600,7 +602,7 @@ export default function useSocketChatConversationEvents({
         });
 
         socket.on('error', (msg) => {
-            if (typeof msg === 'string' && msg.trim()) alert(msg);
+            if (typeof msg === 'string' && msg.trim()) notify({ type: 'error', message: msg });
         });
 
         return () => {
