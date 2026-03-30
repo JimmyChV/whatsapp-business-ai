@@ -33,7 +33,7 @@ const ChatWindow = ({
     onDeleteMessage,
     forwardChatOptions = [],
 
-    canEditMessages = true,
+    canEditMessages = false,
     buildApiHeaders,
     waModules = [],
     ...inputProps

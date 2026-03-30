@@ -56,6 +56,7 @@ export default function useChatMessageUiActions({
   };
 
   const handleForwardMessage = (messageId, toChatId) => {
+    if (!waCapabilities.messageForward) return;
     const sourceMessageId = String(messageId || '').trim();
     const targetChatId = String(toChatId || '').trim();
     if (!sourceMessageId || !targetChatId) return;
@@ -66,6 +67,7 @@ export default function useChatMessageUiActions({
   };
 
   const handleDeleteMessage = async (payload = {}) => {
+    if (!waCapabilities.messageDelete) return;
     const messageId = String(payload?.id || '').trim();
     const resolvedChatId = String(payload?.chatId || activeChatIdRef?.current || '').trim();
     if (!messageId || !resolvedChatId) return;
