@@ -487,7 +487,8 @@ export default function useSocketChatConversationEvents({
             });
 
             const sessionSenderIdentity = resolveSessionSenderIdentity();
-            setMessages((prev) => {
+            startTransition(() => {
+                setMessages((prev) => {
                 const normalizedIncoming = {
                     ...msg,
                     body: repairMojibake(msg?.body || ''),
@@ -561,7 +562,8 @@ export default function useSocketChatConversationEvents({
                     sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || '') || null
                 };
 
-                return [...prev, enrichedIncoming];
+                    return [...prev, enrichedIncoming];
+                });
             });
         });
 
