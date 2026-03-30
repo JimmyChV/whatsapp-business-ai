@@ -17,6 +17,7 @@ const customerService = require('../../tenant/services/customers.service');
 const tenantLabelService = require('../../tenant/services/tenant-labels.service');
 const quotesService = require('../../tenant/services/quotes.service');
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
+const chatAssignmentRouterService = require('../../operations/services/chat-assignment-router.service');
 const auditLogService = require('../../security/services/audit-log.service');
 const RateLimiter = require('../../../config/rate-limiter');
 const { URL } = require('url');
@@ -1307,6 +1308,8 @@ class SocketManager {
         const waEventsBridge = createSocketWaEventsBridgeService({
             waClient,
             mediaManager,
+            conversationOpsService,
+            chatAssignmentRouterService,
             emitToRuntimeContext: this.emitToRuntimeContext.bind(this),
             getWaCapabilities: this.getWaCapabilities.bind(this),
             getWaRuntime: this.getWaRuntime.bind(this),

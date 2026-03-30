@@ -1,6 +1,8 @@
 function createSocketWaEventsBridgeService({
     waClient,
     mediaManager,
+    conversationOpsService,
+    chatAssignmentRouterService,
     emitToRuntimeContext,
     getWaCapabilities,
     getWaRuntime,
@@ -76,6 +78,62 @@ function createSocketWaEventsBridgeService({
                 agentMeta,
                 moduleContext: effectiveModuleContext
             });
+
+            if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase) {
+                try {
+                    const eventUnixTs = Number(msg?.timestamp || 0);
+                    const activityAtIso = eventUnixTs > 0
+                        ? new Date(eventUnixTs * 1000).toISOString()
+                        : new Date().toISOString();
+                    const assignmentScopeModuleId = String(scopeModuleId || '').trim().toLowerCase();
+
+                    const touchedAssignment = await conversationOpsService.touchChatAssignmentActivity(historyTenantId, {
+                        chatId: relatedChatIdBase,
+                        scopeModuleId: assignmentScopeModuleId,
+                        fromCustomer: true,
+                        at: activityAtIso
+                    });
+                    const currentAssignment = touchedAssignment || await conversationOpsService.getChatAssignment(historyTenantId, {
+                        chatId: relatedChatIdBase,
+                        scopeModuleId: assignmentScopeModuleId
+                    });
+
+                    if (currentAssignment?.status === 'en_espera') {
+                        const reactivationResult = await conversationOpsService.reactivateChatAssignmentOnCustomerReply(historyTenantId, {
+                            chatId: relatedChatIdBase,
+                            scopeModuleId: assignmentScopeModuleId,
+                            at: activityAtIso,
+                            metadata: {
+                                trigger: 'incoming_message'
+                            }
+                        });
+
+                        if (reactivationResult?.shouldAutoAssign) {
+                            await chatAssignmentRouterService.autoAssignChat(historyTenantId, {
+                                chatId: relatedChatIdBase,
+                                scopeModuleId: assignmentScopeModuleId,
+                                actorUserId: null,
+                                trigger: 'customer_reply_after_waiting',
+                                assignmentReason: 'customer_reply_after_waiting'
+                            });
+                        }
+                    } else {
+                        const hasAssignee = Boolean(String(currentAssignment?.assigneeUserId || '').trim());
+                        const isActive = String(currentAssignment?.status || '').trim().toLowerCase() === 'active';
+                        if (!hasAssignee || !isActive) {
+                            await chatAssignmentRouterService.autoAssignChat(historyTenantId, {
+                                chatId: relatedChatIdBase,
+                                scopeModuleId: assignmentScopeModuleId,
+                                actorUserId: null,
+                                trigger: 'incoming_message_unassigned',
+                                assignmentReason: 'incoming_message_unassigned'
+                            });
+                        }
+                    }
+                } catch (_) {
+                    // silent: inbound processing should not fail by assignment lifecycle issues
+                }
+            }
 
             emitToRuntimeContext('message', {
                 id: messageId,
