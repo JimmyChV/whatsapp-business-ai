@@ -414,7 +414,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                 <Package size={36} style={{ marginBottom: '12px', opacity: 0.25, marginLeft: 'auto', marginRight: 'auto' }} />
                                 <div style={{ fontSize: '0.875rem', marginBottom: '6px' }}>Catalogo vacio</div>
                                 <div style={{ fontSize: '0.78rem', opacity: 0.7, lineHeight: '1.5' }}>
-                                    Si tu catalogo nativo no aparece, WhatsApp Web no lo esta exponiendo en esta sesion.
+                                    Si tu catalogo nativo no aparece, Cloud API no lo esta exponiendo en esta sesion.
                                 </div>
                             </div>
                         ) : (

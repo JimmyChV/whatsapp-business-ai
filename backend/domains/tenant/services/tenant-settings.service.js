@@ -9,7 +9,7 @@
 
 const SETTINGS_FILE_NAME = 'tenant_settings.json';
 const ALLOWED_CATALOG_MODES = new Set(['hybrid', 'meta_only', 'woo_only', 'local_only']);
-const ALLOWED_TRANSPORT_LOCKS = new Set(['auto', 'webjs', 'cloud']);
+const ALLOWED_TRANSPORT_LOCKS = new Set(['auto', 'cloud']);
 
 const DEFAULT_SETTINGS = Object.freeze({
     catalogMode: 'hybrid',

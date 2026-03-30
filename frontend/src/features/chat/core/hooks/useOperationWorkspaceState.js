@@ -63,10 +63,10 @@ export default function useOperationWorkspaceState({
   const [selectedCatalogId, setSelectedCatalogId] = useState('');
   const [waModuleError, setWaModuleError] = useState('');
   const [waCapabilities, setWaCapabilities] = useState({
-    messageEdit: true,
-    messageEditSync: true,
-    messageForward: true,
-    messageDelete: true,
+    messageEdit: false,
+    messageEditSync: false,
+    messageForward: false,
+    messageDelete: false,
     messageReply: true,
     quickReplies: false,
     quickRepliesRead: false,

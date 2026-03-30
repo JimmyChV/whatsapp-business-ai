@@ -5,7 +5,6 @@ import { readWaLaunchParams } from '../../features/chat/core';
 
 export default function useAppSessionTransportState() {
   const [isConnected, setIsConnected] = useState(false);
-  const [qrCode, setQrCode] = useState('');
   const [isClientReady, setIsClientReady] = useState(false);
   const [selectedTransport, setSelectedTransport] = useState('');
   const [waRuntime, setWaRuntime] = useState({
@@ -48,8 +47,6 @@ export default function useAppSessionTransportState() {
   return {
     isConnected,
     setIsConnected,
-    qrCode,
-    setQrCode,
     isClientReady,
     setIsClientReady,
     selectedTransport,

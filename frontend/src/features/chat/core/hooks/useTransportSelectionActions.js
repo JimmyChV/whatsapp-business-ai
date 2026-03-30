@@ -16,7 +16,6 @@ export default function useTransportSelectionActions({
   setTransportError,
   setIsSwitchingTransport,
   setIsClientReady,
-  setQrCode,
   setChats,
   setChatsLoaded,
   setChatsTotal,
@@ -66,7 +65,6 @@ export default function useTransportSelectionActions({
     setTransportError('');
     setIsSwitchingTransport(true);
     setIsClientReady(false);
-    setQrCode('');
 
     resetChatRuntime();
 
@@ -78,7 +76,6 @@ export default function useTransportSelectionActions({
     resetChatRuntime,
     setIsClientReady,
     setIsSwitchingTransport,
-    setQrCode,
     setSelectedTransport,
     setTransportError,
     socket
@@ -94,7 +91,6 @@ export default function useTransportSelectionActions({
     setWaModuleError('');
     setIsSwitchingTransport(false);
     setIsClientReady(false);
-    setQrCode('');
     setWaRuntime(DEFAULT_RUNTIME);
 
     resetChatRuntime();
@@ -103,7 +99,6 @@ export default function useTransportSelectionActions({
     resetChatRuntime,
     setIsClientReady,
     setIsSwitchingTransport,
-    setQrCode,
     setSelectedTransport,
     setTransportError,
     setWaModuleError,

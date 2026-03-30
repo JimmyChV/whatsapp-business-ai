@@ -35,7 +35,6 @@ const {
 } = require('../../operations/helpers/order-parsing.helpers');
 const {
     normalizePhoneDigits,
-    looksLikeSamePhoneDigits,
     formatPhoneForDisplay,
     isLikelyHumanPhoneDigits,
     coerceHumanPhone,
@@ -122,7 +121,6 @@ const {
     createGuardRateLimit,
     createLazySharpLoader
 } = require('../helpers/socket-runtime-bootstrap.helpers');
-const { buildWebjsSessionNamespaceFromIds } = require('../helpers/socket-session.helpers');
 const fs = require('fs');
 const path = require('path');
 
@@ -133,7 +131,6 @@ const eventRateLimiter = new RateLimiter({
 const HISTORY_DEBUG_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.HISTORY_DEBUG || '').trim().toLowerCase());
 const SOCKET_RBAC_ENABLED = ['1', 'true', 'yes', 'on'].includes(String(process.env.SAAS_AUTH_ENABLED || '').trim().toLowerCase());
 const WA_REQUIRE_SELECTED_MODULE = ['1', 'true', 'yes', 'on'].includes(String(process.env.WA_REQUIRE_SELECTED_MODULE || '').trim().toLowerCase());
-const WA_ENFORCE_WEBJS_PHONE_MATCH = ['1', 'true', 'yes', 'on'].includes(String(process.env.WA_ENFORCE_WEBJS_PHONE_MATCH || '').trim().toLowerCase());
 const QUICK_REPLY_MEDIA_MAX_BYTES = Math.max(
     256 * 1024,
     Number(process.env.QUICK_REPLY_MEDIA_MAX_BYTES || process.env.ADMIN_ASSET_QUICK_REPLY_MAX_BYTES || (50 * 1024 * 1024))
@@ -242,7 +239,6 @@ class SocketManager {
                 tenantId: 'default',
                 moduleId: 'default',
                 transportMode: 'idle',
-                webjsNamespace: typeof waClient.getWebjsSessionNamespace === 'function' ? waClient.getWebjsSessionNamespace() : null,
                 updatedAt: Date.now()
             },
             cacheConfig: {
@@ -498,8 +494,7 @@ class SocketManager {
         moduleName = null,
         modulePhone = null,
         channelType = null,
-        transportMode = 'idle',
-        webjsNamespace = null
+        transportMode = 'idle'
     } = {}) {
         return this.runtimeStore.set('runtimeContext', {
             tenantId: String(tenantId || 'default').trim() || 'default',
@@ -508,7 +503,6 @@ class SocketManager {
             modulePhone: coerceHumanPhone(modulePhone || '') || null,
             channelType: String(channelType || '').trim().toLowerCase() || null,
             transportMode: String(transportMode || 'idle').trim().toLowerCase() || 'idle',
-            webjsNamespace: String(webjsNamespace || '').trim() || null,
             updatedAt: Date.now()
         });
     }
@@ -519,40 +513,6 @@ class SocketManager {
 
     emitToRuntimeContext(eventName, payload) {
         this.runtimeStore.emitToRuntimeContext(eventName, payload);
-    }
-
-    async enforceRuntimeWebjsPhonePolicy() {
-        if (!WA_ENFORCE_WEBJS_PHONE_MATCH) return true;
-
-        const runtime = this.getWaRuntime();
-        const activeTransport = String(runtime?.activeTransport || '').trim().toLowerCase();
-        if (activeTransport !== 'webjs') return true;
-
-        const target = this.resolveRuntimeEventTarget();
-        if (!target?.tenantId || !target?.moduleId) return true;
-
-        const moduleConfig = await waModuleService.getModule(target.tenantId, target.moduleId).catch(() => null);
-        const registeredPhone = normalizePhoneDigits(moduleConfig?.phoneNumber || '');
-        if (!registeredPhone) return true;
-
-        const connectedPhone = normalizePhoneDigits(waClient?.client?.info?.wid?.user || '');
-        if (!connectedPhone) return true;
-
-        if (looksLikeSamePhoneDigits(registeredPhone, connectedPhone)) return true;
-
-        const warning = 'Numero no permitido para este modulo. Registrado: +' + registeredPhone + '. Escaneado: +' + connectedPhone + '.';
-        this.emitToTenantModule(target.tenantId, target.moduleId, 'auth_failure', warning);
-
-        try {
-            await waClient.client.logout();
-        } catch (_) { }
-
-        try {
-            waClient.isReady = false;
-            await waClient.initialize();
-        } catch (_) { }
-
-        return false;
     }
 
     async persistMessageHistory(tenantId, {
@@ -1350,7 +1310,6 @@ class SocketManager {
             emitToRuntimeContext: this.emitToRuntimeContext.bind(this),
             getWaCapabilities: this.getWaCapabilities.bind(this),
             getWaRuntime: this.getWaRuntime.bind(this),
-            enforceRuntimeWebjsPhonePolicy: this.enforceRuntimeWebjsPhonePolicy.bind(this),
             resolveHistoryTenantId: this.resolveHistoryTenantId.bind(this),
             resolveHistoryModuleContext: this.resolveHistoryModuleContext.bind(this),
             persistMessageHistory: this.persistMessageHistory.bind(this),

@@ -1,5 +1,4 @@
 ﻿const EventEmitter = require('events');
-const webjsClient = require('./whatsapp-webjs-client.service');
 const cloudClient = require('./whatsapp-cloud-client.service');
 
 const ACTIVE_TRANSPORTS = new Set(['cloud']);
@@ -20,7 +19,6 @@ class WAProvider extends EventEmitter {
     constructor() {
         super();
         this.adapters = {
-            webjs: webjsClient,
             cloud: cloudClient
         };
 
@@ -165,19 +163,6 @@ class WAProvider extends EventEmitter {
         if (typeof cloudClient.getRuntimeConfigPublic !== 'function') return {};
         return cloudClient.getRuntimeConfigPublic();
     }
-    async setWebjsSessionNamespace(namespace = 'default') {
-        if (typeof webjsClient.setSessionNamespace !== 'function') return false;
-        const changed = await webjsClient.setSessionNamespace(namespace);
-        if (changed && this.activeTransport === 'webjs') {
-            this.client = webjsClient.client;
-        }
-        return changed;
-    }
-
-    getWebjsSessionNamespace() {
-        return String(webjsClient?.sessionNamespace || 'default');
-    }
-
     async initialize() {
         if (!this.activeAdapter || this.activeTransport === 'idle') return false;
         if (typeof this.activeAdapter.initialize !== 'function') return false;

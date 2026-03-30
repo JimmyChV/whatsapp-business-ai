@@ -4,7 +4,6 @@ function createSocketWaEventsBridgeService({
     emitToRuntimeContext,
     getWaCapabilities,
     getWaRuntime,
-    enforceRuntimeWebjsPhonePolicy,
     resolveHistoryTenantId,
     resolveHistoryModuleContext,
     persistMessageHistory,
@@ -32,9 +31,6 @@ function createSocketWaEventsBridgeService({
     const registerWaProviderEvents = () => {
         waClient.on('qr', (qr) => emitToRuntimeContext('qr', qr));
         waClient.on('ready', async () => {
-            const policyOk = await enforceRuntimeWebjsPhonePolicy();
-            if (!policyOk) return;
-
             emitToRuntimeContext('ready', { message: 'WhatsApp Ready' });
             emitToRuntimeContext('wa_capabilities', getWaCapabilities());
             emitToRuntimeContext('wa_runtime', getWaRuntime());

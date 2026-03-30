@@ -30,7 +30,7 @@ const MessageBubble = ({
     onForwardMessage,
     forwardChatOptions = [],
     activeChatId = null,
-    canEditMessages = true,
+    canEditMessages = false,
     showSenderName = false,
     senderDisplayName = '',
     buildApiHeaders,

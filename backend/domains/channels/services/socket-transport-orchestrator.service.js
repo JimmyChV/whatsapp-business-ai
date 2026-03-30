@@ -58,18 +58,10 @@ function createSocketTransportOrchestrator({
         if (moduleTransport !== 'cloud') return null;
         await applyCloudConfigForModule(selectedModule);
 
-        const namespaceChanged = false;
         let runtime = getWaRuntime();
         const activeTransport = String(runtime?.activeTransport || 'idle').trim().toLowerCase();
 
         if (activeTransport === moduleTransport) {
-            if (namespaceChanged) {
-                try {
-                    await waClient.initialize();
-                } catch (_) { }
-                runtime = getWaRuntime();
-            }
-
             invalidateChatListCache();
             runtimeStore.set('contactListCache', { items: [], updatedAt: 0 });
             emitWaCapabilities(socket);
@@ -85,8 +77,7 @@ function createSocketTransportOrchestrator({
                 moduleName: selectedModule?.name || null,
                 modulePhone: selectedModule?.phoneNumber || null,
                 channelType: selectedModule?.channelType || null,
-                transportMode: moduleTransport,
-                webjsNamespace: null
+                transportMode: moduleTransport
             });
 
             return runtime;
@@ -100,7 +91,7 @@ function createSocketTransportOrchestrator({
         await authzAudit.auditSocketAction('wa.transport_mode.autoset_by_module', {
             resourceType: 'wa_module',
             resourceId: selectedModule?.moduleId || null,
-            payload: { moduleTransport, runtime: nextRuntime, namespaceChanged }
+            payload: { moduleTransport, runtime: nextRuntime }
         });
 
         if (waClient.isReady) {
@@ -113,8 +104,7 @@ function createSocketTransportOrchestrator({
             moduleName: selectedModule?.name || null,
             modulePhone: selectedModule?.phoneNumber || null,
             channelType: selectedModule?.channelType || null,
-            transportMode: moduleTransport,
-            webjsNamespace: null
+            transportMode: moduleTransport
         });
 
         return nextRuntime;
@@ -286,8 +276,7 @@ function createSocketTransportOrchestrator({
                     moduleName: selectedModule?.name || null,
                     modulePhone: selectedModule?.phoneNumber || null,
                     channelType: selectedModule?.channelType || null,
-                    transportMode: runtime?.activeTransport || nextMode,
-                    webjsNamespace: null
+                    transportMode: runtime?.activeTransport || nextMode
                 });
                 await authzAudit.auditSocketAction('wa.transport_mode.changed', {
                     resourceType: hasForcedMode ? 'wa_module' : 'wa_runtime',

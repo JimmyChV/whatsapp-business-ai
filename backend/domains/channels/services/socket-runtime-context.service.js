@@ -12,7 +12,6 @@ function createSocketRuntimeContextStore({
             modulePhone: initialRuntimeContext?.modulePhone || null,
             channelType: initialRuntimeContext?.channelType || null,
             transportMode: String(initialRuntimeContext?.transportMode || 'idle').trim().toLowerCase() || 'idle',
-            webjsNamespace: initialRuntimeContext?.webjsNamespace || null,
             updatedAt: Number(initialRuntimeContext?.updatedAt || 0) || now()
         },
         chatListCache: { items: [], updatedAt: 0 },

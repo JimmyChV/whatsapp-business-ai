@@ -6,7 +6,6 @@ export default function useSocketAiAndSessionEvents({
     setAiSuggestion,
     setIsAiLoading,
     setIsClientReady,
-    setQrCode,
     setChats,
     setChatsLoaded,
     setChatsTotal,
@@ -38,19 +37,17 @@ export default function useSocketAiAndSessionEvents({
         });
 
         socket.on('auth_failure', (msg) => {
-            notify({ type: 'error', message: 'Error de autenticacion. Por favor recarga la pagina y escanea de nuevo.\n\nDetalle: ' + msg });
+            notify({ type: 'error', message: 'Error de autenticacion. Por favor recarga la pagina y reconecta Cloud API.\n\nDetalle: ' + msg });
         });
 
         socket.on('disconnected', (reason) => {
             if (reason !== 'NAVIGATION') {
                 setIsClientReady(false);
-                setQrCode('');
             }
         });
 
         socket.on('logout_done', () => {
             setIsClientReady(false);
-            setQrCode('');
             setChats([]);
             setChatsLoaded(false);
             setChatsTotal(0);

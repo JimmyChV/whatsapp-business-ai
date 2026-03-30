@@ -258,8 +258,7 @@ function registerCloudWebhookHttpRoutes({
                     moduleName: String(matched?.moduleName || '').trim() || null,
                     modulePhone: String(matched?.modulePhone || matched?.cloudConfig?.displayPhoneNumber || '').trim() || null,
                     channelType: String(matched?.channelType || 'whatsapp').trim().toLowerCase() || 'whatsapp',
-                    transportMode: 'cloud',
-                    webjsNamespace: null
+                    transportMode: 'cloud'
                 });
             }
 
