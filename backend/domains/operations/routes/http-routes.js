@@ -14,11 +14,16 @@ function resolveActorUserId(req) {
     return String(req?.authContext?.user?.userId || req?.authContext?.user?.id || '').trim() || null;
 }
 
+function toText(value = '') {
+    return String(value ?? '').trim();
+}
+
 function registerOperationsHttpRoutes({
     app,
     authService,
     auditLogService,
     conversationOpsService,
+    chatAssignmentPolicyService,
     assignmentRulesService,
     chatAssignmentRouterService,
     operationsKpiService,
@@ -31,6 +36,22 @@ function registerOperationsHttpRoutes({
     hasOperationsKpiReadAccess
 }) {
     if (!app) throw new Error('registerOperationsHttpRoutes requiere app.');
+    const assignmentPolicy = chatAssignmentPolicyService && typeof chatAssignmentPolicyService === 'object'
+        ? chatAssignmentPolicyService
+        : {};
+
+    const assertInitialAssignmentAllowed = typeof assignmentPolicy.assertInitialAssignmentAllowed === 'function'
+        ? assignmentPolicy.assertInitialAssignmentAllowed.bind(assignmentPolicy)
+        : () => ({ ok: true });
+    const assertTakeChatAllowed = typeof assignmentPolicy.assertTakeChatAllowed === 'function'
+        ? assignmentPolicy.assertTakeChatAllowed.bind(assignmentPolicy)
+        : () => ({ ok: true });
+    const assertReleaseAllowed = typeof assignmentPolicy.assertReleaseAllowed === 'function'
+        ? assignmentPolicy.assertReleaseAllowed.bind(assignmentPolicy)
+        : () => ({ ok: true });
+    const resolveActorTenantRole = typeof assignmentPolicy.resolveActorTenantRole === 'function'
+        ? assignmentPolicy.resolveActorTenantRole.bind(assignmentPolicy)
+        : () => 'seller';
 
     app.get('/api/tenant/chats/:chatId/events', async (req, res) => {
         try {
@@ -101,12 +122,22 @@ function registerOperationsHttpRoutes({
 
             const scopeModuleId = normalizeScopeModuleId(req.body?.scopeModuleId || req.query?.scopeModuleId || '');
             const assigneeUserId = String(req.body?.assigneeUserId || '').trim();
-            const assigneeRole = String(req.body?.assigneeRole || '').trim().toLowerCase();
-            const assignmentMode = String(req.body?.assignmentMode || 'manual').trim().toLowerCase();
+            const requestedAssigneeRole = String(req.body?.assigneeRole || '').trim().toLowerCase();
             const assignmentReason = String(req.body?.assignmentReason || '').trim();
             const metadata = req.body?.metadata && typeof req.body.metadata === 'object' && !Array.isArray(req.body.metadata)
                 ? req.body.metadata
                 : {};
+            const previousAssignment = await conversationOpsService.getChatAssignment(tenantId, { chatId, scopeModuleId });
+            const isInitialAssignment = Boolean(assigneeUserId) && !toText(previousAssignment?.assigneeUserId);
+
+            if (isInitialAssignment) {
+                const policyResult = assertInitialAssignmentAllowed({ req, tenantId });
+                if (!policyResult?.ok) {
+                    return res.status(Number(policyResult?.statusCode || 403)).json({ ok: false, error: String(policyResult?.error || 'No autorizado.') });
+                }
+            }
+
+            let resolvedAssigneeRole = requestedAssigneeRole || null;
 
             if (assigneeUserId) {
                 const assignee = authService.findUserRecord({ userId: assigneeUserId });
@@ -121,6 +152,9 @@ function registerOperationsHttpRoutes({
                 if (!activeMembership) {
                     return res.status(400).json({ ok: false, error: 'El usuario no pertenece a esta empresa.' });
                 }
+                if (!resolvedAssigneeRole) {
+                    resolvedAssigneeRole = String(activeMembership?.role || assignee?.role || 'seller').trim().toLowerCase() || 'seller';
+                }
             }
 
             const actorUserId = resolveActorUserId(req);
@@ -128,9 +162,9 @@ function registerOperationsHttpRoutes({
                 chatId,
                 scopeModuleId,
                 assigneeUserId: assigneeUserId || null,
-                assigneeRole: assigneeRole || null,
+                assigneeRole: resolvedAssigneeRole || null,
                 assignedByUserId: actorUserId,
-                assignmentMode,
+                assignmentMode: 'manual',
                 assignmentReason,
                 metadata,
                 status: assigneeUserId ? 'active' : 'released'
@@ -152,9 +186,77 @@ function registerOperationsHttpRoutes({
                 }
             });
 
-            return res.json({ ok: true, tenantId, chatId, scopeModuleId, ...result });
+            return res.json({ ok: true, tenantId, chatId, scopeModuleId, ...result, previousAssignment: result?.previous || null });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar la asignacion del chat.') });
+        }
+    });
+
+    app.post('/api/tenant/chats/:chatId/take', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const chatId = String(req.params?.chatId || '').trim();
+            if (!chatId) return res.status(400).json({ ok: false, error: 'chatId invalido.' });
+
+            const policyResult = assertTakeChatAllowed({ req, tenantId });
+            if (!policyResult?.ok) {
+                return res.status(Number(policyResult?.statusCode || 403)).json({ ok: false, error: String(policyResult?.error || 'No autorizado.') });
+            }
+
+            const scopeModuleId = normalizeScopeModuleId(req.body?.scopeModuleId || req.query?.scopeModuleId || '');
+            const assignmentReason = String(req.body?.assignmentReason || '').trim() || 'take_chat';
+            const metadata = req.body?.metadata && typeof req.body.metadata === 'object' && !Array.isArray(req.body.metadata)
+                ? req.body.metadata
+                : {};
+            const actorUserId = resolveActorUserId(req);
+            if (!actorUserId) return res.status(401).json({ ok: false, error: 'No autenticado.' });
+
+            const actorRole = String(resolveActorTenantRole({ req, tenantId }) || 'seller').trim().toLowerCase() || 'seller';
+            const result = await conversationOpsService.upsertChatAssignment(tenantId, {
+                chatId,
+                scopeModuleId,
+                assigneeUserId: actorUserId,
+                assigneeRole: actorRole,
+                assignedByUserId: actorUserId,
+                assignmentMode: 'take',
+                assignmentReason,
+                metadata,
+                status: 'active'
+            });
+
+            await auditLogService.writeAuditLog(tenantId, {
+                userId: actorUserId,
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || null,
+                action: 'chat.assignment.taken',
+                resourceType: 'chat',
+                resourceId: chatId,
+                source: 'http',
+                payload: {
+                    scopeModuleId,
+                    previousAssigneeUserId: result?.previous?.assigneeUserId || null,
+                    nextAssigneeUserId: result?.assignment?.assigneeUserId || null,
+                    changed: Boolean(result?.changed)
+                }
+            });
+
+            return res.json({
+                ok: true,
+                tenantId,
+                chatId,
+                scopeModuleId,
+                changed: Boolean(result?.changed),
+                previousAssignment: result?.previous || null,
+                assignment: result?.assignment || null
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo tomar el chat.') });
         }
     });
 
@@ -172,6 +274,10 @@ function registerOperationsHttpRoutes({
 
             const scopeModuleId = normalizeScopeModuleId(req.query?.scopeModuleId || req.body?.scopeModuleId || '');
             const actorUserId = resolveActorUserId(req);
+            const policyResult = assertReleaseAllowed({ req, tenantId });
+            if (!policyResult?.ok) {
+                return res.status(Number(policyResult?.statusCode || 403)).json({ ok: false, error: String(policyResult?.error || 'No autorizado.') });
+            }
             const result = await conversationOpsService.clearChatAssignment(tenantId, {
                 chatId,
                 scopeModuleId,
