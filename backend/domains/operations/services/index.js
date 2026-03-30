@@ -4,6 +4,7 @@
     chatAssignmentPolicyService: require('./chat-assignment-policy.service'),
     assignmentRulesService: require('./assignment-rules.service'),
     chatAssignmentRouterService: require('./chat-assignment-router.service'),
+    chatAssignmentInactivityJobService: require('./chat-assignment-inactivity-job.service'),
     operationsKpiService: require('./operations-kpi.service'),
     aiChatHistoryService: require('./ai-chat-history.service'),
     opsTelemetry: require('./ops-telemetry.service'),

@@ -50,6 +50,7 @@ const {
     chatAssignmentPolicyService,
     assignmentRulesService,
     chatAssignmentRouterService,
+    chatAssignmentInactivityJobService,
     operationsKpiService,
     opsTelemetry,
     registerOperationsHttpRoutes,
@@ -483,6 +484,12 @@ const { scheduleWaInitialize, registerProcessHandlers } = createServerLifecycleH
 });
 
 const PORT = process.env.PORT || 3001;
+const chatAssignmentInactivityJob = chatAssignmentInactivityJobService.createChatAssignmentInactivityJob({
+    conversationOpsService,
+    tenantService,
+    logger,
+    opsTelemetry
+});
 
 registerProcessHandlers();
 
@@ -499,6 +506,7 @@ server.listen(PORT, () => {
         ? waClient.getRuntimeInfo()
         : { requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false };
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
+    chatAssignmentInactivityJob.start();
     scheduleWaInitialize();
 });
 
