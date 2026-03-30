@@ -58,6 +58,11 @@ test('tenant_settings_service keeps tenant isolation and defaults', async () => 
 
         assert.equal(sanitized.catalogMode, 'hybrid');
         assert.equal(sanitized.wa.transportLock, 'auto');
+
+        const cloudOnly = await service.updateTenantSettings('tenant_b', {
+            wa: { transportLock: 'webjs' }
+        });
+        assert.equal(cloudOnly.wa.transportLock, 'auto');
     } finally {
         process.env.SAAS_STORAGE_DRIVER = prevDriver;
         process.env.SAAS_TENANT_DATA_DIR = prevDir;
