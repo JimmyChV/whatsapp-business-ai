@@ -7,7 +7,6 @@ export default function useSocketConnectionRuntimeEvents({
     setIsSwitchingTransport,
     setIsLoadingMoreChats,
     chatPagingRef,
-    setQrCode,
     setIsClientReady,
     requestChatsPage,
     emitScopedBusinessDataRequest,
@@ -45,16 +44,9 @@ export default function useSocketConnectionRuntimeEvents({
             setIsLoadingMoreChats(false);
         });
 
-        socket.on('qr', (qr) => {
-            setQrCode(qr);
-            setIsClientReady(false);
-            setIsSwitchingTransport(false);
-        });
-
         socket.on('ready', () => {
             setIsClientReady(true);
             setIsSwitchingTransport(false);
-            setQrCode('');
             requestChatsPage({ reset: true });
             emitScopedBusinessDataRequest({
                 moduleId: selectedCatalogModuleIdRef.current || selectedWaModuleRef.current?.moduleId || '',
@@ -108,7 +100,6 @@ export default function useSocketConnectionRuntimeEvents({
         socket.on('transport_mode_error', (msg) => {
             setIsSwitchingTransport(false);
             setIsClientReady(false);
-            setQrCode('');
             setTransportError(String(msg || 'No se pudo cambiar el modo de transporte.'));
         });
 
@@ -126,7 +117,6 @@ export default function useSocketConnectionRuntimeEvents({
                 'connect',
                 'connect_error',
                 'disconnect',
-                'qr',
                 'ready',
                 'my_profile',
                 'wa_capabilities',

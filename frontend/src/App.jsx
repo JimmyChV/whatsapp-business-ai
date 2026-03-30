@@ -29,7 +29,6 @@ function App() {
   const {
     isConnected,
     setIsConnected,
-    qrCode,
     setQrCode,
     isClientReady,
     setIsClientReady,
