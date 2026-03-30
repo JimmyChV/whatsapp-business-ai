@@ -15,7 +15,6 @@ export default function useAppRuntimeSessionController({
   const {
     isConnected,
     setIsConnected,
-    setQrCode,
     setIsClientReady,
     selectedTransport,
     setSelectedTransport,
@@ -184,7 +183,6 @@ export default function useAppRuntimeSessionController({
     waRuntime,
     setIsConnected,
     setIsClientReady,
-    setQrCode,
     setSelectedTransport,
     setTransportError,
     setIsSwitchingTransport,

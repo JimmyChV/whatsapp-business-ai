@@ -125,7 +125,6 @@ export default function useAppChatSocketRuntime({
 
   setAiSuggestion,
   setIsAiLoading,
-  setQrCode,
   setReplyingMessage,
   setActiveChatId,
 
@@ -223,7 +222,6 @@ export default function useAppChatSocketRuntime({
     setIsSwitchingTransport,
     setIsLoadingMoreChats,
     chatPagingRef: socketPagingRef,
-    setQrCode,
     setIsClientReady,
     requestChatsPage,
     emitScopedBusinessDataRequest,
@@ -275,7 +273,6 @@ export default function useAppChatSocketRuntime({
     setAiSuggestion,
     setIsAiLoading,
     setIsClientReady,
-    setQrCode,
     setChats,
     setChatsLoaded,
     setChatsTotal,

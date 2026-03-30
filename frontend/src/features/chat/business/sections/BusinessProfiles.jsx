@@ -263,7 +263,7 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout, p
 
     const accountStateRows = [
         ['Etiquetas activas', String(profile.labelsCount ?? labels.length ?? 0)],
-        ['Canal', firstValue(profile.platform, 'WhatsApp Web')],
+        ['Canal', firstValue(profile.platform, 'WhatsApp Cloud API')],
     ];
 
     const businessRows = [

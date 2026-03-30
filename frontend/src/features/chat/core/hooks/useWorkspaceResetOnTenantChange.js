@@ -4,7 +4,6 @@ export default function useWorkspaceResetOnTenantChange({
   tenantScopeId = 'default',
   tenantScopeRef,
   setIsClientReady,
-  setQrCode,
   setSelectedTransport,
   setWaModules,
   setSelectedWaModule,
@@ -35,7 +34,6 @@ export default function useWorkspaceResetOnTenantChange({
 } = {}) {
   const resetWorkspaceState = useCallback(() => {
     setIsClientReady(false);
-    setQrCode('');
     setSelectedTransport('');
     setWaModules([]);
     setSelectedWaModule(null);
@@ -67,7 +65,6 @@ export default function useWorkspaceResetOnTenantChange({
     setIsDragOver(false);
   }, [
     setIsClientReady,
-    setQrCode,
     setSelectedTransport,
     setWaModules,
     setSelectedWaModule,

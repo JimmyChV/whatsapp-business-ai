@@ -121,7 +121,6 @@ export default function useAppSocketChatController({
 
     setAiSuggestion: chatRuntimeBlock.setAiSuggestion,
     setIsAiLoading: chatRuntimeBlock.setIsAiLoading,
-    setQrCode: chatRuntimeBlock.setQrCode,
     setReplyingMessage: chatRuntimeBlock.setReplyingMessage,
     setActiveChatId: chatRuntimeBlock.setActiveChatId,
 

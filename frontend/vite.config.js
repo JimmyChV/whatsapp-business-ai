@@ -10,7 +10,7 @@ export default defineConfig({
         manualChunks: {
           'vendor-react': ['react', 'react-dom'],
           'vendor-socket': ['socket.io-client'],
-          'vendor-ui': ['lucide-react', 'emoji-picker-react', 'qrcode.react', 'simple-icons'],
+          'vendor-ui': ['lucide-react', 'emoji-picker-react', 'simple-icons'],
           'vendor-utils': ['moment'],
         },
       },

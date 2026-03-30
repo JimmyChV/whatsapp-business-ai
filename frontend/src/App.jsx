@@ -29,7 +29,6 @@ function App() {
   const {
     isConnected,
     setIsConnected,
-    setQrCode,
     isClientReady,
     setIsClientReady,
     selectedTransport,
@@ -203,7 +202,6 @@ function App() {
   const sessionStateBlock = {
     isConnected,
     setIsConnected,
-    setQrCode,
     isClientReady,
     setIsClientReady,
     selectedTransport,
@@ -355,7 +353,6 @@ function App() {
     chatIdsReferSameScope,
     setAiSuggestion,
     setIsAiLoading,
-    setQrCode,
     setReplyingMessage,
     setActiveChatId,
     fileInputRef
