@@ -54,7 +54,7 @@ function normalizeMode(value = '') {
 
 function normalizeStatus(value = '') {
     const status = toLower(value);
-    if (['active', 'released', 'reassigned'].includes(status)) return status;
+    if (['active', 'released', 'reassigned', 'en_espera'].includes(status)) return status;
     return 'active';
 }
 
@@ -106,6 +106,9 @@ function normalizeEventRecord(item = {}) {
 
 function normalizeAssignmentRecord(item = {}) {
     const source = item && typeof item === 'object' ? item : {};
+    const lastActivityAt = toText(source.lastActivityAt || source.last_activity_at) || null;
+    const lastCustomerMessageAt = toText(source.lastCustomerMessageAt || source.last_customer_message_at) || null;
+    const waitingSince = toText(source.waitingSince || source.waiting_since) || null;
     return {
         chatId: normalizeChatId(source.chatId || source.chat_id),
         scopeModuleId: normalizeScopeModuleId(source.scopeModuleId || source.scope_module_id),
@@ -116,6 +119,9 @@ function normalizeAssignmentRecord(item = {}) {
         assignmentReason: toText(source.assignmentReason || source.assignment_reason) || null,
         metadata: normalizeObject(source.metadata),
         status: normalizeStatus(source.status || 'active'),
+        lastActivityAt,
+        lastCustomerMessageAt,
+        waitingSince,
         createdAt: toText(source.createdAt || source.created_at || nowIso()) || nowIso(),
         updatedAt: toText(source.updatedAt || source.updated_at || nowIso()) || nowIso()
     };
