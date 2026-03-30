@@ -18,6 +18,7 @@ const tenantLabelService = require('../../tenant/services/tenant-labels.service'
 const quotesService = require('../../tenant/services/quotes.service');
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
 const chatAssignmentRouterService = require('../../operations/services/chat-assignment-router.service');
+const chatAssignmentPolicyService = require('../../operations/services/chat-assignment-policy.service');
 const auditLogService = require('../../security/services/audit-log.service');
 const RateLimiter = require('../../../config/rate-limiter');
 const { URL } = require('url');
@@ -139,6 +140,10 @@ const QUICK_REPLY_MEDIA_MAX_BYTES = Math.max(
 const QUICK_REPLY_MEDIA_TIMEOUT_MS = Math.max(
     2000,
     Number(process.env.QUICK_REPLY_MEDIA_TIMEOUT_MS || 15000)
+);
+const ASSIGNMENT_BULK_SNAPSHOT_LIMIT = Math.max(
+    50,
+    Number(process.env.CHAT_ASSIGNMENT_BULK_SNAPSHOT_LIMIT || 500)
 );
 const DEFAULT_SAAS_UPLOADS_ROOT = path.resolve(__dirname, '../../../uploads');
 const SAAS_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || DEFAULT_SAAS_UPLOADS_ROOT).trim() || DEFAULT_SAAS_UPLOADS_ROOT);
@@ -391,6 +396,30 @@ class SocketManager {
         this.sessionPresenceService = createSocketSessionPresenceService({
             waClient
         });
+        this.unsubscribeAssignmentChanged = null;
+        if (typeof conversationOpsService?.onChatAssignmentChanged === 'function') {
+            this.unsubscribeAssignmentChanged = conversationOpsService.onChatAssignmentChanged((event = {}) => {
+                try {
+                    const eventTenantId = String(event?.tenantId || event?.assignment?.tenantId || 'default').trim() || 'default';
+                    const assignment = event?.assignment && typeof event.assignment === 'object' ? event.assignment : null;
+                    const previousAssignment = event?.previousAssignment && typeof event.previousAssignment === 'object' ? event.previousAssignment : null;
+                    const chatId = String(event?.chatId || assignment?.chatId || '').trim();
+                    const scopeModuleId = String(event?.scopeModuleId || assignment?.scopeModuleId || '').trim().toLowerCase();
+                    if (!chatId) return;
+                    this.emitToTenant(eventTenantId, 'chat_assignment_updated', {
+                        tenantId: eventTenantId,
+                        chatId,
+                        scopeModuleId: scopeModuleId || '',
+                        assignment,
+                        previousAssignment,
+                        changed: Boolean(event?.changed),
+                        assignmentMode: String(event?.assignmentMode || assignment?.assignmentMode || '').trim().toLowerCase() || null,
+                        assignmentReason: String(event?.assignmentReason || assignment?.assignmentReason || '').trim() || null,
+                        generatedAt: new Date().toISOString()
+                    });
+                } catch (_) { }
+            });
+        }
 
         this.setupSocketEvents();
         this.setupWAClientEvents();
@@ -1013,13 +1042,63 @@ class SocketManager {
                         actorRole: authzAudit.actorContext.userRole || null,
                         eventType: String(eventType || '').trim() || 'chat.event',
                         eventSource: String(eventSource || 'socket').trim() || 'socket',
-                        payload: payload && typeof payload === 'object' ? payload : {}
+                    payload: payload && typeof payload === 'object' ? payload : {}
+                });
+            } catch (_) { }
+            };
+            const buildPolicyRequestContext = () => {
+                const memberships = Array.isArray(authContext?.memberships)
+                    ? authContext.memberships
+                    : (Array.isArray(authContext?.user?.memberships) ? authContext.user.memberships : []);
+                const userId = String(authContext?.userId || authContext?.user?.userId || authContext?.user?.id || '').trim() || null;
+                return {
+                    authContext: {
+                        user: {
+                            userId,
+                            id: userId,
+                            role: String(authContext?.role || authContext?.user?.role || authzAudit?.actorContext?.userRole || 'seller').trim().toLowerCase() || 'seller',
+                            memberships,
+                            isSystem: Boolean(authContext?.isSystem || authContext?.user?.isSystem)
+                        }
+                    }
+                };
+            };
+            const emitAssignmentBulkSnapshot = async () => {
+                try {
+                    const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                    const result = await conversationOpsService.listChatAssignments(tenantId, {
+                        scopeModuleId: selectedScopeModuleId || '',
+                        limit: ASSIGNMENT_BULK_SNAPSHOT_LIMIT,
+                        offset: 0
                     });
-                } catch (_) { }
+                    socket.emit('chat_assignment_bulk_snapshot', {
+                        ok: true,
+                        tenantId,
+                        scopeModuleId: selectedScopeModuleId || '',
+                        items: Array.isArray(result?.items) ? result.items : [],
+                        total: Number(result?.total || 0),
+                        limit: Number(result?.limit || ASSIGNMENT_BULK_SNAPSHOT_LIMIT),
+                        offset: Number(result?.offset || 0),
+                        generatedAt: new Date().toISOString()
+                    });
+                } catch (error) {
+                    socket.emit('chat_assignment_bulk_snapshot', {
+                        ok: false,
+                        tenantId,
+                        scopeModuleId: '',
+                        items: [],
+                        total: 0,
+                        limit: ASSIGNMENT_BULK_SNAPSHOT_LIMIT,
+                        offset: 0,
+                        error: String(error?.message || 'No se pudo cargar snapshot de asignaciones.'),
+                        generatedAt: new Date().toISOString()
+                    });
+                }
             };
             const normalizeSocketModuleId = (value = '') => String(value || '').trim().toLowerCase();
             await transportOrchestrator.bootstrapTransportContext();
             transportOrchestrator.registerTransportHandlers();
+            await emitAssignmentBulkSnapshot();
 
             // --- Chat info ---
             this.chatListService.registerChatListHandlers({
@@ -1246,6 +1325,105 @@ class SocketManager {
 
             socket.on('delete_quick_reply', async () => {
                 socket.emit('quick_reply_error', 'Gestiona respuestas rapidas desde Panel SaaS.');
+            });
+
+            socket.on('take_chat', async (payload = {}) => {
+                if (!guardRateLimit(socket, 'take_chat')) return;
+                const requestedChatId = String(payload?.chatId || '').trim();
+                if (!requestedChatId) {
+                    socket.emit('chat_assignment_take_result', {
+                        ok: false,
+                        error: 'chatId invalido.'
+                    });
+                    return;
+                }
+
+                const actorUserId = String(authContext?.userId || authContext?.user?.userId || authContext?.user?.id || '').trim() || null;
+                if (!actorUserId) {
+                    socket.emit('chat_assignment_take_result', {
+                        ok: false,
+                        error: 'No autenticado.'
+                    });
+                    return;
+                }
+
+                const policyReq = buildPolicyRequestContext();
+                const policyResult = chatAssignmentPolicyService.assertTakeChatAllowed({ req: policyReq, tenantId });
+                if (!policyResult?.ok) {
+                    socket.emit('chat_assignment_take_result', {
+                        ok: false,
+                        error: String(policyResult?.error || 'No autorizado.')
+                    });
+                    return;
+                }
+
+                const parsedChat = parseScopedChatId(requestedChatId);
+                const baseChatId = String(parsedChat?.chatId || requestedChatId).trim();
+                if (!baseChatId) {
+                    socket.emit('chat_assignment_take_result', {
+                        ok: false,
+                        error: 'chatId invalido.'
+                    });
+                    return;
+                }
+
+                const scopeModuleId = normalizeScopedModuleId(
+                    payload?.scopeModuleId
+                    || parsedChat?.scopeModuleId
+                    || socket?.data?.waModule?.moduleId
+                    || socket?.data?.waModuleId
+                    || ''
+                );
+                const actorRole = String(chatAssignmentPolicyService.resolveActorTenantRole({ req: policyReq, tenantId }) || authzAudit?.actorContext?.userRole || 'seller').trim().toLowerCase() || 'seller';
+                const assignmentReason = String(payload?.assignmentReason || '').trim() || 'take_chat';
+                const metadata = payload?.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+                    ? payload.metadata
+                    : {};
+
+                try {
+                    const result = await conversationOpsService.upsertChatAssignment(tenantId, {
+                        chatId: baseChatId,
+                        scopeModuleId,
+                        assigneeUserId: actorUserId,
+                        assigneeRole: actorRole,
+                        assignedByUserId: actorUserId,
+                        assignmentMode: 'take',
+                        assignmentReason,
+                        metadata,
+                        status: 'active'
+                    });
+
+                    await authzAudit.auditSocketAction('chat.assignment.taken', {
+                        resourceType: 'chat',
+                        resourceId: baseChatId,
+                        payload: {
+                            scopeModuleId,
+                            previousAssigneeUserId: result?.previous?.assigneeUserId || null,
+                            nextAssigneeUserId: result?.assignment?.assigneeUserId || null,
+                            changed: Boolean(result?.changed)
+                        }
+                    });
+
+                    socket.emit('chat_assignment_take_result', {
+                        ok: true,
+                        tenantId,
+                        chatId: buildScopedChatId(baseChatId, scopeModuleId || '') || baseChatId,
+                        baseChatId,
+                        scopeModuleId: scopeModuleId || '',
+                        changed: Boolean(result?.changed),
+                        previousAssignment: result?.previous || null,
+                        assignment: result?.assignment || null
+                    });
+                } catch (error) {
+                    socket.emit('chat_assignment_take_result', {
+                        ok: false,
+                        tenantId,
+                        chatId: buildScopedChatId(baseChatId, scopeModuleId || '') || baseChatId,
+                        baseChatId,
+                        scopeModuleId: scopeModuleId || '',
+                        error: String(error?.message || 'No se pudo tomar el chat.')
+                    });
+                }
             });
 
 

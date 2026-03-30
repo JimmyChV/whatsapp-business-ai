@@ -33,6 +33,23 @@ const { ensureConversationOpsSchema } = require('../helpers/conversation-ops.sch
 const STORE_FILE = 'conversation_ops.json';
 const EVENTS_FILE_LIMIT = Math.max(500, Number(process.env.CONVERSATION_EVENTS_FILE_LIMIT || 5000));
 const ASSIGNMENT_EVENTS_FILE_LIMIT = Math.max(500, Number(process.env.ASSIGNMENT_EVENTS_FILE_LIMIT || 5000));
+const assignmentChangedListeners = new Set();
+
+function emitChatAssignmentChanged(payload = {}) {
+    assignmentChangedListeners.forEach((listener) => {
+        try {
+            listener(payload);
+        } catch (_) { }
+    });
+}
+
+function onChatAssignmentChanged(listener) {
+    if (typeof listener !== 'function') return () => { };
+    assignmentChangedListeners.add(listener);
+    return () => {
+        assignmentChangedListeners.delete(listener);
+    };
+}
 
 async function listConversationEvents(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const cleanTenantId = resolveTenantId(tenantId);
@@ -528,7 +545,19 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
 
         const changedAssignee = (previous?.assigneeUserId || null) !== (nextRecord.assigneeUserId || null);
         const changedStatus = normalizeStatus(previous?.status || 'active') !== normalizeStatus(nextRecord.status || 'active');
-        return { assignment: nextRecord, previous, changed: changedAssignee || changedStatus };
+        const changed = changedAssignee || changedStatus;
+        emitChatAssignmentChanged({
+            tenantId: cleanTenantId,
+            chatId,
+            scopeModuleId,
+            assignment: nextRecord,
+            previousAssignment: previous || null,
+            changed,
+            assignmentMode,
+            assignmentReason,
+            source: 'conversation_ops.upsert'
+        });
+        return { assignment: nextRecord, previous, changed };
     }
 
     await ensureConversationOpsSchema();
@@ -608,7 +637,19 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
 
     const changedAssignee = (previous?.assigneeUserId || null) !== (nextRecord.assigneeUserId || null);
     const changedStatus = normalizeStatus(previous?.status || 'active') !== normalizeStatus(nextRecord.status || 'active');
-    return { assignment: nextRecord, previous, changed: changedAssignee || changedStatus };
+    const changed = changedAssignee || changedStatus;
+    emitChatAssignmentChanged({
+        tenantId: cleanTenantId,
+        chatId,
+        scopeModuleId,
+        assignment: nextRecord,
+        previousAssignment: previous || null,
+        changed,
+        assignmentMode,
+        assignmentReason,
+        source: 'conversation_ops.upsert'
+    });
+    return { assignment: nextRecord, previous, changed };
 }
 
 async function clearChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) {
@@ -627,6 +668,7 @@ module.exports = {
     getChatAssignment,
     listChatAssignments,
     listChatAssignmentEvents,
+    onChatAssignmentChanged,
     markChatAssignmentWaiting,
     reactivateChatAssignmentOnCustomerReply,
     touchChatAssignmentActivity,
