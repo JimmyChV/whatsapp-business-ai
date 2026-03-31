@@ -1,6 +1,7 @@
 ﻿module.exports = {
     messageHistoryService: require('./message-history.service'),
     conversationOpsService: require('./conversation-ops.service'),
+    chatCommercialStatusService: require('./chat-commercial-status.service'),
     chatAssignmentPolicyService: require('./chat-assignment-policy.service'),
     assignmentRulesService: require('./assignment-rules.service'),
     chatAssignmentRouterService: require('./chat-assignment-router.service'),
