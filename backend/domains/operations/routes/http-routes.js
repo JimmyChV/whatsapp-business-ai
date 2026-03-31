@@ -18,11 +18,16 @@ function toText(value = '') {
     return String(value ?? '').trim();
 }
 
+function toLower(value = '') {
+    return toText(value).toLowerCase();
+}
+
 function registerOperationsHttpRoutes({
     app,
     authService,
     auditLogService,
     conversationOpsService,
+    chatCommercialStatusService,
     chatAssignmentPolicyService,
     assignmentRulesService,
     chatAssignmentRouterService,
@@ -52,6 +57,20 @@ function registerOperationsHttpRoutes({
     const resolveActorTenantRole = typeof assignmentPolicy.resolveActorTenantRole === 'function'
         ? assignmentPolicy.resolveActorTenantRole.bind(assignmentPolicy)
         : () => 'seller';
+    const commercialStatusApi = chatCommercialStatusService && typeof chatCommercialStatusService === 'object'
+        ? chatCommercialStatusService
+        : {};
+    const getChatCommercialStatus = typeof commercialStatusApi.getChatCommercialStatus === 'function'
+        ? commercialStatusApi.getChatCommercialStatus.bind(commercialStatusApi)
+        : async () => null;
+    const listCommercialStatuses = typeof commercialStatusApi.listCommercialStatuses === 'function'
+        ? commercialStatusApi.listCommercialStatuses.bind(commercialStatusApi)
+        : async () => ({ items: [], total: 0, limit: 0, offset: 0 });
+    const markManualStatus = typeof commercialStatusApi.markManualStatus === 'function'
+        ? commercialStatusApi.markManualStatus.bind(commercialStatusApi)
+        : async () => {
+            throw new Error('Servicio de estado comercial no disponible.');
+        };
 
     app.get('/api/tenant/chats/:chatId/events', async (req, res) => {
         try {
@@ -105,6 +124,118 @@ function registerOperationsHttpRoutes({
             return res.json({ ok: true, tenantId, chatId, scopeModuleId, assignment });
         } catch (error) {
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar la asignacion del chat.') });
+        }
+    });
+
+    app.get('/api/tenant/chats/:chatId/commercial-status', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const chatId = String(req.params?.chatId || '').trim();
+            if (!chatId) return res.status(400).json({ ok: false, error: 'chatId invalido.' });
+
+            const scopeModuleId = normalizeScopeModuleId(req.query?.scopeModuleId || '');
+            const commercialStatus = await getChatCommercialStatus(tenantId, { chatId, scopeModuleId });
+
+            return res.json({ ok: true, tenantId, chatId, scopeModuleId, commercialStatus });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar el estado comercial del chat.') });
+        }
+    });
+
+    app.put('/api/tenant/chats/:chatId/commercial-status', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsWriteAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const chatId = String(req.params?.chatId || '').trim();
+            if (!chatId) return res.status(400).json({ ok: false, error: 'chatId invalido.' });
+
+            const scopeModuleId = normalizeScopeModuleId(req.body?.scopeModuleId || req.query?.scopeModuleId || '');
+            const targetStatus = toLower(req.body?.status || '');
+            if (!['vendido', 'perdido'].includes(targetStatus)) {
+                return res.status(400).json({ ok: false, error: 'Estado comercial invalido. Solo vendido/perdido.' });
+            }
+
+            const actorUserId = resolveActorUserId(req);
+            const reason = String(req.body?.reason || '').trim();
+            const metadata = req.body?.metadata && typeof req.body.metadata === 'object' && !Array.isArray(req.body.metadata)
+                ? req.body.metadata
+                : {};
+
+            const result = await markManualStatus(tenantId, {
+                chatId,
+                scopeModuleId,
+                status: targetStatus,
+                source: 'manual',
+                reason: reason || ('manual_mark_' + targetStatus),
+                changedByUserId: actorUserId,
+                metadata
+            });
+
+            await auditLogService.writeAuditLog(tenantId, {
+                userId: actorUserId,
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || null,
+                action: 'chat.commercial_status.updated',
+                resourceType: 'chat',
+                resourceId: chatId,
+                source: 'http',
+                payload: {
+                    scopeModuleId,
+                    previousStatus: result?.previous?.status || null,
+                    nextStatus: result?.status?.status || null,
+                    changed: Boolean(result?.changed)
+                }
+            });
+
+            return res.json({
+                ok: true,
+                tenantId,
+                chatId,
+                scopeModuleId,
+                changed: Boolean(result?.changed),
+                previousCommercialStatus: result?.previous || null,
+                commercialStatus: result?.status || null
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el estado comercial del chat.') });
+        }
+    });
+
+    app.get('/api/tenant/commercial-statuses', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const scopeModuleId = normalizeScopeModuleId(req.query?.scopeModuleId || '');
+            const status = toLower(req.query?.status || '');
+            const limit = Number(req.query?.limit || 200);
+            const offset = Number(req.query?.offset || 0);
+
+            const result = await listCommercialStatuses(tenantId, {
+                scopeModuleId,
+                status,
+                limit,
+                offset
+            });
+
+            return res.json({ ok: true, tenantId, scopeModuleId, status: status || null, ...result });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo listar estados comerciales.') });
         }
     });
 
