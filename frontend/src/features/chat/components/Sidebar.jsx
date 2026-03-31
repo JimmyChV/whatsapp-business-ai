@@ -2,6 +2,7 @@ import React from 'react';
 import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck } from 'lucide-react';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import AssignmentBadge from './assignment/AssignmentBadge';
+import CommercialStatusBadge from './commercial/CommercialStatusBadge';
 import useSidebarFiltersController from './hooks/useSidebarFiltersController';
 import useSidebarChatPresentationModel from './hooks/useSidebarChatPresentationModel';
 import useSidebarInfiniteScroll from './hooks/useSidebarInfiniteScroll';
@@ -60,6 +61,7 @@ const Sidebar = ({
     onOpenSaasAdmin,
     waModules = [],
     chatAssignmentState = null,
+    chatCommercialStatusState = null,
     showBackToPanel = false,
     onBackToPanel = null,
 }) => {
@@ -119,6 +121,9 @@ const Sidebar = ({
     const isAssignedToMeResolver = typeof chatAssignmentState?.isAssignedToMe === 'function'
         ? chatAssignmentState.isAssignedToMe
         : (() => false);
+    const getCommercialStatus = typeof chatCommercialStatusState?.getCommercialStatus === 'function'
+        ? chatCommercialStatusState.getCommercialStatus
+        : (() => null);
     const assignmentsLoaded = Boolean(chatAssignmentState?.assignmentsLoaded);
 
     const currentTenantId = String(activeTenantId || '').trim();
@@ -440,6 +445,7 @@ const Sidebar = ({
                         const channelMarker = getChannelMarker(moduleBadge?.channelType || '');
                         const chatAssignment = getAssignment(chat.id);
                         const isAssignedToMe = isAssignedToMeResolver(chat.id);
+                        const chatCommercialStatus = getCommercialStatus(chat.id);
                         const moduleAvatarImage = moduleBadge?.imageUrl || null;
                         const avatarFallback = moduleBadge?.moduleName
                             ? avatarLetter(moduleBadge.moduleName)
@@ -508,6 +514,10 @@ const Sidebar = ({
                                         <AssignmentBadge
                                             assignment={chatAssignment}
                                             isAssignedToMe={isAssignedToMe}
+                                            compact
+                                        />
+                                        <CommercialStatusBadge
+                                            commercialStatus={chatCommercialStatus}
                                             compact
                                         />
 

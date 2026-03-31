@@ -5,6 +5,7 @@ import moment from 'moment';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import ChatInput from './ChatInput';
 import AssignmentBadge from './assignment/AssignmentBadge';
+import CommercialStatusBadge from './commercial/CommercialStatusBadge';
 import TakeChatButton from './assignment/TakeChatButton';
 import AssignmentSelector from './assignment/AssignmentSelector';
 import useChatWindowMapController from './hooks/useChatWindowMapController';
@@ -42,6 +43,7 @@ const ChatWindow = ({
     currentUserRole = '',
     waModules = [],
     chatAssignmentState = null,
+    chatCommercialStatusState = null,
     ...inputProps
 }) => {
     const {
@@ -114,6 +116,9 @@ const ChatWindow = ({
     const activeChatAssignment = typeof chatAssignmentState?.getAssignment === 'function'
         ? chatAssignmentState.getAssignment(activeChatScopedId)
         : null;
+    const activeChatCommercialStatus = typeof chatCommercialStatusState?.getCommercialStatus === 'function'
+        ? chatCommercialStatusState.getCommercialStatus(activeChatScopedId)
+        : null;
     const isAssignedToMe = typeof chatAssignmentState?.isAssignedToMe === 'function'
         ? chatAssignmentState.isAssignedToMe(activeChatScopedId)
         : false;
@@ -158,6 +163,9 @@ const ChatWindow = ({
                         <AssignmentBadge
                             assignment={activeChatAssignment}
                             isAssignedToMe={isAssignedToMe}
+                        />
+                        <CommercialStatusBadge
+                            commercialStatus={activeChatCommercialStatus}
                         />
                         <AssignmentSelector
                             activeTenantId={activeTenantId}
