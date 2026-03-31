@@ -1,6 +1,7 @@
 import React from 'react';
-import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck } from 'lucide-react';
+import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck } from 'lucide-react';
 import ChannelBrandIcon from './ChannelBrandIcon';
+import AssignmentBadge from './assignment/AssignmentBadge';
 import useSidebarFiltersController from './hooks/useSidebarFiltersController';
 import useSidebarChatPresentationModel from './hooks/useSidebarChatPresentationModel';
 import useSidebarInfiniteScroll from './hooks/useSidebarInfiniteScroll';
@@ -58,6 +59,7 @@ const Sidebar = ({
     canManageSaas = false,
     onOpenSaasAdmin,
     waModules = [],
+    chatAssignmentState = null,
     showBackToPanel = false,
     onBackToPanel = null,
 }) => {
@@ -79,12 +81,14 @@ const Sidebar = ({
         labelSearch,
         setLabelSearch,
         selectedLabelCount,
-        hasAnyFilter
+        hasAnyFilter,
+        assignmentUserOptions
     } = useSidebarFiltersController({
         chats,
         activeFilters,
         labelDefinitions,
         waModules,
+        chatAssignmentState,
         onFiltersChange,
         searchQuery
     });
@@ -109,6 +113,13 @@ const Sidebar = ({
     const queryHasLetters = /[a-zA-Z]/.test(localQuery);
     const searchIsPhone = !queryHasLetters && normalizedPhone.length >= 6 && normalizedPhone.length <= 15;
     const hasPanelAccess = Boolean(saasAuthEnabled && canManageSaas);
+    const getAssignment = typeof chatAssignmentState?.getAssignment === 'function'
+        ? chatAssignmentState.getAssignment
+        : (() => null);
+    const isAssignedToMeResolver = typeof chatAssignmentState?.isAssignedToMe === 'function'
+        ? chatAssignmentState.isAssignedToMe
+        : (() => false);
+    const assignmentsLoaded = Boolean(chatAssignmentState?.assignmentsLoaded);
 
     const currentTenantId = String(activeTenantId || '').trim();
     const sortedTenantOptions = Array.isArray(tenantOptions)
@@ -312,6 +323,16 @@ const Sidebar = ({
                         </button>
                         <button
                             type="button"
+                            className={`sidebar-ribbon-btn ${filters.onlyAssignedToMe ? 'active' : ''}`}
+                            onClick={() => updateFilters({ onlyAssignedToMe: !filters.onlyAssignedToMe })}
+                            title="Solo mis chats"
+                            data-label="Solo mios"
+                        >
+                            <UserCheck size={18} />
+                            {quickStats.assignedToMe > 0 && <span className="sidebar-ribbon-badge">{quickStats.assignedToMe > 9 ? '9+' : quickStats.assignedToMe}</span>}
+                        </button>
+                        <button
+                            type="button"
                             className={`sidebar-ribbon-btn ${showLabelPanel || selectedLabelCount > 0 ? 'active' : ''}`}
                             onClick={() => setShowLabelPanel((v) => !v)}
                             title="Etiquetas"
@@ -335,6 +356,25 @@ const Sidebar = ({
                                     ))
                                 )}
                             </div>
+                            {assignmentsLoaded && (
+                                <label className="assignment-selector" style={{ marginTop: '8px', marginLeft: 0 }}>
+                                    <span className="assignment-selector-label">Vendedora</span>
+                                    <select
+                                        value={filters.assigneeUserId || ''}
+                                        onChange={(event) => updateFilters({ assigneeUserId: String(event.target.value || '').trim() })}
+                                        className="assignment-selector-select"
+                                        title="Filtrar por asignacion"
+                                    >
+                                        <option value="">Todas las vendedoras</option>
+                                        <option value="__unassigned__">Sin asignar</option>
+                                        {assignmentUserOptions.map((entry) => (
+                                            <option key={entry.value} value={entry.value}>
+                                                {entry.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            )}
                             {hasAnyFilter && (
                                 <button type="button" className="sidebar-filter-clear" onClick={resetFilters}>Limpiar</button>
                             )}
@@ -398,6 +438,8 @@ const Sidebar = ({
                         const contactHint = getContactHint(chat, displayName);
                         const moduleBadge = getChannelBadge(chat, waModules);
                         const channelMarker = getChannelMarker(moduleBadge?.channelType || '');
+                        const chatAssignment = getAssignment(chat.id);
+                        const isAssignedToMe = isAssignedToMeResolver(chat.id);
                         const moduleAvatarImage = moduleBadge?.imageUrl || null;
                         const avatarFallback = moduleBadge?.moduleName
                             ? avatarLetter(moduleBadge.moduleName)
@@ -463,6 +505,11 @@ const Sidebar = ({
                                                 <span className="chat-module-badge-label">{moduleBadge.label}</span>
                                             </p>
                                         )}
+                                        <AssignmentBadge
+                                            assignment={chatAssignment}
+                                            isAssignedToMe={isAssignedToMe}
+                                            compact
+                                        />
 
                                         {labels.length > 0 && (
                                             <div

@@ -275,6 +275,14 @@ function createSocketChatListService({
                 scopeModuleId: normalizedScopeModuleId,
                 includeInactive: false
             });
+            if ((!normalizedScopeModuleId || normalizedScopeModuleId === '') && (!Array.isArray(labels) || labels.length === 0)) {
+                labels = await tenantLabelService.listChatLabels({
+                    tenantId: resolvedTenantId,
+                    chatId,
+                    scopeModuleId: '',
+                    includeInactive: false
+                });
+            }
         } catch (error) {
             labels = [];
         }

@@ -17,10 +17,16 @@ export default function BusinessAiTabSection({
     aiEndRef,
     setAiInput,
     sendAiMessage,
-    aiInput = ''
+    aiInput = '',
+    canWriteByAssignment = false
 }) {
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {!canWriteByAssignment && (
+                <div style={{ margin: '8px 10px 0', border: '1px solid rgba(255, 182, 77, 0.35)', background: 'rgba(56, 41, 18, 0.72)', color: '#ffd28f', borderRadius: '8px', padding: '7px 10px', fontSize: '0.74rem', fontWeight: 600 }}>
+                    Toma este chat para responder
+                </div>
+            )}
             <div className="ai-thread-pro" style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {aiMessages.map((msg, idx) => (
                     <div key={idx} className={`ai-row-pro ${msg.role === 'user' ? 'user' : 'assistant'}`} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
@@ -48,6 +54,8 @@ export default function BusinessAiTabSection({
                                     onClick={() => sendToClient(msg.content)}
                                     title="Enviar este mensaje al cliente"
                                     className="ai-use-reply-btn"
+                                    disabled={!canWriteByAssignment}
+                                    style={{ opacity: canWriteByAssignment ? 1 : 0.7, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed' }}
                                 >
                                     <Send size={10} /> Usar como respuesta
                                 </button>
@@ -79,7 +87,8 @@ export default function BusinessAiTabSection({
                         key={i}
                         className="ai-prompt-chip ai-prompt-chip-pro"
                         onClick={() => { setAiInput(chip); }}
-                        style={{ background: '#202c33', border: '1px solid var(--border-color)', color: '#8696a0', padding: '4px 9px', borderRadius: '14px', fontSize: '0.72rem', cursor: 'pointer' }}
+                        disabled={!canWriteByAssignment}
+                        style={{ background: '#202c33', border: '1px solid var(--border-color)', color: '#8696a0', padding: '4px 9px', borderRadius: '14px', fontSize: '0.72rem', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', opacity: canWriteByAssignment ? 1 : 0.75 }}
                         onMouseEnter={e => e.currentTarget.style.borderColor = '#00a884'}
                         onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
                     >
@@ -93,6 +102,7 @@ export default function BusinessAiTabSection({
                     type="text"
                     placeholder="Pregunta algo a la IA..."
                     value={aiInput}
+                    disabled={!canWriteByAssignment}
                     onChange={e => setAiInput(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendAiMessage()}
                     className="ai-assistant-input ai-assistant-input-pro"
@@ -100,9 +110,9 @@ export default function BusinessAiTabSection({
                 />
                 <button
                     onClick={sendAiMessage}
-                    disabled={isAiLoading || !aiInput.trim()}
+                    disabled={!canWriteByAssignment || isAiLoading || !aiInput.trim()}
                     className="ai-assistant-send ai-assistant-send-pro"
-                    style={{ background: isAiLoading ? '#3b4a54' : '#00a884', border: 'none', borderRadius: '50%', width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isAiLoading ? 'wait' : 'pointer', flexShrink: 0 }}
+                    style={{ background: !canWriteByAssignment ? '#3f474b' : (isAiLoading ? '#3b4a54' : '#00a884'), border: 'none', borderRadius: '50%', width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: (!canWriteByAssignment || isAiLoading) ? 'not-allowed' : 'pointer', flexShrink: 0, opacity: canWriteByAssignment ? 1 : 0.75 }}
                 >
                     <Send size={16} color="white" />
                 </button>

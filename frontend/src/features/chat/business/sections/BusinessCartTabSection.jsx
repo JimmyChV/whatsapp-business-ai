@@ -30,7 +30,8 @@ export default function BusinessCartTabSection({
     subtotalAfterGlobal = 0,
     deliveryFee = 0,
     cartTotal = 0,
-    sendQuoteToChat
+    sendQuoteToChat,
+    canWriteByAssignment = false
 }) {
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -72,10 +73,10 @@ export default function BusinessCartTabSection({
 
                                 <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', alignItems: 'center', gap: '6px', background: '#17242c', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '5px 6px' }}>
                                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                                        <button onClick={() => (line.qty <= 1 ? removeFromCart(item.id) : updateQty(item.id, -1))} style={{ width: '21px', height: '21px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={9} /></button>
+                                        <button disabled={!canWriteByAssignment} onClick={() => (line.qty <= 1 ? removeFromCart(item.id) : updateQty(item.id, -1))} style={{ width: '21px', height: '21px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: canWriteByAssignment ? 1 : 0.75 }}><Minus size={9} /></button>
                                         <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 700, minWidth: '18px', textAlign: 'center' }}>{line.qty}</span>
-                                        <button onClick={() => updateQty(item.id, 1)} style={{ width: '21px', height: '21px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus size={9} /></button>
-                                        <button onClick={() => removeFromCart(item.id)} title="Eliminar" style={{ width: '21px', height: '21px', borderRadius: '50%', background: '#2a3942', border: '1px solid rgba(218,54,51,0.4)', cursor: 'pointer', color: '#da3633', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <button disabled={!canWriteByAssignment} onClick={() => updateQty(item.id, 1)} style={{ width: '21px', height: '21px', borderRadius: '50%', background: '#3b4a54', border: 'none', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: canWriteByAssignment ? 1 : 0.75 }}><Plus size={9} /></button>
+                                        <button disabled={!canWriteByAssignment} onClick={() => removeFromCart(item.id)} title="Eliminar" style={{ width: '21px', height: '21px', borderRadius: '50%', background: '#2a3942', border: '1px solid rgba(218,54,51,0.4)', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', color: '#da3633', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: canWriteByAssignment ? 1 : 0.75 }}>
                                             <Trash2 size={11} />
                                         </button>
                                     </div>
@@ -83,6 +84,7 @@ export default function BusinessCartTabSection({
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px', minWidth: 0 }}>
                                         <select
                                             value={lineDiscountMode}
+                                            disabled={!canWriteByAssignment}
                                             onChange={(e) => {
                                                 const mode = e.target.value;
                                                 if (mode === 'none') {
@@ -93,7 +95,7 @@ export default function BusinessCartTabSection({
                                                 updateItemDiscountEnabled(item.id, true);
                                                 updateItemDiscountType(item.id, mode);
                                             }}
-                                            style={{ background: '#2a3942', border: '1px solid var(--border-color)', color: '#d9e8f0', borderRadius: '6px', padding: '4px 6px', fontSize: '0.74rem', outline: 'none', minWidth: '98px' }}
+                                            style={{ background: '#2a3942', border: '1px solid var(--border-color)', color: '#d9e8f0', borderRadius: '6px', padding: '4px 6px', fontSize: '0.74rem', outline: 'none', minWidth: '98px', opacity: canWriteByAssignment ? 1 : 0.75, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed' }}
                                         >
                                             <option value="none">Sin desc.</option>
                                             <option value="percent">Desc. %</option>
@@ -106,9 +108,10 @@ export default function BusinessCartTabSection({
                                                 max={lineDiscountMode === 'percent' ? 100 : undefined}
                                                 step={lineDiscountMode === 'percent' ? '1' : '0.01'}
                                                 value={line.lineDiscountValue}
+                                                disabled={!canWriteByAssignment}
                                                 onChange={e => updateItemDiscountValue(item.id, e.target.value)}
                                                 placeholder="0"
-                                                style={{ width: '70px', background: '#2a3942', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '6px', padding: '4px 6px', fontSize: '0.74rem', outline: 'none' }}
+                                                style={{ width: '70px', background: '#2a3942', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '6px', padding: '4px 6px', fontSize: '0.74rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.75, cursor: canWriteByAssignment ? 'text' : 'not-allowed' }}
                                             />
                                         )}
                                     </div>
@@ -123,8 +126,9 @@ export default function BusinessCartTabSection({
                 <div style={{ padding: '10px 9px', borderTop: '1px solid var(--border-color)', background: '#1a2b35', display: 'flex', flexDirection: 'column', gap: '10px', flexShrink: 0 }}>
                     <button
                         type="button"
+                        disabled={!canWriteByAssignment}
                         onClick={() => setShowOrderAdjustments(prev => !prev)}
-                        style={{ width: '100%', background: 'linear-gradient(90deg, rgba(0,168,132,0.22), rgba(11,56,69,0.7))', border: '1px solid rgba(0,168,132,0.6)', color: '#e6fff8', borderRadius: '9px', padding: '9px 10px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: 'inset 0 0 0 1px rgba(0,168,132,0.16)' }}
+                        style={{ width: '100%', background: 'linear-gradient(90deg, rgba(0,168,132,0.22), rgba(11,56,69,0.7))', border: '1px solid rgba(0,168,132,0.6)', color: '#e6fff8', borderRadius: '9px', padding: '9px 10px', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: 'inset 0 0 0 1px rgba(0,168,132,0.16)', opacity: canWriteByAssignment ? 1 : 0.75 }}
                     >
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><Sparkles size={13} /> Ajustes de pago y envio</span>
                         {showOrderAdjustments ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
@@ -134,7 +138,7 @@ export default function BusinessCartTabSection({
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <div style={{ background: '#17242c', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#d5e3ec', fontSize: '0.78rem', cursor: 'pointer' }}>
-                                    <input type="checkbox" checked={globalDiscountEnabled} onChange={e => setGlobalDiscountEnabled(e.target.checked)} />
+                                    <input type="checkbox" checked={globalDiscountEnabled} disabled={!canWriteByAssignment} onChange={e => setGlobalDiscountEnabled(e.target.checked)} />
                                     Aplicar descuento global
                                 </label>
 
@@ -142,8 +146,9 @@ export default function BusinessCartTabSection({
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                                         <select
                                             value={globalDiscountType}
+                                            disabled={!canWriteByAssignment}
                                             onChange={e => setGlobalDiscountType(e.target.value === 'amount' ? 'amount' : 'percent')}
-                                            style={{ background: '#2a3942', border: '1px solid var(--border-color)', color: '#d9e8f0', borderRadius: '6px', padding: '5px 7px', fontSize: '0.8rem', outline: 'none' }}
+                                            style={{ background: '#2a3942', border: '1px solid var(--border-color)', color: '#d9e8f0', borderRadius: '6px', padding: '5px 7px', fontSize: '0.8rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.75, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed' }}
                                         >
                                             <option value="percent">Porcentaje (%)</option>
                                             <option value="amount">Monto (S/)</option>
@@ -154,8 +159,9 @@ export default function BusinessCartTabSection({
                                             max={globalDiscountType === 'percent' ? 100 : undefined}
                                             step={globalDiscountType === 'percent' ? '1' : '0.01'}
                                             value={normalizedGlobalDiscountValue}
+                                            disabled={!canWriteByAssignment}
                                             onChange={e => setGlobalDiscountValue(Math.max(0, parseMoney(e.target.value, 0)))}
-                                            style={{ background: '#2a3942', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '6px', padding: '5px 7px', fontSize: '0.8rem', outline: 'none' }}
+                                            style={{ background: '#2a3942', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '6px', padding: '5px 7px', fontSize: '0.8rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.75, cursor: canWriteByAssignment ? 'text' : 'not-allowed' }}
                                         />
                                     </div>
                                 )}
@@ -166,8 +172,9 @@ export default function BusinessCartTabSection({
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                                     <select
                                         value={deliveryType}
+                                        disabled={!canWriteByAssignment}
                                         onChange={e => setDeliveryType(e.target.value === 'amount' ? 'amount' : 'free')}
-                                        style={{ background: '#2a3942', border: '1px solid var(--border-color)', color: '#d9e8f0', borderRadius: '6px', padding: '5px 7px', fontSize: '0.8rem', outline: 'none' }}
+                                        style={{ background: '#2a3942', border: '1px solid var(--border-color)', color: '#d9e8f0', borderRadius: '6px', padding: '5px 7px', fontSize: '0.8rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.75, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed' }}
                                     >
                                         <option value="free">Gratuito</option>
                                         <option value="amount">Con monto</option>
@@ -177,9 +184,9 @@ export default function BusinessCartTabSection({
                                         min="0"
                                         step="0.01"
                                         value={deliveryType === 'amount' ? safeDeliveryAmount : 0}
+                                        disabled={deliveryType !== 'amount' || !canWriteByAssignment}
                                         onChange={e => setDeliveryAmount(Math.max(0, parseMoney(e.target.value, 0)))}
-                                        disabled={deliveryType !== 'amount'}
-                                        style={{ background: deliveryType === 'amount' ? '#2a3942' : '#26343d', border: '1px solid var(--border-color)', color: deliveryType === 'amount' ? 'var(--text-primary)' : '#6f8796', borderRadius: '6px', padding: '5px 7px', fontSize: '0.8rem', outline: 'none' }}
+                                        style={{ background: deliveryType === 'amount' && canWriteByAssignment ? '#2a3942' : '#26343d', border: '1px solid var(--border-color)', color: deliveryType === 'amount' && canWriteByAssignment ? 'var(--text-primary)' : '#6f8796', borderRadius: '6px', padding: '5px 7px', fontSize: '0.8rem', outline: 'none', cursor: canWriteByAssignment ? 'text' : 'not-allowed', opacity: canWriteByAssignment ? 1 : 0.75 }}
                                     />
                                 </div>
                             </div>
@@ -189,8 +196,9 @@ export default function BusinessCartTabSection({
                     <div style={{ background: '#17242c', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         <button
                             type="button"
+                            disabled={!canWriteByAssignment}
                             onClick={() => setShowCartTotalsBreakdown((prev) => !prev)}
-                            style={{ width: '100%', background: 'transparent', border: '1px dashed rgba(134,150,160,0.4)', color: '#d8e6ef', borderRadius: '7px', padding: '6px 8px', cursor: 'pointer', fontSize: '0.74rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                            style={{ width: '100%', background: 'transparent', border: '1px dashed rgba(134,150,160,0.4)', color: '#d8e6ef', borderRadius: '7px', padding: '6px 8px', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.74rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', opacity: canWriteByAssignment ? 1 : 0.75 }}
                         >
                             <span>Resumen de total</span>
                             {showCartTotalsBreakdown ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -229,7 +237,8 @@ export default function BusinessCartTabSection({
 
                     <button
                         onClick={sendQuoteToChat}
-                        style={{ width: '100%', padding: '9px', background: '#00a884', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer', fontSize: '0.84rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                        disabled={!canWriteByAssignment}
+                        style={{ width: '100%', padding: '9px', background: canWriteByAssignment ? '#00a884' : '#4b5b63', border: 'none', borderRadius: '8px', color: 'white', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.84rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: canWriteByAssignment ? 1 : 0.75 }}
                     >
                         <Send size={15} /> Enviar cotizacion al cliente
                     </button>

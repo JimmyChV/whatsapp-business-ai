@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import {
   useMessagesAutoScroll,
@@ -10,6 +10,7 @@ import {
   useSocketMessageLifecycleEvents,
   useSocketAiAndSessionEvents,
   useSocketChatConversationEvents,
+  useChatAssignmentState,
   normalizeChatFilters,
   buildFiltersKey,
   isVisibleChatId,
@@ -133,6 +134,12 @@ export default function useAppChatSocketRuntime({
   setClientContact,
   setToasts
 }) {
+  const isClientReadyRef = useRef(Boolean(isClientReady));
+
+  useEffect(() => {
+    isClientReadyRef.current = Boolean(isClientReady);
+  }, [isClientReady]);
+
   useMessagesAutoScroll({
     messages,
     messagesEndRef,
@@ -192,8 +199,9 @@ export default function useAppChatSocketRuntime({
   useEffect(() => {
     if (!isClientReady) return;
     const timer = setTimeout(() => {
+      if (!isClientReadyRef.current) return;
       requestChatsPage({ reset: true });
-    }, 180);
+    }, 600);
     return () => clearTimeout(timer);
   }, [chatSearchQuery, chatFilters, isClientReady]);
 
@@ -336,7 +344,16 @@ export default function useAppChatSocketRuntime({
     setToasts
   });
 
+  const chatAssignmentState = useChatAssignmentState({
+    socket,
+    activeChatId,
+    normalizeChatScopedId,
+    chatIdsReferSameScope,
+    currentUserId: String(saasSession?.user?.userId || saasSession?.user?.id || '').trim()
+  });
+
   return {
-    requestChatsPage
+    requestChatsPage,
+    chatAssignmentState
   };
 }

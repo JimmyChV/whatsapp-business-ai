@@ -12,8 +12,8 @@ import {
 } from '../helpers';
 import { BusinessCatalogProductCard, BusinessCatalogProductForm } from './catalog';
 
-const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null }) => {
-    const { confirm } = useUiFeedback();
+const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, canWriteByAssignment = false }) => {
+    const { confirm, notify } = useUiFeedback();
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState(() => createCatalogProductEmptyForm());
@@ -148,6 +148,10 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     };
 
     const sendCatalogProduct = (item, i) => {
+        if (!canWriteByAssignment) {
+            notify({ type: 'warn', message: 'Toma este chat para responder' });
+            return;
+        }
         if (!activeChatId) {
             notify({ type: 'info', message: 'Selecciona un chat antes de enviar un producto.' });
             return;
@@ -427,6 +431,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                     onCatalogQtyDelta={onCatalogQtyDelta}
                                     addToCart={addToCart}
                                     sendCatalogProduct={sendCatalogProduct}
+                                    canWriteByAssignment={canWriteByAssignment}
                                     chatCatalogReadOnly={chatCatalogReadOnly}
                                     isExternalCatalog={isExternalCatalog}
                                     handleEditClick={handleEditClick}

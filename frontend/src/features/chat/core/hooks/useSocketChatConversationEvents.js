@@ -95,10 +95,12 @@ export default function useSocketChatConversationEvents({
                         phone: getBestChatPhone(chat),
                         lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
                         labels: (() => {
-                            const incoming = normalizeChatLabels(chat.labels);
-                            if (incoming.length > 0) return incoming;
+                            const hasIncomingLabels = Object.prototype.hasOwnProperty.call(chat || {}, 'labels');
+                            const incoming = hasIncomingLabels ? normalizeChatLabels(chat.labels) : null;
+                            if (Array.isArray(incoming) && incoming.length > 0) return incoming;
                             const existing = previous?.labels;
-                            return Array.isArray(existing) && existing.length > 0 ? existing : incoming;
+                            if (Array.isArray(existing) && existing.length > 0) return existing;
+                            return Array.isArray(incoming) ? incoming : [];
                         })(),
                         profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
                         isMyContact: chat?.isMyContact === true,

@@ -3,17 +3,24 @@ export default function BusinessQuickRepliesTabSection({
     setQuickSearch,
     filteredQuickReplies = [],
     onSendQuickReply,
-    setInputText
+    setInputText,
+    canWriteByAssignment = false
 }) {
     return (
         <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {!canWriteByAssignment && (
+                <div style={{ border: '1px solid rgba(255, 182, 77, 0.35)', background: 'rgba(56, 41, 18, 0.72)', color: '#ffd28f', borderRadius: '8px', padding: '7px 10px', fontSize: '0.74rem', fontWeight: 600 }}>
+                    Toma este chat para responder
+                </div>
+            )}
             <div style={{ background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px' }}>
                 <input
                     type="text"
                     value={quickSearch}
+                    disabled={!canWriteByAssignment}
                     onChange={e => setQuickSearch(e.target.value)}
                     placeholder="Buscar respuesta rapida"
-                    style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none' }}
+                    style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.75, cursor: canWriteByAssignment ? 'text' : 'not-allowed' }}
                 />
             </div>
 
@@ -38,16 +45,18 @@ export default function BusinessQuickRepliesTabSection({
                                         setInputText(qr.text || '');
                                     }
                                 }}
+                                disabled={!canWriteByAssignment}
                                 style={{
                                     width: '100%',
                                     padding: '10px 12px',
                                     borderRadius: '8px',
                                     background: '#202c33',
                                     border: '1px solid var(--border-color)',
-                                    cursor: 'pointer',
+                                    cursor: canWriteByAssignment ? 'pointer' : 'not-allowed',
                                     textAlign: 'left',
                                     color: 'var(--text-primary)',
-                                    transition: 'all 0.12s'
+                                    transition: 'all 0.12s',
+                                    opacity: canWriteByAssignment ? 1 : 0.75
                                 }}
                                 onMouseEnter={e => e.currentTarget.style.borderColor = '#00a884'}
                                 onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}

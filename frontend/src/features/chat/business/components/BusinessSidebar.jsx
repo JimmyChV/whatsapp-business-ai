@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Bot, ShoppingCart, Clock, Package } from 'lucide-react';
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import {
     addItemToCartState,
     buildAiRuntimeContext,
@@ -50,7 +51,8 @@ export { ClientProfilePanel };
 
 // =========================================================
 
-const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null }) => {
+const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null }) => {
+    const { notify } = useUiFeedback();
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     const companyProfileRef = useRef(null);
@@ -104,6 +106,16 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const [orderImportStatus, setOrderImportStatus] = useState(null);
     const lastImportedOrderRef = useRef('');
     const tenantScopeRef = useRef(String(tenantScopeKey || 'default').trim() || 'default');
+    const canWriteByAssignment = typeof chatAssignmentState?.isAssignedToMe === 'function'
+        ? chatAssignmentState.isAssignedToMe(activeChatId)
+        : false;
+    const ASSIGNMENT_LOCK_MESSAGE = 'Toma este chat para responder';
+    const notifyAssignmentLock = useCallback(() => {
+        notify({
+            type: 'warn',
+            message: ASSIGNMENT_LOCK_MESSAGE
+        });
+    }, [notify]);
 
     const updateDraft = useCallback((patch) => {
         if (!activeChatId || typeof setCartDraftsByChat !== 'function') return;
@@ -292,6 +304,10 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     });
 
     const sendAiMessage = () => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         if (!aiInput.trim() || isAiLoading || !socket) return;
         const scopeKey = String(currentAiScopeKey || '').trim();
         if (!scopeKey) return;
@@ -319,6 +335,10 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     };
 
     const sendToClient = (text) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         // Extract content inside [MENSAJE: ...] if present, otherwise use full text
         const match = text.match(/\[MENSAJE:\s*([\s\S]+?)\]/);
         const msg = match ? match[1].trim() : text;
@@ -442,6 +462,10 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     }, [socket, activeChatId]);
 
     const sendQuoteToChat = () => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         // TODO(bug): carrito debe limpiarse solo al ENVIAR la cotización, no al agregarla al input
         // TODO(bug): al editar cotización, los descuentos por producto y globales (soles/%) deben guardarse correctamente en BD con todos los campos
         // TODO(bug): la cotización no permite editar — funcionalidad que existía antes y se perdió
@@ -479,32 +503,71 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setCart([]);
     };
     const addToCart = (item, qtyToAdd = 1) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         setCart((previous) => addItemToCartState(previous, item, qtyToAdd));
     };
 
     const removeFromCart = (id) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         setCart((previous) => removeItemFromCartState(previous, id));
     };
 
     const updateQty = (id, delta) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         setCart((previous) => updateCartItemQtyState(previous, id, delta));
     };
 
     const updateCatalogQty = (id, delta) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         setCart((previous) => updateCartItemQtyState(previous, id, delta));
     };
 
     const updateItemDiscountEnabled = (id, enabled) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         setCart((previous) => setCartItemDiscountEnabledState(previous, id, enabled, parseMoney));
     };
 
     const updateItemDiscountType = (id, type) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         setCart((previous) => setCartItemDiscountTypeState(previous, id, type));
     };
 
     const updateItemDiscountValue = (id, value) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         setCart((previous) => setCartItemDiscountValueState(previous, id, value, parseMoney));
     };
+    const handleSendQuickReply = useCallback((quickReply) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
+        if (typeof onSendQuickReply === 'function') {
+            onSendQuickReply(quickReply);
+        } else if (quickReply?.text) {
+            setInputText(String(quickReply.text || ''));
+        }
+    }, [canWriteByAssignment, notifyAssignmentLock, onSendQuickReply, setInputText]);
     const filteredQuickReplies = (Array.isArray(quickReplies) ? quickReplies : []).filter((item) => {
         const q = String(quickSearch || '').trim().toLowerCase();
         if (!q) return true;
@@ -542,6 +605,11 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     Respuestas rapidas deshabilitadas para esta empresa o plan.
                 </div>
             )}
+            {!canWriteByAssignment && (
+                <div className="business-assignment-lock-hint">
+                    Toma este chat para responder
+                </div>
+            )}
 
 
 
@@ -568,12 +636,13 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     setAiInput={setAiInput}
                     sendAiMessage={sendAiMessage}
                     aiInput={aiInput}
+                    canWriteByAssignment={canWriteByAssignment}
                 />
             )}
 
             {/* CATALOG TAB */}
             {activeTab === 'catalog' && (
-                <BusinessCatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} waModules={waModules} selectedCatalogModuleId={selectedCatalogModuleId} selectedCatalogId={selectedCatalogId} onSelectCatalogModule={onSelectCatalogModule} onSelectCatalog={onSelectCatalog} onUploadCatalogImage={onUploadCatalogImage} />
+                <BusinessCatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} waModules={waModules} selectedCatalogModuleId={selectedCatalogModuleId} selectedCatalogId={selectedCatalogId} onSelectCatalogModule={onSelectCatalogModule} onSelectCatalog={onSelectCatalog} onUploadCatalogImage={onUploadCatalogImage} canWriteByAssignment={canWriteByAssignment} />
             )}
 
             {/* CART TAB */}
@@ -609,6 +678,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     deliveryFee={deliveryFee}
                     cartTotal={cartTotal}
                     sendQuoteToChat={sendQuoteToChat}
+                    canWriteByAssignment={canWriteByAssignment}
                 />
             )}
 
@@ -620,8 +690,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     quickSearch={quickSearch}
                     setQuickSearch={setQuickSearch}
                     filteredQuickReplies={filteredQuickReplies}
-                    onSendQuickReply={onSendQuickReply}
+                    onSendQuickReply={handleSendQuickReply}
                     setInputText={setInputText}
+                    canWriteByAssignment={canWriteByAssignment}
                 />
             )}
 

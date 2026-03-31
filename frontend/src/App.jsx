@@ -370,7 +370,8 @@ function App() {
     messagesEndRef: socketMessagesEndRef,
     clientProfilePanelRef: socketClientProfilePanelRef,
     requestChatsPage,
-    emitScopedBusinessDataRequest
+    emitScopedBusinessDataRequest,
+    chatAssignmentState
   } = useAppSocketChatController({
     runtimeBlock,
     businessScopeBlock,
@@ -613,6 +614,7 @@ function App() {
     selectedWaModule,
     selectedCatalogModuleId,
     selectedCatalogId,
+    chatAssignmentState,
     waCapabilities,
     toasts,
     setToasts,

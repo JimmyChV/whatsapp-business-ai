@@ -33,6 +33,23 @@ const { ensureConversationOpsSchema } = require('../helpers/conversation-ops.sch
 const STORE_FILE = 'conversation_ops.json';
 const EVENTS_FILE_LIMIT = Math.max(500, Number(process.env.CONVERSATION_EVENTS_FILE_LIMIT || 5000));
 const ASSIGNMENT_EVENTS_FILE_LIMIT = Math.max(500, Number(process.env.ASSIGNMENT_EVENTS_FILE_LIMIT || 5000));
+const assignmentChangedListeners = new Set();
+
+function emitChatAssignmentChanged(payload = {}) {
+    assignmentChangedListeners.forEach((listener) => {
+        try {
+            listener(payload);
+        } catch (_) { }
+    });
+}
+
+function onChatAssignmentChanged(listener) {
+    if (typeof listener !== 'function') return () => { };
+    assignmentChangedListeners.add(listener);
+    return () => {
+        assignmentChangedListeners.delete(listener);
+    };
+}
 
 async function listConversationEvents(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const cleanTenantId = resolveTenantId(tenantId);
@@ -174,7 +191,9 @@ async function getChatAssignment(tenantId = DEFAULT_TENANT_ID, options = {}) {
         await ensureConversationOpsSchema();
         const { rows } = await queryPostgres(
             `SELECT chat_id, scope_module_id, assignee_user_id, assignee_role, assigned_by_user_id,
-                    assignment_mode, assignment_reason, metadata, status, created_at, updated_at
+                    assignment_mode, assignment_reason, metadata, status,
+                    last_activity_at, last_customer_message_at, waiting_since,
+                    created_at, updated_at
                FROM tenant_chat_assignments
               WHERE tenant_id = $1
                 AND chat_id = $2
@@ -195,6 +214,9 @@ async function getChatAssignment(tenantId = DEFAULT_TENANT_ID, options = {}) {
             assignment_reason: row.assignment_reason,
             metadata: row.metadata,
             status: row.status,
+            last_activity_at: row.last_activity_at,
+            last_customer_message_at: row.last_customer_message_at,
+            waiting_since: row.waiting_since,
             created_at: row.created_at,
             updated_at: row.updated_at
         });
@@ -252,7 +274,9 @@ async function listChatAssignments(tenantId = DEFAULT_TENANT_ID, options = {}) {
         const rowParams = [...params, limit, offset];
         const rowsResult = await queryPostgres(
             `SELECT chat_id, scope_module_id, assignee_user_id, assignee_role, assigned_by_user_id,
-                    assignment_mode, assignment_reason, metadata, status, created_at, updated_at
+                    assignment_mode, assignment_reason, metadata, status,
+                    last_activity_at, last_customer_message_at, waiting_since,
+                    created_at, updated_at
                FROM tenant_chat_assignments
               WHERE ${whereSql}
               ORDER BY updated_at DESC
@@ -331,6 +355,111 @@ async function listChatAssignmentEvents(tenantId = DEFAULT_TENANT_ID, options = 
     }
 }
 
+async function markChatAssignmentWaiting(tenantId = DEFAULT_TENANT_ID, payload = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const chatId = normalizeChatId(payload.chatId || '');
+    const scopeModuleId = normalizeScopeModuleId(payload.scopeModuleId || '');
+    if (!chatId) throw new Error('chatId requerido para marcar en espera.');
+
+    const current = await getChatAssignment(cleanTenantId, { chatId, scopeModuleId });
+    if (!current) return { assignment: null, previous: null, changed: false, reason: 'not_found' };
+    if (current.status === 'en_espera') return { assignment: current, previous: current, changed: false, reason: 'already_waiting' };
+
+    const at = toText(payload.at || '') || nowIso();
+    const reason = toText(payload.reason || payload.assignmentReason || '') || 'inactive_48h';
+
+    return upsertChatAssignment(cleanTenantId, {
+        chatId,
+        scopeModuleId,
+        assigneeUserId: current.assigneeUserId,
+        assigneeRole: current.assigneeRole,
+        assignedByUserId: toText(payload.actorUserId || payload.assignedByUserId || '') || null,
+        assignmentMode: 'auto',
+        assignmentReason: reason,
+        metadata: normalizeObject(payload.metadata),
+        status: 'en_espera',
+        lastActivityAt: current.lastActivityAt || at,
+        lastCustomerMessageAt: current.lastCustomerMessageAt || null,
+        waitingSince: at
+    });
+}
+
+async function reactivateChatAssignmentOnCustomerReply(tenantId = DEFAULT_TENANT_ID, payload = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const chatId = normalizeChatId(payload.chatId || '');
+    const scopeModuleId = normalizeScopeModuleId(payload.scopeModuleId || '');
+    if (!chatId) throw new Error('chatId requerido para reactivar asignacion.');
+
+    const current = await getChatAssignment(cleanTenantId, { chatId, scopeModuleId });
+    if (!current) return { shouldAutoAssign: true, assignment: null, previous: null, changed: false, reason: 'not_found' };
+    if (current.status !== 'en_espera') return { shouldAutoAssign: false, assignment: current, previous: current, changed: false, reason: 'not_waiting' };
+
+    const at = toText(payload.at || '') || nowIso();
+    const result = await upsertChatAssignment(cleanTenantId, {
+        chatId,
+        scopeModuleId,
+        assigneeUserId: null,
+        assigneeRole: null,
+        assignedByUserId: toText(payload.actorUserId || payload.assignedByUserId || '') || null,
+        assignmentMode: 'auto',
+        assignmentReason: 'customer_reply_after_waiting',
+        metadata: normalizeObject(payload.metadata),
+        status: 'released',
+        lastActivityAt: at,
+        lastCustomerMessageAt: at,
+        waitingSince: null
+    });
+
+    return { ...result, shouldAutoAssign: true, reason: 'customer_reply_after_waiting' };
+}
+
+async function touchChatAssignmentActivity(tenantId = DEFAULT_TENANT_ID, payload = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const chatId = normalizeChatId(payload.chatId || '');
+    const scopeModuleId = normalizeScopeModuleId(payload.scopeModuleId || '');
+    if (!chatId) throw new Error('chatId requerido para actualizar actividad.');
+
+    const current = await getChatAssignment(cleanTenantId, { chatId, scopeModuleId });
+    if (!current) return null;
+
+    const at = toText(payload.at || '') || nowIso();
+    const fromCustomer = payload.fromCustomer === true;
+    const nextRecord = normalizeAssignmentRecord({
+        ...current,
+        lastActivityAt: at,
+        lastCustomerMessageAt: fromCustomer ? at : current.lastCustomerMessageAt,
+        waitingSince: current.waitingSince
+    });
+
+    if (getStorageDriver() !== 'postgres') {
+        const store = normalizeStore(await readTenantJsonFile(STORE_FILE, { tenantId: cleanTenantId, defaultValue: {} }));
+        const key = assignmentKey(chatId, scopeModuleId);
+        const index = store.assignments.findIndex((entry) => assignmentKey(entry.chatId, entry.scopeModuleId) === key);
+        if (index >= 0) {
+            store.assignments[index] = nextRecord;
+            await writeTenantJsonFile(STORE_FILE, store, { tenantId: cleanTenantId });
+        }
+        return nextRecord;
+    }
+
+    await ensureConversationOpsSchema();
+    await queryPostgres(
+        `UPDATE tenant_chat_assignments
+            SET last_activity_at = $4::timestamptz,
+                last_customer_message_at = CASE
+                    WHEN $5::boolean THEN $4::timestamptz
+                    ELSE last_customer_message_at
+                END,
+                updated_at = NOW()
+          WHERE tenant_id = $1
+            AND chat_id = $2
+            AND scope_module_id = $3`,
+        [cleanTenantId, chatId, scopeModuleId, at, fromCustomer]
+    );
+
+    return nextRecord;
+}
+
 async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) {
     const cleanTenantId = resolveTenantId(tenantId);
     const chatId = normalizeChatId(payload.chatId || '');
@@ -348,6 +477,11 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
 
     const previous = await getChatAssignment(cleanTenantId, { chatId, scopeModuleId });
 
+    const isWaiting = status === 'en_espera';
+    const incomingLastActivityAt = toText(payload.lastActivityAt || payload.last_activity_at) || null;
+    const incomingLastCustomerMessageAt = toText(payload.lastCustomerMessageAt || payload.last_customer_message_at) || null;
+    const incomingWaitingSince = toText(payload.waitingSince || payload.waiting_since) || null;
+
     const nextRecord = normalizeAssignmentRecord({
         chatId,
         scopeModuleId,
@@ -358,6 +492,11 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
         assignmentReason,
         metadata,
         status,
+        lastActivityAt: incomingLastActivityAt || previous?.lastActivityAt || now,
+        lastCustomerMessageAt: incomingLastCustomerMessageAt || previous?.lastCustomerMessageAt || null,
+        waitingSince: isWaiting
+            ? (incomingWaitingSince || previous?.waitingSince || now)
+            : null,
         createdAt: previous?.createdAt || now,
         updatedAt: now
     });
@@ -404,7 +543,21 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
             }
         });
 
-        return { assignment: nextRecord, previous, changed: (previous?.assigneeUserId || null) !== (nextRecord.assigneeUserId || null) };
+        const changedAssignee = (previous?.assigneeUserId || null) !== (nextRecord.assigneeUserId || null);
+        const changedStatus = normalizeStatus(previous?.status || 'active') !== normalizeStatus(nextRecord.status || 'active');
+        const changed = changedAssignee || changedStatus;
+        emitChatAssignmentChanged({
+            tenantId: cleanTenantId,
+            chatId,
+            scopeModuleId,
+            assignment: nextRecord,
+            previousAssignment: previous || null,
+            changed,
+            assignmentMode,
+            assignmentReason,
+            source: 'conversation_ops.upsert'
+        });
+        return { assignment: nextRecord, previous, changed };
     }
 
     await ensureConversationOpsSchema();
@@ -412,8 +565,10 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
     await queryPostgres(
         `INSERT INTO tenant_chat_assignments (
             tenant_id, chat_id, scope_module_id, assignee_user_id, assignee_role, assigned_by_user_id,
-            assignment_mode, assignment_reason, metadata, status, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, NOW(), NOW())
+            assignment_mode, assignment_reason, metadata, status,
+            last_activity_at, last_customer_message_at, waiting_since,
+            created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::timestamptz, $12::timestamptz, $13::timestamptz, NOW(), NOW())
         ON CONFLICT (tenant_id, chat_id, scope_module_id)
         DO UPDATE SET
             assignee_user_id = EXCLUDED.assignee_user_id,
@@ -423,6 +578,9 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
             assignment_reason = EXCLUDED.assignment_reason,
             metadata = COALESCE(tenant_chat_assignments.metadata, '{}'::jsonb) || COALESCE(EXCLUDED.metadata, '{}'::jsonb),
             status = EXCLUDED.status,
+            last_activity_at = EXCLUDED.last_activity_at,
+            last_customer_message_at = EXCLUDED.last_customer_message_at,
+            waiting_since = EXCLUDED.waiting_since,
             updated_at = NOW()`,
         [
             cleanTenantId,
@@ -434,7 +592,10 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
             nextRecord.assignmentMode,
             nextRecord.assignmentReason,
             JSON.stringify(nextRecord.metadata || {}),
-            nextRecord.status
+            nextRecord.status,
+            nextRecord.lastActivityAt,
+            nextRecord.lastCustomerMessageAt,
+            nextRecord.waitingSince
         ]
     );
 
@@ -474,7 +635,21 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
         }
     });
 
-    return { assignment: nextRecord, previous, changed: (previous?.assigneeUserId || null) !== (nextRecord.assigneeUserId || null) };
+    const changedAssignee = (previous?.assigneeUserId || null) !== (nextRecord.assigneeUserId || null);
+    const changedStatus = normalizeStatus(previous?.status || 'active') !== normalizeStatus(nextRecord.status || 'active');
+    const changed = changedAssignee || changedStatus;
+    emitChatAssignmentChanged({
+        tenantId: cleanTenantId,
+        chatId,
+        scopeModuleId,
+        assignment: nextRecord,
+        previousAssignment: previous || null,
+        changed,
+        assignmentMode,
+        assignmentReason,
+        source: 'conversation_ops.upsert'
+    });
+    return { assignment: nextRecord, previous, changed };
 }
 
 async function clearChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) {
@@ -482,7 +657,8 @@ async function clearChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) {
         ...payload,
         assigneeUserId: null,
         assigneeRole: null,
-        status: 'released'
+        status: 'released',
+        waitingSince: null
     });
 }
 
@@ -492,6 +668,10 @@ module.exports = {
     getChatAssignment,
     listChatAssignments,
     listChatAssignmentEvents,
+    onChatAssignmentChanged,
+    markChatAssignmentWaiting,
+    reactivateChatAssignmentOnCustomerReply,
+    touchChatAssignmentActivity,
     upsertChatAssignment,
     clearChatAssignment
 };

@@ -5,6 +5,7 @@ const DEFAULT_CHAT_FILTERS = {
   labelTokens: [],
   unreadOnly: false,
   unlabeledOnly: false,
+  onlyAssignedToMe: false,
   contactMode: 'all',
   archivedMode: 'all',
   pinnedMode: 'all'
