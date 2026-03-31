@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Bot, ShoppingCart, Clock, Package } from 'lucide-react';
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import {
     addItemToCartState,
     buildAiRuntimeContext,
@@ -50,7 +51,8 @@ export { ClientProfilePanel };
 
 // =========================================================
 
-const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null }) => {
+const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null }) => {
+    const { notify } = useUiFeedback();
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     const companyProfileRef = useRef(null);
@@ -104,6 +106,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const [orderImportStatus, setOrderImportStatus] = useState(null);
     const lastImportedOrderRef = useRef('');
     const tenantScopeRef = useRef(String(tenantScopeKey || 'default').trim() || 'default');
+    const canWriteByAssignment = typeof chatAssignmentState?.isAssignedToMe === 'function'
+        ? chatAssignmentState.isAssignedToMe(activeChatId)
+        : false;
 
     const updateDraft = useCallback((patch) => {
         if (!activeChatId || typeof setCartDraftsByChat !== 'function') return;
@@ -442,6 +447,13 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     }, [socket, activeChatId]);
 
     const sendQuoteToChat = () => {
+        if (!canWriteByAssignment) {
+            notify({
+                type: 'warn',
+                message: 'Toma este chat para responder.'
+            });
+            return;
+        }
         // TODO(bug): carrito debe limpiarse solo al ENVIAR la cotización, no al agregarla al input
         // TODO(bug): al editar cotización, los descuentos por producto y globales (soles/%) deben guardarse correctamente en BD con todos los campos
         // TODO(bug): la cotización no permite editar — funcionalidad que existía antes y se perdió
@@ -542,6 +554,11 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     Respuestas rapidas deshabilitadas para esta empresa o plan.
                 </div>
             )}
+            {!canWriteByAssignment && (
+                <div className="business-assignment-lock-hint">
+                    Toma este chat para responder.
+                </div>
+            )}
 
 
 
@@ -573,7 +590,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 
             {/* CATALOG TAB */}
             {activeTab === 'catalog' && (
-                <BusinessCatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} waModules={waModules} selectedCatalogModuleId={selectedCatalogModuleId} selectedCatalogId={selectedCatalogId} onSelectCatalogModule={onSelectCatalogModule} onSelectCatalog={onSelectCatalog} onUploadCatalogImage={onUploadCatalogImage} />
+                <BusinessCatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} waModules={waModules} selectedCatalogModuleId={selectedCatalogModuleId} selectedCatalogId={selectedCatalogId} onSelectCatalogModule={onSelectCatalogModule} onSelectCatalog={onSelectCatalog} onUploadCatalogImage={onUploadCatalogImage} canWriteByAssignment={canWriteByAssignment} />
             )}
 
             {/* CART TAB */}
@@ -609,6 +626,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     deliveryFee={deliveryFee}
                     cartTotal={cartTotal}
                     sendQuoteToChat={sendQuoteToChat}
+                    canWriteByAssignment={canWriteByAssignment}
                 />
             )}
 

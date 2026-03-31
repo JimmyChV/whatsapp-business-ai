@@ -7,6 +7,7 @@ export default function BusinessCatalogProductCard({
     onCatalogQtyDelta,
     addToCart,
     sendCatalogProduct,
+    canWriteByAssignment = false,
     chatCatalogReadOnly = true,
     isExternalCatalog = false,
     handleEditClick,
@@ -62,7 +63,8 @@ export default function BusinessCatalogProductCard({
                 <div style={{ marginTop: '4px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '7px', alignItems: 'stretch' }}>
                     <button
                         onClick={() => sendCatalogProduct(item, index)}
-                        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: '#17323f', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '9px', color: '#d6f7ee', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        disabled={!canWriteByAssignment}
+                        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: canWriteByAssignment ? '#17323f' : '#3f474b', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '9px', color: '#d6f7ee', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.73rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: canWriteByAssignment ? 1 : 0.75 }}
                     >
                         <Send size={12} /> Enviar
                     </button>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import {
   chatIdsReferSameScope as chatIdsReferSameScopeFallback,
   normalizeChatScopedId as normalizeChatScopedIdFallback
@@ -34,6 +35,7 @@ export default function useChatAssignmentState({
   chatIdsReferSameScope = chatIdsReferSameScopeFallback,
   currentUserId = ''
 } = {}) {
+  const { notify } = useUiFeedback();
   const [assignmentsByChatId, setAssignmentsByChatId] = useState({});
   const [assignmentsLoaded, setAssignmentsLoaded] = useState(false);
   const [takeChatPendingByChatId, setTakeChatPendingByChatId] = useState({});
@@ -159,8 +161,20 @@ export default function useChatAssignmentState({
       const incomingChatId = asText(payload?.chatId || payload?.baseChatId || payload?.assignment?.chatId || '');
       const incomingScopeModuleId = asScope(payload?.scopeModuleId || payload?.assignment?.scopeModuleId || '');
       clearTakePending(incomingChatId, incomingScopeModuleId);
+      if (payload?.ok === false) {
+        notify({
+          type: 'error',
+          message: String(payload?.error || 'No se pudo tomar el chat.')
+        });
+      }
       if (payload?.ok === true && payload?.assignment) {
         putAssignment(incomingChatId, incomingScopeModuleId, payload.assignment);
+      }
+      if (payload?.ok === true && payload?.changed === true) {
+        notify({
+          type: 'info',
+          message: 'Chat tomado correctamente.'
+        });
       }
     };
 
@@ -173,7 +187,7 @@ export default function useChatAssignmentState({
       socket.off('chat_assignment_updated', handleAssignmentUpdated);
       socket.off('chat_assignment_take_result', handleTakeResult);
     };
-  }, [socket, resolveAssignmentKey, putAssignment, clearTakePending]);
+  }, [socket, resolveAssignmentKey, putAssignment, clearTakePending, notify]);
 
   return {
     assignmentsByChatId,

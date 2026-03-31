@@ -30,7 +30,8 @@ export default function BusinessCartTabSection({
     subtotalAfterGlobal = 0,
     deliveryFee = 0,
     cartTotal = 0,
-    sendQuoteToChat
+    sendQuoteToChat,
+    canWriteByAssignment = false
 }) {
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -229,7 +230,8 @@ export default function BusinessCartTabSection({
 
                     <button
                         onClick={sendQuoteToChat}
-                        style={{ width: '100%', padding: '9px', background: '#00a884', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer', fontSize: '0.84rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                        disabled={!canWriteByAssignment}
+                        style={{ width: '100%', padding: '9px', background: canWriteByAssignment ? '#00a884' : '#4b5b63', border: 'none', borderRadius: '8px', color: 'white', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.84rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: canWriteByAssignment ? 1 : 0.75 }}
                     >
                         <Send size={15} /> Enviar cotizacion al cliente
                     </button>

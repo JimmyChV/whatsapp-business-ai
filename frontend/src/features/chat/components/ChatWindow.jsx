@@ -6,6 +6,7 @@ import ChannelBrandIcon from './ChannelBrandIcon';
 import ChatInput from './ChatInput';
 import AssignmentBadge from './assignment/AssignmentBadge';
 import TakeChatButton from './assignment/TakeChatButton';
+import AssignmentSelector from './assignment/AssignmentSelector';
 import useChatWindowMapController from './hooks/useChatWindowMapController';
 import useChatWindowSearchController from './hooks/useChatWindowSearchController';
 import useChatWindowHeaderModel from './hooks/useChatWindowHeaderModel';
@@ -37,6 +38,8 @@ const ChatWindow = ({
 
     canEditMessages = false,
     buildApiHeaders,
+    activeTenantId = '',
+    currentUserRole = '',
     waModules = [],
     chatAssignmentState = null,
     ...inputProps
@@ -155,6 +158,13 @@ const ChatWindow = ({
                         <AssignmentBadge
                             assignment={activeChatAssignment}
                             isAssignedToMe={isAssignedToMe}
+                        />
+                        <AssignmentSelector
+                            activeTenantId={activeTenantId}
+                            chatId={activeChatScopedId}
+                            scopeModuleId={activeScopeModuleId}
+                            buildApiHeaders={buildApiHeaders}
+                            currentUserRole={currentUserRole}
                         />
                         {showHeaderModule && (
                             <span className="chat-header-module-pill" title={headerModuleName || 'Modulo'}>

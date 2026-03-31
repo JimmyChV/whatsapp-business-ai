@@ -4787,3 +4787,45 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.assignment-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+}
+
+.assignment-selector-label {
+  font-size: 0.66rem;
+  color: #9cb1bc;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.assignment-selector-select {
+  min-width: 148px;
+  max-width: 220px;
+  background: #162831;
+  color: #d8e7ef;
+  border: 1px solid rgba(125, 157, 173, 0.35);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  outline: none;
+}
+
+.assignment-selector-select:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.business-assignment-lock-hint {
+  margin: 6px 10px 0;
+  border: 1px solid rgba(255, 182, 77, 0.35);
+  background: rgba(56, 41, 18, 0.72);
+  color: #ffd28f;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 0.74rem;
+  font-weight: 600;
+}

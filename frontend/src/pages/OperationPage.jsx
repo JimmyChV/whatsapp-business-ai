@@ -204,6 +204,8 @@ export default function OperationPage({
               editingMessage={editingMessage}
               replyingMessage={replyingMessage}
               buildApiHeaders={buildApiHeaders}
+              activeTenantId={tenantScopeId}
+              currentUserRole={saasUserRole}
               canEditMessages={waCapabilities.messageEdit}
               waModules={availableWaModules}
               chatAssignmentState={chatAssignmentState}
