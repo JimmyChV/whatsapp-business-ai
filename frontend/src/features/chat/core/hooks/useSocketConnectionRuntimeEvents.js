@@ -47,7 +47,6 @@ export default function useSocketConnectionRuntimeEvents({
         socket.on('ready', () => {
             setIsClientReady(true);
             setIsSwitchingTransport(false);
-            requestChatsPage({ reset: true });
             emitScopedBusinessDataRequest({
                 moduleId: selectedCatalogModuleIdRef.current || selectedWaModuleRef.current?.moduleId || '',
                 catalogId: selectedCatalogIdRef.current || ''
