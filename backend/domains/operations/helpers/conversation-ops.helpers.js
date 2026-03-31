@@ -48,6 +48,7 @@ function normalizeMode(value = '') {
     const mode = toLower(value);
     if (mode === 'auto' || mode === 'automatic') return 'auto';
     if (mode === 'manual') return 'manual';
+    if (mode === 'take') return 'take';
     if (mode === 'fallback') return 'fallback';
     return 'manual';
 }
