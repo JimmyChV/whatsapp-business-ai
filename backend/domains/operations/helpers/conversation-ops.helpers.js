@@ -21,6 +21,13 @@ function toText(value = '') {
     return String(value ?? '').trim();
 }
 
+function toIsoText(value = '') {
+    if (value instanceof Date) {
+        return Number.isFinite(value.getTime()) ? value.toISOString() : '';
+    }
+    return toText(value);
+}
+
 function toLower(value = '') {
     return toText(value).toLowerCase();
 }
@@ -107,9 +114,9 @@ function normalizeEventRecord(item = {}) {
 
 function normalizeAssignmentRecord(item = {}) {
     const source = item && typeof item === 'object' ? item : {};
-    const lastActivityAt = toText(source.lastActivityAt || source.last_activity_at) || null;
-    const lastCustomerMessageAt = toText(source.lastCustomerMessageAt || source.last_customer_message_at) || null;
-    const waitingSince = toText(source.waitingSince || source.waiting_since) || null;
+    const lastActivityAt = toIsoText(source.lastActivityAt || source.last_activity_at) || null;
+    const lastCustomerMessageAt = toIsoText(source.lastCustomerMessageAt || source.last_customer_message_at) || null;
+    const waitingSince = toIsoText(source.waitingSince || source.waiting_since) || null;
     return {
         chatId: normalizeChatId(source.chatId || source.chat_id),
         scopeModuleId: normalizeScopeModuleId(source.scopeModuleId || source.scope_module_id),
@@ -123,8 +130,8 @@ function normalizeAssignmentRecord(item = {}) {
         lastActivityAt,
         lastCustomerMessageAt,
         waitingSince,
-        createdAt: toText(source.createdAt || source.created_at || nowIso()) || nowIso(),
-        updatedAt: toText(source.updatedAt || source.updated_at || nowIso()) || nowIso()
+        createdAt: toIsoText(source.createdAt || source.created_at || nowIso()) || nowIso(),
+        updatedAt: toIsoText(source.updatedAt || source.updated_at || nowIso()) || nowIso()
     };
 }
 

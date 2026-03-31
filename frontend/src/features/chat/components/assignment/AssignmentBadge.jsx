@@ -2,6 +2,13 @@ import React from 'react';
 
 function resolveAssignmentVisual(assignment = null, isAssignedToMe = false, compact = false) {
   const hasAssignee = Boolean(String(assignment?.assigneeUserId || '').trim());
+  const assigneeName = String(
+    assignment?.assigneeName
+    || assignment?.assigneeDisplayName
+    || assignment?.metadata?.assigneeName
+    || assignment?.assigneeUserId
+    || ''
+  ).trim();
   const status = String(assignment?.status || '').trim().toLowerCase();
 
   if (!hasAssignee || status === 'released') {
@@ -27,7 +34,7 @@ function resolveAssignmentVisual(assignment = null, isAssignedToMe = false, comp
 
   return {
     tone: 'assigned',
-    label: compact ? 'Asignado' : 'Asignado'
+    label: compact ? 'Asignado' : (assigneeName ? `Asignado: ${assigneeName}` : 'Asignado')
   };
 }
 

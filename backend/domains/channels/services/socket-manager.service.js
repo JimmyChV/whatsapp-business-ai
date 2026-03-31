@@ -16,6 +16,7 @@ const tenantCatalogService = require('../../tenant/services/tenant-catalog.servi
 const customerService = require('../../tenant/services/customers.service');
 const tenantLabelService = require('../../tenant/services/tenant-labels.service');
 const quotesService = require('../../tenant/services/quotes.service');
+const saasControlService = require('../../tenant/services/tenant-control.service');
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
 const chatAssignmentRouterService = require('../../operations/services/chat-assignment-router.service');
 const chatAssignmentPolicyService = require('../../operations/services/chat-assignment-policy.service');
@@ -401,8 +402,14 @@ class SocketManager {
             this.unsubscribeAssignmentChanged = conversationOpsService.onChatAssignmentChanged((event = {}) => {
                 try {
                     const eventTenantId = String(event?.tenantId || event?.assignment?.tenantId || 'default').trim() || 'default';
-                    const assignment = event?.assignment && typeof event.assignment === 'object' ? event.assignment : null;
-                    const previousAssignment = event?.previousAssignment && typeof event.previousAssignment === 'object' ? event.previousAssignment : null;
+                    const assignment = this.enrichAssignmentDisplay(
+                        eventTenantId,
+                        event?.assignment && typeof event.assignment === 'object' ? event.assignment : null
+                    );
+                    const previousAssignment = this.enrichAssignmentDisplay(
+                        eventTenantId,
+                        event?.previousAssignment && typeof event.previousAssignment === 'object' ? event.previousAssignment : null
+                    );
                     const chatId = String(event?.chatId || assignment?.chatId || '').trim();
                     const scopeModuleId = String(event?.scopeModuleId || assignment?.scopeModuleId || '').trim().toLowerCase();
                     if (!chatId) return;
@@ -423,6 +430,46 @@ class SocketManager {
 
         this.setupSocketEvents();
         this.setupWAClientEvents();
+    }
+
+    resolveAssigneeName(tenantId = 'default', assignment = null) {
+        if (!assignment || typeof assignment !== 'object') return '';
+        const directName = String(assignment?.assigneeName || assignment?.assigneeDisplayName || assignment?.metadata?.assigneeName || '').trim();
+        if (directName) return directName;
+
+        const assigneeUserId = String(assignment?.assigneeUserId || '').trim();
+        if (!assigneeUserId) return '';
+
+        const user = typeof saasControlService?.findUserByIdSync === 'function'
+            ? saasControlService.findUserByIdSync(assigneeUserId)
+            : null;
+        if (!user || typeof user !== 'object') return assigneeUserId;
+
+        const memberships = Array.isArray(user?.memberships) ? user.memberships : [];
+        const cleanTenantId = String(tenantId || '').trim();
+        const hasTenantMembership = memberships.some((entry) =>
+            String(entry?.tenantId || '').trim() === cleanTenantId && entry?.active !== false
+        );
+        if (!hasTenantMembership) return assigneeUserId;
+
+        const displayName = String(user?.name || user?.displayName || '').trim();
+        if (displayName) return displayName;
+
+        const email = String(user?.email || '').trim();
+        if (email) return email;
+
+        return assigneeUserId;
+    }
+
+    enrichAssignmentDisplay(tenantId = 'default', assignment = null) {
+        if (!assignment || typeof assignment !== 'object') return assignment;
+        const assigneeName = this.resolveAssigneeName(tenantId, assignment);
+        if (!assigneeName) return assignment;
+        return {
+            ...assignment,
+            assigneeName,
+            assigneeDisplayName: assigneeName
+        };
     }
 
 
@@ -1071,11 +1118,14 @@ class SocketManager {
                         limit: ASSIGNMENT_BULK_SNAPSHOT_LIMIT,
                         offset: 0
                     });
+                    const items = Array.isArray(result?.items)
+                        ? result.items.map((entry) => this.enrichAssignmentDisplay(tenantId, entry))
+                        : [];
                     socket.emit('chat_assignment_bulk_snapshot', {
                         ok: true,
                         tenantId,
                         scopeModuleId: selectedScopeModuleId || '',
-                        items: Array.isArray(result?.items) ? result.items : [],
+                        items,
                         total: Number(result?.total || 0),
                         limit: Number(result?.limit || ASSIGNMENT_BULK_SNAPSHOT_LIMIT),
                         offset: Number(result?.offset || 0),
