@@ -39,7 +39,7 @@ export default function useAppSocketChatController({
     setIsClientReady: runtimeBlock.setIsClientReady
   });
 
-  const { requestChatsPage } = useAppChatSocketRuntime({
+  const { requestChatsPage, chatAssignmentState } = useAppChatSocketRuntime({
     socket: appSocketSingleton,
     chatPageSize: CHAT_PAGE_SIZE,
     requestQuickRepliesForModule,
@@ -136,6 +136,7 @@ export default function useAppSocketChatController({
     messagesEndRef: chatRuntimeBlock.messagesEndRef,
     clientProfilePanelRef: chatRuntimeBlock.clientProfilePanelRef,
     requestChatsPage,
-    emitScopedBusinessDataRequest
+    emitScopedBusinessDataRequest,
+    chatAssignmentState
   };
 }

@@ -64,6 +64,7 @@ export default function OperationPage({
   handleForwardMessage,
   handleDeleteMessage,
   quickReplies,
+  chatAssignmentState,
   handleSendQuickReply,
   quickReplyDraft,
   setQuickReplyDraft,
@@ -153,6 +154,7 @@ export default function OperationPage({
         canManageSaas={canManageSaas}
         onOpenSaasAdmin={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
         waModules={availableWaModules}
+        chatAssignmentState={chatAssignmentState}
         showBackToPanel={Boolean(forceOperationLaunch && canManageSaas)}
         onBackToPanel={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
       />
@@ -294,6 +296,7 @@ export default function OperationPage({
             onCartSnapshotChange={handleCartSnapshotChange}
             cartDraftsByChat={cartDraftsByChat}
             setCartDraftsByChat={setCartDraftsByChat}
+            chatAssignmentState={chatAssignmentState}
           />
         )}
       </div>

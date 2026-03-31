@@ -10,6 +10,7 @@ import {
   useSocketMessageLifecycleEvents,
   useSocketAiAndSessionEvents,
   useSocketChatConversationEvents,
+  useChatAssignmentState,
   normalizeChatFilters,
   buildFiltersKey,
   isVisibleChatId,
@@ -336,7 +337,16 @@ export default function useAppChatSocketRuntime({
     setToasts
   });
 
+  const chatAssignmentState = useChatAssignmentState({
+    socket,
+    activeChatId,
+    normalizeChatScopedId,
+    chatIdsReferSameScope,
+    currentUserId: String(saasSession?.user?.userId || saasSession?.user?.id || '').trim()
+  });
+
   return {
-    requestChatsPage
+    requestChatsPage,
+    chatAssignmentState
   };
 }

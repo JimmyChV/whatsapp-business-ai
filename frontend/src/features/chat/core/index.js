@@ -19,6 +19,7 @@ export { default as useAttachmentActions } from './hooks/useAttachmentActions';
 export { default as useChatSidebarActions } from './hooks/useChatSidebarActions';
 export { default as useChatMessageUiActions } from './hooks/useChatMessageUiActions';
 export { default as useChatSelectionAction } from './hooks/useChatSelectionAction';
+export { default as useChatAssignmentState } from './hooks/useChatAssignmentState';
 export { default as useWorkspaceResetOnTenantChange } from './hooks/useWorkspaceResetOnTenantChange';
 export { default as useAppDerivedChatState } from './hooks/useAppDerivedChatState';
 export { default as useGlobalEscapeToCloseChat } from './hooks/useGlobalEscapeToCloseChat';
