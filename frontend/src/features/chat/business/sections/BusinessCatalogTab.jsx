@@ -149,7 +149,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 
     const sendCatalogProduct = (item, i) => {
         if (!canWriteByAssignment) {
-            notify({ type: 'warn', message: 'Toma este chat para responder.' });
+            notify({ type: 'warn', message: 'Toma este chat para responder' });
             return;
         }
         if (!activeChatId) {

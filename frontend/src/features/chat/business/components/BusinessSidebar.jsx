@@ -109,6 +109,13 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const canWriteByAssignment = typeof chatAssignmentState?.isAssignedToMe === 'function'
         ? chatAssignmentState.isAssignedToMe(activeChatId)
         : false;
+    const ASSIGNMENT_LOCK_MESSAGE = 'Toma este chat para responder';
+    const notifyAssignmentLock = useCallback(() => {
+        notify({
+            type: 'warn',
+            message: ASSIGNMENT_LOCK_MESSAGE
+        });
+    }, [notify]);
 
     const updateDraft = useCallback((patch) => {
         if (!activeChatId || typeof setCartDraftsByChat !== 'function') return;
@@ -297,6 +304,10 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     });
 
     const sendAiMessage = () => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         if (!aiInput.trim() || isAiLoading || !socket) return;
         const scopeKey = String(currentAiScopeKey || '').trim();
         if (!scopeKey) return;
@@ -324,6 +335,10 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     };
 
     const sendToClient = (text) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         // Extract content inside [MENSAJE: ...] if present, otherwise use full text
         const match = text.match(/\[MENSAJE:\s*([\s\S]+?)\]/);
         const msg = match ? match[1].trim() : text;
@@ -448,10 +463,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 
     const sendQuoteToChat = () => {
         if (!canWriteByAssignment) {
-            notify({
-                type: 'warn',
-                message: 'Toma este chat para responder.'
-            });
+            notifyAssignmentLock();
             return;
         }
         // TODO(bug): carrito debe limpiarse solo al ENVIAR la cotización, no al agregarla al input
@@ -491,32 +503,71 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setCart([]);
     };
     const addToCart = (item, qtyToAdd = 1) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         setCart((previous) => addItemToCartState(previous, item, qtyToAdd));
     };
 
     const removeFromCart = (id) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         setCart((previous) => removeItemFromCartState(previous, id));
     };
 
     const updateQty = (id, delta) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         setCart((previous) => updateCartItemQtyState(previous, id, delta));
     };
 
     const updateCatalogQty = (id, delta) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         setCart((previous) => updateCartItemQtyState(previous, id, delta));
     };
 
     const updateItemDiscountEnabled = (id, enabled) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         setCart((previous) => setCartItemDiscountEnabledState(previous, id, enabled, parseMoney));
     };
 
     const updateItemDiscountType = (id, type) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         setCart((previous) => setCartItemDiscountTypeState(previous, id, type));
     };
 
     const updateItemDiscountValue = (id, value) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
         setCart((previous) => setCartItemDiscountValueState(previous, id, value, parseMoney));
     };
+    const handleSendQuickReply = useCallback((quickReply) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
+        if (typeof onSendQuickReply === 'function') {
+            onSendQuickReply(quickReply);
+        } else if (quickReply?.text) {
+            setInputText(String(quickReply.text || ''));
+        }
+    }, [canWriteByAssignment, notifyAssignmentLock, onSendQuickReply, setInputText]);
     const filteredQuickReplies = (Array.isArray(quickReplies) ? quickReplies : []).filter((item) => {
         const q = String(quickSearch || '').trim().toLowerCase();
         if (!q) return true;
@@ -556,7 +607,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             )}
             {!canWriteByAssignment && (
                 <div className="business-assignment-lock-hint">
-                    Toma este chat para responder.
+                    Toma este chat para responder
                 </div>
             )}
 
@@ -585,6 +636,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     setAiInput={setAiInput}
                     sendAiMessage={sendAiMessage}
                     aiInput={aiInput}
+                    canWriteByAssignment={canWriteByAssignment}
                 />
             )}
 
@@ -638,8 +690,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     quickSearch={quickSearch}
                     setQuickSearch={setQuickSearch}
                     filteredQuickReplies={filteredQuickReplies}
-                    onSendQuickReply={onSendQuickReply}
+                    onSendQuickReply={handleSendQuickReply}
                     setInputText={setInputText}
+                    canWriteByAssignment={canWriteByAssignment}
                 />
             )}
 

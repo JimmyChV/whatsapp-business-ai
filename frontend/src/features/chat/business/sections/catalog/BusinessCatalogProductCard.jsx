@@ -72,14 +72,16 @@ export default function BusinessCatalogProductCard({
                         <div style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#0f322b', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '9px', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                             <button
                                 onClick={() => onCatalogQtyDelta && onCatalogQtyDelta(item.id, -1)}
-                                style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#20423a', border: 'none', cursor: 'pointer', color: '#d6f7ee', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                                disabled={!canWriteByAssignment}
+                                style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#20423a', border: 'none', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', color: '#d6f7ee', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: canWriteByAssignment ? 1 : 0.75 }}
                             >
                                 <Minus size={11} />
                             </button>
                             <span style={{ minWidth: '20px', textAlign: 'center', color: '#d9fff4', fontSize: '0.78rem', fontWeight: 800 }}>{cartQty}</span>
                             <button
                                 onClick={() => onCatalogQtyDelta && onCatalogQtyDelta(item.id, 1)}
-                                style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                                disabled={!canWriteByAssignment}
+                                style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: canWriteByAssignment ? 1 : 0.75 }}
                             >
                                 <Plus size={11} />
                             </button>
@@ -87,7 +89,8 @@ export default function BusinessCatalogProductCard({
                     ) : (
                         <button
                             onClick={() => addToCart(item, 1)}
-                            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: 'linear-gradient(90deg, #00a884 0%, #02c39a 100%)', border: 'none', borderRadius: '9px', color: 'white', cursor: 'pointer', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                            disabled={!canWriteByAssignment}
+                            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: canWriteByAssignment ? 'linear-gradient(90deg, #00a884 0%, #02c39a 100%)' : '#4b5b63', border: 'none', borderRadius: '9px', color: 'white', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: canWriteByAssignment ? 1 : 0.75 }}
                         >
                             <ShoppingCart size={12} /> Carrito
                         </button>

@@ -6,7 +6,7 @@ const normalizeRole = (value = '') => String(value || '').trim().toLowerCase();
 const normalizeText = (value = '') => String(value || '').trim();
 
 const ASSIGNABLE_ROLES = new Set(['seller', 'admin', 'owner']);
-const MANAGER_ROLES = new Set(['owner', 'admin']);
+const MANAGER_ROLES = new Set(['owner', 'admin', 'superadmin']);
 
 const resolveDisplayName = (user = {}) => {
   const name = normalizeText(user?.name || user?.fullName || user?.displayName || '');
