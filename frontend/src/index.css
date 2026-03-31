@@ -4699,3 +4699,91 @@ body {
   gap: 6px;
   padding-top: 0;
 }
+
+/* --- Chat Assignment UI --- */
+.assignment-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.assignment-badge--compact {
+  padding: 2px 7px;
+  font-size: 0.62rem;
+}
+
+.assignment-badge--unassigned {
+  background: rgba(132, 152, 163, 0.18);
+  border-color: rgba(132, 152, 163, 0.34);
+  color: #a5bac5;
+}
+
+.assignment-badge--waiting {
+  background: rgba(255, 182, 77, 0.2);
+  border-color: rgba(255, 182, 77, 0.42);
+  color: #ffd28f;
+}
+
+.assignment-badge--mine {
+  background: rgba(0, 168, 132, 0.2);
+  border-color: rgba(0, 168, 132, 0.46);
+  color: #8ff3d4;
+}
+
+.assignment-badge--assigned {
+  background: rgba(76, 142, 255, 0.2);
+  border-color: rgba(76, 142, 255, 0.42);
+  color: #b2ceff;
+}
+
+.chat-row-meta .assignment-badge {
+  flex: 0 0 auto;
+}
+
+.take-chat-button {
+  border: 1px solid rgba(0, 168, 132, 0.55);
+  background: rgba(0, 168, 132, 0.18);
+  color: #8ff3d4;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.take-chat-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.chat-assignment-lock {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: #13252f;
+  padding: 11px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.chat-assignment-lock-meta {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-assignment-lock-text {
+  color: #9cb1bc;
+  font-size: 0.76rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -206,6 +206,7 @@ export default function OperationPage({
               buildApiHeaders={buildApiHeaders}
               canEditMessages={waCapabilities.messageEdit}
               waModules={availableWaModules}
+              chatAssignmentState={chatAssignmentState}
             />
 
             {showClientProfile && (

@@ -1,6 +1,7 @@
 import React from 'react';
 import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck } from 'lucide-react';
 import ChannelBrandIcon from './ChannelBrandIcon';
+import AssignmentBadge from './assignment/AssignmentBadge';
 import useSidebarFiltersController from './hooks/useSidebarFiltersController';
 import useSidebarChatPresentationModel from './hooks/useSidebarChatPresentationModel';
 import useSidebarInfiniteScroll from './hooks/useSidebarInfiniteScroll';
@@ -58,6 +59,7 @@ const Sidebar = ({
     canManageSaas = false,
     onOpenSaasAdmin,
     waModules = [],
+    chatAssignmentState = null,
     showBackToPanel = false,
     onBackToPanel = null,
 }) => {
@@ -109,6 +111,12 @@ const Sidebar = ({
     const queryHasLetters = /[a-zA-Z]/.test(localQuery);
     const searchIsPhone = !queryHasLetters && normalizedPhone.length >= 6 && normalizedPhone.length <= 15;
     const hasPanelAccess = Boolean(saasAuthEnabled && canManageSaas);
+    const getAssignment = typeof chatAssignmentState?.getAssignment === 'function'
+        ? chatAssignmentState.getAssignment
+        : (() => null);
+    const isAssignedToMeResolver = typeof chatAssignmentState?.isAssignedToMe === 'function'
+        ? chatAssignmentState.isAssignedToMe
+        : (() => false);
 
     const currentTenantId = String(activeTenantId || '').trim();
     const sortedTenantOptions = Array.isArray(tenantOptions)
@@ -398,6 +406,8 @@ const Sidebar = ({
                         const contactHint = getContactHint(chat, displayName);
                         const moduleBadge = getChannelBadge(chat, waModules);
                         const channelMarker = getChannelMarker(moduleBadge?.channelType || '');
+                        const chatAssignment = getAssignment(chat.id);
+                        const isAssignedToMe = isAssignedToMeResolver(chat.id);
                         const moduleAvatarImage = moduleBadge?.imageUrl || null;
                         const avatarFallback = moduleBadge?.moduleName
                             ? avatarLetter(moduleBadge.moduleName)
@@ -463,6 +473,11 @@ const Sidebar = ({
                                                 <span className="chat-module-badge-label">{moduleBadge.label}</span>
                                             </p>
                                         )}
+                                        <AssignmentBadge
+                                            assignment={chatAssignment}
+                                            isAssignedToMe={isAssignedToMe}
+                                            compact
+                                        />
 
                                         {labels.length > 0 && (
                                             <div

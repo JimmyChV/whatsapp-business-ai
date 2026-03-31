@@ -4,6 +4,8 @@ import MessageBubble from './message-bubble/MessageBubble';
 import moment from 'moment';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import ChatInput from './ChatInput';
+import AssignmentBadge from './assignment/AssignmentBadge';
+import TakeChatButton from './assignment/TakeChatButton';
 import useChatWindowMapController from './hooks/useChatWindowMapController';
 import useChatWindowSearchController from './hooks/useChatWindowSearchController';
 import useChatWindowHeaderModel from './hooks/useChatWindowHeaderModel';
@@ -36,6 +38,7 @@ const ChatWindow = ({
     canEditMessages = false,
     buildApiHeaders,
     waModules = [],
+    chatAssignmentState = null,
     ...inputProps
 }) => {
     const {
@@ -104,6 +107,16 @@ const ChatWindow = ({
         messages,
         waModules
     });
+    const activeChatScopedId = String(activeChatDetails?.id || '').trim();
+    const activeChatAssignment = typeof chatAssignmentState?.getAssignment === 'function'
+        ? chatAssignmentState.getAssignment(activeChatScopedId)
+        : null;
+    const isAssignedToMe = typeof chatAssignmentState?.isAssignedToMe === 'function'
+        ? chatAssignmentState.isAssignedToMe(activeChatScopedId)
+        : false;
+    const hasAssignee = Boolean(String(activeChatAssignment?.assigneeUserId || '').trim());
+    const canWriteByAssignment = hasAssignee && isAssignedToMe;
+    const activeScopeModuleId = String(activeChatDetails?.scopeModuleId || activeChatAssignment?.scopeModuleId || '').trim().toLowerCase();
 
     return (
         <div
@@ -139,6 +152,10 @@ const ChatWindow = ({
                     <div className="chat-header-title-row chat-header-title-row--clean">
                         <h3 className="chat-header-name">{headerDisplayName}</h3>
                         {activeChatDetails?.isBusiness && <span className="chat-header-pill">Business</span>}
+                        <AssignmentBadge
+                            assignment={activeChatAssignment}
+                            isAssignedToMe={isAssignedToMe}
+                        />
                         {showHeaderModule && (
                             <span className="chat-header-module-pill" title={headerModuleName || 'Modulo'}>
                                 {headerModuleImageUrl
@@ -414,7 +431,33 @@ const ChatWindow = ({
             )}
 
             {/* Input Area */}
-            <ChatInput {...inputProps} replyingMessage={inputProps?.replyingMessage} onCancelReplyMessage={inputProps?.onCancelReplyMessage} onOpenMapPicker={() => openMapModal({ query: '' })} buildApiHeaders={buildApiHeaders} />
+            {canWriteByAssignment ? (
+                <ChatInput
+                    {...inputProps}
+                    replyingMessage={inputProps?.replyingMessage}
+                    onCancelReplyMessage={inputProps?.onCancelReplyMessage}
+                    onOpenMapPicker={() => openMapModal({ query: '' })}
+                    buildApiHeaders={buildApiHeaders}
+                />
+            ) : (
+                <div className="chat-assignment-lock">
+                    <div className="chat-assignment-lock-meta">
+                        <AssignmentBadge
+                            assignment={activeChatAssignment}
+                            isAssignedToMe={isAssignedToMe}
+                        />
+                        <span className="chat-assignment-lock-text">
+                            Toma este chat para responder al cliente.
+                        </span>
+                    </div>
+                    <TakeChatButton
+                        chatId={activeChatScopedId}
+                        scopeModuleId={activeScopeModuleId}
+                        assignment={activeChatAssignment}
+                        chatAssignmentState={chatAssignmentState}
+                    />
+                </div>
+            )}
         </div>
     );
 };
