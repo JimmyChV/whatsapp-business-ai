@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 const WA_LABEL_COLORS = ['#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#00A884', '#7D8D95'];
 
@@ -74,6 +74,19 @@ const useSidebarFiltersController = ({
     ? chatAssignmentState.getAssignment
     : (() => null);
 
+  const resolveChatAssignment = useCallback((chat = {}) => {
+    const scopedId = String(chat?.id || '').trim();
+    if (scopedId) {
+      const scopedAssignment = getAssignmentResolver(scopedId);
+      if (scopedAssignment) return scopedAssignment;
+    }
+    const baseId = String(chat?.baseChatId || '').trim();
+    if (baseId) {
+      return getAssignmentResolver(baseId);
+    }
+    return null;
+  }, [getAssignmentResolver]);
+
   const [labelSearch, setLabelSearch] = useState('');
 
   const filters = useMemo(() => normalizeFilters(activeFilters), [activeFilters]);
@@ -141,7 +154,7 @@ const useSidebarFiltersController = ({
   const assignmentUserOptions = useMemo(() => {
     const map = new Map();
     chats.forEach((chat) => {
-      const assignment = getAssignmentResolver(chat?.id);
+      const assignment = resolveChatAssignment(chat);
       const rawUserId = String(assignment?.assigneeUserId || '').trim();
       if (!rawUserId) return;
       const value = normalizeFilterToken(rawUserId);
@@ -155,7 +168,7 @@ const useSidebarFiltersController = ({
       map.set(value, { value, label: assigneeName });
     });
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
-  }, [chats, getAssignmentResolver]);
+  }, [chats, resolveChatAssignment]);
 
   const assignmentUserLabelById = useMemo(() => {
     const map = new Map();
@@ -203,7 +216,7 @@ const useSidebarFiltersController = ({
     if (filters.unreadOnly && Number(chat?.unreadCount || 0) <= 0) return false;
     if (filters.onlyAssignedToMe && assignmentsLoaded && !isAssignedToMeResolver(chat?.id)) return false;
     if (filters.assigneeUserId && assignmentsLoaded) {
-      const assignment = getAssignmentResolver(chat?.id);
+      const assignment = resolveChatAssignment(chat);
       const assigneeToken = normalizeFilterToken(assignment?.assigneeUserId || '');
       if (filters.assigneeUserId === '__unassigned__') {
         if (assigneeToken) return false;
@@ -217,7 +230,7 @@ const useSidebarFiltersController = ({
     if (filters.archivedMode === 'active' && chat?.archived) return false;
     if (filters.pinnedMode === 'pinned' && !chat?.pinned) return false;
     if (filters.pinnedMode === 'unpinned' && chat?.pinned) return false;
-    // TODO(bug): filtro "sin etiquetas" muestra resultados invertidos â€” chats con etiqueta aparecen como sin etiqueta
+    // TODO(bug): filtro "sin etiquetas" muestra resultados invertidos — chats con etiqueta aparecen como sin etiqueta
     if (filters.unlabeledOnly && labelTokenSet.size !== 0) return false;
 
     if (!filters.unlabeledOnly && filters.labelTokens.length > 0) {
@@ -239,9 +252,9 @@ const useSidebarFiltersController = ({
       return phone.includes(qDigits) || normalizePhoneDigits(subtitle).includes(qDigits);
     }
 
-    // TODO(bug): filtro sin resultados queda en estado "cargando" indefinidamente â€” falta estado de "sin resultados"
+    // TODO(bug): filtro sin resultados queda en estado "cargando" indefinidamente — falta estado de "sin resultados"
     return name.includes(q) || subtitle.includes(q) || status.includes(q) || lastMessage.includes(q);
-  }), [assignmentsLoaded, chats, filters, getAssignmentResolver, localQuery, isAssignedToMeResolver]);
+  }), [assignmentsLoaded, chats, filters, localQuery, isAssignedToMeResolver, resolveChatAssignment]);
 
   const resetFilters = () => {
     onFiltersChange?.(normalizeFilters({

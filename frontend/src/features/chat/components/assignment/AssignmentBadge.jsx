@@ -1,5 +1,33 @@
 import React from 'react';
 
+function resolveCompactAssigneeLabel(assigneeName = '') {
+  const raw = String(assigneeName || '').trim();
+  if (!raw) return 'Asignado';
+
+  const words = raw
+    .split(/\s+/)
+    .map((token) => String(token || '').trim())
+    .filter(Boolean);
+
+  if (words.length >= 2 && words[0].length > 1) {
+    return words[0];
+  }
+
+  if (words.length === 1 && words[0].length > 1 && !words[0].includes('@')) {
+    return words[0];
+  }
+
+  const initials = words
+    .slice(0, 2)
+    .map((token) => String(token || '').charAt(0).toUpperCase())
+    .join('')
+    .trim();
+
+  if (initials) return initials;
+
+  return String(raw.charAt(0) || 'A').toUpperCase();
+}
+
 function resolveAssignmentVisual(assignment = null, isAssignedToMe = false, compact = false) {
   const hasAssignee = Boolean(String(assignment?.assigneeUserId || '').trim());
   const assigneeName = String(
@@ -34,7 +62,9 @@ function resolveAssignmentVisual(assignment = null, isAssignedToMe = false, comp
 
   return {
     tone: 'assigned',
-    label: compact ? 'Asignado' : (assigneeName ? `Asignado: ${assigneeName}` : 'Asignado')
+    label: compact
+      ? resolveCompactAssigneeLabel(assigneeName)
+      : (assigneeName ? `Asignado: ${assigneeName}` : 'Asignado')
   };
 }
 

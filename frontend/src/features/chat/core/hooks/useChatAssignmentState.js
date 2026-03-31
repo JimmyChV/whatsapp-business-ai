@@ -74,14 +74,29 @@ export default function useChatAssignmentState({
       return assignmentsByChatId[directKey];
     }
 
+    const parsedSafe = normalizeChatScopedId(safeChatId, '');
+    const baseChatId = asText(String(parsedSafe || '').split('::mod::')[0] || safeChatId);
+    if (baseChatId) {
+      const baseKey = resolveAssignmentKey(baseChatId, '');
+      if (baseKey && assignmentsByChatId[baseKey]) {
+        return assignmentsByChatId[baseKey];
+      }
+    }
+
     const keys = Object.keys(assignmentsByChatId);
+    let baseFallback = null;
     for (const key of keys) {
       if (chatIdsReferSameScope(key, safeChatId)) {
         return assignmentsByChatId[key];
       }
+      if (!baseChatId) continue;
+      const keyBase = asText(String(key || '').split('::mod::')[0] || '');
+      if (keyBase === baseChatId && !baseFallback) {
+        baseFallback = assignmentsByChatId[key];
+      }
     }
-    return null;
-  }, [assignmentsByChatId, resolveAssignmentKey, chatIdsReferSameScope]);
+    return baseFallback || null;
+  }, [assignmentsByChatId, resolveAssignmentKey, chatIdsReferSameScope, normalizeChatScopedId]);
 
   const activeChatAssignment = useMemo(
     () => getAssignment(activeChatId),
