@@ -31,6 +31,7 @@ const normalizeFilters = (filters = {}) => {
     unreadOnly: Boolean(filters?.unreadOnly),
     unlabeledOnly: Boolean(filters?.unlabeledOnly),
     onlyAssignedToMe: Boolean(filters?.onlyAssignedToMe),
+    assigneeUserId: normalizeFilterToken(filters?.assigneeUserId || ''),
     contactMode,
     archivedMode,
     pinnedMode
@@ -69,6 +70,9 @@ const useSidebarFiltersController = ({
   const isAssignedToMeResolver = typeof chatAssignmentState?.isAssignedToMe === 'function'
     ? chatAssignmentState.isAssignedToMe
     : (() => false);
+  const getAssignmentResolver = typeof chatAssignmentState?.getAssignment === 'function'
+    ? chatAssignmentState.getAssignment
+    : (() => null);
 
   const [labelSearch, setLabelSearch] = useState('');
 
@@ -128,10 +132,38 @@ const useSidebarFiltersController = ({
   const hasActiveQuickFilters = filters.unreadOnly
     || filters.unlabeledOnly
     || filters.onlyAssignedToMe
+    || Boolean(filters.assigneeUserId)
     || filters.contactMode !== 'all'
     || filters.archivedMode !== 'all'
     || filters.pinnedMode !== 'all';
   const hasAnyFilter = hasActiveQuickFilters || selectedLabelCount > 0;
+
+  const assignmentUserOptions = useMemo(() => {
+    const map = new Map();
+    chats.forEach((chat) => {
+      const assignment = getAssignmentResolver(chat?.id);
+      const rawUserId = String(assignment?.assigneeUserId || '').trim();
+      if (!rawUserId) return;
+      const value = normalizeFilterToken(rawUserId);
+      if (!value || map.has(value)) return;
+      const assigneeName = String(
+        assignment?.assigneeName
+        || assignment?.assigneeDisplayName
+        || assignment?.metadata?.assigneeName
+        || rawUserId
+      ).trim() || rawUserId;
+      map.set(value, { value, label: assigneeName });
+    });
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
+  }, [chats, getAssignmentResolver]);
+
+  const assignmentUserLabelById = useMemo(() => {
+    const map = new Map();
+    assignmentUserOptions.forEach((entry) => {
+      map.set(entry.value, entry.label);
+    });
+    return map;
+  }, [assignmentUserOptions]);
 
   const quickStats = useMemo(() => {
     const unread = chats.filter((c) => Number(c?.unreadCount || 0) > 0).length;
@@ -152,13 +184,17 @@ const useSidebarFiltersController = ({
     if (filters.unreadOnly) chips.push('No leidos');
     if (filters.unlabeledOnly) chips.push('Sin etiqueta');
     if (filters.onlyAssignedToMe) chips.push('Solo mis chats');
+    if (filters.assigneeUserId === '__unassigned__') chips.push('Solo sin asignar');
+    if (filters.assigneeUserId && filters.assigneeUserId !== '__unassigned__') {
+      chips.push(`Asignada: ${assignmentUserLabelById.get(filters.assigneeUserId) || filters.assigneeUserId}`);
+    }
     if (filters.archivedMode === 'archived') chips.push('Archivados');
     if (filters.pinnedMode === 'pinned') chips.push('Fijados');
     if (filters.contactMode === 'my') chips.push('Guardados');
     if (filters.contactMode === 'unknown') chips.push('No guardados');
     if (filters.labelTokens.length > 0) chips.push(`Etiquetas (${filters.labelTokens.length})`);
     return chips;
-  }, [filters, hasAnyFilter]);
+  }, [assignmentUserLabelById, filters, hasAnyFilter]);
 
   const localQuery = String(searchQuery || '');
   const filteredChats = useMemo(() => chats.filter((chat) => {
@@ -166,6 +202,15 @@ const useSidebarFiltersController = ({
 
     if (filters.unreadOnly && Number(chat?.unreadCount || 0) <= 0) return false;
     if (filters.onlyAssignedToMe && assignmentsLoaded && !isAssignedToMeResolver(chat?.id)) return false;
+    if (filters.assigneeUserId && assignmentsLoaded) {
+      const assignment = getAssignmentResolver(chat?.id);
+      const assigneeToken = normalizeFilterToken(assignment?.assigneeUserId || '');
+      if (filters.assigneeUserId === '__unassigned__') {
+        if (assigneeToken) return false;
+      } else if (assigneeToken !== filters.assigneeUserId) {
+        return false;
+      }
+    }
     if (filters.contactMode === 'my' && !chat?.isMyContact) return false;
     if (filters.contactMode === 'unknown' && chat?.isMyContact) return false;
     if (filters.archivedMode === 'archived' && !chat?.archived) return false;
@@ -196,7 +241,7 @@ const useSidebarFiltersController = ({
 
     // TODO(bug): filtro sin resultados queda en estado "cargando" indefinidamente â€” falta estado de "sin resultados"
     return name.includes(q) || subtitle.includes(q) || status.includes(q) || lastMessage.includes(q);
-  }), [assignmentsLoaded, chats, filters, localQuery, isAssignedToMeResolver]);
+  }), [assignmentsLoaded, chats, filters, getAssignmentResolver, localQuery, isAssignedToMeResolver]);
 
   const resetFilters = () => {
     onFiltersChange?.(normalizeFilters({
@@ -204,6 +249,7 @@ const useSidebarFiltersController = ({
       unreadOnly: false,
       unlabeledOnly: false,
       onlyAssignedToMe: false,
+      assigneeUserId: '',
       contactMode: 'all',
       archivedMode: 'all',
       pinnedMode: 'all'
@@ -231,7 +277,8 @@ const useSidebarFiltersController = ({
     labelSearch,
     setLabelSearch,
     selectedLabelCount,
-    hasAnyFilter
+    hasAnyFilter,
+    assignmentUserOptions
   };
 };
 

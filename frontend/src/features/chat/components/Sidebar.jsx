@@ -81,7 +81,8 @@ const Sidebar = ({
         labelSearch,
         setLabelSearch,
         selectedLabelCount,
-        hasAnyFilter
+        hasAnyFilter,
+        assignmentUserOptions
     } = useSidebarFiltersController({
         chats,
         activeFilters,
@@ -118,6 +119,7 @@ const Sidebar = ({
     const isAssignedToMeResolver = typeof chatAssignmentState?.isAssignedToMe === 'function'
         ? chatAssignmentState.isAssignedToMe
         : (() => false);
+    const assignmentsLoaded = Boolean(chatAssignmentState?.assignmentsLoaded);
 
     const currentTenantId = String(activeTenantId || '').trim();
     const sortedTenantOptions = Array.isArray(tenantOptions)
@@ -354,6 +356,25 @@ const Sidebar = ({
                                     ))
                                 )}
                             </div>
+                            {assignmentsLoaded && (
+                                <div className="sidebar-label-search-row" style={{ marginTop: '8px' }}>
+                                    <UserCheck size={14} />
+                                    <select
+                                        value={filters.assigneeUserId || ''}
+                                        onChange={(event) => updateFilters({ assigneeUserId: String(event.target.value || '').trim() })}
+                                        className="sidebar-label-search-input"
+                                        title="Filtrar por asignacion"
+                                    >
+                                        <option value="">Todas las vendedoras</option>
+                                        <option value="__unassigned__">Sin asignar</option>
+                                        {assignmentUserOptions.map((entry) => (
+                                            <option key={entry.value} value={entry.value}>
+                                                {entry.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                             {hasAnyFilter && (
                                 <button type="button" className="sidebar-filter-clear" onClick={resetFilters}>Limpiar</button>
                             )}
