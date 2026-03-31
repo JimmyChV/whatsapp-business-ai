@@ -147,6 +147,10 @@ const ASSIGNMENT_BULK_SNAPSHOT_LIMIT = Math.max(
     50,
     Number(process.env.CHAT_ASSIGNMENT_BULK_SNAPSHOT_LIMIT || 500)
 );
+const COMMERCIAL_STATUS_BULK_SNAPSHOT_LIMIT = Math.max(
+    50,
+    Number(process.env.CHAT_COMMERCIAL_STATUS_BULK_SNAPSHOT_LIMIT || 500)
+);
 const DEFAULT_SAAS_UPLOADS_ROOT = path.resolve(__dirname, '../../../uploads');
 const SAAS_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || DEFAULT_SAAS_UPLOADS_ROOT).trim() || DEFAULT_SAAS_UPLOADS_ROOT);
 const guardRateLimit = createGuardRateLimit(eventRateLimiter);
@@ -1173,10 +1177,44 @@ class SocketManager {
                     });
                 }
             };
+            const emitCommercialStatusBulkSnapshot = async () => {
+                try {
+                    const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                    const result = await chatCommercialStatusService.listCommercialStatuses(tenantId, {
+                        scopeModuleId: selectedScopeModuleId || '',
+                        limit: COMMERCIAL_STATUS_BULK_SNAPSHOT_LIMIT,
+                        offset: 0
+                    });
+                    const items = Array.isArray(result?.items) ? result.items : [];
+                    socket.emit('chat_commercial_status_bulk_snapshot', {
+                        ok: true,
+                        tenantId,
+                        scopeModuleId: selectedScopeModuleId || '',
+                        items,
+                        total: Number(result?.total || 0),
+                        limit: Number(result?.limit || COMMERCIAL_STATUS_BULK_SNAPSHOT_LIMIT),
+                        offset: Number(result?.offset || 0),
+                        generatedAt: new Date().toISOString()
+                    });
+                } catch (error) {
+                    socket.emit('chat_commercial_status_bulk_snapshot', {
+                        ok: false,
+                        tenantId,
+                        scopeModuleId: '',
+                        items: [],
+                        total: 0,
+                        limit: COMMERCIAL_STATUS_BULK_SNAPSHOT_LIMIT,
+                        offset: 0,
+                        error: String(error?.message || 'No se pudo cargar snapshot de estado comercial.'),
+                        generatedAt: new Date().toISOString()
+                    });
+                }
+            };
             const normalizeSocketModuleId = (value = '') => String(value || '').trim().toLowerCase();
             await transportOrchestrator.bootstrapTransportContext();
             transportOrchestrator.registerTransportHandlers();
             await emitAssignmentBulkSnapshot();
+            await emitCommercialStatusBulkSnapshot();
 
             // --- Chat info ---
             this.chatListService.registerChatListHandlers({
