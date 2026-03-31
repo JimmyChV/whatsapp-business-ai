@@ -18,6 +18,7 @@ const tenantLabelService = require('../../tenant/services/tenant-labels.service'
 const quotesService = require('../../tenant/services/quotes.service');
 const saasControlService = require('../../tenant/services/tenant-control.service');
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
+const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
 const chatAssignmentRouterService = require('../../operations/services/chat-assignment-router.service');
 const chatAssignmentPolicyService = require('../../operations/services/chat-assignment-policy.service');
 const auditLogService = require('../../security/services/audit-log.service');
@@ -352,6 +353,7 @@ class SocketManager {
             buildSocketAgentMeta,
             sanitizeAgentMeta,
             rememberOutgoingAgentMeta,
+            chatCommercialStatusService,
             quotesService
         });
         this.profileContactService = createSocketProfileContactService({
@@ -555,6 +557,32 @@ class SocketManager {
 
     emitToTenant(tenantId, eventName, payload) {
         this.runtimeStore.emitToTenant(tenantId, eventName, payload);
+    }
+
+    emitCommercialStatusUpdated({
+        tenantId = 'default',
+        chatId = '',
+        scopeModuleId = '',
+        result = null,
+        source = 'socket'
+    } = {}) {
+        const cleanTenantId = String(tenantId || 'default').trim() || 'default';
+        const cleanChatId = String(chatId || result?.status?.chatId || '').trim();
+        if (!cleanChatId) return;
+        const status = result?.status && typeof result.status === 'object' ? result.status : null;
+        const previousStatus = result?.previous && typeof result.previous === 'object' ? result.previous : null;
+        const cleanScopeModuleId = String(scopeModuleId || status?.scopeModuleId || '').trim().toLowerCase();
+
+        this.emitToTenant(cleanTenantId, 'chat_commercial_status_updated', {
+            tenantId: cleanTenantId,
+            chatId: cleanChatId,
+            scopeModuleId: cleanScopeModuleId || '',
+            status,
+            previousStatus,
+            changed: Boolean(result?.changed),
+            source: String(source || 'socket').trim().toLowerCase() || 'socket',
+            generatedAt: new Date().toISOString()
+        });
     }
 
     getTenantModuleRoom(tenantId = 'default', moduleId = 'default') {
@@ -1207,6 +1235,7 @@ class SocketManager {
                 transportOrchestrator,
                 resolveScopedSendTarget: (...args) => messageDeliveryRuntime.resolveScopedSendTarget(...args),
                 emitRealtimeOutgoingMessage: (...args) => messageDeliveryRuntime.emitRealtimeOutgoingMessage(...args),
+                emitCommercialStatusUpdated: (...args) => this.emitCommercialStatusUpdated(...args),
                 recordConversationEvent
             });
 
@@ -1538,7 +1567,9 @@ class SocketManager {
             mediaManager,
             conversationOpsService,
             chatAssignmentRouterService,
+            chatCommercialStatusService,
             emitToRuntimeContext: this.emitToRuntimeContext.bind(this),
+            emitCommercialStatusUpdated: (...args) => this.emitCommercialStatusUpdated(...args),
             getWaCapabilities: this.getWaCapabilities.bind(this),
             getWaRuntime: this.getWaRuntime.bind(this),
             resolveHistoryTenantId: this.resolveHistoryTenantId.bind(this),
