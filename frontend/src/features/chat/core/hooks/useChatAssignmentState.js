@@ -35,6 +35,7 @@ export default function useChatAssignmentState({
   currentUserId = ''
 } = {}) {
   const [assignmentsByChatId, setAssignmentsByChatId] = useState({});
+  const [assignmentsLoaded, setAssignmentsLoaded] = useState(false);
   const [takeChatPendingByChatId, setTakeChatPendingByChatId] = useState({});
   const [lastTakeChatResult, setLastTakeChatResult] = useState(null);
 
@@ -125,6 +126,7 @@ export default function useChatAssignmentState({
         nextMap[key] = normalizedItem;
       });
       setAssignmentsByChatId(nextMap);
+      setAssignmentsLoaded(true);
     };
 
     const handleAssignmentUpdated = (payload = {}) => {
@@ -175,6 +177,7 @@ export default function useChatAssignmentState({
 
   return {
     assignmentsByChatId,
+    assignmentsLoaded,
     activeChatAssignment,
     currentUserId: asText(currentUserId || ''),
     getAssignment,

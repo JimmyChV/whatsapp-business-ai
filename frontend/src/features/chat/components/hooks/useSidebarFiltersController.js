@@ -65,6 +65,7 @@ const useSidebarFiltersController = ({
   searchQuery = ''
 } = {}) => {
   void waModules;
+  const assignmentsLoaded = Boolean(chatAssignmentState?.assignmentsLoaded);
   const isAssignedToMeResolver = typeof chatAssignmentState?.isAssignedToMe === 'function'
     ? chatAssignmentState.isAssignedToMe
     : (() => false);
@@ -139,9 +140,11 @@ const useSidebarFiltersController = ({
     const unknown = chats.filter((c) => c?.isMyContact !== true).length;
     const archived = chats.filter((c) => Boolean(c?.archived)).length;
     const pinned = chats.filter((c) => Boolean(c?.pinned)).length;
-    const assignedToMe = chats.filter((chat) => isAssignedToMeResolver(chat?.id)).length;
+    const assignedToMe = assignmentsLoaded
+      ? chats.filter((chat) => isAssignedToMeResolver(chat?.id)).length
+      : 0;
     return { unread, unlabeled, myContacts, unknown, archived, pinned, assignedToMe };
-  }, [chats, isAssignedToMeResolver]);
+  }, [assignmentsLoaded, chats, isAssignedToMeResolver]);
 
   const activeFilterChips = useMemo(() => {
     const chips = [];
@@ -162,7 +165,7 @@ const useSidebarFiltersController = ({
     const labelTokenSet = getChatLabelTokenSet(chat);
 
     if (filters.unreadOnly && Number(chat?.unreadCount || 0) <= 0) return false;
-    if (filters.onlyAssignedToMe && !isAssignedToMeResolver(chat?.id)) return false;
+    if (filters.onlyAssignedToMe && assignmentsLoaded && !isAssignedToMeResolver(chat?.id)) return false;
     if (filters.contactMode === 'my' && !chat?.isMyContact) return false;
     if (filters.contactMode === 'unknown' && chat?.isMyContact) return false;
     if (filters.archivedMode === 'archived' && !chat?.archived) return false;
@@ -193,7 +196,7 @@ const useSidebarFiltersController = ({
 
     // TODO(bug): filtro sin resultados queda en estado "cargando" indefinidamente â€” falta estado de "sin resultados"
     return name.includes(q) || subtitle.includes(q) || status.includes(q) || lastMessage.includes(q);
-  }), [chats, filters, localQuery, isAssignedToMeResolver]);
+  }), [assignmentsLoaded, chats, filters, localQuery, isAssignedToMeResolver]);
 
   const resetFilters = () => {
     onFiltersChange?.(normalizeFilters({
