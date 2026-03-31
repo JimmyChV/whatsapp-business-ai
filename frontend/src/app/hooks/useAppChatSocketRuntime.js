@@ -11,6 +11,7 @@ import {
   useSocketAiAndSessionEvents,
   useSocketChatConversationEvents,
   useChatAssignmentState,
+  useChatCommercialStatusState,
   normalizeChatFilters,
   buildFiltersKey,
   isVisibleChatId,
@@ -132,7 +133,10 @@ export default function useAppChatSocketRuntime({
   handleChatSelect,
   resolveSessionSenderIdentity,
   setClientContact,
-  setToasts
+  setToasts,
+  baseApiUrl = '',
+  buildApiHeaders = null,
+  activeTenantId = ''
 }) {
   const isClientReadyRef = useRef(Boolean(isClientReady));
 
@@ -352,8 +356,20 @@ export default function useAppChatSocketRuntime({
     currentUserId: String(saasSession?.user?.userId || saasSession?.user?.id || '').trim()
   });
 
+  const chatCommercialStatusState = useChatCommercialStatusState({
+    socket,
+    activeChatId,
+    baseApiUrl,
+    buildApiHeaders,
+    activeTenantId,
+    normalizeChatScopedId,
+    parseScopedChatId,
+    chatIdsReferSameScope
+  });
+
   return {
     requestChatsPage,
-    chatAssignmentState
+    chatAssignmentState,
+    chatCommercialStatusState
   };
 }

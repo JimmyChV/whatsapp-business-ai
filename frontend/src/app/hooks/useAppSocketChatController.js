@@ -39,7 +39,7 @@ export default function useAppSocketChatController({
     setIsClientReady: runtimeBlock.setIsClientReady
   });
 
-  const { requestChatsPage, chatAssignmentState } = useAppChatSocketRuntime({
+  const { requestChatsPage, chatAssignmentState, chatCommercialStatusState } = useAppChatSocketRuntime({
     socket: appSocketSingleton,
     chatPageSize: CHAT_PAGE_SIZE,
     requestQuickRepliesForModule,
@@ -127,7 +127,10 @@ export default function useAppSocketChatController({
     handleChatSelect: (...args) => handleChatSelectRef?.current?.(...args),
     resolveSessionSenderIdentity: callbacksBlock.resolveSessionSenderIdentity,
     setClientContact: callbacksBlock.setClientContact,
-    setToasts: callbacksBlock.setToasts
+    setToasts: callbacksBlock.setToasts,
+    baseApiUrl: API_URL,
+    buildApiHeaders: callbacksBlock.buildApiHeaders,
+    activeTenantId: runtimeBlock.tenantScopeId
   });
 
   return {
@@ -137,6 +140,7 @@ export default function useAppSocketChatController({
     clientProfilePanelRef: chatRuntimeBlock.clientProfilePanelRef,
     requestChatsPage,
     emitScopedBusinessDataRequest,
-    chatAssignmentState
+    chatAssignmentState,
+    chatCommercialStatusState
   };
 }

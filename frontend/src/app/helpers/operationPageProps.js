@@ -62,6 +62,7 @@ export function buildOperationPageProps(input = {}) {
     handleDeleteMessage: input.handleDeleteMessage,
     quickReplies: input.quickReplies,
     chatAssignmentState: input.chatAssignmentState,
+    chatCommercialStatusState: input.chatCommercialStatusState,
     handleSendQuickReply: input.handleSendQuickReply,
     quickReplyDraft: input.quickReplyDraft,
     setQuickReplyDraft: input.setQuickReplyDraft,
