@@ -1,5 +1,5 @@
 import React from 'react';
-import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck } from 'lucide-react';
+import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck } from 'lucide-react';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import AssignmentBadge from './assignment/AssignmentBadge';
 import useSidebarFiltersController from './hooks/useSidebarFiltersController';
@@ -87,6 +87,7 @@ const Sidebar = ({
         activeFilters,
         labelDefinitions,
         waModules,
+        chatAssignmentState,
         onFiltersChange,
         searchQuery
     });
@@ -317,6 +318,16 @@ const Sidebar = ({
                         >
                             <UserRoundX size={18} />
                             {quickStats.unknown > 0 && <span className="sidebar-ribbon-badge">{quickStats.unknown > 9 ? '9+' : quickStats.unknown}</span>}
+                        </button>
+                        <button
+                            type="button"
+                            className={`sidebar-ribbon-btn ${filters.onlyAssignedToMe ? 'active' : ''}`}
+                            onClick={() => updateFilters({ onlyAssignedToMe: !filters.onlyAssignedToMe })}
+                            title="Solo mis chats"
+                            data-label="Solo mios"
+                        >
+                            <UserCheck size={18} />
+                            {quickStats.assignedToMe > 0 && <span className="sidebar-ribbon-badge">{quickStats.assignedToMe > 9 ? '9+' : quickStats.assignedToMe}</span>}
                         </button>
                         <button
                             type="button"

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 
 const WA_LABEL_COLORS = ['#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#00A884', '#7D8D95'];
 
@@ -30,6 +30,7 @@ const normalizeFilters = (filters = {}) => {
     labelTokens,
     unreadOnly: Boolean(filters?.unreadOnly),
     unlabeledOnly: Boolean(filters?.unlabeledOnly),
+    onlyAssignedToMe: Boolean(filters?.onlyAssignedToMe),
     contactMode,
     archivedMode,
     pinnedMode
@@ -59,10 +60,14 @@ const useSidebarFiltersController = ({
   activeFilters = {},
   labelDefinitions = [],
   waModules = [],
+  chatAssignmentState = null,
   onFiltersChange = null,
   searchQuery = ''
 } = {}) => {
   void waModules;
+  const isAssignedToMeResolver = typeof chatAssignmentState?.isAssignedToMe === 'function'
+    ? chatAssignmentState.isAssignedToMe
+    : (() => false);
 
   const [labelSearch, setLabelSearch] = useState('');
 
@@ -119,7 +124,12 @@ const useSidebarFiltersController = ({
   ), [allLabels, normalizedLabelSearch]);
 
   const selectedLabelCount = filters.labelTokens.length;
-  const hasActiveQuickFilters = filters.unreadOnly || filters.unlabeledOnly || filters.contactMode !== 'all' || filters.archivedMode !== 'all' || filters.pinnedMode !== 'all';
+  const hasActiveQuickFilters = filters.unreadOnly
+    || filters.unlabeledOnly
+    || filters.onlyAssignedToMe
+    || filters.contactMode !== 'all'
+    || filters.archivedMode !== 'all'
+    || filters.pinnedMode !== 'all';
   const hasAnyFilter = hasActiveQuickFilters || selectedLabelCount > 0;
 
   const quickStats = useMemo(() => {
@@ -129,14 +139,16 @@ const useSidebarFiltersController = ({
     const unknown = chats.filter((c) => c?.isMyContact !== true).length;
     const archived = chats.filter((c) => Boolean(c?.archived)).length;
     const pinned = chats.filter((c) => Boolean(c?.pinned)).length;
-    return { unread, unlabeled, myContacts, unknown, archived, pinned };
-  }, [chats]);
+    const assignedToMe = chats.filter((chat) => isAssignedToMeResolver(chat?.id)).length;
+    return { unread, unlabeled, myContacts, unknown, archived, pinned, assignedToMe };
+  }, [chats, isAssignedToMeResolver]);
 
   const activeFilterChips = useMemo(() => {
     const chips = [];
     if (!hasAnyFilter) return chips;
     if (filters.unreadOnly) chips.push('No leidos');
     if (filters.unlabeledOnly) chips.push('Sin etiqueta');
+    if (filters.onlyAssignedToMe) chips.push('Solo mis chats');
     if (filters.archivedMode === 'archived') chips.push('Archivados');
     if (filters.pinnedMode === 'pinned') chips.push('Fijados');
     if (filters.contactMode === 'my') chips.push('Guardados');
@@ -150,13 +162,14 @@ const useSidebarFiltersController = ({
     const labelTokenSet = getChatLabelTokenSet(chat);
 
     if (filters.unreadOnly && Number(chat?.unreadCount || 0) <= 0) return false;
+    if (filters.onlyAssignedToMe && !isAssignedToMeResolver(chat?.id)) return false;
     if (filters.contactMode === 'my' && !chat?.isMyContact) return false;
     if (filters.contactMode === 'unknown' && chat?.isMyContact) return false;
     if (filters.archivedMode === 'archived' && !chat?.archived) return false;
     if (filters.archivedMode === 'active' && chat?.archived) return false;
     if (filters.pinnedMode === 'pinned' && !chat?.pinned) return false;
     if (filters.pinnedMode === 'unpinned' && chat?.pinned) return false;
-    // TODO(bug): filtro "sin etiquetas" muestra resultados invertidos — chats con etiqueta aparecen como sin etiqueta
+    // TODO(bug): filtro "sin etiquetas" muestra resultados invertidos â€” chats con etiqueta aparecen como sin etiqueta
     if (filters.unlabeledOnly && labelTokenSet.size !== 0) return false;
 
     if (!filters.unlabeledOnly && filters.labelTokens.length > 0) {
@@ -178,15 +191,16 @@ const useSidebarFiltersController = ({
       return phone.includes(qDigits) || normalizePhoneDigits(subtitle).includes(qDigits);
     }
 
-    // TODO(bug): filtro sin resultados queda en estado "cargando" indefinidamente — falta estado de "sin resultados"
+    // TODO(bug): filtro sin resultados queda en estado "cargando" indefinidamente â€” falta estado de "sin resultados"
     return name.includes(q) || subtitle.includes(q) || status.includes(q) || lastMessage.includes(q);
-  }), [chats, filters, localQuery]);
+  }), [chats, filters, localQuery, isAssignedToMeResolver]);
 
   const resetFilters = () => {
     onFiltersChange?.(normalizeFilters({
       labelTokens: [],
       unreadOnly: false,
       unlabeledOnly: false,
+      onlyAssignedToMe: false,
       contactMode: 'all',
       archivedMode: 'all',
       pinnedMode: 'all'

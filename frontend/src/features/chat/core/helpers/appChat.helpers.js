@@ -523,6 +523,7 @@ export const normalizeChatFilters = (filters = {}) => {
     labelTokens,
     unreadOnly: Boolean(filters?.unreadOnly),
     unlabeledOnly: Boolean(filters?.unlabeledOnly),
+    onlyAssignedToMe: Boolean(filters?.onlyAssignedToMe),
     contactMode,
     archivedMode,
     pinnedMode,
