@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import {
   useMessagesAutoScroll,
@@ -134,6 +134,12 @@ export default function useAppChatSocketRuntime({
   setClientContact,
   setToasts
 }) {
+  const isClientReadyRef = useRef(Boolean(isClientReady));
+
+  useEffect(() => {
+    isClientReadyRef.current = Boolean(isClientReady);
+  }, [isClientReady]);
+
   useMessagesAutoScroll({
     messages,
     messagesEndRef,
@@ -193,8 +199,9 @@ export default function useAppChatSocketRuntime({
   useEffect(() => {
     if (!isClientReady) return;
     const timer = setTimeout(() => {
+      if (!isClientReadyRef.current) return;
       requestChatsPage({ reset: true });
-    }, 180);
+    }, 600);
     return () => clearTimeout(timer);
   }, [chatSearchQuery, chatFilters, isClientReady]);
 

@@ -357,12 +357,12 @@ const Sidebar = ({
                                 )}
                             </div>
                             {assignmentsLoaded && (
-                                <div className="sidebar-label-search-row" style={{ marginTop: '8px' }}>
-                                    <UserCheck size={14} />
+                                <label className="assignment-selector" style={{ marginTop: '8px', marginLeft: 0 }}>
+                                    <span className="assignment-selector-label">Vendedora</span>
                                     <select
                                         value={filters.assigneeUserId || ''}
                                         onChange={(event) => updateFilters({ assigneeUserId: String(event.target.value || '').trim() })}
-                                        className="sidebar-label-search-input"
+                                        className="assignment-selector-select"
                                         title="Filtrar por asignacion"
                                     >
                                         <option value="">Todas las vendedoras</option>
@@ -373,7 +373,7 @@ const Sidebar = ({
                                             </option>
                                         ))}
                                     </select>
-                                </div>
+                                </label>
                             )}
                             {hasAnyFilter && (
                                 <button type="button" className="sidebar-filter-clear" onClick={resetFilters}>Limpiar</button>
