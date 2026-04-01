@@ -84,13 +84,15 @@ const Sidebar = ({
         setLabelSearch,
         selectedLabelCount,
         hasAnyFilter,
-        assignmentUserOptions
+        assignmentUserOptions,
+        commercialStatusOptions
     } = useSidebarFiltersController({
         chats,
         activeFilters,
         labelDefinitions,
         waModules,
         chatAssignmentState,
+        chatCommercialStatusState,
         onFiltersChange,
         searchQuery
     });
@@ -125,6 +127,7 @@ const Sidebar = ({
         ? chatCommercialStatusState.getCommercialStatus
         : (() => null);
     const assignmentsLoaded = Boolean(chatAssignmentState?.assignmentsLoaded);
+    const statusesLoaded = Boolean(chatCommercialStatusState?.statusesLoaded);
 
     const currentTenantId = String(activeTenantId || '').trim();
     const sortedTenantOptions = Array.isArray(tenantOptions)
@@ -373,6 +376,23 @@ const Sidebar = ({
                                         <option value="">Todas las vendedoras</option>
                                         <option value="__unassigned__">Sin asignar</option>
                                         {assignmentUserOptions.map((entry) => (
+                                            <option key={entry.value} value={entry.value}>
+                                                {entry.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            )}
+                            {statusesLoaded && (
+                                <label className="assignment-selector" style={{ marginTop: '8px', marginLeft: 0 }}>
+                                    <span className="assignment-selector-label">Estado</span>
+                                    <select
+                                        value={filters.commercialStatus || 'all'}
+                                        onChange={(event) => updateFilters({ commercialStatus: String(event.target.value || 'all').trim().toLowerCase() })}
+                                        className="assignment-selector-select"
+                                        title="Filtrar por estado comercial"
+                                    >
+                                        {commercialStatusOptions.map((entry) => (
                                             <option key={entry.value} value={entry.value}>
                                                 {entry.label}
                                             </option>
