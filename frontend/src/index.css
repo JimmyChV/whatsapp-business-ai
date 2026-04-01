@@ -4791,6 +4791,52 @@ body {
   color: #ffb8b2;
 }
 
+.commercial-status-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.commercial-status-action-btn {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1.1;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.commercial-status-action-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.commercial-status-action-btn--sold {
+  background: rgba(0, 168, 132, 0.16);
+  border-color: rgba(0, 168, 132, 0.35);
+  color: #8ff3d4;
+}
+
+.commercial-status-action-btn--sold:hover:not(:disabled),
+.commercial-status-action-btn--sold.active {
+  background: rgba(0, 168, 132, 0.28);
+  border-color: rgba(0, 168, 132, 0.5);
+}
+
+.commercial-status-action-btn--lost {
+  background: rgba(244, 67, 54, 0.16);
+  border-color: rgba(244, 67, 54, 0.35);
+  color: #ffb8b2;
+}
+
+.commercial-status-action-btn--lost:hover:not(:disabled),
+.commercial-status-action-btn--lost.active {
+  background: rgba(244, 67, 54, 0.28);
+  border-color: rgba(244, 67, 54, 0.5);
+}
+
 .chat-row-meta .assignment-badge {
   flex: 0 0 auto;
 }

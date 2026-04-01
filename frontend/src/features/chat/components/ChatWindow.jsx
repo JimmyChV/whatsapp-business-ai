@@ -6,6 +6,7 @@ import ChannelBrandIcon from './ChannelBrandIcon';
 import ChatInput from './ChatInput';
 import AssignmentBadge from './assignment/AssignmentBadge';
 import CommercialStatusBadge from './commercial/CommercialStatusBadge';
+import CommercialStatusActions from './commercial/CommercialStatusActions';
 import TakeChatButton from './assignment/TakeChatButton';
 import AssignmentSelector from './assignment/AssignmentSelector';
 import useChatWindowMapController from './hooks/useChatWindowMapController';
@@ -166,6 +167,12 @@ const ChatWindow = ({
                         />
                         <CommercialStatusBadge
                             commercialStatus={activeChatCommercialStatus}
+                        />
+                        <CommercialStatusActions
+                            chatId={activeChatScopedId}
+                            commercialStatus={activeChatCommercialStatus}
+                            chatCommercialStatusState={chatCommercialStatusState}
+                            currentUserRole={currentUserRole}
                         />
                         <AssignmentSelector
                             activeTenantId={activeTenantId}
