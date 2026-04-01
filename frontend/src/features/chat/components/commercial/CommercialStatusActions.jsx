@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 
 const normalizeText = (value = '') => String(value || '').trim();
@@ -15,6 +15,8 @@ export default function CommercialStatusActions({
 }) {
   const { confirm } = useUiFeedback();
   const [pendingStatus, setPendingStatus] = useState('');
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
 
   const safeChatId = normalizeText(chatId);
   const currentStatus = normalizeStatus(commercialStatus?.status || '');
@@ -24,6 +26,17 @@ export default function CommercialStatusActions({
     : null;
 
   if (!safeChatId || !canManage || !setManualCommercialStatus) return null;
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (!rootRef.current) return;
+      if (rootRef.current.contains(event.target)) return;
+      setOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
 
   const runStatusUpdate = async (targetStatus = '') => {
     const safeStatus = normalizeStatus(targetStatus);
@@ -44,6 +57,7 @@ export default function CommercialStatusActions({
     try {
       setPendingStatus(safeStatus);
       await setManualCommercialStatus(safeChatId, safeStatus);
+      setOpen(false);
     } finally {
       setPendingStatus('');
     }
@@ -51,27 +65,41 @@ export default function CommercialStatusActions({
 
   return (
     <div
-      className="commercial-status-actions"
+      ref={rootRef}
+      className="commercial-status-actions commercial-status-actions--dropdown"
       onClick={(event) => event.stopPropagation()}
     >
       <button
         type="button"
-        className={`commercial-status-action-btn commercial-status-action-btn--sold ${currentStatus === 'vendido' ? 'active' : ''}`}
-        onClick={() => runStatusUpdate('vendido')}
+        className="commercial-status-dropdown-trigger"
+        onClick={() => setOpen((prev) => !prev)}
         disabled={Boolean(pendingStatus)}
-        title="Marcar chat como vendido"
+        title="Cambiar estado comercial"
       >
-        Vender
+        Cambiar estado
       </button>
-      <button
-        type="button"
-        className={`commercial-status-action-btn commercial-status-action-btn--lost ${currentStatus === 'perdido' ? 'active' : ''}`}
-        onClick={() => runStatusUpdate('perdido')}
-        disabled={Boolean(pendingStatus)}
-        title="Marcar chat como perdido"
-      >
-        Perder
-      </button>
+      {open && (
+        <div className="commercial-status-dropdown-menu">
+          <button
+            type="button"
+            className={`commercial-status-dropdown-item commercial-status-dropdown-item--sold ${currentStatus === 'vendido' ? 'active' : ''}`}
+            onClick={() => runStatusUpdate('vendido')}
+            disabled={Boolean(pendingStatus)}
+            title="Marcar chat como vendido"
+          >
+            Marcar vendido
+          </button>
+          <button
+            type="button"
+            className={`commercial-status-dropdown-item commercial-status-dropdown-item--lost ${currentStatus === 'perdido' ? 'active' : ''}`}
+            onClick={() => runStatusUpdate('perdido')}
+            disabled={Boolean(pendingStatus)}
+            title="Marcar chat como perdido"
+          >
+            Marcar perdido
+          </button>
+        </div>
+      )}
     </div>
   );
 }

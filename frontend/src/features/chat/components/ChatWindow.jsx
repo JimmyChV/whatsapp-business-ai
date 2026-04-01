@@ -98,7 +98,6 @@ const ChatWindow = ({
         avatarColor,
         resolveGroupSenderName,
         formatDayLabel,
-        headerMetaItems,
         headerDisplayName,
         showHeaderModule,
         headerModuleName,
@@ -126,6 +125,9 @@ const ChatWindow = ({
     const hasAssignee = Boolean(String(activeChatAssignment?.assigneeUserId || '').trim());
     const canWriteByAssignment = hasAssignee && isAssignedToMe;
     const activeScopeModuleId = String(activeChatDetails?.scopeModuleId || activeChatAssignment?.scopeModuleId || '').trim().toLowerCase();
+    const headerLabels = Array.isArray(activeChatDetails?.labels) ? activeChatDetails.labels : [];
+    const visibleHeaderLabels = headerLabels.slice(0, 2);
+    const hiddenHeaderLabelsCount = Math.max(0, headerLabels.length - visibleHeaderLabels.length);
 
     return (
         <div
@@ -160,13 +162,14 @@ const ChatWindow = ({
                 <div className="chat-header-meta">
                     <div className="chat-header-title-row chat-header-title-row--clean">
                         <h3 className="chat-header-name">{headerDisplayName}</h3>
-                        {activeChatDetails?.isBusiness && <span className="chat-header-pill">Business</span>}
+                        <CommercialStatusBadge
+                            commercialStatus={activeChatCommercialStatus}
+                            compact
+                        />
                         <AssignmentBadge
                             assignment={activeChatAssignment}
                             isAssignedToMe={isAssignedToMe}
-                        />
-                        <CommercialStatusBadge
-                            commercialStatus={activeChatCommercialStatus}
+                            compact
                         />
                         <CommercialStatusActions
                             chatId={activeChatScopedId}
@@ -174,15 +177,10 @@ const ChatWindow = ({
                             chatCommercialStatusState={chatCommercialStatusState}
                             currentUserRole={currentUserRole}
                         />
-                        <AssignmentSelector
-                            activeTenantId={activeTenantId}
-                            chatId={activeChatScopedId}
-                            scopeModuleId={activeScopeModuleId}
-                            buildApiHeaders={buildApiHeaders}
-                            currentUserRole={currentUserRole}
-                        />
+                    </div>
+                    <div className="chat-header-subline chat-header-subline--summary">
                         {showHeaderModule && (
-                            <span className="chat-header-module-pill" title={headerModuleName || 'Modulo'}>
+                            <span className="chat-header-module-mini" title={headerModuleName || 'Modulo'}>
                                 {headerModuleImageUrl
                                     ? <img src={headerModuleImageUrl} alt={headerModuleName || 'Modulo'} className="chat-header-module-avatar" />
                                     : <span className="chat-header-module-dot" aria-hidden="true" />}
@@ -199,28 +197,23 @@ const ChatWindow = ({
                                 )}
                             </span>
                         )}
-                    </div>
-                    <div className="chat-header-subline">
-                        {headerMetaItems.map((item, idx) => (
-                            <React.Fragment key={`${item}_${idx}`}>
-                                <span className={idx === 0 ? 'chat-header-primary' : 'chat-header-secondary'}>{item}</span>
-                                {idx < headerMetaItems.length - 1 && <span className="chat-header-dot">|</span>}
-                            </React.Fragment>
+                        {activeChatDetails?.isBusiness && <span className="chat-header-secondary-pill">Business</span>}
+                        {visibleHeaderLabels.map((label, index) => (
+                            <span
+                                key={`${label?.id || label?.name || 'h'}_${index}`}
+                                className="chat-header-label-chip chat-header-label-chip--compact"
+                                style={{ '--label-color': label?.color || '#7a8f9a' }}
+                                title={label?.name || 'Etiqueta'}
+                            >
+                                {label?.name || 'Etiqueta'}
+                            </span>
                         ))}
+                        {hiddenHeaderLabelsCount > 0 && (
+                            <span className="chat-header-label-more" title={`${hiddenHeaderLabelsCount} etiqueta(s) adicionales`}>
+                                +{hiddenHeaderLabelsCount}
+                            </span>
+                        )}
                     </div>
-                    {!!activeChatDetails?.labels?.length && (
-                        <div className="chat-header-labels">
-                            {activeChatDetails.labels.slice(0, 3).map((l, i) => (
-                                <span
-                                    key={i}
-                                    className="chat-header-label-chip"
-                                    style={{ '--label-color': l.color || '#7a8f9a' }}
-                                >
-                                    {l.name}
-                                </span>
-                            ))}
-                        </div>
-                    )}
                 </div>
                 <div className="chat-header-actions" onClick={e => e.stopPropagation()}>
                     <button className={`btn-icon ui-icon-btn chat-header-action-btn ${searchVisible ? 'active' : ''}`}
@@ -278,6 +271,16 @@ const ChatWindow = ({
                                         {item.label}
                                     </div>
                                 ))}
+                                <div className="chat-header-popover-divider" />
+                                <div className="chat-header-popover-section">
+                                    <AssignmentSelector
+                                        activeTenantId={activeTenantId}
+                                        chatId={activeChatScopedId}
+                                        scopeModuleId={activeScopeModuleId}
+                                        buildApiHeaders={buildApiHeaders}
+                                        currentUserRole={currentUserRole}
+                                    />
+                                </div>
                             </div>
                         )}
                     </div>

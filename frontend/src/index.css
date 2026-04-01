@@ -4525,7 +4525,7 @@ body {
 
 .chat-header-title-row--clean {
   align-items: center;
-  gap: 8px;
+  gap: 7px;
 }
 
 .chat-header-name {
@@ -4553,6 +4553,36 @@ body {
   gap: 6px;
   min-height: 18px;
 }
+.chat-header-subline--summary {
+  margin-top: 1px;
+  gap: 6px;
+}
+
+.chat-header-module-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(260px, 42vw);
+  min-width: 0;
+  padding: 2px 8px 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 220, 185, 0.42);
+  background: rgba(12, 54, 46, 0.45);
+  color: #b7f6ea;
+}
+
+.chat-header-secondary-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  border: 1px solid rgba(76, 142, 255, 0.36);
+  background: rgba(76, 142, 255, 0.18);
+  color: #bcd5ff;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.05;
+}
 
 .chat-header-primary,
 .chat-header-secondary {
@@ -4576,6 +4606,27 @@ body {
   border-radius: 999px;
   font-size: 0.68rem;
   font-weight: 700;
+}
+.chat-header-label-chip--compact {
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 2px 7px;
+  font-size: 0.64rem;
+}
+
+.chat-header-label-more {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 7px;
+  border: 1px solid rgba(134, 150, 160, 0.35);
+  background: rgba(132, 152, 163, 0.15);
+  color: #a7bcc6;
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1.05;
 }
 
 .chat-header-actions {
@@ -4663,6 +4714,9 @@ body {
   flex-wrap: wrap;
   gap: 6px;
   min-height: 18px;
+}
+.chat-window .chat-header-module-mini {
+  max-width: min(240px, 38vw);
 }
 
 .chat-window .chat-header-labels {
@@ -4794,45 +4848,89 @@ body {
 .commercial-status-actions {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  position: relative;
 }
 
-.commercial-status-action-btn {
+.commercial-status-actions--dropdown {
+  position: relative;
+}
+
+.commercial-status-dropdown-trigger {
   border: 1px solid transparent;
   border-radius: 999px;
-  padding: 3px 8px;
+  padding: 3px 9px;
   font-size: 0.65rem;
   font-weight: 700;
   line-height: 1.1;
   cursor: pointer;
   transition: all 0.14s ease;
+  background: rgba(255, 182, 77, 0.16);
+  border-color: rgba(255, 182, 77, 0.36);
+  color: #ffd28f;
 }
 
-.commercial-status-action-btn:disabled {
+.commercial-status-dropdown-trigger:disabled {
   opacity: 0.65;
   cursor: not-allowed;
 }
 
-.commercial-status-action-btn--sold {
+.commercial-status-dropdown-trigger:hover:not(:disabled) {
+  background: rgba(255, 182, 77, 0.24);
+  border-color: rgba(255, 182, 77, 0.5);
+}
+
+.commercial-status-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 150px;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(134, 150, 160, 0.26);
+  background: #13232d;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
+  z-index: 12;
+}
+
+.commercial-status-dropdown-item {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.1;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.14s ease;
+}
+
+.commercial-status-dropdown-item:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.commercial-status-dropdown-item--sold {
   background: rgba(0, 168, 132, 0.16);
   border-color: rgba(0, 168, 132, 0.35);
   color: #8ff3d4;
 }
 
-.commercial-status-action-btn--sold:hover:not(:disabled),
-.commercial-status-action-btn--sold.active {
+.commercial-status-dropdown-item--sold:hover:not(:disabled),
+.commercial-status-dropdown-item--sold.active {
   background: rgba(0, 168, 132, 0.28);
   border-color: rgba(0, 168, 132, 0.5);
 }
 
-.commercial-status-action-btn--lost {
+.commercial-status-dropdown-item--lost {
   background: rgba(244, 67, 54, 0.16);
   border-color: rgba(244, 67, 54, 0.35);
   color: #ffb8b2;
 }
 
-.commercial-status-action-btn--lost:hover:not(:disabled),
-.commercial-status-action-btn--lost.active {
+.commercial-status-dropdown-item--lost:hover:not(:disabled),
+.commercial-status-dropdown-item--lost.active {
   background: rgba(244, 67, 54, 0.28);
   border-color: rgba(244, 67, 54, 0.5);
 }
@@ -4915,6 +5013,30 @@ body {
 .assignment-selector-select:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+.chat-header-popover-divider {
+  height: 1px;
+  margin: 5px 0 4px;
+  background: rgba(125, 157, 173, 0.22);
+}
+
+.chat-header-popover-section {
+  display: grid;
+  gap: 6px;
+}
+
+.chat-header-popover-section .assignment-selector {
+  margin-left: 0;
+  display: flex;
+  width: 100%;
+  gap: 7px;
+}
+
+.chat-header-popover-section .assignment-selector-select {
+  min-width: 100%;
+  width: 100%;
+  max-width: 100%;
 }
 
 .business-assignment-lock-hint {
