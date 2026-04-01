@@ -4470,7 +4470,25 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 20px;
+  min-height: 16px;
+}
+
+.chat-row-meta--compact {
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+
+.chat-row-labels {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chat-row-statuses {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
 }
 
 .chat-module-badge--compact {
@@ -4485,7 +4503,7 @@ body {
 }
 
 .chat-inline-labels--dots {
-  margin-left: auto;
+  margin-left: 0;
   margin-bottom: 0;
 }
 
@@ -4935,11 +4953,11 @@ body {
   border-color: rgba(244, 67, 54, 0.5);
 }
 
-.chat-row-meta .assignment-badge {
+.chat-row-statuses .assignment-badge {
   flex: 0 0 auto;
 }
 
-.chat-row-meta .commercial-status-badge {
+.chat-row-statuses .commercial-status-badge {
   flex: 0 0 auto;
 }
 

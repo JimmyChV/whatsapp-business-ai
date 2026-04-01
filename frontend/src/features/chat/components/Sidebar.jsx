@@ -507,43 +507,10 @@ const Sidebar = ({
                                         </span>
                                     </div>
 
-                                    <div className="chat-row-meta">
-                                        {moduleBadge?.label && (
-                                            <p className="chat-module-badge chat-module-badge--compact">
-                                                <span className="chat-module-badge-media">
-                                                    {moduleBadge.imageUrl
-                                                        ? <img src={moduleBadge.imageUrl} alt={moduleBadge.label} className="chat-module-badge-avatar" />
-                                                        : <span className="chat-module-badge-dot" aria-hidden="true" />}
-                                                    {moduleBadge?.channelType && (
-                                                        <span
-                                                            className={`chat-module-badge-channel chat-module-badge-channel--${channelMarker.key}`}
-                                                            title={channelMarker.label}
-                                                        >
-                                                            <ChannelBrandIcon
-                                                                channelType={channelMarker.key}
-                                                                className="chat-module-badge-channel-icon"
-                                                                size={8}
-                                                                title={channelMarker.label}
-                                                            />
-                                                        </span>
-                                                    )}
-                                                </span>
-                                                <span className="chat-module-badge-label">{moduleBadge.label}</span>
-                                            </p>
-                                        )}
-                                        <AssignmentBadge
-                                            assignment={chatAssignment}
-                                            isAssignedToMe={isAssignedToMe}
-                                            compact
-                                        />
-                                        <CommercialStatusBadge
-                                            commercialStatus={chatCommercialStatus}
-                                            compact
-                                        />
-
+                                    <div className="chat-row-meta chat-row-meta--compact">
                                         {labels.length > 0 && (
                                             <div
-                                                className="chat-inline-labels chat-inline-labels--dots"
+                                                className="chat-row-labels chat-inline-labels chat-inline-labels--dots"
                                                 title={labels.map((label) => String(label?.name || '').trim()).filter(Boolean).join(', ')}
                                             >
                                                 {labels.slice(0, 4).map((label, idx) => (
@@ -556,6 +523,17 @@ const Sidebar = ({
                                                 {labels.length > 4 && <span className="chat-inline-label-more">+{labels.length - 4}</span>}
                                             </div>
                                         )}
+                                        <div className="chat-row-statuses">
+                                            <CommercialStatusBadge
+                                                commercialStatus={chatCommercialStatus}
+                                                compact
+                                            />
+                                            <AssignmentBadge
+                                                assignment={chatAssignment}
+                                                isAssignedToMe={isAssignedToMe}
+                                                compact
+                                            />
+                                        </div>
                                     </div>
 
                                     <div className="chat-row-bottom">

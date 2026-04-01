@@ -42,7 +42,7 @@ function resolveAssignmentVisual(assignment = null, isAssignedToMe = false, comp
   if (!hasAssignee || status === 'released') {
     return {
       tone: 'unassigned',
-      label: compact ? 'Libre' : 'Sin asignar'
+      label: compact ? 'Sin asignar' : 'Sin asignar'
     };
   }
 
