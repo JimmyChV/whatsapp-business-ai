@@ -4103,6 +4103,102 @@ body {
   font-size: 0.68rem;
 }
 
+.sidebar-filter-pill-toolbar {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sidebar-filter-pill-dropdown {
+  position: relative;
+}
+
+.sidebar-filter-pill-trigger {
+  border: 1px solid rgba(124, 151, 164, 0.34);
+  background: rgba(17, 31, 41, 0.9);
+  color: #d9e7ee;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.71rem;
+  font-weight: 700;
+  line-height: 1.05;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.sidebar-filter-pill-trigger:hover {
+  border-color: rgba(0, 168, 132, 0.44);
+  color: #e8f8f4;
+}
+
+.sidebar-filter-pill-trigger.active {
+  border-color: rgba(0, 168, 132, 0.55);
+  background: rgba(0, 168, 132, 0.16);
+  color: #b7f6ea;
+}
+
+.sidebar-filter-pill-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8fb0bf;
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.sidebar-filter-pill-value {
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-filter-pill-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 180px;
+  max-width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
+  display: grid;
+  gap: 4px;
+  padding: 7px;
+  border-radius: 12px;
+  border: 1px solid rgba(124, 151, 164, 0.26);
+  background: linear-gradient(180deg, rgba(18, 33, 42, 0.98), rgba(14, 27, 35, 0.97));
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.4);
+  z-index: 95;
+}
+
+.sidebar-filter-pill-item {
+  border: 1px solid transparent;
+  background: rgba(24, 42, 53, 0.76);
+  color: #d6e4eb;
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.sidebar-filter-pill-item:hover {
+  border-color: rgba(0, 168, 132, 0.42);
+  background: rgba(0, 168, 132, 0.16);
+}
+
+.sidebar-filter-pill-item.active {
+  border-color: rgba(0, 168, 132, 0.54);
+  background: rgba(0, 168, 132, 0.24);
+  color: #b7f6ea;
+}
+
 
 /* --- Sidebar + Header polish (CRM WhatsApp-like) --- */
 .sidebar-main-content {

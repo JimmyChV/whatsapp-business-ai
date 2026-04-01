@@ -128,6 +128,36 @@ const Sidebar = ({
         : (() => null);
     const assignmentsLoaded = Boolean(chatAssignmentState?.assignmentsLoaded);
     const statusesLoaded = Boolean(chatCommercialStatusState?.statusesLoaded);
+    const [showAssigneeFilterMenu, setShowAssigneeFilterMenu] = React.useState(false);
+    const [showCommercialFilterMenu, setShowCommercialFilterMenu] = React.useState(false);
+    const assigneeMenuRef = React.useRef(null);
+    const commercialMenuRef = React.useRef(null);
+
+    React.useEffect(() => {
+        const handlePointerDown = (event) => {
+            const target = event.target;
+            if (assigneeMenuRef.current && !assigneeMenuRef.current.contains(target)) {
+                setShowAssigneeFilterMenu(false);
+            }
+            if (commercialMenuRef.current && !commercialMenuRef.current.contains(target)) {
+                setShowCommercialFilterMenu(false);
+            }
+        };
+        document.addEventListener('pointerdown', handlePointerDown);
+        return () => document.removeEventListener('pointerdown', handlePointerDown);
+    }, []);
+
+    const selectedAssigneeLabel = React.useMemo(() => {
+        if (filters.assigneeUserId === '__unassigned__') return 'Sin asignar';
+        if (!filters.assigneeUserId) return 'Todas las vendedoras';
+        const match = assignmentUserOptions.find((entry) => String(entry?.value || '') === String(filters.assigneeUserId || ''));
+        return match?.label || filters.assigneeUserId;
+    }, [assignmentUserOptions, filters.assigneeUserId]);
+
+    const selectedCommercialStatusLabel = React.useMemo(() => {
+        const selected = commercialStatusOptions.find((entry) => String(entry?.value || '') === String(filters.commercialStatus || 'all'));
+        return selected?.label || 'Todos';
+    }, [commercialStatusOptions, filters.commercialStatus]);
 
     const currentTenantId = String(activeTenantId || '').trim();
     const sortedTenantOptions = Array.isArray(tenantOptions)
@@ -364,42 +394,94 @@ const Sidebar = ({
                                     ))
                                 )}
                             </div>
-                            {assignmentsLoaded && (
-                                <label className="assignment-selector" style={{ marginTop: '8px', marginLeft: 0 }}>
-                                    <span className="assignment-selector-label">Vendedora</span>
-                                    <select
-                                        value={filters.assigneeUserId || ''}
-                                        onChange={(event) => updateFilters({ assigneeUserId: String(event.target.value || '').trim() })}
-                                        className="assignment-selector-select"
-                                        title="Filtrar por asignacion"
-                                    >
-                                        <option value="">Todas las vendedoras</option>
-                                        <option value="__unassigned__">Sin asignar</option>
-                                        {assignmentUserOptions.map((entry) => (
-                                            <option key={entry.value} value={entry.value}>
-                                                {entry.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </label>
-                            )}
-                            {statusesLoaded && (
-                                <label className="assignment-selector" style={{ marginTop: '8px', marginLeft: 0 }}>
-                                    <span className="assignment-selector-label">Estado</span>
-                                    <select
-                                        value={filters.commercialStatus || 'all'}
-                                        onChange={(event) => updateFilters({ commercialStatus: String(event.target.value || 'all').trim().toLowerCase() })}
-                                        className="assignment-selector-select"
-                                        title="Filtrar por estado comercial"
-                                    >
-                                        {commercialStatusOptions.map((entry) => (
-                                            <option key={entry.value} value={entry.value}>
-                                                {entry.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </label>
-                            )}
+                            <div className="sidebar-filter-pill-toolbar">
+                                {assignmentsLoaded && (
+                                    <div className="sidebar-filter-pill-dropdown" ref={assigneeMenuRef}>
+                                        <button
+                                            type="button"
+                                            className={`sidebar-filter-pill-trigger ${filters.assigneeUserId ? 'active' : ''}`}
+                                            onClick={() => {
+                                                setShowAssigneeFilterMenu((prev) => !prev);
+                                                setShowCommercialFilterMenu(false);
+                                            }}
+                                            title="Filtrar por vendedora"
+                                        >
+                                            <span className="sidebar-filter-pill-label">Vendedora</span>
+                                            <span className="sidebar-filter-pill-value">{selectedAssigneeLabel}</span>
+                                        </button>
+                                        {showAssigneeFilterMenu && (
+                                            <div className="sidebar-filter-pill-menu">
+                                                <button
+                                                    type="button"
+                                                    className={`sidebar-filter-pill-item ${!filters.assigneeUserId ? 'active' : ''}`}
+                                                    onClick={() => {
+                                                        updateFilters({ assigneeUserId: '' });
+                                                        setShowAssigneeFilterMenu(false);
+                                                    }}
+                                                >
+                                                    Todas las vendedoras
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className={`sidebar-filter-pill-item ${filters.assigneeUserId === '__unassigned__' ? 'active' : ''}`}
+                                                    onClick={() => {
+                                                        updateFilters({ assigneeUserId: '__unassigned__' });
+                                                        setShowAssigneeFilterMenu(false);
+                                                    }}
+                                                >
+                                                    Sin asignar
+                                                </button>
+                                                {assignmentUserOptions.map((entry) => (
+                                                    <button
+                                                        key={entry.value}
+                                                        type="button"
+                                                        className={`sidebar-filter-pill-item ${filters.assigneeUserId === entry.value ? 'active' : ''}`}
+                                                        onClick={() => {
+                                                            updateFilters({ assigneeUserId: String(entry.value || '').trim() });
+                                                            setShowAssigneeFilterMenu(false);
+                                                        }}
+                                                    >
+                                                        {entry.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                {statusesLoaded && (
+                                    <div className="sidebar-filter-pill-dropdown" ref={commercialMenuRef}>
+                                        <button
+                                            type="button"
+                                            className={`sidebar-filter-pill-trigger ${String(filters.commercialStatus || 'all') !== 'all' ? 'active' : ''}`}
+                                            onClick={() => {
+                                                setShowCommercialFilterMenu((prev) => !prev);
+                                                setShowAssigneeFilterMenu(false);
+                                            }}
+                                            title="Filtrar por estado comercial"
+                                        >
+                                            <span className="sidebar-filter-pill-label">Estado</span>
+                                            <span className="sidebar-filter-pill-value">{selectedCommercialStatusLabel}</span>
+                                        </button>
+                                        {showCommercialFilterMenu && (
+                                            <div className="sidebar-filter-pill-menu">
+                                                {commercialStatusOptions.map((entry) => (
+                                                    <button
+                                                        key={entry.value}
+                                                        type="button"
+                                                        className={`sidebar-filter-pill-item ${String(filters.commercialStatus || 'all') === String(entry.value) ? 'active' : ''}`}
+                                                        onClick={() => {
+                                                            updateFilters({ commercialStatus: String(entry.value || 'all').trim().toLowerCase() });
+                                                            setShowCommercialFilterMenu(false);
+                                                        }}
+                                                    >
+                                                        {entry.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                             {hasAnyFilter && (
                                 <button type="button" className="sidebar-filter-clear" onClick={resetFilters}>Limpiar</button>
                             )}
@@ -442,7 +524,7 @@ const Sidebar = ({
                             </div>
                         )}
                     </div>
-            <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); }} onScroll={handleChatListScroll}>
+            <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); if (showAssigneeFilterMenu) setShowAssigneeFilterMenu(false); if (showCommercialFilterMenu) setShowCommercialFilterMenu(false); }} onScroll={handleChatListScroll}>
                 {filteredChats.length === 0 && chats.length === 0 && !chatsLoaded ? (
                     [1, 2, 3, 4, 5].map((i) => (
                         <div key={i} className="chat-item chat-item-modern">

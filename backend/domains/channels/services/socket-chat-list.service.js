@@ -155,17 +155,81 @@ function createSocketChatListService({
         return deduped;
     };
 
+    const buildLabelMapKey = (chatId = '', scopeModuleId = '') => `${String(chatId || '')}::${normalizeScopedModuleId(scopeModuleId || '')}`;
+
+    const listChatLabelsMapWithScopeFallback = async ({
+        tenantId = 'default',
+        chatIds = [],
+        scopeModuleId = '',
+        includeInactive = false
+    } = {}) => {
+        const safeTenantId = String(tenantId || 'default').trim() || 'default';
+        const safeScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
+        const cleanChatIds = Array.from(new Set(
+            (Array.isArray(chatIds) ? chatIds : [])
+                .map((entry) => String(entry || '').trim())
+                .filter((entry) => Boolean(entry) && isVisibleChatId(entry))
+        ));
+        if (!cleanChatIds.length) return {};
+        if (typeof tenantLabelService?.listChatLabelsMap !== 'function') return {};
+
+        let labelsMap = {};
+        try {
+            labelsMap = await tenantLabelService.listChatLabelsMap({
+                tenantId: safeTenantId,
+                chatKeys: cleanChatIds.map((chatId) => ({ chatId, scopeModuleId: safeScopeModuleId })),
+                includeInactive
+            }) || {};
+        } catch (error) {
+            labelsMap = {};
+        }
+
+        if (safeScopeModuleId) {
+            const missingChatIds = cleanChatIds.filter((chatId) => {
+                const scopedKey = buildLabelMapKey(chatId, safeScopeModuleId);
+                const scopedLabels = labelsMap?.[scopedKey];
+                return !Array.isArray(scopedLabels) || scopedLabels.length === 0;
+            });
+
+            if (missingChatIds.length > 0) {
+                try {
+                    const fallbackMap = await tenantLabelService.listChatLabelsMap({
+                        tenantId: safeTenantId,
+                        chatKeys: missingChatIds.map((chatId) => ({ chatId, scopeModuleId: '' })),
+                        includeInactive
+                    }) || {};
+                    for (const chatId of missingChatIds) {
+                        const scopedKey = buildLabelMapKey(chatId, safeScopeModuleId);
+                        const fallbackKey = buildLabelMapKey(chatId, '');
+                        if ((!Array.isArray(labelsMap?.[scopedKey]) || labelsMap[scopedKey].length === 0) && Array.isArray(fallbackMap?.[fallbackKey]) && fallbackMap[fallbackKey].length > 0) {
+                            labelsMap[scopedKey] = fallbackMap[fallbackKey];
+                        }
+                    }
+                } catch (error) { }
+            }
+        }
+
+        cleanChatIds.forEach((chatId) => {
+            const key = buildLabelMapKey(chatId, safeScopeModuleId);
+            if (!Array.isArray(labelsMap?.[key])) labelsMap[key] = [];
+        });
+
+        return labelsMap;
+    };
+
     const getChatLabelTokenSet = async (chat, { tenantId = 'default', scopeModuleId = '' } = {}) => {
         const chatId = String(chat?.id?._serialized || '');
         if (!chatId || !isVisibleChatId(chatId)) return new Set();
 
         try {
-            const labels = await tenantLabelService.listChatLabels({
+            const safeScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
+            const labelsMap = await listChatLabelsMapWithScopeFallback({
                 tenantId,
-                chatId,
-                scopeModuleId: normalizeScopedModuleId(scopeModuleId || ''),
+                chatIds: [chatId],
+                scopeModuleId: safeScopeModuleId,
                 includeInactive: false
             });
+            const labels = labelsMap?.[buildLabelMapKey(chatId, safeScopeModuleId)] || [];
             return toLabelTokenSet(labels);
         } catch (error) {
             return new Set();
@@ -193,11 +257,28 @@ function createSocketChatListService({
 
         const safeTenantId = String(tenantId || 'default').trim() || 'default';
         const safeScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
+        const labelTokenSetByChatId = new Map();
+        if (needsLabelFiltering) {
+            const chatIds = chats
+                .map((chat) => String(chat?.id?._serialized || '').trim())
+                .filter((chatId) => Boolean(chatId) && isVisibleChatId(chatId));
+            const labelsMap = await listChatLabelsMapWithScopeFallback({
+                tenantId: safeTenantId,
+                chatIds,
+                scopeModuleId: safeScopeModuleId,
+                includeInactive: false
+            });
+            chatIds.forEach((chatId) => {
+                const labels = labelsMap?.[buildLabelMapKey(chatId, safeScopeModuleId)] || [];
+                labelTokenSetByChatId.set(chatId, toLabelTokenSet(labels));
+            });
+        }
 
         const included = new Array(chats.length).fill(false);
         const labelConcurrency = Math.max(2, Number(process.env.LABEL_FILTER_CONCURRENCY || 10));
 
         await runWithConcurrency(chats, labelConcurrency, async (chat, idx) => {
+            const chatId = String(chat?.id?._serialized || '').trim();
             const unreadCount = Number(chat?.unreadCount || 0);
             if (unreadOnly && unreadCount <= 0) return;
 
@@ -212,7 +293,7 @@ function createSocketChatListService({
             if (pinnedMode === 'unpinned' && isPinned) return;
 
             if (needsLabelFiltering) {
-                const labelTokenSet = await getChatLabelTokenSet(chat, { tenantId: safeTenantId, scopeModuleId: safeScopeModuleId });
+                const labelTokenSet = labelTokenSetByChatId.get(chatId) || await getChatLabelTokenSet(chat, { tenantId: safeTenantId, scopeModuleId: safeScopeModuleId });
                 const hasAnyLabel = labelTokenSet.size > 0;
                 if (unlabeledOnly && hasAnyLabel) return;
                 if (!unlabeledOnly && selectedTokens.length > 0 && !matchesTokenSet(labelTokenSet, selectedTokens)) {
@@ -275,7 +356,7 @@ function createSocketChatListService({
                 scopeModuleId: normalizedScopeModuleId,
                 includeInactive: false
             });
-            if ((!normalizedScopeModuleId || normalizedScopeModuleId === '') && (!Array.isArray(labels) || labels.length === 0)) {
+            if ((normalizedScopeModuleId && normalizedScopeModuleId !== '') && (!Array.isArray(labels) || labels.length === 0)) {
                 labels = await tenantLabelService.listChatLabels({
                     tenantId: resolvedTenantId,
                     chatId,
