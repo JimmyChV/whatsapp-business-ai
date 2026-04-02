@@ -38,7 +38,8 @@ function registerOperationsHttpRoutes({
     hasChatAssignmentsWriteAccess,
     hasAssignmentRulesReadAccess,
     hasAssignmentRulesWriteAccess,
-    hasOperationsKpiReadAccess
+    hasOperationsKpiReadAccess,
+    emitCommercialStatusUpdated
 }) {
     if (!app) throw new Error('registerOperationsHttpRoutes requiere app.');
     const assignmentPolicy = chatAssignmentPolicyService && typeof chatAssignmentPolicyService === 'object'
@@ -197,6 +198,16 @@ function registerOperationsHttpRoutes({
                     changed: Boolean(result?.changed)
                 }
             });
+
+            if (typeof emitCommercialStatusUpdated === 'function') {
+                emitCommercialStatusUpdated({
+                    tenantId,
+                    chatId,
+                    scopeModuleId,
+                    result,
+                    source: 'http'
+                });
+            }
 
             return res.json({
                 ok: true,

@@ -155,7 +155,7 @@ export default function useChatCommercialStatusState({
         return { ok: false, error: detail || 'request_failed' };
       }
 
-      const nextStatus = normalizeCommercialStatusRecord(payload?.status, baseChatId, scopeModuleId);
+      const nextStatus = normalizeCommercialStatusRecord(payload?.commercialStatus, baseChatId, scopeModuleId);
       if (nextStatus) {
         putCommercialStatus(baseChatId, scopeModuleId, nextStatus);
       }

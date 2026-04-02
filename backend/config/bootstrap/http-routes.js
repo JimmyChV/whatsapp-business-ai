@@ -214,7 +214,8 @@ function registerHttpRoutes({
         hasChatAssignmentsWriteAccess,
         hasAssignmentRulesReadAccess,
         hasAssignmentRulesWriteAccess,
-        hasOperationsKpiReadAccess
+        hasOperationsKpiReadAccess,
+        emitCommercialStatusUpdated: socketManager?.emitCommercialStatusUpdated?.bind(socketManager) || null
     });
 
     registerTenantRuntimeSettingsHttpRoutes({
