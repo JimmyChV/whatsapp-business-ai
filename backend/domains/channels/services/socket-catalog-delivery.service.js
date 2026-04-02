@@ -15,6 +15,7 @@ function createSocketCatalogDeliveryService({
         authContext,
         guardRateLimit,
         transportOrchestrator,
+        checkOutboundConsent,
         isFeatureEnabledForTenant,
         resolveScopedSendTarget,
         emitRealtimeOutgoingMessage,
@@ -38,6 +39,17 @@ function createSocketCatalogDeliveryService({
                     action: 'enviar productos de catalogo'
                 });
                 if (!target?.ok) return;
+
+                if (typeof checkOutboundConsent === 'function') {
+                    const consentResult = await checkOutboundConsent(tenantId, {
+                        phone: target.targetPhone || target.targetChatId,
+                        messageType: 'catalog'
+                    });
+                    if (!consentResult?.allowed) {
+                        socket.emit('error', 'El cliente no tiene consentimiento de marketing para recibir catalogos.');
+                        return;
+                    }
+                }
 
                 const product = payload?.product && typeof payload.product === 'object' ? payload.product : {};
                 const caption = buildCatalogProductCaption(product);

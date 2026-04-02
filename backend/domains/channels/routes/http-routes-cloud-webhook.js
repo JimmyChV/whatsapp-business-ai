@@ -163,16 +163,30 @@ function summarizeMetaWebhookPayload(payload = {}) {
     let changesCount = 0;
     let messagesCount = 0;
     let statusesCount = 0;
+    let deliveryErrorsCount = 0;
+    let templateStatusUpdatesCount = 0;
+    let templateQualityUpdatesCount = 0;
+    let templateCategoryUpdatesCount = 0;
 
     entries.forEach((entry) => {
         const changes = Array.isArray(entry?.changes) ? entry.changes : [];
         changesCount += changes.length;
         changes.forEach((change) => {
+            const field = String(change?.field || '').trim().toLowerCase();
             const value = change?.value || {};
             const messages = Array.isArray(value?.messages) ? value.messages : [];
             const statuses = Array.isArray(value?.statuses) ? value.statuses : [];
             messagesCount += messages.length;
             statusesCount += statuses.length;
+
+            statuses.forEach((status) => {
+                const errors = Array.isArray(status?.errors) ? status.errors : [];
+                deliveryErrorsCount += errors.length;
+            });
+
+            if (field === 'message_template_status_update') templateStatusUpdatesCount += 1;
+            else if (field === 'message_template_quality_update') templateQualityUpdatesCount += 1;
+            else if (field === 'template_category_update') templateCategoryUpdatesCount += 1;
         });
     });
 
@@ -181,8 +195,55 @@ function summarizeMetaWebhookPayload(payload = {}) {
         entriesCount: entries.length,
         changesCount,
         messagesCount,
-        statusesCount
+        statusesCount,
+        deliveryErrorsCount,
+        templateStatusUpdatesCount,
+        templateQualityUpdatesCount,
+        templateCategoryUpdatesCount
     };
+}
+
+function extractTemplateWebhookEvents(payload = {}) {
+    const entries = Array.isArray(payload?.entry) ? payload.entry : [];
+    const eventTypeByField = {
+        message_template_status_update: 'status_update',
+        message_template_quality_update: 'quality_update',
+        template_category_update: 'category_update'
+    };
+    const out = [];
+
+    entries.forEach((entry) => {
+        const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+        changes.forEach((change) => {
+            const field = String(change?.field || '').trim().toLowerCase();
+            const eventType = eventTypeByField[field] || null;
+            if (!eventType) return;
+
+            const value = change?.value && typeof change.value === 'object' ? change.value : {};
+            const payloadForField = value?.[field] && typeof value[field] === 'object' ? value[field] : value;
+            const reasonRaw = payloadForField?.reason || payloadForField?.rejection_reason || payloadForField?.disable_info || payloadForField?.event;
+            const reason = typeof reasonRaw === 'string'
+                ? String(reasonRaw).trim()
+                : (reasonRaw && typeof reasonRaw === 'object'
+                    ? String(reasonRaw?.description || reasonRaw?.reason || '').trim()
+                    : '');
+
+            out.push({
+                field,
+                eventType,
+                wabaId: String(entry?.id || value?.metadata?.waba_id || payloadForField?.waba_id || '').trim() || null,
+                phoneNumberId: String(value?.metadata?.phone_number_id || value?.phone_number_id || '').trim() || null,
+                templateName: String(payloadForField?.message_template_name || payloadForField?.template_name || payloadForField?.name || '').trim() || null,
+                templateId: String(payloadForField?.message_template_id || payloadForField?.template_id || payloadForField?.id || '').trim() || null,
+                previousStatus: String(payloadForField?.previous_status || payloadForField?.old_status || payloadForField?.prior_status || '').trim() || null,
+                newStatus: String(payloadForField?.event || payloadForField?.new_status || payloadForField?.status || '').trim() || null,
+                reason: reason || null,
+                raw: payloadForField
+            });
+        });
+    });
+
+    return out;
 }
 
 function applyWebhookRuntimeConfigFromPayload(payload = {}, registryItems = [], waClient = null) {
@@ -262,6 +323,7 @@ function registerCloudWebhookHttpRoutes({
                 });
             }
 
+            const templateEvents = extractTemplateWebhookEvents(payload);
             const summary = summarizeMetaWebhookPayload(payload);
             const handled = typeof waClient.handleWebhookPayload === 'function'
                 ? await waClient.handleWebhookPayload(payload)
@@ -273,6 +335,11 @@ function registerCloudWebhookHttpRoutes({
                     + ' changes=' + String(summary.changesCount)
                     + ' messages=' + String(summary.messagesCount)
                     + ' statuses=' + String(summary.statusesCount)
+                    + ' statusErrors=' + String(summary.deliveryErrorsCount)
+                    + ' tmplStatus=' + String(summary.templateStatusUpdatesCount)
+                    + ' tmplQuality=' + String(summary.templateQualityUpdatesCount)
+                    + ' tmplCategory=' + String(summary.templateCategoryUpdatesCount)
+                    + ' tmplEvents=' + String(templateEvents.length)
                     + ' handled=' + String(Boolean(handled))
                     + ' tenant=' + String(runtimeApplied?.matched?.tenantId || 'n/a')
                     + ' module=' + String(runtimeApplied?.matched?.moduleId || 'n/a')

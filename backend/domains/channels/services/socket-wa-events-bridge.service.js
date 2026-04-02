@@ -4,6 +4,7 @@ function createSocketWaEventsBridgeService({
     conversationOpsService,
     chatAssignmentRouterService,
     chatCommercialStatusService,
+    chatOriginService,
     emitToRuntimeContext,
     emitCommercialStatusUpdated,
     getWaCapabilities,
@@ -50,6 +51,10 @@ function createSocketWaEventsBridgeService({
             const runtimeModuleContext = resolveHistoryModuleContext();
             const relatedChatIdBase = String(msg?.fromMe ? msg?.to : msg?.from || '').trim();
             const messageId = getSerializedMessageId(msg);
+            const eventUnixTs = Number(msg?.timestamp || 0);
+            const activityAtIso = eventUnixTs > 0
+                ? new Date(eventUnixTs * 1000).toISOString()
+                : new Date().toISOString();
             const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId)) : null;
             const effectiveModuleContext = buildEffectiveModuleContext(runtimeModuleContext, agentMeta);
             const moduleAttributionMeta = buildModuleAttributionMeta(effectiveModuleContext);
@@ -71,6 +76,8 @@ function createSocketWaEventsBridgeService({
             const quotedMessage = await extractQuotedMessageInfo(msg);
             const order = extractOrderInfo(msg);
             const location = extractLocationInfo(msg);
+            const referral = msg?.referral && typeof msg.referral === 'object' ? msg.referral : null;
+            const hasReferral = Boolean(referral && Object.keys(referral).length > 0);
             await persistMessageHistory(historyTenantId, {
                 msg,
                 senderMeta,
@@ -82,12 +89,28 @@ function createSocketWaEventsBridgeService({
                 moduleContext: effectiveModuleContext
             });
 
+            if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && chatOriginService && hasReferral) {
+                try {
+                    await chatOriginService.upsertChatOrigin(historyTenantId, {
+                        chatId: relatedChatIdBase,
+                        scopeModuleId: cleanScopeModuleId,
+                        originType: 'meta_ad',
+                        referralSourceUrl: String(referral?.sourceUrl || referral?.source_url || '').trim() || null,
+                        referralSourceType: String(referral?.sourceType || referral?.source_type || '').trim() || null,
+                        referralSourceId: String(referral?.sourceId || referral?.source_id || '').trim() || null,
+                        referralHeadline: String(referral?.headline || '').trim() || null,
+                        ctwaClid: String(referral?.ctwaClid || referral?.ctwa_clid || '').trim() || null,
+                        campaignId: null,
+                        rawReferral: referral,
+                        detectedAt: activityAtIso
+                    });
+                } catch (_) {
+                    // silent: inbound processing should not fail by origin attribution persistence issues
+                }
+            }
+
             if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && chatCommercialStatusService) {
                 try {
-                    const eventUnixTs = Number(msg?.timestamp || 0);
-                    const activityAtIso = eventUnixTs > 0
-                        ? new Date(eventUnixTs * 1000).toISOString()
-                        : new Date().toISOString();
                     const inboundResult = await chatCommercialStatusService.markInboundCustomerFirstContact(historyTenantId, {
                         chatId: relatedChatIdBase,
                         scopeModuleId: cleanScopeModuleId,
@@ -116,10 +139,6 @@ function createSocketWaEventsBridgeService({
 
             if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase) {
                 try {
-                    const eventUnixTs = Number(msg?.timestamp || 0);
-                    const activityAtIso = eventUnixTs > 0
-                        ? new Date(eventUnixTs * 1000).toISOString()
-                        : new Date().toISOString();
                     const assignmentScopeModuleId = cleanScopeModuleId;
 
                     const touchedAssignment = await conversationOpsService.touchChatAssignmentActivity(historyTenantId, {
@@ -196,6 +215,7 @@ function createSocketWaEventsBridgeService({
                 senderPushname: senderMeta.senderPushname,
                 isGroupMessage: senderMeta.isGroupMessage,
                 canEdit: false,
+                referral: referral || null,
                 order,
                 location,
                 quotedMessage,
