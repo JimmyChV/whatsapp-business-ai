@@ -1,10 +1,16 @@
 ﻿const { DEFAULT_TENANT_ID, getStorageDriver, normalizeTenantId, queryPostgres } = require('../../../config/persistence-runtime');
 const conversationOpsService = require('./conversation-ops.service');
 const messageHistoryService = require('./message-history.service');
+const templateWebhookEventsService = require('./template-webhook-events.service');
 
 const CHAT_PAGE_LIMIT = 300;
 const MESSAGE_PAGE_LIMIT = 500;
 const MESSAGE_SCAN_LIMIT_PER_CHAT = 2500;
+const TEMPLATE_EVENTS_PAGE_LIMIT = 500;
+const TEMPLATE_EVENTS_SCAN_LIMIT = 5000;
+const FAILED_TEMPLATE_STATUSES = new Set(['failed', 'undelivered']);
+const DELIVERED_TEMPLATE_STATUSES = new Set(['delivered', 'read']);
+const READ_TEMPLATE_STATUSES = new Set(['read']);
 
 function toText(value = '') {
     return String(value ?? '').trim();
@@ -31,6 +37,10 @@ function toUnix(value = null) {
 function toIsoFromUnix(value = null) {
     if (!Number.isFinite(Number(value))) return null;
     return new Date(Number(value) * 1000).toISOString();
+}
+
+function missingRelation(error) {
+    return String(error?.code || '').trim() === '42P01';
 }
 
 function withinWindow(ts = null, fromUnix = null, toUnix = null) {
@@ -81,6 +91,124 @@ function computeResponseMetrics(messages = []) {
         avgFirstResponseSec,
         respondedChats: firstResponseSeconds.length
     };
+}
+
+function buildCampaignCounters(statusRows = []) {
+    const failedByReason = {};
+    const totalsByTemplate = new Map();
+
+    (Array.isArray(statusRows) ? statusRows : []).forEach((row) => {
+        const templateName = toText(row?.templateName || row?.template_name) || '__unknown__';
+        const status = toText(row?.newStatus || row?.new_status).toLowerCase();
+        const reason = toText(row?.reason || '').toLowerCase() || 'unknown';
+        const count = Number(row?.count || row?.total || 0) || 0;
+        if (count <= 0 || !status) return;
+
+        const current = totalsByTemplate.get(templateName) || { total: 0, delivered: 0, read: 0 };
+        current.total += count;
+        if (DELIVERED_TEMPLATE_STATUSES.has(status)) current.delivered += count;
+        if (READ_TEMPLATE_STATUSES.has(status)) current.read += count;
+        totalsByTemplate.set(templateName, current);
+
+        if (FAILED_TEMPLATE_STATUSES.has(status)) {
+            failedByReason[reason] = Number(failedByReason[reason] || 0) + count;
+        }
+    });
+
+    const deliveryRateByTemplate = {};
+    const readRateByTemplate = {};
+    totalsByTemplate.forEach((item, templateName) => {
+        deliveryRateByTemplate[templateName] = {
+            delivered: item.delivered,
+            total: item.total,
+            ratePct: item.total > 0
+                ? Number(((item.delivered * 100) / item.total).toFixed(2))
+                : 0
+        };
+        readRateByTemplate[templateName] = {
+            read: item.read,
+            delivered: item.delivered,
+            ratePct: item.delivered > 0
+                ? Number(((item.read * 100) / item.delivered).toFixed(2))
+                : 0
+        };
+    });
+
+    return {
+        failedByReason,
+        deliveryRateByTemplate,
+        readRateByTemplate
+    };
+}
+
+async function listTemplateStatusRowsFileDriver(tenantId = '', {
+    fromUnix = null,
+    toUnix = null,
+    scopeModuleId = ''
+} = {}) {
+    const rows = [];
+    let offset = 0;
+    let scanned = 0;
+    let keepGoing = true;
+    while (keepGoing && scanned < TEMPLATE_EVENTS_SCAN_LIMIT) {
+        const page = await templateWebhookEventsService.listTemplateWebhookEvents(tenantId, {
+            scopeModuleId,
+            eventType: 'status_update',
+            limit: TEMPLATE_EVENTS_PAGE_LIMIT,
+            offset
+        });
+        const items = Array.isArray(page?.items) ? page.items : [];
+        if (!items.length) break;
+
+        items.forEach((event) => {
+            const receivedAtUnix = toUnix(event?.receivedAt || null);
+            if (!withinWindow(receivedAtUnix, fromUnix, toUnix)) return;
+            rows.push({
+                templateName: toText(event?.templateName || '') || '__unknown__',
+                newStatus: toText(event?.newStatus || '').toLowerCase(),
+                reason: toText(event?.reason || '').toLowerCase() || 'unknown',
+                count: 1
+            });
+            scanned += 1;
+        });
+
+        if (items.length < TEMPLATE_EVENTS_PAGE_LIMIT) {
+            keepGoing = false;
+        } else {
+            offset += TEMPLATE_EVENTS_PAGE_LIMIT;
+        }
+    }
+    return rows;
+}
+
+async function listTemplateStatusRowsPostgres(tenantId = '', {
+    fromUnix = null,
+    toUnix = null,
+    scopeModuleId = ''
+} = {}) {
+    const fromIso = Number.isFinite(fromUnix) ? toIsoFromUnix(fromUnix) : null;
+    const toIso = Number.isFinite(toUnix) ? toIsoFromUnix(toUnix) : null;
+    try {
+        const result = await queryPostgres(
+            `SELECT
+                COALESCE(NULLIF(TRIM(template_name), ''), '__unknown__') AS template_name,
+                LOWER(COALESCE(new_status, '')) AS new_status,
+                LOWER(COALESCE(NULLIF(TRIM(reason), ''), 'unknown')) AS reason,
+                COUNT(*)::BIGINT AS total
+             FROM tenant_template_webhook_events
+             WHERE tenant_id = $1
+               AND event_type = 'status_update'
+               AND ($2::TEXT = '' OR COALESCE(scope_module_id, '') = $2)
+               AND ($3::TIMESTAMPTZ IS NULL OR received_at >= $3::TIMESTAMPTZ)
+               AND ($4::TIMESTAMPTZ IS NULL OR received_at <= $4::TIMESTAMPTZ)
+             GROUP BY 1, 2, 3`,
+            [tenantId, scopeModuleId || '', fromIso, toIso]
+        );
+        return Array.isArray(result?.rows) ? result.rows : [];
+    } catch (error) {
+        if (missingRelation(error)) return [];
+        throw error;
+    }
 }
 
 async function listAllMessagesForChat(tenantId = '', chatId = '', { fromUnix = null, toUnix = null } = {}) {
@@ -187,6 +315,9 @@ async function getKpisFromFileDriver(tenantId = '', {
     const unassignedChats = cleanAssigneeUserId
         ? 0
         : selectedChatIds.filter((chatId) => !activeAssignmentKeys.has(`${chatId}::${scopeModuleId || ''}`) && !activeAssignmentKeys.has(`${chatId}::`)).length;
+    const campaignCounters = buildCampaignCounters(
+        await listTemplateStatusRowsFileDriver(tenantId, { fromUnix, toUnix, scopeModuleId })
+    );
 
     return {
         window: {
@@ -203,6 +334,9 @@ async function getKpisFromFileDriver(tenantId = '', {
             reassignedChats,
             avgFirstResponseSec: responseMetrics.avgFirstResponseSec,
             respondedChats: responseMetrics.respondedChats,
+            failedByReason: campaignCounters.failedByReason,
+            deliveryRateByTemplate: campaignCounters.deliveryRateByTemplate,
+            readRateByTemplate: campaignCounters.readRateByTemplate,
             source: 'file'
         }
     };
@@ -266,6 +400,9 @@ async function getKpisFromPostgres(tenantId = '', {
                 reassignedChats: 0,
                 avgFirstResponseSec: null,
                 respondedChats: 0,
+                failedByReason: {},
+                deliveryRateByTemplate: {},
+                readRateByTemplate: {},
                 source: 'postgres'
             }
         };
@@ -392,6 +529,13 @@ async function getKpisFromPostgres(tenantId = '', {
          )`,
         commonParams
     );
+    const campaignCounters = buildCampaignCounters(
+        await listTemplateStatusRowsPostgres(cleanTenantId, {
+            fromUnix,
+            toUnix,
+            scopeModuleId: cleanScopeModuleId
+        })
+    );
 
     const countRow = countResult?.rows?.[0] || {};
     const responseRow = responseResult?.rows?.[0] || {};
@@ -416,6 +560,9 @@ async function getKpisFromPostgres(tenantId = '', {
                 ? null
                 : Number(responseRow.avg_first_response_sec),
             respondedChats: Number(responseRow.responded_chats || 0),
+            failedByReason: campaignCounters.failedByReason,
+            deliveryRateByTemplate: campaignCounters.deliveryRateByTemplate,
+            readRateByTemplate: campaignCounters.readRateByTemplate,
             source: 'postgres'
         }
     };
