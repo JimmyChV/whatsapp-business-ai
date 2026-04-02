@@ -250,6 +250,192 @@ class WhatsAppCloudClient extends EventEmitter {
         }
     }
 
+    buildGraphUrlWithToken(path = '', {
+        token = '',
+        includeAppSecretProof = false,
+        query = null
+    } = {}) {
+        const normalizedPath = String(path || '').startsWith('/')
+            ? String(path || '')
+            : `/${String(path || '')}`;
+        const url = new URL(`${this.graphBaseUrl}${normalizedPath}`);
+        const queryObject = query && typeof query === 'object' && !Array.isArray(query) ? query : {};
+        Object.entries(queryObject).forEach(([key, value]) => {
+            const cleanKey = String(key || '').trim();
+            if (!cleanKey) return;
+            if (value === null || value === undefined) return;
+            const cleanValue = String(value).trim();
+            if (!cleanValue) return;
+            url.searchParams.set(cleanKey, cleanValue);
+        });
+
+        const cleanToken = String(token || '').trim();
+        const secret = this.appSecret;
+        if (includeAppSecretProof && cleanToken && secret) {
+            try {
+                const proof = crypto.createHmac('sha256', secret).update(cleanToken).digest('hex');
+                if (proof) {
+                    url.searchParams.set('appsecret_proof', proof);
+                }
+            } catch (_) { }
+        }
+
+        return url.toString();
+    }
+
+    normalizeGraphError(payload = {}, status = 0) {
+        const envelope = payload && typeof payload === 'object' ? payload : {};
+        const errorObj = envelope?.error && typeof envelope.error === 'object' ? envelope.error : envelope;
+        const codeRaw = Number(errorObj?.code);
+        const subcodeRaw = Number(errorObj?.error_subcode ?? errorObj?.errorSubcode);
+        const code = Number.isFinite(codeRaw) ? codeRaw : null;
+        const errorSubcode = Number.isFinite(subcodeRaw) ? subcodeRaw : null;
+        const errorUserTitle = String(errorObj?.error_user_title || '').trim() || null;
+        const errorUserMsg = String(errorObj?.error_user_msg || '').trim() || null;
+        const message = String(errorObj?.message || '').trim() || `Cloud API error ${Number(status || 0) || 0}`;
+
+        return {
+            code,
+            error_subcode: errorSubcode,
+            error_user_title: errorUserTitle,
+            error_user_msg: errorUserMsg,
+            message
+        };
+    }
+
+    createGraphRequestError({ status = 0, payload = {}, detail = '', context = 'Cloud API error' } = {}) {
+        const normalized = this.normalizeGraphError(payload, status);
+        const normalizedDetail = String(detail || normalized.message || '').trim();
+        const error = new Error(`${context} ${Number(status || 0)}: ${normalizedDetail}`);
+        error.status = Number(status || 0) || 0;
+        error.payload = payload;
+        error.code = normalized.code;
+        error.error_subcode = normalized.error_subcode;
+        error.error_user_title = normalized.error_user_title;
+        error.error_user_msg = normalized.error_user_msg;
+        error.messageDetail = normalized.message;
+        return error;
+    }
+
+    async graphJsonWithToken(path, {
+        method = 'GET',
+        headers = null,
+        body = null,
+        query = null,
+        systemUserToken = ''
+    } = {}) {
+        const token = String(systemUserToken || this.accessToken).trim();
+        if (!token) {
+            throw new Error('Cloud API token is missing.');
+        }
+
+        const execute = async (includeProof = false) => {
+            const url = this.buildGraphUrlWithToken(path, {
+                token,
+                includeAppSecretProof: includeProof,
+                query
+            });
+            const response = await fetch(url, {
+                method,
+                headers: headers && typeof headers === 'object' ? headers : undefined,
+                body
+            });
+            const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+            const payload = contentType.includes('application/json')
+                ? await response.json().catch(() => ({}))
+                : await response.text().catch(() => '');
+            const detail = typeof payload === 'string'
+                ? payload
+                : String(payload?.error?.message || JSON.stringify(payload || {}));
+            return { response, payload, detail };
+        };
+
+        const first = await execute(false);
+        if (first.response.ok) {
+            return first.payload;
+        }
+
+        const needsProof = /appsecret_proof|requires appsecret|an appsecret proof/i.test(String(first.detail || ''));
+        if (needsProof && this.appSecret) {
+            console.warn('[WA][Cloud] Graph requires appsecret_proof; retrying with proof.');
+            const retry = await execute(true);
+            if (retry.response.ok) {
+                return retry.payload;
+            }
+            throw this.createGraphRequestError({
+                status: retry.response.status,
+                payload: retry.payload,
+                detail: retry.detail,
+                context: 'Cloud API error'
+            });
+        }
+
+        throw this.createGraphRequestError({
+            status: first.response.status,
+            payload: first.payload,
+            detail: first.detail,
+            context: 'Cloud API error'
+        });
+    }
+
+    async createMessageTemplate(wabaId, templatePayload, { systemUserToken } = {}) {
+        const safeWabaId = String(wabaId || '').trim();
+        if (!safeWabaId) throw new Error('wabaId is required.');
+        if (!templatePayload || typeof templatePayload !== 'object' || Array.isArray(templatePayload)) {
+            throw new Error('templatePayload must be a plain object.');
+        }
+
+        return this.graphJsonWithToken(`/${encodeURIComponent(safeWabaId)}/message_templates`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(templatePayload),
+            systemUserToken
+        });
+    }
+
+    async listMessageTemplates(wabaId, {
+        systemUserToken,
+        fields = '',
+        limit = null,
+        after = ''
+    } = {}) {
+        const safeWabaId = String(wabaId || '').trim();
+        if (!safeWabaId) throw new Error('wabaId is required.');
+
+        const query = {};
+        const normalizedFields = Array.isArray(fields)
+            ? fields.map((item) => String(item || '').trim()).filter(Boolean).join(',')
+            : String(fields || '').trim();
+        if (normalizedFields) query.fields = normalizedFields;
+
+        const numericLimit = Number(limit);
+        if (Number.isFinite(numericLimit) && numericLimit > 0) {
+            query.limit = String(Math.floor(numericLimit));
+        }
+
+        const cursor = String(after || '').trim();
+        if (cursor) query.after = cursor;
+
+        return this.graphJsonWithToken(`/${encodeURIComponent(safeWabaId)}/message_templates`, {
+            method: 'GET',
+            query,
+            systemUserToken
+        });
+    }
+
+    async deleteMessageTemplate(wabaId, templateName, { systemUserToken } = {}) {
+        const safeWabaId = String(wabaId || '').trim();
+        if (!safeWabaId) throw new Error('wabaId is required.');
+        const safeTemplateName = String(templateName || '').trim();
+        if (!safeTemplateName) throw new Error('templateName is required.');
+
+        return this.graphJsonWithToken(`/${encodeURIComponent(safeWabaId)}/message_templates`, {
+            method: 'DELETE',
+            query: { name: safeTemplateName },
+            systemUserToken
+        });
+    }
+
     ensureContact(chatId, { name = '', pushname = '', profilePicUrl = null } = {}) {
         const safeChatId = toChatId(chatId);
         if (!safeChatId) return null;
