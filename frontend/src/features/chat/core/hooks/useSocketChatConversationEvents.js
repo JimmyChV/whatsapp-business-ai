@@ -62,9 +62,17 @@ export default function useSocketChatConversationEvents({
                 : (payload || {});
 
             const incomingQuery = String(page.query || '').trim();
-            if (incomingQuery !== chatSearchRef.current) return;
+            if (incomingQuery !== chatSearchRef.current) {
+                chatPagingRef.current.loading = false;
+                setIsLoadingMoreChats(false);
+                return;
+            }
             const incomingFilterKey = String(page.filterKey || '').trim();
-            if (incomingFilterKey && incomingFilterKey !== buildFiltersKey(chatFiltersRef.current)) return;
+            if (incomingFilterKey && incomingFilterKey !== buildFiltersKey(chatFiltersRef.current)) {
+                chatPagingRef.current.loading = false;
+                setIsLoadingMoreChats(false);
+                return;
+            }
 
             const rawItems = Array.isArray(page.items) ? page.items : [];
             const previousById = new Map(

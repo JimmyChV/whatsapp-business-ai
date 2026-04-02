@@ -30,6 +30,9 @@ export default function useSocketConnectionRuntimeEvents({
             } else {
                 setIsSwitchingTransport(false);
             }
+            setTimeout(() => {
+                requestChatsPage({ reset: true });
+            }, 0);
             socket.emit('get_wa_capabilities');
             socket.emit('get_wa_modules');
         });
@@ -51,7 +54,9 @@ export default function useSocketConnectionRuntimeEvents({
         socket.on('ready', () => {
             setIsClientReady(true);
             setIsSwitchingTransport(false);
-            requestChatsPage({ reset: true });
+            setTimeout(() => {
+                requestChatsPage({ reset: true });
+            }, 0);
             emitScopedBusinessDataRequest({
                 moduleId: selectedCatalogModuleIdRef.current || selectedWaModuleRef.current?.moduleId || '',
                 catalogId: selectedCatalogIdRef.current || ''
@@ -116,6 +121,9 @@ export default function useSocketConnectionRuntimeEvents({
             } else {
                 setIsSwitchingTransport(false);
             }
+            setTimeout(() => {
+                requestChatsPage({ reset: true });
+            }, 0);
             socket.emit('get_wa_capabilities');
             socket.emit('get_wa_modules');
         }

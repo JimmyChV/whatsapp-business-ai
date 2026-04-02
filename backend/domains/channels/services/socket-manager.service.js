@@ -1273,12 +1273,9 @@ class SocketManager {
                 }
             };
             const normalizeSocketModuleId = (value = '') => String(value || '').trim().toLowerCase();
-            await transportOrchestrator.bootstrapTransportContext();
             transportOrchestrator.registerTransportHandlers();
-            await emitAssignmentBulkSnapshot();
-            await emitCommercialStatusBulkSnapshot();
 
-            // --- Chat info ---
+            // Register core chat handlers before async bootstrap to avoid dropping early client emits.
             this.chatListService.registerChatListHandlers({
                 socket,
                 tenantId,
@@ -1291,6 +1288,10 @@ class SocketManager {
                 tenantId,
                 transportOrchestrator
             });
+
+            await transportOrchestrator.bootstrapTransportContext();
+            await emitAssignmentBulkSnapshot();
+            await emitCommercialStatusBulkSnapshot();
 
             this.chatStateLabelsService.registerChatStateLabelHandlers({
                 socket,
