@@ -47,6 +47,8 @@ const {
 const {
     messageHistoryService,
     conversationOpsService,
+    customerConsentService,
+    templateWebhookEventsService,
     chatCommercialStatusService,
     chatAssignmentPolicyService,
     assignmentRulesService,
@@ -446,6 +448,8 @@ registerHttpRoutes({
     invalidateWebhookCloudRegistryCache,
     hasTenantModuleWriteAccess,
     conversationOpsService,
+    customerConsentService,
+    templateWebhookEventsService,
     chatCommercialStatusService,
     chatAssignmentPolicyService,
     assignmentRulesService,
