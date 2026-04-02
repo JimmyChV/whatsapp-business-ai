@@ -256,6 +256,13 @@ class WAProvider extends EventEmitter {
         return await this.activeAdapter.sendMessage(to, body, options);
     }
 
+    async sendTemplateMessage(to, payload = {}) {
+        if (!this.activeAdapter?.sendTemplateMessage) {
+            throw new Error('Template send is not supported in this transport.');
+        }
+        return await this.activeAdapter.sendTemplateMessage(to, payload);
+    }
+
     async getMessageById(messageId) {
         if (!this.activeAdapter?.getMessageById) return null;
         return await this.activeAdapter.getMessageById(messageId);

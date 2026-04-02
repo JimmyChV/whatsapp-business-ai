@@ -49,6 +49,8 @@ const {
     conversationOpsService,
     customerConsentService,
     templateWebhookEventsService,
+    campaignQueueService,
+    campaignDispatcherJobService,
     chatCommercialStatusService,
     chatAssignmentPolicyService,
     assignmentRulesService,
@@ -496,6 +498,15 @@ const chatAssignmentInactivityJob = chatAssignmentInactivityJobService.createCha
     logger,
     opsTelemetry
 });
+const campaignDispatcherJob = campaignDispatcherJobService.createCampaignDispatcherJob({
+    campaignQueueService,
+    customerConsentService,
+    tenantService,
+    waModuleService,
+    waClient,
+    logger,
+    opsTelemetry
+});
 
 registerProcessHandlers();
 
@@ -513,6 +524,7 @@ server.listen(PORT, () => {
         : { requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false };
     logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
     chatAssignmentInactivityJob.start();
+    campaignDispatcherJob.start();
     scheduleWaInitialize();
 });
 

@@ -592,6 +592,66 @@ class WhatsAppCloudClient extends EventEmitter {
         return response;
     }
 
+    async sendTemplateMessage(to, { templateName, languageCode = 'es', components = [], metadata = {} } = {}) {
+        if (!this.isReady) throw new Error('Cloud client not ready');
+        const waId = await this.resolveSendWaId(to);
+        const safeTemplateName = String(templateName || '').trim();
+        if (!safeTemplateName) throw new Error('templateName requerido para enviar template.');
+
+        const payload = {
+            messaging_product: 'whatsapp',
+            to: waId,
+            type: 'template',
+            template: {
+                name: safeTemplateName,
+                language: {
+                    code: String(languageCode || 'es').trim() || 'es'
+                }
+            }
+        };
+
+        if (Array.isArray(components) && components.length > 0) {
+            payload.template.components = components;
+        }
+
+        const response = await this.graphJson(`/${this.phoneNumberId}/messages`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const messageId = String(response?.messages?.[0]?.id || randomMessageId('cloud_out_template'));
+        const chatId = `${waId}@c.us`;
+        const metadataObj = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {};
+        const templateBody = String(metadataObj?.previewText || `Template: ${safeTemplateName}`).trim();
+        const message = this.upsertMessage({
+            id: messageId,
+            chatId,
+            from: this.selfChatId,
+            to: chatId,
+            body: templateBody,
+            fromMe: true,
+            type: 'chat',
+            ack: 1,
+            timestamp: safeTimestamp(),
+            hasMedia: false,
+            rawData: compactObject({
+                templateName: safeTemplateName,
+                templateLanguage: payload.template?.language?.code || 'es',
+                templateComponents: Array.isArray(components) ? components : [],
+                metadata: metadataObj
+            })
+        }, { incoming: false, emitEvent: 'message_sent' });
+
+        if (message) {
+            this.emit('message_ack', { message, ack: 1 });
+        }
+
+        return response;
+    }
+
     async uploadMedia(mediaData, mimetype, filename = 'adjunto') {
         const safeMime = String(mimetype || 'application/octet-stream').trim() || 'application/octet-stream';
         const safeName = String(filename || 'adjunto').trim() || 'adjunto';
