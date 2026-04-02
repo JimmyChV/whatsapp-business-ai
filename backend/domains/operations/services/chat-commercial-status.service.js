@@ -1,0 +1,527 @@
+const {
+    DEFAULT_TENANT_ID,
+    getStorageDriver,
+    normalizeTenantId,
+    readTenantJsonFile,
+    writeTenantJsonFile,
+    queryPostgres
+} = require('../../../config/persistence-runtime');
+
+const STORE_FILE = 'chat_commercial_status.json';
+const DEFAULT_LIMIT = 60;
+const MAX_LIMIT = 500;
+const VALID_STATUSES = new Set(['nuevo', 'en_conversacion', 'cotizado', 'vendido', 'perdido']);
+const VALID_SOURCES = new Set(['system', 'manual', 'automation', 'campaign', 'socket', 'webhook', 'http']);
+
+let schemaReady = false;
+let schemaPromise = null;
+
+function nowIso() {
+    return new Date().toISOString();
+}
+
+function resolveTenantId(input = null) {
+    if (typeof input === 'string') return normalizeTenantId(input || DEFAULT_TENANT_ID);
+    if (input && typeof input === 'object') return normalizeTenantId(input.tenantId || DEFAULT_TENANT_ID);
+    return DEFAULT_TENANT_ID;
+}
+
+function toText(value = '') {
+    return String(value ?? '').trim();
+}
+
+function toLower(value = '') {
+    return toText(value).toLowerCase();
+}
+
+function normalizeChatId(value = '') {
+    return toText(value);
+}
+
+function normalizeScopeModuleId(value = '') {
+    return toLower(value);
+}
+
+function normalizeIso(value = '') {
+    if (value instanceof Date) {
+        return Number.isFinite(value.getTime()) ? value.toISOString() : null;
+    }
+    const text = toText(value);
+    if (!text) return null;
+    const parsed = new Date(text);
+    if (!Number.isFinite(parsed.getTime())) return null;
+    return parsed.toISOString();
+}
+
+function normalizeStatus(value = '') {
+    const status = toLower(value);
+    if (VALID_STATUSES.has(status)) return status;
+    return 'nuevo';
+}
+
+function normalizeSource(value = '') {
+    const source = toLower(value);
+    if (!source) return 'system';
+    if (VALID_SOURCES.has(source)) return source;
+    return 'system';
+}
+
+function normalizeMetadata(value = {}) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+    return {};
+}
+
+function normalizeLimit(value = DEFAULT_LIMIT) {
+    const parsed = Number(value || DEFAULT_LIMIT);
+    if (!Number.isFinite(parsed)) return DEFAULT_LIMIT;
+    return Math.max(1, Math.min(MAX_LIMIT, Math.floor(parsed)));
+}
+
+function normalizeOffset(value = 0) {
+    const parsed = Number(value || 0);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, Math.floor(parsed));
+}
+
+function statusKey(chatId = '', scopeModuleId = '') {
+    return `${normalizeChatId(chatId)}::${normalizeScopeModuleId(scopeModuleId)}`;
+}
+
+function normalizeRecord(item = {}, { fallbackChatId = '', fallbackScopeModuleId = '' } = {}) {
+    const source = item && typeof item === 'object' ? item : {};
+    const createdAt = normalizeIso(source.createdAt || source.created_at) || nowIso();
+    const updatedAt = normalizeIso(source.updatedAt || source.updated_at) || createdAt;
+    const status = normalizeStatus(source.status || 'nuevo');
+    const lastTransitionAt = normalizeIso(source.lastTransitionAt || source.last_transition_at) || updatedAt;
+
+    return {
+        chatId: normalizeChatId(source.chatId || source.chat_id || fallbackChatId),
+        scopeModuleId: normalizeScopeModuleId(source.scopeModuleId || source.scope_module_id || fallbackScopeModuleId),
+        status,
+        source: normalizeSource(source.source || 'system'),
+        reason: toText(source.reason || '') || null,
+        changedByUserId: toText(source.changedByUserId || source.changed_by_user_id || '') || null,
+        firstCustomerMessageAt: normalizeIso(source.firstCustomerMessageAt || source.first_customer_message_at) || null,
+        firstAgentResponseAt: normalizeIso(source.firstAgentResponseAt || source.first_agent_response_at) || null,
+        quotedAt: normalizeIso(source.quotedAt || source.quoted_at) || null,
+        soldAt: normalizeIso(source.soldAt || source.sold_at) || null,
+        lostAt: normalizeIso(source.lostAt || source.lost_at) || null,
+        lastTransitionAt,
+        metadata: normalizeMetadata(source.metadata),
+        createdAt,
+        updatedAt
+    };
+}
+
+function normalizeStore(input = {}) {
+    const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+    const items = Array.isArray(source.items)
+        ? source.items
+            .map((entry) => normalizeRecord(entry))
+            .filter((entry) => entry.chatId)
+        : [];
+    return { items };
+}
+
+function toDbRecord(record = {}) {
+    return {
+        chat_id: record.chatId,
+        scope_module_id: record.scopeModuleId,
+        status: record.status,
+        source: record.source,
+        reason: record.reason,
+        changed_by_user_id: record.changedByUserId,
+        first_customer_message_at: record.firstCustomerMessageAt,
+        first_agent_response_at: record.firstAgentResponseAt,
+        quoted_at: record.quotedAt,
+        sold_at: record.soldAt,
+        lost_at: record.lostAt,
+        last_transition_at: record.lastTransitionAt,
+        metadata: record.metadata,
+        created_at: record.createdAt,
+        updated_at: record.updatedAt
+    };
+}
+
+function missingRelation(error) {
+    return String(error?.code || '').trim() === '42P01';
+}
+
+async function ensurePostgresSchema() {
+    if (schemaReady) return;
+    if (schemaPromise) return schemaPromise;
+
+    schemaPromise = (async () => {
+        await queryPostgres(`
+            CREATE TABLE IF NOT EXISTS tenant_chat_commercial_status (
+                tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+                chat_id TEXT NOT NULL,
+                scope_module_id TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'nuevo'
+                    CHECK (status IN ('nuevo', 'en_conversacion', 'cotizado', 'vendido', 'perdido')),
+                source TEXT NOT NULL DEFAULT 'system'
+                    CHECK (source IN ('system', 'manual', 'automation', 'campaign', 'socket', 'webhook', 'http')),
+                reason TEXT NULL,
+                changed_by_user_id TEXT NULL REFERENCES users(user_id) ON DELETE SET NULL,
+                first_customer_message_at TIMESTAMPTZ NULL,
+                first_agent_response_at TIMESTAMPTZ NULL,
+                quoted_at TIMESTAMPTZ NULL,
+                sold_at TIMESTAMPTZ NULL,
+                lost_at TIMESTAMPTZ NULL,
+                last_transition_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (tenant_id, chat_id, scope_module_id)
+            )
+        `);
+        await queryPostgres(`
+            CREATE INDEX IF NOT EXISTS idx_chat_commercial_status_tenant_status
+            ON tenant_chat_commercial_status(tenant_id, scope_module_id, status, updated_at DESC)
+        `);
+        schemaReady = true;
+    })();
+
+    try {
+        await schemaPromise;
+    } catch (error) {
+        schemaPromise = null;
+        throw error;
+    }
+}
+
+async function getChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const chatId = normalizeChatId(options.chatId || options);
+    const scopeModuleId = normalizeScopeModuleId(options.scopeModuleId || '');
+    if (!chatId) return null;
+
+    if (getStorageDriver() !== 'postgres') {
+        const store = normalizeStore(await readTenantJsonFile(STORE_FILE, { tenantId: cleanTenantId, defaultValue: {} }));
+        const key = statusKey(chatId, scopeModuleId);
+        const match = store.items.find((entry) => statusKey(entry.chatId, entry.scopeModuleId) === key);
+        return match ? { ...match } : null;
+    }
+
+    try {
+        await ensurePostgresSchema();
+        const result = await queryPostgres(
+            `SELECT chat_id, scope_module_id, status, source, reason, changed_by_user_id,
+                    first_customer_message_at, first_agent_response_at, quoted_at, sold_at, lost_at,
+                    last_transition_at, metadata, created_at, updated_at
+               FROM tenant_chat_commercial_status
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND scope_module_id = $3
+              LIMIT 1`,
+            [cleanTenantId, chatId, scopeModuleId]
+        );
+        const row = Array.isArray(result?.rows) && result.rows[0] ? result.rows[0] : null;
+        if (!row) return null;
+        return normalizeRecord(row);
+    } catch (error) {
+        if (missingRelation(error)) return null;
+        throw error;
+    }
+}
+
+async function listCommercialStatuses(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const scopeModuleId = normalizeScopeModuleId(options.scopeModuleId || '');
+    const status = toLower(options.status || '');
+    const limit = normalizeLimit(options.limit);
+    const offset = normalizeOffset(options.offset);
+
+    if (getStorageDriver() !== 'postgres') {
+        const store = normalizeStore(await readTenantJsonFile(STORE_FILE, { tenantId: cleanTenantId, defaultValue: {} }));
+        const filtered = store.items
+            .filter((entry) => !scopeModuleId || entry.scopeModuleId === scopeModuleId)
+            .filter((entry) => !status || entry.status === status)
+            .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+        const items = filtered.slice(offset, offset + limit).map((entry) => ({ ...entry }));
+        return { items, total: filtered.length, limit, offset };
+    }
+
+    try {
+        await ensurePostgresSchema();
+        const params = [cleanTenantId];
+        const where = ['tenant_id = $1'];
+
+        if (scopeModuleId) {
+            params.push(scopeModuleId);
+            where.push(`scope_module_id = $${params.length}`);
+        }
+        if (status) {
+            params.push(status);
+            where.push(`status = $${params.length}`);
+        }
+
+        const whereSql = where.join(' AND ');
+        const totalResult = await queryPostgres(
+            `SELECT COUNT(*)::BIGINT AS total
+               FROM tenant_chat_commercial_status
+              WHERE ${whereSql}`,
+            params
+        );
+
+        const rowParams = [...params, limit, offset];
+        const rowsResult = await queryPostgres(
+            `SELECT chat_id, scope_module_id, status, source, reason, changed_by_user_id,
+                    first_customer_message_at, first_agent_response_at, quoted_at, sold_at, lost_at,
+                    last_transition_at, metadata, created_at, updated_at
+               FROM tenant_chat_commercial_status
+              WHERE ${whereSql}
+              ORDER BY updated_at DESC
+              LIMIT $${rowParams.length - 1}
+              OFFSET $${rowParams.length}`,
+            rowParams
+        );
+
+        const items = (Array.isArray(rowsResult?.rows) ? rowsResult.rows : []).map((row) => normalizeRecord(row));
+        const total = Number(totalResult?.rows?.[0]?.total || 0);
+        return { items, total, limit, offset };
+    } catch (error) {
+        if (missingRelation(error)) return { items: [], total: 0, limit, offset };
+        throw error;
+    }
+}
+
+async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const source = payload && typeof payload === 'object' ? payload : {};
+    const chatId = normalizeChatId(source.chatId || source.chat_id);
+    const scopeModuleId = normalizeScopeModuleId(source.scopeModuleId || source.scope_module_id || '');
+    if (!chatId) throw new Error('chatId requerido para estado comercial.');
+
+    const previous = await getChatCommercialStatus(cleanTenantId, { chatId, scopeModuleId });
+    const now = nowIso();
+    const next = normalizeRecord({
+        chatId,
+        scopeModuleId,
+        status: source.status || previous?.status || 'nuevo',
+        source: source.source || previous?.source || 'system',
+        reason: source.reason !== undefined ? source.reason : (previous?.reason || null),
+        changedByUserId: source.changedByUserId !== undefined ? source.changedByUserId : (previous?.changedByUserId || null),
+        firstCustomerMessageAt: source.firstCustomerMessageAt !== undefined ? source.firstCustomerMessageAt : (previous?.firstCustomerMessageAt || null),
+        firstAgentResponseAt: source.firstAgentResponseAt !== undefined ? source.firstAgentResponseAt : (previous?.firstAgentResponseAt || null),
+        quotedAt: source.quotedAt !== undefined ? source.quotedAt : (previous?.quotedAt || null),
+        soldAt: source.soldAt !== undefined ? source.soldAt : (previous?.soldAt || null),
+        lostAt: source.lostAt !== undefined ? source.lostAt : (previous?.lostAt || null),
+        lastTransitionAt: source.lastTransitionAt !== undefined ? source.lastTransitionAt : (previous?.lastTransitionAt || now),
+        metadata: {
+            ...(previous?.metadata || {}),
+            ...normalizeMetadata(source.metadata)
+        },
+        createdAt: previous?.createdAt || now,
+        updatedAt: now
+    });
+
+    if (getStorageDriver() !== 'postgres') {
+        const store = normalizeStore(await readTenantJsonFile(STORE_FILE, { tenantId: cleanTenantId, defaultValue: {} }));
+        const key = statusKey(chatId, scopeModuleId);
+        const index = store.items.findIndex((entry) => statusKey(entry.chatId, entry.scopeModuleId) === key);
+        const nextItems = [...store.items];
+        if (index >= 0) nextItems[index] = next;
+        else nextItems.push(next);
+        const normalizedItems = nextItems
+            .map((entry) => normalizeRecord(entry))
+            .filter((entry) => entry.chatId);
+        await writeTenantJsonFile(STORE_FILE, { items: normalizedItems }, { tenantId: cleanTenantId });
+        return {
+            status: next,
+            previous,
+            changed: !previous || JSON.stringify(previous) !== JSON.stringify(next)
+        };
+    }
+
+    await ensurePostgresSchema();
+    const row = toDbRecord(next);
+    await queryPostgres(
+        `INSERT INTO tenant_chat_commercial_status (
+            tenant_id, chat_id, scope_module_id, status, source, reason, changed_by_user_id,
+            first_customer_message_at, first_agent_response_at, quoted_at, sold_at, lost_at,
+            last_transition_at, metadata, created_at, updated_at
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7,
+            $8, $9, $10, $11, $12,
+            $13, $14::jsonb, $15, $16
+        )
+        ON CONFLICT (tenant_id, chat_id, scope_module_id)
+        DO UPDATE SET
+            status = EXCLUDED.status,
+            source = EXCLUDED.source,
+            reason = EXCLUDED.reason,
+            changed_by_user_id = EXCLUDED.changed_by_user_id,
+            first_customer_message_at = EXCLUDED.first_customer_message_at,
+            first_agent_response_at = EXCLUDED.first_agent_response_at,
+            quoted_at = EXCLUDED.quoted_at,
+            sold_at = EXCLUDED.sold_at,
+            lost_at = EXCLUDED.lost_at,
+            last_transition_at = EXCLUDED.last_transition_at,
+            metadata = COALESCE(tenant_chat_commercial_status.metadata, '{}'::jsonb) || COALESCE(EXCLUDED.metadata, '{}'::jsonb),
+            updated_at = EXCLUDED.updated_at`,
+        [
+            cleanTenantId,
+            row.chat_id,
+            row.scope_module_id,
+            row.status,
+            row.source,
+            row.reason,
+            row.changed_by_user_id,
+            row.first_customer_message_at,
+            row.first_agent_response_at,
+            row.quoted_at,
+            row.sold_at,
+            row.lost_at,
+            row.last_transition_at,
+            JSON.stringify(row.metadata || {}),
+            row.created_at,
+            row.updated_at
+        ]
+    );
+
+    return {
+        status: next,
+        previous,
+        changed: !previous || JSON.stringify(previous) !== JSON.stringify(next)
+    };
+}
+
+async function markInboundCustomerFirstContact(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    const at = normalizeIso(options.at) || nowIso();
+    const current = await getChatCommercialStatus(tenantId, options);
+
+    if (!current) {
+        return upsertChatCommercialStatus(tenantId, {
+            chatId: options.chatId,
+            scopeModuleId: options.scopeModuleId,
+            status: 'nuevo',
+            source: options.source || 'webhook',
+            reason: options.reason || 'first_inbound_customer_message',
+            changedByUserId: options.changedByUserId || null,
+            firstCustomerMessageAt: at,
+            lastTransitionAt: at,
+            metadata: normalizeMetadata(options.metadata)
+        });
+    }
+
+    if (current.firstCustomerMessageAt) {
+        return { status: current, previous: current, changed: false };
+    }
+
+    return upsertChatCommercialStatus(tenantId, {
+        chatId: current.chatId,
+        scopeModuleId: current.scopeModuleId,
+        firstCustomerMessageAt: at,
+        metadata: normalizeMetadata(options.metadata)
+    });
+}
+
+async function markFirstAgentReply(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    const at = normalizeIso(options.at) || nowIso();
+    const current = await getChatCommercialStatus(tenantId, options);
+
+    if (!current) {
+        return upsertChatCommercialStatus(tenantId, {
+            chatId: options.chatId,
+            scopeModuleId: options.scopeModuleId,
+            status: 'en_conversacion',
+            source: options.source || 'socket',
+            reason: options.reason || 'first_outbound_agent_message',
+            changedByUserId: options.changedByUserId || null,
+            firstAgentResponseAt: at,
+            lastTransitionAt: at,
+            metadata: normalizeMetadata(options.metadata)
+        });
+    }
+
+    const patch = {
+        chatId: current.chatId,
+        scopeModuleId: current.scopeModuleId,
+        metadata: normalizeMetadata(options.metadata)
+    };
+    if (!current.firstAgentResponseAt) patch.firstAgentResponseAt = at;
+    if (current.status === 'nuevo') {
+        patch.status = 'en_conversacion';
+        patch.source = options.source || 'socket';
+        patch.reason = options.reason || 'first_outbound_agent_message';
+        patch.changedByUserId = options.changedByUserId || null;
+        patch.lastTransitionAt = at;
+    }
+
+    if (Object.keys(patch).length <= 3) {
+        return { status: current, previous: current, changed: false };
+    }
+
+    return upsertChatCommercialStatus(tenantId, patch);
+}
+
+async function markQuoteSent(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    const at = normalizeIso(options.at) || nowIso();
+    const current = await getChatCommercialStatus(tenantId, options);
+
+    if (current && (current.status === 'vendido' || current.status === 'perdido')) {
+        return { status: current, previous: current, changed: false };
+    }
+
+    const base = current || {
+        chatId: normalizeChatId(options.chatId),
+        scopeModuleId: normalizeScopeModuleId(options.scopeModuleId || '')
+    };
+    if (!base.chatId) throw new Error('chatId requerido para marcar cotizado.');
+
+    return upsertChatCommercialStatus(tenantId, {
+        chatId: base.chatId,
+        scopeModuleId: base.scopeModuleId,
+        status: 'cotizado',
+        source: options.source || 'socket',
+        reason: options.reason || 'send_structured_quote_success',
+        changedByUserId: options.changedByUserId || null,
+        quotedAt: current?.quotedAt || at,
+        firstCustomerMessageAt: current?.firstCustomerMessageAt || null,
+        firstAgentResponseAt: current?.firstAgentResponseAt || null,
+        lastTransitionAt: at,
+        metadata: normalizeMetadata(options.metadata)
+    });
+}
+
+async function markManualStatus(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    const targetStatus = normalizeStatus(options.status || '');
+    if (targetStatus !== 'vendido' && targetStatus !== 'perdido') {
+        throw new Error('status manual invalido. Solo vendido/perdido.');
+    }
+    const at = normalizeIso(options.at) || nowIso();
+    const current = await getChatCommercialStatus(tenantId, options);
+    const base = current || {
+        chatId: normalizeChatId(options.chatId),
+        scopeModuleId: normalizeScopeModuleId(options.scopeModuleId || '')
+    };
+    if (!base.chatId) throw new Error('chatId requerido para marcado manual.');
+
+    return upsertChatCommercialStatus(tenantId, {
+        chatId: base.chatId,
+        scopeModuleId: base.scopeModuleId,
+        status: targetStatus,
+        source: options.source || 'manual',
+        reason: options.reason || ('manual_mark_' + targetStatus),
+        changedByUserId: options.changedByUserId || null,
+        soldAt: targetStatus === 'vendido' ? (current?.soldAt || at) : current?.soldAt || null,
+        lostAt: targetStatus === 'perdido' ? (current?.lostAt || at) : current?.lostAt || null,
+        quotedAt: current?.quotedAt || null,
+        firstCustomerMessageAt: current?.firstCustomerMessageAt || null,
+        firstAgentResponseAt: current?.firstAgentResponseAt || null,
+        lastTransitionAt: at,
+        metadata: normalizeMetadata(options.metadata)
+    });
+}
+
+module.exports = {
+    getChatCommercialStatus,
+    listCommercialStatuses,
+    upsertChatCommercialStatus,
+    markInboundCustomerFirstContact,
+    markFirstAgentReply,
+    markQuoteSent,
+    markManualStatus
+};
+

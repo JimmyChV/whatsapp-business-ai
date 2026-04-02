@@ -1,9 +1,25 @@
 import { useCallback, useMemo, useState } from 'react';
 
 const WA_LABEL_COLORS = ['#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#00A884', '#7D8D95'];
+const COMMERCIAL_STATUS_OPTIONS = [
+  { value: 'all', label: 'Todos' },
+  { value: 'nuevo', label: 'Nuevo' },
+  { value: 'en_conversacion', label: 'En conversacion' },
+  { value: 'cotizado', label: 'Cotizado' },
+  { value: 'vendido', label: 'Vendido' },
+  { value: 'perdido', label: 'Perdido' }
+];
+const COMMERCIAL_STATUS_LABEL_BY_VALUE = COMMERCIAL_STATUS_OPTIONS.reduce((acc, entry) => {
+  acc[entry.value] = entry.label;
+  return acc;
+}, {});
 
 const normalizePhoneDigits = (value = '') => String(value || '').replace(/\D/g, '');
 const normalizeFilterToken = (value = '') => String(value || '').trim().toLowerCase();
+const normalizeCommercialStatus = (value = 'all') => {
+  const clean = normalizeFilterToken(value || 'all');
+  return COMMERCIAL_STATUS_LABEL_BY_VALUE[clean] ? clean : 'all';
+};
 
 const normalizeFilters = (filters = {}) => {
   const rawTokens = Array.isArray(filters?.labelTokens) ? filters.labelTokens : [];
@@ -32,6 +48,7 @@ const normalizeFilters = (filters = {}) => {
     unlabeledOnly: Boolean(filters?.unlabeledOnly),
     onlyAssignedToMe: Boolean(filters?.onlyAssignedToMe),
     assigneeUserId: normalizeFilterToken(filters?.assigneeUserId || ''),
+    commercialStatus: normalizeCommercialStatus(filters?.commercialStatus || 'all'),
     contactMode,
     archivedMode,
     pinnedMode
@@ -62,6 +79,7 @@ const useSidebarFiltersController = ({
   labelDefinitions = [],
   waModules = [],
   chatAssignmentState = null,
+  chatCommercialStatusState = null,
   onFiltersChange = null,
   searchQuery = ''
 } = {}) => {
@@ -72,6 +90,10 @@ const useSidebarFiltersController = ({
     : (() => false);
   const getAssignmentResolver = typeof chatAssignmentState?.getAssignment === 'function'
     ? chatAssignmentState.getAssignment
+    : (() => null);
+  const statusesLoaded = Boolean(chatCommercialStatusState?.statusesLoaded);
+  const getCommercialStatusResolver = typeof chatCommercialStatusState?.getCommercialStatus === 'function'
+    ? chatCommercialStatusState.getCommercialStatus
     : (() => null);
 
   const resolveChatAssignment = useCallback((chat = {}) => {
@@ -86,6 +108,18 @@ const useSidebarFiltersController = ({
     }
     return null;
   }, [getAssignmentResolver]);
+  const resolveChatCommercialStatus = useCallback((chat = {}) => {
+    const scopedId = String(chat?.id || '').trim();
+    if (scopedId) {
+      const scopedStatus = getCommercialStatusResolver(scopedId);
+      if (scopedStatus) return scopedStatus;
+    }
+    const baseId = String(chat?.baseChatId || '').trim();
+    if (baseId) {
+      return getCommercialStatusResolver(baseId);
+    }
+    return null;
+  }, [getCommercialStatusResolver]);
 
   const [labelSearch, setLabelSearch] = useState('');
 
@@ -146,6 +180,7 @@ const useSidebarFiltersController = ({
     || filters.unlabeledOnly
     || filters.onlyAssignedToMe
     || Boolean(filters.assigneeUserId)
+    || filters.commercialStatus !== 'all'
     || filters.contactMode !== 'all'
     || filters.archivedMode !== 'all'
     || filters.pinnedMode !== 'all';
@@ -201,6 +236,9 @@ const useSidebarFiltersController = ({
     if (filters.assigneeUserId && filters.assigneeUserId !== '__unassigned__') {
       chips.push(`Asignada: ${assignmentUserLabelById.get(filters.assigneeUserId) || filters.assigneeUserId}`);
     }
+    if (filters.commercialStatus !== 'all') {
+      chips.push(`Estado: ${COMMERCIAL_STATUS_LABEL_BY_VALUE[filters.commercialStatus] || filters.commercialStatus}`);
+    }
     if (filters.archivedMode === 'archived') chips.push('Archivados');
     if (filters.pinnedMode === 'pinned') chips.push('Fijados');
     if (filters.contactMode === 'my') chips.push('Guardados');
@@ -223,6 +261,11 @@ const useSidebarFiltersController = ({
       } else if (assigneeToken !== filters.assigneeUserId) {
         return false;
       }
+    }
+    if (filters.commercialStatus !== 'all' && statusesLoaded) {
+      const chatCommercialStatus = resolveChatCommercialStatus(chat);
+      const statusToken = normalizeFilterToken(chatCommercialStatus?.status || 'nuevo') || 'nuevo';
+      if (statusToken !== filters.commercialStatus) return false;
     }
     if (filters.contactMode === 'my' && !chat?.isMyContact) return false;
     if (filters.contactMode === 'unknown' && chat?.isMyContact) return false;
@@ -254,7 +297,7 @@ const useSidebarFiltersController = ({
 
     // TODO(bug): filtro sin resultados queda en estado "cargando" indefinidamente — falta estado de "sin resultados"
     return name.includes(q) || subtitle.includes(q) || status.includes(q) || lastMessage.includes(q);
-  }), [assignmentsLoaded, chats, filters, localQuery, isAssignedToMeResolver, resolveChatAssignment]);
+  }), [assignmentsLoaded, chats, filters, localQuery, isAssignedToMeResolver, resolveChatAssignment, resolveChatCommercialStatus, statusesLoaded]);
 
   const resetFilters = () => {
     onFiltersChange?.(normalizeFilters({
@@ -263,6 +306,7 @@ const useSidebarFiltersController = ({
       unlabeledOnly: false,
       onlyAssignedToMe: false,
       assigneeUserId: '',
+      commercialStatus: 'all',
       contactMode: 'all',
       archivedMode: 'all',
       pinnedMode: 'all'
@@ -291,7 +335,8 @@ const useSidebarFiltersController = ({
     setLabelSearch,
     selectedLabelCount,
     hasAnyFilter,
-    assignmentUserOptions
+    assignmentUserOptions,
+    commercialStatusOptions: COMMERCIAL_STATUS_OPTIONS
   };
 };
 

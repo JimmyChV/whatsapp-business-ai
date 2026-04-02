@@ -275,7 +275,8 @@ function App() {
     setIsConnected,
     setIsClientReady,
     setIsSwitchingTransport,
-    setTransportError
+    setTransportError,
+    tenantScopeId
   };
 
   const businessScopeBlock = {
@@ -361,7 +362,8 @@ function App() {
   const callbacksBlock = {
     resolveSessionSenderIdentity: apiSessionExports.resolveSessionSenderIdentity,
     setClientContact,
-    setToasts
+    setToasts,
+    buildApiHeaders: apiSessionExports.buildApiHeaders
   };
 
   const {
@@ -371,7 +373,8 @@ function App() {
     clientProfilePanelRef: socketClientProfilePanelRef,
     requestChatsPage,
     emitScopedBusinessDataRequest,
-    chatAssignmentState
+    chatAssignmentState,
+    chatCommercialStatusState
   } = useAppSocketChatController({
     runtimeBlock,
     businessScopeBlock,
@@ -615,6 +618,7 @@ function App() {
     selectedCatalogModuleId,
     selectedCatalogId,
     chatAssignmentState,
+    chatCommercialStatusState,
     waCapabilities,
     toasts,
     setToasts,

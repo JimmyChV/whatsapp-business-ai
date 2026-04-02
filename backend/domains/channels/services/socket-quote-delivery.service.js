@@ -166,6 +166,7 @@ function createSocketQuoteDeliveryService({
     buildSocketAgentMeta,
     sanitizeAgentMeta,
     rememberOutgoingAgentMeta,
+    chatCommercialStatusService = null,
     quotesService = fallbackQuotesService
 } = {}) {
     const resolvedQuotesService = quotesService && typeof quotesService.createQuoteRecord === 'function'
@@ -180,6 +181,7 @@ function createSocketQuoteDeliveryService({
         transportOrchestrator,
         resolveScopedSendTarget,
         emitRealtimeOutgoingMessage,
+        emitCommercialStatusUpdated,
         recordConversationEvent
     } = {}) => {
         socket.on('send_structured_quote', async (payload = {}) => {
@@ -282,6 +284,34 @@ function createSocketQuoteDeliveryService({
                         sentAt
                     })
                     : null;
+
+                if (chatCommercialStatusService && target?.targetChatId) {
+                    try {
+                        const commercialResult = await chatCommercialStatusService.markQuoteSent(tenantId, {
+                            chatId: target.targetChatId,
+                            scopeModuleId: String(target.scopeModuleId || '').trim().toLowerCase(),
+                            source: 'socket',
+                            reason: 'send_structured_quote_success',
+                            changedByUserId: actorUserId,
+                            at: sentAt,
+                            metadata: {
+                                quoteId: effectiveQuoteId || null,
+                                messageId: sentMessageId || null
+                            }
+                        });
+                        if (commercialResult?.changed) {
+                            emitCommercialStatusUpdated?.({
+                                tenantId,
+                                chatId: target.targetChatId,
+                                scopeModuleId: String(target.scopeModuleId || '').trim().toLowerCase(),
+                                result: commercialResult,
+                                source: 'quote_delivery.send_structured_quote'
+                            });
+                        }
+                    } catch (_) {
+                        // silent: quote delivery should not fail by commercial status lifecycle issues
+                    }
+                }
 
                 await recordConversationEvent({
                     chatId: target.targetChatId,

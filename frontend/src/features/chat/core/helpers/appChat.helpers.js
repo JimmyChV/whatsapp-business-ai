@@ -518,6 +518,10 @@ export const normalizeChatFilters = (filters = {}) => {
   const pinnedMode = ['all', 'pinned', 'unpinned'].includes(String(filters?.pinnedMode || 'all'))
     ? String(filters?.pinnedMode || 'all')
     : 'all';
+  const commercialStatus = ['all', 'nuevo', 'en_conversacion', 'cotizado', 'vendido', 'perdido']
+    .includes(String(filters?.commercialStatus || 'all').trim().toLowerCase())
+    ? String(filters?.commercialStatus || 'all').trim().toLowerCase()
+    : 'all';
 
   return {
     labelTokens,
@@ -525,6 +529,7 @@ export const normalizeChatFilters = (filters = {}) => {
     unlabeledOnly: Boolean(filters?.unlabeledOnly),
     onlyAssignedToMe: Boolean(filters?.onlyAssignedToMe),
     assigneeUserId: String(filters?.assigneeUserId || '').trim(),
+    commercialStatus,
     contactMode,
     archivedMode,
     pinnedMode,

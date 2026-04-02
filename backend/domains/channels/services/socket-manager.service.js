@@ -18,6 +18,7 @@ const tenantLabelService = require('../../tenant/services/tenant-labels.service'
 const quotesService = require('../../tenant/services/quotes.service');
 const saasControlService = require('../../tenant/services/tenant-control.service');
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
+const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
 const chatAssignmentRouterService = require('../../operations/services/chat-assignment-router.service');
 const chatAssignmentPolicyService = require('../../operations/services/chat-assignment-policy.service');
 const auditLogService = require('../../security/services/audit-log.service');
@@ -145,6 +146,10 @@ const QUICK_REPLY_MEDIA_TIMEOUT_MS = Math.max(
 const ASSIGNMENT_BULK_SNAPSHOT_LIMIT = Math.max(
     50,
     Number(process.env.CHAT_ASSIGNMENT_BULK_SNAPSHOT_LIMIT || 500)
+);
+const COMMERCIAL_STATUS_BULK_SNAPSHOT_LIMIT = Math.max(
+    50,
+    Number(process.env.CHAT_COMMERCIAL_STATUS_BULK_SNAPSHOT_LIMIT || 500)
 );
 const DEFAULT_SAAS_UPLOADS_ROOT = path.resolve(__dirname, '../../../uploads');
 const SAAS_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || DEFAULT_SAAS_UPLOADS_ROOT).trim() || DEFAULT_SAAS_UPLOADS_ROOT);
@@ -352,6 +357,7 @@ class SocketManager {
             buildSocketAgentMeta,
             sanitizeAgentMeta,
             rememberOutgoingAgentMeta,
+            chatCommercialStatusService,
             quotesService
         });
         this.profileContactService = createSocketProfileContactService({
@@ -555,6 +561,32 @@ class SocketManager {
 
     emitToTenant(tenantId, eventName, payload) {
         this.runtimeStore.emitToTenant(tenantId, eventName, payload);
+    }
+
+    emitCommercialStatusUpdated({
+        tenantId = 'default',
+        chatId = '',
+        scopeModuleId = '',
+        result = null,
+        source = 'socket'
+    } = {}) {
+        const cleanTenantId = String(tenantId || 'default').trim() || 'default';
+        const cleanChatId = String(chatId || result?.status?.chatId || '').trim();
+        if (!cleanChatId) return;
+        const status = result?.status && typeof result.status === 'object' ? result.status : null;
+        const previousStatus = result?.previous && typeof result.previous === 'object' ? result.previous : null;
+        const cleanScopeModuleId = String(scopeModuleId || status?.scopeModuleId || '').trim().toLowerCase();
+
+        this.emitToTenant(cleanTenantId, 'chat_commercial_status_updated', {
+            tenantId: cleanTenantId,
+            chatId: cleanChatId,
+            scopeModuleId: cleanScopeModuleId || '',
+            status,
+            previousStatus,
+            changed: Boolean(result?.changed),
+            source: String(source || 'socket').trim().toLowerCase() || 'socket',
+            generatedAt: new Date().toISOString()
+        });
     }
 
     getTenantModuleRoom(tenantId = 'default', moduleId = 'default') {
@@ -913,9 +945,71 @@ class SocketManager {
             if (batch.length < batchSize) break;
         }
 
-        const normalized = allRows
+        const historySummaries = allRows
             .map((entry) => this.toHistoryChatSummary(entry))
-            .filter(Boolean)
+            .filter(Boolean);
+
+        let summariesWithLabels = historySummaries;
+        if (historySummaries.length > 0 && typeof tenantLabelService?.listChatLabelsMap === 'function') {
+            const buildLabelMapKey = (chatId = '', scopedModuleId = '') => `${String(chatId || '')}::${normalizeScopedModuleId(scopedModuleId || '')}`;
+            const historyChatIds = Array.from(new Set(
+                historySummaries
+                    .map((summary) => String(summary?.baseChatId || parseScopedChatId(summary?.id || '').chatId || '').trim())
+                    .filter((chatId) => Boolean(chatId))
+            ));
+
+            if (historyChatIds.length > 0) {
+                let labelsMap = {};
+                try {
+                    labelsMap = await tenantLabelService.listChatLabelsMap({
+                        tenantId,
+                        chatKeys: historyChatIds.map((chatId) => ({ chatId, scopeModuleId: normalizedScopeModuleId })),
+                        includeInactive: false
+                    }) || {};
+                } catch (_) {
+                    labelsMap = {};
+                }
+
+                if (normalizedScopeModuleId) {
+                    const missingChatIds = historyChatIds.filter((chatId) => {
+                        const scopedKey = buildLabelMapKey(chatId, normalizedScopeModuleId);
+                        const scopedLabels = labelsMap?.[scopedKey];
+                        return !Array.isArray(scopedLabels) || scopedLabels.length === 0;
+                    });
+
+                    if (missingChatIds.length > 0) {
+                        try {
+                            const fallbackMap = await tenantLabelService.listChatLabelsMap({
+                                tenantId,
+                                chatKeys: missingChatIds.map((chatId) => ({ chatId, scopeModuleId: '' })),
+                                includeInactive: false
+                            }) || {};
+
+                            for (const chatId of missingChatIds) {
+                                const scopedKey = buildLabelMapKey(chatId, normalizedScopeModuleId);
+                                const fallbackKey = buildLabelMapKey(chatId, '');
+                                if ((!Array.isArray(labelsMap?.[scopedKey]) || labelsMap[scopedKey].length === 0) && Array.isArray(fallbackMap?.[fallbackKey])) {
+                                    labelsMap[scopedKey] = fallbackMap[fallbackKey];
+                                }
+                            }
+                        } catch (_) { }
+                    }
+                }
+
+                summariesWithLabels = historySummaries.map((summary) => {
+                    const baseChatId = String(summary?.baseChatId || parseScopedChatId(summary?.id || '').chatId || '').trim();
+                    if (!baseChatId) return summary;
+                    const labelKey = buildLabelMapKey(baseChatId, normalizedScopeModuleId);
+                    const labels = Array.isArray(labelsMap?.[labelKey]) ? labelsMap[labelKey] : (Array.isArray(summary?.labels) ? summary.labels : []);
+                    return {
+                        ...summary,
+                        labels: this.normalizeHistoryLabels(labels)
+                    };
+                });
+            }
+        }
+
+        const normalized = summariesWithLabels
             .filter((summary) => {
                 if (!normalizedScopeModuleId) return true;
                 const summaryScopeId = normalizeScopedModuleId(
@@ -1145,10 +1239,44 @@ class SocketManager {
                     });
                 }
             };
+            const emitCommercialStatusBulkSnapshot = async () => {
+                try {
+                    const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                    const result = await chatCommercialStatusService.listCommercialStatuses(tenantId, {
+                        scopeModuleId: selectedScopeModuleId || '',
+                        limit: COMMERCIAL_STATUS_BULK_SNAPSHOT_LIMIT,
+                        offset: 0
+                    });
+                    const items = Array.isArray(result?.items) ? result.items : [];
+                    socket.emit('chat_commercial_status_bulk_snapshot', {
+                        ok: true,
+                        tenantId,
+                        scopeModuleId: selectedScopeModuleId || '',
+                        items,
+                        total: Number(result?.total || 0),
+                        limit: Number(result?.limit || COMMERCIAL_STATUS_BULK_SNAPSHOT_LIMIT),
+                        offset: Number(result?.offset || 0),
+                        generatedAt: new Date().toISOString()
+                    });
+                } catch (error) {
+                    socket.emit('chat_commercial_status_bulk_snapshot', {
+                        ok: false,
+                        tenantId,
+                        scopeModuleId: '',
+                        items: [],
+                        total: 0,
+                        limit: COMMERCIAL_STATUS_BULK_SNAPSHOT_LIMIT,
+                        offset: 0,
+                        error: String(error?.message || 'No se pudo cargar snapshot de estado comercial.'),
+                        generatedAt: new Date().toISOString()
+                    });
+                }
+            };
             const normalizeSocketModuleId = (value = '') => String(value || '').trim().toLowerCase();
             await transportOrchestrator.bootstrapTransportContext();
             transportOrchestrator.registerTransportHandlers();
             await emitAssignmentBulkSnapshot();
+            await emitCommercialStatusBulkSnapshot();
 
             // --- Chat info ---
             this.chatListService.registerChatListHandlers({
@@ -1207,6 +1335,7 @@ class SocketManager {
                 transportOrchestrator,
                 resolveScopedSendTarget: (...args) => messageDeliveryRuntime.resolveScopedSendTarget(...args),
                 emitRealtimeOutgoingMessage: (...args) => messageDeliveryRuntime.emitRealtimeOutgoingMessage(...args),
+                emitCommercialStatusUpdated: (...args) => this.emitCommercialStatusUpdated(...args),
                 recordConversationEvent
             });
 
@@ -1538,7 +1667,9 @@ class SocketManager {
             mediaManager,
             conversationOpsService,
             chatAssignmentRouterService,
+            chatCommercialStatusService,
             emitToRuntimeContext: this.emitToRuntimeContext.bind(this),
+            emitCommercialStatusUpdated: (...args) => this.emitCommercialStatusUpdated(...args),
             getWaCapabilities: this.getWaCapabilities.bind(this),
             getWaRuntime: this.getWaRuntime.bind(this),
             resolveHistoryTenantId: this.resolveHistoryTenantId.bind(this),

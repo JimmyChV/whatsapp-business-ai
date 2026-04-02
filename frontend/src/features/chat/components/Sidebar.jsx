@@ -1,7 +1,8 @@
 import React from 'react';
-import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck } from 'lucide-react';
+import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck, ChevronDown } from 'lucide-react';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import AssignmentBadge from './assignment/AssignmentBadge';
+import CommercialStatusBadge from './commercial/CommercialStatusBadge';
 import useSidebarFiltersController from './hooks/useSidebarFiltersController';
 import useSidebarChatPresentationModel from './hooks/useSidebarChatPresentationModel';
 import useSidebarInfiniteScroll from './hooks/useSidebarInfiniteScroll';
@@ -60,6 +61,7 @@ const Sidebar = ({
     onOpenSaasAdmin,
     waModules = [],
     chatAssignmentState = null,
+    chatCommercialStatusState = null,
     showBackToPanel = false,
     onBackToPanel = null,
 }) => {
@@ -82,13 +84,15 @@ const Sidebar = ({
         setLabelSearch,
         selectedLabelCount,
         hasAnyFilter,
-        assignmentUserOptions
+        assignmentUserOptions,
+        commercialStatusOptions
     } = useSidebarFiltersController({
         chats,
         activeFilters,
         labelDefinitions,
         waModules,
         chatAssignmentState,
+        chatCommercialStatusState,
         onFiltersChange,
         searchQuery
     });
@@ -119,7 +123,41 @@ const Sidebar = ({
     const isAssignedToMeResolver = typeof chatAssignmentState?.isAssignedToMe === 'function'
         ? chatAssignmentState.isAssignedToMe
         : (() => false);
+    const getCommercialStatus = typeof chatCommercialStatusState?.getCommercialStatus === 'function'
+        ? chatCommercialStatusState.getCommercialStatus
+        : (() => null);
     const assignmentsLoaded = Boolean(chatAssignmentState?.assignmentsLoaded);
+    const statusesLoaded = Boolean(chatCommercialStatusState?.statusesLoaded);
+    const [showAssigneeFilterMenu, setShowAssigneeFilterMenu] = React.useState(false);
+    const [showCommercialFilterMenu, setShowCommercialFilterMenu] = React.useState(false);
+    const assigneeMenuRef = React.useRef(null);
+    const commercialMenuRef = React.useRef(null);
+
+    React.useEffect(() => {
+        const handlePointerDown = (event) => {
+            const target = event.target;
+            if (assigneeMenuRef.current && !assigneeMenuRef.current.contains(target)) {
+                setShowAssigneeFilterMenu(false);
+            }
+            if (commercialMenuRef.current && !commercialMenuRef.current.contains(target)) {
+                setShowCommercialFilterMenu(false);
+            }
+        };
+        document.addEventListener('pointerdown', handlePointerDown);
+        return () => document.removeEventListener('pointerdown', handlePointerDown);
+    }, []);
+
+    const selectedAssigneeLabel = React.useMemo(() => {
+        if (filters.assigneeUserId === '__unassigned__') return 'Sin asignar';
+        if (!filters.assigneeUserId) return 'Todas las vendedoras';
+        const match = assignmentUserOptions.find((entry) => String(entry?.value || '') === String(filters.assigneeUserId || ''));
+        return match?.label || filters.assigneeUserId;
+    }, [assignmentUserOptions, filters.assigneeUserId]);
+
+    const selectedCommercialStatusLabel = React.useMemo(() => {
+        const selected = commercialStatusOptions.find((entry) => String(entry?.value || '') === String(filters.commercialStatus || 'all'));
+        return selected?.label || 'Todos';
+    }, [commercialStatusOptions, filters.commercialStatus]);
 
     const currentTenantId = String(activeTenantId || '').trim();
     const sortedTenantOptions = Array.isArray(tenantOptions)
@@ -344,7 +382,102 @@ const Sidebar = ({
                     </div>
                     <div className="sidebar-main-column">
                         <div className="sidebar-filter-content">
-                        <div className="sidebar-filter-content-top">
+                        <div className="sidebar-filter-header-row">
+                            <span className="sidebar-filter-title">Filtros avanzados</span>
+                            {hasAnyFilter && (
+                                <button type="button" className="sidebar-filter-clear" onClick={resetFilters}>Limpiar</button>
+                            )}
+                        </div>
+                            <div className="sidebar-filter-pill-toolbar">
+                                {assignmentsLoaded && (
+                                    <div className="sidebar-filter-pill-dropdown" ref={assigneeMenuRef}>
+                                        <button
+                                            type="button"
+                                            className={`sidebar-filter-pill-trigger ${filters.assigneeUserId ? 'active' : ''}`}
+                                            onClick={() => {
+                                                setShowAssigneeFilterMenu((prev) => !prev);
+                                                setShowCommercialFilterMenu(false);
+                                            }}
+                                            title="Filtrar por vendedora"
+                                        >
+                                            <span className="sidebar-filter-pill-label">Vendedora</span>
+                                            <span className="sidebar-filter-pill-value">{selectedAssigneeLabel}</span>
+                                            <ChevronDown size={14} className={`sidebar-filter-pill-caret ${showAssigneeFilterMenu ? 'open' : ''}`} />
+                                        </button>
+                                        {showAssigneeFilterMenu && (
+                                            <div className="sidebar-filter-pill-menu">
+                                                <button
+                                                    type="button"
+                                                    className={`sidebar-filter-pill-item ${!filters.assigneeUserId ? 'active' : ''}`}
+                                                    onClick={() => {
+                                                        updateFilters({ assigneeUserId: '' });
+                                                        setShowAssigneeFilterMenu(false);
+                                                    }}
+                                                >
+                                                    Todas las vendedoras
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className={`sidebar-filter-pill-item ${filters.assigneeUserId === '__unassigned__' ? 'active' : ''}`}
+                                                    onClick={() => {
+                                                        updateFilters({ assigneeUserId: '__unassigned__' });
+                                                        setShowAssigneeFilterMenu(false);
+                                                    }}
+                                                >
+                                                    Sin asignar
+                                                </button>
+                                                {assignmentUserOptions.map((entry) => (
+                                                    <button
+                                                        key={entry.value}
+                                                        type="button"
+                                                        className={`sidebar-filter-pill-item ${filters.assigneeUserId === entry.value ? 'active' : ''}`}
+                                                        onClick={() => {
+                                                            updateFilters({ assigneeUserId: String(entry.value || '').trim() });
+                                                            setShowAssigneeFilterMenu(false);
+                                                        }}
+                                                    >
+                                                        {entry.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                {statusesLoaded && (
+                                    <div className="sidebar-filter-pill-dropdown" ref={commercialMenuRef}>
+                                        <button
+                                            type="button"
+                                            className={`sidebar-filter-pill-trigger ${String(filters.commercialStatus || 'all') !== 'all' ? 'active' : ''}`}
+                                            onClick={() => {
+                                                setShowCommercialFilterMenu((prev) => !prev);
+                                                setShowAssigneeFilterMenu(false);
+                                            }}
+                                            title="Filtrar por estado comercial"
+                                        >
+                                            <span className="sidebar-filter-pill-label">Estado</span>
+                                            <span className="sidebar-filter-pill-value">{selectedCommercialStatusLabel}</span>
+                                            <ChevronDown size={14} className={`sidebar-filter-pill-caret ${showCommercialFilterMenu ? 'open' : ''}`} />
+                                        </button>
+                                        {showCommercialFilterMenu && (
+                                            <div className="sidebar-filter-pill-menu">
+                                                {commercialStatusOptions.map((entry) => (
+                                                    <button
+                                                        key={entry.value}
+                                                        type="button"
+                                                        className={`sidebar-filter-pill-item ${String(filters.commercialStatus || 'all') === String(entry.value) ? 'active' : ''}`}
+                                                        onClick={() => {
+                                                            updateFilters({ commercialStatus: String(entry.value || 'all').trim().toLowerCase() });
+                                                            setShowCommercialFilterMenu(false);
+                                                        }}
+                                                    >
+                                                        {entry.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                             <div className="sidebar-active-filters-row">
                                 {!hasAnyFilter ? (
                                     <span className="sidebar-active-filter-empty">Sin filtros activos</span>
@@ -356,29 +489,6 @@ const Sidebar = ({
                                     ))
                                 )}
                             </div>
-                            {assignmentsLoaded && (
-                                <label className="assignment-selector" style={{ marginTop: '8px', marginLeft: 0 }}>
-                                    <span className="assignment-selector-label">Vendedora</span>
-                                    <select
-                                        value={filters.assigneeUserId || ''}
-                                        onChange={(event) => updateFilters({ assigneeUserId: String(event.target.value || '').trim() })}
-                                        className="assignment-selector-select"
-                                        title="Filtrar por asignacion"
-                                    >
-                                        <option value="">Todas las vendedoras</option>
-                                        <option value="__unassigned__">Sin asignar</option>
-                                        {assignmentUserOptions.map((entry) => (
-                                            <option key={entry.value} value={entry.value}>
-                                                {entry.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </label>
-                            )}
-                            {hasAnyFilter && (
-                                <button type="button" className="sidebar-filter-clear" onClick={resetFilters}>Limpiar</button>
-                            )}
-                        </div>
 
                         {showLabelPanel && (
                             <div className="sidebar-label-dropdown" role="dialog" aria-label="Filtrar por etiquetas">
@@ -417,7 +527,7 @@ const Sidebar = ({
                             </div>
                         )}
                     </div>
-            <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); }} onScroll={handleChatListScroll}>
+            <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); if (showAssigneeFilterMenu) setShowAssigneeFilterMenu(false); if (showCommercialFilterMenu) setShowCommercialFilterMenu(false); }} onScroll={handleChatListScroll}>
                 {filteredChats.length === 0 && chats.length === 0 && !chatsLoaded ? (
                     [1, 2, 3, 4, 5].map((i) => (
                         <div key={i} className="chat-item chat-item-modern">
@@ -440,6 +550,7 @@ const Sidebar = ({
                         const channelMarker = getChannelMarker(moduleBadge?.channelType || '');
                         const chatAssignment = getAssignment(chat.id);
                         const isAssignedToMe = isAssignedToMeResolver(chat.id);
+                        const chatCommercialStatus = getCommercialStatus(chat.id);
                         const moduleAvatarImage = moduleBadge?.imageUrl || null;
                         const avatarFallback = moduleBadge?.moduleName
                             ? avatarLetter(moduleBadge.moduleName)
@@ -481,39 +592,10 @@ const Sidebar = ({
                                         </span>
                                     </div>
 
-                                    <div className="chat-row-meta">
-                                        {moduleBadge?.label && (
-                                            <p className="chat-module-badge chat-module-badge--compact">
-                                                <span className="chat-module-badge-media">
-                                                    {moduleBadge.imageUrl
-                                                        ? <img src={moduleBadge.imageUrl} alt={moduleBadge.label} className="chat-module-badge-avatar" />
-                                                        : <span className="chat-module-badge-dot" aria-hidden="true" />}
-                                                    {moduleBadge?.channelType && (
-                                                        <span
-                                                            className={`chat-module-badge-channel chat-module-badge-channel--${channelMarker.key}`}
-                                                            title={channelMarker.label}
-                                                        >
-                                                            <ChannelBrandIcon
-                                                                channelType={channelMarker.key}
-                                                                className="chat-module-badge-channel-icon"
-                                                                size={8}
-                                                                title={channelMarker.label}
-                                                            />
-                                                        </span>
-                                                    )}
-                                                </span>
-                                                <span className="chat-module-badge-label">{moduleBadge.label}</span>
-                                            </p>
-                                        )}
-                                        <AssignmentBadge
-                                            assignment={chatAssignment}
-                                            isAssignedToMe={isAssignedToMe}
-                                            compact
-                                        />
-
+                                    <div className="chat-row-meta chat-row-meta--compact">
                                         {labels.length > 0 && (
                                             <div
-                                                className="chat-inline-labels chat-inline-labels--dots"
+                                                className="chat-row-labels chat-inline-labels chat-inline-labels--dots"
                                                 title={labels.map((label) => String(label?.name || '').trim()).filter(Boolean).join(', ')}
                                             >
                                                 {labels.slice(0, 4).map((label, idx) => (
@@ -526,6 +608,17 @@ const Sidebar = ({
                                                 {labels.length > 4 && <span className="chat-inline-label-more">+{labels.length - 4}</span>}
                                             </div>
                                         )}
+                                        <div className="chat-row-statuses">
+                                            <CommercialStatusBadge
+                                                commercialStatus={chatCommercialStatus}
+                                                compact
+                                            />
+                                            <AssignmentBadge
+                                                assignment={chatAssignment}
+                                                isAssignedToMe={isAssignedToMe}
+                                                compact
+                                            />
+                                        </div>
                                     </div>
 
                                     <div className="chat-row-bottom">

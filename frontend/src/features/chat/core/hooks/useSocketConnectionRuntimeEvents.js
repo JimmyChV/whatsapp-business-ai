@@ -23,9 +23,13 @@ export default function useSocketConnectionRuntimeEvents({
     useEffect(() => {
         socket.on('connect', () => {
             setIsConnected(true);
-            const mode = selectedTransportRef.current;
-            setIsSwitchingTransport(true);
-            socket.emit('set_transport_mode', { mode: mode || 'idle' });
+            const mode = String(selectedTransportRef.current || '').trim().toLowerCase();
+            if (mode && mode !== 'idle') {
+                setIsSwitchingTransport(true);
+                socket.emit('set_transport_mode', { mode });
+            } else {
+                setIsSwitchingTransport(false);
+            }
             socket.emit('get_wa_capabilities');
             socket.emit('get_wa_modules');
         });
@@ -47,6 +51,7 @@ export default function useSocketConnectionRuntimeEvents({
         socket.on('ready', () => {
             setIsClientReady(true);
             setIsSwitchingTransport(false);
+            requestChatsPage({ reset: true });
             emitScopedBusinessDataRequest({
                 moduleId: selectedCatalogModuleIdRef.current || selectedWaModuleRef.current?.moduleId || '',
                 catalogId: selectedCatalogIdRef.current || ''
@@ -104,9 +109,13 @@ export default function useSocketConnectionRuntimeEvents({
 
         if (socket.connected) {
             setIsConnected(true);
-            const mode = selectedTransportRef.current;
-            setIsSwitchingTransport(true);
-            socket.emit('set_transport_mode', { mode: mode || 'idle' });
+            const mode = String(selectedTransportRef.current || '').trim().toLowerCase();
+            if (mode && mode !== 'idle') {
+                setIsSwitchingTransport(true);
+                socket.emit('set_transport_mode', { mode });
+            } else {
+                setIsSwitchingTransport(false);
+            }
             socket.emit('get_wa_capabilities');
             socket.emit('get_wa_modules');
         }

@@ -3,7 +3,9 @@ function createSocketWaEventsBridgeService({
     mediaManager,
     conversationOpsService,
     chatAssignmentRouterService,
+    chatCommercialStatusService,
     emitToRuntimeContext,
+    emitCommercialStatusUpdated,
     getWaCapabilities,
     getWaRuntime,
     resolveHistoryTenantId,
@@ -56,6 +58,7 @@ function createSocketWaEventsBridgeService({
                 || moduleAttributionMeta?.sentViaModuleId
                 || ''
             );
+            const cleanScopeModuleId = String(scopeModuleId || '').trim().toLowerCase();
             const scopedChatId = buildScopedChatId(relatedChatIdBase, scopeModuleId || '');
             const media = await mediaManager.processMessageMedia(msg, {
                 tenantId: historyTenantId,
@@ -79,13 +82,45 @@ function createSocketWaEventsBridgeService({
                 moduleContext: effectiveModuleContext
             });
 
+            if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && chatCommercialStatusService) {
+                try {
+                    const eventUnixTs = Number(msg?.timestamp || 0);
+                    const activityAtIso = eventUnixTs > 0
+                        ? new Date(eventUnixTs * 1000).toISOString()
+                        : new Date().toISOString();
+                    const inboundResult = await chatCommercialStatusService.markInboundCustomerFirstContact(historyTenantId, {
+                        chatId: relatedChatIdBase,
+                        scopeModuleId: cleanScopeModuleId,
+                        source: 'webhook',
+                        reason: 'first_inbound_customer_message',
+                        changedByUserId: null,
+                        at: activityAtIso,
+                        metadata: {
+                            trigger: 'incoming_message',
+                            messageId
+                        }
+                    });
+                    if (inboundResult?.changed) {
+                        emitCommercialStatusUpdated?.({
+                            tenantId: historyTenantId,
+                            chatId: relatedChatIdBase,
+                            scopeModuleId: cleanScopeModuleId,
+                            result: inboundResult,
+                            source: 'wa_events_bridge.inbound'
+                        });
+                    }
+                } catch (_) {
+                    // silent: inbound processing should not fail by commercial status lifecycle issues
+                }
+            }
+
             if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase) {
                 try {
                     const eventUnixTs = Number(msg?.timestamp || 0);
                     const activityAtIso = eventUnixTs > 0
                         ? new Date(eventUnixTs * 1000).toISOString()
                         : new Date().toISOString();
-                    const assignmentScopeModuleId = String(scopeModuleId || '').trim().toLowerCase();
+                    const assignmentScopeModuleId = cleanScopeModuleId;
 
                     const touchedAssignment = await conversationOpsService.touchChatAssignmentActivity(historyTenantId, {
                         chatId: relatedChatIdBase,
@@ -207,6 +242,7 @@ function createSocketWaEventsBridgeService({
                 || moduleAttributionMeta?.sentViaModuleId
                 || ''
             );
+            const cleanScopeModuleId = String(scopeModuleId || '').trim().toLowerCase();
             const scopedChatId = buildScopedChatId(relatedChatIdBase, scopeModuleId || '');
             const media = await mediaManager.processMessageMedia(msg, {
                 tenantId: historyTenantId,
@@ -228,6 +264,37 @@ function createSocketWaEventsBridgeService({
                 agentMeta,
                 moduleContext: effectiveModuleContext
             });
+            if (historyTenantId && relatedChatIdBase && chatCommercialStatusService) {
+                try {
+                    const eventUnixTs = Number(msg?.timestamp || 0);
+                    const activityAtIso = eventUnixTs > 0
+                        ? new Date(eventUnixTs * 1000).toISOString()
+                        : new Date().toISOString();
+                    const outboundResult = await chatCommercialStatusService.markFirstAgentReply(historyTenantId, {
+                        chatId: relatedChatIdBase,
+                        scopeModuleId: cleanScopeModuleId,
+                        source: 'socket',
+                        reason: 'first_outbound_agent_message',
+                        changedByUserId: String(agentMeta?.sentByUserId || '').trim() || null,
+                        at: activityAtIso,
+                        metadata: {
+                            trigger: 'message_sent',
+                            messageId
+                        }
+                    });
+                    if (outboundResult?.changed) {
+                        emitCommercialStatusUpdated?.({
+                            tenantId: historyTenantId,
+                            chatId: relatedChatIdBase,
+                            scopeModuleId: cleanScopeModuleId,
+                            result: outboundResult,
+                            source: 'wa_events_bridge.message_sent'
+                        });
+                    }
+                } catch (_) {
+                    // silent: outbound processing should not fail by commercial status lifecycle issues
+                }
+            }
             emitToRuntimeContext('message', {
                 id: messageId,
                 chatId: scopedChatId || relatedChatIdBase,
