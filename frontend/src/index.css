@@ -4064,27 +4064,41 @@ body {
 .sidebar-filter-content {
   min-width: 0;
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
-.sidebar-filter-content-top {
+.sidebar-filter-content-top,
+.sidebar-filter-header-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
+.sidebar-filter-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8aa2ad;
+}
+
 .sidebar-active-filters-row {
-  min-height: 26px;
+  min-height: 24px;
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 151, 164, 0.34) transparent;
+  padding-bottom: 2px;
 }
 
 .sidebar-active-filter-empty {
-  color: #7f98a4;
-  font-size: 0.72rem;
+  color: #77909b;
+  font-size: 0.7rem;
+  white-space: nowrap;
 }
 
 .sidebar-active-filter-chip {
@@ -4095,37 +4109,43 @@ body {
   padding: 4px 8px;
   font-size: 0.69rem;
   line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .sidebar-filter-clear {
   border-radius: 999px;
-  padding: 5px 10px;
+  padding: 5px 11px;
   font-size: 0.68rem;
+  flex-shrink: 0;
 }
 
 .sidebar-filter-pill-toolbar {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
 .sidebar-filter-pill-dropdown {
   position: relative;
+  min-width: 0;
 }
 
 .sidebar-filter-pill-trigger {
   border: 1px solid rgba(124, 151, 164, 0.34);
   background: rgba(17, 31, 41, 0.9);
   color: #d9e7ee;
-  border-radius: 999px;
-  padding: 5px 10px;
-  font-size: 0.71rem;
+  border-radius: 11px;
+  padding: 6px 10px;
+  min-height: 38px;
+  width: 100%;
+  font-size: 0.7rem;
   font-weight: 700;
-  line-height: 1.05;
-  display: inline-flex;
+  line-height: 1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
+  column-gap: 8px;
   cursor: pointer;
   transition: all 0.14s ease;
 }
@@ -4145,15 +4165,28 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #8fb0bf;
-  font-size: 0.64rem;
+  font-size: 0.62rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .sidebar-filter-pill-value {
-  max-width: 160px;
+  min-width: 0;
+  max-width: none;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: left;
+}
+
+.sidebar-filter-pill-caret {
+  color: #8fb0bf;
+  transition: transform 0.14s ease, color 0.14s ease;
+}
+
+.sidebar-filter-pill-caret.open {
+  transform: rotate(180deg);
+  color: #b7f6ea;
 }
 
 .sidebar-filter-pill-menu {
@@ -4197,6 +4230,12 @@ body {
   border-color: rgba(0, 168, 132, 0.54);
   background: rgba(0, 168, 132, 0.24);
   color: #b7f6ea;
+}
+
+@media (max-width: 520px) {
+  .sidebar-filter-pill-toolbar {
+    grid-template-columns: 1fr;
+  }
 }
 
 

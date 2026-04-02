@@ -1,5 +1,5 @@
 import React from 'react';
-import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck } from 'lucide-react';
+import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck, ChevronDown } from 'lucide-react';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import AssignmentBadge from './assignment/AssignmentBadge';
 import CommercialStatusBadge from './commercial/CommercialStatusBadge';
@@ -382,18 +382,12 @@ const Sidebar = ({
                     </div>
                     <div className="sidebar-main-column">
                         <div className="sidebar-filter-content">
-                        <div className="sidebar-filter-content-top">
-                            <div className="sidebar-active-filters-row">
-                                {!hasAnyFilter ? (
-                                    <span className="sidebar-active-filter-empty">Sin filtros activos</span>
-                                ) : (
-                                    activeFilterChips.map((chip, index) => (
-                                        <span key={`${chip}_${index}`} className="sidebar-active-filter-chip">
-                                            {chip}
-                                        </span>
-                                    ))
-                                )}
-                            </div>
+                        <div className="sidebar-filter-header-row">
+                            <span className="sidebar-filter-title">Filtros avanzados</span>
+                            {hasAnyFilter && (
+                                <button type="button" className="sidebar-filter-clear" onClick={resetFilters}>Limpiar</button>
+                            )}
+                        </div>
                             <div className="sidebar-filter-pill-toolbar">
                                 {assignmentsLoaded && (
                                     <div className="sidebar-filter-pill-dropdown" ref={assigneeMenuRef}>
@@ -408,6 +402,7 @@ const Sidebar = ({
                                         >
                                             <span className="sidebar-filter-pill-label">Vendedora</span>
                                             <span className="sidebar-filter-pill-value">{selectedAssigneeLabel}</span>
+                                            <ChevronDown size={14} className={`sidebar-filter-pill-caret ${showAssigneeFilterMenu ? 'open' : ''}`} />
                                         </button>
                                         {showAssigneeFilterMenu && (
                                             <div className="sidebar-filter-pill-menu">
@@ -461,6 +456,7 @@ const Sidebar = ({
                                         >
                                             <span className="sidebar-filter-pill-label">Estado</span>
                                             <span className="sidebar-filter-pill-value">{selectedCommercialStatusLabel}</span>
+                                            <ChevronDown size={14} className={`sidebar-filter-pill-caret ${showCommercialFilterMenu ? 'open' : ''}`} />
                                         </button>
                                         {showCommercialFilterMenu && (
                                             <div className="sidebar-filter-pill-menu">
@@ -482,10 +478,17 @@ const Sidebar = ({
                                     </div>
                                 )}
                             </div>
-                            {hasAnyFilter && (
-                                <button type="button" className="sidebar-filter-clear" onClick={resetFilters}>Limpiar</button>
-                            )}
-                        </div>
+                            <div className="sidebar-active-filters-row">
+                                {!hasAnyFilter ? (
+                                    <span className="sidebar-active-filter-empty">Sin filtros activos</span>
+                                ) : (
+                                    activeFilterChips.map((chip, index) => (
+                                        <span key={`${chip}_${index}`} className="sidebar-active-filter-chip">
+                                            {chip}
+                                        </span>
+                                    ))
+                                )}
+                            </div>
 
                         {showLabelPanel && (
                             <div className="sidebar-label-dropdown" role="dialog" aria-label="Filtrar por etiquetas">
