@@ -19,6 +19,7 @@ const quotesService = require('../../tenant/services/quotes.service');
 const saasControlService = require('../../tenant/services/tenant-control.service');
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
 const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
+const chatOriginService = require('../../operations/services/chat-origin.service');
 const chatAssignmentRouterService = require('../../operations/services/chat-assignment-router.service');
 const chatAssignmentPolicyService = require('../../operations/services/chat-assignment-policy.service');
 const auditLogService = require('../../security/services/audit-log.service');
@@ -1669,6 +1670,7 @@ class SocketManager {
             conversationOpsService,
             chatAssignmentRouterService,
             chatCommercialStatusService,
+            chatOriginService,
             emitToRuntimeContext: this.emitToRuntimeContext.bind(this),
             emitCommercialStatusUpdated: (...args) => this.emitCommercialStatusUpdated(...args),
             getWaCapabilities: this.getWaCapabilities.bind(this),
