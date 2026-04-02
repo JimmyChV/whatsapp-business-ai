@@ -446,7 +446,7 @@ function createSocketChatListService({
                         query,
                         filters: activeFilters,
                         filterKey,
-                        scopeModuleId: null
+                        scopeModuleId: activeScopeModuleId || ''
                     });
                     socket.emit('chats', fallbackPage);
                     return;
@@ -580,7 +580,7 @@ function createSocketChatListService({
                         query,
                         filters: activeFilters,
                         filterKey,
-                        scopeModuleId: null
+                        scopeModuleId: activeScopeModuleId || ''
                     });
                     if (Array.isArray(fallbackPageIfEmpty?.items) && fallbackPageIfEmpty.items.length > 0) {
                         socket.emit('chats', fallbackPageIfEmpty);

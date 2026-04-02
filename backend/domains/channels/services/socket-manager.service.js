@@ -945,9 +945,71 @@ class SocketManager {
             if (batch.length < batchSize) break;
         }
 
-        const normalized = allRows
+        const historySummaries = allRows
             .map((entry) => this.toHistoryChatSummary(entry))
-            .filter(Boolean)
+            .filter(Boolean);
+
+        let summariesWithLabels = historySummaries;
+        if (historySummaries.length > 0 && typeof tenantLabelService?.listChatLabelsMap === 'function') {
+            const buildLabelMapKey = (chatId = '', scopedModuleId = '') => `${String(chatId || '')}::${normalizeScopedModuleId(scopedModuleId || '')}`;
+            const historyChatIds = Array.from(new Set(
+                historySummaries
+                    .map((summary) => String(summary?.baseChatId || parseScopedChatId(summary?.id || '').chatId || '').trim())
+                    .filter((chatId) => Boolean(chatId))
+            ));
+
+            if (historyChatIds.length > 0) {
+                let labelsMap = {};
+                try {
+                    labelsMap = await tenantLabelService.listChatLabelsMap({
+                        tenantId,
+                        chatKeys: historyChatIds.map((chatId) => ({ chatId, scopeModuleId: normalizedScopeModuleId })),
+                        includeInactive: false
+                    }) || {};
+                } catch (_) {
+                    labelsMap = {};
+                }
+
+                if (normalizedScopeModuleId) {
+                    const missingChatIds = historyChatIds.filter((chatId) => {
+                        const scopedKey = buildLabelMapKey(chatId, normalizedScopeModuleId);
+                        const scopedLabels = labelsMap?.[scopedKey];
+                        return !Array.isArray(scopedLabels) || scopedLabels.length === 0;
+                    });
+
+                    if (missingChatIds.length > 0) {
+                        try {
+                            const fallbackMap = await tenantLabelService.listChatLabelsMap({
+                                tenantId,
+                                chatKeys: missingChatIds.map((chatId) => ({ chatId, scopeModuleId: '' })),
+                                includeInactive: false
+                            }) || {};
+
+                            for (const chatId of missingChatIds) {
+                                const scopedKey = buildLabelMapKey(chatId, normalizedScopeModuleId);
+                                const fallbackKey = buildLabelMapKey(chatId, '');
+                                if ((!Array.isArray(labelsMap?.[scopedKey]) || labelsMap[scopedKey].length === 0) && Array.isArray(fallbackMap?.[fallbackKey])) {
+                                    labelsMap[scopedKey] = fallbackMap[fallbackKey];
+                                }
+                            }
+                        } catch (_) { }
+                    }
+                }
+
+                summariesWithLabels = historySummaries.map((summary) => {
+                    const baseChatId = String(summary?.baseChatId || parseScopedChatId(summary?.id || '').chatId || '').trim();
+                    if (!baseChatId) return summary;
+                    const labelKey = buildLabelMapKey(baseChatId, normalizedScopeModuleId);
+                    const labels = Array.isArray(labelsMap?.[labelKey]) ? labelsMap[labelKey] : (Array.isArray(summary?.labels) ? summary.labels : []);
+                    return {
+                        ...summary,
+                        labels: this.normalizeHistoryLabels(labels)
+                    };
+                });
+            }
+        }
+
+        const normalized = summariesWithLabels
             .filter((summary) => {
                 if (!normalizedScopeModuleId) return true;
                 const summaryScopeId = normalizeScopedModuleId(
