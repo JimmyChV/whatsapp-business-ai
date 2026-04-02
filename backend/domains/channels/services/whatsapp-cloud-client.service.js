@@ -352,6 +352,8 @@ class WhatsAppCloudClient extends EventEmitter {
             order: raw.order || null,
             orderProducts: Array.isArray(raw.orderProducts) ? raw.orderProducts : null,
             location: raw.location || null,
+            referral: raw.referral || null,
+            rawReferral: raw.rawReferral || null,
             hasQuotedMsg: Boolean(raw.quotedMessageId),
             getQuotedMessage: async () => {
                 if (!raw.quotedMessageId) return null;
@@ -784,6 +786,91 @@ class WhatsAppCloudClient extends EventEmitter {
         };
     }
 
+    normalizeReferralPayload(referral = {}) {
+        if (!referral || typeof referral !== 'object') return null;
+        const sourceType = String(referral?.source_type || '').trim().toLowerCase();
+        const sourceId = String(referral?.source_id || '').trim();
+        const sourceUrl = String(referral?.source_url || '').trim();
+        const headline = String(referral?.headline || '').trim();
+        const body = String(referral?.body || '').trim();
+        const ctwaClid = String(referral?.ctwa_clid || '').trim();
+        const mediaType = String(referral?.media_type || '').trim().toLowerCase();
+        const imageUrl = String(referral?.image_url || '').trim();
+        const videoUrl = String(referral?.video_url || '').trim();
+        const thumbnailUrl = String(referral?.thumbnail_url || '').trim();
+
+        const normalized = compactObject({
+            sourceType: sourceType || null,
+            sourceId: sourceId || null,
+            sourceUrl: sourceUrl || null,
+            headline: headline || null,
+            body: body || null,
+            ctwaClid: ctwaClid || null,
+            mediaType: mediaType || null,
+            imageUrl: imageUrl || null,
+            videoUrl: videoUrl || null,
+            thumbnailUrl: thumbnailUrl || null
+        });
+        if (Object.keys(normalized).length === 0) return null;
+        return normalized;
+    }
+
+    extractInboundReferral(msg = {}) {
+        const referral = msg?.referral && typeof msg.referral === 'object' ? msg.referral : null;
+        if (!referral) return null;
+        return this.normalizeReferralPayload(referral);
+    }
+
+    normalizeStatusErrors(errors = []) {
+        const source = Array.isArray(errors) ? errors : [];
+        return source
+            .map((item) => {
+                const current = item && typeof item === 'object' ? item : {};
+                const details = String(current?.error_data?.details || current?.details || '').trim();
+                return compactObject({
+                    code: Number.isFinite(Number(current?.code)) ? Number(current.code) : null,
+                    title: String(current?.title || '').trim() || null,
+                    message: String(current?.message || '').trim() || null,
+                    details: details || null,
+                    href: String(current?.href || '').trim() || null
+                });
+            })
+            .filter((entry) => Object.keys(entry || {}).length > 0);
+    }
+
+    normalizeTemplateWebhookEvent(change = {}, entry = {}) {
+        const field = String(change?.field || '').trim().toLowerCase();
+        const eventTypeByField = {
+            message_template_status_update: 'status_update',
+            message_template_quality_update: 'quality_update',
+            template_category_update: 'category_update'
+        };
+        const eventType = eventTypeByField[field] || null;
+        if (!eventType) return null;
+
+        const value = change?.value && typeof change.value === 'object' ? change.value : {};
+        const payload = value?.[field] && typeof value[field] === 'object' ? value[field] : value;
+        const reasonRaw = payload?.reason || payload?.rejection_reason || payload?.disable_info || payload?.event;
+        const reason = typeof reasonRaw === 'string'
+            ? String(reasonRaw).trim()
+            : (reasonRaw && typeof reasonRaw === 'object'
+                ? String(reasonRaw?.description || reasonRaw?.reason || '').trim()
+                : '');
+
+        return compactObject({
+            field,
+            eventType,
+            wabaId: String(entry?.id || value?.metadata?.waba_id || payload?.waba_id || '').trim() || null,
+            phoneNumberId: String(value?.metadata?.phone_number_id || value?.phone_number_id || '').trim() || null,
+            templateName: String(payload?.message_template_name || payload?.template_name || payload?.name || '').trim() || null,
+            templateId: String(payload?.message_template_id || payload?.template_id || payload?.id || '').trim() || null,
+            previousStatus: String(payload?.previous_status || payload?.old_status || payload?.prior_status || '').trim() || null,
+            newStatus: String(payload?.event || payload?.new_status || payload?.status || '').trim() || null,
+            reason: reason || null,
+            raw: payload
+        });
+    }
+
     ingestInboundMessage(msg = {}, contactsByWaId = new Map()) {
         const fromWa = normalizeDigits(msg?.from || '');
         if (!fromWa) return null;
@@ -820,8 +907,21 @@ class WhatsAppCloudClient extends EventEmitter {
             order: null,
             orderProducts: null,
             location: null,
+            referral: null,
+            rawReferral: null,
             rawData: null
         };
+
+        const inboundReferral = this.extractInboundReferral(msg);
+        if (inboundReferral) {
+            base.referral = inboundReferral;
+            base.rawReferral = msg?.referral || null;
+            base.rawData = compactObject({
+                ...(base.rawData || {}),
+                referral: inboundReferral,
+                rawReferral: msg?.referral || null
+            });
+        }
 
         if (type === 'text') {
             base.type = 'chat';
@@ -1038,9 +1138,23 @@ class WhatsAppCloudClient extends EventEmitter {
         if (!messageId) return;
 
         const ack = ackFromCloudStatus(status?.status);
+        const statusValue = String(status?.status || '').trim().toLowerCase() || null;
         const mappedChatId = this.outboundMessageToChat.get(messageId);
         const recipient = toWaId(status?.recipient_id || '');
         const chatId = mappedChatId || (recipient ? `${recipient}@c.us` : '');
+        const errorsNormalized = this.normalizeStatusErrors(status?.errors);
+        const conversation = compactObject({
+            id: String(status?.conversation?.id || '').trim() || null,
+            originType: String(status?.conversation?.origin?.type || '').trim().toLowerCase() || null,
+            expirationTimestamp: status?.conversation?.expiration_timestamp
+                ? safeTimestamp(status.conversation.expiration_timestamp)
+                : null
+        });
+        const pricing = compactObject({
+            billable: typeof status?.pricing?.billable === 'boolean' ? status.pricing.billable : null,
+            pricingModel: String(status?.pricing?.pricing_model || '').trim().toLowerCase() || null,
+            category: String(status?.pricing?.category || '').trim().toLowerCase() || null
+        });
 
         const message = this.messageById.get(messageId) || null;
         if (message) {
@@ -1066,7 +1180,13 @@ class WhatsAppCloudClient extends EventEmitter {
 
         this.emit('message_ack', {
             message: fallbackMessage,
-            ack
+            ack,
+            status: statusValue,
+            recipientId: recipient || null,
+            conversation,
+            pricing,
+            errors: errorsNormalized,
+            hasErrors: errorsNormalized.length > 0
         });
     }
 
@@ -1077,6 +1197,10 @@ class WhatsAppCloudClient extends EventEmitter {
         for (const entry of entries) {
             const changes = Array.isArray(entry?.changes) ? entry.changes : [];
             for (const change of changes) {
+                const templateEvent = this.normalizeTemplateWebhookEvent(change, entry);
+                if (templateEvent) {
+                    this.emit('template_webhook_event', templateEvent);
+                }
                 const value = change?.value || {};
                 const contactsList = Array.isArray(value?.contacts) ? value.contacts : [];
                 const contactsByWaId = new Map();
