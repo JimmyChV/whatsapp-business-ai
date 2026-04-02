@@ -179,6 +179,7 @@ function createSocketQuoteDeliveryService({
         authContext,
         guardRateLimit,
         transportOrchestrator,
+        checkOutboundConsent,
         resolveScopedSendTarget,
         emitRealtimeOutgoingMessage,
         emitCommercialStatusUpdated,
@@ -196,6 +197,25 @@ function createSocketQuoteDeliveryService({
                     action: 'enviar cotizaciones'
                 });
                 if (!target?.ok) return;
+
+                if (typeof checkOutboundConsent === 'function') {
+                    const consentResult = await checkOutboundConsent(tenantId, {
+                        phone: target.targetPhone || target.targetChatId,
+                        messageType: 'template'
+                    });
+                    if (!consentResult?.allowed) {
+                        socket.emit('quote_error', {
+                            ok: false,
+                            chatId: target.scopedChatId || target.targetChatId,
+                            baseChatId: target.targetChatId,
+                            scopeModuleId: target.scopeModuleId || null,
+                            error: 'El cliente no tiene consentimiento de marketing para recibir cotizaciones.',
+                            reason: consentResult?.reason || 'marketing_consent_required',
+                            consentStatus: consentResult?.status || 'unknown'
+                        });
+                        return;
+                    }
+                }
 
                 const incomingQuote = normalizeStructuredQuote(
                     isPlainObject(payload?.quote)

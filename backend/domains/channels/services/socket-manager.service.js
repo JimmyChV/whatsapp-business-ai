@@ -19,6 +19,7 @@ const quotesService = require('../../tenant/services/quotes.service');
 const saasControlService = require('../../tenant/services/tenant-control.service');
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
 const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
+const customerConsentService = require('../../operations/services/customer-consent.service');
 const chatOriginService = require('../../operations/services/chat-origin.service');
 const chatAssignmentRouterService = require('../../operations/services/chat-assignment-router.service');
 const chatAssignmentPolicyService = require('../../operations/services/chat-assignment-policy.service');
@@ -118,6 +119,7 @@ const { createSocketQuickRepliesService } = require('./socket-quick-replies.serv
 const { createSocketMessageDeliveryService } = require('./socket-message-delivery.service');
 const { createSocketCatalogDeliveryService } = require('./socket-catalog-delivery.service');
 const { createSocketQuoteDeliveryService } = require('./socket-quote-delivery.service');
+const { createMessageDeliveryConsentPolicyService } = require('./message-delivery-consent-policy.service');
 const { createSocketAiAssistantService } = require('./socket-ai-assistant.service');
 const { createSocketProfileContactService } = require('./socket-profile-contact.service');
 const { createSocketBusinessDataService } = require('./socket-business-data.service');
@@ -351,6 +353,10 @@ class SocketManager {
             buildSocketAgentMeta,
             sanitizeAgentMeta,
             rememberOutgoingAgentMeta
+        });
+        this.messageDeliveryConsentPolicyService = createMessageDeliveryConsentPolicyService({
+            customerService,
+            customerConsentService
         });
         this.quoteDeliveryService = createSocketQuoteDeliveryService({
             waClient,
@@ -1324,6 +1330,7 @@ class SocketManager {
                 authContext,
                 guardRateLimit,
                 transportOrchestrator,
+                checkOutboundConsent: (...args) => this.messageDeliveryConsentPolicyService.checkOutboundConsent(...args),
                 isFeatureEnabledForTenant: this.isFeatureEnabledForTenant.bind(this),
                 resolveScopedSendTarget: (...args) => messageDeliveryRuntime.resolveScopedSendTarget(...args),
                 emitRealtimeOutgoingMessage: (...args) => messageDeliveryRuntime.emitRealtimeOutgoingMessage(...args),
@@ -1335,6 +1342,7 @@ class SocketManager {
                 authContext,
                 guardRateLimit,
                 transportOrchestrator,
+                checkOutboundConsent: (...args) => this.messageDeliveryConsentPolicyService.checkOutboundConsent(...args),
                 resolveScopedSendTarget: (...args) => messageDeliveryRuntime.resolveScopedSendTarget(...args),
                 emitRealtimeOutgoingMessage: (...args) => messageDeliveryRuntime.emitRealtimeOutgoingMessage(...args),
                 emitCommercialStatusUpdated: (...args) => this.emitCommercialStatusUpdated(...args),
