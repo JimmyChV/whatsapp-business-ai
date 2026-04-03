@@ -523,6 +523,9 @@ function MetaTemplatesSection(props = {}) {
         };
     }, [createForm.bodyText, createForm.footerText, createForm.headerText, variableExamplesByIndex]);
 
+    const previewButtons = useMemo(() => normalizeButtonRows(createForm.buttons).slice(0, 3), [createForm.buttons]);
+    const previewTimeLabel = useMemo(() => new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }), []);
+
     if (!isMetaTemplatesSection) {
         return null;
     }
@@ -695,9 +698,9 @@ function MetaTemplatesSection(props = {}) {
                                 </div>
                             </div>
 
-                            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'minmax(320px,1.2fr) minmax(280px,1fr)' }}>
-                                <div style={{ display: 'grid', gap: 12 }}>
-                                    <div className="saas-admin-form-row">
+                            <div className="saas-meta-template-builder">
+                                <section className="saas-meta-template-builder__form">
+                                    <div className="saas-admin-form-row saas-meta-template-builder__full-row">
                                         <select
                                             value={createForm.moduleId}
                                             onChange={(event) => setCreateForm((prev) => ({ ...prev, moduleId: toText(event.target.value) }))}
@@ -782,28 +785,26 @@ function MetaTemplatesSection(props = {}) {
                                             onClick={updateBodyCursor}
                                             onKeyUp={updateBodyCursor}
                                             placeholder="Body del template (obligatorio)"
-                                            rows={6}
-                                            style={{ width: '100%' }}
+                                            rows={8}
                                             disabled={templatesBusy || !canWrite}
                                         />
                                     </div>
 
-                                    <div className="saas-admin-form-row">
+                                    <div className="saas-admin-form-row saas-meta-template-builder__full-row">
                                         <textarea
                                             value={createForm.footerText}
                                             onChange={(event) => setCreateForm((prev) => ({ ...prev, footerText: event.target.value }))}
                                             placeholder="Footer (opcional)"
                                             rows={2}
-                                            style={{ width: '100%' }}
                                             disabled={templatesBusy || !canWrite}
                                         />
                                     </div>
 
-                                    <div className="saas-admin-related-block" style={{ margin: 0 }}>
-                                        <h4 style={{ marginBottom: 8 }}>Botones (opcional)</h4>
-                                        <div style={{ display: 'grid', gap: 8 }}>
+                                    <div className="saas-meta-template-buttons">
+                                        <h4>Botones (opcional)</h4>
+                                        <div className="saas-meta-template-buttons-list">
                                             {(Array.isArray(createForm.buttons) ? createForm.buttons : []).map((buttonRow) => (
-                                                <div className="saas-admin-form-row" key={buttonRow.id}>
+                                                <div className="saas-meta-template-button-row" key={buttonRow.id}>
                                                     <select
                                                         value={buttonRow.type || 'quick_reply'}
                                                         onChange={(event) => {
@@ -869,6 +870,7 @@ function MetaTemplatesSection(props = {}) {
                                             ))}
                                             <button
                                                 type="button"
+                                                className="saas-meta-template-button-add"
                                                 disabled={templatesBusy || !canWrite || (createForm.buttons || []).length >= 10}
                                                 onClick={() => {
                                                     setCreateForm((prev) => ({
@@ -882,7 +884,7 @@ function MetaTemplatesSection(props = {}) {
                                         </div>
                                     </div>
 
-                                    <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                    <div className="saas-admin-form-row saas-admin-form-row--actions saas-meta-template-builder__actions">
                                         <button
                                             type="button"
                                             disabled={templatesBusy || !canWrite}
@@ -905,53 +907,50 @@ function MetaTemplatesSection(props = {}) {
                                             Cancelar
                                         </button>
                                     </div>
-                                </div>
+                                </section>
 
-                                <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
-                                    <div className="saas-admin-related-block" style={{ margin: 0 }}>
-                                        <h4 style={{ marginBottom: 8 }}>Variables disponibles</h4>
-                                        {loadingVarCatalog && <small>Cargando catalogo de variables...</small>}
-                                        {varCatalogError && <small style={{ color: '#fca5a5' }}>{varCatalogError}</small>}
+                                <section className="saas-meta-template-builder__variables">
+                                    <div className="saas-admin-related-block saas-meta-template-pane">
+                                        <h4>Variables disponibles</h4>
+                                        {loadingVarCatalog && <small className="saas-meta-template-help">Cargando catalogo de variables...</small>}
+                                        {varCatalogError && <small className="saas-meta-template-error">{varCatalogError}</small>}
                                         {!loadingVarCatalog && !varCatalogError && templateVarCategories.map((category) => (
-                                            <div key={`template_var_category_${category.id}`} style={{ marginBottom: 10 }}>
-                                                <strong style={{ display: 'block', marginBottom: 6 }}>{category.label}</strong>
-                                                <div style={{ display: 'grid', gap: 6 }}>
+                                            <div key={`template_var_category_${category.id}`} className="saas-meta-template-var-group">
+                                                <strong className="saas-meta-template-var-group-title">{category.label}</strong>
+                                                <div className="saas-meta-template-var-list">
                                                     {(Array.isArray(category.variables) ? category.variables : []).map((variable) => (
-                                                        <button
-                                                            key={`template_var_${category.id}_${variable.key}`}
-                                                            type="button"
-                                                            disabled={templatesBusy || !canWrite}
-                                                            style={{
-                                                                textAlign: 'left',
-                                                                border: '1px solid rgba(45, 212, 191, 0.35)',
-                                                                borderRadius: 10,
-                                                                background: 'rgba(13, 24, 39, 0.8)',
-                                                                color: '#c9fbf1',
-                                                                padding: '8px 10px',
-                                                                cursor: 'pointer'
-                                                            }}
-                                                            onClick={() => insertVariableAtBodyCursor(variable)}
-                                                            title={toText(variable?.description)}
-                                                        >
-                                                            {`{{${Number(variable?.placeholderIndex)}}}`} {toText(variable?.label || variable?.key)}
-                                                        </button>
+                                                        <div className="saas-meta-template-var-item" key={`template_var_${category.id}_${variable.key}`}>
+                                                            <div className="saas-meta-template-var-item-main">
+                                                                <span className="saas-meta-template-var-token">{`{{${Number(variable?.placeholderIndex)}}}`}</span>
+                                                                <strong>{toText(variable?.label || variable?.key)}</strong>
+                                                                <small>{toText(variable?.description)}</small>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                className="saas-meta-template-var-insert"
+                                                                disabled={templatesBusy || !canWrite}
+                                                                onClick={() => insertVariableAtBodyCursor(variable)}
+                                                            >
+                                                                Insertar
+                                                            </button>
+                                                        </div>
                                                     ))}
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
 
-                                    <div className="saas-admin-related-block" style={{ margin: 0 }}>
-                                        <h4 style={{ marginBottom: 8 }}>Ejemplos para variables usadas</h4>
+                                    <div className="saas-admin-related-block saas-meta-template-pane">
+                                        <h4>Ejemplos para variables usadas</h4>
                                         {usedVariables.length === 0 && (
-                                            <small>Inserta variables en el body/header/footer para configurar ejemplos.</small>
+                                            <small className="saas-meta-template-help">Inserta variables en el body/header/footer para configurar ejemplos.</small>
                                         )}
                                         {usedVariables.length > 0 && usedVariables.map((variable) => {
                                             const index = Number(variable?.placeholderIndex);
                                             const key = `var_example_${index}`;
                                             return (
-                                                <div className="saas-admin-form-row" key={key}>
-                                                    <label htmlFor={key} style={{ color: '#9cc6d9', minWidth: 130 }}>
+                                                <div className="saas-meta-template-example-row" key={key}>
+                                                    <label htmlFor={key}>
                                                         {`{{${index}}}`} {toText(variable?.label)}
                                                     </label>
                                                     <input
@@ -966,26 +965,34 @@ function MetaTemplatesSection(props = {}) {
                                         })}
                                     </div>
 
-                                    <div className="saas-admin-related-block" style={{ margin: 0 }}>
-                                        <h4 style={{ marginBottom: 8 }}>Preview</h4>
-                                        {createForm.headerType === 'text' && Boolean(createForm.headerText) && (
-                                            <div style={{ marginBottom: 8 }}>
-                                                <small style={{ color: '#8db6c9' }}>Header</small>
-                                                <pre>{previewText.header || '-'}</pre>
-                                            </div>
-                                        )}
-                                        <div style={{ marginBottom: 8 }}>
-                                            <small style={{ color: '#8db6c9' }}>Body</small>
-                                            <pre>{previewText.body || '-'}</pre>
+                                </section>
+
+                                <aside className="saas-meta-template-builder__preview">
+                                    <h4>Preview WhatsApp</h4>
+                                    <div className="saas-wa-preview">
+                                        <div className="saas-wa-preview__chat-bg">
+                                            <article className="saas-wa-preview__bubble">
+                                                {createForm.headerType === 'text' && Boolean(createForm.headerText) && (
+                                                    <div className="saas-wa-preview__header">{previewText.header || '-'}</div>
+                                                )}
+                                                <div className="saas-wa-preview__body">{previewText.body || 'Escribe el contenido del template...'}</div>
+                                                {Boolean(createForm.footerText) && (
+                                                    <div className="saas-wa-preview__footer">{previewText.footer || '-'}</div>
+                                                )}
+                                                {previewButtons.length > 0 && (
+                                                    <div className="saas-wa-preview__buttons">
+                                                        {previewButtons.map((buttonRow) => (
+                                                            <div className="saas-wa-preview__button" key={`preview_button_${buttonRow.id}`}>
+                                                                {toText(buttonRow.text) || 'Boton'}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                <div className="saas-wa-preview__meta">{previewTimeLabel}</div>
+                                            </article>
                                         </div>
-                                        {Boolean(createForm.footerText) && (
-                                            <div>
-                                                <small style={{ color: '#8db6c9' }}>Footer</small>
-                                                <pre>{previewText.footer || '-'}</pre>
-                                            </div>
-                                        )}
                                     </div>
-                                </div>
+                                </aside>
                             </div>
                         </div>
                     )}
