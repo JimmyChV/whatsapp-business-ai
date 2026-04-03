@@ -1,8 +1,11 @@
 export default function buildOpsAndAutomationSectionContext(c) {
     return {
         isOperationsSection: c.isOperationsSection,
+        isMetaTemplatesSection: c.isMetaTemplatesSection,
+        canEditModules: c.canEditModules,
         tenantScopeLocked: c.tenantScopeLocked,
         busy: c.busy,
+        metaTemplatesController: c.metaTemplatesController,
         loadingAssignmentRules: c.loadingAssignmentRules,
         loadingOperationsKpis: c.loadingOperationsKpis,
         canManageAssignments: c.canManageAssignments,
