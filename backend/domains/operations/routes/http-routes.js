@@ -212,6 +212,11 @@ function registerOperationsHttpRoutes({
     const listCampaignEvents = typeof campaignsApi.listCampaignEvents === 'function'
         ? campaignsApi.listCampaignEvents.bind(campaignsApi)
         : async () => ({ items: [], total: 0, limit: 0, offset: 0 });
+    const estimateCampaign = typeof campaignsApi.estimateCampaign === 'function'
+        ? campaignsApi.estimateCampaign.bind(campaignsApi)
+        : async () => {
+            throw new Error('Servicio de campanas no disponible.');
+        };
 
     app.patch('/api/tenant/customers/:customerId/consent', async (req, res) => {
         try {
@@ -762,6 +767,35 @@ function registerOperationsHttpRoutes({
             });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear la campana.') });
+        }
+    });
+
+    app.post('/api/tenant/campaigns/estimate', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const access = ensureCampaignWriteAccess(req, tenantId);
+            if (!access.ok) {
+                return res.status(Number(access.statusCode || 403)).json({ ok: false, error: String(access.error || 'No autorizado.') });
+            }
+
+            const payload = isPlainObject(req.body) ? req.body : {};
+            const estimate = await estimateCampaign(tenantId, {
+                campaignId: toText(payload.campaignId || ''),
+                scopeModuleId: normalizeScopeModuleId(payload.scopeModuleId || ''),
+                moduleId: toText(payload.moduleId || ''),
+                templateName: toText(payload.templateName || ''),
+                templateLanguage: toLower(payload.templateLanguage || 'es') || 'es',
+                filters: isPlainObject(payload.filters) ? payload.filters : {}
+            });
+
+            return res.json({
+                ok: true,
+                tenantId,
+                estimate
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo estimar el alcance de la campana.') });
         }
     });
 

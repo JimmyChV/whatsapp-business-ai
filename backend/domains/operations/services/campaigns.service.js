@@ -1042,6 +1042,82 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
         .slice(0, maxRecipients);
 }
 
+function computeRecipientEligibility(candidates = [], existingRecipients = []) {
+    const knownByPhone = new Set(ensureArray(existingRecipients).map((entry) => toText(entry.phone)));
+    const knownByCustomer = new Set(
+        ensureArray(existingRecipients)
+            .map((entry) => toText(entry.customerId))
+            .filter(Boolean)
+    );
+
+    let total = 0;
+    const eligibleCustomers = [];
+
+    for (const customer of ensureArray(candidates)) {
+        const phone = toText(customer?.phone || '');
+        if (!phone) continue;
+
+        total += 1;
+        const customerId = toText(customer?.customerId || '');
+        if (knownByPhone.has(phone)) continue;
+        if (customerId && knownByCustomer.has(customerId)) continue;
+
+        eligibleCustomers.push(customer);
+        knownByPhone.add(phone);
+        if (customerId) knownByCustomer.add(customerId);
+    }
+
+    const eligible = eligibleCustomers.length;
+    const excluded = Math.max(total - eligible, 0);
+    return { total, eligible, excluded, eligibleCustomers };
+}
+
+async function estimateCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const source = normalizeObject(options);
+    const campaignId = toText(source.campaignId || '');
+
+    let campaign = null;
+    if (campaignId) {
+        campaign = await getCampaignById(cleanTenantId, campaignId);
+        if (!campaign) throw new Error('Campana no encontrada.');
+    }
+
+    const filters = normalizeObject(source.filters || campaign?.audienceFiltersJson || {});
+    const campaignContext = campaign
+        ? campaign
+        : {
+            tenantId: cleanTenantId,
+            campaignId: null,
+            scopeModuleId: normalizeScopeModuleId(source.scopeModuleId || ''),
+            moduleId: toText(source.moduleId || ''),
+            templateName: toText(source.templateName || ''),
+            templateLanguage: toLower(source.templateLanguage || 'es') || 'es'
+        };
+
+    const candidates = await loadCandidateCustomers(cleanTenantId, campaignContext, filters);
+    const existingRecipients = campaign?.campaignId
+        ? await listCampaignRecipients(cleanTenantId, {
+            campaignId: campaign.campaignId,
+            limit: MAX_LIMIT,
+            offset: 0
+        })
+        : { items: [] };
+
+    const eligibility = computeRecipientEligibility(candidates, existingRecipients.items);
+
+    return {
+        tenantId: cleanTenantId,
+        campaignId: campaign?.campaignId || null,
+        scopeModuleId: campaignContext.scopeModuleId || '',
+        moduleId: campaignContext.moduleId || null,
+        filters,
+        total: eligibility.total,
+        eligible: eligibility.eligible,
+        excluded: eligibility.excluded
+    };
+}
+
 async function listCampaignRecipients(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
     const campaignId = toText(options.campaignId || '');
@@ -1315,15 +1391,11 @@ async function seedRecipientsFromFilters(tenantId = DEFAULT_TENANT_ID, options =
         limit: MAX_LIMIT,
         offset: 0
     });
-    const knownByPhone = new Set(existingRecipients.items.map((entry) => toText(entry.phone)));
-    const knownByCustomer = new Set(existingRecipients.items.map((entry) => toText(entry.customerId)).filter(Boolean));
+    const eligibility = computeRecipientEligibility(candidates, existingRecipients.items);
 
     const insertedRecipients = [];
-    for (const customer of candidates) {
+    for (const customer of eligibility.eligibleCustomers) {
         const phone = toText(customer.phone);
-        if (!phone) continue;
-        if (knownByPhone.has(phone)) continue;
-        if (customer.customerId && knownByCustomer.has(customer.customerId)) continue;
 
         const recipient = await persistRecipientRecord(cleanTenantId, {
             tenantId: cleanTenantId,
@@ -1353,8 +1425,6 @@ async function seedRecipientsFromFilters(tenantId = DEFAULT_TENANT_ID, options =
             updatedAt: nowIso()
         });
         insertedRecipients.push(recipient);
-        knownByPhone.add(phone);
-        if (recipient.customerId) knownByCustomer.add(recipient.customerId);
 
         if (enqueueQueue) {
             const existingJob = await campaignQueueService.getJobByIdempotencyKey(cleanTenantId, recipient.idempotencyKey);
@@ -1745,6 +1815,7 @@ module.exports = {
     pauseCampaign,
     resumeCampaign,
     cancelCampaign,
+    estimateCampaign,
     seedRecipientsFromFilters,
     listCampaignRecipients,
     recordCampaignEvent,
