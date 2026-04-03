@@ -874,6 +874,69 @@
   font-size: 0.76rem;
   color: #cfe6f7;
 }
+.saas-template-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(340px, 1fr);
+  gap: 12px;
+}
+.saas-template-detail-preview-pane,
+.saas-template-detail-payload-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.saas-template-detail-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.saas-template-detail-meta-item {
+  border: 1px solid rgba(123, 170, 196, 0.2);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(8, 19, 27, 0.72);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.saas-template-detail-meta-item span {
+  font-size: 0.7rem;
+  color: #90a9bb;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.saas-template-detail-meta-item strong {
+  font-size: 0.9rem;
+  color: #e6f5ff;
+  word-break: break-word;
+}
+.saas-template-detail-rejection {
+  border: 1px solid rgba(255, 109, 109, 0.32);
+  background: rgba(72, 13, 13, 0.36);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.saas-template-detail-rejection span {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  color: #f3bcbc;
+  margin-bottom: 4px;
+}
+.saas-template-detail-rejection p {
+  margin: 0;
+  color: #ffdcdc;
+  font-size: 0.82rem;
+}
+.saas-template-detail-payload-pane pre {
+  margin: 0;
+  max-height: 380px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.76rem;
+  color: #cfe6f7;
+}
 @media (max-width: 1360px) {
   .saas-admin-master-detail {
     grid-template-columns: 1fr;
@@ -882,6 +945,14 @@
 
   .saas-admin-list--compact {
     max-height: 300px;
+  }
+
+  .saas-template-detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .saas-template-detail-meta-grid {
+    grid-template-columns: 1fr;
   }
 }
 .saas-admin-dropzone {

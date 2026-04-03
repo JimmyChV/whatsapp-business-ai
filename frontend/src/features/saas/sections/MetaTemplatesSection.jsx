@@ -46,6 +46,7 @@ const EMPTY_CREATE_FORM = {
 
 const toText = (value = '') => String(value || '').trim();
 const toLower = (value = '') => toText(value).toLowerCase();
+const toUpper = (value = '') => toText(value).toUpperCase();
 const META_PLACEHOLDER_REGEX = /{{\s*(\d+)\s*}}/g;
 const TEMPLATE_TOKEN_REGEX = /{{\s*([^{}]+?)\s*}}/g;
 const SUPPORTED_LANGUAGES = Object.freeze(['es', 'en', 'pt']);
@@ -279,6 +280,135 @@ function mapButtonRowsToMeta(buttonRows = []) {
             if (button.type === 'PHONE_NUMBER') return Boolean(button.phone_number);
             return true;
         });
+}
+
+function replaceMetaPlaceholdersWithExampleArray(text = '', examples = []) {
+    return String(text || '').replace(META_PLACEHOLDER_REGEX, (_, indexRaw) => {
+        const index = Number(indexRaw);
+        if (!Number.isFinite(index) || index <= 0) return `{{${indexRaw}}}`;
+        const value = toText(Array.isArray(examples) ? examples[index - 1] : '');
+        return value || `{{${index}}}`;
+    });
+}
+
+function buildTemplatePreviewFromComponents(componentsJson = []) {
+    const components = Array.isArray(componentsJson) ? componentsJson : [];
+    const byType = (type) => components.find((component) => toUpper(component?.type) === type) || null;
+    const headerComponent = byType('HEADER');
+    const bodyComponent = byType('BODY');
+    const footerComponent = byType('FOOTER');
+    const buttonsComponent = byType('BUTTONS');
+
+    const headerFormat = toLower(headerComponent?.format || '');
+    const headerType = headerComponent
+        ? (headerFormat === 'text' ? 'text' : (['image', 'video', 'document'].includes(headerFormat) ? headerFormat : 'none'))
+        : 'none';
+
+    const headerExampleValues = Array.isArray(headerComponent?.example?.header_text)
+        ? headerComponent.example.header_text
+        : [];
+    const bodyExampleValues = Array.isArray(bodyComponent?.example?.body_text?.[0])
+        ? bodyComponent.example.body_text[0]
+        : [];
+
+    const mediaHandle = toText(headerComponent?.example?.header_handle?.[0]);
+    const headerMediaSrc = toText(mediaHandle);
+    const headerMediaLabel = toText(headerComponent?.text) || mediaHandle || 'Media de ejemplo';
+
+    const previewButtons = (Array.isArray(buttonsComponent?.buttons) ? buttonsComponent.buttons : [])
+        .map((button, index) => ({
+            id: `selected_btn_${index + 1}`,
+            type: toLower(button?.type || 'quick_reply'),
+            text: toText(button?.text) || `Boton ${index + 1}`,
+            value: toText(button?.url || button?.phone_number || '')
+        }));
+
+    return {
+        headerType,
+        headerText: wrapPreviewLines(
+            replaceMetaPlaceholdersWithExampleArray(toText(headerComponent?.text), headerExampleValues),
+            90
+        ),
+        headerMediaSrc,
+        headerMediaLabel,
+        bodyText: wrapPreviewLines(
+            replaceMetaPlaceholdersWithExampleArray(toText(bodyComponent?.text), bodyExampleValues),
+            90
+        ),
+        footerText: wrapPreviewLines(toText(footerComponent?.text), 90),
+        buttons: previewButtons
+    };
+}
+
+function WhatsAppTemplatePreview({
+    headerType = 'none',
+    headerText = '',
+    headerMediaSrc = '',
+    headerMediaLabel = '',
+    bodyText = '',
+    footerText = '',
+    buttons = [],
+    timeLabel = '',
+    emptyBodyText = 'Escribe el contenido del template...'
+}) {
+    const cleanHeaderType = toLower(headerType || 'none');
+    const isHeaderMediaType = ['image', 'video', 'document'].includes(cleanHeaderType);
+    const canRenderHeaderImage = cleanHeaderType === 'image' && toText(headerMediaSrc);
+    const previewButtons = Array.isArray(buttons) ? buttons : [];
+
+    return (
+        <div className="saas-wa-preview">
+            <div className="saas-wa-preview__chat-bg">
+                <div className="saas-wa-preview__delivery-stack">
+                    <article className="saas-wa-preview__bubble">
+                        {isHeaderMediaType && (
+                            <div className="saas-wa-preview__media-placeholder">
+                                {canRenderHeaderImage ? (
+                                    <img
+                                        src={headerMediaSrc}
+                                        alt="Preview header"
+                                        className="saas-wa-preview__media-image"
+                                    />
+                                ) : (
+                                    <>
+                                        <strong>{cleanHeaderType === 'image' ? 'Imagen' : cleanHeaderType === 'video' ? 'Video' : 'Documento'}</strong>
+                                        <small>{toText(headerMediaLabel) || 'Sin archivo cargado'}</small>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                        {cleanHeaderType === 'text' && Boolean(headerText) && (
+                            <div className="saas-wa-preview__header">{headerText || '-'}</div>
+                        )}
+                        <div className="saas-wa-preview__body">{bodyText || emptyBodyText}</div>
+                        {Boolean(footerText) && (
+                            <div className="saas-wa-preview__footer">{footerText || '-'}</div>
+                        )}
+                        <div className="saas-wa-preview__meta">
+                            <span>{toText(timeLabel) || new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span className="saas-wa-preview__tick">{'\u2713\u2713'}</span>
+                        </div>
+                    </article>
+                    {previewButtons.length > 0 && (
+                        <div className="saas-wa-preview__template-buttons">
+                            {previewButtons.map((buttonRow) => (
+                                <div className="saas-wa-preview__template-button" key={`preview_button_${buttonRow.id}`}>
+                                    <span className="saas-wa-preview__template-button-meta">
+                                        {toLower(buttonRow?.type) === 'url'
+                                            ? 'Enlace'
+                                            : (toLower(buttonRow?.type) === 'phone' || toLower(buttonRow?.type) === 'phone_number')
+                                                ? 'Llamar'
+                                                : 'Respuesta'}
+                                    </span>
+                                    <span>{toText(buttonRow?.text) || 'Boton'}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 }
 
 function buildTemplatePayload(form = {}, {
@@ -568,6 +698,11 @@ function MetaTemplatesSection(props = {}) {
     const selectedTemplate = useMemo(() => {
         return visibleItems.find((entry) => String(entry?.templateId || '').trim() === selectedTemplateId) || null;
     }, [selectedTemplateId, visibleItems]);
+
+    const selectedTemplatePreview = useMemo(
+        () => buildTemplatePreviewFromComponents(selectedTemplate?.componentsJson || []),
+        [selectedTemplate]
+    );
 
     const hasErrors = Boolean(listError || createError || deleteError || syncError);
     const templatesBusy = busy || loadingList || loadingCreate || loadingSync;
@@ -1533,57 +1668,17 @@ function MetaTemplatesSection(props = {}) {
                                         {previewMode === 'delivery' && (
                                             <>
                                                 <small className="saas-meta-template-help">Simulacion de entrega al cliente en WhatsApp.</small>
-                                                <div className="saas-wa-preview">
-                                                    <div className="saas-wa-preview__chat-bg">
-                                                        <div className="saas-wa-preview__delivery-stack">
-                                                            <article className="saas-wa-preview__bubble">
-                                                                {isHeaderMediaType && (
-                                                                    <div className="saas-wa-preview__media-placeholder">
-                                                                        {activeHeaderType === 'image' && previewHeaderMediaSrc ? (
-                                                                            <img
-                                                                                src={previewHeaderMediaSrc}
-                                                                                alt="Preview header"
-                                                                                className="saas-wa-preview__media-image"
-                                                                            />
-                                                                        ) : (
-                                                                            <>
-                                                                                <strong>{activeHeaderType === 'image' ? 'Imagen' : activeHeaderType === 'video' ? 'Video' : 'Documento'}</strong>
-                                                                                <small>{toText(createForm?.headerMedia?.name) || 'Sin archivo cargado'}</small>
-                                                                            </>
-                                                                        )}
-                                                                    </div>
-                                                                )}
-                                                                {activeHeaderType === 'text' && Boolean(createForm.headerText) && (
-                                                                    <div className="saas-wa-preview__header">{previewText.header || '-'}</div>
-                                                                )}
-                                                                <div className="saas-wa-preview__body">{previewText.body || 'Escribe el contenido del template...'}</div>
-                                                                {Boolean(createForm.footerText) && (
-                                                                    <div className="saas-wa-preview__footer">{previewText.footer || '-'}</div>
-                                                                )}
-                                                                <div className="saas-wa-preview__meta">
-                                                                    <span>{previewTimeLabel}</span>
-                                                                    <span className="saas-wa-preview__tick">{'\u2713\u2713'}</span>
-                                                                </div>
-                                                            </article>
-                                                            {previewButtons.length > 0 && (
-                                                                <div className="saas-wa-preview__template-buttons">
-                                                            {previewButtons.map((buttonRow) => (
-                                                                <div className="saas-wa-preview__template-button" key={`preview_button_${buttonRow.id}`}>
-                                                                    <span className="saas-wa-preview__template-button-meta">
-                                                                        {toLower(buttonRow?.type) === 'url'
-                                                                            ? 'Enlace'
-                                                                            : (toLower(buttonRow?.type) === 'phone' || toLower(buttonRow?.type) === 'phone_number')
-                                                                                ? 'Llamar'
-                                                                                : 'Respuesta'}
-                                                                    </span>
-                                                                    <span>{toText(buttonRow.text) || 'Boton'}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                        </div>
-                                                    </div>
-                                                </div>
+                                                <WhatsAppTemplatePreview
+                                                    headerType={activeHeaderType}
+                                                    headerText={previewText.header}
+                                                    headerMediaSrc={previewHeaderMediaSrc}
+                                                    headerMediaLabel={toText(createForm?.headerMedia?.name)}
+                                                    bodyText={previewText.body}
+                                                    footerText={previewText.footer}
+                                                    buttons={previewButtons}
+                                                    timeLabel={previewTimeLabel}
+                                                    emptyBodyText="Escribe el contenido del template..."
+                                                />
                                             </>
                                         )}
                                         {previewMode === 'approval' && (
@@ -1685,16 +1780,42 @@ function MetaTemplatesSection(props = {}) {
                                 <div className="saas-admin-detail-field"><span>Total listados</span><strong>{Number(total || 0)}</strong></div>
                             </div>
 
-                            {selectedTemplate?.rejectionReason && (
-                                <div className="saas-admin-empty-state">
-                                    <h4>Motivo de rechazo</h4>
-                                    <p>{selectedTemplate.rejectionReason}</p>
+                            <div className="saas-template-detail-layout">
+                                <div className="saas-admin-related-block saas-template-detail-preview-pane">
+                                    <h4>Preview WhatsApp</h4>
+                                    <small className="saas-meta-template-help">Vista estimada del mensaje final para cliente usando examples del template.</small>
+                                    <WhatsAppTemplatePreview
+                                        headerType={selectedTemplatePreview?.headerType}
+                                        headerText={selectedTemplatePreview?.headerText}
+                                        headerMediaSrc={selectedTemplatePreview?.headerMediaSrc}
+                                        headerMediaLabel={selectedTemplatePreview?.headerMediaLabel}
+                                        bodyText={selectedTemplatePreview?.bodyText}
+                                        footerText={selectedTemplatePreview?.footerText}
+                                        buttons={selectedTemplatePreview?.buttons}
+                                        timeLabel={new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
+                                        emptyBodyText="Template sin body"
+                                    />
                                 </div>
-                            )}
-
-                            <div className="saas-admin-detail-metadata">
-                                <h4>Componentes JSON</h4>
-                                <pre>{JSON.stringify(selectedTemplate?.componentsJson || [], null, 2)}</pre>
+                                <div className="saas-admin-related-block saas-template-detail-payload-pane">
+                                    <h4>Payload tecnico</h4>
+                                    <div className="saas-template-detail-meta-grid">
+                                        <div className="saas-template-detail-meta-item">
+                                            <span>Estado Meta</span>
+                                            <strong>{resolveStatusMeta(selectedTemplate?.status).label}</strong>
+                                        </div>
+                                        <div className="saas-template-detail-meta-item">
+                                            <span>Meta ID</span>
+                                            <strong>{toText(selectedTemplate?.metaTemplateId) || '-'}</strong>
+                                        </div>
+                                    </div>
+                                    {selectedTemplate?.rejectionReason && (
+                                        <div className="saas-template-detail-rejection">
+                                            <span>Motivo de rechazo</span>
+                                            <p>{toText(selectedTemplate?.rejectionReason)}</p>
+                                        </div>
+                                    )}
+                                    <pre>{JSON.stringify(selectedTemplate?.componentsJson || [], null, 2)}</pre>
+                                </div>
                             </div>
                         </>
                     )}
