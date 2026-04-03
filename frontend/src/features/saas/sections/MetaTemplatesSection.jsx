@@ -111,6 +111,27 @@ function replacePlaceholders(text = '', valuesByIndex = {}) {
     });
 }
 
+function wrapPreviewLines(text = '', maxCharsPerLine = 90) {
+    const maxChars = Number(maxCharsPerLine);
+    if (!Number.isFinite(maxChars) || maxChars <= 0) return String(text || '');
+    return String(text || '')
+        .split('\n')
+        .map((rawLine) => {
+            let line = String(rawLine || '');
+            if (line.length <= maxChars) return line;
+            const chunks = [];
+            while (line.length > maxChars) {
+                let cut = line.lastIndexOf(' ', maxChars);
+                if (cut < 1) cut = maxChars;
+                chunks.push(line.slice(0, cut));
+                line = line.slice(cut).trimStart();
+            }
+            if (line.length > 0) chunks.push(line);
+            return chunks.join('\n');
+        })
+        .join('\n');
+}
+
 function coerceCatalogPayload(payload = {}) {
     const categories = Array.isArray(payload?.categories) ? payload.categories : [];
     const normalizedCategories = categories
@@ -292,8 +313,9 @@ function MetaTemplatesSection(props = {}) {
     const [varCatalogError, setVarCatalogError] = useState('');
     const [variableExamplesByIndex, setVariableExamplesByIndex] = useState({});
     const [bodyCursor, setBodyCursor] = useState({ start: 0, end: 0 });
-    const [showInlineVariablePicker, setShowInlineVariablePicker] = useState(false);
     const [expandedVariableCategories, setExpandedVariableCategories] = useState({});
+    const [variableSearchQuery, setVariableSearchQuery] = useState('');
+    const [previewMode, setPreviewMode] = useState('delivery');
     const bodyTextareaRef = useRef(null);
     const headerMediaInputRef = useRef(null);
 
@@ -392,7 +414,7 @@ function MetaTemplatesSection(props = {}) {
             templateVarCategories.forEach((category) => {
                 const key = toText(category?.id);
                 if (!key) return;
-                if (typeof next[key] !== 'boolean') next[key] = true;
+                if (typeof next[key] !== 'boolean') next[key] = false;
             });
             return next;
         });
@@ -513,6 +535,8 @@ function MetaTemplatesSection(props = {}) {
 
     const openCreateTemplatePanel = useCallback(async () => {
         setPanelMode('create');
+        setVariableSearchQuery('');
+        setPreviewMode('delivery');
         try {
             await loadTemplateVariablesCatalog();
         } catch (error) {
@@ -620,11 +644,26 @@ function MetaTemplatesSection(props = {}) {
             .filter(Boolean);
     }, [usedPlaceholderIndexes, varCatalogByPlaceholderIndex]);
 
+    const filteredVarCategories = useMemo(() => {
+        const query = toLower(variableSearchQuery);
+        return templateVarCategories
+            .map((category) => {
+                const variables = Array.isArray(category?.variables) ? category.variables : [];
+                if (!query) return { ...category, variables };
+                const filtered = variables.filter((variable) => {
+                    const haystack = `${toText(variable?.label)} ${toText(variable?.key)} ${toText(variable?.description)}`.toLowerCase();
+                    return haystack.includes(query);
+                });
+                return { ...category, variables: filtered };
+            })
+            .filter((category) => (Array.isArray(category?.variables) ? category.variables.length > 0 : false));
+    }, [templateVarCategories, variableSearchQuery]);
+
     const previewText = useMemo(() => {
         return {
-            header: replacePlaceholders(createForm.headerText, variableExamplesByIndex),
-            body: replacePlaceholders(createForm.bodyText, variableExamplesByIndex),
-            footer: replacePlaceholders(createForm.footerText, variableExamplesByIndex)
+            header: wrapPreviewLines(replacePlaceholders(createForm.headerText, variableExamplesByIndex), 90),
+            body: wrapPreviewLines(replacePlaceholders(createForm.bodyText, variableExamplesByIndex), 90),
+            footer: wrapPreviewLines(replacePlaceholders(createForm.footerText, variableExamplesByIndex), 90)
         };
     }, [createForm.bodyText, createForm.footerText, createForm.headerText, variableExamplesByIndex]);
 
@@ -633,7 +672,55 @@ function MetaTemplatesSection(props = {}) {
     const activeHeaderType = toLower(createForm.headerType || 'none');
     const isHeaderMediaType = ['image', 'video', 'document'].includes(activeHeaderType);
     const headerMediaAccept = resolveHeaderAccept(activeHeaderType);
+    const previewHeaderMediaSrc = toText(createForm?.headerMedia?.base64);
     const bodyCharacterCount = String(createForm.bodyText || '').length;
+    const previewHeaderModeLabel = activeHeaderType === 'image'
+        ? 'Imagen de ejemplo'
+        : activeHeaderType === 'video'
+            ? 'Video de ejemplo'
+            : activeHeaderType === 'document'
+                ? 'Documento de ejemplo'
+                : 'Sin header multimedia';
+    const approvalPayloadSummary = useMemo(() => ({
+        HEADER: isHeaderMediaType
+            ? {
+                type: 'MEDIA',
+                format: activeHeaderType.toUpperCase(),
+                exampleFileName: toText(createForm?.headerMedia?.name) || null
+            }
+            : activeHeaderType === 'text'
+                ? {
+                    type: 'TEXT',
+                    text: previewText.header || '',
+                    placeholders: extractPlaceholderIndexes(createForm.headerText)
+                }
+                : { type: 'NONE' },
+        BODY: {
+            textLength: String(createForm.bodyText || '').length,
+            placeholders: extractPlaceholderIndexes(createForm.bodyText),
+            text: previewText.body || ''
+        },
+        FOOTER: {
+            textLength: String(createForm.footerText || '').length,
+            text: previewText.footer || ''
+        },
+        BUTTONS: previewButtons.map((buttonRow) => ({
+            type: toLower(buttonRow?.type || 'quick_reply'),
+            text: toText(buttonRow?.text),
+            value: toText(buttonRow?.value) || null
+        }))
+    }), [
+        activeHeaderType,
+        createForm?.bodyText,
+        createForm?.footerText,
+        createForm?.headerMedia?.name,
+        createForm?.headerText,
+        isHeaderMediaType,
+        previewButtons,
+        previewText.body,
+        previewText.footer,
+        previewText.header
+    ]);
 
     if (!isMetaTemplatesSection) {
         return null;
@@ -641,7 +728,7 @@ function MetaTemplatesSection(props = {}) {
 
     return (
         <section id="saas_templates" className="saas-admin-card saas-admin-card--full">
-            <div className="saas-admin-master-detail">
+            <div className={`saas-admin-master-detail ${panelMode === 'create' ? 'saas-admin-master-detail--template-create' : ''}`.trim()}>
                 <aside className="saas-admin-master-pane">
                     <div className="saas-admin-pane-header">
                         <div>
@@ -924,6 +1011,9 @@ function MetaTemplatesSection(props = {}) {
                                                             <small className="saas-meta-template-upload-file">{createForm.headerMedia.name}</small>
                                                         )}
                                                     </div>
+                                                    <small className="saas-meta-template-help">
+                                                        Este archivo se usa como ejemplo para aprobacion de Meta. El media final se define al enviar la plantilla.
+                                                    </small>
                                                 </>
                                             )}
                                             {!isHeaderMediaType && activeHeaderType !== 'text' && (
@@ -935,14 +1025,7 @@ function MetaTemplatesSection(props = {}) {
                                     <div className="saas-meta-template-field">
                                         <div className="saas-meta-template-field-heading">
                                             <label htmlFor="meta_template_body_text">Body del template</label>
-                                            <button
-                                                type="button"
-                                                className="saas-meta-template-inline-var-toggle"
-                                                disabled={templatesBusy || !canWrite}
-                                                onClick={() => setShowInlineVariablePicker((prev) => !prev)}
-                                            >
-                                                Insertar variable
-                                            </button>
+                                            <span className="saas-meta-template-body-hint">Inserta variables desde el panel derecho (+)</span>
                                         </div>
                                         <textarea
                                             id="meta_template_body_text"
@@ -958,27 +1041,6 @@ function MetaTemplatesSection(props = {}) {
                                             disabled={templatesBusy || !canWrite}
                                         />
                                         <div className="saas-meta-template-counter">{bodyCharacterCount} caracteres</div>
-                                        {showInlineVariablePicker && (
-                                            <div className="saas-meta-template-inline-picker">
-                                                {templateVarCategories.map((category) => (
-                                                    <div className="saas-meta-template-inline-picker-group" key={`inline_var_group_${category.id}`}>
-                                                        <strong>{category.label}</strong>
-                                                        <div className="saas-meta-template-inline-picker-list">
-                                                            {(Array.isArray(category.variables) ? category.variables : []).map((variable) => (
-                                                                <button
-                                                                    type="button"
-                                                                    key={`inline_var_${category.id}_${variable.key}`}
-                                                                    disabled={templatesBusy || !canWrite}
-                                                                    onClick={() => insertVariableAtBodyCursor(variable)}
-                                                                >
-                                                                    {`{{${Number(variable?.placeholderIndex)}}}`} {toText(variable?.label || variable?.key)}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
                                     </div>
 
                                     <div className="saas-meta-template-field">
@@ -1103,7 +1165,6 @@ function MetaTemplatesSection(props = {}) {
                                             disabled={templatesBusy}
                                             onClick={() => {
                                                 setPanelMode('view');
-                                                setShowInlineVariablePicker(false);
                                                 setCreateForm(buildInitialForm(createForm.moduleId || moduleOptions[0]?.moduleId || ''));
                                             }}
                                         >
@@ -1112,41 +1173,53 @@ function MetaTemplatesSection(props = {}) {
                                     </div>
                                 </section>
 
-                                <section className="saas-meta-template-builder__variables">
-                                    <div className="saas-admin-related-block saas-meta-template-pane">
-                                        <h4>Variables por categoria</h4>
-                                        {loadingVarCatalog && <small className="saas-meta-template-help">Cargando catalogo de variables...</small>}
-                                        {varCatalogError && <small className="saas-meta-template-error">{varCatalogError}</small>}
-                                        {!loadingVarCatalog && !varCatalogError && templateVarCategories.map((category) => {
-                                            const categoryKey = toText(category?.id);
-                                            const isExpanded = Boolean(expandedVariableCategories?.[categoryKey]);
-                                            return (
-                                                <div key={`template_var_category_${category.id}`} className="saas-meta-template-var-group">
-                                                    <button
-                                                        type="button"
-                                                        className="saas-meta-template-accordion-trigger"
-                                                        onClick={() => toggleVariableCategory(categoryKey)}
-                                                    >
-                                                        <span>{category.label}</span>
-                                                        <span>{isExpanded ? '-' : '+'}</span>
-                                                    </button>
-                                                    {isExpanded && (
-                                                        <div className="saas-meta-template-var-list">
-                                                            {(Array.isArray(category.variables) ? category.variables : []).map((variable) => (
-                                                                <div className="saas-meta-template-var-item" key={`template_var_${category.id}_${variable.key}`}>
-                                                                    <div className="saas-meta-template-var-item-main">
-                                                                        <span className="saas-meta-template-var-token">{`{{${Number(variable?.placeholderIndex)}}}`}</span>
-                                                                        <strong>{toText(variable?.label || variable?.key)}</strong>
-                                                                        <small>{toText(variable?.description)}</small>
-                                                                    </div>
-                                                                    <button
-                                                                        type="button"
-                                                                        className="saas-meta-template-var-insert"
-                                                                        disabled={templatesBusy || !canWrite}
-                                                                        onClick={() => insertVariableAtBodyCursor(variable)}
-                                                                    >
-                                                                        +
-                                                                    </button>
+                                <aside className="saas-meta-template-builder__side">
+                                    <section className="saas-meta-template-builder__variables">
+                                        <div className="saas-admin-related-block saas-meta-template-pane">
+                                            <h4>Variables por categoria</h4>
+                                            <div className="saas-meta-template-variables-toolbar">
+                                                <input
+                                                    value={variableSearchQuery}
+                                                    onChange={(event) => setVariableSearchQuery(event.target.value)}
+                                                    placeholder="Buscar variable..."
+                                                    disabled={templatesBusy}
+                                                />
+                                            </div>
+                                            {loadingVarCatalog && <small className="saas-meta-template-help">Cargando catalogo de variables...</small>}
+                                            {varCatalogError && <small className="saas-meta-template-error">{varCatalogError}</small>}
+                                            {!loadingVarCatalog && !varCatalogError && filteredVarCategories.map((category) => {
+                                                const categoryKey = toText(category?.id);
+                                                const isExpanded = Boolean(expandedVariableCategories?.[categoryKey]);
+                                                return (
+                                                    <div key={`template_var_category_${category.id}`} className="saas-meta-template-var-group">
+                                                        <button
+                                                            type="button"
+                                                            className="saas-meta-template-accordion-trigger"
+                                                            onClick={() => toggleVariableCategory(categoryKey)}
+                                                        >
+                                                            <span className="saas-meta-template-accordion-title">
+                                                                {category.label}
+                                                                <small>{(Array.isArray(category.variables) ? category.variables.length : 0)}</small>
+                                                            </span>
+                                                            <span className="saas-meta-template-accordion-caret">{isExpanded ? '\u25be' : '\u25b8'}</span>
+                                                        </button>
+                                                        {isExpanded && (
+                                                            <div className="saas-meta-template-var-list">
+                                                                {(Array.isArray(category.variables) ? category.variables : []).map((variable) => (
+                                                                    <div className="saas-meta-template-var-item" key={`template_var_${category.id}_${variable.key}`}>
+                                                                        <div className="saas-meta-template-var-item-main">
+                                                                            <span className="saas-meta-template-var-token">{`{{${Number(variable?.placeholderIndex)}}}`}</span>
+                                                                            <strong>{toText(variable?.label || variable?.key)}</strong>
+                                                                            <small>{toText(variable?.description)}</small>
+                                                                        </div>
+                                                                        <button
+                                                                            type="button"
+                                                                            className="saas-meta-template-var-insert"
+                                                                            disabled={templatesBusy || !canWrite}
+                                                                            onClick={() => insertVariableAtBodyCursor(variable)}
+                                                                        >
+                                                                            +
+                                                                        </button>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -1154,69 +1227,154 @@ function MetaTemplatesSection(props = {}) {
                                                 </div>
                                             );
                                         })}
-                                    </div>
-
-                                    <div className="saas-admin-related-block saas-meta-template-pane">
-                                        <h4>Ejemplos para variables usadas</h4>
-                                        {usedVariables.length === 0 && (
-                                            <small className="saas-meta-template-help">Inserta variables en el body/header/footer para configurar ejemplos.</small>
-                                        )}
-                                        {usedVariables.length > 0 && usedVariables.map((variable) => {
-                                            const index = Number(variable?.placeholderIndex);
-                                            const key = `var_example_${index}`;
-                                            return (
-                                                <div className="saas-meta-template-example-row" key={key}>
-                                                    <label htmlFor={key}>
-                                                        {`{{${index}}}`} {toText(variable?.label)}
-                                                    </label>
-                                                    <input
-                                                        id={key}
-                                                        value={toText(variableExamplesByIndex?.[index])}
-                                                        onChange={(event) => updateVariableExample(index, event.target.value)}
-                                                        placeholder={toText(variable?.exampleValue) || `valor_${index}`}
-                                                        disabled={templatesBusy || !canWrite}
-                                                    />
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-
-                                </section>
-
-                                <aside className="saas-meta-template-builder__preview">
-                                    <h4>Preview WhatsApp</h4>
-                                    <div className="saas-wa-preview">
-                                        <div className="saas-wa-preview__chat-bg">
-                                            <article className="saas-wa-preview__bubble">
-                                                {isHeaderMediaType && (
-                                                    <div className="saas-wa-preview__media-placeholder">
-                                                        <strong>{activeHeaderType === 'image' ? 'Imagen' : activeHeaderType === 'video' ? 'Video' : 'Documento'}</strong>
-                                                        <small>{toText(createForm?.headerMedia?.name) || 'Sin archivo cargado'}</small>
-                                                    </div>
-                                                )}
-                                                {activeHeaderType === 'text' && Boolean(createForm.headerText) && (
-                                                    <div className="saas-wa-preview__header">{previewText.header || '-'}</div>
-                                                )}
-                                                <div className="saas-wa-preview__body">{previewText.body || 'Escribe el contenido del template...'}</div>
-                                                {Boolean(createForm.footerText) && (
-                                                    <div className="saas-wa-preview__footer">{previewText.footer || '-'}</div>
-                                                )}
-                                                {previewButtons.length > 0 && (
-                                                    <div className="saas-wa-preview__buttons">
-                                                        {previewButtons.map((buttonRow) => (
-                                                            <div className="saas-wa-preview__button" key={`preview_button_${buttonRow.id}`}>
-                                                                {toText(buttonRow.text) || 'Boton'}
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                                <div className="saas-wa-preview__meta">
-                                                    <span>{previewTimeLabel}</span>
-                                                    <span className="saas-wa-preview__tick">{'\u2713\u2713'}</span>
-                                                </div>
-                                            </article>
+                                            {!loadingVarCatalog && !varCatalogError && filteredVarCategories.length === 0 && (
+                                                <small className="saas-meta-template-help">Sin resultados para la busqueda.</small>
+                                            )}
                                         </div>
-                                    </div>
+
+                                        <div className="saas-admin-related-block saas-meta-template-pane">
+                                            <h4>Ejemplos para variables usadas</h4>
+                                            {usedVariables.length === 0 && (
+                                                <small className="saas-meta-template-help">Inserta variables en el body/header/footer para configurar ejemplos.</small>
+                                            )}
+                                            {usedVariables.length > 0 && usedVariables.map((variable) => {
+                                                const index = Number(variable?.placeholderIndex);
+                                                const key = `var_example_${index}`;
+                                                return (
+                                                    <div className="saas-meta-template-example-row" key={key}>
+                                                        <label htmlFor={key}>
+                                                            {`{{${index}}}`} {toText(variable?.label)}
+                                                        </label>
+                                                        <input
+                                                            id={key}
+                                                            value={toText(variableExamplesByIndex?.[index])}
+                                                            onChange={(event) => updateVariableExample(index, event.target.value)}
+                                                            placeholder={toText(variable?.exampleValue) || `valor_${index}`}
+                                                            disabled={templatesBusy || !canWrite}
+                                                        />
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </section>
+
+                                    <section className="saas-meta-template-builder__preview">
+                                        <h4>Preview</h4>
+                                        <div className="saas-template-preview-mode">
+                                            <button
+                                                type="button"
+                                                className={previewMode === 'delivery' ? 'active' : ''}
+                                                onClick={() => setPreviewMode('delivery')}
+                                            >
+                                                Mensaje final al cliente
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={previewMode === 'approval' ? 'active' : ''}
+                                                onClick={() => setPreviewMode('approval')}
+                                            >
+                                                Aprobacion Meta
+                                            </button>
+                                        </div>
+                                        {previewMode === 'delivery' && (
+                                            <>
+                                                <small className="saas-meta-template-help">Simulacion de entrega al cliente en WhatsApp.</small>
+                                                <div className="saas-wa-preview">
+                                                    <div className="saas-wa-preview__chat-bg">
+                                                        <div className="saas-wa-preview__delivery-stack">
+                                                            <article className="saas-wa-preview__bubble">
+                                                                {isHeaderMediaType && (
+                                                                    <div className="saas-wa-preview__media-placeholder">
+                                                                        {activeHeaderType === 'image' && previewHeaderMediaSrc ? (
+                                                                            <img
+                                                                                src={previewHeaderMediaSrc}
+                                                                                alt="Preview header"
+                                                                                className="saas-wa-preview__media-image"
+                                                                            />
+                                                                        ) : (
+                                                                            <>
+                                                                                <strong>{activeHeaderType === 'image' ? 'Imagen' : activeHeaderType === 'video' ? 'Video' : 'Documento'}</strong>
+                                                                                <small>{toText(createForm?.headerMedia?.name) || 'Sin archivo cargado'}</small>
+                                                                            </>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                                {activeHeaderType === 'text' && Boolean(createForm.headerText) && (
+                                                                    <div className="saas-wa-preview__header">{previewText.header || '-'}</div>
+                                                                )}
+                                                                <div className="saas-wa-preview__body">{previewText.body || 'Escribe el contenido del template...'}</div>
+                                                                {Boolean(createForm.footerText) && (
+                                                                    <div className="saas-wa-preview__footer">{previewText.footer || '-'}</div>
+                                                                )}
+                                                                <div className="saas-wa-preview__meta">
+                                                                    <span>{previewTimeLabel}</span>
+                                                                    <span className="saas-wa-preview__tick">{'\u2713\u2713'}</span>
+                                                                </div>
+                                                            </article>
+                                                            {previewButtons.length > 0 && (
+                                                                <div className="saas-wa-preview__template-buttons">
+                                                            {previewButtons.map((buttonRow) => (
+                                                                <div className="saas-wa-preview__template-button" key={`preview_button_${buttonRow.id}`}>
+                                                                    <span className="saas-wa-preview__template-button-meta">
+                                                                        {toLower(buttonRow?.type) === 'url'
+                                                                            ? 'Enlace'
+                                                                            : (toLower(buttonRow?.type) === 'phone' || toLower(buttonRow?.type) === 'phone_number')
+                                                                                ? 'Llamar'
+                                                                                : 'Respuesta'}
+                                                                    </span>
+                                                                    <span>{toText(buttonRow.text) || 'Boton'}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+                                        {previewMode === 'approval' && (
+                                            <>
+                                                <small className="saas-meta-template-help">Vista del contenido de ejemplo para revision de Meta.</small>
+                                                <div className="saas-template-approval-preview">
+                                                    <div className="saas-template-approval-preview__row">
+                                                        <span>Header</span>
+                                                        <strong>{isHeaderMediaType ? previewHeaderModeLabel : (activeHeaderType === 'text' ? 'Texto' : 'Sin header')}</strong>
+                                                    </div>
+                                                    {isHeaderMediaType && (
+                                                        <div className="saas-template-approval-preview__media">
+                                                            {activeHeaderType === 'image' && previewHeaderMediaSrc ? (
+                                                                <img src={previewHeaderMediaSrc} alt="Aprobacion header" />
+                                                            ) : (
+                                                                <div>
+                                                                    <strong>{previewHeaderModeLabel}</strong>
+                                                                    <small>{toText(createForm?.headerMedia?.name) || 'Sin archivo cargado'}</small>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    <div className="saas-template-approval-preview__block">
+                                                        <span>Body</span>
+                                                        <p>{previewText.body || '-'}</p>
+                                                    </div>
+                                                    <div className="saas-template-approval-preview__block">
+                                                        <span>Footer</span>
+                                                        <p>{previewText.footer || '-'}</p>
+                                                    </div>
+                                                    <div className="saas-template-approval-preview__block">
+                                                        <span>Botones</span>
+                                                        <p>{previewButtons.length > 0 ? previewButtons.map((row) => toText(row.text)).join(' | ') : 'Sin botones'}</p>
+                                                    </div>
+                                                    <small className="saas-meta-template-help">
+                                                        Nota: este ejemplo se usa para la evaluacion del template. El contenido final puede variar por variables y media al momento de envio.
+                                                    </small>
+                                                    <div className="saas-template-approval-preview__payload">
+                                                        <span>Resumen tecnico (HEADER/BODY/BUTTONS)</span>
+                                                        <pre>{JSON.stringify(approvalPayloadSummary, null, 2)}</pre>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </section>
                                 </aside>
                             </div>
                         </div>
