@@ -102,6 +102,54 @@ function extractPlaceholderIndexes(...texts) {
     return [...indexes].sort((left, right) => left - right);
 }
 
+function collectPlaceholderIndexesInAppearanceOrder(text = '') {
+    const ordered = [];
+    const seen = new Set();
+    const source = String(text || '');
+    if (!source) return ordered;
+    const regex = new RegExp(PLACEHOLDER_REGEX);
+    let match = regex.exec(source);
+    while (match) {
+        const index = Number(match[1]);
+        if (Number.isFinite(index) && index > 0 && !seen.has(index)) {
+            seen.add(index);
+            ordered.push(index);
+        }
+        match = regex.exec(source);
+    }
+    return ordered;
+}
+
+function buildSequentialPlaceholderMap(...texts) {
+    const orderedOriginalIndexes = [];
+    const seen = new Set();
+    texts.forEach((text) => {
+        collectPlaceholderIndexesInAppearanceOrder(text).forEach((index) => {
+            if (seen.has(index)) return;
+            seen.add(index);
+            orderedOriginalIndexes.push(index);
+        });
+    });
+    const originalToSequential = {};
+    const sequentialToOriginal = {};
+    orderedOriginalIndexes.forEach((originalIndex, position) => {
+        const sequentialIndex = position + 1;
+        originalToSequential[originalIndex] = sequentialIndex;
+        sequentialToOriginal[sequentialIndex] = originalIndex;
+    });
+    return { originalToSequential, sequentialToOriginal };
+}
+
+function applySequentialPlaceholderMap(text = '', originalToSequential = {}) {
+    return String(text || '').replace(PLACEHOLDER_REGEX, (_, indexRaw) => {
+        const originalIndex = Number(indexRaw);
+        if (!Number.isFinite(originalIndex) || originalIndex <= 0) return `{{${indexRaw}}}`;
+        const sequentialIndex = Number(originalToSequential?.[originalIndex]);
+        if (!Number.isFinite(sequentialIndex) || sequentialIndex <= 0) return `{{${originalIndex}}}`;
+        return `{{${sequentialIndex}}}`;
+    });
+}
+
 function replacePlaceholders(text = '', valuesByIndex = {}) {
     return String(text || '').replace(PLACEHOLDER_REGEX, (_, indexRaw) => {
         const index = Number(indexRaw);
@@ -232,27 +280,44 @@ function buildTemplatePayload(form = {}, { variableExamplesByIndex = {} } = {}) 
     if (!name) throw new Error('Nombre del template requerido.');
     if (!bodyText) throw new Error('Body del template requerido.');
 
+    const {
+        originalToSequential,
+        sequentialToOriginal
+    } = buildSequentialPlaceholderMap(headerText, bodyText, footerText);
+
+    const normalizedHeaderText = applySequentialPlaceholderMap(headerText, originalToSequential);
+    const normalizedBodyText = applySequentialPlaceholderMap(bodyText, originalToSequential);
+    const normalizedFooterText = applySequentialPlaceholderMap(footerText, originalToSequential);
+
     const components = [
         {
             type: 'BODY',
-            text: bodyText
+            text: normalizedBodyText
         }
     ];
 
-    const bodyIndexes = extractPlaceholderIndexes(bodyText);
+    const bodyIndexes = extractPlaceholderIndexes(normalizedBodyText);
     if (bodyIndexes.length > 0) {
-        const values = bodyIndexes.map((index) => toText(variableExamplesByIndex?.[index]) || `valor_${index}`);
+        const values = bodyIndexes.map((sequentialIndex) => {
+            const originalIndex = Number(sequentialToOriginal?.[sequentialIndex]);
+            const value = toText(variableExamplesByIndex?.[originalIndex]);
+            return value || `valor_${sequentialIndex}`;
+        });
         components[0].example = {
             body_text: [values]
         };
     }
 
-    if (headerType === 'text' && headerText) {
-        const header = { type: 'HEADER', format: 'TEXT', text: headerText };
-        const headerIndexes = extractPlaceholderIndexes(headerText);
+    if (headerType === 'text' && normalizedHeaderText) {
+        const header = { type: 'HEADER', format: 'TEXT', text: normalizedHeaderText };
+        const headerIndexes = extractPlaceholderIndexes(normalizedHeaderText);
         if (headerIndexes.length > 0) {
             header.example = {
-                header_text: headerIndexes.map((index) => toText(variableExamplesByIndex?.[index]) || `valor_${index}`)
+                header_text: headerIndexes.map((sequentialIndex) => {
+                    const originalIndex = Number(sequentialToOriginal?.[sequentialIndex]);
+                    const value = toText(variableExamplesByIndex?.[originalIndex]);
+                    return value || `valor_${sequentialIndex}`;
+                })
             };
         }
         components.unshift(header);
@@ -268,18 +333,24 @@ function buildTemplatePayload(form = {}, { variableExamplesByIndex = {} } = {}) 
             }
         });
     }
-    if (footerText) {
-        components.push({ type: 'FOOTER', text: footerText });
+    if (normalizedFooterText) {
+        components.push({ type: 'FOOTER', text: normalizedFooterText });
     }
     if (buttons.length > 0) {
         components.push({ type: 'BUTTONS', buttons });
     }
 
     return {
-        name,
-        category: category.toUpperCase(),
-        language,
-        components
+        metaPayload: {
+            name,
+            category: category.toUpperCase(),
+            language,
+            components
+        },
+        variableIndexMap: {
+            originalToSequential,
+            sequentialToOriginal
+        }
     };
 }
 
@@ -318,6 +389,7 @@ function MetaTemplatesSection(props = {}) {
     const [previewMode, setPreviewMode] = useState('delivery');
     const bodyTextareaRef = useRef(null);
     const headerMediaInputRef = useRef(null);
+    const lastVariableIndexMapRef = useRef({ originalToSequential: {}, sequentialToOriginal: {} });
 
     const moduleOptions = useMemo(() => {
         return Array.isArray(waModules)
@@ -470,7 +542,11 @@ function MetaTemplatesSection(props = {}) {
         const moduleId = toText(createForm.moduleId);
         if (!moduleId) throw new Error('Selecciona un modulo para crear el template.');
 
-        const templatePayload = buildTemplatePayload(createForm, { variableExamplesByIndex });
+        const {
+            metaPayload: templatePayload,
+            variableIndexMap
+        } = buildTemplatePayload(createForm, { variableExamplesByIndex });
+        lastVariableIndexMapRef.current = variableIndexMap || { originalToSequential: {}, sequentialToOriginal: {} };
         await runActionSafe('Template Meta creado', async () => {
             await createTemplate({
                 moduleId,
@@ -681,6 +757,10 @@ function MetaTemplatesSection(props = {}) {
             : activeHeaderType === 'document'
                 ? 'Documento de ejemplo'
                 : 'Sin header multimedia';
+    const currentVariableIndexMap = useMemo(
+        () => buildSequentialPlaceholderMap(createForm.headerText, createForm.bodyText, createForm.footerText),
+        [createForm.bodyText, createForm.footerText, createForm.headerText]
+    );
     const approvalPayloadSummary = useMemo(() => ({
         HEADER: isHeaderMediaType
             ? {
@@ -708,13 +788,15 @@ function MetaTemplatesSection(props = {}) {
             type: toLower(buttonRow?.type || 'quick_reply'),
             text: toText(buttonRow?.text),
             value: toText(buttonRow?.value) || null
-        }))
+        })),
+        VARIABLE_REMAP: currentVariableIndexMap.originalToSequential
     }), [
         activeHeaderType,
         createForm?.bodyText,
         createForm?.footerText,
         createForm?.headerMedia?.name,
         createForm?.headerText,
+        currentVariableIndexMap.originalToSequential,
         isHeaderMediaType,
         previewButtons,
         previewText.body,
