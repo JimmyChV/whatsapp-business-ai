@@ -46,7 +46,8 @@ const EMPTY_CREATE_FORM = {
 
 const toText = (value = '') => String(value || '').trim();
 const toLower = (value = '') => toText(value).toLowerCase();
-const PLACEHOLDER_REGEX = /{{\s*(\d+)\s*}}/g;
+const META_PLACEHOLDER_REGEX = /{{\s*(\d+)\s*}}/g;
+const TEMPLATE_TOKEN_REGEX = /{{\s*([^{}]+?)\s*}}/g;
 const SUPPORTED_LANGUAGES = Object.freeze(['es', 'en', 'pt']);
 let buttonRowCounter = 0;
 
@@ -84,12 +85,20 @@ function normalizeButtonRows(buttons = []) {
         .filter((row) => row.text);
 }
 
+function normalizeTemplateToken(raw = '') {
+    return toText(raw).toLowerCase();
+}
+
+function isMetaNumericToken(token = '') {
+    return /^[1-9]\d*$/.test(toText(token));
+}
+
 function extractPlaceholderIndexes(...texts) {
     const indexes = new Set();
     texts.forEach((text) => {
         const source = String(text || '');
         if (!source) return;
-        const regex = new RegExp(PLACEHOLDER_REGEX);
+        const regex = new RegExp(META_PLACEHOLDER_REGEX);
         let match = regex.exec(source);
         while (match) {
             const index = Number(match[1]);
@@ -102,18 +111,18 @@ function extractPlaceholderIndexes(...texts) {
     return [...indexes].sort((left, right) => left - right);
 }
 
-function collectPlaceholderIndexesInAppearanceOrder(text = '') {
+function collectPlaceholderTokensInAppearanceOrder(text = '') {
     const ordered = [];
     const seen = new Set();
     const source = String(text || '');
     if (!source) return ordered;
-    const regex = new RegExp(PLACEHOLDER_REGEX);
+    const regex = new RegExp(TEMPLATE_TOKEN_REGEX);
     let match = regex.exec(source);
     while (match) {
-        const index = Number(match[1]);
-        if (Number.isFinite(index) && index > 0 && !seen.has(index)) {
-            seen.add(index);
-            ordered.push(index);
+        const token = normalizeTemplateToken(match[1]);
+        if (token && !seen.has(token)) {
+            seen.add(token);
+            ordered.push(token);
         }
         match = regex.exec(source);
     }
@@ -121,41 +130,41 @@ function collectPlaceholderIndexesInAppearanceOrder(text = '') {
 }
 
 function buildSequentialPlaceholderMap(...texts) {
-    const orderedOriginalIndexes = [];
+    const orderedOriginalTokens = [];
     const seen = new Set();
     texts.forEach((text) => {
-        collectPlaceholderIndexesInAppearanceOrder(text).forEach((index) => {
-            if (seen.has(index)) return;
-            seen.add(index);
-            orderedOriginalIndexes.push(index);
+        collectPlaceholderTokensInAppearanceOrder(text).forEach((token) => {
+            if (seen.has(token)) return;
+            seen.add(token);
+            orderedOriginalTokens.push(token);
         });
     });
     const originalToSequential = {};
     const sequentialToOriginal = {};
-    orderedOriginalIndexes.forEach((originalIndex, position) => {
+    orderedOriginalTokens.forEach((originalToken, position) => {
         const sequentialIndex = position + 1;
-        originalToSequential[originalIndex] = sequentialIndex;
-        sequentialToOriginal[sequentialIndex] = originalIndex;
+        originalToSequential[originalToken] = sequentialIndex;
+        sequentialToOriginal[sequentialIndex] = originalToken;
     });
-    return { originalToSequential, sequentialToOriginal };
+    return { orderedTokens: orderedOriginalTokens, originalToSequential, sequentialToOriginal };
 }
 
 function applySequentialPlaceholderMap(text = '', originalToSequential = {}) {
-    return String(text || '').replace(PLACEHOLDER_REGEX, (_, indexRaw) => {
-        const originalIndex = Number(indexRaw);
-        if (!Number.isFinite(originalIndex) || originalIndex <= 0) return `{{${indexRaw}}}`;
-        const sequentialIndex = Number(originalToSequential?.[originalIndex]);
-        if (!Number.isFinite(sequentialIndex) || sequentialIndex <= 0) return `{{${originalIndex}}}`;
+    return String(text || '').replace(TEMPLATE_TOKEN_REGEX, (_, rawToken) => {
+        const token = normalizeTemplateToken(rawToken);
+        if (!token) return `{{${rawToken}}}`;
+        const sequentialIndex = Number(originalToSequential?.[token]);
+        if (!Number.isFinite(sequentialIndex) || sequentialIndex <= 0) return `{{${token}}}`;
         return `{{${sequentialIndex}}}`;
     });
 }
 
-function replacePlaceholders(text = '', valuesByIndex = {}) {
-    return String(text || '').replace(PLACEHOLDER_REGEX, (_, indexRaw) => {
-        const index = Number(indexRaw);
-        if (!Number.isFinite(index) || index <= 0) return `{{${indexRaw}}}`;
-        const replacement = toText(valuesByIndex?.[index]);
-        return replacement || `{{${index}}}`;
+function replaceTemplateTokens(text = '', valuesByToken = {}) {
+    return String(text || '').replace(TEMPLATE_TOKEN_REGEX, (_, rawToken) => {
+        const token = normalizeTemplateToken(rawToken);
+        if (!token) return `{{${rawToken}}}`;
+        const replacement = toText(valuesByToken?.[token]);
+        return replacement || `{{${token}}}`;
     });
 }
 
@@ -209,9 +218,15 @@ function coerceCatalogPayload(payload = {}) {
 
 function buildInitialVariableExamples(variables = []) {
     return variables.reduce((acc, variable) => {
+        const tokenKey = normalizeTemplateToken(variable?.key);
+        const exampleValue = toText(variable?.exampleValue);
+        if (tokenKey) {
+            acc[tokenKey] = exampleValue;
+        }
         const index = Number(variable?.placeholderIndex);
-        if (!Number.isFinite(index) || index <= 0) return acc;
-        acc[index] = toText(variable?.exampleValue);
+        if (Number.isFinite(index) && index > 0) {
+            acc[String(index)] = exampleValue;
+        }
         return acc;
     }, {});
 }
@@ -266,7 +281,10 @@ function mapButtonRowsToMeta(buttonRows = []) {
         });
 }
 
-function buildTemplatePayload(form = {}, { variableExamplesByIndex = {} } = {}) {
+function buildTemplatePayload(form = {}, {
+    variableExamplesByToken = {},
+    defaultExampleByToken = {}
+} = {}) {
     const name = toText(form.name);
     const category = toLower(form.category || 'marketing') || 'marketing';
     const language = toLower(form.language || 'es') || 'es';
@@ -281,6 +299,7 @@ function buildTemplatePayload(form = {}, { variableExamplesByIndex = {} } = {}) 
     if (!bodyText) throw new Error('Body del template requerido.');
 
     const {
+        orderedTokens,
         originalToSequential,
         sequentialToOriginal
     } = buildSequentialPlaceholderMap(headerText, bodyText, footerText);
@@ -288,6 +307,21 @@ function buildTemplatePayload(form = {}, { variableExamplesByIndex = {} } = {}) 
     const normalizedHeaderText = applySequentialPlaceholderMap(headerText, originalToSequential);
     const normalizedBodyText = applySequentialPlaceholderMap(bodyText, originalToSequential);
     const normalizedFooterText = applySequentialPlaceholderMap(footerText, originalToSequential);
+
+    const resolveExampleForToken = (originalToken, sequentialIndex) => {
+        const normalizedToken = normalizeTemplateToken(originalToken);
+        const fromUser = toText(
+            variableExamplesByToken?.[normalizedToken]
+            ?? variableExamplesByToken?.[originalToken]
+        );
+        if (fromUser) return fromUser;
+        const fromDefaults = toText(
+            defaultExampleByToken?.[normalizedToken]
+            ?? defaultExampleByToken?.[originalToken]
+        );
+        if (fromDefaults) return fromDefaults;
+        return `valor_${sequentialIndex}`;
+    };
 
     const components = [
         {
@@ -299,9 +333,8 @@ function buildTemplatePayload(form = {}, { variableExamplesByIndex = {} } = {}) 
     const bodyIndexes = extractPlaceholderIndexes(normalizedBodyText);
     if (bodyIndexes.length > 0) {
         const values = bodyIndexes.map((sequentialIndex) => {
-            const originalIndex = Number(sequentialToOriginal?.[sequentialIndex]);
-            const value = toText(variableExamplesByIndex?.[originalIndex]);
-            return value || `valor_${sequentialIndex}`;
+            const originalToken = toText(sequentialToOriginal?.[sequentialIndex]);
+            return resolveExampleForToken(originalToken, sequentialIndex);
         });
         components[0].example = {
             body_text: [values]
@@ -314,9 +347,8 @@ function buildTemplatePayload(form = {}, { variableExamplesByIndex = {} } = {}) 
         if (headerIndexes.length > 0) {
             header.example = {
                 header_text: headerIndexes.map((sequentialIndex) => {
-                    const originalIndex = Number(sequentialToOriginal?.[sequentialIndex]);
-                    const value = toText(variableExamplesByIndex?.[originalIndex]);
-                    return value || `valor_${sequentialIndex}`;
+                    const originalToken = toText(sequentialToOriginal?.[sequentialIndex]);
+                    return resolveExampleForToken(originalToken, sequentialIndex);
                 })
             };
         }
@@ -348,6 +380,7 @@ function buildTemplatePayload(form = {}, { variableExamplesByIndex = {} } = {}) 
             components
         },
         variableIndexMap: {
+            orderedTokens,
             originalToSequential,
             sequentialToOriginal
         }
@@ -382,7 +415,7 @@ function MetaTemplatesSection(props = {}) {
     const [templateVarCategories, setTemplateVarCategories] = useState([]);
     const [loadingVarCatalog, setLoadingVarCatalog] = useState(false);
     const [varCatalogError, setVarCatalogError] = useState('');
-    const [variableExamplesByIndex, setVariableExamplesByIndex] = useState({});
+    const [variableExamplesByToken, setVariableExamplesByToken] = useState({});
     const [bodyCursor, setBodyCursor] = useState({ start: 0, end: 0 });
     const [expandedVariableCategories, setExpandedVariableCategories] = useState({});
     const [variableSearchQuery, setVariableSearchQuery] = useState('');
@@ -410,6 +443,25 @@ function MetaTemplatesSection(props = {}) {
             return acc;
         }, {});
     }, [templateVarCatalog]);
+
+    const varCatalogByToken = useMemo(() => {
+        return templateVarCatalog.reduce((acc, variable) => {
+            const tokenKey = normalizeTemplateToken(variable?.key);
+            if (tokenKey) {
+                acc[tokenKey] = variable;
+            }
+            const numericToken = Number(variable?.placeholderIndex);
+            if (Number.isFinite(numericToken) && numericToken > 0 && !acc[String(numericToken)]) {
+                acc[String(numericToken)] = variable;
+            }
+            return acc;
+        }, {});
+    }, [templateVarCatalog]);
+
+    const defaultVariableExamplesByToken = useMemo(
+        () => buildInitialVariableExamples(templateVarCatalog),
+        [templateVarCatalog]
+    );
 
     const runActionSafe = useCallback(async (label, action) => {
         if (typeof runAction === 'function') return runAction(label, action);
@@ -449,7 +501,7 @@ function MetaTemplatesSection(props = {}) {
             const { categories, variables } = coerceCatalogPayload(payload);
             setTemplateVarCategories(categories);
             setTemplateVarCatalog(variables);
-            setVariableExamplesByIndex((prev) => {
+            setVariableExamplesByToken((prev) => {
                 const defaults = buildInitialVariableExamples(variables);
                 return Object.keys(prev || {}).length > 0 ? { ...defaults, ...prev } : defaults;
             });
@@ -545,7 +597,10 @@ function MetaTemplatesSection(props = {}) {
         const {
             metaPayload: templatePayload,
             variableIndexMap
-        } = buildTemplatePayload(createForm, { variableExamplesByIndex });
+        } = buildTemplatePayload(createForm, {
+            variableExamplesByToken,
+            defaultExampleByToken: defaultVariableExamplesByToken
+        });
         lastVariableIndexMapRef.current = variableIndexMap || { originalToSequential: {}, sequentialToOriginal: {} };
         await runActionSafe('Template Meta creado', async () => {
             await createTemplate({
@@ -561,7 +616,7 @@ function MetaTemplatesSection(props = {}) {
                 scopeModuleId: filters.scopeModuleId || moduleId
             });
         });
-    }, [canWrite, createTemplate, createForm, runActionSafe, notify, loadTemplates, filters, variableExamplesByIndex]);
+    }, [canWrite, createTemplate, createForm, runActionSafe, notify, loadTemplates, filters, variableExamplesByToken, defaultVariableExamplesByToken]);
 
     const handleDeleteTemplate = useCallback(async (template = null) => {
         const templateId = toText(template?.templateId);
@@ -679,9 +734,11 @@ function MetaTemplatesSection(props = {}) {
     }, []);
 
     const insertVariableAtBodyCursor = useCallback((variable = null) => {
-        const index = Number(variable?.placeholderIndex);
-        if (!Number.isFinite(index) || index <= 0) return;
-        const token = `{{${index}}}`;
+        const tokenKey = normalizeTemplateToken(variable?.key);
+        const numericFallback = Number(variable?.placeholderIndex);
+        const normalizedToken = tokenKey || (Number.isFinite(numericFallback) && numericFallback > 0 ? String(numericFallback) : '');
+        if (!normalizedToken) return;
+        const token = `{{${normalizedToken}}}`;
         const input = bodyTextareaRef.current;
         const currentBody = String(createForm.bodyText || '');
         const start = Number.isFinite(input?.selectionStart) ? input.selectionStart : bodyCursor.start;
@@ -701,24 +758,45 @@ function MetaTemplatesSection(props = {}) {
         });
     }, [bodyCursor.end, bodyCursor.start, createForm.bodyText]);
 
-    const updateVariableExample = useCallback((placeholderIndex, value) => {
-        const index = Number(placeholderIndex);
-        if (!Number.isFinite(index) || index <= 0) return;
-        setVariableExamplesByIndex((prev) => ({
+    const updateVariableExample = useCallback((token, value) => {
+        const normalizedToken = normalizeTemplateToken(token);
+        if (!normalizedToken) return;
+        setVariableExamplesByToken((prev) => ({
             ...prev,
-            [index]: value
+            [normalizedToken]: value
         }));
     }, []);
 
-    const usedPlaceholderIndexes = useMemo(() => {
-        return extractPlaceholderIndexes(createForm.headerText, createForm.bodyText, createForm.footerText);
+    const usedTemplateTokens = useMemo(() => {
+        const { orderedTokens = [] } = buildSequentialPlaceholderMap(
+            createForm.headerText,
+            createForm.bodyText,
+            createForm.footerText
+        );
+        return orderedTokens;
     }, [createForm.bodyText, createForm.footerText, createForm.headerText]);
 
     const usedVariables = useMemo(() => {
-        return usedPlaceholderIndexes
-            .map((index) => varCatalogByPlaceholderIndex[index])
-            .filter(Boolean);
-    }, [usedPlaceholderIndexes, varCatalogByPlaceholderIndex]);
+        return usedTemplateTokens.map((rawToken) => {
+            const token = normalizeTemplateToken(rawToken);
+            const catalogVariable = varCatalogByToken[token]
+                || (Number.isFinite(Number(token)) ? varCatalogByPlaceholderIndex[Number(token)] : null);
+            if (catalogVariable) {
+                return {
+                    ...catalogVariable,
+                    token
+                };
+            }
+            return {
+                key: token,
+                token,
+                label: `Variable personalizada (${token})`,
+                description: 'Variable no catalogada. Define un ejemplo para validarla.',
+                placeholderIndex: null,
+                exampleValue: ''
+            };
+        });
+    }, [usedTemplateTokens, varCatalogByToken, varCatalogByPlaceholderIndex]);
 
     const filteredVarCategories = useMemo(() => {
         const query = toLower(variableSearchQuery);
@@ -735,13 +813,33 @@ function MetaTemplatesSection(props = {}) {
             .filter((category) => (Array.isArray(category?.variables) ? category.variables.length > 0 : false));
     }, [templateVarCategories, variableSearchQuery]);
 
+    const previewValuesByToken = useMemo(() => {
+        const values = {};
+        usedVariables.forEach((variable) => {
+            const token = normalizeTemplateToken(variable?.token || variable?.key);
+            if (!token) return;
+            const userExample = toText(variableExamplesByToken?.[token]);
+            const defaultExample = toText(defaultVariableExamplesByToken?.[token] ?? variable?.exampleValue);
+            const finalExample = userExample || defaultExample || `valor_${token}`;
+            values[token] = finalExample;
+            if (isMetaNumericToken(token) && !values[String(Number(token))]) {
+                values[String(Number(token))] = finalExample;
+            }
+            const placeholderIndex = Number(variable?.placeholderIndex);
+            if (Number.isFinite(placeholderIndex) && placeholderIndex > 0 && !values[String(placeholderIndex)]) {
+                values[String(placeholderIndex)] = finalExample;
+            }
+        });
+        return values;
+    }, [usedVariables, variableExamplesByToken, defaultVariableExamplesByToken]);
+
     const previewText = useMemo(() => {
         return {
-            header: wrapPreviewLines(replacePlaceholders(createForm.headerText, variableExamplesByIndex), 90),
-            body: wrapPreviewLines(replacePlaceholders(createForm.bodyText, variableExamplesByIndex), 90),
-            footer: wrapPreviewLines(replacePlaceholders(createForm.footerText, variableExamplesByIndex), 90)
+            header: wrapPreviewLines(replaceTemplateTokens(createForm.headerText, previewValuesByToken), 90),
+            body: wrapPreviewLines(replaceTemplateTokens(createForm.bodyText, previewValuesByToken), 90),
+            footer: wrapPreviewLines(replaceTemplateTokens(createForm.footerText, previewValuesByToken), 90)
         };
-    }, [createForm.bodyText, createForm.footerText, createForm.headerText, variableExamplesByIndex]);
+    }, [createForm.bodyText, createForm.footerText, createForm.headerText, previewValuesByToken]);
 
     const previewButtons = useMemo(() => normalizeButtonRows(createForm.buttons).slice(0, 3), [createForm.buttons]);
     const previewTimeLabel = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
@@ -757,10 +855,29 @@ function MetaTemplatesSection(props = {}) {
             : activeHeaderType === 'document'
                 ? 'Documento de ejemplo'
                 : 'Sin header multimedia';
-    const currentVariableIndexMap = useMemo(
-        () => buildSequentialPlaceholderMap(createForm.headerText, createForm.bodyText, createForm.footerText),
-        [createForm.bodyText, createForm.footerText, createForm.headerText]
-    );
+    const approvalPayloadBuild = useMemo(() => {
+        try {
+            return {
+                ...buildTemplatePayload(createForm, {
+                    variableExamplesByToken,
+                    defaultExampleByToken: defaultVariableExamplesByToken
+                }),
+                error: null
+            };
+        } catch (error) {
+            return {
+                metaPayload: null,
+                variableIndexMap: buildSequentialPlaceholderMap(createForm.headerText, createForm.bodyText, createForm.footerText),
+                error: String(error?.message || error || 'Payload invalido')
+            };
+        }
+    }, [createForm, variableExamplesByToken, defaultVariableExamplesByToken]);
+
+    const currentVariableIndexMap = approvalPayloadBuild.variableIndexMap || {
+        orderedTokens: [],
+        originalToSequential: {},
+        sequentialToOriginal: {}
+    };
     const approvalPayloadSummary = useMemo(() => ({
         HEADER: isHeaderMediaType
             ? {
@@ -772,12 +889,12 @@ function MetaTemplatesSection(props = {}) {
                 ? {
                     type: 'TEXT',
                     text: previewText.header || '',
-                    placeholders: extractPlaceholderIndexes(createForm.headerText)
+                    placeholders: extractPlaceholderIndexes(applySequentialPlaceholderMap(createForm.headerText, currentVariableIndexMap.originalToSequential))
                 }
                 : { type: 'NONE' },
         BODY: {
             textLength: String(createForm.bodyText || '').length,
-            placeholders: extractPlaceholderIndexes(createForm.bodyText),
+            placeholders: extractPlaceholderIndexes(applySequentialPlaceholderMap(createForm.bodyText, currentVariableIndexMap.originalToSequential)),
             text: previewText.body || ''
         },
         FOOTER: {
@@ -789,15 +906,21 @@ function MetaTemplatesSection(props = {}) {
             text: toText(buttonRow?.text),
             value: toText(buttonRow?.value) || null
         })),
-        VARIABLE_REMAP: currentVariableIndexMap.originalToSequential
+        VARIABLE_ORDER: currentVariableIndexMap.orderedTokens,
+        VARIABLE_REMAP: currentVariableIndexMap.originalToSequential,
+        META_PAYLOAD: approvalPayloadBuild.metaPayload,
+        ERROR: approvalPayloadBuild.error
     }), [
         activeHeaderType,
         createForm?.bodyText,
         createForm?.footerText,
         createForm?.headerMedia?.name,
         createForm?.headerText,
+        currentVariableIndexMap.orderedTokens,
         currentVariableIndexMap.originalToSequential,
         isHeaderMediaType,
+        approvalPayloadBuild.error,
+        approvalPayloadBuild.metaPayload,
         previewButtons,
         previewText.body,
         previewText.footer,
@@ -1290,7 +1413,7 @@ function MetaTemplatesSection(props = {}) {
                                                                 {(Array.isArray(category.variables) ? category.variables : []).map((variable) => (
                                                                     <div className="saas-meta-template-var-item" key={`template_var_${category.id}_${variable.key}`}>
                                                                         <div className="saas-meta-template-var-item-main">
-                                                                            <span className="saas-meta-template-var-token">{`{{${Number(variable?.placeholderIndex)}}}`}</span>
+                                                                            <span className="saas-meta-template-var-token">{`{{${normalizeTemplateToken(variable?.key)}}}`}</span>
                                                                             <strong>{toText(variable?.label || variable?.key)}</strong>
                                                                             <small>{toText(variable?.description)}</small>
                                                                         </div>
@@ -1320,18 +1443,21 @@ function MetaTemplatesSection(props = {}) {
                                                 <small className="saas-meta-template-help">Inserta variables en el body/header/footer para configurar ejemplos.</small>
                                             )}
                                             {usedVariables.length > 0 && usedVariables.map((variable) => {
-                                                const index = Number(variable?.placeholderIndex);
-                                                const key = `var_example_${index}`;
+                                                const token = normalizeTemplateToken(variable?.token || variable?.key);
+                                                if (!token) return null;
+                                                const inputId = `var_example_${token.replace(/[^a-z0-9_]+/gi, '_')}`;
+                                                const mappedIndex = Number(currentVariableIndexMap?.originalToSequential?.[token]);
+                                                const mappedLabel = Number.isFinite(mappedIndex) && mappedIndex > 0 ? `Meta {{${mappedIndex}}}` : '';
                                                 return (
-                                                    <div className="saas-meta-template-example-row" key={key}>
-                                                        <label htmlFor={key}>
-                                                            {`{{${index}}}`} {toText(variable?.label)}
+                                                    <div className="saas-meta-template-example-row" key={inputId}>
+                                                        <label htmlFor={inputId}>
+                                                            {`{{${token}}}`} {toText(variable?.label)} {mappedLabel ? `(${mappedLabel})` : ''}
                                                         </label>
                                                         <input
-                                                            id={key}
-                                                            value={toText(variableExamplesByIndex?.[index])}
-                                                            onChange={(event) => updateVariableExample(index, event.target.value)}
-                                                            placeholder={toText(variable?.exampleValue) || `valor_${index}`}
+                                                            id={inputId}
+                                                            value={toText(variableExamplesByToken?.[token])}
+                                                            onChange={(event) => updateVariableExample(token, event.target.value)}
+                                                            placeholder={toText(defaultVariableExamplesByToken?.[token]) || toText(variable?.exampleValue) || `valor_${mappedIndex || token}`}
                                                             disabled={templatesBusy || !canWrite}
                                                         />
                                                     </div>
