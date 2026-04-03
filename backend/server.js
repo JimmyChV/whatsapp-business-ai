@@ -458,6 +458,7 @@ registerHttpRoutes({
     customerConsentService,
     templateWebhookEventsService,
     templateVariablesService,
+    campaignsService,
     chatCommercialStatusService,
     metaTemplatesService,
     chatAssignmentPolicyService,
