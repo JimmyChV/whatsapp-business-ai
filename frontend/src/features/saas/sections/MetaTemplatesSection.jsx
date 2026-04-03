@@ -23,6 +23,14 @@ const LANGUAGE_OPTIONS = [
     { value: 'pt', label: 'Português' }
 ];
 
+const HEADER_TYPE_OPTIONS = [
+    { value: 'none', label: 'Sin header' },
+    { value: 'text', label: 'Texto' },
+    { value: 'image', label: 'Imagen' },
+    { value: 'video', label: 'Video' },
+    { value: 'document', label: 'Documento' }
+];
+
 const EMPTY_CREATE_FORM = {
     moduleId: '',
     name: '',
@@ -30,6 +38,7 @@ const EMPTY_CREATE_FORM = {
     language: 'es',
     headerType: 'none',
     headerText: '',
+    headerMedia: null,
     bodyText: '',
     footerText: '',
     buttons: []
@@ -53,6 +62,14 @@ function createEmptyButtonRow() {
         text: '',
         value: ''
     };
+}
+
+function resolveHeaderAccept(type = '') {
+    const cleanType = toLower(type);
+    if (cleanType === 'image') return 'image/*';
+    if (cleanType === 'video') return 'video/*';
+    if (cleanType === 'document') return '.pdf,.doc,.docx,.txt,.xls,.xlsx,.ppt,.pptx';
+    return '';
 }
 
 function normalizeButtonRows(buttons = []) {
@@ -130,6 +147,19 @@ function buildInitialVariableExamples(variables = []) {
     }, {});
 }
 
+function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        if (!(file instanceof File)) {
+            reject(new Error('Archivo invalido para header.'));
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('No se pudo leer el archivo del header.'));
+        reader.readAsDataURL(file);
+    });
+}
+
 function resolveStatusMeta(status = '') {
     const cleanStatus = toLower(status);
     return STATUS_META[cleanStatus] || { label: cleanStatus || 'Desconocido', className: 'saas-meta-template-status--paused' };
@@ -173,6 +203,7 @@ function buildTemplatePayload(form = {}, { variableExamplesByIndex = {} } = {}) 
     const language = toLower(form.language || 'es') || 'es';
     const headerType = toLower(form.headerType || 'none');
     const headerText = toText(form.headerText);
+    const headerMedia = form?.headerMedia && typeof form.headerMedia === 'object' ? form.headerMedia : null;
     const bodyText = toText(form.bodyText);
     const footerText = toText(form.footerText);
     const buttons = mapButtonRowsToMeta(form.buttons);
@@ -204,6 +235,17 @@ function buildTemplatePayload(form = {}, { variableExamplesByIndex = {} } = {}) 
             };
         }
         components.unshift(header);
+    } else if (['image', 'video', 'document'].includes(headerType)) {
+        if (!toText(headerMedia?.base64)) {
+            throw new Error('Selecciona un archivo para el header multimedia.');
+        }
+        components.unshift({
+            type: 'HEADER',
+            format: headerType.toUpperCase(),
+            example: {
+                header_handle: [toText(headerMedia?.base64)]
+            }
+        });
     }
     if (footerText) {
         components.push({ type: 'FOOTER', text: footerText });
@@ -250,7 +292,10 @@ function MetaTemplatesSection(props = {}) {
     const [varCatalogError, setVarCatalogError] = useState('');
     const [variableExamplesByIndex, setVariableExamplesByIndex] = useState({});
     const [bodyCursor, setBodyCursor] = useState({ start: 0, end: 0 });
+    const [showInlineVariablePicker, setShowInlineVariablePicker] = useState(false);
+    const [expandedVariableCategories, setExpandedVariableCategories] = useState({});
     const bodyTextareaRef = useRef(null);
+    const headerMediaInputRef = useRef(null);
 
     const moduleOptions = useMemo(() => {
         return Array.isArray(waModules)
@@ -339,6 +384,19 @@ function MetaTemplatesSection(props = {}) {
         if (templateVarCatalog.length > 0 || loadingVarCatalog) return;
         loadTemplateVariablesCatalog().catch(() => null);
     }, [isMetaTemplatesSection, panelMode, templateVarCatalog.length, loadingVarCatalog, loadTemplateVariablesCatalog]);
+
+    useEffect(() => {
+        if (!Array.isArray(templateVarCategories) || templateVarCategories.length === 0) return;
+        setExpandedVariableCategories((prev) => {
+            const next = { ...prev };
+            templateVarCategories.forEach((category) => {
+                const key = toText(category?.id);
+                if (!key) return;
+                if (typeof next[key] !== 'boolean') next[key] = true;
+            });
+            return next;
+        });
+    }, [templateVarCategories]);
 
     useEffect(() => {
         if (!isMetaTemplatesSection || !settingsTenantId || typeof loadTemplates !== 'function') return;
@@ -462,6 +520,53 @@ function MetaTemplatesSection(props = {}) {
         }
     }, [loadTemplateVariablesCatalog, requestJson, templateVarCatalog.length]);
 
+    const toggleVariableCategory = useCallback((categoryId = '') => {
+        const key = toText(categoryId);
+        if (!key) return;
+        setExpandedVariableCategories((prev) => ({
+            ...prev,
+            [key]: !Boolean(prev?.[key])
+        }));
+    }, []);
+
+    const updateHeaderType = useCallback((typeRaw = '') => {
+        const nextType = toLower(typeRaw);
+        const isMediaType = ['image', 'video', 'document'].includes(nextType);
+        setCreateForm((prev) => ({
+            ...prev,
+            headerType: nextType,
+            headerText: nextType === 'text' ? prev.headerText : '',
+            headerMedia: isMediaType ? prev.headerMedia : null
+        }));
+        if (!isMediaType && headerMediaInputRef.current) {
+            headerMediaInputRef.current.value = '';
+        }
+    }, []);
+
+    const handleHeaderMediaFileChange = useCallback(async (event) => {
+        const file = event?.target?.files?.[0] || null;
+        if (!(file instanceof File)) {
+            setCreateForm((prev) => ({ ...prev, headerMedia: null }));
+            return;
+        }
+        try {
+            const base64 = await readFileAsDataUrl(file);
+            setCreateForm((prev) => ({
+                ...prev,
+                headerMedia: {
+                    name: toText(file.name),
+                    type: toText(file.type),
+                    size: Number(file.size) || 0,
+                    base64
+                }
+            }));
+        } catch (error) {
+            const message = String(error?.message || 'No se pudo leer el archivo del header.');
+            notify({ type: 'error', message });
+            setCreateForm((prev) => ({ ...prev, headerMedia: null }));
+        }
+    }, [notify]);
+
     const updateBodyCursor = useCallback((event) => {
         const target = event?.target;
         if (!target) return;
@@ -524,7 +629,11 @@ function MetaTemplatesSection(props = {}) {
     }, [createForm.bodyText, createForm.footerText, createForm.headerText, variableExamplesByIndex]);
 
     const previewButtons = useMemo(() => normalizeButtonRows(createForm.buttons).slice(0, 3), [createForm.buttons]);
-    const previewTimeLabel = useMemo(() => new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }), []);
+    const previewTimeLabel = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+    const activeHeaderType = toLower(createForm.headerType || 'none');
+    const isHeaderMediaType = ['image', 'video', 'document'].includes(activeHeaderType);
+    const headerMediaAccept = resolveHeaderAccept(activeHeaderType);
+    const bodyCharacterCount = String(createForm.bodyText || '').length;
 
     if (!isMetaTemplatesSection) {
         return null;
@@ -700,102 +809,185 @@ function MetaTemplatesSection(props = {}) {
 
                             <div className="saas-meta-template-builder">
                                 <section className="saas-meta-template-builder__form">
-                                    <div className="saas-admin-form-row saas-meta-template-builder__full-row">
-                                        <select
-                                            value={createForm.moduleId}
-                                            onChange={(event) => setCreateForm((prev) => ({ ...prev, moduleId: toText(event.target.value) }))}
-                                            disabled={templatesBusy || !canWrite}
-                                        >
-                                            <option value="">Selecciona modulo</option>
-                                            {moduleOptions.map((moduleItem) => (
-                                                <option key={`meta_template_form_module_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
-                                                    {moduleItem.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <input
-                                            value={createForm.name}
-                                            onChange={(event) => setCreateForm((prev) => ({ ...prev, name: event.target.value }))}
-                                            placeholder="Nombre (snake_case recomendado)"
-                                            disabled={templatesBusy || !canWrite}
-                                        />
+                                    <div className="saas-meta-template-field-grid saas-meta-template-field-grid--2">
+                                        <div className="saas-meta-template-field">
+                                            <label htmlFor="meta_template_form_module">Modulo</label>
+                                            <select
+                                                id="meta_template_form_module"
+                                                value={createForm.moduleId}
+                                                onChange={(event) => setCreateForm((prev) => ({ ...prev, moduleId: toText(event.target.value) }))}
+                                                disabled={templatesBusy || !canWrite}
+                                            >
+                                                <option value="">Selecciona modulo</option>
+                                                {moduleOptions.map((moduleItem) => (
+                                                    <option key={`meta_template_form_module_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
+                                                        {moduleItem.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="saas-meta-template-field">
+                                            <label htmlFor="meta_template_form_name">Nombre del template</label>
+                                            <input
+                                                id="meta_template_form_name"
+                                                value={createForm.name}
+                                                onChange={(event) => setCreateForm((prev) => ({ ...prev, name: event.target.value }))}
+                                                placeholder="Ejemplo: promo_semana_limpieza"
+                                                disabled={templatesBusy || !canWrite}
+                                            />
+                                        </div>
                                     </div>
 
-                                    <div className="saas-admin-form-row">
-                                        <select
-                                            value={createForm.category}
-                                            onChange={(event) => setCreateForm((prev) => ({ ...prev, category: toLower(event.target.value) }))}
-                                            disabled={templatesBusy || !canWrite}
-                                        >
-                                            {CATEGORY_OPTIONS.map((option) => (
-                                                <option key={`meta_template_category_${option.value}`} value={option.value}>
-                                                    {option.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <select
-                                            value={createForm.language}
-                                            onChange={(event) => {
-                                                const nextLanguage = toLower(event.target.value);
-                                                setCreateForm((prev) => ({
-                                                    ...prev,
-                                                    language: SUPPORTED_LANGUAGES.includes(nextLanguage) ? nextLanguage : 'es'
-                                                }));
-                                            }}
-                                            disabled={templatesBusy || !canWrite}
-                                        >
-                                            {LANGUAGE_OPTIONS.map((option) => (
-                                                <option key={`meta_template_language_${option.value}`} value={option.value}>
-                                                    {option.label}
-                                                </option>
-                                            ))}
-                                        </select>
+                                    <div className="saas-meta-template-field-grid saas-meta-template-field-grid--2">
+                                        <div className="saas-meta-template-field">
+                                            <label htmlFor="meta_template_category">Categoria</label>
+                                            <select
+                                                id="meta_template_category"
+                                                value={createForm.category}
+                                                onChange={(event) => setCreateForm((prev) => ({ ...prev, category: toLower(event.target.value) }))}
+                                                disabled={templatesBusy || !canWrite}
+                                            >
+                                                {CATEGORY_OPTIONS.map((option) => (
+                                                    <option key={`meta_template_category_${option.value}`} value={option.value}>
+                                                        {option.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="saas-meta-template-field">
+                                            <label htmlFor="meta_template_language">Idioma</label>
+                                            <select
+                                                id="meta_template_language"
+                                                value={createForm.language}
+                                                onChange={(event) => {
+                                                    const nextLanguage = toLower(event.target.value);
+                                                    setCreateForm((prev) => ({
+                                                        ...prev,
+                                                        language: SUPPORTED_LANGUAGES.includes(nextLanguage) ? nextLanguage : 'es'
+                                                    }));
+                                                }}
+                                                disabled={templatesBusy || !canWrite}
+                                            >
+                                                {LANGUAGE_OPTIONS.map((option) => (
+                                                    <option key={`meta_template_language_${option.value}`} value={option.value}>
+                                                        {option.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     </div>
 
-                                    <div className="saas-admin-form-row">
-                                        <select
-                                            value={createForm.headerType}
-                                            onChange={(event) => {
-                                                const nextType = toLower(event.target.value);
-                                                setCreateForm((prev) => ({
-                                                    ...prev,
-                                                    headerType: nextType,
-                                                    headerText: nextType === 'text' ? prev.headerText : ''
-                                                }));
-                                            }}
-                                            disabled={templatesBusy || !canWrite}
-                                        >
-                                            <option value="none">Sin header</option>
-                                            <option value="text">Header de texto</option>
-                                        </select>
-                                        <input
-                                            value={createForm.headerText}
-                                            onChange={(event) => setCreateForm((prev) => ({ ...prev, headerText: event.target.value }))}
-                                            placeholder="Header (opcional)"
-                                            disabled={templatesBusy || !canWrite || createForm.headerType !== 'text'}
-                                        />
+                                    <div className="saas-meta-template-field-grid saas-meta-template-field-grid--2">
+                                        <div className="saas-meta-template-field">
+                                            <label htmlFor="meta_template_header_type">Header</label>
+                                            <select
+                                                id="meta_template_header_type"
+                                                value={createForm.headerType}
+                                                onChange={(event) => updateHeaderType(event.target.value)}
+                                                disabled={templatesBusy || !canWrite}
+                                            >
+                                                {HEADER_TYPE_OPTIONS.map((option) => (
+                                                    <option key={`meta_template_header_type_${option.value}`} value={option.value}>
+                                                        {option.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="saas-meta-template-field">
+                                            {activeHeaderType === 'text' && (
+                                                <>
+                                                    <label htmlFor="meta_template_header_text">Texto del header</label>
+                                                    <input
+                                                        id="meta_template_header_text"
+                                                        value={createForm.headerText}
+                                                        onChange={(event) => setCreateForm((prev) => ({ ...prev, headerText: event.target.value }))}
+                                                        placeholder="Header en negrita"
+                                                        disabled={templatesBusy || !canWrite}
+                                                    />
+                                                </>
+                                            )}
+                                            {isHeaderMediaType && (
+                                                <>
+                                                    <label htmlFor="meta_template_header_media">Archivo del header</label>
+                                                    <div className="saas-meta-template-upload-row">
+                                                        <input
+                                                            ref={headerMediaInputRef}
+                                                            id="meta_template_header_media"
+                                                            type="file"
+                                                            accept={headerMediaAccept}
+                                                            onChange={(event) => {
+                                                                handleHeaderMediaFileChange(event).catch(() => null);
+                                                            }}
+                                                            disabled={templatesBusy || !canWrite}
+                                                        />
+                                                        {createForm?.headerMedia?.name && (
+                                                            <small className="saas-meta-template-upload-file">{createForm.headerMedia.name}</small>
+                                                        )}
+                                                    </div>
+                                                </>
+                                            )}
+                                            {!isHeaderMediaType && activeHeaderType !== 'text' && (
+                                                <small className="saas-meta-template-help">Puedes usar header de texto o multimedia.</small>
+                                            )}
+                                        </div>
                                     </div>
 
-                                    <div className="saas-admin-form-row">
+                                    <div className="saas-meta-template-field">
+                                        <div className="saas-meta-template-field-heading">
+                                            <label htmlFor="meta_template_body_text">Body del template</label>
+                                            <button
+                                                type="button"
+                                                className="saas-meta-template-inline-var-toggle"
+                                                disabled={templatesBusy || !canWrite}
+                                                onClick={() => setShowInlineVariablePicker((prev) => !prev)}
+                                            >
+                                                Insertar variable
+                                            </button>
+                                        </div>
                                         <textarea
+                                            id="meta_template_body_text"
                                             ref={bodyTextareaRef}
+                                            className="saas-meta-template-body-textarea"
                                             value={createForm.bodyText}
                                             onChange={(event) => setCreateForm((prev) => ({ ...prev, bodyText: event.target.value }))}
                                             onSelect={updateBodyCursor}
                                             onClick={updateBodyCursor}
                                             onKeyUp={updateBodyCursor}
-                                            placeholder="Body del template (obligatorio)"
+                                            placeholder="Escribe el contenido principal del template..."
                                             rows={8}
                                             disabled={templatesBusy || !canWrite}
                                         />
+                                        <div className="saas-meta-template-counter">{bodyCharacterCount} caracteres</div>
+                                        {showInlineVariablePicker && (
+                                            <div className="saas-meta-template-inline-picker">
+                                                {templateVarCategories.map((category) => (
+                                                    <div className="saas-meta-template-inline-picker-group" key={`inline_var_group_${category.id}`}>
+                                                        <strong>{category.label}</strong>
+                                                        <div className="saas-meta-template-inline-picker-list">
+                                                            {(Array.isArray(category.variables) ? category.variables : []).map((variable) => (
+                                                                <button
+                                                                    type="button"
+                                                                    key={`inline_var_${category.id}_${variable.key}`}
+                                                                    disabled={templatesBusy || !canWrite}
+                                                                    onClick={() => insertVariableAtBodyCursor(variable)}
+                                                                >
+                                                                    {`{{${Number(variable?.placeholderIndex)}}}`} {toText(variable?.label || variable?.key)}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
 
-                                    <div className="saas-admin-form-row saas-meta-template-builder__full-row">
-                                        <textarea
+                                    <div className="saas-meta-template-field">
+                                        <label htmlFor="meta_template_footer_text">Footer (opcional)</label>
+                                        <input
+                                            id="meta_template_footer_text"
                                             value={createForm.footerText}
                                             onChange={(event) => setCreateForm((prev) => ({ ...prev, footerText: event.target.value }))}
-                                            placeholder="Footer (opcional)"
-                                            rows={2}
+                                            placeholder="Texto corto al pie del template"
                                             disabled={templatesBusy || !canWrite}
                                         />
                                     </div>
@@ -805,57 +997,67 @@ function MetaTemplatesSection(props = {}) {
                                         <div className="saas-meta-template-buttons-list">
                                             {(Array.isArray(createForm.buttons) ? createForm.buttons : []).map((buttonRow) => (
                                                 <div className="saas-meta-template-button-row" key={buttonRow.id}>
-                                                    <select
-                                                        value={buttonRow.type || 'quick_reply'}
-                                                        onChange={(event) => {
-                                                            const nextType = toLower(event.target.value);
-                                                            setCreateForm((prev) => ({
-                                                                ...prev,
-                                                                buttons: (Array.isArray(prev.buttons) ? prev.buttons : []).map((row) => (
-                                                                    row.id === buttonRow.id
-                                                                        ? { ...row, type: nextType, value: ['url', 'phone', 'phone_number'].includes(nextType) ? row.value : '' }
-                                                                        : row
-                                                                ))
-                                                            }));
-                                                        }}
-                                                        disabled={templatesBusy || !canWrite}
-                                                    >
-                                                        <option value="quick_reply">Quick reply</option>
-                                                        <option value="url">URL</option>
-                                                        <option value="phone">Telefono</option>
-                                                    </select>
-                                                    <input
-                                                        value={buttonRow.text || ''}
-                                                        onChange={(event) => {
-                                                            const nextValue = event.target.value;
-                                                            setCreateForm((prev) => ({
-                                                                ...prev,
-                                                                buttons: (Array.isArray(prev.buttons) ? prev.buttons : []).map((row) => (
-                                                                    row.id === buttonRow.id ? { ...row, text: nextValue } : row
-                                                                ))
-                                                            }));
-                                                        }}
-                                                        placeholder="Texto del boton"
-                                                        disabled={templatesBusy || !canWrite}
-                                                    />
-                                                    {(buttonRow.type === 'url' || buttonRow.type === 'phone' || buttonRow.type === 'phone_number') && (
+                                                    <div className="saas-meta-template-field">
+                                                        <label>Tipo</label>
+                                                        <select
+                                                            value={buttonRow.type || 'quick_reply'}
+                                                            onChange={(event) => {
+                                                                const nextType = toLower(event.target.value);
+                                                                setCreateForm((prev) => ({
+                                                                    ...prev,
+                                                                    buttons: (Array.isArray(prev.buttons) ? prev.buttons : []).map((row) => (
+                                                                        row.id === buttonRow.id
+                                                                            ? { ...row, type: nextType, value: ['url', 'phone', 'phone_number'].includes(nextType) ? row.value : '' }
+                                                                            : row
+                                                                    ))
+                                                                }));
+                                                            }}
+                                                            disabled={templatesBusy || !canWrite}
+                                                        >
+                                                            <option value="quick_reply">Quick reply</option>
+                                                            <option value="url">URL</option>
+                                                            <option value="phone">Telefono</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="saas-meta-template-field">
+                                                        <label>Texto</label>
                                                         <input
-                                                            value={buttonRow.value || ''}
+                                                            value={buttonRow.text || ''}
                                                             onChange={(event) => {
                                                                 const nextValue = event.target.value;
                                                                 setCreateForm((prev) => ({
                                                                     ...prev,
                                                                     buttons: (Array.isArray(prev.buttons) ? prev.buttons : []).map((row) => (
-                                                                        row.id === buttonRow.id ? { ...row, value: nextValue } : row
+                                                                        row.id === buttonRow.id ? { ...row, text: nextValue } : row
                                                                     ))
                                                                 }));
                                                             }}
-                                                            placeholder={buttonRow.type === 'url' ? 'https://...' : '+51999999999'}
+                                                            placeholder="Texto del boton"
                                                             disabled={templatesBusy || !canWrite}
                                                         />
+                                                    </div>
+                                                    {(buttonRow.type === 'url' || buttonRow.type === 'phone' || buttonRow.type === 'phone_number') && (
+                                                        <div className="saas-meta-template-field">
+                                                            <label>Destino</label>
+                                                            <input
+                                                                value={buttonRow.value || ''}
+                                                                onChange={(event) => {
+                                                                    const nextValue = event.target.value;
+                                                                    setCreateForm((prev) => ({
+                                                                        ...prev,
+                                                                        buttons: (Array.isArray(prev.buttons) ? prev.buttons : []).map((row) => (
+                                                                            row.id === buttonRow.id ? { ...row, value: nextValue } : row
+                                                                        ))
+                                                                    }));
+                                                                }}
+                                                                placeholder={buttonRow.type === 'url' ? 'https://...' : '+51999999999'}
+                                                                disabled={templatesBusy || !canWrite}
+                                                            />
+                                                        </div>
                                                     )}
                                                     <button
                                                         type="button"
+                                                        className="saas-meta-template-button-remove"
                                                         disabled={templatesBusy || !canWrite}
                                                         onClick={() => {
                                                             setCreateForm((prev) => ({
@@ -901,6 +1103,7 @@ function MetaTemplatesSection(props = {}) {
                                             disabled={templatesBusy}
                                             onClick={() => {
                                                 setPanelMode('view');
+                                                setShowInlineVariablePicker(false);
                                                 setCreateForm(buildInitialForm(createForm.moduleId || moduleOptions[0]?.moduleId || ''));
                                             }}
                                         >
@@ -911,33 +1114,46 @@ function MetaTemplatesSection(props = {}) {
 
                                 <section className="saas-meta-template-builder__variables">
                                     <div className="saas-admin-related-block saas-meta-template-pane">
-                                        <h4>Variables disponibles</h4>
+                                        <h4>Variables por categoria</h4>
                                         {loadingVarCatalog && <small className="saas-meta-template-help">Cargando catalogo de variables...</small>}
                                         {varCatalogError && <small className="saas-meta-template-error">{varCatalogError}</small>}
-                                        {!loadingVarCatalog && !varCatalogError && templateVarCategories.map((category) => (
-                                            <div key={`template_var_category_${category.id}`} className="saas-meta-template-var-group">
-                                                <strong className="saas-meta-template-var-group-title">{category.label}</strong>
-                                                <div className="saas-meta-template-var-list">
-                                                    {(Array.isArray(category.variables) ? category.variables : []).map((variable) => (
-                                                        <div className="saas-meta-template-var-item" key={`template_var_${category.id}_${variable.key}`}>
-                                                            <div className="saas-meta-template-var-item-main">
-                                                                <span className="saas-meta-template-var-token">{`{{${Number(variable?.placeholderIndex)}}}`}</span>
-                                                                <strong>{toText(variable?.label || variable?.key)}</strong>
-                                                                <small>{toText(variable?.description)}</small>
-                                                            </div>
-                                                            <button
-                                                                type="button"
-                                                                className="saas-meta-template-var-insert"
-                                                                disabled={templatesBusy || !canWrite}
-                                                                onClick={() => insertVariableAtBodyCursor(variable)}
-                                                            >
-                                                                Insertar
-                                                            </button>
+                                        {!loadingVarCatalog && !varCatalogError && templateVarCategories.map((category) => {
+                                            const categoryKey = toText(category?.id);
+                                            const isExpanded = Boolean(expandedVariableCategories?.[categoryKey]);
+                                            return (
+                                                <div key={`template_var_category_${category.id}`} className="saas-meta-template-var-group">
+                                                    <button
+                                                        type="button"
+                                                        className="saas-meta-template-accordion-trigger"
+                                                        onClick={() => toggleVariableCategory(categoryKey)}
+                                                    >
+                                                        <span>{category.label}</span>
+                                                        <span>{isExpanded ? '-' : '+'}</span>
+                                                    </button>
+                                                    {isExpanded && (
+                                                        <div className="saas-meta-template-var-list">
+                                                            {(Array.isArray(category.variables) ? category.variables : []).map((variable) => (
+                                                                <div className="saas-meta-template-var-item" key={`template_var_${category.id}_${variable.key}`}>
+                                                                    <div className="saas-meta-template-var-item-main">
+                                                                        <span className="saas-meta-template-var-token">{`{{${Number(variable?.placeholderIndex)}}}`}</span>
+                                                                        <strong>{toText(variable?.label || variable?.key)}</strong>
+                                                                        <small>{toText(variable?.description)}</small>
+                                                                    </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="saas-meta-template-var-insert"
+                                                                        disabled={templatesBusy || !canWrite}
+                                                                        onClick={() => insertVariableAtBodyCursor(variable)}
+                                                                    >
+                                                                        +
+                                                                    </button>
+                                                                </div>
+                                                            ))}
                                                         </div>
-                                                    ))}
+                                                    )}
                                                 </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
 
                                     <div className="saas-admin-related-block saas-meta-template-pane">
@@ -972,7 +1188,13 @@ function MetaTemplatesSection(props = {}) {
                                     <div className="saas-wa-preview">
                                         <div className="saas-wa-preview__chat-bg">
                                             <article className="saas-wa-preview__bubble">
-                                                {createForm.headerType === 'text' && Boolean(createForm.headerText) && (
+                                                {isHeaderMediaType && (
+                                                    <div className="saas-wa-preview__media-placeholder">
+                                                        <strong>{activeHeaderType === 'image' ? 'Imagen' : activeHeaderType === 'video' ? 'Video' : 'Documento'}</strong>
+                                                        <small>{toText(createForm?.headerMedia?.name) || 'Sin archivo cargado'}</small>
+                                                    </div>
+                                                )}
+                                                {activeHeaderType === 'text' && Boolean(createForm.headerText) && (
                                                     <div className="saas-wa-preview__header">{previewText.header || '-'}</div>
                                                 )}
                                                 <div className="saas-wa-preview__body">{previewText.body || 'Escribe el contenido del template...'}</div>
@@ -988,7 +1210,10 @@ function MetaTemplatesSection(props = {}) {
                                                         ))}
                                                     </div>
                                                 )}
-                                                <div className="saas-wa-preview__meta">{previewTimeLabel}</div>
+                                                <div className="saas-wa-preview__meta">
+                                                    <span>{previewTimeLabel}</span>
+                                                    <span className="saas-wa-preview__tick">{'\u2713\u2713'}</span>
+                                                </div>
                                             </article>
                                         </div>
                                     </div>
