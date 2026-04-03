@@ -335,9 +335,13 @@ class WhatsAppCloudClient extends EventEmitter {
                 includeAppSecretProof: includeProof,
                 query
             });
+            const requestHeaders = headers && typeof headers === 'object' ? { ...headers } : {};
+            if (systemUserToken) {
+                requestHeaders['Authorization'] = `Bearer ${systemUserToken}`;
+            }
             const response = await fetch(url, {
                 method,
-                headers: headers && typeof headers === 'object' ? headers : undefined,
+                headers: Object.keys(requestHeaders).length > 0 ? requestHeaders : undefined,
                 body
             });
             const contentType = String(response.headers.get('content-type') || '').toLowerCase();
