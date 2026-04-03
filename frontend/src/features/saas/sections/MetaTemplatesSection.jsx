@@ -298,15 +298,13 @@ function buildTemplatePayload(form = {}, {
     if (!name) throw new Error('Nombre del template requerido.');
     if (!bodyText) throw new Error('Body del template requerido.');
 
-    const {
-        orderedTokens,
-        originalToSequential,
-        sequentialToOriginal
-    } = buildSequentialPlaceholderMap(headerText, bodyText, footerText);
+    const headerVariableMap = buildSequentialPlaceholderMap(headerText);
+    const bodyVariableMap = buildSequentialPlaceholderMap(bodyText);
+    const footerVariableMap = buildSequentialPlaceholderMap(footerText);
 
-    const normalizedHeaderText = applySequentialPlaceholderMap(headerText, originalToSequential);
-    const normalizedBodyText = applySequentialPlaceholderMap(bodyText, originalToSequential);
-    const normalizedFooterText = applySequentialPlaceholderMap(footerText, originalToSequential);
+    const normalizedHeaderText = applySequentialPlaceholderMap(headerText, headerVariableMap.originalToSequential);
+    const normalizedBodyText = applySequentialPlaceholderMap(bodyText, bodyVariableMap.originalToSequential);
+    const normalizedFooterText = applySequentialPlaceholderMap(footerText, footerVariableMap.originalToSequential);
 
     const resolveExampleForToken = (originalToken, sequentialIndex) => {
         const normalizedToken = normalizeTemplateToken(originalToken);
@@ -333,7 +331,7 @@ function buildTemplatePayload(form = {}, {
     const bodyIndexes = extractPlaceholderIndexes(normalizedBodyText);
     if (bodyIndexes.length > 0) {
         const values = bodyIndexes.map((sequentialIndex) => {
-            const originalToken = toText(sequentialToOriginal?.[sequentialIndex]);
+            const originalToken = toText(bodyVariableMap?.sequentialToOriginal?.[sequentialIndex]);
             return resolveExampleForToken(originalToken, sequentialIndex);
         });
         components[0].example = {
@@ -347,7 +345,7 @@ function buildTemplatePayload(form = {}, {
         if (headerIndexes.length > 0) {
             header.example = {
                 header_text: headerIndexes.map((sequentialIndex) => {
-                    const originalToken = toText(sequentialToOriginal?.[sequentialIndex]);
+                    const originalToken = toText(headerVariableMap?.sequentialToOriginal?.[sequentialIndex]);
                     return resolveExampleForToken(originalToken, sequentialIndex);
                 })
             };
@@ -380,9 +378,9 @@ function buildTemplatePayload(form = {}, {
             components
         },
         variableIndexMap: {
-            orderedTokens,
-            originalToSequential,
-            sequentialToOriginal
+            header: headerVariableMap,
+            body: bodyVariableMap,
+            footer: footerVariableMap
         }
     };
 }
@@ -422,7 +420,11 @@ function MetaTemplatesSection(props = {}) {
     const [previewMode, setPreviewMode] = useState('delivery');
     const bodyTextareaRef = useRef(null);
     const headerMediaInputRef = useRef(null);
-    const lastVariableIndexMapRef = useRef({ originalToSequential: {}, sequentialToOriginal: {} });
+    const lastVariableIndexMapRef = useRef({
+        header: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },
+        body: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },
+        footer: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} }
+    });
 
     const moduleOptions = useMemo(() => {
         return Array.isArray(waModules)
@@ -601,7 +603,11 @@ function MetaTemplatesSection(props = {}) {
             variableExamplesByToken,
             defaultExampleByToken: defaultVariableExamplesByToken
         });
-        lastVariableIndexMapRef.current = variableIndexMap || { originalToSequential: {}, sequentialToOriginal: {} };
+        lastVariableIndexMapRef.current = variableIndexMap || {
+            header: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },
+            body: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },
+            footer: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} }
+        };
         await runActionSafe('Template Meta creado', async () => {
             await createTemplate({
                 moduleId,
@@ -867,16 +873,20 @@ function MetaTemplatesSection(props = {}) {
         } catch (error) {
             return {
                 metaPayload: null,
-                variableIndexMap: buildSequentialPlaceholderMap(createForm.headerText, createForm.bodyText, createForm.footerText),
+                variableIndexMap: {
+                    header: buildSequentialPlaceholderMap(createForm.headerText),
+                    body: buildSequentialPlaceholderMap(createForm.bodyText),
+                    footer: buildSequentialPlaceholderMap(createForm.footerText)
+                },
                 error: String(error?.message || error || 'Payload invalido')
             };
         }
     }, [createForm, variableExamplesByToken, defaultVariableExamplesByToken]);
 
     const currentVariableIndexMap = approvalPayloadBuild.variableIndexMap || {
-        orderedTokens: [],
-        originalToSequential: {},
-        sequentialToOriginal: {}
+        header: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },
+        body: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },
+        footer: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} }
     };
     const approvalPayloadSummary = useMemo(() => ({
         HEADER: isHeaderMediaType
@@ -889,16 +899,32 @@ function MetaTemplatesSection(props = {}) {
                 ? {
                     type: 'TEXT',
                     text: previewText.header || '',
-                    placeholders: extractPlaceholderIndexes(applySequentialPlaceholderMap(createForm.headerText, currentVariableIndexMap.originalToSequential))
+                    placeholders: extractPlaceholderIndexes(
+                        applySequentialPlaceholderMap(
+                            createForm.headerText,
+                            currentVariableIndexMap?.header?.originalToSequential || {}
+                        )
+                    )
                 }
                 : { type: 'NONE' },
         BODY: {
             textLength: String(createForm.bodyText || '').length,
-            placeholders: extractPlaceholderIndexes(applySequentialPlaceholderMap(createForm.bodyText, currentVariableIndexMap.originalToSequential)),
+            placeholders: extractPlaceholderIndexes(
+                applySequentialPlaceholderMap(
+                    createForm.bodyText,
+                    currentVariableIndexMap?.body?.originalToSequential || {}
+                )
+            ),
             text: previewText.body || ''
         },
         FOOTER: {
             textLength: String(createForm.footerText || '').length,
+            placeholders: extractPlaceholderIndexes(
+                applySequentialPlaceholderMap(
+                    createForm.footerText,
+                    currentVariableIndexMap?.footer?.originalToSequential || {}
+                )
+            ),
             text: previewText.footer || ''
         },
         BUTTONS: previewButtons.map((buttonRow) => ({
@@ -906,8 +932,16 @@ function MetaTemplatesSection(props = {}) {
             text: toText(buttonRow?.text),
             value: toText(buttonRow?.value) || null
         })),
-        VARIABLE_ORDER: currentVariableIndexMap.orderedTokens,
-        VARIABLE_REMAP: currentVariableIndexMap.originalToSequential,
+        VARIABLE_ORDER_BY_COMPONENT: {
+            header: currentVariableIndexMap?.header?.orderedTokens || [],
+            body: currentVariableIndexMap?.body?.orderedTokens || [],
+            footer: currentVariableIndexMap?.footer?.orderedTokens || []
+        },
+        VARIABLE_REMAP_BY_COMPONENT: {
+            header: currentVariableIndexMap?.header?.originalToSequential || {},
+            body: currentVariableIndexMap?.body?.originalToSequential || {},
+            footer: currentVariableIndexMap?.footer?.originalToSequential || {}
+        },
         META_PAYLOAD: approvalPayloadBuild.metaPayload,
         ERROR: approvalPayloadBuild.error
     }), [
@@ -916,8 +950,12 @@ function MetaTemplatesSection(props = {}) {
         createForm?.footerText,
         createForm?.headerMedia?.name,
         createForm?.headerText,
-        currentVariableIndexMap.orderedTokens,
-        currentVariableIndexMap.originalToSequential,
+        currentVariableIndexMap?.body?.orderedTokens,
+        currentVariableIndexMap?.body?.originalToSequential,
+        currentVariableIndexMap?.footer?.orderedTokens,
+        currentVariableIndexMap?.footer?.originalToSequential,
+        currentVariableIndexMap?.header?.orderedTokens,
+        currentVariableIndexMap?.header?.originalToSequential,
         isHeaderMediaType,
         approvalPayloadBuild.error,
         approvalPayloadBuild.metaPayload,
@@ -1446,8 +1484,16 @@ function MetaTemplatesSection(props = {}) {
                                                 const token = normalizeTemplateToken(variable?.token || variable?.key);
                                                 if (!token) return null;
                                                 const inputId = `var_example_${token.replace(/[^a-z0-9_]+/gi, '_')}`;
-                                                const mappedIndex = Number(currentVariableIndexMap?.originalToSequential?.[token]);
-                                                const mappedLabel = Number.isFinite(mappedIndex) && mappedIndex > 0 ? `Meta {{${mappedIndex}}}` : '';
+                                                const headerIndex = Number(currentVariableIndexMap?.header?.originalToSequential?.[token]);
+                                                const bodyIndex = Number(currentVariableIndexMap?.body?.originalToSequential?.[token]);
+                                                const footerIndex = Number(currentVariableIndexMap?.footer?.originalToSequential?.[token]);
+                                                const mappedSegments = [];
+                                                if (Number.isFinite(headerIndex) && headerIndex > 0) mappedSegments.push(`Header {{${headerIndex}}}`);
+                                                if (Number.isFinite(bodyIndex) && bodyIndex > 0) mappedSegments.push(`Body {{${bodyIndex}}}`);
+                                                if (Number.isFinite(footerIndex) && footerIndex > 0) mappedSegments.push(`Footer {{${footerIndex}}}`);
+                                                const mappedLabel = mappedSegments.length > 0 ? mappedSegments.join(' | ') : '';
+                                                const firstMappedIndex = [headerIndex, bodyIndex, footerIndex]
+                                                    .find((value) => Number.isFinite(value) && value > 0);
                                                 return (
                                                     <div className="saas-meta-template-example-row" key={inputId}>
                                                         <label htmlFor={inputId}>
@@ -1457,7 +1503,7 @@ function MetaTemplatesSection(props = {}) {
                                                             id={inputId}
                                                             value={toText(variableExamplesByToken?.[token])}
                                                             onChange={(event) => updateVariableExample(token, event.target.value)}
-                                                            placeholder={toText(defaultVariableExamplesByToken?.[token]) || toText(variable?.exampleValue) || `valor_${mappedIndex || token}`}
+                                                            placeholder={toText(defaultVariableExamplesByToken?.[token]) || toText(variable?.exampleValue) || `valor_${firstMappedIndex || token}`}
                                                             disabled={templatesBusy || !canWrite}
                                                         />
                                                     </div>
