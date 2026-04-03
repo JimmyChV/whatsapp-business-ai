@@ -20,6 +20,9 @@ const saasControlService = require('../../tenant/services/tenant-control.service
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
 const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
 const metaTemplatesService = require('../../operations/services/meta-templates.service');
+const customerConsentService = require('../../operations/services/customer-consent.service');
+const chatOriginService = require('../../operations/services/chat-origin.service');
+const templateWebhookEventsService = require('../../operations/services/template-webhook-events.service');
 const chatAssignmentRouterService = require('../../operations/services/chat-assignment-router.service');
 const chatAssignmentPolicyService = require('../../operations/services/chat-assignment-policy.service');
 const auditLogService = require('../../security/services/audit-log.service');
@@ -118,6 +121,7 @@ const { createSocketQuickRepliesService } = require('./socket-quick-replies.serv
 const { createSocketMessageDeliveryService } = require('./socket-message-delivery.service');
 const { createSocketCatalogDeliveryService } = require('./socket-catalog-delivery.service');
 const { createSocketQuoteDeliveryService } = require('./socket-quote-delivery.service');
+const { createMessageDeliveryConsentPolicyService } = require('./message-delivery-consent-policy.service');
 const { createSocketAiAssistantService } = require('./socket-ai-assistant.service');
 const { createSocketProfileContactService } = require('./socket-profile-contact.service');
 const { createSocketBusinessDataService } = require('./socket-business-data.service');
@@ -243,16 +247,6 @@ const resolveSocketModuleContext = createSocketModuleContextResolver({
     waModuleService
 });
 
-let templateWebhookEventsService = null;
-try {
-    // Optional dependency while template-webhook service rolls out by phases.
-    // If missing, webhook persistence is skipped but status reconciliation still runs.
-    // eslint-disable-next-line global-require
-    templateWebhookEventsService = require('../../operations/services/template-webhook-events.service');
-} catch (_) {
-    templateWebhookEventsService = null;
-}
-
 class SocketManager {
     constructor(io, deps = {}) {
         this.io = io;
@@ -363,6 +357,10 @@ class SocketManager {
             buildSocketAgentMeta,
             sanitizeAgentMeta,
             rememberOutgoingAgentMeta
+        });
+        this.messageDeliveryConsentPolicyService = createMessageDeliveryConsentPolicyService({
+            customerService,
+            customerConsentService
         });
         this.quoteDeliveryService = createSocketQuoteDeliveryService({
             waClient,
@@ -598,6 +596,25 @@ class SocketManager {
             previousStatus,
             changed: Boolean(result?.changed),
             source: String(source || 'socket').trim().toLowerCase() || 'socket',
+            generatedAt: new Date().toISOString()
+        });
+    }
+
+    emitMetaTemplateStatusUpdated({
+        tenantId = 'default',
+        scopeModuleId = '',
+        event = null,
+        source = 'cloud_webhook'
+    } = {}) {
+        const cleanTenantId = String(tenantId || 'default').trim() || 'default';
+        const cleanScopeModuleId = String(scopeModuleId || event?.scopeModuleId || '').trim().toLowerCase();
+        const normalizedEvent = event && typeof event === 'object' ? event : null;
+        if (!normalizedEvent) return;
+        this.emitToTenant(cleanTenantId, 'meta_template_status_updated', {
+            tenantId: cleanTenantId,
+            scopeModuleId: cleanScopeModuleId || '',
+            event: normalizedEvent,
+            source: String(source || 'cloud_webhook').trim().toLowerCase() || 'cloud_webhook',
             generatedAt: new Date().toISOString()
         });
     }
@@ -1336,6 +1353,7 @@ class SocketManager {
                 authContext,
                 guardRateLimit,
                 transportOrchestrator,
+                checkOutboundConsent: (...args) => this.messageDeliveryConsentPolicyService.checkOutboundConsent(...args),
                 isFeatureEnabledForTenant: this.isFeatureEnabledForTenant.bind(this),
                 resolveScopedSendTarget: (...args) => messageDeliveryRuntime.resolveScopedSendTarget(...args),
                 emitRealtimeOutgoingMessage: (...args) => messageDeliveryRuntime.emitRealtimeOutgoingMessage(...args),
@@ -1347,6 +1365,7 @@ class SocketManager {
                 authContext,
                 guardRateLimit,
                 transportOrchestrator,
+                checkOutboundConsent: (...args) => this.messageDeliveryConsentPolicyService.checkOutboundConsent(...args),
                 resolveScopedSendTarget: (...args) => messageDeliveryRuntime.resolveScopedSendTarget(...args),
                 emitRealtimeOutgoingMessage: (...args) => messageDeliveryRuntime.emitRealtimeOutgoingMessage(...args),
                 emitCommercialStatusUpdated: (...args) => this.emitCommercialStatusUpdated(...args),
@@ -1682,6 +1701,7 @@ class SocketManager {
             conversationOpsService,
             chatAssignmentRouterService,
             chatCommercialStatusService,
+            chatOriginService,
             emitToRuntimeContext: this.emitToRuntimeContext.bind(this),
             emitCommercialStatusUpdated: (...args) => this.emitCommercialStatusUpdated(...args),
             getWaCapabilities: this.getWaCapabilities.bind(this),
@@ -1711,7 +1731,6 @@ class SocketManager {
             extractLocationInfo
         });
         waEventsBridge.registerWaProviderEvents();
-
         waClient.on('template_webhook_event', async (event = {}) => {
             try {
                 const tenantId = String(

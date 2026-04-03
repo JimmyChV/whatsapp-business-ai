@@ -1,4 +1,9 @@
-﻿function ensureAuthenticated(req, res, authService) {
+const {
+    getStorageDriver,
+    queryPostgres
+} = require('../../../config/persistence-runtime');
+
+function ensureAuthenticated(req, res, authService) {
     if (authService.isAuthEnabled() && !req?.authContext?.isAuthenticated) {
         res.status(401).json({ ok: false, error: 'No autenticado.' });
         return false;
@@ -26,10 +31,23 @@ function isPlainObject(value = null) {
     return value && typeof value === 'object' && !Array.isArray(value);
 }
 
+function toSafeObject(value = null) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function normalizePreferredLanguage(value = '') {
+    const normalized = toLower(value || 'es').replace(/[^a-z_-]/g, '');
+    if (!normalized) return 'es';
+    return normalized.slice(0, 16);
+}
+
 function registerOperationsHttpRoutes({
     app,
     authService,
     auditLogService,
+    customerService,
+    customerConsentService,
+    templateWebhookEventsService,
     conversationOpsService,
     chatCommercialStatusService,
     metaTemplatesService,
@@ -109,6 +127,164 @@ function registerOperationsHttpRoutes({
         }
         return { ok: true, role };
     }
+    const consentApi = customerConsentService && typeof customerConsentService === 'object'
+        ? customerConsentService
+        : {};
+    const grantConsent = typeof consentApi.grantConsent === 'function'
+        ? consentApi.grantConsent.bind(consentApi)
+        : async () => {
+            throw new Error('Servicio de consentimiento no disponible.');
+        };
+    const revokeConsent = typeof consentApi.revokeConsent === 'function'
+        ? consentApi.revokeConsent.bind(consentApi)
+        : async () => {
+            throw new Error('Servicio de consentimiento no disponible.');
+        };
+    const templateWebhookEventsApi = templateWebhookEventsService && typeof templateWebhookEventsService === 'object'
+        ? templateWebhookEventsService
+        : {};
+    const listTemplateWebhookEvents = typeof templateWebhookEventsApi.listTemplateWebhookEvents === 'function'
+        ? templateWebhookEventsApi.listTemplateWebhookEvents.bind(templateWebhookEventsApi)
+        : async () => ({ items: [], total: 0, limit: 0, offset: 0 });
+
+    app.patch('/api/tenant/customers/:customerId/consent', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsWriteAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const customerId = String(req.params?.customerId || '').trim();
+            if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
+
+            const consentType = toLower(req.body?.consentType || 'marketing') || 'marketing';
+            const statusRaw = toLower(req.body?.status || '');
+            const source = toLower(req.body?.source || 'manual') || 'manual';
+            const proofPayload = toSafeObject(req.body?.proofPayload);
+            const actorUserId = resolveActorUserId(req);
+
+            let result = null;
+            if (['granted', 'opted_in'].includes(statusRaw)) {
+                result = await grantConsent(tenantId, {
+                    customerId,
+                    consentType,
+                    source,
+                    proofPayload: {
+                        ...proofPayload,
+                        actorUserId
+                    }
+                });
+            } else if (['revoked', 'opted_out'].includes(statusRaw)) {
+                result = await revokeConsent(tenantId, {
+                    customerId,
+                    consentType,
+                    source,
+                    proofPayload: {
+                        ...proofPayload,
+                        actorUserId
+                    }
+                });
+            } else {
+                return res.status(400).json({ ok: false, error: 'status invalido. Usa granted/revoked (o opted_in/opted_out).' });
+            }
+
+            return res.json({
+                ok: true,
+                tenantId,
+                customerId,
+                consent: result
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el consentimiento.') });
+        }
+    });
+
+    app.patch('/api/tenant/customers/:customerId/language', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsWriteAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const customerId = String(req.params?.customerId || '').trim();
+            if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
+
+            const preferredLanguage = normalizePreferredLanguage(req.body?.preferredLanguage || 'es');
+
+            if (getStorageDriver() === 'postgres') {
+                const result = await queryPostgres(
+                    `UPDATE tenant_customers
+                        SET preferred_language = $3,
+                            updated_at = NOW()
+                      WHERE tenant_id = $1
+                        AND customer_id = $2
+                    RETURNING customer_id, preferred_language`,
+                    [tenantId, customerId, preferredLanguage]
+                );
+                const row = Array.isArray(result?.rows) ? result.rows[0] : null;
+                if (!row) return res.status(404).json({ ok: false, error: 'Cliente no encontrado.' });
+                return res.json({
+                    ok: true,
+                    tenantId,
+                    customerId: String(row.customer_id || customerId),
+                    preferredLanguage: String(row.preferred_language || preferredLanguage)
+                });
+            }
+
+            const updateResult = await customerService.updateCustomer(tenantId, customerId, {
+                metadata: {
+                    preferredLanguage
+                }
+            });
+
+            return res.json({
+                ok: true,
+                tenantId,
+                customerId,
+                preferredLanguage,
+                customer: updateResult?.item || null
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el idioma preferido.') });
+        }
+    });
+
+    app.get('/api/tenant/template-webhook-events', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const templateName = toText(req.query?.templateName || '');
+            const eventType = toLower(req.query?.eventType || '');
+            const limit = Number(req.query?.limit || 50);
+            const offset = Number(req.query?.offset || 0);
+
+            const result = await listTemplateWebhookEvents(tenantId, {
+                templateName,
+                eventType,
+                limit,
+                offset
+            });
+
+            return res.json({
+                ok: true,
+                tenantId,
+                templateName: templateName || null,
+                eventType: eventType || null,
+                ...result
+            });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo listar eventos webhook de templates.') });
+        }
+    });
 
     app.get('/api/tenant/chats/:chatId/events', async (req, res) => {
         try {

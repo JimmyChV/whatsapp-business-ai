@@ -1,8 +1,26 @@
-import React from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 
 function resolveCustomerId(value = null) {
     if (!value || typeof value !== 'object') return '';
     return String(value.customerId || value.customer_id || value.id || '').trim();
+}
+
+function normalizeMarketingConsentStatus(customer = null) {
+    if (!customer || typeof customer !== 'object') return 'unknown';
+    const direct = String(customer.marketingOptInStatus || customer.marketing_opt_in_status || '').trim().toLowerCase();
+    const fromMetadata = String(customer?.metadata?.marketingOptInStatus || '').trim().toLowerCase();
+    const normalized = direct || fromMetadata;
+    if (normalized === 'opted_in' || normalized === 'opted_out') return normalized;
+    return 'unknown';
+}
+
+function normalizePreferredLanguage(customer = null) {
+    if (!customer || typeof customer !== 'object') return 'es';
+    const direct = String(customer.preferredLanguage || customer.preferred_language || '').trim().toLowerCase();
+    const fromMetadata = String(customer?.metadata?.preferredLanguage || '').trim().toLowerCase();
+    const normalized = direct || fromMetadata;
+    if (normalized === 'en' || normalized === 'pt') return normalized;
+    return 'es';
 }
 
 function CustomersSection(props = {}) {
@@ -37,6 +55,70 @@ function CustomersSection(props = {}) {
     customerCsvText,
     setCustomerCsvText
     } = context;
+    const [consentDraftByCustomer, setConsentDraftByCustomer] = useState({});
+    const [languageDraftByCustomer, setLanguageDraftByCustomer] = useState({});
+    const [consentBusy, setConsentBusy] = useState(false);
+    const [languageBusy, setLanguageBusy] = useState(false);
+
+    const selectedCustomerIdResolved = useMemo(() => resolveCustomerId(selectedCustomer), [selectedCustomer]);
+    const selectedConsentStatus = useMemo(() => {
+        if (!selectedCustomerIdResolved) return normalizeMarketingConsentStatus(selectedCustomer);
+        const draft = String(consentDraftByCustomer[selectedCustomerIdResolved] || '').trim().toLowerCase();
+        if (draft) return draft;
+        return normalizeMarketingConsentStatus(selectedCustomer);
+    }, [selectedCustomer, selectedCustomerIdResolved, consentDraftByCustomer]);
+    const selectedPreferredLanguage = useMemo(() => {
+        if (!selectedCustomerIdResolved) return normalizePreferredLanguage(selectedCustomer);
+        const draft = String(languageDraftByCustomer[selectedCustomerIdResolved] || '').trim().toLowerCase();
+        if (draft) return draft;
+        return normalizePreferredLanguage(selectedCustomer);
+    }, [selectedCustomer, selectedCustomerIdResolved, languageDraftByCustomer]);
+
+    const handleConsentChange = useCallback(async (nextStatusRaw = '') => {
+        const customerId = selectedCustomerIdResolved;
+        const nextStatus = String(nextStatusRaw || '').trim().toLowerCase();
+        if (!customerId) return;
+
+        setConsentDraftByCustomer((prev) => ({ ...prev, [customerId]: nextStatus || 'unknown' }));
+        if (nextStatus !== 'opted_in' && nextStatus !== 'opted_out') return;
+
+        setConsentBusy(true);
+        try {
+            await requestJson('/api/tenant/customers/' + encodeURIComponent(customerId) + '/consent', {
+                method: 'PATCH',
+                body: {
+                    consentType: 'marketing',
+                    status: nextStatus,
+                    source: 'manual',
+                    proofPayload: {
+                        ui: 'saas_customers_section'
+                    }
+                }
+            });
+            await loadCustomers(tenantScopeId);
+        } finally {
+            setConsentBusy(false);
+        }
+    }, [loadCustomers, requestJson, selectedCustomerIdResolved, tenantScopeId]);
+
+    const handlePreferredLanguageChange = useCallback(async (nextLanguageRaw = '') => {
+        const customerId = selectedCustomerIdResolved;
+        const nextLanguage = String(nextLanguageRaw || '').trim().toLowerCase();
+        if (!customerId) return;
+
+        const normalized = nextLanguage === 'en' || nextLanguage === 'pt' ? nextLanguage : 'es';
+        setLanguageDraftByCustomer((prev) => ({ ...prev, [customerId]: normalized }));
+        setLanguageBusy(true);
+        try {
+            await requestJson('/api/tenant/customers/' + encodeURIComponent(customerId) + '/language', {
+                method: 'PATCH',
+                body: { preferredLanguage: normalized }
+            });
+            await loadCustomers(tenantScopeId);
+        } finally {
+            setLanguageBusy(false);
+        }
+    }, [loadCustomers, requestJson, selectedCustomerIdResolved, tenantScopeId]);
 
     if (!isCustomersSection) {
         return null;
@@ -155,6 +237,41 @@ function CustomersSection(props = {}) {
                                                         <div className="saas-admin-related-row" role="status"><span>Documento</span><small>{selectedCustomer?.profile?.documentNumber || '-'}</small></div>
                                                         <div className="saas-admin-related-row" role="status"><span>Observacion</span><small>{selectedCustomer?.profile?.notes || '-'}</small></div>
                                                         <div className="saas-admin-related-row" role="status"><span>Etiquetas</span><small>{Array.isArray(selectedCustomer?.tags) ? selectedCustomer.tags.join(', ') : '-'}</small></div>
+                                                    </div>
+                                                </div>
+                                                <div className="saas-admin-related-block">
+                                                    <h4>Marketing y preferencias</h4>
+                                                    <div className="saas-admin-form-row">
+                                                        <label className="saas-admin-module-toggle" style={{ minWidth: 220 }}>
+                                                            <span>Consentimiento marketing</span>
+                                                        </label>
+                                                        <select
+                                                            value={selectedConsentStatus}
+                                                            onChange={(event) => {
+                                                                handleConsentChange(event.target.value);
+                                                            }}
+                                                            disabled={busy || consentBusy || languageBusy}
+                                                        >
+                                                            <option value="unknown">Sin definir</option>
+                                                            <option value="opted_in">Opted in</option>
+                                                            <option value="opted_out">Opted out</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="saas-admin-form-row">
+                                                        <label className="saas-admin-module-toggle" style={{ minWidth: 220 }}>
+                                                            <span>Idioma preferido</span>
+                                                        </label>
+                                                        <select
+                                                            value={selectedPreferredLanguage}
+                                                            onChange={(event) => {
+                                                                handlePreferredLanguageChange(event.target.value);
+                                                            }}
+                                                            disabled={busy || consentBusy || languageBusy}
+                                                        >
+                                                            <option value="es">Español (es)</option>
+                                                            <option value="en">Ingles (en)</option>
+                                                            <option value="pt">Portugues (pt)</option>
+                                                        </select>
                                                     </div>
                                                 </div>
                                                 </>

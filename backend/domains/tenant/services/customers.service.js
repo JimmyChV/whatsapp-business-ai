@@ -679,6 +679,10 @@ async function listChannelEvents(tenantId = DEFAULT_TENANT_ID, options = {}) {
 async function upsertFromInteraction(tenantId = DEFAULT_TENANT_ID, payload = {}) {
     const phone = normalizePhone(payload?.phone || payload?.phoneE164 || '');
     if (!phone) return null;
+    const existingByPhone = await findCustomer(tenantId, { phoneE164: phone });
+    const existingOrigin = normalizeObject(existingByPhone?.metadata?.origin || existingByPhone?.metadata?.acquisitionOrigin);
+    const incomingOrigin = normalizeObject(payload?.metadata?.origin || payload?.origin || {});
+    const shouldAttachFirstOrigin = Object.keys(existingOrigin).length === 0 && Object.keys(incomingOrigin).length > 0;
 
     const upsertResult = await upsertCustomer(tenantId, {
         moduleId: toText(payload?.moduleId || ''),
@@ -686,6 +690,7 @@ async function upsertFromInteraction(tenantId = DEFAULT_TENANT_ID, payload = {})
         contactName: toText(payload?.contactName || payload?.name || payload?.pushname || ''),
         metadata: {
             ...(normalizeObject(payload?.metadata)),
+            ...(shouldAttachFirstOrigin ? { origin: incomingOrigin } : {}),
             whatsapp: {
                 chatId: toText(payload?.chatId || ''),
                 direction: toText(payload?.direction || ''),
@@ -724,7 +729,8 @@ async function upsertFromInteraction(tenantId = DEFAULT_TENANT_ID, payload = {})
                 status: toText(payload?.status || '') || null,
                 payload: {
                     messageType: toText(payload?.messageType || ''),
-                    metadata: normalizeObject(payload?.metadata)
+                    metadata: normalizeObject(payload?.metadata),
+                    ...(shouldAttachFirstOrigin ? { origin: incomingOrigin, hasOrigin: true } : {})
                 }
             });
         } catch (_) {
