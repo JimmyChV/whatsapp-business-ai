@@ -67,6 +67,7 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
         canEditModules: context.canEditModules,
         runAction: context.runAction,
         setError: context.setError,
+        requestJson: context.requestJson,
         metaTemplatesController: context.metaTemplatesController
     };
     const tenantLabelsContext = {
