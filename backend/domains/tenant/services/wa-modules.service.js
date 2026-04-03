@@ -529,7 +529,7 @@ async function getModuleRuntime(tenantId = DEFAULT_TENANT_ID, moduleId = '', { u
     if (!cleanModuleId) return null;
 
     const modules = await listModulesRuntime(tenantId, { includeInactive: true, userId });
-    return modules.find((module) => module.moduleId === cleanModuleId) || null;
+    return modules.find((module) => String(module?.moduleId || '').toLowerCase() === cleanModuleId.toLowerCase()) || null;
 }
 
 function moduleVisibleForUser(module = {}, userId = '') {
