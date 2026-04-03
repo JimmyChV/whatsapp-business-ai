@@ -272,7 +272,7 @@ function MetaTemplatesSection(props = {}) {
 
     const handleSyncTemplates = useCallback(async () => {
         if (!canWrite || typeof syncTemplates !== 'function') return;
-        const moduleId = toText(syncModuleId).toLowerCase();
+        const moduleId = toText(syncModuleId);
         if (!moduleId) throw new Error('Selecciona un modulo para sincronizar.');
 
         await runActionSafe('Templates Meta sincronizados', async () => {
