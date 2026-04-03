@@ -19,6 +19,7 @@ const quotesService = require('../../tenant/services/quotes.service');
 const saasControlService = require('../../tenant/services/tenant-control.service');
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
 const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
+const metaTemplatesService = require('../../operations/services/meta-templates.service');
 const chatAssignmentRouterService = require('../../operations/services/chat-assignment-router.service');
 const chatAssignmentPolicyService = require('../../operations/services/chat-assignment-policy.service');
 const auditLogService = require('../../security/services/audit-log.service');
@@ -242,9 +243,21 @@ const resolveSocketModuleContext = createSocketModuleContextResolver({
     waModuleService
 });
 
+let templateWebhookEventsService = null;
+try {
+    // Optional dependency while template-webhook service rolls out by phases.
+    // If missing, webhook persistence is skipped but status reconciliation still runs.
+    // eslint-disable-next-line global-require
+    templateWebhookEventsService = require('../../operations/services/template-webhook-events.service');
+} catch (_) {
+    templateWebhookEventsService = null;
+}
+
 class SocketManager {
-    constructor(io) {
+    constructor(io, deps = {}) {
         this.io = io;
+        this.metaTemplatesService = deps?.metaTemplatesService || metaTemplatesService;
+        this.templateWebhookEventsService = deps?.templateWebhookEventsService || templateWebhookEventsService;
         this.runtimeStore = createSocketRuntimeContextStore({
             io,
             initialRuntimeContext: {
@@ -1698,6 +1711,104 @@ class SocketManager {
             extractLocationInfo
         });
         waEventsBridge.registerWaProviderEvents();
+
+        waClient.on('template_webhook_event', async (event = {}) => {
+            try {
+                const tenantId = String(
+                    event?.tenantId
+                    || this.resolveHistoryTenantId()
+                    || 'default'
+                ).trim() || 'default';
+                const fallbackModuleId = this.resolveHistoryModuleContext()?.moduleId || '';
+                const scopeModuleId = normalizeScopedModuleId(
+                    event?.scopeModuleId
+                    || event?.moduleId
+                    || fallbackModuleId
+                );
+                const templateName = String(
+                    event?.templateName
+                    || event?.template?.name
+                    || event?.name
+                    || ''
+                ).trim();
+                const newStatus = String(
+                    event?.newStatus
+                    || event?.status
+                    || event?.templateStatus
+                    || ''
+                ).trim().toLowerCase();
+                const previousStatus = String(
+                    event?.previousStatus
+                    || event?.oldStatus
+                    || ''
+                ).trim().toLowerCase() || null;
+                const reason = String(
+                    event?.reason
+                    || event?.errorMessage
+                    || event?.rejectionReason
+                    || ''
+                ).trim() || null;
+                const wabaId = String(
+                    event?.wabaId
+                    || event?.whatsappBusinessAccountId
+                    || event?.cloudConfig?.wabaId
+                    || ''
+                ).trim() || null;
+                const eventType = String(
+                    event?.eventType
+                    || event?.type
+                    || 'status_update'
+                ).trim().toLowerCase() || 'status_update';
+                const rawPayload = event?.rawPayload && typeof event.rawPayload === 'object'
+                    ? event.rawPayload
+                    : event;
+
+                let persistedEvent = null;
+                if (typeof this.templateWebhookEventsService?.recordTemplateWebhookEvent === 'function') {
+                    persistedEvent = await this.templateWebhookEventsService.recordTemplateWebhookEvent(tenantId, {
+                        scopeModuleId: scopeModuleId || '',
+                        wabaId,
+                        templateName,
+                        eventType,
+                        previousStatus,
+                        newStatus,
+                        reason,
+                        rawPayload
+                    });
+                }
+
+                let reconciliation = null;
+                if (
+                    typeof this.metaTemplatesService?.applyTemplateWebhookStatusUpdate === 'function'
+                    && templateName
+                    && newStatus
+                ) {
+                    reconciliation = await this.metaTemplatesService.applyTemplateWebhookStatusUpdate(tenantId, {
+                        templateName,
+                        newStatus,
+                        reason,
+                        wabaId,
+                        rawPayload
+                    });
+                }
+
+                this.emitToTenant(tenantId, 'meta_template_status_updated', {
+                    tenantId,
+                    scopeModuleId: scopeModuleId || '',
+                    templateName: templateName || null,
+                    eventType,
+                    previousStatus,
+                    newStatus: newStatus || null,
+                    reason,
+                    wabaId,
+                    reconciliation,
+                    event: persistedEvent,
+                    generatedAt: new Date().toISOString()
+                });
+            } catch (error) {
+                console.warn('[WA][Cloud] template_webhook_event handling failed:', String(error?.message || error));
+            }
+        });
     }
 }
 

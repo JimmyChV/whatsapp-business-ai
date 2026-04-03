@@ -309,7 +309,9 @@ io.on('connection', (socket) => {
 });
 
 // Initialize Managers
-const socketManager = new SocketManager(io);
+const socketManager = new SocketManager(io, {
+    metaTemplatesService
+});
 
 function toPublicTenant(tenant = null) {
     if (!tenant || typeof tenant !== 'object') return null;
