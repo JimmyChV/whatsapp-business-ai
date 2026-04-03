@@ -48,6 +48,7 @@ function registerOperationsHttpRoutes({
     customerService,
     customerConsentService,
     templateWebhookEventsService,
+    templateVariablesService,
     conversationOpsService,
     chatCommercialStatusService,
     metaTemplatesService,
@@ -146,6 +147,15 @@ function registerOperationsHttpRoutes({
     const listTemplateWebhookEvents = typeof templateWebhookEventsApi.listTemplateWebhookEvents === 'function'
         ? templateWebhookEventsApi.listTemplateWebhookEvents.bind(templateWebhookEventsApi)
         : async () => ({ items: [], total: 0, limit: 0, offset: 0 });
+    const templateVariablesApi = templateVariablesService && typeof templateVariablesService === 'object'
+        ? templateVariablesService
+        : {};
+    const getTemplateVariablesCatalog = typeof templateVariablesApi.getCatalog === 'function'
+        ? templateVariablesApi.getCatalog.bind(templateVariablesApi)
+        : async () => ({ tenantId: 'default', generatedAt: null, categories: [], variables: [] });
+    const getTemplateVariablesPreview = typeof templateVariablesApi.getPreview === 'function'
+        ? templateVariablesApi.getPreview.bind(templateVariablesApi)
+        : async (tenantId) => ({ tenantId, generatedAt: null, context: { chatId: null, customerId: null }, categories: [], variables: [] });
 
     app.patch('/api/tenant/customers/:customerId/consent', async (req, res) => {
         try {
@@ -283,6 +293,40 @@ function registerOperationsHttpRoutes({
             });
         } catch (error) {
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo listar eventos webhook de templates.') });
+        }
+    });
+
+    app.get('/api/tenant/template-variables/catalog', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            const payload = await getTemplateVariablesCatalog(tenantId);
+            return res.json({
+                ok: true,
+                tenantId,
+                ...toSafeObject(payload)
+            });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar el catalogo de variables de template.') });
+        }
+    });
+
+    app.get('/api/tenant/template-variables/preview', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            const chatId = toText(req.query?.chatId || '');
+            const customerId = toText(req.query?.customerId || '');
+            const payload = await getTemplateVariablesPreview(tenantId, { chatId, customerId });
+            return res.json({
+                ok: true,
+                tenantId,
+                ...toSafeObject(payload)
+            });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar la previsualizacion de variables de template.') });
         }
     });
 
