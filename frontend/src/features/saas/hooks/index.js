@@ -31,6 +31,7 @@ export { default as useSaasPanelSectionContexts } from './panel/useSaasPanelSect
 export { default as useSaasPanelSectionChange } from './panel/useSaasPanelSectionChange';
 
 export { default as useSaasOperationAccess } from './useSaasOperationAccess';
+export { default as useSaasMetaTemplatesController } from './useSaasMetaTemplatesController';
 
 
 export { default as useSaasRunActionBridge } from './panel/useSaasRunActionBridge';
