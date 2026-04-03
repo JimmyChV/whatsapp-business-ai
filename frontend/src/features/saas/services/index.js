@@ -8,3 +8,4 @@ export * from './quickReplies.service';
 export * from './tenants.service';
 
 export * from './operations.service';
+export * from './metaTemplates.service';

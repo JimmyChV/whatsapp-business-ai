@@ -23,6 +23,7 @@ export default function useSaasPanelNavigation({
         if (cleanId === 'saas_usuarios') return canManageUsers;
         if (cleanId === 'saas_clientes') return canViewCustomers;
         if (cleanId === 'saas_operacion') return canViewOperations;
+        if (cleanId === 'saas_templates') return canViewModules;
         if (cleanId === 'saas_ia') return canViewAi;
         if (cleanId === 'saas_etiquetas') return canViewLabels;
         if (cleanId === 'saas_quick_replies') return canViewQuickReplies;
@@ -68,6 +69,7 @@ export default function useSaasPanelNavigation({
         isRolesSection: selectedSectionId === 'saas_roles',
         isCustomersSection: selectedSectionId === 'saas_clientes',
         isOperationsSection: selectedSectionId === 'saas_operacion',
+        isMetaTemplatesSection: selectedSectionId === 'saas_templates',
         isAiSection: selectedSectionId === 'saas_ia',
         isLabelsSection: selectedSectionId === 'saas_etiquetas',
         isQuickRepliesSection: selectedSectionId === 'saas_quick_replies',

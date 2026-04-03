@@ -321,6 +321,7 @@ export default function OperationPage({
         isOpen={showSaasAdminPanel}
         onClose={() => setShowSaasAdminPanel(false)}
         onLogout={handleSaasLogout}
+        socket={socket}
         onOpenWhatsAppOperation={handleOpenWhatsAppOperation}
         buildApiHeaders={buildApiHeaders}
         activeTenantId={tenantScopeId}

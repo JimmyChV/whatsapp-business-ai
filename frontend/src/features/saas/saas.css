@@ -1367,3 +1367,41 @@
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+.saas-meta-template-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  width: fit-content;
+  border: 1px solid transparent;
+}
+
+.saas-meta-template-status--pending {
+  background: rgba(255, 197, 71, 0.14);
+  border-color: rgba(255, 197, 71, 0.42);
+  color: #ffd580;
+}
+
+.saas-meta-template-status--approved {
+  background: rgba(0, 199, 160, 0.14);
+  border-color: rgba(0, 199, 160, 0.42);
+  color: #8af5de;
+}
+
+.saas-meta-template-status--rejected {
+  background: rgba(255, 113, 113, 0.14);
+  border-color: rgba(255, 113, 113, 0.44);
+  color: #ffb3b3;
+}
+
+.saas-meta-template-status--paused {
+  background: rgba(148, 184, 204, 0.14);
+  border-color: rgba(148, 184, 204, 0.42);
+  color: #b9d4e4;
+}

@@ -62,6 +62,7 @@ export default function useAppPagePropsComposer({
       isOpen: true,
       onClose: sessionBlock.handleSaasLogout,
       onLogout: sessionBlock.handleSaasLogout,
+      socket: socketBlock.socket || null,
       onOpenWhatsAppOperation: handlersBlock.handleOpenWhatsAppOperation,
       buildApiHeaders: sessionBlock.buildApiHeaders,
       activeTenantId: sessionBlock.tenantScopeId,

@@ -162,6 +162,7 @@ export const ADMIN_NAV_ITEMS = [
     { id: 'saas_roles', label: 'Roles' },
     { id: 'saas_clientes', label: 'Clientes' },
     { id: 'saas_operacion', label: 'Operacion' },
+    { id: 'saas_templates', label: 'Templates Meta' },
     { id: 'saas_ia', label: 'IA' },
     { id: 'saas_etiquetas', label: 'Etiquetas' },
     { id: 'saas_quick_replies', label: 'Respuestas rapidas' },
@@ -213,7 +214,7 @@ export function normalizeOverview(payload = {}) {
 
 export function normalizeWaModule(item = {}) {
     const source = item && typeof item === 'object' ? item : {};
-    const moduleId = String(source.moduleId || source.id || '').trim();
+    const moduleId = String(source.moduleId || source.module_id || source.id || '').trim();
     if (!moduleId) return null;
 
     const metadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)

@@ -103,11 +103,13 @@ import useSaasPlansRolesController from './useSaasPlansRolesController';
 import useSaasQuickRepliesController from './useSaasQuickRepliesController';
 import useSaasTenantController from './useSaasTenantController';
 import useSaasUsersController from './useSaasUsersController';
+import useSaasMetaTemplatesController from '../../useSaasMetaTemplatesController';
 
 export default function useSaasAdminPanelController({
     isOpen = false,
     onClose,
     onLogout,
+    socket = null,
     onOpenWhatsAppOperation,
     buildApiHeaders,
     activeTenantId = '',
@@ -285,6 +287,7 @@ export default function useSaasAdminPanelController({
         apiBase: API_BASE,
         buildApiHeaders
     });
+    const metaTemplatesController = useSaasMetaTemplatesController({ requestJson, socket });
 
     const operationsPanelState = useOperationsPanelState({
         canViewOperations,
@@ -1009,6 +1012,7 @@ export default function useSaasAdminPanelController({
 
     const sectionContextsInput = {
         busy: panelCoreState.busy,
+        canEditModules,
         aiAssistantForm: aiController.aiState.aiAssistantForm,
         aiAssistantPanelMode: aiController.aiState.aiAssistantPanelMode,
         catalogPanelMode: catalogController.catalogState.catalogPanelMode,
@@ -1130,6 +1134,7 @@ export default function useSaasAdminPanelController({
         plansRolesActions,
         tenantsUsersActions,
         customersAdminActions,
+        metaTemplatesController,
         // tenantsUsers (8)
         openTenantCreate: tenantsUsersActions.openTenantCreate,
         openTenantEdit: tenantsUsersActions.openTenantEdit,
