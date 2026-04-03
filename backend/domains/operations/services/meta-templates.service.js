@@ -65,7 +65,8 @@ function normalizeStatus(value = '') {
 }
 
 function normalizeQuality(value = '') {
-    const quality = toLower(value);
+    const source = value && typeof value === 'object' ? JSON.stringify(value) : value;
+    const quality = toLower(source);
     if (!quality) return 'unknown';
     return quality;
 }
