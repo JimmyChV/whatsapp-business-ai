@@ -22,12 +22,17 @@ function toLower(value = '') {
     return toText(value).toLowerCase();
 }
 
+function isPlainObject(value = null) {
+    return value && typeof value === 'object' && !Array.isArray(value);
+}
+
 function registerOperationsHttpRoutes({
     app,
     authService,
     auditLogService,
     conversationOpsService,
     chatCommercialStatusService,
+    metaTemplatesService,
     chatAssignmentPolicyService,
     assignmentRulesService,
     chatAssignmentRouterService,
@@ -72,6 +77,38 @@ function registerOperationsHttpRoutes({
         : async () => {
             throw new Error('Servicio de estado comercial no disponible.');
         };
+    const metaTemplatesApi = metaTemplatesService && typeof metaTemplatesService === 'object'
+        ? metaTemplatesService
+        : {};
+    const createMetaTemplate = typeof metaTemplatesApi.createTemplate === 'function'
+        ? metaTemplatesApi.createTemplate.bind(metaTemplatesApi)
+        : async () => {
+            throw new Error('Servicio de templates Meta no disponible.');
+        };
+    const listMetaTemplates = typeof metaTemplatesApi.listTemplates === 'function'
+        ? metaTemplatesApi.listTemplates.bind(metaTemplatesApi)
+        : async () => ({ items: [], total: 0, limit: 0, offset: 0 });
+    const deleteMetaTemplate = typeof metaTemplatesApi.deleteTemplate === 'function'
+        ? metaTemplatesApi.deleteTemplate.bind(metaTemplatesApi)
+        : async () => {
+            throw new Error('Servicio de templates Meta no disponible.');
+        };
+    const syncMetaTemplatesFromMeta = typeof metaTemplatesApi.syncTemplatesFromMeta === 'function'
+        ? metaTemplatesApi.syncTemplatesFromMeta.bind(metaTemplatesApi)
+        : async () => {
+            throw new Error('Servicio de templates Meta no disponible.');
+        };
+
+    function ensureMetaTemplateWriteAccess(req, tenantId) {
+        if (!hasChatAssignmentsWriteAccess(req, tenantId)) {
+            return { ok: false, statusCode: 403, error: 'No autorizado.' };
+        }
+        const role = String(resolveActorTenantRole({ req, tenantId }) || 'seller').trim().toLowerCase();
+        if (!['owner', 'admin'].includes(role)) {
+            return { ok: false, statusCode: 403, error: 'Solo owner/admin pueden gestionar templates Meta.' };
+        }
+        return { ok: true, role };
+    }
 
     app.get('/api/tenant/chats/:chatId/events', async (req, res) => {
         try {
@@ -247,6 +284,165 @@ function registerOperationsHttpRoutes({
             return res.json({ ok: true, tenantId, scopeModuleId, status: status || null, ...result });
         } catch (error) {
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo listar estados comerciales.') });
+        }
+    });
+
+    app.post('/api/tenant/meta-templates', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const access = ensureMetaTemplateWriteAccess(req, tenantId);
+            if (!access.ok) {
+                return res.status(Number(access.statusCode || 403)).json({ ok: false, error: String(access.error || 'No autorizado.') });
+            }
+
+            const moduleId = String(req.body?.moduleId || '').trim();
+            const templatePayload = isPlainObject(req.body?.templatePayload) ? req.body.templatePayload : null;
+            if (!moduleId) return res.status(400).json({ ok: false, error: 'moduleId requerido.' });
+            if (!templatePayload) return res.status(400).json({ ok: false, error: 'templatePayload requerido.' });
+
+            const result = await createMetaTemplate(tenantId, { moduleId, templatePayload });
+
+            await auditLogService.writeAuditLog(tenantId, {
+                userId: resolveActorUserId(req),
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || null,
+                action: 'meta.template.create',
+                resourceType: 'meta_template',
+                resourceId: String(result?.template?.templateId || result?.template?.templateName || ''),
+                source: 'http',
+                payload: {
+                    moduleId,
+                    templateName: result?.template?.templateName || null,
+                    templateLanguage: result?.template?.templateLanguage || null,
+                    status: result?.template?.status || null
+                }
+            });
+
+            return res.status(201).json({
+                ok: true,
+                tenantId,
+                template: result?.template || null,
+                metaResponse: result?.metaResponse || null
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear template Meta.') });
+        }
+    });
+
+    app.get('/api/tenant/meta-templates', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const scopeModuleId = normalizeScopeModuleId(req.query?.scopeModuleId || '');
+            const status = String(req.query?.status || '').trim().toLowerCase();
+            const limit = Number(req.query?.limit || 50);
+            const offset = Number(req.query?.offset || 0);
+
+            const result = await listMetaTemplates(tenantId, {
+                scopeModuleId,
+                status,
+                limit,
+                offset
+            });
+
+            return res.json({
+                ok: true,
+                tenantId,
+                scopeModuleId: scopeModuleId || '',
+                status: status || null,
+                ...result
+            });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron listar templates Meta.') });
+        }
+    });
+
+    app.delete('/api/tenant/meta-templates/:templateId', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const access = ensureMetaTemplateWriteAccess(req, tenantId);
+            if (!access.ok) {
+                return res.status(Number(access.statusCode || 403)).json({ ok: false, error: String(access.error || 'No autorizado.') });
+            }
+
+            const templateId = String(req.params?.templateId || '').trim();
+            const moduleId = String(req.query?.moduleId || req.body?.moduleId || '').trim();
+            if (!templateId) return res.status(400).json({ ok: false, error: 'templateId requerido.' });
+
+            const result = await deleteMetaTemplate(tenantId, { templateId, moduleId });
+
+            await auditLogService.writeAuditLog(tenantId, {
+                userId: resolveActorUserId(req),
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || null,
+                action: 'meta.template.delete',
+                resourceType: 'meta_template',
+                resourceId: templateId,
+                source: 'http',
+                payload: {
+                    moduleId: moduleId || null,
+                    deletedTemplateId: result?.template?.templateId || templateId,
+                    templateName: result?.template?.templateName || null
+                }
+            });
+
+            return res.json({
+                ok: true,
+                tenantId,
+                templateId,
+                template: result?.template || null
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar template Meta.') });
+        }
+    });
+
+    app.post('/api/tenant/meta-templates/sync', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const access = ensureMetaTemplateWriteAccess(req, tenantId);
+            if (!access.ok) {
+                return res.status(Number(access.statusCode || 403)).json({ ok: false, error: String(access.error || 'No autorizado.') });
+            }
+
+            const moduleId = String(req.body?.moduleId || req.query?.moduleId || '').trim();
+            if (!moduleId) return res.status(400).json({ ok: false, error: 'moduleId requerido para sincronizar.' });
+
+            const result = await syncMetaTemplatesFromMeta(tenantId, { moduleId });
+
+            await auditLogService.writeAuditLog(tenantId, {
+                userId: resolveActorUserId(req),
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || null,
+                action: 'meta.template.sync',
+                resourceType: 'meta_template',
+                resourceId: moduleId,
+                source: 'http',
+                payload: {
+                    moduleId,
+                    scopeModuleId: result?.scopeModuleId || null,
+                    totalSynced: Number(result?.totalSynced || 0)
+                }
+            });
+
+            return res.json({
+                ok: true,
+                tenantId,
+                moduleId,
+                scopeModuleId: result?.scopeModuleId || null,
+                totalSynced: Number(result?.totalSynced || 0),
+                items: Array.isArray(result?.items) ? result.items : []
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo sincronizar templates Meta.') });
         }
     });
 
