@@ -100,7 +100,6 @@ export default function useSaasMetaTemplatesController({
             const nextTotal = Number.isFinite(Number(response?.total)) ? Math.max(0, Number(response.total)) : nextItems.length;
             setItems(sortTemplates(nextItems));
             setTotal(nextTotal);
-            setFilters((prev) => normalizeFilters({ ...prev, ...query }));
             return response;
         } catch (error) {
             const message = String(error?.message || 'No se pudieron cargar templates Meta.');

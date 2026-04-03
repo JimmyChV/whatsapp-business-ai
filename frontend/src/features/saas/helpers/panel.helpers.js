@@ -214,7 +214,7 @@ export function normalizeOverview(payload = {}) {
 
 export function normalizeWaModule(item = {}) {
     const source = item && typeof item === 'object' ? item : {};
-    const moduleId = String(source.moduleId || source.id || '').trim();
+    const moduleId = String(source.moduleId || source.module_id || source.id || '').trim();
     if (!moduleId) return null;
 
     const metadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
