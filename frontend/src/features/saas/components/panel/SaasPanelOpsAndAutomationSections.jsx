@@ -1,5 +1,6 @@
 import {
     AiAssistantsSection,
+    CampaignsSection,
     MetaTemplatesSection,
     OperationsSection,
     QuickRepliesSection,
@@ -9,6 +10,7 @@ import {
 export default function SaasPanelOpsAndAutomationSections(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const isOperationsSection = context?.isOperationsSection === true;
+    const isCampaignsSection = context?.isCampaignsSection === true;
     const isMetaTemplatesSection = context?.isMetaTemplatesSection === true;
     const isLabelsSection = context?.isLabelsSection === true;
     const isQuickRepliesSection = context?.isQuickRepliesSection === true;
@@ -68,6 +70,16 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
         runAction: context.runAction,
         setError: context.setError,
         requestJson: context.requestJson,
+        metaTemplatesController: context.metaTemplatesController
+    };
+    const campaignsContext = {
+        isCampaignsSection,
+        settingsTenantId: context.settingsTenantId,
+        tenantScopeLocked: context.tenantScopeLocked,
+        waModules: context.waModules,
+        busy: context.busy,
+        setError: context.setError,
+        campaignsController: context.campaignsController,
         metaTemplatesController: context.metaTemplatesController
     };
     const tenantLabelsContext = {
@@ -160,6 +172,10 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
         <>
             {isOperationsSection && (
                 <OperationsSection context={operationsContext} />
+            )}
+
+            {isCampaignsSection && (
+                <CampaignsSection context={campaignsContext} />
             )}
 
             {isMetaTemplatesSection && (

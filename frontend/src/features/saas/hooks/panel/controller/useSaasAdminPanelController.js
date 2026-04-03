@@ -104,6 +104,7 @@ import useSaasQuickRepliesController from './useSaasQuickRepliesController';
 import useSaasTenantController from './useSaasTenantController';
 import useSaasUsersController from './useSaasUsersController';
 import useSaasMetaTemplatesController from '../../useSaasMetaTemplatesController';
+import useSaasCampaignsController from '../../useSaasCampaignsController';
 
 export default function useSaasAdminPanelController({
     isOpen = false,
@@ -288,6 +289,7 @@ export default function useSaasAdminPanelController({
         buildApiHeaders
     });
     const metaTemplatesController = useSaasMetaTemplatesController({ requestJson, socket });
+    const campaignsController = useSaasCampaignsController({ requestJson, socket });
 
     const operationsPanelState = useOperationsPanelState({
         canViewOperations,
@@ -1135,6 +1137,7 @@ export default function useSaasAdminPanelController({
         tenantsUsersActions,
         customersAdminActions,
         metaTemplatesController,
+        campaignsController,
         // tenantsUsers (8)
         openTenantCreate: tenantsUsersActions.openTenantCreate,
         openTenantEdit: tenantsUsersActions.openTenantEdit,
