@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import {
     createMetaTemplate,
     deleteMetaTemplate,
@@ -52,8 +53,10 @@ function sortTemplates(items = []) {
 
 export default function useSaasMetaTemplatesController({
     requestJson = null,
+    socket = null,
     initialFilters = {}
 } = {}) {
+    const { notify } = useUiFeedback();
     const [filters, setFilters] = useState(() => normalizeFilters({ ...DEFAULT_FILTERS, ...initialFilters }));
     const [items, setItems] = useState([]);
     const [total, setTotal] = useState(0);
@@ -195,6 +198,79 @@ export default function useSaasMetaTemplatesController({
     }, [filters.search, items]);
 
     const loading = loadingList || loadingCreate || loadingSync || Object.keys(loadingDeleteById).length > 0;
+
+    useEffect(() => {
+        if (!socket || typeof socket.on !== 'function' || typeof socket.off !== 'function') return undefined;
+
+        const handleMetaTemplateStatusUpdated = (payload = {}) => {
+            const eventTemplateName = String(payload?.templateName || '').trim().toLowerCase();
+            const eventScopeModuleId = String(payload?.scopeModuleId || '').trim().toLowerCase();
+            const eventStatus = String(payload?.newStatus || payload?.status || '').trim().toLowerCase();
+            const eventReason = String(payload?.reason || '').trim();
+            const eventTimestamp = String(payload?.generatedAt || '').trim() || new Date().toISOString();
+            const reconciledItems = Array.isArray(payload?.reconciliation?.items) ? payload.reconciliation.items : [];
+            const reconciledByTemplateId = new Map(
+                reconciledItems
+                    .map((entry) => [String(entry?.templateId || '').trim(), entry])
+                    .filter(([templateId]) => Boolean(templateId))
+            );
+
+            let toastToShow = null;
+            let didUpdate = false;
+
+            setItems((prev) => {
+                if (!Array.isArray(prev) || prev.length === 0) return prev;
+
+                const next = prev.map((item) => {
+                    const itemTemplateId = String(item?.templateId || '').trim();
+                    const matchedById = itemTemplateId ? reconciledByTemplateId.get(itemTemplateId) : null;
+                    const itemName = String(item?.templateName || '').trim().toLowerCase();
+                    const itemScopeModuleId = String(item?.scopeModuleId || '').trim().toLowerCase();
+                    const matchedByName = !matchedById
+                        && Boolean(eventTemplateName)
+                        && itemName === eventTemplateName
+                        && (!eventScopeModuleId || !itemScopeModuleId || itemScopeModuleId === eventScopeModuleId);
+
+                    if (!matchedById && !matchedByName) return item;
+
+                    const merged = matchedById && typeof matchedById === 'object'
+                        ? { ...item, ...matchedById }
+                        : {
+                            ...item,
+                            status: eventStatus || item?.status,
+                            rejectionReason: eventReason || item?.rejectionReason,
+                            updatedAt: eventTimestamp
+                        };
+
+                    const prevStatus = String(item?.status || '').trim().toLowerCase();
+                    const nextStatus = String(merged?.status || '').trim().toLowerCase();
+                    if (prevStatus !== nextStatus && (nextStatus === 'approved' || nextStatus === 'rejected')) {
+                        const templateLabel = String(merged?.templateName || item?.templateName || '').trim() || 'Template';
+                        toastToShow = {
+                            type: nextStatus === 'approved' ? 'info' : 'warn',
+                            message: nextStatus === 'approved'
+                                ? `Template aprobado: ${templateLabel}`
+                                : `Template rechazado: ${templateLabel}`
+                        };
+                    }
+
+                    didUpdate = true;
+                    return merged;
+                });
+
+                return didUpdate ? sortTemplates(next) : prev;
+            });
+
+            if (toastToShow && typeof notify === 'function') {
+                notify(toastToShow);
+            }
+        };
+
+        socket.on('meta_template_status_updated', handleMetaTemplateStatusUpdated);
+        return () => {
+            socket.off('meta_template_status_updated', handleMetaTemplateStatusUpdated);
+        };
+    }, [notify, socket]);
 
     return {
         filters,

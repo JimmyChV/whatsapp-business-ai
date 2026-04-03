@@ -109,6 +109,7 @@ export default function useSaasAdminPanelController({
     isOpen = false,
     onClose,
     onLogout,
+    socket = null,
     onOpenWhatsAppOperation,
     buildApiHeaders,
     activeTenantId = '',
@@ -286,7 +287,7 @@ export default function useSaasAdminPanelController({
         apiBase: API_BASE,
         buildApiHeaders
     });
-    const metaTemplatesController = useSaasMetaTemplatesController({ requestJson });
+    const metaTemplatesController = useSaasMetaTemplatesController({ requestJson, socket });
 
     const operationsPanelState = useOperationsPanelState({
         canViewOperations,
