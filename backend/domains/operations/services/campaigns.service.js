@@ -37,6 +37,23 @@ const EVENT_ACTOR_TYPES = new Set(['system', 'user', 'worker', 'webhook']);
 
 let schemaReady = false;
 let schemaPromise = null;
+const campaignUpdatedListeners = new Set();
+
+function emitCampaignUpdated(payload = {}) {
+    campaignUpdatedListeners.forEach((listener) => {
+        try {
+            listener(payload);
+        } catch (_) { }
+    });
+}
+
+function onCampaignUpdated(listener) {
+    if (typeof listener !== 'function') return () => { };
+    campaignUpdatedListeners.add(listener);
+    return () => {
+        campaignUpdatedListeners.delete(listener);
+    };
+}
 
 function nowIso() {
     return new Date().toISOString();
@@ -1212,6 +1229,21 @@ async function recomputeCampaignStats(tenantId = DEFAULT_TENANT_ID, { campaignId
         });
     }
 
+    if (campaign.status !== updatedCampaign.status) {
+        emitCampaignUpdated({
+            tenantId: cleanTenantId,
+            type: 'status',
+            campaignId: updatedCampaign.campaignId,
+            campaign: updatedCampaign,
+            previousCampaign: campaign,
+            previousStatus: campaign.status,
+            status: updatedCampaign.status,
+            reason: updatedCampaign.status === 'completed' ? 'campaign_completed' : 'campaign_status_changed',
+            source: 'campaigns.recomputeCampaignStats',
+            generatedAt: nowIso()
+        });
+    }
+
     return updatedCampaign;
 }
 
@@ -1465,6 +1497,20 @@ async function applyQueueJobUpdate(tenantId = DEFAULT_TENANT_ID, options = {}) {
         markCompleted: true
     });
 
+    if (['sent', 'failed', 'skipped'].includes(nextStatus)) {
+        emitCampaignUpdated({
+            tenantId: cleanTenantId,
+            type: 'progress',
+            campaignId: persistedRecipient.campaignId,
+            campaign,
+            recipient: persistedRecipient,
+            recipientStatus: nextStatus,
+            reason: toNullableText(options.reason || nextRecipient.lastError || nextStatus) || nextStatus,
+            source: 'campaigns.applyQueueJobUpdate',
+            generatedAt: nowIso()
+        });
+    }
+
     return { campaign, recipient: persistedRecipient };
 }
 
@@ -1511,7 +1557,20 @@ async function startCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         }
     });
 
-    return recomputeCampaignStats(cleanTenantId, { campaignId: updated.campaignId, markCompleted: true });
+    const finalCampaign = await recomputeCampaignStats(cleanTenantId, { campaignId: updated.campaignId, markCompleted: true });
+    emitCampaignUpdated({
+        tenantId: cleanTenantId,
+        type: 'status',
+        campaignId: finalCampaign?.campaignId || updated.campaignId,
+        campaign: finalCampaign || updated,
+        previousCampaign: campaign,
+        previousStatus: campaign.status,
+        status: (finalCampaign || updated).status,
+        reason: 'campaign_started',
+        source: 'campaigns.startCampaign',
+        generatedAt: nowIso()
+    });
+    return finalCampaign;
 }
 
 async function pauseCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
@@ -1538,6 +1597,19 @@ async function pauseCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         actorId: toNullableText(options.actorUserId),
         message: 'Campana pausada',
         payloadJson: {}
+    });
+
+    emitCampaignUpdated({
+        tenantId: cleanTenantId,
+        type: 'status',
+        campaignId: updated.campaignId,
+        campaign: updated,
+        previousCampaign: campaign,
+        previousStatus: campaign.status,
+        status: updated.status,
+        reason: 'campaign_paused',
+        source: 'campaigns.pauseCampaign',
+        generatedAt: nowIso()
     });
 
     return updated;
@@ -1571,6 +1643,19 @@ async function resumeCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         actorId: toNullableText(options.actorUserId),
         message: 'Campana reanudada',
         payloadJson: {}
+    });
+
+    emitCampaignUpdated({
+        tenantId: cleanTenantId,
+        type: 'status',
+        campaignId: updated.campaignId,
+        campaign: updated,
+        previousCampaign: campaign,
+        previousStatus: campaign.status,
+        status: updated.status,
+        reason: 'campaign_resumed',
+        source: 'campaigns.resumeCampaign',
+        generatedAt: nowIso()
     });
 
     return updated;
@@ -1635,7 +1720,20 @@ async function cancelCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         payloadJson: {}
     });
 
-    return recomputeCampaignStats(cleanTenantId, { campaignId: updated.campaignId, markCompleted: false });
+    const finalCampaign = await recomputeCampaignStats(cleanTenantId, { campaignId: updated.campaignId, markCompleted: false });
+    emitCampaignUpdated({
+        tenantId: cleanTenantId,
+        type: 'status',
+        campaignId: finalCampaign?.campaignId || updated.campaignId,
+        campaign: finalCampaign || updated,
+        previousCampaign: campaign,
+        previousStatus: campaign.status,
+        status: (finalCampaign || updated).status,
+        reason: 'campaign_cancelled',
+        source: 'campaigns.cancelCampaign',
+        generatedAt: nowIso()
+    });
+    return finalCampaign;
 }
 
 module.exports = {
@@ -1652,5 +1750,6 @@ module.exports = {
     recordCampaignEvent,
     listCampaignEvents,
     recomputeCampaignStats,
-    applyQueueJobUpdate
+    applyQueueJobUpdate,
+    onCampaignUpdated
 };

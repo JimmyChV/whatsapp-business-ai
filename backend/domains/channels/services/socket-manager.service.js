@@ -19,6 +19,7 @@ const quotesService = require('../../tenant/services/quotes.service');
 const saasControlService = require('../../tenant/services/tenant-control.service');
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
 const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
+const campaignsService = require('../../operations/services/campaigns.service');
 const metaTemplatesService = require('../../operations/services/meta-templates.service');
 const customerConsentService = require('../../operations/services/customer-consent.service');
 const chatOriginService = require('../../operations/services/chat-origin.service');
@@ -250,6 +251,7 @@ const resolveSocketModuleContext = createSocketModuleContextResolver({
 class SocketManager {
     constructor(io, deps = {}) {
         this.io = io;
+        this.campaignsService = deps?.campaignsService || campaignsService;
         this.metaTemplatesService = deps?.metaTemplatesService || metaTemplatesService;
         this.templateWebhookEventsService = deps?.templateWebhookEventsService || templateWebhookEventsService;
         this.runtimeStore = createSocketRuntimeContextStore({
@@ -441,6 +443,43 @@ class SocketManager {
                         assignmentReason: String(event?.assignmentReason || assignment?.assignmentReason || '').trim() || null,
                         generatedAt: new Date().toISOString()
                     });
+                } catch (_) { }
+            });
+        }
+        this.unsubscribeCampaignUpdated = null;
+        if (typeof this.campaignsService?.onCampaignUpdated === 'function') {
+            this.unsubscribeCampaignUpdated = this.campaignsService.onCampaignUpdated((event = {}) => {
+                try {
+                    const eventTenantId = String(event?.tenantId || event?.campaign?.tenantId || 'default').trim() || 'default';
+                    const campaign = event?.campaign && typeof event.campaign === 'object' ? event.campaign : null;
+                    const previousCampaign = event?.previousCampaign && typeof event.previousCampaign === 'object'
+                        ? event.previousCampaign
+                        : null;
+                    const campaignId = String(event?.campaignId || campaign?.campaignId || previousCampaign?.campaignId || '').trim();
+                    if (!campaignId) return;
+
+                    const payload = {
+                        tenantId: eventTenantId,
+                        campaignId,
+                        campaign,
+                        previousCampaign,
+                        status: String(event?.status || campaign?.status || '').trim().toLowerCase() || null,
+                        previousStatus: String(event?.previousStatus || previousCampaign?.status || '').trim().toLowerCase() || null,
+                        reason: String(event?.reason || '').trim() || null,
+                        source: String(event?.source || '').trim() || null,
+                        generatedAt: String(event?.generatedAt || '').trim() || new Date().toISOString()
+                    };
+
+                    if (String(event?.type || '').trim().toLowerCase() === 'progress') {
+                        this.emitToTenant(eventTenantId, 'campaign_progress_updated', {
+                            ...payload,
+                            recipient: event?.recipient && typeof event.recipient === 'object' ? event.recipient : null,
+                            recipientStatus: String(event?.recipientStatus || event?.recipient?.status || '').trim().toLowerCase() || null
+                        });
+                        return;
+                    }
+
+                    this.emitToTenant(eventTenantId, 'campaign_status_updated', payload);
                 } catch (_) { }
             });
         }
