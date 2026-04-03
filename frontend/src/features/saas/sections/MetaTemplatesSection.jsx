@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 
 const STATUS_META = {
@@ -32,44 +32,142 @@ const EMPTY_CREATE_FORM = {
     headerText: '',
     bodyText: '',
     footerText: '',
-    buttonsText: ''
+    buttons: []
 };
 
 const toText = (value = '') => String(value || '').trim();
 const toLower = (value = '') => toText(value).toLowerCase();
+const PLACEHOLDER_REGEX = /{{\s*(\d+)\s*}}/g;
+const SUPPORTED_LANGUAGES = Object.freeze(['es', 'en', 'pt']);
+let buttonRowCounter = 0;
+
+function nextButtonRowId() {
+    buttonRowCounter += 1;
+    return `btn_${buttonRowCounter}_${Date.now()}`;
+}
+
+function createEmptyButtonRow() {
+    return {
+        id: nextButtonRowId(),
+        type: 'quick_reply',
+        text: '',
+        value: ''
+    };
+}
+
+function normalizeButtonRows(buttons = []) {
+    if (!Array.isArray(buttons)) return [];
+    return buttons
+        .map((row = {}) => ({
+            id: toText(row.id) || nextButtonRowId(),
+            type: toLower(row.type || 'quick_reply') || 'quick_reply',
+            text: toText(row.text),
+            value: toText(row.value)
+        }))
+        .filter((row) => row.text);
+}
+
+function extractPlaceholderIndexes(...texts) {
+    const indexes = new Set();
+    texts.forEach((text) => {
+        const source = String(text || '');
+        if (!source) return;
+        const regex = new RegExp(PLACEHOLDER_REGEX);
+        let match = regex.exec(source);
+        while (match) {
+            const index = Number(match[1]);
+            if (Number.isFinite(index) && index > 0) {
+                indexes.add(index);
+            }
+            match = regex.exec(source);
+        }
+    });
+    return [...indexes].sort((left, right) => left - right);
+}
+
+function replacePlaceholders(text = '', valuesByIndex = {}) {
+    return String(text || '').replace(PLACEHOLDER_REGEX, (_, indexRaw) => {
+        const index = Number(indexRaw);
+        if (!Number.isFinite(index) || index <= 0) return `{{${indexRaw}}}`;
+        const replacement = toText(valuesByIndex?.[index]);
+        return replacement || `{{${index}}}`;
+    });
+}
+
+function coerceCatalogPayload(payload = {}) {
+    const categories = Array.isArray(payload?.categories) ? payload.categories : [];
+    const normalizedCategories = categories
+        .map((category = {}) => ({
+            id: toLower(category?.id || category?.key),
+            label: toText(category?.label || category?.id),
+            variables: Array.isArray(category?.variables) ? category.variables : []
+        }))
+        .filter((category) => category.id && category.label);
+
+    const variables = normalizedCategories.flatMap((category) => category.variables.map((variable = {}) => ({
+        ...variable,
+        key: toText(variable?.key),
+        label: toText(variable?.label || variable?.key),
+        description: toText(variable?.description),
+        placeholderIndex: Number(variable?.placeholderIndex),
+        exampleValue: toText(variable?.exampleValue),
+        source: toText(variable?.source),
+        requiresContext: Array.isArray(variable?.requiresContext) ? variable.requiresContext : [],
+        supportedIn: Array.isArray(variable?.supportedIn) ? variable.supportedIn : [],
+        categoryId: category.id,
+        categoryLabel: category.label
+    }))).filter((variable) => variable.key && Number.isFinite(variable.placeholderIndex) && variable.placeholderIndex > 0);
+
+    return { categories: normalizedCategories, variables };
+}
+
+function buildInitialVariableExamples(variables = []) {
+    return variables.reduce((acc, variable) => {
+        const index = Number(variable?.placeholderIndex);
+        if (!Number.isFinite(index) || index <= 0) return acc;
+        acc[index] = toText(variable?.exampleValue);
+        return acc;
+    }, {});
+}
 
 function resolveStatusMeta(status = '') {
     const cleanStatus = toLower(status);
     return STATUS_META[cleanStatus] || { label: cleanStatus || 'Desconocido', className: 'saas-meta-template-status--paused' };
 }
 
-function parseButtons(buttonsText = '') {
-    return String(buttonsText || '')
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean)
+function mapButtonRowsToMeta(buttonRows = []) {
+    return normalizeButtonRows(buttonRows)
         .slice(0, 10)
-        .map((line) => {
-            const [rawType, rawLabel, rawValue] = line.split('|').map((chunk) => String(chunk || '').trim());
-            const type = toLower(rawType);
-            const label = rawLabel || rawType;
-            if (!label) return null;
+        .map((row) => {
+            const type = toLower(row.type || 'quick_reply');
             if (type === 'url') {
-                const url = toText(rawValue);
-                if (!url) return null;
-                return { type: 'URL', text: label, url };
+                return {
+                    type: 'URL',
+                    text: row.text,
+                    url: toText(row.value)
+                };
             }
             if (type === 'phone' || type === 'phone_number') {
-                const phoneNumber = toText(rawValue);
-                if (!phoneNumber) return null;
-                return { type: 'PHONE_NUMBER', text: label, phone_number: phoneNumber };
+                return {
+                    type: 'PHONE_NUMBER',
+                    text: row.text,
+                    phone_number: toText(row.value)
+                };
             }
-            return { type: 'QUICK_REPLY', text: label };
+            return {
+                type: 'QUICK_REPLY',
+                text: row.text
+            };
         })
-        .filter(Boolean);
+        .filter((button) => {
+            if (!button?.text) return false;
+            if (button.type === 'URL') return Boolean(button.url);
+            if (button.type === 'PHONE_NUMBER') return Boolean(button.phone_number);
+            return true;
+        });
 }
 
-function buildTemplatePayload(form = {}) {
+function buildTemplatePayload(form = {}, { variableExamplesByIndex = {} } = {}) {
     const name = toText(form.name);
     const category = toLower(form.category || 'marketing') || 'marketing';
     const language = toLower(form.language || 'es') || 'es';
@@ -77,17 +175,35 @@ function buildTemplatePayload(form = {}) {
     const headerText = toText(form.headerText);
     const bodyText = toText(form.bodyText);
     const footerText = toText(form.footerText);
-    const buttons = parseButtons(form.buttonsText);
+    const buttons = mapButtonRowsToMeta(form.buttons);
 
     if (!name) throw new Error('Nombre del template requerido.');
     if (!bodyText) throw new Error('Body del template requerido.');
 
     const components = [
-        { type: 'BODY', text: bodyText }
+        {
+            type: 'BODY',
+            text: bodyText
+        }
     ];
 
+    const bodyIndexes = extractPlaceholderIndexes(bodyText);
+    if (bodyIndexes.length > 0) {
+        const values = bodyIndexes.map((index) => toText(variableExamplesByIndex?.[index]) || `valor_${index}`);
+        components[0].example = {
+            body_text: [values]
+        };
+    }
+
     if (headerType === 'text' && headerText) {
-        components.unshift({ type: 'HEADER', format: 'TEXT', text: headerText });
+        const header = { type: 'HEADER', format: 'TEXT', text: headerText };
+        const headerIndexes = extractPlaceholderIndexes(headerText);
+        if (headerIndexes.length > 0) {
+            header.example = {
+                header_text: headerIndexes.map((index) => toText(variableExamplesByIndex?.[index]) || `valor_${index}`)
+            };
+        }
+        components.unshift(header);
     }
     if (footerText) {
         components.push({ type: 'FOOTER', text: footerText });
@@ -119,6 +235,7 @@ function MetaTemplatesSection(props = {}) {
         canEditModules = false,
         runAction = null,
         setError = null,
+        requestJson = null,
         metaTemplatesController = null
     } = context;
 
@@ -127,17 +244,33 @@ function MetaTemplatesSection(props = {}) {
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
     const [syncModuleId, setSyncModuleId] = useState('');
     const [createForm, setCreateForm] = useState(() => buildInitialForm(''));
+    const [templateVarCatalog, setTemplateVarCatalog] = useState([]);
+    const [templateVarCategories, setTemplateVarCategories] = useState([]);
+    const [loadingVarCatalog, setLoadingVarCatalog] = useState(false);
+    const [varCatalogError, setVarCatalogError] = useState('');
+    const [variableExamplesByIndex, setVariableExamplesByIndex] = useState({});
+    const [bodyCursor, setBodyCursor] = useState({ start: 0, end: 0 });
+    const bodyTextareaRef = useRef(null);
 
     const moduleOptions = useMemo(() => {
         return Array.isArray(waModules)
             ? waModules
                 .map((moduleItem) => ({
-                    moduleId: toText(moduleItem?.moduleId).toLowerCase(),
+                    moduleId: toText(moduleItem?.moduleId),
                     label: toText(moduleItem?.name) || toText(moduleItem?.moduleId)
                 }))
                 .filter((entry) => entry.moduleId)
             : [];
     }, [waModules]);
+
+    const varCatalogByPlaceholderIndex = useMemo(() => {
+        return templateVarCatalog.reduce((acc, variable) => {
+            const index = Number(variable?.placeholderIndex);
+            if (!Number.isFinite(index) || index <= 0) return acc;
+            acc[index] = variable;
+            return acc;
+        }, {});
+    }, [templateVarCatalog]);
 
     const runActionSafe = useCallback(async (label, action) => {
         if (typeof runAction === 'function') return runAction(label, action);
@@ -166,6 +299,31 @@ function MetaTemplatesSection(props = {}) {
         syncTemplates = null
     } = metaTemplatesController || {};
 
+    const loadTemplateVariablesCatalog = useCallback(async ({ force = false } = {}) => {
+        if (typeof requestJson !== 'function') return null;
+        if (!force && templateVarCatalog.length > 0) return null;
+
+        setLoadingVarCatalog(true);
+        setVarCatalogError('');
+        try {
+            const payload = await requestJson('/api/tenant/template-variables/catalog');
+            const { categories, variables } = coerceCatalogPayload(payload);
+            setTemplateVarCategories(categories);
+            setTemplateVarCatalog(variables);
+            setVariableExamplesByIndex((prev) => {
+                const defaults = buildInitialVariableExamples(variables);
+                return Object.keys(prev || {}).length > 0 ? { ...defaults, ...prev } : defaults;
+            });
+            return payload;
+        } catch (error) {
+            const message = String(error?.message || 'No se pudo cargar el catalogo de variables.');
+            setVarCatalogError(message);
+            return null;
+        } finally {
+            setLoadingVarCatalog(false);
+        }
+    }, [requestJson, templateVarCatalog.length]);
+
     useEffect(() => {
         if (!isMetaTemplatesSection) return;
         const firstModuleId = moduleOptions[0]?.moduleId || '';
@@ -175,6 +333,12 @@ function MetaTemplatesSection(props = {}) {
             return { ...prev, moduleId: firstModuleId };
         });
     }, [isMetaTemplatesSection, moduleOptions]);
+
+    useEffect(() => {
+        if (!isMetaTemplatesSection || panelMode !== 'create') return;
+        if (templateVarCatalog.length > 0 || loadingVarCatalog) return;
+        loadTemplateVariablesCatalog().catch(() => null);
+    }, [isMetaTemplatesSection, panelMode, templateVarCatalog.length, loadingVarCatalog, loadTemplateVariablesCatalog]);
 
     useEffect(() => {
         if (!isMetaTemplatesSection || !settingsTenantId || typeof loadTemplates !== 'function') return;
@@ -223,10 +387,10 @@ function MetaTemplatesSection(props = {}) {
 
     const handleCreateTemplate = useCallback(async () => {
         if (!canWrite || typeof createTemplate !== 'function') return;
-        const moduleId = toText(createForm.moduleId).toLowerCase();
+        const moduleId = toText(createForm.moduleId);
         if (!moduleId) throw new Error('Selecciona un modulo para crear el template.');
 
-        const templatePayload = buildTemplatePayload(createForm);
+        const templatePayload = buildTemplatePayload(createForm, { variableExamplesByIndex });
         await runActionSafe('Template Meta creado', async () => {
             await createTemplate({
                 moduleId,
@@ -241,7 +405,7 @@ function MetaTemplatesSection(props = {}) {
                 scopeModuleId: filters.scopeModuleId || moduleId
             });
         });
-    }, [canWrite, createTemplate, createForm, runActionSafe, notify, loadTemplates, filters]);
+    }, [canWrite, createTemplate, createForm, runActionSafe, notify, loadTemplates, filters, variableExamplesByIndex]);
 
     const handleDeleteTemplate = useCallback(async (template = null) => {
         const templateId = toText(template?.templateId);
@@ -289,6 +453,72 @@ function MetaTemplatesSection(props = {}) {
         });
     }, [canWrite, filters, loadTemplates, notify, runActionSafe, syncModuleId, syncTemplates]);
 
+    const openCreateTemplatePanel = useCallback(async () => {
+        setPanelMode('create');
+        await loadTemplateVariablesCatalog();
+    }, [loadTemplateVariablesCatalog]);
+
+    const updateBodyCursor = useCallback((event) => {
+        const target = event?.target;
+        if (!target) return;
+        const start = Number(target.selectionStart);
+        const end = Number(target.selectionEnd);
+        setBodyCursor({
+            start: Number.isFinite(start) ? start : 0,
+            end: Number.isFinite(end) ? end : Number.isFinite(start) ? start : 0
+        });
+    }, []);
+
+    const insertVariableAtBodyCursor = useCallback((variable = null) => {
+        const index = Number(variable?.placeholderIndex);
+        if (!Number.isFinite(index) || index <= 0) return;
+        const token = `{{${index}}}`;
+        const input = bodyTextareaRef.current;
+        const currentBody = String(createForm.bodyText || '');
+        const start = Number.isFinite(input?.selectionStart) ? input.selectionStart : bodyCursor.start;
+        const end = Number.isFinite(input?.selectionEnd) ? input.selectionEnd : bodyCursor.end;
+        const safeStart = Number.isFinite(start) && start >= 0 ? start : currentBody.length;
+        const safeEnd = Number.isFinite(end) && end >= safeStart ? end : safeStart;
+        const nextBody = `${currentBody.slice(0, safeStart)}${token}${currentBody.slice(safeEnd)}`;
+        const cursorPosition = safeStart + token.length;
+
+        setCreateForm((prev) => ({ ...prev, bodyText: nextBody }));
+        setBodyCursor({ start: cursorPosition, end: cursorPosition });
+
+        requestAnimationFrame(() => {
+            if (!bodyTextareaRef.current) return;
+            bodyTextareaRef.current.focus();
+            bodyTextareaRef.current.setSelectionRange(cursorPosition, cursorPosition);
+        });
+    }, [bodyCursor.end, bodyCursor.start, createForm.bodyText]);
+
+    const updateVariableExample = useCallback((placeholderIndex, value) => {
+        const index = Number(placeholderIndex);
+        if (!Number.isFinite(index) || index <= 0) return;
+        setVariableExamplesByIndex((prev) => ({
+            ...prev,
+            [index]: value
+        }));
+    }, []);
+
+    const usedPlaceholderIndexes = useMemo(() => {
+        return extractPlaceholderIndexes(createForm.headerText, createForm.bodyText, createForm.footerText);
+    }, [createForm.bodyText, createForm.footerText, createForm.headerText]);
+
+    const usedVariables = useMemo(() => {
+        return usedPlaceholderIndexes
+            .map((index) => varCatalogByPlaceholderIndex[index])
+            .filter(Boolean);
+    }, [usedPlaceholderIndexes, varCatalogByPlaceholderIndex]);
+
+    const previewText = useMemo(() => {
+        return {
+            header: replacePlaceholders(createForm.headerText, variableExamplesByIndex),
+            body: replacePlaceholders(createForm.bodyText, variableExamplesByIndex),
+            footer: replacePlaceholders(createForm.footerText, variableExamplesByIndex)
+        };
+    }, [createForm.bodyText, createForm.footerText, createForm.headerText, variableExamplesByIndex]);
+
     if (!isMetaTemplatesSection) {
         return null;
     }
@@ -313,7 +543,11 @@ function MetaTemplatesSection(props = {}) {
                             <button
                                 type="button"
                                 disabled={templatesBusy || !canWrite}
-                                onClick={() => setPanelMode('create')}
+                                onClick={() => openCreateTemplatePanel().catch((error) => {
+                                    const message = String(error?.message || error || 'No se pudo abrir el formulario de templates.');
+                                    notify({ type: 'error', message });
+                                    setError?.(message);
+                                })}
                             >
                                 Crear template
                             </button>
@@ -334,7 +568,7 @@ function MetaTemplatesSection(props = {}) {
                                     value={filters.scopeModuleId || ''}
                                     disabled={templatesBusy}
                                     onChange={(event) => {
-                                        const nextScopeModuleId = toLower(event.target.value);
+                                        const nextScopeModuleId = toText(event.target.value);
                                         updateFilter({ scopeModuleId: nextScopeModuleId, offset: 0 }).catch((error) => {
                                             setError?.(String(error?.message || error || 'No se pudo filtrar por modulo.'));
                                         });
@@ -380,7 +614,7 @@ function MetaTemplatesSection(props = {}) {
                             <div className="saas-admin-form-row">
                                 <select
                                     value={syncModuleId}
-                                    onChange={(event) => setSyncModuleId(toLower(event.target.value))}
+                                    onChange={(event) => setSyncModuleId(toText(event.target.value))}
                                     disabled={templatesBusy || !canWrite}
                                 >
                                     <option value="">Selecciona modulo para sincronizar</option>
@@ -453,128 +687,301 @@ function MetaTemplatesSection(props = {}) {
                             <div className="saas-admin-pane-header">
                                 <div>
                                     <h3>Crear template</h3>
-                                    <small>Define componentes HEADER/BODY/FOOTER/BUTTONS para enviar a Meta.</small>
+                                    <small>Formulario inteligente con variables, ejemplos y preview en tiempo real.</small>
                                 </div>
                             </div>
 
-                            <div className="saas-admin-form-row">
-                                <select
-                                    value={createForm.moduleId}
-                                    onChange={(event) => setCreateForm((prev) => ({ ...prev, moduleId: toLower(event.target.value) }))}
-                                    disabled={templatesBusy || !canWrite}
-                                >
-                                    <option value="">Selecciona modulo</option>
-                                    {moduleOptions.map((moduleItem) => (
-                                        <option key={`meta_template_form_module_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
-                                            {moduleItem.label}
-                                        </option>
-                                    ))}
-                                </select>
-                                <input
-                                    value={createForm.name}
-                                    onChange={(event) => setCreateForm((prev) => ({ ...prev, name: event.target.value }))}
-                                    placeholder="Nombre (snake_case recomendado)"
-                                    disabled={templatesBusy || !canWrite}
-                                />
-                            </div>
+                            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'minmax(320px,1.2fr) minmax(280px,1fr)' }}>
+                                <div style={{ display: 'grid', gap: 12 }}>
+                                    <div className="saas-admin-form-row">
+                                        <select
+                                            value={createForm.moduleId}
+                                            onChange={(event) => setCreateForm((prev) => ({ ...prev, moduleId: toText(event.target.value) }))}
+                                            disabled={templatesBusy || !canWrite}
+                                        >
+                                            <option value="">Selecciona modulo</option>
+                                            {moduleOptions.map((moduleItem) => (
+                                                <option key={`meta_template_form_module_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
+                                                    {moduleItem.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <input
+                                            value={createForm.name}
+                                            onChange={(event) => setCreateForm((prev) => ({ ...prev, name: event.target.value }))}
+                                            placeholder="Nombre (snake_case recomendado)"
+                                            disabled={templatesBusy || !canWrite}
+                                        />
+                                    </div>
 
-                            <div className="saas-admin-form-row">
-                                <select
-                                    value={createForm.category}
-                                    onChange={(event) => setCreateForm((prev) => ({ ...prev, category: toLower(event.target.value) }))}
-                                    disabled={templatesBusy || !canWrite}
-                                >
-                                    {CATEGORY_OPTIONS.map((option) => (
-                                        <option key={`meta_template_category_${option.value}`} value={option.value}>
-                                            {option.label}
-                                        </option>
-                                    ))}
-                                </select>
-                                <select
-                                    value={createForm.language}
-                                    onChange={(event) => setCreateForm((prev) => ({ ...prev, language: toLower(event.target.value) }))}
-                                    disabled={templatesBusy || !canWrite}
-                                >
-                                    {LANGUAGE_OPTIONS.map((option) => (
-                                        <option key={`meta_template_language_${option.value}`} value={option.value}>
-                                            {option.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                                    <div className="saas-admin-form-row">
+                                        <select
+                                            value={createForm.category}
+                                            onChange={(event) => setCreateForm((prev) => ({ ...prev, category: toLower(event.target.value) }))}
+                                            disabled={templatesBusy || !canWrite}
+                                        >
+                                            {CATEGORY_OPTIONS.map((option) => (
+                                                <option key={`meta_template_category_${option.value}`} value={option.value}>
+                                                    {option.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <select
+                                            value={createForm.language}
+                                            onChange={(event) => {
+                                                const nextLanguage = toLower(event.target.value);
+                                                setCreateForm((prev) => ({
+                                                    ...prev,
+                                                    language: SUPPORTED_LANGUAGES.includes(nextLanguage) ? nextLanguage : 'es'
+                                                }));
+                                            }}
+                                            disabled={templatesBusy || !canWrite}
+                                        >
+                                            {LANGUAGE_OPTIONS.map((option) => (
+                                                <option key={`meta_template_language_${option.value}`} value={option.value}>
+                                                    {option.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
 
-                            <div className="saas-admin-form-row">
-                                <select
-                                    value={createForm.headerType}
-                                    onChange={(event) => setCreateForm((prev) => ({ ...prev, headerType: toLower(event.target.value) }))}
-                                    disabled={templatesBusy || !canWrite}
-                                >
-                                    <option value="none">Sin header</option>
-                                    <option value="text">Header de texto</option>
-                                </select>
-                                <input
-                                    value={createForm.headerText}
-                                    onChange={(event) => setCreateForm((prev) => ({ ...prev, headerText: event.target.value }))}
-                                    placeholder="Header (opcional)"
-                                    disabled={templatesBusy || !canWrite || createForm.headerType !== 'text'}
-                                />
-                            </div>
+                                    <div className="saas-admin-form-row">
+                                        <select
+                                            value={createForm.headerType}
+                                            onChange={(event) => {
+                                                const nextType = toLower(event.target.value);
+                                                setCreateForm((prev) => ({
+                                                    ...prev,
+                                                    headerType: nextType,
+                                                    headerText: nextType === 'text' ? prev.headerText : ''
+                                                }));
+                                            }}
+                                            disabled={templatesBusy || !canWrite}
+                                        >
+                                            <option value="none">Sin header</option>
+                                            <option value="text">Header de texto</option>
+                                        </select>
+                                        <input
+                                            value={createForm.headerText}
+                                            onChange={(event) => setCreateForm((prev) => ({ ...prev, headerText: event.target.value }))}
+                                            placeholder="Header (opcional)"
+                                            disabled={templatesBusy || !canWrite || createForm.headerType !== 'text'}
+                                        />
+                                    </div>
 
-                            <div className="saas-admin-form-row">
-                                <textarea
-                                    value={createForm.bodyText}
-                                    onChange={(event) => setCreateForm((prev) => ({ ...prev, bodyText: event.target.value }))}
-                                    placeholder="Body del template (obligatorio)"
-                                    rows={4}
-                                    style={{ width: '100%' }}
-                                    disabled={templatesBusy || !canWrite}
-                                />
-                            </div>
+                                    <div className="saas-admin-form-row">
+                                        <textarea
+                                            ref={bodyTextareaRef}
+                                            value={createForm.bodyText}
+                                            onChange={(event) => setCreateForm((prev) => ({ ...prev, bodyText: event.target.value }))}
+                                            onSelect={updateBodyCursor}
+                                            onClick={updateBodyCursor}
+                                            onKeyUp={updateBodyCursor}
+                                            placeholder="Body del template (obligatorio)"
+                                            rows={6}
+                                            style={{ width: '100%' }}
+                                            disabled={templatesBusy || !canWrite}
+                                        />
+                                    </div>
 
-                            <div className="saas-admin-form-row">
-                                <textarea
-                                    value={createForm.footerText}
-                                    onChange={(event) => setCreateForm((prev) => ({ ...prev, footerText: event.target.value }))}
-                                    placeholder="Footer (opcional)"
-                                    rows={2}
-                                    style={{ width: '100%' }}
-                                    disabled={templatesBusy || !canWrite}
-                                />
-                            </div>
+                                    <div className="saas-admin-form-row">
+                                        <textarea
+                                            value={createForm.footerText}
+                                            onChange={(event) => setCreateForm((prev) => ({ ...prev, footerText: event.target.value }))}
+                                            placeholder="Footer (opcional)"
+                                            rows={2}
+                                            style={{ width: '100%' }}
+                                            disabled={templatesBusy || !canWrite}
+                                        />
+                                    </div>
 
-                            <div className="saas-admin-form-row">
-                                <textarea
-                                    value={createForm.buttonsText}
-                                    onChange={(event) => setCreateForm((prev) => ({ ...prev, buttonsText: event.target.value }))}
-                                    placeholder={'Botones (uno por linea):\nquick_reply|Hablar con asesor\nurl|Ver web|https://...'}
-                                    rows={4}
-                                    style={{ width: '100%' }}
-                                    disabled={templatesBusy || !canWrite}
-                                />
-                            </div>
+                                    <div className="saas-admin-related-block" style={{ margin: 0 }}>
+                                        <h4 style={{ marginBottom: 8 }}>Botones (opcional)</h4>
+                                        <div style={{ display: 'grid', gap: 8 }}>
+                                            {(Array.isArray(createForm.buttons) ? createForm.buttons : []).map((buttonRow) => (
+                                                <div className="saas-admin-form-row" key={buttonRow.id}>
+                                                    <select
+                                                        value={buttonRow.type || 'quick_reply'}
+                                                        onChange={(event) => {
+                                                            const nextType = toLower(event.target.value);
+                                                            setCreateForm((prev) => ({
+                                                                ...prev,
+                                                                buttons: (Array.isArray(prev.buttons) ? prev.buttons : []).map((row) => (
+                                                                    row.id === buttonRow.id
+                                                                        ? { ...row, type: nextType, value: ['url', 'phone', 'phone_number'].includes(nextType) ? row.value : '' }
+                                                                        : row
+                                                                ))
+                                                            }));
+                                                        }}
+                                                        disabled={templatesBusy || !canWrite}
+                                                    >
+                                                        <option value="quick_reply">Quick reply</option>
+                                                        <option value="url">URL</option>
+                                                        <option value="phone">Telefono</option>
+                                                    </select>
+                                                    <input
+                                                        value={buttonRow.text || ''}
+                                                        onChange={(event) => {
+                                                            const nextValue = event.target.value;
+                                                            setCreateForm((prev) => ({
+                                                                ...prev,
+                                                                buttons: (Array.isArray(prev.buttons) ? prev.buttons : []).map((row) => (
+                                                                    row.id === buttonRow.id ? { ...row, text: nextValue } : row
+                                                                ))
+                                                            }));
+                                                        }}
+                                                        placeholder="Texto del boton"
+                                                        disabled={templatesBusy || !canWrite}
+                                                    />
+                                                    {(buttonRow.type === 'url' || buttonRow.type === 'phone' || buttonRow.type === 'phone_number') && (
+                                                        <input
+                                                            value={buttonRow.value || ''}
+                                                            onChange={(event) => {
+                                                                const nextValue = event.target.value;
+                                                                setCreateForm((prev) => ({
+                                                                    ...prev,
+                                                                    buttons: (Array.isArray(prev.buttons) ? prev.buttons : []).map((row) => (
+                                                                        row.id === buttonRow.id ? { ...row, value: nextValue } : row
+                                                                    ))
+                                                                }));
+                                                            }}
+                                                            placeholder={buttonRow.type === 'url' ? 'https://...' : '+51999999999'}
+                                                            disabled={templatesBusy || !canWrite}
+                                                        />
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        disabled={templatesBusy || !canWrite}
+                                                        onClick={() => {
+                                                            setCreateForm((prev) => ({
+                                                                ...prev,
+                                                                buttons: (Array.isArray(prev.buttons) ? prev.buttons : []).filter((row) => row.id !== buttonRow.id)
+                                                            }));
+                                                        }}
+                                                    >
+                                                        Quitar
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            <button
+                                                type="button"
+                                                disabled={templatesBusy || !canWrite || (createForm.buttons || []).length >= 10}
+                                                onClick={() => {
+                                                    setCreateForm((prev) => ({
+                                                        ...prev,
+                                                        buttons: [...(Array.isArray(prev.buttons) ? prev.buttons : []), createEmptyButtonRow()]
+                                                    }));
+                                                }}
+                                            >
+                                                Agregar boton
+                                            </button>
+                                        </div>
+                                    </div>
 
-                            <div className="saas-admin-form-row saas-admin-form-row--actions">
-                                <button
-                                    type="button"
-                                    disabled={templatesBusy || !canWrite}
-                                    onClick={() => handleCreateTemplate().catch((error) => {
-                                        const message = String(error?.message || error || 'No se pudo crear template Meta.');
-                                        notify({ type: 'error', message });
-                                        setError?.(message);
-                                    })}
-                                >
-                                    Guardar template
-                                </button>
-                                <button
-                                    type="button"
-                                    disabled={templatesBusy}
-                                    onClick={() => {
-                                        setPanelMode('view');
-                                        setCreateForm(buildInitialForm(createForm.moduleId || moduleOptions[0]?.moduleId || ''));
-                                    }}
-                                >
-                                    Cancelar
-                                </button>
+                                    <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                        <button
+                                            type="button"
+                                            disabled={templatesBusy || !canWrite}
+                                            onClick={() => handleCreateTemplate().catch((error) => {
+                                                const message = String(error?.message || error || 'No se pudo crear template Meta.');
+                                                notify({ type: 'error', message });
+                                                setError?.(message);
+                                            })}
+                                        >
+                                            Guardar template
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={templatesBusy}
+                                            onClick={() => {
+                                                setPanelMode('view');
+                                                setCreateForm(buildInitialForm(createForm.moduleId || moduleOptions[0]?.moduleId || ''));
+                                            }}
+                                        >
+                                            Cancelar
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
+                                    <div className="saas-admin-related-block" style={{ margin: 0 }}>
+                                        <h4 style={{ marginBottom: 8 }}>Variables disponibles</h4>
+                                        {loadingVarCatalog && <small>Cargando catalogo de variables...</small>}
+                                        {varCatalogError && <small style={{ color: '#fca5a5' }}>{varCatalogError}</small>}
+                                        {!loadingVarCatalog && !varCatalogError && templateVarCategories.map((category) => (
+                                            <div key={`template_var_category_${category.id}`} style={{ marginBottom: 10 }}>
+                                                <strong style={{ display: 'block', marginBottom: 6 }}>{category.label}</strong>
+                                                <div style={{ display: 'grid', gap: 6 }}>
+                                                    {(Array.isArray(category.variables) ? category.variables : []).map((variable) => (
+                                                        <button
+                                                            key={`template_var_${category.id}_${variable.key}`}
+                                                            type="button"
+                                                            disabled={templatesBusy || !canWrite}
+                                                            style={{
+                                                                textAlign: 'left',
+                                                                border: '1px solid rgba(45, 212, 191, 0.35)',
+                                                                borderRadius: 10,
+                                                                background: 'rgba(13, 24, 39, 0.8)',
+                                                                color: '#c9fbf1',
+                                                                padding: '8px 10px',
+                                                                cursor: 'pointer'
+                                                            }}
+                                                            onClick={() => insertVariableAtBodyCursor(variable)}
+                                                            title={toText(variable?.description)}
+                                                        >
+                                                            {`{{${Number(variable?.placeholderIndex)}}}`} {toText(variable?.label || variable?.key)}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <div className="saas-admin-related-block" style={{ margin: 0 }}>
+                                        <h4 style={{ marginBottom: 8 }}>Ejemplos para variables usadas</h4>
+                                        {usedVariables.length === 0 && (
+                                            <small>Inserta variables en el body/header/footer para configurar ejemplos.</small>
+                                        )}
+                                        {usedVariables.length > 0 && usedVariables.map((variable) => {
+                                            const index = Number(variable?.placeholderIndex);
+                                            const key = `var_example_${index}`;
+                                            return (
+                                                <div className="saas-admin-form-row" key={key}>
+                                                    <label htmlFor={key} style={{ color: '#9cc6d9', minWidth: 130 }}>
+                                                        {`{{${index}}}`} {toText(variable?.label)}
+                                                    </label>
+                                                    <input
+                                                        id={key}
+                                                        value={toText(variableExamplesByIndex?.[index])}
+                                                        onChange={(event) => updateVariableExample(index, event.target.value)}
+                                                        placeholder={toText(variable?.exampleValue) || `valor_${index}`}
+                                                        disabled={templatesBusy || !canWrite}
+                                                    />
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <div className="saas-admin-related-block" style={{ margin: 0 }}>
+                                        <h4 style={{ marginBottom: 8 }}>Preview</h4>
+                                        {createForm.headerType === 'text' && Boolean(createForm.headerText) && (
+                                            <div style={{ marginBottom: 8 }}>
+                                                <small style={{ color: '#8db6c9' }}>Header</small>
+                                                <pre>{previewText.header || '-'}</pre>
+                                            </div>
+                                        )}
+                                        <div style={{ marginBottom: 8 }}>
+                                            <small style={{ color: '#8db6c9' }}>Body</small>
+                                            <pre>{previewText.body || '-'}</pre>
+                                        </div>
+                                        {Boolean(createForm.footerText) && (
+                                            <div>
+                                                <small style={{ color: '#8db6c9' }}>Footer</small>
+                                                <pre>{previewText.footer || '-'}</pre>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -601,7 +1008,11 @@ function MetaTemplatesSection(props = {}) {
                                     <button
                                         type="button"
                                         disabled={templatesBusy || !canWrite}
-                                        onClick={() => setPanelMode('create')}
+                                        onClick={() => openCreateTemplatePanel().catch((error) => {
+                                            const message = String(error?.message || error || 'No se pudo abrir el formulario de templates.');
+                                            notify({ type: 'error', message });
+                                            setError?.(message);
+                                        })}
                                     >
                                         Crear template
                                     </button>
