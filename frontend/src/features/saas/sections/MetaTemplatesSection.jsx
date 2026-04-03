@@ -613,7 +613,7 @@ function MetaTemplatesSection(props = {}) {
                                 <div className="saas-admin-detail-field"><span>Modulo</span><strong>{toText(selectedTemplate?.moduleId) || '-'}</strong></div>
                                 <div className="saas-admin-detail-field"><span>Idioma</span><strong>{toText(selectedTemplate?.templateLanguage).toUpperCase() || '-'}</strong></div>
                                 <div className="saas-admin-detail-field"><span>Categoria</span><strong>{toText(selectedTemplate?.category) || '-'}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Quality</span><strong>{toText(selectedTemplate?.qualityScore) || '-'}</strong></div>
+                                <div className="saas-admin-detail-field"><span>Quality</span><strong>{typeof selectedTemplate?.qualityScore === 'object' ? JSON.stringify(selectedTemplate?.qualityScore) : (selectedTemplate?.qualityScore || 'N/A')}</strong></div>
                                 <div className="saas-admin-detail-field"><span>Meta ID</span><strong>{toText(selectedTemplate?.metaTemplateId) || '-'}</strong></div>
                                 <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{toText(selectedTemplate?.updatedAt) || '-'}</strong></div>
                                 <div className="saas-admin-detail-field"><span>Total listados</span><strong>{Number(total || 0)}</strong></div>
