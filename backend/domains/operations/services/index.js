@@ -5,6 +5,7 @@ module.exports = {
     customerConsentService: require('./customer-consent.service'),
     chatOriginService: require('./chat-origin.service'),
     templateWebhookEventsService: require('./template-webhook-events.service'),
+    campaignsService: require('./campaigns.service'),
     campaignQueueService: require('./campaign-queue.service'),
     campaignDispatcherJobService: require('./campaign-dispatcher-job.service'),
     chatAssignmentPolicyService: require('./chat-assignment-policy.service'),
