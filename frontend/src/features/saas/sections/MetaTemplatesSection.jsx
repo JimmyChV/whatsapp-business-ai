@@ -455,8 +455,12 @@ function MetaTemplatesSection(props = {}) {
 
     const openCreateTemplatePanel = useCallback(async () => {
         setPanelMode('create');
-        await loadTemplateVariablesCatalog();
-    }, [loadTemplateVariablesCatalog]);
+        try {
+            await loadTemplateVariablesCatalog();
+        } catch (error) {
+            throw error;
+        }
+    }, [loadTemplateVariablesCatalog, requestJson, templateVarCatalog.length]);
 
     const updateBodyCursor = useCallback((event) => {
         const target = event?.target;
