@@ -90,6 +90,7 @@ function buildRetryDelaySeconds(attemptCount = 0, baseSeconds = 30, maxSeconds =
 
 function createCampaignDispatcherJob({
     campaignQueueService,
+    campaignsService,
     customerConsentService,
     tenantService,
     waModuleService,
@@ -113,6 +114,22 @@ function createCampaignDispatcherJob({
     const moduleNextAllowedAt = new Map();
     let timer = null;
     let running = false;
+
+    async function syncCampaignRecipientFromQueue(tenantId = '', queueJob = null, { reason = '', actorType = 'worker', actorId = '' } = {}) {
+        if (!queueJob || !toText(queueJob.idempotencyKey)) return;
+        if (!campaignsService || typeof campaignsService.applyQueueJobUpdate !== 'function') return;
+        try {
+            await campaignsService.applyQueueJobUpdate(tenantId, {
+                queueJob,
+                reason,
+                actorType,
+                actorId
+            });
+        } catch (error) {
+            opsTelemetry?.recordInternalError?.('campaign_dispatcher_sync_recipient', error);
+            logger?.warn?.('[Ops][CampaignDispatcher] sync recipient failed tenant=' + tenantId + ': ' + String(error?.message || error));
+        }
+    }
 
     async function recoverStaleClaims(tenantId = '') {
         if (storageDriver !== 'postgres') return 0;
@@ -183,19 +200,21 @@ function createCampaignDispatcherJob({
 
         const moduleContext = await resolveModuleContext(tenantId, moduleId);
         if (!moduleContext) {
-            await campaignQueueService.skipJob(tenantId, {
+            const skippedJob = await campaignQueueService.skipJob(tenantId, {
                 idempotencyKey,
                 reason: 'module_unavailable'
             });
+            await syncCampaignRecipientFromQueue(tenantId, skippedJob, { reason: 'module_unavailable' });
             return { status: 'skipped', reason: 'module_unavailable' };
         }
 
         const consentGranted = await hasConsent(tenantId, job);
         if (!consentGranted) {
-            await campaignQueueService.skipJob(tenantId, {
+            const skippedJob = await campaignQueueService.skipJob(tenantId, {
                 idempotencyKey,
                 reason: 'consent_required'
             });
+            await syncCampaignRecipientFromQueue(tenantId, skippedJob, { reason: 'consent_required' });
             return { status: 'skipped', reason: 'consent_required' };
         }
 
@@ -219,24 +238,29 @@ function createCampaignDispatcherJob({
                 }
             });
 
-            await campaignQueueService.ackJob(tenantId, { idempotencyKey });
+            const sentJob = await campaignQueueService.ackJob(tenantId, { idempotencyKey });
+            await syncCampaignRecipientFromQueue(tenantId, sentJob, { reason: 'sent' });
             return { status: 'sent' };
         } catch (error) {
             const code = extractErrorCode(error);
             if (isLikelyPermanentError(code, permanentCodes)) {
-                await campaignQueueService.skipJob(tenantId, {
+                const skippedJob = await campaignQueueService.skipJob(tenantId, {
                     idempotencyKey,
                     reason: `permanent_error_${code}`
                 });
+                await syncCampaignRecipientFromQueue(tenantId, skippedJob, { reason: `permanent_error_${code}` });
                 return { status: 'skipped', reason: 'permanent_error', code };
             }
 
             const isTransient = Number.isFinite(Number(code)) ? transientCodes.has(Number(code)) : false;
             const retryDelaySeconds = buildRetryDelaySeconds(job?.attemptCount || 0, retryBaseSeconds, retryMaxSeconds);
-            await campaignQueueService.failJob(tenantId, {
+            const failedJob = await campaignQueueService.failJob(tenantId, {
                 idempotencyKey,
                 lastError: String(error?.message || (isTransient ? 'transient_dispatch_failed' : 'dispatch_failed')),
                 retryDelaySeconds
+            });
+            await syncCampaignRecipientFromQueue(tenantId, failedJob, {
+                reason: String(error?.message || (isTransient ? 'transient_dispatch_failed' : 'dispatch_failed'))
             });
             return { status: 'failed', reason: 'retry_scheduled', code };
         }
@@ -250,6 +274,9 @@ function createCampaignDispatcherJob({
             limit: batchSize
         });
         const jobs = Array.isArray(claimedJobs) ? claimedJobs : [];
+        for (const claimedJob of jobs) {
+            await syncCampaignRecipientFromQueue(tenantId, claimedJob, { reason: 'claimed', actorId: workerId });
+        }
 
         let sent = 0;
         let failed = 0;

@@ -1092,6 +1092,35 @@ async function listCampaignRecipients(tenantId = DEFAULT_TENANT_ID, options = {}
     }
 }
 
+async function getRecipientByIdempotencyKey(tenantId = DEFAULT_TENANT_ID, { idempotencyKey = '' } = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const cleanIdempotencyKey = toText(idempotencyKey);
+    if (!cleanIdempotencyKey) return null;
+
+    if (getStorageDriver() !== 'postgres') {
+        const store = await readStore(cleanTenantId);
+        const found = store.recipients.find((item) => toText(item.idempotencyKey) === cleanIdempotencyKey) || null;
+        return found ? sanitizeRecipient(found) : null;
+    }
+
+    try {
+        await ensurePostgresSchema();
+        const result = await queryPostgres(
+            `SELECT *
+               FROM tenant_campaign_recipients
+              WHERE tenant_id = $1
+                AND idempotency_key = $2
+              LIMIT 1`,
+            [cleanTenantId, cleanIdempotencyKey]
+        );
+        const row = Array.isArray(result?.rows) ? result.rows[0] : null;
+        return row ? mapRecipientRow(row) : null;
+    } catch (error) {
+        if (missingRelation(error)) return null;
+        throw error;
+    }
+}
+
 async function recomputeCampaignStats(tenantId = DEFAULT_TENANT_ID, { campaignId = '', markCompleted = true } = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
     const cleanCampaignId = toText(campaignId);
@@ -1201,7 +1230,8 @@ async function enqueuePendingRecipientsForCampaign(tenantId = DEFAULT_TENANT_ID,
     let queued = 0;
 
     for (const recipient of pendingRecipients) {
-        await campaignQueueService.enqueueJob(cleanTenantId, {
+        const existingJob = await campaignQueueService.getJobByIdempotencyKey(cleanTenantId, recipient.idempotencyKey);
+        const queueJob = await campaignQueueService.enqueueJob(cleanTenantId, {
             campaignId: targetCampaign.campaignId,
             recipientId: recipient.recipientId,
             phone: recipient.phone,
@@ -1214,7 +1244,23 @@ async function enqueuePendingRecipientsForCampaign(tenantId = DEFAULT_TENANT_ID,
             nextAttemptAt: recipient.nextAttemptAt || nowIso(),
             status: 'pending'
         });
-        queued += 1;
+        if (!existingJob && queueJob) {
+            queued += 1;
+            await recordCampaignEvent(cleanTenantId, {
+                campaignId: targetCampaign.campaignId,
+                recipientId: recipient.recipientId,
+                customerId: recipient.customerId || null,
+                phone: recipient.phone,
+                moduleId: targetCampaign.moduleId,
+                eventType: 'recipient_queued',
+                severity: 'info',
+                actorType: 'system',
+                message: 'Job materializado en tenant_campaign_queue',
+                payloadJson: {
+                    idempotencyKey: recipient.idempotencyKey
+                }
+            });
+        }
     }
 
     return { queued };
@@ -1229,6 +1275,7 @@ async function seedRecipientsFromFilters(tenantId = DEFAULT_TENANT_ID, options =
     if (!campaign) throw new Error('Campana no encontrada.');
 
     const filters = normalizeObject(options.filters || campaign.audienceFiltersJson);
+    const enqueueQueue = options.enqueueQueue === true;
     const candidates = await loadCandidateCustomers(cleanTenantId, campaign, filters);
     const maxAttempts = toInt(options.maxAttempts, 3, { min: 1, max: 10 });
     const existingRecipients = await listCampaignRecipients(cleanTenantId, {
@@ -1277,35 +1324,39 @@ async function seedRecipientsFromFilters(tenantId = DEFAULT_TENANT_ID, options =
         knownByPhone.add(phone);
         if (recipient.customerId) knownByCustomer.add(recipient.customerId);
 
-        await campaignQueueService.enqueueJob(cleanTenantId, {
-            campaignId: campaign.campaignId,
-            recipientId: recipient.recipientId,
-            phone: recipient.phone,
-            moduleId: campaign.moduleId,
-            templateName: campaign.templateName,
-            templateLanguage: campaign.templateLanguage,
-            variablesJson: recipient.variablesJson,
-            idempotencyKey: recipient.idempotencyKey,
-            maxAttempts: recipient.maxAttempts,
-            nextAttemptAt: recipient.nextAttemptAt || nowIso(),
-            status: 'pending'
-        });
-
-        await recordCampaignEvent(cleanTenantId, {
-            campaignId: campaign.campaignId,
-            recipientId: recipient.recipientId,
-            customerId: recipient.customerId,
-            phone: recipient.phone,
-            moduleId: campaign.moduleId,
-            eventType: 'recipient_queued',
-            severity: 'info',
-            actorType: options.actorUserId ? 'user' : 'system',
-            actorId: toNullableText(options.actorUserId),
-            message: 'Destinatario encolado para campana',
-            payloadJson: {
-                idempotencyKey: recipient.idempotencyKey
+        if (enqueueQueue) {
+            const existingJob = await campaignQueueService.getJobByIdempotencyKey(cleanTenantId, recipient.idempotencyKey);
+            const queueJob = await campaignQueueService.enqueueJob(cleanTenantId, {
+                campaignId: campaign.campaignId,
+                recipientId: recipient.recipientId,
+                phone: recipient.phone,
+                moduleId: campaign.moduleId,
+                templateName: campaign.templateName,
+                templateLanguage: campaign.templateLanguage,
+                variablesJson: recipient.variablesJson,
+                idempotencyKey: recipient.idempotencyKey,
+                maxAttempts: recipient.maxAttempts,
+                nextAttemptAt: recipient.nextAttemptAt || nowIso(),
+                status: 'pending'
+            });
+            if (!existingJob && queueJob) {
+                await recordCampaignEvent(cleanTenantId, {
+                    campaignId: campaign.campaignId,
+                    recipientId: recipient.recipientId,
+                    customerId: recipient.customerId,
+                    phone: recipient.phone,
+                    moduleId: campaign.moduleId,
+                    eventType: 'recipient_queued',
+                    severity: 'info',
+                    actorType: options.actorUserId ? 'user' : 'system',
+                    actorId: toNullableText(options.actorUserId),
+                    message: 'Destinatario encolado para campana',
+                    payloadJson: {
+                        idempotencyKey: recipient.idempotencyKey
+                    }
+                });
             }
-        });
+        }
     }
 
     const refreshedCampaign = await recomputeCampaignStats(cleanTenantId, { campaignId: campaign.campaignId, markCompleted: false });
@@ -1314,6 +1365,107 @@ async function seedRecipientsFromFilters(tenantId = DEFAULT_TENANT_ID, options =
         insertedCount: insertedRecipients.length,
         insertedRecipients
     };
+}
+
+async function applyQueueJobUpdate(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const queueJob = normalizeObject(options.queueJob);
+    const idempotencyKey = toText(queueJob.idempotencyKey || options.idempotencyKey || '');
+    if (!idempotencyKey) return null;
+
+    const job = queueJob.idempotencyKey
+        ? queueJob
+        : (await campaignQueueService.getJobByIdempotencyKey(cleanTenantId, idempotencyKey));
+    if (!job || !toText(job.campaignId)) return null;
+
+    const recipient = await getRecipientByIdempotencyKey(cleanTenantId, { idempotencyKey });
+    if (!recipient) return null;
+
+    const now = nowIso();
+    const nextStatus = normalizeRecipientStatus(job.status || recipient.status);
+    const nextRecipient = sanitizeRecipient({
+        ...recipient,
+        status: nextStatus,
+        attemptCount: toInt(job.attemptCount ?? recipient.attemptCount, 0, { min: 0 }),
+        maxAttempts: toInt(job.maxAttempts ?? recipient.maxAttempts, recipient.maxAttempts || 3, { min: 1 }),
+        nextAttemptAt: job.nextAttemptAt || recipient.nextAttemptAt || now,
+        claimedAt: nextStatus === 'claimed' ? (job.claimedAt || recipient.claimedAt || now) : null,
+        sentAt: nextStatus === 'sent' ? (recipient.sentAt || now) : recipient.sentAt,
+        failedAt: nextStatus === 'failed' ? (recipient.failedAt || now) : recipient.failedAt,
+        skippedAt: nextStatus === 'skipped' ? (recipient.skippedAt || now) : recipient.skippedAt,
+        lastError: job.lastError !== undefined ? toNullableText(job.lastError) : recipient.lastError,
+        skipReason: nextStatus === 'skipped'
+            ? (toNullableText(options.reason || job.lastError || recipient.skipReason || 'skipped') || 'skipped')
+            : recipient.skipReason,
+        updatedAt: now
+    });
+
+    const changed = (
+        nextRecipient.status !== recipient.status
+        || nextRecipient.attemptCount !== recipient.attemptCount
+        || toText(nextRecipient.nextAttemptAt) !== toText(recipient.nextAttemptAt)
+        || toText(nextRecipient.lastError || '') !== toText(recipient.lastError || '')
+        || toText(nextRecipient.claimedAt || '') !== toText(recipient.claimedAt || '')
+    );
+
+    if (!changed) {
+        return { campaign: await recomputeCampaignStats(cleanTenantId, { campaignId: recipient.campaignId, markCompleted: true }), recipient };
+    }
+
+    const persistedRecipient = await persistRecipientRecord(cleanTenantId, nextRecipient);
+
+    let eventType = '';
+    let severity = 'info';
+    let message = '';
+    if (nextStatus === 'claimed') {
+        eventType = 'recipient_claimed';
+        message = 'Destinatario tomado por worker';
+    } else if (nextStatus === 'sent') {
+        eventType = 'recipient_sent';
+        message = 'Template enviado al destinatario';
+    } else if (nextStatus === 'skipped') {
+        eventType = 'recipient_skipped';
+        severity = 'warn';
+        message = 'Destinatario omitido por politica/estado';
+    } else if (nextStatus === 'failed') {
+        eventType = 'recipient_failed';
+        severity = 'error';
+        message = 'Destinatario fallo definitivamente';
+    } else if (nextStatus === 'pending' && toText(nextRecipient.lastError || '')) {
+        eventType = 'recipient_failed';
+        severity = 'warn';
+        message = 'Fallo transitorio, reintento programado';
+    }
+
+    if (eventType) {
+        await recordCampaignEvent(cleanTenantId, {
+            campaignId: persistedRecipient.campaignId,
+            recipientId: persistedRecipient.recipientId,
+            customerId: persistedRecipient.customerId,
+            phone: persistedRecipient.phone,
+            moduleId: persistedRecipient.moduleId,
+            eventType,
+            severity,
+            actorType: toLower(options.actorType || 'worker') || 'worker',
+            actorId: toNullableText(options.actorId),
+            reason: toNullableText(options.reason || nextRecipient.lastError),
+            message,
+            payloadJson: {
+                status: nextStatus,
+                attemptCount: nextRecipient.attemptCount,
+                maxAttempts: nextRecipient.maxAttempts,
+                nextAttemptAt: nextRecipient.nextAttemptAt,
+                idempotencyKey
+            }
+        });
+    }
+
+    const campaign = await recomputeCampaignStats(cleanTenantId, {
+        campaignId: persistedRecipient.campaignId,
+        markCompleted: true
+    });
+
+    return { campaign, recipient: persistedRecipient };
 }
 
 async function startCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
@@ -1499,5 +1651,6 @@ module.exports = {
     listCampaignRecipients,
     recordCampaignEvent,
     listCampaignEvents,
-    recomputeCampaignStats
+    recomputeCampaignStats,
+    applyQueueJobUpdate
 };
