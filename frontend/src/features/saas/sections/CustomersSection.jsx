@@ -91,6 +91,7 @@ function CustomersSection(props = {}) {
     const [moduleContextsError, setModuleContextsError] = useState('');
     const [moduleConsentDraftByModuleId, setModuleConsentDraftByModuleId] = useState({});
     const [moduleConsentBusyByModuleId, setModuleConsentBusyByModuleId] = useState({});
+    const [editClickBusy, setEditClickBusy] = useState(false);
 
     const selectedCustomerIdResolved = useMemo(() => resolveCustomerId(selectedCustomer), [selectedCustomer]);
     const moduleNameById = useMemo(() => {
@@ -232,6 +233,22 @@ function CustomersSection(props = {}) {
         }
     }, [loadCustomers, loadModuleContextsByCustomer, requestJson, selectedCustomerIdResolved, tenantScopeId]);
 
+    const handleOpenCustomerEdit = useCallback(() => {
+        console.log('[customers][edit-click]', {
+            busy,
+            customerPanelMode,
+            hasSelectedCustomer: Boolean(selectedCustomer),
+            selectedCustomerId: resolveCustomerId(selectedCustomer)
+        });
+        if (editClickBusy) return;
+        setEditClickBusy(true);
+        try {
+            openCustomerEdit();
+        } finally {
+            setEditClickBusy(false);
+        }
+    }, [busy, customerPanelMode, editClickBusy, openCustomerEdit, selectedCustomer]);
+
     useEffect(() => {
         if (!isCustomersSection || customerPanelMode === 'create') {
             setModuleContexts([]);
@@ -328,7 +345,7 @@ function CustomersSection(props = {}) {
                                             </div>
                                             {customerPanelMode === 'view' && selectedCustomer && (
                                                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                                    <button type="button" disabled={busy} onClick={openCustomerEdit}>Editar</button>
+                                                    <button type="button" disabled={editClickBusy} onClick={handleOpenCustomerEdit}>Editar</button>
                                                     <button
                                                         type="button"
                                                         disabled={busy}

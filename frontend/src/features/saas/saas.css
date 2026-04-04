@@ -28,7 +28,7 @@
   box-shadow: none;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: auto;
 }
 .saas-admin-panel--embedded {
   width: 100%;
@@ -713,6 +713,10 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+.saas-admin-detail-pane {
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .saas-admin-pane-header {
   display: flex;
