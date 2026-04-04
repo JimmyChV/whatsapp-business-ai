@@ -39,6 +39,17 @@ export async function createCampaign(requestJson, payload = {}) {
     });
 }
 
+export async function estimateCampaign(requestJson, payload = {}) {
+    assertRequestJson(requestJson);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        throw new Error('payload de estimacion requerido.');
+    }
+    return requestJson('/api/tenant/campaigns/estimate', {
+        method: 'POST',
+        body: payload
+    });
+}
+
 export async function listCampaigns(
     requestJson,
     {
@@ -168,4 +179,3 @@ export async function listCampaignEvents(
     });
     return requestJson(`/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/events${suffix}`);
 }
-

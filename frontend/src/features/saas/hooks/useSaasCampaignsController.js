@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
+import { fetchTenantLabels } from '../services/labels.service';
 import {
     cancelCampaign as cancelCampaignApi,
     createCampaign as createCampaignApi,
+    estimateCampaign as estimateCampaignApi,
     getCampaignDetail,
     listCampaignEvents as listCampaignEventsApi,
     listCampaignRecipients as listCampaignRecipientsApi,
@@ -73,6 +75,7 @@ function patchCampaignArray(items = [], patch = null) {
 export default function useSaasCampaignsController({
     requestJson = null,
     socket = null,
+    tenantId = '',
     initialFilters = {}
 } = {}) {
     const { notify } = useUiFeedback();
@@ -82,9 +85,12 @@ export default function useSaasCampaignsController({
     const [total, setTotal] = useState(0);
     const [recipients, setRecipients] = useState([]);
     const [events, setEvents] = useState([]);
+    const [availableLabels, setAvailableLabels] = useState([]);
+    const [reachEstimate, setReachEstimate] = useState(null);
     const [loading, setLoading] = useState(false);
     const [loadingRecipients, setLoadingRecipients] = useState(false);
     const [loadingEvents, setLoadingEvents] = useState(false);
+    const [estimating, setEstimating] = useState(false);
     const [error, setError] = useState('');
 
     const selectedCampaignId = toText(selectedCampaign?.campaignId || '');
@@ -139,6 +145,50 @@ export default function useSaasCampaignsController({
             setLoading(false);
         }
     }, [filters, requestJson, selectedCampaignId]);
+
+    const loadAvailableLabels = useCallback(async (overrideTenantId = '') => {
+        if (typeof requestJson !== 'function') return { items: [] };
+        const cleanTenantId = toText(overrideTenantId || tenantId);
+        if (!cleanTenantId) {
+            setAvailableLabels([]);
+            return { items: [] };
+        }
+
+        try {
+            const response = await fetchTenantLabels(requestJson, cleanTenantId, { includeInactive: false });
+            const items = Array.isArray(response?.items) ? response.items : [];
+            setAvailableLabels(items);
+            return response;
+        } catch (err) {
+            const message = String(err?.message || 'No se pudieron cargar etiquetas para campanas.');
+            setError(message);
+            throw err;
+        }
+    }, [requestJson, tenantId]);
+
+    const estimateReach = useCallback(async (filtersPayload = {}) => {
+        if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
+        const payload = filtersPayload && typeof filtersPayload === 'object' && !Array.isArray(filtersPayload)
+            ? filtersPayload
+            : {};
+
+        setEstimating(true);
+        setError('');
+        try {
+            const response = await estimateCampaignApi(requestJson, payload);
+            const estimate = response?.estimate && typeof response.estimate === 'object'
+                ? response.estimate
+                : null;
+            setReachEstimate(estimate);
+            return response;
+        } catch (err) {
+            const message = String(err?.message || 'No se pudo estimar el alcance de la campana.');
+            setError(message);
+            throw err;
+        } finally {
+            setEstimating(false);
+        }
+    }, [requestJson]);
 
     const selectCampaign = useCallback(async (campaignId = '', { loadDetail = true } = {}) => {
         const cleanCampaignId = toText(campaignId);
@@ -412,6 +462,15 @@ export default function useSaasCampaignsController({
         };
     }, [notify, patchCampaignState, selectedCampaignId, socket]);
 
+    useEffect(() => {
+        const cleanTenantId = toText(tenantId);
+        if (!cleanTenantId) {
+            setAvailableLabels([]);
+            return;
+        }
+        loadAvailableLabels(cleanTenantId).catch(() => { });
+    }, [loadAvailableLabels, tenantId]);
+
     const statusCounts = useMemo(() => {
         const counts = {
             total: Number(total) || campaigns.length || 0,
@@ -441,13 +500,18 @@ export default function useSaasCampaignsController({
         total,
         recipients,
         events,
+        availableLabels,
+        reachEstimate,
         loading,
         loadingRecipients,
         loadingEvents,
+        estimating,
         error,
         clearError,
         statusCounts,
         loadCampaigns,
+        loadAvailableLabels,
+        estimateReach,
         selectCampaign,
         createCampaign,
         updateCampaign,
@@ -459,4 +523,3 @@ export default function useSaasCampaignsController({
         loadEvents
     };
 }
-

@@ -79,6 +79,10 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
         waModules: context.waModules,
         busy: context.busy,
         setError: context.setError,
+        availableLabels: context.availableLabels,
+        reachEstimate: context.reachEstimate,
+        estimating: context.estimating,
+        estimateReach: context.estimateReach,
         campaignsController: context.campaignsController,
         metaTemplatesController: context.metaTemplatesController
     };

@@ -289,7 +289,11 @@ export default function useSaasAdminPanelController({
         buildApiHeaders
     });
     const metaTemplatesController = useSaasMetaTemplatesController({ requestJson, socket });
-    const campaignsController = useSaasCampaignsController({ requestJson, socket });
+    const campaignsController = useSaasCampaignsController({
+        requestJson,
+        socket,
+        tenantId: panelCoreState.settingsTenantId
+    });
 
     const operationsPanelState = useOperationsPanelState({
         canViewOperations,
