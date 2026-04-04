@@ -234,12 +234,6 @@ function CustomersSection(props = {}) {
     }, [loadCustomers, loadModuleContextsByCustomer, requestJson, selectedCustomerIdResolved, tenantScopeId]);
 
     const handleOpenCustomerEdit = useCallback(() => {
-        console.log('[customers][edit-click]', {
-            busy,
-            customerPanelMode,
-            hasSelectedCustomer: Boolean(selectedCustomer),
-            selectedCustomerId: resolveCustomerId(selectedCustomer)
-        });
         if (editClickBusy) return;
         setEditClickBusy(true);
         try {
@@ -247,7 +241,7 @@ function CustomersSection(props = {}) {
         } finally {
             setEditClickBusy(false);
         }
-    }, [busy, customerPanelMode, editClickBusy, openCustomerEdit, selectedCustomer]);
+    }, [editClickBusy, openCustomerEdit]);
 
     useEffect(() => {
         if (!isCustomersSection || customerPanelMode === 'create') {

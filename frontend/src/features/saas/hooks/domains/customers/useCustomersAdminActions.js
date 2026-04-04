@@ -32,8 +32,9 @@ export default function useCustomersAdminActions({
     };
 
     const openCustomerEdit = () => {
-        if (!selectedCustomer) return;
-        setCustomerForm(normalizeCustomerFormFromItem(selectedCustomer));
+        if (selectedCustomer) {
+            setCustomerForm(normalizeCustomerFormFromItem(selectedCustomer));
+        }
         setCustomerPanelMode('edit');
     };
 
