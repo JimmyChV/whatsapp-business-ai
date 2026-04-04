@@ -50,6 +50,7 @@ const {
     customerConsentService,
     templateWebhookEventsService,
     templateVariablesService,
+    campaignsService,
     campaignQueueService,
     campaignDispatcherJobService,
     chatCommercialStatusService,
@@ -457,6 +458,7 @@ registerHttpRoutes({
     customerConsentService,
     templateWebhookEventsService,
     templateVariablesService,
+    campaignsService,
     chatCommercialStatusService,
     metaTemplatesService,
     chatAssignmentPolicyService,
@@ -506,6 +508,7 @@ const chatAssignmentInactivityJob = chatAssignmentInactivityJobService.createCha
 });
 const campaignDispatcherJob = campaignDispatcherJobService.createCampaignDispatcherJob({
     campaignQueueService,
+    campaignsService,
     customerConsentService,
     tenantService,
     waModuleService,

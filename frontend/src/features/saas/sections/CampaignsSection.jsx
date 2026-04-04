@@ -1,0 +1,652 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
+
+const STATUS_META = {
+    draft: { label: 'Borrador', className: 'saas-campaigns-status--draft' },
+    scheduled: { label: 'Programada', className: 'saas-campaigns-status--scheduled' },
+    running: { label: 'Corriendo', className: 'saas-campaigns-status--running' },
+    paused: { label: 'Pausada', className: 'saas-campaigns-status--paused' },
+    completed: { label: 'Completada', className: 'saas-campaigns-status--completed' },
+    cancelled: { label: 'Cancelada', className: 'saas-campaigns-status--cancelled' },
+    failed: { label: 'Fallida', className: 'saas-campaigns-status--failed' }
+};
+
+const EMPTY_FORM = {
+    campaignName: '',
+    campaignDescription: '',
+    moduleId: '',
+    templateId: '',
+    templateName: '',
+    templateLanguage: 'es',
+    scheduledAt: '',
+    commercialStatuses: [],
+    selectedLabelIds: [],
+    languageFilter: '',
+    searchText: '',
+    maxRecipients: ''
+};
+
+function toText(value = '') { return String(value || '').trim(); }
+function toLower(value = '') { return toText(value).toLowerCase(); }
+function toUpper(value = '') { return toText(value).toUpperCase(); }
+function toNumber(value = 0, fallback = 0) { const n = Number(value); return Number.isFinite(n) ? n : fallback; }
+
+function formatDateTime(value = '') {
+    const raw = toText(value);
+    if (!raw) return '-';
+    const d = new Date(raw);
+    if (!Number.isFinite(d.getTime())) return raw;
+    return d.toLocaleString('es-PE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function toDateTimeLocal(value = '') {
+    const raw = toText(value);
+    if (!raw) return '';
+    const d = new Date(raw);
+    if (!Number.isFinite(d.getTime())) return '';
+    const offset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function toIsoDateTimeLocal(value = '') {
+    const raw = toText(value);
+    if (!raw) return null;
+    const d = new Date(raw);
+    return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
+
+const COMMERCIAL_STATUS_OPTIONS = [
+    { key: 'nuevo', label: 'Nuevo' },
+    { key: 'en_conversacion', label: 'En conversacion' },
+    { key: 'cotizado', label: 'Cotizado' },
+    { key: 'vendido', label: 'Vendido' },
+    { key: 'perdido', label: 'Perdido' }
+];
+
+function statusMeta(status = '') {
+    const key = toLower(status);
+    return STATUS_META[key] || { label: key || 'N/A', className: 'saas-campaigns-status--paused' };
+}
+
+function progress(campaign = {}) {
+    const total = Math.max(0, toNumber(campaign?.totalRecipients));
+    if (!total) return 0;
+    const done = Math.max(0, toNumber(campaign?.sentRecipients) + toNumber(campaign?.failedRecipients) + toNumber(campaign?.skippedRecipients));
+    return Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+}
+
+function normalizeCommercialStatuses(value = []) {
+    const source = Array.isArray(value) ? value : [];
+    const allowed = new Set(COMMERCIAL_STATUS_OPTIONS.map((entry) => entry.key));
+    return Array.from(new Set(source.map((entry) => toLower(entry)).filter((entry) => allowed.has(entry))));
+}
+
+function buildLabelOptions(items = []) {
+    return (Array.isArray(items) ? items : [])
+        .map((item) => ({
+            labelId: toUpper(item?.labelId || item?.id || ''),
+            name: toText(item?.name || item?.labelName || item?.label || ''),
+            isActive: item?.isActive !== false
+        }))
+        .filter((item) => item.labelId && item.name && item.isActive)
+        .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+}
+
+function mapCampaignToForm(campaign = {}, labelOptions = []) {
+    const filters = campaign?.audienceFiltersJson && typeof campaign.audienceFiltersJson === 'object' ? campaign.audienceFiltersJson : {};
+    const labelsByName = new Map(labelOptions.map((entry) => [toLower(entry.name), entry.labelId]));
+    const labelsById = new Set(labelOptions.map((entry) => toUpper(entry.labelId)));
+    const selectedLabelIds = (Array.isArray(filters?.tagAny) ? filters.tagAny : [])
+        .map((entry) => {
+            const raw = toText(entry);
+            if (!raw) return '';
+            const upper = toUpper(raw);
+            if (labelsById.has(upper)) return upper;
+            return labelsByName.get(toLower(raw)) || '';
+        })
+        .filter(Boolean);
+    return {
+        campaignName: toText(campaign?.campaignName),
+        campaignDescription: toText(campaign?.campaignDescription),
+        moduleId: toText(campaign?.moduleId),
+        templateId: toText(campaign?.templateId),
+        templateName: toText(campaign?.templateName),
+        templateLanguage: toLower(campaign?.templateLanguage || 'es'),
+        scheduledAt: toDateTimeLocal(campaign?.scheduledAt),
+        commercialStatuses: normalizeCommercialStatuses(filters?.commercialStatuses || (filters?.commercialStatus ? [filters.commercialStatus] : [])),
+        selectedLabelIds: Array.from(new Set(selectedLabelIds)),
+        languageFilter: toLower(filters?.preferredLanguage || ''),
+        searchText: toText(filters?.search),
+        maxRecipients: filters?.maxRecipients ? String(filters.maxRecipients) : ''
+    };
+}
+
+function buildAudienceFiltersFromForm(form = {}, labelOptions = []) {
+    const labelsById = new Map(labelOptions.map((entry) => [toUpper(entry.labelId), entry]));
+    const tagAny = (Array.isArray(form?.selectedLabelIds) ? form.selectedLabelIds : [])
+        .map((labelId) => labelsById.get(toUpper(labelId)))
+        .filter(Boolean)
+        .map((entry) => toLower(entry.name))
+        .filter(Boolean);
+    const maxRecipients = Math.max(0, Math.floor(toNumber(form?.maxRecipients)));
+    return {
+        commercialStatuses: normalizeCommercialStatuses(form?.commercialStatuses || []),
+        preferredLanguage: toLower(form?.languageFilter || ''),
+        marketingStatus: ['opted_in'],
+        tagAny,
+        search: toText(form?.searchText || ''),
+        maxRecipients: maxRecipients > 0 ? maxRecipients : undefined
+    };
+}
+
+export default React.memo(function CampaignsSection(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const { notify, confirm } = useUiFeedback();
+    const {
+        isCampaignsSection = false,
+        tenantScopeLocked = true,
+        settingsTenantId = '',
+        waModules = [],
+        campaignsController = null,
+        metaTemplatesController = null,
+        availableLabels: availableLabelsFromContext = [],
+        reachEstimate: reachEstimateFromContext = null,
+        estimating: estimatingFromContext = false,
+        estimateReach: estimateReachFromContext = null,
+        setError = null
+    } = context;
+
+    const [panelMode, setPanelMode] = useState('detail');
+    const [form, setForm] = useState(EMPTY_FORM);
+    const [search, setSearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState('');
+    const [moduleFilter, setModuleFilter] = useState('');
+    const [maxRecipientsTouched, setMaxRecipientsTouched] = useState(false);
+    const [localEstimate, setLocalEstimate] = useState(null);
+
+    const {
+        campaigns = [],
+        selectedCampaign = null,
+        selectedCampaignId = '',
+        recipients = [],
+        events = [],
+        loading = false,
+        error = '',
+        loadCampaigns,
+        selectCampaign,
+        createCampaign,
+        updateCampaign,
+        startCampaign,
+        pauseCampaign,
+        resumeCampaign,
+        cancelCampaign,
+        loadRecipients,
+        loadEvents,
+        availableLabels: availableLabelsFromController = [],
+        reachEstimate: reachEstimateFromController = null,
+        estimating: estimatingFromController = false,
+        estimateReach: estimateReachFromController = null
+    } = campaignsController || {};
+
+    const { items: templateItems = [], loadTemplates } = metaTemplatesController || {};
+
+    const availableLabels = useMemo(() => {
+        if (Array.isArray(availableLabelsFromContext) && availableLabelsFromContext.length > 0) return availableLabelsFromContext;
+        return availableLabelsFromController;
+    }, [availableLabelsFromContext, availableLabelsFromController]);
+    const reachEstimate = localEstimate || reachEstimateFromContext || reachEstimateFromController || null;
+    const estimating = Boolean(estimatingFromContext || estimatingFromController);
+    const estimateReachAction = estimateReachFromContext || estimateReachFromController;
+
+    const labelOptions = useMemo(() => buildLabelOptions(availableLabels), [availableLabels]);
+
+    const moduleOptions = useMemo(() => (Array.isArray(waModules) ? waModules : [])
+        .map((item) => ({
+            moduleId: toText(item?.moduleId || item?.id),
+            label: toText(item?.name || item?.moduleId || item?.id),
+            isActive: item?.isActive !== false && item?.active !== false && toLower(item?.status || '') !== 'inactive'
+        }))
+        .filter((entry) => entry.moduleId && entry.label), [waModules]);
+
+    const approvedTemplates = useMemo(() => (Array.isArray(templateItems) ? templateItems : [])
+        .filter((entry) => toLower(entry?.status) === 'approved')
+        .map((entry) => ({
+            templateId: toText(entry?.templateId || entry?.metaTemplateId || entry?.templateName),
+            templateName: toText(entry?.templateName),
+            moduleId: toText(entry?.moduleId),
+            templateLanguage: toLower(entry?.templateLanguage || 'es')
+        }))
+        .filter((entry) => entry.templateName), [templateItems]);
+
+    const filteredCampaigns = useMemo(() => {
+        const term = toLower(search);
+        return campaigns.filter((item) => (!statusFilter || toLower(item?.status) === toLower(statusFilter))
+            && (!moduleFilter || toText(item?.moduleId) === toText(moduleFilter))
+            && (!term || `${toLower(item?.campaignName)} ${toLower(item?.templateName)} ${toLower(item?.moduleId)}`.includes(term)));
+    }, [campaigns, moduleFilter, search, statusFilter]);
+
+    const templatesByModule = useMemo(() => {
+        if (!form.moduleId) return approvedTemplates;
+        return approvedTemplates.filter((entry) => !entry.moduleId || entry.moduleId === form.moduleId);
+    }, [approvedTemplates, form.moduleId]);
+
+    const selectedTemplate = useMemo(() => {
+        const cleanTemplateId = toText(form.templateId);
+        if (!cleanTemplateId) return null;
+        return templatesByModule.find((entry) => entry.templateId === cleanTemplateId) || null;
+    }, [form.templateId, templatesByModule]);
+
+    const selectedModule = useMemo(() => {
+        const cleanModuleId = toText(form.moduleId);
+        if (!cleanModuleId) return null;
+        return moduleOptions.find((entry) => entry.moduleId === cleanModuleId) || null;
+    }, [form.moduleId, moduleOptions]);
+
+    const estimateNumbers = useMemo(() => ({
+        total: Math.max(0, toNumber(reachEstimate?.total)),
+        eligible: Math.max(0, toNumber(reachEstimate?.eligible)),
+        excluded: Math.max(0, toNumber(reachEstimate?.excluded))
+    }), [reachEstimate]);
+
+    const canStartGuardrails = useMemo(() => {
+        const templateApproved = Boolean(selectedTemplate?.templateId);
+        const moduleActive = selectedModule ? selectedModule.isActive !== false : false;
+        const hasEligibleAudience = estimateNumbers.eligible >= 1;
+        return [
+            {
+                key: 'template',
+                ok: templateApproved,
+                label: 'Template aprobado',
+                hint: templateApproved ? 'OK' : 'Selecciona un template en estado aprobado.'
+            },
+            {
+                key: 'module',
+                ok: moduleActive,
+                label: 'Modulo activo',
+                hint: moduleActive ? 'OK' : 'Selecciona un modulo activo.'
+            },
+            {
+                key: 'eligible',
+                ok: hasEligibleAudience,
+                label: 'Destinatarios elegibles >= 1',
+                hint: hasEligibleAudience ? `${estimateNumbers.eligible} elegibles` : (reachEstimate ? 'No hay elegibles para estos filtros.' : 'Primero estima el alcance.')
+            }
+        ];
+    }, [estimateNumbers.eligible, reachEstimate, selectedModule, selectedTemplate]);
+    const canStartWithGuardrails = canStartGuardrails.every((entry) => entry.ok);
+    const maxRecipientsRange = Math.max(1, estimateNumbers.eligible || 1);
+    const selectedLabels = useMemo(() => {
+        const selected = new Set((Array.isArray(form.selectedLabelIds) ? form.selectedLabelIds : []).map((entry) => toUpper(entry)));
+        return labelOptions.filter((entry) => selected.has(toUpper(entry.labelId)));
+    }, [form.selectedLabelIds, labelOptions]);
+
+    const runSafe = useCallback(async (action, fallbackMessage) => {
+        try {
+            return await action();
+        } catch (err) {
+            const message = String(err?.message || fallbackMessage);
+            notify({ type: 'error', message });
+            setError?.(message);
+            return null;
+        }
+    }, [notify, setError]);
+
+    const loadTracking = useCallback(async (campaignId) => {
+        const cleanId = toText(campaignId || selectedCampaignId);
+        if (!cleanId) return;
+        await Promise.all([
+            typeof loadRecipients === 'function' ? loadRecipients({ campaignId: cleanId, limit: 120, offset: 0 }) : Promise.resolve(),
+            typeof loadEvents === 'function' ? loadEvents({ campaignId: cleanId, limit: 120, offset: 0 }) : Promise.resolve()
+        ]);
+    }, [loadEvents, loadRecipients, selectedCampaignId]);
+
+    useEffect(() => {
+        if (!isCampaignsSection || tenantScopeLocked || !settingsTenantId) return;
+        loadCampaigns?.().catch(() => {});
+        loadTemplates?.({ status: 'approved', limit: 300, offset: 0 }).catch(() => {});
+    }, [isCampaignsSection, loadCampaigns, loadTemplates, settingsTenantId, tenantScopeLocked]);
+
+    useEffect(() => {
+        if (!isCampaignsSection || tenantScopeLocked || panelMode === 'create') return;
+        if (selectedCampaignId || !campaigns[0]?.campaignId) return;
+        selectCampaign?.(campaigns[0].campaignId, { loadDetail: true }).then(() => loadTracking(campaigns[0].campaignId)).catch(() => {});
+    }, [campaigns, isCampaignsSection, loadTracking, panelMode, selectCampaign, selectedCampaignId, tenantScopeLocked]);
+
+    useEffect(() => {
+        if (panelMode !== 'create' && panelMode !== 'edit') return;
+        if (maxRecipientsTouched) return;
+        const eligible = estimateNumbers.eligible;
+        if (!Number.isFinite(eligible) || eligible <= 0) return;
+        setForm((prev) => ({ ...prev, maxRecipients: String(eligible) }));
+    }, [estimateNumbers.eligible, maxRecipientsTouched, panelMode]);
+
+    const toggleCommercialStatus = useCallback((statusKey = '') => {
+        const cleanKey = toLower(statusKey);
+        if (!cleanKey) return;
+        setForm((prev) => {
+            const current = new Set(normalizeCommercialStatuses(prev.commercialStatuses));
+            if (current.has(cleanKey)) current.delete(cleanKey);
+            else current.add(cleanKey);
+            return { ...prev, commercialStatuses: Array.from(current) };
+        });
+    }, []);
+
+    const toggleLabel = useCallback((labelId = '') => {
+        const cleanLabelId = toUpper(labelId);
+        if (!cleanLabelId) return;
+        setForm((prev) => {
+            const current = new Set((Array.isArray(prev.selectedLabelIds) ? prev.selectedLabelIds : []).map((entry) => toUpper(entry)));
+            if (current.has(cleanLabelId)) current.delete(cleanLabelId);
+            else current.add(cleanLabelId);
+            return { ...prev, selectedLabelIds: Array.from(current) };
+        });
+    }, []);
+
+    const buildCampaignPayload = useCallback(() => {
+        const audienceFiltersJson = buildAudienceFiltersFromForm(form, labelOptions);
+        return {
+            moduleId: toText(form.moduleId),
+            scopeModuleId: toLower(form.moduleId),
+            templateId: toText(form.templateId) || null,
+            templateName: toText(form.templateName),
+            templateLanguage: toLower(form.templateLanguage || 'es'),
+            campaignName: toText(form.campaignName),
+            campaignDescription: toText(form.campaignDescription) || null,
+            scheduledAt: toIsoDateTimeLocal(form.scheduledAt),
+            audienceFiltersJson,
+            variablesPreviewJson: {}
+        };
+    }, [form, labelOptions]);
+
+    const runEstimate = useCallback(async () => {
+        if (typeof estimateReachAction !== 'function') return;
+        const payload = buildCampaignPayload();
+        if (!payload.moduleId) throw new Error('Selecciona un modulo antes de estimar alcance.');
+        if (!payload.templateName) throw new Error('Selecciona un template aprobado antes de estimar alcance.');
+        const response = await estimateReachAction({
+            scopeModuleId: payload.scopeModuleId,
+            moduleId: payload.moduleId,
+            templateName: payload.templateName,
+            templateLanguage: payload.templateLanguage,
+            filters: payload.audienceFiltersJson
+        });
+        const estimate = response?.estimate && typeof response.estimate === 'object'
+            ? response.estimate
+            : null;
+        if (estimate) {
+            setLocalEstimate(estimate);
+        }
+    }, [buildCampaignPayload, estimateReachAction]);
+
+    if (!isCampaignsSection) return null;
+
+    const selectedMeta = statusMeta(selectedCampaign?.status);
+    const selectedProgress = progress(selectedCampaign);
+    const canWrite = !tenantScopeLocked;
+
+    return (
+        <section id="saas_campaigns" className="saas-admin-card saas-admin-card--full">
+            <div className={`saas-admin-master-detail saas-campaigns-layout ${(panelMode === 'create' || panelMode === 'edit') ? 'saas-campaigns-layout--builder' : ''}`}>
+                <aside className="saas-admin-master-pane saas-campaigns-list-pane">
+                    <div className="saas-admin-pane-header">
+                        <div><h3>Campanas</h3><small>Builder + lifecycle + tracking</small></div>
+                        <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                            <button type="button" disabled={loading || tenantScopeLocked} onClick={() => loadCampaigns?.().catch(() => {})}>Recargar</button>
+                            <button type="button" disabled={loading || tenantScopeLocked} onClick={() => {
+                                setPanelMode('create');
+                                setMaxRecipientsTouched(false);
+                                setLocalEstimate(null);
+                                setForm({ ...EMPTY_FORM, moduleId: moduleOptions[0]?.moduleId || '' });
+                            }}>Nueva</button>
+                        </div>
+                    </div>
+                    {tenantScopeLocked ? <div className="saas-admin-empty-state"><p>Selecciona una empresa para gestionar campanas.</p></div> : (
+                        <>
+                            <div className="saas-campaigns-list-filters">
+                                <input placeholder="Buscar campana" value={search} onChange={(e) => setSearch(e.target.value)} />
+                                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="">Todos</option>{Object.keys(STATUS_META).map((key) => <option key={key} value={key}>{STATUS_META[key].label}</option>)}</select>
+                                <select value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}><option value="">Todos los modulos</option>{moduleOptions.map((item) => <option key={item.moduleId} value={item.moduleId}>{item.label}</option>)}</select>
+                            </div>
+                            <div className="saas-admin-list saas-admin-list--compact">
+                                {filteredCampaigns.length === 0 ? <div className="saas-admin-empty-inline">No hay campanas para estos filtros.</div> : filteredCampaigns.map((campaign) => {
+                                    const meta = statusMeta(campaign?.status);
+                                    const isActive = toText(campaign?.campaignId) === selectedCampaignId;
+                                    return (
+                                        <button key={toText(campaign?.campaignId)} type="button" className={`saas-admin-list-item--button saas-campaigns-list-item ${isActive ? 'active' : ''}`} onClick={() => runSafe(async () => { await selectCampaign?.(campaign.campaignId, { loadDetail: true }); await loadTracking(campaign.campaignId); setPanelMode('detail'); }, 'No se pudo abrir campana.')}>
+                                            <div className="saas-campaigns-list-item__head"><strong>{toText(campaign?.campaignName) || 'Campana sin nombre'}</strong><span className={`saas-campaigns-status ${meta.className}`}>{meta.label}</span></div>
+                                            <small>{toText(campaign?.templateName) || 'Sin template'} | {toText(campaign?.moduleId) || '-'}</small>
+                                            <div className="saas-campaigns-progress"><div className="saas-campaigns-progress__track"><div className="saas-campaigns-progress__fill" style={{ width: `${progress(campaign)}%` }} /></div><span>{progress(campaign)}%</span></div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    )}
+                </aside>
+                <div className="saas-admin-detail-pane saas-campaigns-detail-pane">
+                    {tenantScopeLocked && <div className="saas-admin-empty-state saas-admin-empty-state--detail"><h4>Sin empresa activa</h4><p>Selecciona una empresa para continuar.</p></div>}
+                    {!tenantScopeLocked && (panelMode === 'create' || panelMode === 'edit') && (
+                        <div className="saas-campaigns-builder">
+                            <div className="saas-campaigns-builder__form">
+                                <div className="saas-admin-form-row">
+                                    <div className="saas-admin-field">
+                                        <label>Nombre</label>
+                                        <input value={form.campaignName} onChange={(e) => setForm((p) => ({ ...p, campaignName: e.target.value }))} />
+                                    </div>
+                                    <div className="saas-admin-field">
+                                        <label>Modulo</label>
+                                        <select value={form.moduleId} onChange={(e) => setForm((p) => ({ ...p, moduleId: e.target.value, templateId: '', templateName: '' }))}>
+                                            <option value="">Selecciona modulo</option>
+                                            {moduleOptions.map((m) => <option key={m.moduleId} value={m.moduleId}>{m.label}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="saas-admin-form-row">
+                                    <div className="saas-admin-field">
+                                        <label>Template aprobado</label>
+                                        <select
+                                            value={form.templateId}
+                                            onChange={(e) => {
+                                                const id = toText(e.target.value);
+                                                const t = templatesByModule.find((x) => x.templateId === id) || null;
+                                                setForm((p) => ({ ...p, templateId: id, templateName: t?.templateName || '', templateLanguage: t?.templateLanguage || 'es' }));
+                                            }}
+                                        >
+                                            <option value="">Selecciona template</option>
+                                            {templatesByModule.map((t) => <option key={t.templateId} value={t.templateId}>{`${t.templateName} (${toText(t.templateLanguage).toUpperCase()})`}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="saas-admin-field">
+                                        <label>Programada</label>
+                                        <input type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm((p) => ({ ...p, scheduledAt: e.target.value }))} />
+                                    </div>
+                                </div>
+                                <div className="saas-admin-form-row saas-admin-form-row--single">
+                                    <div className="saas-admin-field">
+                                        <label>Descripcion</label>
+                                        <textarea value={form.campaignDescription} onChange={(e) => setForm((p) => ({ ...p, campaignDescription: e.target.value }))} />
+                                    </div>
+                                </div>
+                                <div className="saas-admin-form-row">
+                                    <div className="saas-admin-field">
+                                        <label>Estado comercial (multiseleccion)</label>
+                                        <div className="saas-campaigns-chip-group">
+                                            {COMMERCIAL_STATUS_OPTIONS.map((option) => {
+                                                const active = normalizeCommercialStatuses(form.commercialStatuses).includes(option.key);
+                                                return (
+                                                    <button
+                                                        key={option.key}
+                                                        type="button"
+                                                        className={`saas-campaigns-chip ${active ? 'active' : ''}`}
+                                                        onClick={() => toggleCommercialStatus(option.key)}
+                                                    >
+                                                        {option.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                    <div className="saas-admin-field">
+                                        <label>Idioma</label>
+                                        <select value={form.languageFilter} onChange={(e) => setForm((p) => ({ ...p, languageFilter: e.target.value }))}>
+                                            <option value="">Todos</option>
+                                            <option value="es">Espanol</option>
+                                            <option value="en">English</option>
+                                            <option value="pt">Portugues</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="saas-admin-form-row">
+                                    <div className="saas-admin-field">
+                                        <label>Etiquetas (multiseleccion)</label>
+                                        <div className="saas-campaigns-chip-group">
+                                            {labelOptions.length === 0 ? <small className="saas-admin-empty-inline">No hay etiquetas activas.</small> : labelOptions.map((entry) => {
+                                                const active = selectedLabels.some((item) => item.labelId === entry.labelId);
+                                                return (
+                                                    <button
+                                                        key={entry.labelId}
+                                                        type="button"
+                                                        className={`saas-campaigns-chip ${active ? 'active' : ''}`}
+                                                        onClick={() => toggleLabel(entry.labelId)}
+                                                    >
+                                                        {entry.name}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                    <div className="saas-admin-field">
+                                        <label>Busqueda</label>
+                                        <input value={form.searchText} onChange={(e) => setForm((p) => ({ ...p, searchText: e.target.value }))} placeholder="nombre o telefono" />
+                                    </div>
+                                </div>
+                                <div className="saas-admin-form-row">
+                                    <div className="saas-admin-field">
+                                        <label>Opt-in marketing</label>
+                                        <div className="saas-campaigns-fixed-info">Campanas de marketing usan solo clientes con opt-in: <strong>opted_in</strong>.</div>
+                                    </div>
+                                    <div className="saas-admin-field">
+                                        <label>Max destinatarios</label>
+                                        <div className="saas-campaigns-max-recipients">
+                                            <input
+                                                type="range"
+                                                min={1}
+                                                max={maxRecipientsRange}
+                                                value={Math.max(1, Math.min(maxRecipientsRange, toNumber(form.maxRecipients || maxRecipientsRange)))}
+                                                onChange={(e) => {
+                                                    const value = Math.max(1, Math.min(maxRecipientsRange, Math.floor(toNumber(e.target.value, 1))));
+                                                    setMaxRecipientsTouched(true);
+                                                    setForm((p) => ({ ...p, maxRecipients: String(value) }));
+                                                }}
+                                                disabled={maxRecipientsRange <= 1}
+                                            />
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                max={maxRecipientsRange}
+                                                value={form.maxRecipients}
+                                                onChange={(e) => {
+                                                    const raw = Math.floor(toNumber(e.target.value, 1));
+                                                    const value = raw > 0 ? Math.min(maxRecipientsRange, raw) : '';
+                                                    setMaxRecipientsTouched(true);
+                                                    setForm((p) => ({ ...p, maxRecipients: value ? String(value) : '' }));
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                    <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => {
+                                        const payload = buildCampaignPayload();
+                                        if (!payload.moduleId || !payload.templateName || !payload.campaignName) throw new Error('Nombre, modulo y template son obligatorios.');
+                                        const response = panelMode === 'edit' ? await updateCampaign?.({ campaignId: selectedCampaignId, patch: payload }) : await createCampaign?.(payload);
+                                        const campaign = response?.campaign || null;
+                                        if (!campaign) return;
+                                        notify({ type: 'info', message: panelMode === 'edit' ? 'Campana actualizada.' : 'Campana creada.' });
+                                        await loadCampaigns?.();
+                                        await selectCampaign?.(campaign.campaignId, { loadDetail: true });
+                                        await loadTracking(campaign.campaignId);
+                                        setPanelMode('detail');
+                                        setLocalEstimate(null);
+                                    }, 'No se pudo guardar campana.')}>Guardar borrador</button>
+                                    <button type="button" disabled={loading || estimating || !canWrite} onClick={() => runSafe(async () => {
+                                        await runEstimate();
+                                        notify({ type: 'info', message: 'Estimacion actualizada.' });
+                                    }, 'No se pudo estimar alcance.')}>Estimar alcance</button>
+                                    <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => {
+                                        if (panelMode === 'create') {
+                                            await (async () => {
+                                                if (!canStartWithGuardrails) throw new Error('Debes cumplir las validaciones previas antes de iniciar la campana.');
+                                                const payload = buildCampaignPayload();
+                                                const response = await createCampaign?.(payload);
+                                                const campaign = response?.campaign;
+                                                if (!campaign) throw new Error('No se pudo crear campana.');
+                                                await startCampaign?.(campaign.campaignId);
+                                                await loadCampaigns?.();
+                                                await selectCampaign?.(campaign.campaignId, { loadDetail: true });
+                                                await loadTracking(campaign.campaignId);
+                                                setPanelMode('detail');
+                                            })();
+                                        } else {
+                                            if (!canStartWithGuardrails) throw new Error('Debes cumplir las validaciones previas antes de iniciar la campana.');
+                                            await startCampaign?.(selectedCampaignId);
+                                            await loadCampaigns?.();
+                                            await loadTracking(selectedCampaignId);
+                                        }
+                                        notify({ type: 'info', message: 'Campana iniciada.' });
+                                    }, 'No se pudo iniciar campana.')} className={canStartWithGuardrails ? '' : 'saas-campaigns-button-danger'}>Guardar e iniciar</button>
+                                    <button type="button" disabled={loading} onClick={() => { setPanelMode('detail'); setLocalEstimate(null); }}>Cancelar</button>
+                                </div>
+                            </div>
+                            <aside className="saas-campaigns-builder__summary">
+                                <div className="saas-admin-related-block">
+                                    <h4>Estimacion de alcance</h4>
+                                    <div className="saas-campaigns-estimation-grid">
+                                        <div><small>Total</small><strong>{estimateNumbers.total}</strong></div>
+                                        <div><small>Elegibles</small><strong>{estimateNumbers.eligible}</strong></div>
+                                        <div><small>Excluidos</small><strong>{estimateNumbers.excluded}</strong></div>
+                                    </div>
+                                    <span className="saas-campaigns-estimation-help">{reachEstimate ? 'Estimacion calculada con filtros actuales.' : 'Haz clic en "Estimar alcance" para precalcular audiencia.'}</span>
+                                </div>
+                                <div className="saas-admin-related-block">
+                                    <h4>Validaciones antes de iniciar</h4>
+                                    <div className="saas-campaigns-guardrails">
+                                        {canStartGuardrails.map((check) => (
+                                            <article key={check.key} className={`saas-campaigns-guardrail ${check.ok ? 'ok' : 'warn'}`}>
+                                                <strong>{check.ok ? 'OK' : 'Pendiente'}: {check.label}</strong>
+                                                <small>{check.hint}</small>
+                                            </article>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="saas-admin-related-block">
+                                    <h4>Resumen</h4>
+                                    <div className="saas-campaigns-builder-preview">
+                                        <div><span>Template</span><strong>{toText(form.templateName) || '-'}</strong></div>
+                                        <div><span>Idioma</span><strong>{toText(form.templateLanguage).toUpperCase() || '-'}</strong></div>
+                                        <div><span>Programacion</span><strong>{form.scheduledAt ? formatDateTime(toIsoDateTimeLocal(form.scheduledAt)) : 'Inmediata'}</strong></div>
+                                        <div><span>Etiquetas</span><strong>{selectedLabels.length > 0 ? selectedLabels.map((entry) => entry.name).join(', ') : 'Sin filtro'}</strong></div>
+                                    </div>
+                                </div>
+                            </aside>
+                        </div>
+                    )}
+                    {!tenantScopeLocked && panelMode === 'detail' && (
+                        !selectedCampaignId ? <div className="saas-admin-empty-state saas-admin-empty-state--detail"><p>Selecciona una campana para ver tracking.</p></div> : (
+                            <div className="saas-campaigns-tracking">
+                                <div className="saas-admin-pane-header"><div><h3>{toText(selectedCampaign?.campaignName) || 'Campana'}</h3><small>{toText(selectedCampaign?.templateName) || '-'}</small></div><div className="saas-admin-list-actions saas-admin-list-actions--row">{toLower(selectedCampaign?.status) === 'draft' && <button type="button" disabled={loading || !canWrite} onClick={() => { setForm(mapCampaignToForm(selectedCampaign, labelOptions)); setPanelMode('edit'); setMaxRecipientsTouched(false); setLocalEstimate(null); }}>Editar</button>}{toLower(selectedCampaign?.status) === 'running' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => pauseCampaign?.(selectedCampaignId), 'No se pudo pausar campana.')}>Pausar</button>}{toLower(selectedCampaign?.status) === 'paused' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => resumeCampaign?.(selectedCampaignId), 'No se pudo reanudar campana.')}>Reanudar</button>}{['draft', 'scheduled'].includes(toLower(selectedCampaign?.status)) && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => startCampaign?.(selectedCampaignId), 'No se pudo iniciar campana.')}>Iniciar</button>}{!['cancelled', 'completed'].includes(toLower(selectedCampaign?.status)) && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => { const ok = await confirm({ title: 'Cancelar campana', message: 'Esta accion detendra el procesamiento pendiente.', confirmText: 'Cancelar campana', cancelText: 'Volver', tone: 'danger' }); if (!ok) return; await cancelCampaign?.(selectedCampaignId, 'cancelled_by_user'); }, 'No se pudo cancelar campana.')}>Cancelar</button>}<button type="button" disabled={loading} onClick={() => runSafe(async () => { await loadCampaigns?.(); await loadTracking(selectedCampaignId); }, 'No se pudo recargar tracking.')}>Recargar tracking</button></div></div>
+                                <div className="saas-admin-detail-grid"><div className="saas-admin-detail-field"><span>Estado</span><strong><span className={`saas-campaigns-status ${selectedMeta.className}`}>{selectedMeta.label}</span></strong></div><div className="saas-admin-detail-field"><span>Modulo</span><strong>{toText(selectedCampaign?.moduleId) || '-'}</strong></div><div className="saas-admin-detail-field"><span>Total</span><strong>{toNumber(selectedCampaign?.totalRecipients)}</strong></div><div className="saas-admin-detail-field"><span>Enviados</span><strong>{toNumber(selectedCampaign?.sentRecipients)}</strong></div><div className="saas-admin-detail-field"><span>Fallidos</span><strong>{toNumber(selectedCampaign?.failedRecipients)}</strong></div><div className="saas-admin-detail-field"><span>Omitidos</span><strong>{toNumber(selectedCampaign?.skippedRecipients)}</strong></div></div>
+                                <div className="saas-campaigns-progress saas-campaigns-progress--detail"><div className="saas-campaigns-progress__track"><div className="saas-campaigns-progress__fill" style={{ width: `${selectedProgress}%` }} /></div><span>{selectedProgress}%</span></div>
+                                <div className="saas-campaigns-two-columns">
+                                    <section className="saas-admin-related-block saas-campaigns-table-block"><h4>Destinatarios ({recipients.length})</h4><div className="saas-campaigns-table-wrap"><table className="saas-campaigns-table"><thead><tr><th>Telefono</th><th>Cliente</th><th>Estado</th><th>Intentos</th><th>Actualizado</th><th>Error</th></tr></thead><tbody>{recipients.length === 0 ? <tr><td colSpan={6}>Sin destinatarios.</td></tr> : recipients.map((r) => { const m = statusMeta(r?.status); return <tr key={`${toText(r?.recipientId)}_${toText(r?.phone)}`}><td>{toText(r?.phone) || '-'}</td><td>{toText(r?.customerId) || '-'}</td><td><span className={`saas-campaigns-status ${m.className}`}>{m.label}</span></td><td>{toNumber(r?.attemptCount)} / {toNumber(r?.maxAttempts)}</td><td>{formatDateTime(r?.updatedAt)}</td><td>{toText(r?.lastError || r?.skipReason) || '-'}</td></tr>; })}</tbody></table></div></section>
+                                    <section className="saas-admin-related-block saas-campaigns-events-block"><h4>Eventos ({events.length})</h4><div className="saas-campaigns-events-list">{events.length === 0 ? <div className="saas-admin-empty-inline">Sin eventos.</div> : events.map((ev) => <article key={toText(ev?.eventId)} className="saas-campaigns-event-item"><header><strong>{toText(ev?.eventType) || 'event'}</strong><span>{formatDateTime(ev?.createdAt)}</span></header><p>{toText(ev?.message || ev?.reason) || '-'}</p><small>{`Actor: ${toText(ev?.actorType) || 'system'} | Severidad: ${toText(ev?.severity) || '-'}`}</small></article>)}</div></section>
+                                </div>
+                            </div>
+                        )
+                    )}
+                    {error ? <div className="saas-meta-template-error">{error}</div> : null}
+                </div>
+            </div>
+        </section>
+    );
+});

@@ -49,6 +49,7 @@ function registerOperationsHttpRoutes({
     customerConsentService,
     templateWebhookEventsService,
     templateVariablesService,
+    campaignsService,
     conversationOpsService,
     chatCommercialStatusService,
     metaTemplatesService,
@@ -128,6 +129,16 @@ function registerOperationsHttpRoutes({
         }
         return { ok: true, role };
     }
+    function ensureCampaignWriteAccess(req, tenantId) {
+        if (!hasChatAssignmentsWriteAccess(req, tenantId)) {
+            return { ok: false, statusCode: 403, error: 'No autorizado.' };
+        }
+        const role = String(resolveActorTenantRole({ req, tenantId }) || 'seller').trim().toLowerCase();
+        if (!['owner', 'admin'].includes(role)) {
+            return { ok: false, statusCode: 403, error: 'Solo owner/admin pueden gestionar campanas.' };
+        }
+        return { ok: true, role };
+    }
     const consentApi = customerConsentService && typeof customerConsentService === 'object'
         ? customerConsentService
         : {};
@@ -156,6 +167,56 @@ function registerOperationsHttpRoutes({
     const getTemplateVariablesPreview = typeof templateVariablesApi.getPreview === 'function'
         ? templateVariablesApi.getPreview.bind(templateVariablesApi)
         : async (tenantId) => ({ tenantId, generatedAt: null, context: { chatId: null, customerId: null }, categories: [], variables: [] });
+    const campaignsApi = campaignsService && typeof campaignsService === 'object'
+        ? campaignsService
+        : {};
+    const createCampaign = typeof campaignsApi.createCampaign === 'function'
+        ? campaignsApi.createCampaign.bind(campaignsApi)
+        : async () => {
+            throw new Error('Servicio de campanas no disponible.');
+        };
+    const listCampaigns = typeof campaignsApi.listCampaigns === 'function'
+        ? campaignsApi.listCampaigns.bind(campaignsApi)
+        : async () => ({ items: [], total: 0, limit: 0, offset: 0 });
+    const getCampaignById = typeof campaignsApi.getCampaignById === 'function'
+        ? campaignsApi.getCampaignById.bind(campaignsApi)
+        : async () => null;
+    const updateCampaign = typeof campaignsApi.updateCampaign === 'function'
+        ? campaignsApi.updateCampaign.bind(campaignsApi)
+        : async () => {
+            throw new Error('Servicio de campanas no disponible.');
+        };
+    const startCampaign = typeof campaignsApi.startCampaign === 'function'
+        ? campaignsApi.startCampaign.bind(campaignsApi)
+        : async () => {
+            throw new Error('Servicio de campanas no disponible.');
+        };
+    const pauseCampaign = typeof campaignsApi.pauseCampaign === 'function'
+        ? campaignsApi.pauseCampaign.bind(campaignsApi)
+        : async () => {
+            throw new Error('Servicio de campanas no disponible.');
+        };
+    const resumeCampaign = typeof campaignsApi.resumeCampaign === 'function'
+        ? campaignsApi.resumeCampaign.bind(campaignsApi)
+        : async () => {
+            throw new Error('Servicio de campanas no disponible.');
+        };
+    const cancelCampaign = typeof campaignsApi.cancelCampaign === 'function'
+        ? campaignsApi.cancelCampaign.bind(campaignsApi)
+        : async () => {
+            throw new Error('Servicio de campanas no disponible.');
+        };
+    const listCampaignRecipients = typeof campaignsApi.listCampaignRecipients === 'function'
+        ? campaignsApi.listCampaignRecipients.bind(campaignsApi)
+        : async () => ({ items: [], total: 0, limit: 0, offset: 0 });
+    const listCampaignEvents = typeof campaignsApi.listCampaignEvents === 'function'
+        ? campaignsApi.listCampaignEvents.bind(campaignsApi)
+        : async () => ({ items: [], total: 0, limit: 0, offset: 0 });
+    const estimateCampaign = typeof campaignsApi.estimateCampaign === 'function'
+        ? campaignsApi.estimateCampaign.bind(campaignsApi)
+        : async () => {
+            throw new Error('Servicio de campanas no disponible.');
+        };
 
     app.patch('/api/tenant/customers/:customerId/consent', async (req, res) => {
         try {
@@ -663,6 +724,348 @@ function registerOperationsHttpRoutes({
             });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo sincronizar templates Meta.') });
+        }
+    });
+
+    app.post('/api/tenant/campaigns', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const access = ensureCampaignWriteAccess(req, tenantId);
+            if (!access.ok) {
+                return res.status(Number(access.statusCode || 403)).json({ ok: false, error: String(access.error || 'No autorizado.') });
+            }
+
+            const actorUserId = resolveActorUserId(req);
+            const payload = isPlainObject(req.body) ? req.body : {};
+            const created = await createCampaign(tenantId, {
+                ...payload,
+                createdBy: actorUserId,
+                updatedBy: actorUserId,
+                actorUserId
+            });
+
+            await auditLogService.writeAuditLog(tenantId, {
+                userId: actorUserId,
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || null,
+                action: 'campaign.create',
+                resourceType: 'campaign',
+                resourceId: String(created?.campaignId || ''),
+                source: 'http',
+                payload: {
+                    moduleId: created?.moduleId || null,
+                    templateName: created?.templateName || null,
+                    status: created?.status || null
+                }
+            });
+
+            return res.status(201).json({
+                ok: true,
+                tenantId,
+                campaign: created
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear la campana.') });
+        }
+    });
+
+    app.post('/api/tenant/campaigns/estimate', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const access = ensureCampaignWriteAccess(req, tenantId);
+            if (!access.ok) {
+                return res.status(Number(access.statusCode || 403)).json({ ok: false, error: String(access.error || 'No autorizado.') });
+            }
+
+            const payload = isPlainObject(req.body) ? req.body : {};
+            const estimate = await estimateCampaign(tenantId, {
+                campaignId: toText(payload.campaignId || ''),
+                scopeModuleId: normalizeScopeModuleId(payload.scopeModuleId || ''),
+                moduleId: toText(payload.moduleId || ''),
+                templateName: toText(payload.templateName || ''),
+                templateLanguage: toLower(payload.templateLanguage || 'es') || 'es',
+                filters: isPlainObject(payload.filters) ? payload.filters : {}
+            });
+
+            return res.json({
+                ok: true,
+                tenantId,
+                estimate
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo estimar el alcance de la campana.') });
+        }
+    });
+
+    app.get('/api/tenant/campaigns', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const scopeModuleId = normalizeScopeModuleId(req.query?.scopeModuleId || '');
+            const moduleId = toText(req.query?.moduleId || '');
+            const status = toLower(req.query?.status || '');
+            const query = toText(req.query?.query || req.query?.q || '');
+            const limit = Number(req.query?.limit || 50);
+            const offset = Number(req.query?.offset || 0);
+
+            const result = await listCampaigns(tenantId, {
+                scopeModuleId,
+                moduleId,
+                status,
+                query,
+                limit,
+                offset
+            });
+
+            return res.json({
+                ok: true,
+                tenantId,
+                scopeModuleId: scopeModuleId || '',
+                moduleId: moduleId || null,
+                status: status || null,
+                query: query || null,
+                ...result
+            });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron listar campanas.') });
+        }
+    });
+
+    app.get('/api/tenant/campaigns/:campaignId', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const campaignId = toText(req.params?.campaignId || '');
+            if (!campaignId) return res.status(400).json({ ok: false, error: 'campaignId invalido.' });
+
+            const campaign = await getCampaignById(tenantId, { campaignId });
+            if (!campaign) return res.status(404).json({ ok: false, error: 'Campana no encontrada.' });
+
+            return res.json({ ok: true, tenantId, campaign });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar el detalle de la campana.') });
+        }
+    });
+
+    app.patch('/api/tenant/campaigns/:campaignId', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const access = ensureCampaignWriteAccess(req, tenantId);
+            if (!access.ok) {
+                return res.status(Number(access.statusCode || 403)).json({ ok: false, error: String(access.error || 'No autorizado.') });
+            }
+
+            const campaignId = toText(req.params?.campaignId || '');
+            if (!campaignId) return res.status(400).json({ ok: false, error: 'campaignId invalido.' });
+
+            const current = await getCampaignById(tenantId, { campaignId });
+            if (!current) return res.status(404).json({ ok: false, error: 'Campana no encontrada.' });
+            if (toLower(current.status) !== 'draft') {
+                return res.status(400).json({ ok: false, error: 'Solo se puede editar una campana en estado draft.' });
+            }
+
+            const actorUserId = resolveActorUserId(req);
+            const patch = isPlainObject(req.body) ? req.body : {};
+            const updated = await updateCampaign(tenantId, {
+                campaignId,
+                patch: {
+                    ...patch,
+                    updatedBy: actorUserId,
+                    actorUserId
+                }
+            });
+
+            await auditLogService.writeAuditLog(tenantId, {
+                userId: actorUserId,
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || null,
+                action: 'campaign.update_draft',
+                resourceType: 'campaign',
+                resourceId: campaignId,
+                source: 'http',
+                payload: {
+                    status: updated?.status || null
+                }
+            });
+
+            return res.json({ ok: true, tenantId, campaign: updated });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar la campana.') });
+        }
+    });
+
+    app.post('/api/tenant/campaigns/:campaignId/start', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const access = ensureCampaignWriteAccess(req, tenantId);
+            if (!access.ok) {
+                return res.status(Number(access.statusCode || 403)).json({ ok: false, error: String(access.error || 'No autorizado.') });
+            }
+
+            const campaignId = toText(req.params?.campaignId || '');
+            if (!campaignId) return res.status(400).json({ ok: false, error: 'campaignId invalido.' });
+            const actorUserId = resolveActorUserId(req);
+
+            const campaign = await startCampaign(tenantId, {
+                campaignId,
+                actorUserId
+            });
+
+            return res.json({ ok: true, tenantId, campaign });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo iniciar la campana.') });
+        }
+    });
+
+    app.post('/api/tenant/campaigns/:campaignId/pause', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const access = ensureCampaignWriteAccess(req, tenantId);
+            if (!access.ok) {
+                return res.status(Number(access.statusCode || 403)).json({ ok: false, error: String(access.error || 'No autorizado.') });
+            }
+
+            const campaignId = toText(req.params?.campaignId || '');
+            if (!campaignId) return res.status(400).json({ ok: false, error: 'campaignId invalido.' });
+            const actorUserId = resolveActorUserId(req);
+
+            const campaign = await pauseCampaign(tenantId, {
+                campaignId,
+                actorUserId
+            });
+
+            return res.json({ ok: true, tenantId, campaign });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo pausar la campana.') });
+        }
+    });
+
+    app.post('/api/tenant/campaigns/:campaignId/resume', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const access = ensureCampaignWriteAccess(req, tenantId);
+            if (!access.ok) {
+                return res.status(Number(access.statusCode || 403)).json({ ok: false, error: String(access.error || 'No autorizado.') });
+            }
+
+            const campaignId = toText(req.params?.campaignId || '');
+            if (!campaignId) return res.status(400).json({ ok: false, error: 'campaignId invalido.' });
+            const actorUserId = resolveActorUserId(req);
+
+            const campaign = await resumeCampaign(tenantId, {
+                campaignId,
+                actorUserId
+            });
+
+            return res.json({ ok: true, tenantId, campaign });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo reanudar la campana.') });
+        }
+    });
+
+    app.post('/api/tenant/campaigns/:campaignId/cancel', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const access = ensureCampaignWriteAccess(req, tenantId);
+            if (!access.ok) {
+                return res.status(Number(access.statusCode || 403)).json({ ok: false, error: String(access.error || 'No autorizado.') });
+            }
+
+            const campaignId = toText(req.params?.campaignId || '');
+            if (!campaignId) return res.status(400).json({ ok: false, error: 'campaignId invalido.' });
+            const actorUserId = resolveActorUserId(req);
+            const reason = toText(req.body?.reason || '');
+
+            const campaign = await cancelCampaign(tenantId, {
+                campaignId,
+                actorUserId,
+                reason
+            });
+
+            return res.json({ ok: true, tenantId, campaign });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo cancelar la campana.') });
+        }
+    });
+
+    app.get('/api/tenant/campaigns/:campaignId/recipients', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const campaignId = toText(req.params?.campaignId || '');
+            if (!campaignId) return res.status(400).json({ ok: false, error: 'campaignId invalido.' });
+
+            const status = toLower(req.query?.status || '');
+            const moduleId = toText(req.query?.moduleId || '');
+            const search = toText(req.query?.search || '');
+            const limit = Number(req.query?.limit || 50);
+            const offset = Number(req.query?.offset || 0);
+
+            const result = await listCampaignRecipients(tenantId, {
+                campaignId,
+                status,
+                moduleId,
+                search,
+                limit,
+                offset
+            });
+
+            return res.json({ ok: true, tenantId, campaignId, ...result });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron listar destinatarios de campana.') });
+        }
+    });
+
+    app.get('/api/tenant/campaigns/:campaignId/events', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const campaignId = toText(req.params?.campaignId || '');
+            if (!campaignId) return res.status(400).json({ ok: false, error: 'campaignId invalido.' });
+
+            const eventType = toLower(req.query?.eventType || '');
+            const severity = toLower(req.query?.severity || '');
+            const limit = Number(req.query?.limit || 50);
+            const offset = Number(req.query?.offset || 0);
+
+            const result = await listCampaignEvents(tenantId, {
+                campaignId,
+                eventType,
+                severity,
+                limit,
+                offset
+            });
+
+            return res.json({ ok: true, tenantId, campaignId, ...result });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron listar eventos de campana.') });
         }
     });
 

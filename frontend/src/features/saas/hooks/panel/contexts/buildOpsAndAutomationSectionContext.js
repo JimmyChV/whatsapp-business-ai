@@ -1,11 +1,17 @@
 export default function buildOpsAndAutomationSectionContext(c) {
     return {
         isOperationsSection: c.isOperationsSection,
+        isCampaignsSection: c.isCampaignsSection,
         isMetaTemplatesSection: c.isMetaTemplatesSection,
         canEditModules: c.canEditModules,
         tenantScopeLocked: c.tenantScopeLocked,
         busy: c.busy,
         metaTemplatesController: c.metaTemplatesController,
+        campaignsController: c.campaignsController,
+        availableLabels: c.campaignsController?.availableLabels || [],
+        reachEstimate: c.campaignsController?.reachEstimate || null,
+        estimating: c.campaignsController?.estimating === true,
+        estimateReach: c.campaignsController?.estimateReach,
         loadingAssignmentRules: c.loadingAssignmentRules,
         loadingOperationsKpis: c.loadingOperationsKpis,
         canManageAssignments: c.canManageAssignments,
