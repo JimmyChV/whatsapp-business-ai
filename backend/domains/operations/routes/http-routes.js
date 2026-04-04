@@ -169,6 +169,37 @@ function registerOperationsHttpRoutes({
         ? templateVariablesApi.getPreview.bind(templateVariablesApi)
         : async (tenantId) => ({ tenantId, generatedAt: null, context: { chatId: null, customerId: null }, categories: [], variables: [] });
 
+    app.get('/api/tenant/customers/:customerId/module-contexts', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const customerId = toText(req.params?.customerId || '');
+            if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
+
+            const limit = Number(req.query?.limit || 500);
+            const offset = Number(req.query?.offset || 0);
+            const result = await listCustomerModuleContextsByCustomer(tenantId, {
+                customerId,
+                limit,
+                offset
+            });
+
+            return res.json({
+                ok: true,
+                tenantId,
+                customerId,
+                ...result
+            });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar contextos por modulo del cliente.') });
+        }
+    });
+
     app.patch('/api/tenant/customers/:customerId/consent', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
