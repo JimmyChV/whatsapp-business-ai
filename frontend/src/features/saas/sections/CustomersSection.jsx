@@ -243,6 +243,73 @@ function CustomersSection(props = {}) {
         }
     }, [editClickBusy, openCustomerEdit]);
 
+    const renderModuleContextsBlock = () => (
+        <div className="saas-admin-related-block">
+            <h4>Contextos por modulo</h4>
+            {moduleContextsLoading && (
+                <div className="saas-admin-empty-state">
+                    <p>Cargando contextos por modulo...</p>
+                </div>
+            )}
+            {!moduleContextsLoading && moduleContextsError && (
+                <div className="saas-admin-empty-state">
+                    <p>{moduleContextsError}</p>
+                </div>
+            )}
+            {!moduleContextsLoading && !moduleContextsError && moduleContexts.length === 0 && (
+                <div className="saas-admin-empty-state">
+                    <p>Este cliente aun no tiene contextos por modulo registrados.</p>
+                </div>
+            )}
+            {!moduleContextsLoading && !moduleContextsError && moduleContexts.length > 0 && (
+                <div className="saas-admin-related-list">
+                    {moduleContexts.map((moduleContext, contextIndex) => {
+                        const moduleId = String(moduleContext.moduleId || '').trim();
+                        const moduleLabel = moduleNameById[moduleId] || moduleId || 'Sin modulo';
+                        const consentValue = String(moduleConsentDraftByModuleId[moduleId] || moduleContext.marketingOptInStatus || 'unknown').trim().toLowerCase();
+                        const consentBusyForModule = Boolean(moduleConsentBusyByModuleId[moduleId]);
+                        const labels = Array.isArray(moduleContext.labels) ? moduleContext.labels : [];
+                        return (
+                            <div
+                                key={moduleId || `customer-module-context-${contextIndex}`}
+                                className="saas-admin-related-list"
+                                style={{
+                                    border: '1px solid rgba(148, 163, 184, 0.25)',
+                                    borderRadius: 10,
+                                    padding: '10px 12px',
+                                    marginBottom: 10
+                                }}
+                            >
+                                <div className="saas-admin-related-row" role="status"><span>Modulo</span><small>{moduleLabel}</small></div>
+                                <div className="saas-admin-related-row" role="status"><span>Estado comercial</span><small>{moduleContext.commercialStatus || 'unknown'}</small></div>
+                                <div className="saas-admin-related-row" role="status"><span>Vendedora asignada</span><small>{moduleContext.assignmentUserId || '-'}</small></div>
+                                <div className="saas-admin-related-row" role="status"><span>Etiquetas</span><small>{labels.length > 0 ? labels.join(', ') : '-'}</small></div>
+                                <div className="saas-admin-related-row" role="status"><span>Primera interaccion</span><small>{formatDateTimeLabel(moduleContext.firstInteractionAt)}</small></div>
+                                <div className="saas-admin-related-row" role="status"><span>Ultima interaccion</span><small>{formatDateTimeLabel(moduleContext.lastInteractionAt)}</small></div>
+                                <div className="saas-admin-form-row">
+                                    <label className="saas-admin-module-toggle" style={{ minWidth: 220 }}>
+                                        <span>Consentimiento marketing</span>
+                                    </label>
+                                    <select
+                                        value={consentValue}
+                                        onChange={(event) => {
+                                            handleModuleConsentChange(moduleId, event.target.value);
+                                        }}
+                                        disabled={busy || consentBusy || languageBusy || consentBusyForModule || !moduleId}
+                                    >
+                                        <option value="unknown">Sin definir</option>
+                                        <option value="opted_in">Opted in</option>
+                                        <option value="opted_out">Opted out</option>
+                                    </select>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+
     useEffect(() => {
         if (!isCustomersSection || customerPanelMode === 'create') {
             setModuleContexts([]);
@@ -417,70 +484,7 @@ function CustomersSection(props = {}) {
                                                         </select>
                                                     </div>
                                                 </div>
-                                                <div className="saas-admin-related-block">
-                                                    <h4>Contextos por modulo</h4>
-                                                    {moduleContextsLoading && (
-                                                        <div className="saas-admin-empty-state">
-                                                            <p>Cargando contextos por modulo...</p>
-                                                        </div>
-                                                    )}
-                                                    {!moduleContextsLoading && moduleContextsError && (
-                                                        <div className="saas-admin-empty-state">
-                                                            <p>{moduleContextsError}</p>
-                                                        </div>
-                                                    )}
-                                                    {!moduleContextsLoading && !moduleContextsError && moduleContexts.length === 0 && (
-                                                        <div className="saas-admin-empty-state">
-                                                            <p>Este cliente aun no tiene contextos por modulo registrados.</p>
-                                                        </div>
-                                                    )}
-                                                    {!moduleContextsLoading && !moduleContextsError && moduleContexts.length > 0 && (
-                                                        <div className="saas-admin-related-list">
-                                                            {moduleContexts.map((moduleContext, contextIndex) => {
-                                                                const moduleId = String(moduleContext.moduleId || '').trim();
-                                                                const moduleLabel = moduleNameById[moduleId] || moduleId || 'Sin modulo';
-                                                                const consentValue = String(moduleConsentDraftByModuleId[moduleId] || moduleContext.marketingOptInStatus || 'unknown').trim().toLowerCase();
-                                                                const consentBusyForModule = Boolean(moduleConsentBusyByModuleId[moduleId]);
-                                                                const labels = Array.isArray(moduleContext.labels) ? moduleContext.labels : [];
-                                                                return (
-                                                                    <div
-                                                                        key={moduleId || `customer-module-context-${contextIndex}`}
-                                                                        className="saas-admin-related-list"
-                                                                        style={{
-                                                                            border: '1px solid rgba(148, 163, 184, 0.25)',
-                                                                            borderRadius: 10,
-                                                                            padding: '10px 12px',
-                                                                            marginBottom: 10
-                                                                        }}
-                                                                    >
-                                                                        <div className="saas-admin-related-row" role="status"><span>Modulo</span><small>{moduleLabel}</small></div>
-                                                                        <div className="saas-admin-related-row" role="status"><span>Estado comercial</span><small>{moduleContext.commercialStatus || 'unknown'}</small></div>
-                                                                        <div className="saas-admin-related-row" role="status"><span>Vendedora asignada</span><small>{moduleContext.assignmentUserId || '-'}</small></div>
-                                                                        <div className="saas-admin-related-row" role="status"><span>Etiquetas</span><small>{labels.length > 0 ? labels.join(', ') : '-'}</small></div>
-                                                                        <div className="saas-admin-related-row" role="status"><span>Primera interaccion</span><small>{formatDateTimeLabel(moduleContext.firstInteractionAt)}</small></div>
-                                                                        <div className="saas-admin-related-row" role="status"><span>Ultima interaccion</span><small>{formatDateTimeLabel(moduleContext.lastInteractionAt)}</small></div>
-                                                                        <div className="saas-admin-form-row">
-                                                                            <label className="saas-admin-module-toggle" style={{ minWidth: 220 }}>
-                                                                                <span>Consentimiento marketing</span>
-                                                                            </label>
-                                                                            <select
-                                                                                value={consentValue}
-                                                                                onChange={(event) => {
-                                                                                    handleModuleConsentChange(moduleId, event.target.value);
-                                                                                }}
-                                                                                disabled={busy || consentBusy || languageBusy || consentBusyForModule || !moduleId}
-                                                                            >
-                                                                                <option value="unknown">Sin definir</option>
-                                                                                <option value="opted_in">Opted in</option>
-                                                                                <option value="opted_out">Opted out</option>
-                                                                            </select>
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    )}
-                                                </div>
+                                                {renderModuleContextsBlock()}
                                                 </>
                                         )}
 
@@ -550,6 +554,7 @@ function CustomersSection(props = {}) {
                                                     </button>
                                                     <button type="button" disabled={busy} onClick={cancelCustomerEdit}>Cancelar</button>
                                                 </div>
+                                                {selectedCustomer && renderModuleContextsBlock()}
                                             </>
                                         )}
 

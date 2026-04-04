@@ -6,6 +6,17 @@ function toText(value = '') {
     return String(value ?? '').trim();
 }
 
+function toIsoText(value = '') {
+    if (value instanceof Date) {
+        return Number.isFinite(value.getTime()) ? value.toISOString() : '';
+    }
+    const text = toText(value);
+    if (!text) return '';
+    const parsed = new Date(text);
+    if (!Number.isFinite(parsed.getTime())) return text;
+    return parsed.toISOString();
+}
+
 function toLower(value = '') {
     return toText(value).toLowerCase();
 }
@@ -116,8 +127,8 @@ function normalizeCustomer(payload = {}, { fallbackId = '', previous = null } = 
         profile,
         metadata: { ...(normalizeObject(prev?.metadata)), ...(normalizeObject(source.metadata)) },
         isActive: toBool(source.isActive ?? source.active ?? prev?.isActive, prev?.isActive ?? true),
-        lastInteractionAt: toText(source.lastInteractionAt || prev?.lastInteractionAt || '') || null,
-        createdAt: toText(prev?.createdAt || nowIso()),
+        lastInteractionAt: toIsoText(source.lastInteractionAt || prev?.lastInteractionAt || '') || null,
+        createdAt: toIsoText(prev?.createdAt || nowIso()) || nowIso(),
         updatedAt: nowIso()
     };
 }
@@ -135,9 +146,9 @@ function sanitizePublic(item = {}) {
         profile: normalizeObject(source.profile),
         metadata: normalizeObject(source.metadata),
         isActive: toBool(source.isActive ?? source.is_active, true),
-        lastInteractionAt: toText(source.lastInteractionAt || source.last_interaction_at || '') || null,
-        createdAt: toText(source.createdAt || source.created_at || '') || null,
-        updatedAt: toText(source.updatedAt || source.updated_at || '') || null
+        lastInteractionAt: toIsoText(source.lastInteractionAt || source.last_interaction_at || '') || null,
+        createdAt: toIsoText(source.createdAt || source.created_at || '') || null,
+        updatedAt: toIsoText(source.updatedAt || source.updated_at || '') || null
     };
 }
 
@@ -259,6 +270,7 @@ function createChannelEventId() {
 
 module.exports = {
     toText,
+    toIsoText,
     toLower,
     toBool,
     nowIso,

@@ -8,6 +8,7 @@ const {
 } = require('../../../config/persistence-runtime');
 const {
     toText,
+    toIsoText,
     toLower,
     toBool,
     nowIso,
@@ -474,8 +475,8 @@ async function updateCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '', pat
             ...metadataPatch
         },
         isActive: toBool(sourcePatch.isActive !== undefined ? sourcePatch.isActive : existing?.isActive, existing?.isActive ?? true),
-        lastInteractionAt: toText(sourcePatch.lastInteractionAt !== undefined ? sourcePatch.lastInteractionAt : existing?.lastInteractionAt) || null,
-        createdAt: toText(existing?.createdAt || nowIso()),
+        lastInteractionAt: toIsoText(sourcePatch.lastInteractionAt !== undefined ? sourcePatch.lastInteractionAt : existing?.lastInteractionAt) || null,
+        createdAt: toIsoText(existing?.createdAt || nowIso()) || nowIso(),
         updatedAt: nowIso()
     };
 
