@@ -47,6 +47,7 @@ function registerOperationsHttpRoutes({
     auditLogService,
     customerService,
     customerConsentService,
+    customerModuleContextsService,
     templateWebhookEventsService,
     templateVariablesService,
     conversationOpsService,
@@ -141,6 +142,17 @@ function registerOperationsHttpRoutes({
         : async () => {
             throw new Error('Servicio de consentimiento no disponible.');
         };
+    const customerModuleContextsApi = customerModuleContextsService && typeof customerModuleContextsService === 'object'
+        ? customerModuleContextsService
+        : {};
+    const listCustomerModuleContextsByCustomer = typeof customerModuleContextsApi.listContextsByCustomer === 'function'
+        ? customerModuleContextsApi.listContextsByCustomer.bind(customerModuleContextsApi)
+        : async () => ({ items: [], total: 0, limit: 0, offset: 0 });
+    const upsertCustomerModuleContext = typeof customerModuleContextsApi.upsertContext === 'function'
+        ? customerModuleContextsApi.upsertContext.bind(customerModuleContextsApi)
+        : async () => {
+            throw new Error('Servicio de contextos por modulo no disponible.');
+        };
     const templateWebhookEventsApi = templateWebhookEventsService && typeof templateWebhookEventsService === 'object'
         ? templateWebhookEventsService
         : {};
@@ -172,6 +184,7 @@ function registerOperationsHttpRoutes({
             const consentType = toLower(req.body?.consentType || 'marketing') || 'marketing';
             const statusRaw = toLower(req.body?.status || '');
             const source = toLower(req.body?.source || 'manual') || 'manual';
+            const moduleId = toText(req.body?.moduleId || '');
             const proofPayload = toSafeObject(req.body?.proofPayload);
             const actorUserId = resolveActorUserId(req);
 
@@ -200,11 +213,67 @@ function registerOperationsHttpRoutes({
                 return res.status(400).json({ ok: false, error: 'status invalido. Usa granted/revoked (o opted_in/opted_out).' });
             }
 
+            const nextMarketingOptInStatus = ['granted', 'opted_in'].includes(statusRaw)
+                ? 'opted_in'
+                : 'opted_out';
+            const consentUpdatedAt = toText(
+                result?.grantedAt
+                || result?.revokedAt
+                || result?.createdAt
+                || new Date().toISOString()
+            );
+            const updatedContexts = [];
+
+            if (moduleId) {
+                const syncResult = await upsertCustomerModuleContext(tenantId, {
+                    customerId,
+                    moduleId,
+                    marketingOptInStatus: nextMarketingOptInStatus,
+                    marketingOptInUpdatedAt: consentUpdatedAt,
+                    marketingOptInSource: source,
+                    metadata: {
+                        consentType,
+                        syncedFrom: 'http.customers.consent',
+                        actorUserId
+                    }
+                });
+                if (syncResult?.context) updatedContexts.push(syncResult.context);
+            } else {
+                const contextsResult = await listCustomerModuleContextsByCustomer(tenantId, {
+                    customerId,
+                    limit: 500,
+                    offset: 0
+                });
+                const contexts = Array.isArray(contextsResult?.items) ? contextsResult.items : [];
+                for (const context of contexts) {
+                    const targetModuleId = toText(context?.moduleId || context?.module_id || '');
+                    if (!targetModuleId) continue;
+                    const syncResult = await upsertCustomerModuleContext(tenantId, {
+                        customerId,
+                        moduleId: targetModuleId,
+                        marketingOptInStatus: nextMarketingOptInStatus,
+                        marketingOptInUpdatedAt: consentUpdatedAt,
+                        marketingOptInSource: source,
+                        metadata: {
+                            consentType,
+                            syncedFrom: 'http.customers.consent',
+                            actorUserId
+                        }
+                    });
+                    if (syncResult?.context) updatedContexts.push(syncResult.context);
+                }
+            }
+
             return res.json({
                 ok: true,
                 tenantId,
                 customerId,
-                consent: result
+                consent: result,
+                contextSync: {
+                    moduleId: moduleId || null,
+                    marketingOptInStatus: nextMarketingOptInStatus,
+                    updatedCount: updatedContexts.length
+                }
             });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el consentimiento.') });
