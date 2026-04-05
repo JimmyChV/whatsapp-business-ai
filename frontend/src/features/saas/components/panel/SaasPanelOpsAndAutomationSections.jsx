@@ -74,11 +74,17 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
     };
     const campaignsContext = {
         isCampaignsSection,
+        settingsTenantId: context.settingsTenantId,
         tenantScopeLocked: context.tenantScopeLocked,
+        waModules: context.waModules,
         busy: context.busy,
+        setError: context.setError,
+        availableLabels: context.availableLabels,
+        reachEstimate: context.reachEstimate,
+        estimating: context.estimating,
+        estimateReach: context.estimateReach,
         campaignsController: context.campaignsController,
-        runAction: context.runAction,
-        formatDateTimeLabel: context.formatDateTimeLabel
+        metaTemplatesController: context.metaTemplatesController
     };
     const tenantLabelsContext = {
         busy: context.busy,
