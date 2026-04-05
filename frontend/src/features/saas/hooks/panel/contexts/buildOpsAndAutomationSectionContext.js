@@ -6,6 +6,7 @@ export default function buildOpsAndAutomationSectionContext(c) {
         canEditModules: c.canEditModules,
         tenantScopeLocked: c.tenantScopeLocked,
         busy: c.busy,
+        campaignsController: c.campaignsController,
         metaTemplatesController: c.metaTemplatesController,
         campaignsController: c.campaignsController,
         availableLabels: c.campaignsController?.availableLabels || [],

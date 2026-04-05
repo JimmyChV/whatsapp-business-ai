@@ -8,6 +8,7 @@ const {
 } = require('../../../config/persistence-runtime');
 const {
     toText,
+    toIsoText,
     toLower,
     toBool,
     nowIso,
@@ -434,17 +435,103 @@ async function getCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '') {
 }
 
 async function updateCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '', patch = {}) {
-    const cleanCustomerId = normalizeCustomerIdCandidate(customerId);
-    if (!cleanCustomerId) throw new Error('customerId invalido.');
+    const rawCustomerId = toText(customerId || '');
+    const cleanCustomerId = normalizeCustomerIdCandidate(rawCustomerId);
+    const lookupCustomerId = cleanCustomerId || rawCustomerId;
+    if (!lookupCustomerId) throw new Error('customerId invalido.');
 
-    const existing = await findCustomer(tenantId, { customerId: cleanCustomerId });
+    const existing = await findCustomer(tenantId, { customerId: lookupCustomerId });
     if (!existing) throw new Error('Cliente no encontrado.');
 
-    return upsertCustomer(tenantId, {
-        ...existing,
-        ...(patch && typeof patch === 'object' ? patch : {}),
-        customerId: cleanCustomerId
-    }, { allowPhoneMerge: false });
+    const resolvedCustomerId = toText(existing?.customerId || lookupCustomerId);
+    const resolvedCleanCustomerId = normalizeCustomerIdCandidate(resolvedCustomerId);
+    if (!resolvedCustomerId) throw new Error('customerId invalido.');
+
+    const sourcePatch = patch && typeof patch === 'object' ? patch : {};
+    if (resolvedCleanCustomerId) {
+        return upsertCustomer(tenantId, {
+            ...existing,
+            ...sourcePatch,
+            customerId: resolvedCleanCustomerId
+        }, { allowPhoneMerge: false });
+    }
+
+    const profilePatch = normalizeObject(sourcePatch.profile);
+    const metadataPatch = normalizeObject(sourcePatch.metadata);
+    const updatedLegacy = {
+        customerId: resolvedCustomerId,
+        moduleId: toText(sourcePatch.moduleId !== undefined ? sourcePatch.moduleId : existing?.moduleId) || null,
+        contactName: toText(sourcePatch.contactName !== undefined ? sourcePatch.contactName : existing?.contactName) || null,
+        phoneE164: normalizePhone(sourcePatch.phoneE164 !== undefined ? sourcePatch.phoneE164 : existing?.phoneE164),
+        phoneAlt: normalizePhone(sourcePatch.phoneAlt !== undefined ? sourcePatch.phoneAlt : existing?.phoneAlt),
+        email: toLower(sourcePatch.email !== undefined ? sourcePatch.email : existing?.email) || null,
+        tags: normalizeTags(sourcePatch.tags !== undefined ? sourcePatch.tags : existing?.tags || []),
+        profile: {
+            ...normalizeObject(existing?.profile),
+            ...profilePatch
+        },
+        metadata: {
+            ...normalizeObject(existing?.metadata),
+            ...metadataPatch
+        },
+        isActive: toBool(sourcePatch.isActive !== undefined ? sourcePatch.isActive : existing?.isActive, existing?.isActive ?? true),
+        lastInteractionAt: toIsoText(sourcePatch.lastInteractionAt !== undefined ? sourcePatch.lastInteractionAt : existing?.lastInteractionAt) || null,
+        createdAt: toIsoText(existing?.createdAt || nowIso()) || nowIso(),
+        updatedAt: nowIso()
+    };
+
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    if (getStorageDriver() === 'postgres') {
+        await ensurePostgresSchema();
+        const result = await queryPostgres(
+            `UPDATE tenant_customers
+             SET
+                module_id = $3,
+                contact_name = $4,
+                phone_e164 = $5,
+                phone_alt = $6,
+                email = $7,
+                tags = $8::jsonb,
+                profile = $9::jsonb,
+                metadata = $10::jsonb,
+                is_active = $11,
+                last_interaction_at = $12,
+                updated_at = $13
+             WHERE tenant_id = $1 AND customer_id = $2
+             RETURNING *`,
+            [
+                cleanTenantId,
+                resolvedCustomerId,
+                updatedLegacy.moduleId,
+                updatedLegacy.contactName,
+                updatedLegacy.phoneE164,
+                updatedLegacy.phoneAlt,
+                updatedLegacy.email,
+                JSON.stringify(updatedLegacy.tags || []),
+                JSON.stringify(updatedLegacy.profile || {}),
+                JSON.stringify(updatedLegacy.metadata || {}),
+                updatedLegacy.isActive !== false,
+                updatedLegacy.lastInteractionAt,
+                updatedLegacy.updatedAt
+            ]
+        );
+        return {
+            created: false,
+            item: result?.rows?.[0] ? sanitizePublic(result.rows[0]) : sanitizePublic(updatedLegacy)
+        };
+    }
+
+    const parsed = await readTenantJsonFile(CUSTOMERS_FILE, {
+        tenantId: cleanTenantId,
+        defaultValue: { items: [] }
+    });
+    const source = Array.isArray(parsed?.items) ? parsed.items.map(sanitizePublic) : [];
+    const next = source.map((item) => (String(item?.customerId || '') === resolvedCustomerId ? updatedLegacy : item));
+    await writeTenantJsonFile(CUSTOMERS_FILE, { items: next }, { tenantId: cleanTenantId });
+    return {
+        created: false,
+        item: sanitizePublic(updatedLegacy)
+    };
 }
 
 async function importCustomersCsv(tenantId = DEFAULT_TENANT_ID, csvText = '', options = {}) {

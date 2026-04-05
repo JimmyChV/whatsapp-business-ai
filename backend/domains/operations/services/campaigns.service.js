@@ -951,8 +951,17 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     const excludeCustomerIds = new Set(normalizeStringArray(filters.excludeCustomerIds));
     const tagAny = new Set(normalizeStringArray(filters.tagAny).map((entry) => toLower(entry)));
     const tagAll = new Set(normalizeStringArray(filters.tagAll).map((entry) => toLower(entry)));
+    const labelsAny = new Set(normalizeStringArray(filters.labels || filters.labelsAny || filters.labelAny).map((entry) => toLower(entry)));
     const search = toLower(filters.search || '');
     const marketingStatus = new Set(normalizeStringArray(filters.marketingStatus).map((entry) => toLower(entry)));
+    const commercialStatus = new Set(
+        normalizeStringArray(
+            filters.commercialStatus
+            || filters.commercialStatuses
+            || filters.commercial_status
+            || filters.commercial_statuses
+        ).map((entry) => toLower(entry))
+    );
 
     const customerId = toText(customer.customerId);
     const tags = ensureArray(customer.tags).map((entry) => toLower(entry));
@@ -968,6 +977,11 @@ function customerMatchesFilters(customer = {}, filters = {}) {
         if (!hasAny) return false;
     }
 
+    if (labelsAny.size > 0) {
+        const hasAnyLabel = [...labelsAny].some((tag) => tagsSet.has(tag));
+        if (!hasAnyLabel) return false;
+    }
+
     if (tagAll.size > 0) {
         const hasAll = [...tagAll].every((tag) => tagsSet.has(tag));
         if (!hasAll) return false;
@@ -976,6 +990,11 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     if (marketingStatus.size > 0) {
         const currentMarketingStatus = toLower(customer.marketingOptInStatus || 'unknown');
         if (!marketingStatus.has(currentMarketingStatus)) return false;
+    }
+
+    if (commercialStatus.size > 0) {
+        const currentCommercialStatus = toLower(customer.commercialStatus || customer.commercial_status || 'unknown');
+        if (!commercialStatus.has(currentCommercialStatus)) return false;
     }
 
     return true;
@@ -1006,6 +1025,55 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
     }
 
     await ensurePostgresSchema();
+    if (moduleFilter) {
+        try {
+            const contextRowsResult = await queryPostgres(
+                `SELECT
+                    c.customer_id,
+                    c.phone_e164,
+                    c.contact_name,
+                    c.email,
+                    c.preferred_language,
+                    c.module_id AS customer_module_id,
+                    cmc.module_id AS context_module_id,
+                    cmc.marketing_opt_in_status,
+                    cmc.commercial_status,
+                    cmc.labels
+                 FROM tenant_customer_module_contexts cmc
+                 JOIN tenant_customers c
+                   ON c.tenant_id = cmc.tenant_id
+                  AND c.customer_id = cmc.customer_id
+                 WHERE cmc.tenant_id = $1
+                   AND cmc.module_id = $2
+                   AND COALESCE(c.phone_e164, '') <> ''
+                   AND c.is_active = TRUE
+                 ORDER BY COALESCE(cmc.updated_at, c.updated_at) DESC
+                 LIMIT $3`,
+                [cleanTenantId, moduleFilter, Math.max(maxRecipients * 3, 300)]
+            );
+
+            const contextRows = ensureArray(contextRowsResult?.rows).map((row) => ({
+                customerId: toText(row.customer_id),
+                phone: toText(row.phone_e164),
+                contactName: toText(row.contact_name),
+                email: toText(row.email),
+                tags: ensureArray(row.labels),
+                marketingOptInStatus: toLower(row.marketing_opt_in_status || 'unknown'),
+                commercialStatus: toLower(row.commercial_status || 'unknown'),
+                moduleId: toText(row.context_module_id || row.customer_module_id || ''),
+                preferredLanguage: toLower(row.preferred_language || 'es')
+            }));
+
+            if (contextRows.length > 0) {
+                return contextRows
+                    .filter((item) => customerMatchesFilters(item, filters))
+                    .slice(0, maxRecipients);
+            }
+        } catch (error) {
+            if (!missingRelation(error)) throw error;
+        }
+    }
+
     const params = [cleanTenantId];
     const where = [
         'tenant_id = $1',
@@ -1033,6 +1101,7 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
         email: toText(row.email),
         tags: ensureArray(row.tags),
         marketingOptInStatus: toLower(row.marketing_opt_in_status || 'unknown'),
+        commercialStatus: 'unknown',
         moduleId: toText(row.module_id || ''),
         preferredLanguage: toLower(row.preferred_language || 'es')
     }));

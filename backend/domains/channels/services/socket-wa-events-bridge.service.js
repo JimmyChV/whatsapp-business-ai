@@ -1,3 +1,10 @@
+const {
+    getStorageDriver,
+    queryPostgres,
+    readTenantJsonFile
+} = require('../../../config/persistence-runtime');
+const { customerModuleContextsService: customerModuleContextsServiceFallback } = require('../../operations/services');
+
 function createSocketWaEventsBridgeService({
     waClient,
     mediaManager,
@@ -31,8 +38,93 @@ function createSocketWaEventsBridgeService({
     extractMessageFileMeta,
     extractQuotedMessageInfo,
     extractOrderInfo,
-    extractLocationInfo
+    extractLocationInfo,
+    customerModuleContextsService = customerModuleContextsServiceFallback
 } = {}) {
+    const extractPhoneCandidatesFromChatId = (chatId = '') => {
+        const clean = String(chatId || '').trim();
+        const base = clean.split('@')[0].trim();
+        const digits = base.replace(/[^\d]/g, '');
+        const out = [];
+        if (digits) {
+            out.push(`+${digits}`);
+            out.push(digits);
+        }
+        return out;
+    };
+
+    const resolveCustomerIdFromChat = async (tenantId = '', chatId = '', scopeModuleId = '') => {
+        const cleanTenantId = String(tenantId || '').trim();
+        const cleanChatId = String(chatId || '').trim();
+        const cleanScopeModuleId = String(scopeModuleId || '').trim().toLowerCase();
+        if (!cleanTenantId || !cleanChatId) return null;
+
+        if (getStorageDriver() === 'postgres') {
+            try {
+                const params = [cleanTenantId, cleanChatId];
+                let scopeSql = '';
+                if (cleanScopeModuleId) {
+                    params.push(cleanScopeModuleId);
+                    scopeSql = ` AND LOWER(COALESCE(module_id, '')) = LOWER($${params.length})`;
+                }
+                const eventResult = await queryPostgres(
+                    `SELECT customer_id
+                       FROM tenant_channel_events
+                      WHERE tenant_id = $1
+                        AND chat_id = $2
+                        AND COALESCE(customer_id, '') <> ''${scopeSql}
+                      ORDER BY created_at DESC
+                      LIMIT 1`,
+                    params
+                );
+                const eventCustomerId = String(eventResult?.rows?.[0]?.customer_id || '').trim();
+                if (eventCustomerId) return eventCustomerId;
+
+                const phoneCandidates = extractPhoneCandidatesFromChatId(cleanChatId);
+                for (const phone of phoneCandidates) {
+                    const customerParams = [cleanTenantId, phone];
+                    let moduleSql = '';
+                    if (cleanScopeModuleId) {
+                        customerParams.push(cleanScopeModuleId);
+                        moduleSql = ` AND LOWER(COALESCE(module_id, '')) = LOWER($${customerParams.length})`;
+                    }
+                    const customerResult = await queryPostgres(
+                        `SELECT customer_id
+                           FROM tenant_customers
+                          WHERE tenant_id = $1
+                            AND phone_e164 = $2${moduleSql}
+                          ORDER BY updated_at DESC
+                          LIMIT 1`,
+                        customerParams
+                    );
+                    const customerId = String(customerResult?.rows?.[0]?.customer_id || '').trim();
+                    if (customerId) return customerId;
+                }
+            } catch (_) {
+                return null;
+            }
+            return null;
+        }
+
+        try {
+            const store = await readTenantJsonFile('customers.json', {
+                tenantId: cleanTenantId,
+                defaultValue: { items: [] }
+            });
+            const items = Array.isArray(store?.items) ? store.items : [];
+            const phoneCandidates = extractPhoneCandidatesFromChatId(cleanChatId);
+            const matched = items.find((entry) => {
+                const customerPhone = String(entry?.phoneE164 || entry?.phone_e164 || '').trim();
+                const customerModuleId = String(entry?.moduleId || entry?.module_id || '').trim().toLowerCase();
+                const moduleMatch = !cleanScopeModuleId || customerModuleId === cleanScopeModuleId;
+                return moduleMatch && phoneCandidates.some((phone) => customerPhone === phone);
+            });
+            return String(matched?.customerId || matched?.customer_id || '').trim() || null;
+        } catch (_) {
+            return null;
+        }
+    };
+
     const registerWaProviderEvents = () => {
         waClient.on('qr', (qr) => emitToRuntimeContext('qr', qr));
         waClient.on('ready', async () => {
@@ -88,6 +180,29 @@ function createSocketWaEventsBridgeService({
                 agentMeta,
                 moduleContext: effectiveModuleContext
             });
+            if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && cleanScopeModuleId && customerModuleContextsService) {
+                try {
+                    const customerId = await resolveCustomerIdFromChat(historyTenantId, relatedChatIdBase, cleanScopeModuleId);
+                    if (customerId) {
+                        const existingContext = await customerModuleContextsService.getContext(historyTenantId, {
+                            customerId,
+                            moduleId: cleanScopeModuleId
+                        });
+                        await customerModuleContextsService.upsertContext(historyTenantId, {
+                            customerId,
+                            moduleId: cleanScopeModuleId,
+                            firstInteractionAt: existingContext?.firstInteractionAt || activityAtIso,
+                            lastInteractionAt: activityAtIso,
+                            metadata: {
+                                dualWriteSource: 'socket_wa_events_bridge.inbound',
+                                lastInboundMessageId: messageId
+                            }
+                        });
+                    }
+                } catch (_) {
+                    // silent: dual-write must not interrupt inbound flow
+                }
+            }
 
             if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && chatOriginService && hasReferral) {
                 try {

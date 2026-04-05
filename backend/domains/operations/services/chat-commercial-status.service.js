@@ -6,6 +6,7 @@ const {
     writeTenantJsonFile,
     queryPostgres
 } = require('../../../config/persistence-runtime');
+const customerModuleContextsService = require('./customer-module-contexts.service');
 
 const STORE_FILE = 'chat_commercial_status.json';
 const DEFAULT_LIMIT = 60;
@@ -15,6 +16,90 @@ const VALID_SOURCES = new Set(['system', 'manual', 'automation', 'campaign', 'so
 
 let schemaReady = false;
 let schemaPromise = null;
+
+function extractPhoneCandidatesFromChatId(chatId = '') {
+    const clean = toText(chatId);
+    const base = clean.split('@')[0].trim();
+    const digits = base.replace(/[^\d]/g, '');
+    const out = [];
+    if (digits) {
+        out.push(`+${digits}`);
+        out.push(digits);
+    }
+    return out;
+}
+
+async function resolveCustomerIdFromChat(tenantId = DEFAULT_TENANT_ID, { chatId = '', scopeModuleId = '' } = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const cleanChatId = normalizeChatId(chatId);
+    const cleanScopeModuleId = normalizeScopeModuleId(scopeModuleId || '');
+    if (!cleanChatId) return null;
+
+    if (getStorageDriver() === 'postgres') {
+        try {
+            const params = [cleanTenantId, cleanChatId];
+            let scopeSql = '';
+            if (cleanScopeModuleId) {
+                params.push(cleanScopeModuleId);
+                scopeSql = ` AND LOWER(COALESCE(module_id, '')) = LOWER($${params.length})`;
+            }
+            const eventResult = await queryPostgres(
+                `SELECT customer_id
+                   FROM tenant_channel_events
+                  WHERE tenant_id = $1
+                    AND chat_id = $2
+                    AND COALESCE(customer_id, '') <> ''${scopeSql}
+                  ORDER BY created_at DESC
+                  LIMIT 1`,
+                params
+            );
+            const eventCustomerId = toText(eventResult?.rows?.[0]?.customer_id || '');
+            if (eventCustomerId) return eventCustomerId;
+
+            const phoneCandidates = extractPhoneCandidatesFromChatId(cleanChatId);
+            for (const phone of phoneCandidates) {
+                const customerParams = [cleanTenantId, phone];
+                let moduleSql = '';
+                if (cleanScopeModuleId) {
+                    customerParams.push(cleanScopeModuleId);
+                    moduleSql = ` AND LOWER(COALESCE(module_id, '')) = LOWER($${customerParams.length})`;
+                }
+                const customerResult = await queryPostgres(
+                    `SELECT customer_id
+                       FROM tenant_customers
+                      WHERE tenant_id = $1
+                        AND phone_e164 = $2${moduleSql}
+                      ORDER BY updated_at DESC
+                      LIMIT 1`,
+                    customerParams
+                );
+                const customerId = toText(customerResult?.rows?.[0]?.customer_id || '');
+                if (customerId) return customerId;
+            }
+        } catch (_) {
+            return null;
+        }
+        return null;
+    }
+
+    try {
+        const customersStore = await readTenantJsonFile('customers.json', {
+            tenantId: cleanTenantId,
+            defaultValue: { items: [] }
+        });
+        const items = Array.isArray(customersStore?.items) ? customersStore.items : [];
+        const phoneCandidates = extractPhoneCandidatesFromChatId(cleanChatId);
+        const matched = items.find((entry) => {
+            const customerPhone = toText(entry?.phoneE164 || entry?.phone_e164 || '');
+            const customerModuleId = toText(entry?.moduleId || entry?.module_id || '').toLowerCase();
+            const moduleMatch = !cleanScopeModuleId || customerModuleId === cleanScopeModuleId;
+            return moduleMatch && phoneCandidates.some((phone) => customerPhone === phone);
+        });
+        return toText(matched?.customerId || matched?.customer_id || '') || null;
+    } catch (_) {
+        return null;
+    }
+}
 
 function nowIso() {
     return new Date().toISOString();
@@ -327,6 +412,28 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
             .map((entry) => normalizeRecord(entry))
             .filter((entry) => entry.chatId);
         await writeTenantJsonFile(STORE_FILE, { items: normalizedItems }, { tenantId: cleanTenantId });
+        try {
+            const moduleId = toText(next.scopeModuleId || '');
+            if (moduleId) {
+                const customerId = await resolveCustomerIdFromChat(cleanTenantId, {
+                    chatId,
+                    scopeModuleId: moduleId
+                });
+                if (customerId) {
+                    await customerModuleContextsService.upsertContext(cleanTenantId, {
+                        customerId,
+                        moduleId,
+                        commercialStatus: next.status || 'unknown',
+                        lastInteractionAt: next.lastTransitionAt || next.updatedAt || now,
+                        metadata: {
+                            dualWriteSource: 'chat_commercial_status.upsert'
+                        }
+                    });
+                }
+            }
+        } catch (_) {
+            // silent: dual-write must not interrupt commercial status lifecycle
+        }
         return {
             status: next,
             previous,
@@ -379,6 +486,29 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
             row.updated_at
         ]
     );
+
+    try {
+        const moduleId = toText(next.scopeModuleId || '');
+        if (moduleId) {
+            const customerId = await resolveCustomerIdFromChat(cleanTenantId, {
+                chatId,
+                scopeModuleId: moduleId
+            });
+            if (customerId) {
+                await customerModuleContextsService.upsertContext(cleanTenantId, {
+                    customerId,
+                    moduleId,
+                    commercialStatus: next.status || 'unknown',
+                    lastInteractionAt: next.lastTransitionAt || next.updatedAt || now,
+                    metadata: {
+                        dualWriteSource: 'chat_commercial_status.upsert'
+                    }
+                });
+            }
+        }
+    } catch (_) {
+        // silent: dual-write must not interrupt commercial status lifecycle
+    }
 
     return {
         status: next,

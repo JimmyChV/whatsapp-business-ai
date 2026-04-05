@@ -12,6 +12,7 @@ module.exports = {
     assignmentRulesService: require('./assignment-rules.service'),
     chatAssignmentRouterService: require('./chat-assignment-router.service'),
     chatAssignmentInactivityJobService: require('./chat-assignment-inactivity-job.service'),
+    customerModuleContextsService: require('./customer-module-contexts.service'),
     metaTemplatesService: require('./meta-templates.service'),
     templateVariablesService: require('./template-variables.service'),
     operationsKpiService: require('./operations-kpi.service'),
