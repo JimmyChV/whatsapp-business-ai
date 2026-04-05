@@ -7,6 +7,8 @@
   tenantLabelService: require('./tenant-labels.service'),
   waModuleService: require('./wa-modules.service'),
   customerService: require('./customers.service'),
+  customerAddressesService: require('./customer-addresses.service'),
+  customerCatalogsService: require('./customer-catalogs.service'),
   aiUsageService: require('./ai-usage.service'),
   quickRepliesManagerService: require('./quick-replies-manager.service'),
   tenantIntegrationsService: require('./integrations.service'),
