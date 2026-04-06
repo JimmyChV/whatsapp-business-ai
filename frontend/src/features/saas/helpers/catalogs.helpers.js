@@ -140,6 +140,7 @@ export function normalizeTenantCatalogItem(item = {}) {
         sourceType: ['local', 'woocommerce', 'meta'].includes(String(source.sourceType || '').trim().toLowerCase())
             ? String(source.sourceType || '').trim().toLowerCase()
             : 'local',
+        isActive: source.is_active !== false && source.isActive !== false,
         isDefault: source.isDefault === true,
         wooBaseUrl: String(woo.baseUrl || '').trim(),
         wooPerPage: Number(woo.perPage || 100) || 100,
