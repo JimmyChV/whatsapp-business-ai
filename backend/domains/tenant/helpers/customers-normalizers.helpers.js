@@ -93,26 +93,118 @@ function normalizeCustomer(payload = {}, { fallbackId = '', previous = null } = 
     const customerId = normalizeCustomerIdCandidate(source.customerId || source.id || fallbackId || prev?.customerId || '');
     if (!customerId) throw new Error('customerId invalido.');
 
+    const treatmentId = toText(
+        source.treatmentId
+        || source.treatment_id
+        || source.idTratamientoCliente
+        || source.IdTratamientoCliente
+        || prev?.treatmentId
+        || prev?.treatment_id
+        || prev?.profile?.treatmentId
+        || ''
+    ) || null;
+    const firstName = toText(
+        source.firstName
+        || source.first_name
+        || source.firstNames
+        || source.nombres
+        || source.Nombres
+        || prev?.firstName
+        || prev?.first_name
+        || prev?.profile?.firstNames
+        || ''
+    ) || null;
+    const lastNamePaternal = toText(
+        source.lastNamePaternal
+        || source.last_name_paternal
+        || source.apellidoPaterno
+        || source.ApellidoPaterno
+        || prev?.lastNamePaternal
+        || prev?.last_name_paternal
+        || prev?.profile?.lastNamePaternal
+        || ''
+    ) || null;
+    const lastNameMaternal = toText(
+        source.lastNameMaternal
+        || source.last_name_maternal
+        || source.apellidoMaterno
+        || source.ApellidoMaterno
+        || prev?.lastNameMaternal
+        || prev?.last_name_maternal
+        || prev?.profile?.lastNameMaternal
+        || ''
+    ) || null;
+    const documentTypeId = toText(
+        source.documentTypeId
+        || source.document_type_id
+        || source.idDocumentoIdentidad
+        || source.IdDocumentoIdentidad
+        || prev?.documentTypeId
+        || prev?.document_type_id
+        || prev?.profile?.documentTypeId
+        || ''
+    ) || null;
+    const documentNumber = toText(
+        source.documentNumber
+        || source.document_number
+        || source.numeroDocumentoIdentidad
+        || source.NumeroDocumentoIdentidad
+        || prev?.documentNumber
+        || prev?.document_number
+        || prev?.profile?.documentNumber
+        || ''
+    ) || null;
+    const customerTypeId = toText(
+        source.customerTypeId
+        || source.customer_type_id
+        || source.idTipoCliente
+        || source.IdTipoCliente
+        || prev?.customerTypeId
+        || prev?.customer_type_id
+        || prev?.profile?.customerTypeId
+        || ''
+    ) || null;
+    const acquisitionSourceId = toText(
+        source.acquisitionSourceId
+        || source.acquisition_source_id
+        || source.sourceId
+        || source.source_id
+        || source.idFuenteCliente
+        || source.IdFuenteCliente
+        || prev?.acquisitionSourceId
+        || prev?.acquisition_source_id
+        || prev?.profile?.sourceId
+        || ''
+    ) || null;
+    const notes = toText(
+        source.notes
+        || source.observacionCliente
+        || source.ObservacionCliente
+        || prev?.notes
+        || prev?.profile?.notes
+        || ''
+    ) || null;
+
     const profile = {
         ...(normalizeObject(prev?.profile)),
         ...(normalizeObject(source.profile)),
-        treatmentId: toText(source.treatmentId || source.idTratamientoCliente || source.IdTratamientoCliente || prev?.profile?.treatmentId || '') || null,
-        lastNamePaternal: toText(source.lastNamePaternal || source.apellidoPaterno || source.ApellidoPaterno || prev?.profile?.lastNamePaternal || '') || null,
-        lastNameMaternal: toText(source.lastNameMaternal || source.apellidoMaterno || source.ApellidoMaterno || prev?.profile?.lastNameMaternal || '') || null,
-        firstNames: toText(source.firstNames || source.nombres || source.Nombres || prev?.profile?.firstNames || '') || null,
-        documentNumber: toText(source.documentNumber || source.numeroDocumentoIdentidad || source.NumeroDocumentoIdentidad || prev?.profile?.documentNumber || '') || null,
+        treatmentId,
+        lastNamePaternal,
+        lastNameMaternal,
+        firstNames: firstName,
+        documentNumber,
         groupName: toText(source.groupName || source.grupo || source.Grupo || prev?.profile?.groupName || '') || null,
-        documentTypeId: toText(source.documentTypeId || source.idDocumentoIdentidad || source.IdDocumentoIdentidad || prev?.profile?.documentTypeId || '') || null,
+        documentTypeId,
         employeeId: toText(source.employeeId || source.idEmpleado || source.IdEmpleado || prev?.profile?.employeeId || '') || null,
         username: toText(source.username || source.usuario || source.Usuario || prev?.profile?.username || '') || null,
-        customerTypeId: toText(source.customerTypeId || source.idTipoCliente || source.IdTipoCliente || prev?.profile?.customerTypeId || '') || null,
-        sourceId: toText(source.sourceId || source.idFuenteCliente || source.IdFuenteCliente || prev?.profile?.sourceId || '') || null,
+        customerTypeId,
+        sourceId: acquisitionSourceId,
         brandId: toText(source.brandId || source.idMarca || source.IdMarca || prev?.profile?.brandId || '') || null,
         districtId: toText(source.districtId || source.idDistritoFiscal || source.IdDistritoFiscal || prev?.profile?.districtId || '') || null,
         fiscalAddress: toText(source.fiscalAddress || source.direccionFiscal || source.DireccionFiscal || prev?.profile?.fiscalAddress || '') || null,
         referredById: toText(source.referredById || source.idReferido || source.IdReferido || prev?.profile?.referredById || '') || null,
         contactType: toText(source.contactType || source.tipoContacto || source.TipoContacto || prev?.profile?.contactType || '') || null,
-        notes: toText(source.notes || source.observacionCliente || source.ObservacionCliente || prev?.profile?.notes || '') || null,
+        notes,
         marketingAuthorization: toBool(source.marketingAuthorization ?? source.autorizacion ?? source.Autorizacion ?? prev?.profile?.marketingAuthorization, prev?.profile?.marketingAuthorization ?? false)
     };
 
@@ -124,6 +216,15 @@ function normalizeCustomer(payload = {}, { fallbackId = '', previous = null } = 
         phoneAlt: normalizePhone(source.phoneAlt || source.telefono2 || source.Telefono2 || prev?.phoneAlt || ''),
         email: toLower(source.email || source.correoElectronico || source.CorreoElectronico || prev?.email || '') || null,
         tags: normalizeTags(source.tags !== undefined ? source.tags : prev?.tags || []),
+        firstName,
+        lastNamePaternal,
+        lastNameMaternal,
+        treatmentId,
+        documentTypeId,
+        documentNumber,
+        customerTypeId,
+        acquisitionSourceId,
+        notes,
         profile,
         metadata: { ...(normalizeObject(prev?.metadata)), ...(normalizeObject(source.metadata)) },
         isActive: toBool(source.isActive ?? source.active ?? prev?.isActive, prev?.isActive ?? true),
@@ -135,6 +236,18 @@ function normalizeCustomer(payload = {}, { fallbackId = '', previous = null } = 
 
 function sanitizePublic(item = {}) {
     const source = item && typeof item === 'object' ? item : {};
+    const profile = normalizeObject(source.profile);
+
+    const firstName = toText(source.firstName || source.first_name || profile.firstNames || '') || null;
+    const lastNamePaternal = toText(source.lastNamePaternal || source.last_name_paternal || profile.lastNamePaternal || '') || null;
+    const lastNameMaternal = toText(source.lastNameMaternal || source.last_name_maternal || profile.lastNameMaternal || '') || null;
+    const treatmentId = toText(source.treatmentId || source.treatment_id || profile.treatmentId || '') || null;
+    const documentTypeId = toText(source.documentTypeId || source.document_type_id || profile.documentTypeId || '') || null;
+    const documentNumber = toText(source.documentNumber || source.document_number || profile.documentNumber || '') || null;
+    const customerTypeId = toText(source.customerTypeId || source.customer_type_id || profile.customerTypeId || '') || null;
+    const acquisitionSourceId = toText(source.acquisitionSourceId || source.acquisition_source_id || source.sourceId || source.source_id || profile.sourceId || '') || null;
+    const notes = toText(source.notes || profile.notes || '') || null;
+
     return {
         customerId: toText(source.customerId || source.customer_id),
         moduleId: toText(source.moduleId || source.module_id) || null,
@@ -143,7 +256,16 @@ function sanitizePublic(item = {}) {
         phoneAlt: toText(source.phoneAlt || source.phone_alt) || null,
         email: toLower(source.email || '') || null,
         tags: normalizeTags(source.tags || []),
-        profile: normalizeObject(source.profile),
+        firstName,
+        lastNamePaternal,
+        lastNameMaternal,
+        treatmentId,
+        documentTypeId,
+        documentNumber,
+        customerTypeId,
+        acquisitionSourceId,
+        notes,
+        profile,
         metadata: normalizeObject(source.metadata),
         isActive: toBool(source.isActive ?? source.is_active, true),
         lastInteractionAt: toIsoText(source.lastInteractionAt || source.last_interaction_at || '') || null,
