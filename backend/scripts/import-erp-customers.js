@@ -423,7 +423,7 @@ async function upsertCustomer(tenantId, row = {}, lookups = {}, options = {}) {
             $8::jsonb, $9::jsonb, $10::jsonb, TRUE, $11, $12, $13,
             $14, $15, $16, $17, $18, $19, $20, $21, $22
         )
-        ON CONFLICT (tenant_id, phone_e164)
+        ON CONFLICT ON CONSTRAINT idx_tenant_customers_phone_unique
         DO UPDATE SET
             module_id = EXCLUDED.module_id,
             contact_name = EXCLUDED.contact_name,
@@ -653,14 +653,14 @@ async function main() {
                 if (result.customerId && result.erpClientId) {
                     erpCustomerMap.set(result.erpClientId, result.customerId);
                 }
-            } catch (error) {
+            } catch (err) {
                 runState.errorRows += 1;
                 await insertRowError(args.tenant, runState.runId, {
                     rowNumber,
                     customerId: toText(row.idcliente) || null,
                     phoneE164: normalizePhone(row.telefono || ''),
                     errorCode: 'CLIENT_UPSERT_FAILED',
-                    errorMessage: String(error?.message || error || 'Error en cliente'),
+                    errorMessage: String(err?.message || err || 'Error en cliente'),
                     rawData: row,
                     context: { source: 'TbClientes' }
                 });
