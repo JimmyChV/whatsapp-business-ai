@@ -369,8 +369,9 @@ async function upsertCustomer(tenantId, row = {}, lookups = {}, options = {}) {
         return { status: 'skipped', reason: 'missing_phone', customerId: null, phoneE164: null };
     }
 
+    const erpCustomerId = createCustomerId(tenantId, erpClientId || phoneE164);
     const existingByPhone = await findCustomerByPhone(tenantId, phoneE164);
-    const customerId = existingByPhone || createCustomerId(tenantId, erpClientId || phoneE164);
+    const customerId = existingByPhone || erpCustomerId;
 
     const treatmentId = lookups.treatments.has(toText(row.idtratamientocliente)) ? toText(row.idtratamientocliente) : null;
     const customerTypeId = lookups.types.has(toText(row.idtipocliente)) ? toText(row.idtipocliente) : null;
@@ -423,7 +424,7 @@ async function upsertCustomer(tenantId, row = {}, lookups = {}, options = {}) {
             $8::jsonb, $9::jsonb, $10::jsonb, TRUE, $11, $12, $13,
             $14, $15, $16, $17, $18, $19, $20, $21, $22
         )
-        ON CONFLICT ON CONSTRAINT idx_tenant_customers_phone_unique
+        ON CONFLICT (tenant_id, customer_id)
         DO UPDATE SET
             module_id = EXCLUDED.module_id,
             contact_name = EXCLUDED.contact_name,
