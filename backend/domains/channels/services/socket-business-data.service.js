@@ -336,6 +336,9 @@ function createSocketBusinessDataService({
                 const activeCatalogId = normalizeSocketCatalogId(catalogScope?.catalogId || resolvedCatalogSelection?.primaryCatalogId || '');
                 const activeCatalogConfig = (Array.isArray(resolvedCatalogSelection?.catalogs) ? resolvedCatalogSelection.catalogs : [])
                     .find((entry) => normalizeSocketCatalogId(entry?.catalogId) === activeCatalogId) || null;
+                const activeCatalogRuntime = activeCatalogId
+                    ? await tenantCatalogService.getCatalog(tenantId, activeCatalogId, { runtime: true }).catch(() => null)
+                    : null;
                 const activeCatalogSourceType = String(activeCatalogConfig?.sourceType || '').trim().toLowerCase();
 
                 const moduleCatalogMode = String(selectedModuleContext?.metadata?.moduleSettings?.catalogMode || '').trim().toLowerCase();
@@ -350,9 +353,26 @@ function createSocketBusinessDataService({
                         ? moduleCatalogMode
                         : configuredCatalogMode);
 
+                const integrationsWooConfig = tenantIntegrations?.catalog?.providers?.woocommerce || {};
+                const activeCatalogWooConfig = (activeCatalogRuntime?.config?.woocommerce && typeof activeCatalogRuntime.config.woocommerce === 'object')
+                    ? activeCatalogRuntime.config.woocommerce
+                    : ((activeCatalogConfig?.config?.woocommerce && typeof activeCatalogConfig.config.woocommerce === 'object')
+                        ? activeCatalogConfig.config.woocommerce
+                        : {});
                 const wooConfig = {
-                    ...(tenantIntegrations?.catalog?.providers?.woocommerce || {}),
-                    enabled: tenantIntegrations?.catalog?.providers?.woocommerce?.enabled !== false
+                    ...integrationsWooConfig,
+                    ...activeCatalogWooConfig,
+                    baseUrl: String(activeCatalogWooConfig?.baseUrl || '').trim() || String(integrationsWooConfig?.baseUrl || '').trim() || '',
+                    consumerKey: String(activeCatalogWooConfig?.consumerKey || '').trim() || String(integrationsWooConfig?.consumerKey || '').trim() || '',
+                    consumerSecret: String(activeCatalogWooConfig?.consumerSecret || '').trim() || String(integrationsWooConfig?.consumerSecret || '').trim() || '',
+                    perPage: Number(activeCatalogWooConfig?.perPage || integrationsWooConfig?.perPage || 100) || 100,
+                    maxPages: Number(activeCatalogWooConfig?.maxPages || integrationsWooConfig?.maxPages || 10) || 10,
+                    includeOutOfStock: Object.prototype.hasOwnProperty.call(activeCatalogWooConfig, 'includeOutOfStock')
+                        ? activeCatalogWooConfig.includeOutOfStock !== false
+                        : integrationsWooConfig?.includeOutOfStock !== false,
+                    enabled: activeCatalogSourceType === 'woocommerce'
+                        ? activeCatalogWooConfig?.enabled !== false
+                        : integrationsWooConfig?.enabled !== false
                 };
                 const wooConfigured = isWooConfigured(wooConfig);
                 const tenantPlan = tenantService.findTenantById(tenantId) || tenantService.DEFAULT_TENANT;

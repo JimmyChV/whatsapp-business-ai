@@ -569,7 +569,10 @@ async function upsertAddress(tenantId, row = {}, customerId = null) {
 }
 
 async function main() {
+    process.stdout.write('[import] starting...\n');
     const args = parseArgs(process.argv.slice(2));
+    let step = 'args_parsed';
+    process.stdout.write('[import] step: ' + step + '\n');
     if (getStorageDriver() !== 'postgres') {
         throw new Error('import-erp-customers.js requiere SAAS_STORAGE_DRIVER=postgres.');
     }
@@ -607,7 +610,11 @@ async function main() {
     };
 
     await ensureSchema();
+    step = 'schema_ready';
+    process.stdout.write('[import] step: ' + step + '\n');
     await insertRun(args.tenant, runState);
+    step = 'run_started';
+    process.stdout.write('[import] step: ' + step + '\n');
 
     try {
         const treatmentRows = csvToObjects(csvPaths.treatments);
