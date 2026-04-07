@@ -37,6 +37,8 @@ function registerHttpRoutes({
     tenantLabelService,
     quickReplyLibrariesService,
     customerService,
+    customerAddressesService,
+    customerCatalogsService,
     waModuleService,
     hasPermission,
     hasAnyPermission,
@@ -199,6 +201,8 @@ function registerHttpRoutes({
         authService,
         accessPolicyService,
         customerService,
+        customerAddressesService,
+        customerCatalogsService,
         waModuleService,
         isTenantAllowedForUser,
         hasPermission

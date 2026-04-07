@@ -43,6 +43,15 @@ async function ensurePostgresSchema() {
                 phone_e164 TEXT NULL,
                 phone_alt TEXT NULL,
                 email TEXT NULL,
+                treatment_id TEXT NULL,
+                first_name TEXT NULL,
+                last_name_paternal TEXT NULL,
+                last_name_maternal TEXT NULL,
+                document_type_id TEXT NULL,
+                document_number TEXT NULL,
+                customer_type_id TEXT NULL,
+                acquisition_source_id TEXT NULL,
+                notes TEXT NULL,
                 tags JSONB NOT NULL DEFAULT '[]'::jsonb,
                 profile JSONB NOT NULL DEFAULT '{}'::jsonb,
                 metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -58,6 +67,15 @@ async function ensurePostgresSchema() {
             ON tenant_customers(tenant_id, phone_e164)
             WHERE phone_e164 IS NOT NULL AND phone_e164 <> ''
         `);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS treatment_id TEXT NULL`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS first_name TEXT NULL`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS last_name_paternal TEXT NULL`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS last_name_maternal TEXT NULL`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS document_type_id TEXT NULL`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS document_number TEXT NULL`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS customer_type_id TEXT NULL`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS acquisition_source_id TEXT NULL`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS notes TEXT NULL`);
         await queryPostgres(`
             CREATE INDEX IF NOT EXISTS idx_tenant_customers_module
             ON tenant_customers(tenant_id, module_id)
@@ -342,10 +360,13 @@ async function upsertCustomerPostgres(tenantId = DEFAULT_TENANT_ID, payload = {}
     const result = await queryPostgres(
         `INSERT INTO tenant_customers (
             tenant_id, customer_id, module_id, contact_name, phone_e164, phone_alt, email,
+            treatment_id, first_name, last_name_paternal, last_name_maternal,
+            document_type_id, document_number, customer_type_id, acquisition_source_id, notes,
             tags, profile, metadata, is_active, last_interaction_at, created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7,
-            $8::jsonb, $9::jsonb, $10::jsonb, $11, $12, $13, $14
+            $8, $9, $10, $11, $12, $13, $14, $15, $16,
+            $17::jsonb, $18::jsonb, $19::jsonb, $20, $21, $22, $23
         )
         ON CONFLICT (tenant_id, customer_id)
         DO UPDATE SET
@@ -354,6 +375,15 @@ async function upsertCustomerPostgres(tenantId = DEFAULT_TENANT_ID, payload = {}
             phone_e164 = EXCLUDED.phone_e164,
             phone_alt = EXCLUDED.phone_alt,
             email = EXCLUDED.email,
+            treatment_id = EXCLUDED.treatment_id,
+            first_name = EXCLUDED.first_name,
+            last_name_paternal = EXCLUDED.last_name_paternal,
+            last_name_maternal = EXCLUDED.last_name_maternal,
+            document_type_id = EXCLUDED.document_type_id,
+            document_number = EXCLUDED.document_number,
+            customer_type_id = EXCLUDED.customer_type_id,
+            acquisition_source_id = EXCLUDED.acquisition_source_id,
+            notes = EXCLUDED.notes,
             tags = EXCLUDED.tags,
             profile = EXCLUDED.profile,
             metadata = EXCLUDED.metadata,
@@ -369,6 +399,15 @@ async function upsertCustomerPostgres(tenantId = DEFAULT_TENANT_ID, payload = {}
             normalized.phoneE164,
             normalized.phoneAlt,
             normalized.email,
+            normalized.treatmentId,
+            normalized.firstName,
+            normalized.lastNamePaternal,
+            normalized.lastNameMaternal,
+            normalized.documentTypeId,
+            normalized.documentNumber,
+            normalized.customerTypeId,
+            normalized.acquisitionSourceId,
+            normalized.notes,
             JSON.stringify(normalized.tags || []),
             JSON.stringify(normalized.profile || {}),
             JSON.stringify(normalized.metadata || {}),
@@ -459,6 +498,19 @@ async function updateCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '', pat
 
     const profilePatch = normalizeObject(sourcePatch.profile);
     const metadataPatch = normalizeObject(sourcePatch.metadata);
+    const mergedLegacyProfile = {
+        ...normalizeObject(existing?.profile),
+        ...profilePatch
+    };
+    const legacyFirstName = toText(sourcePatch.firstName !== undefined ? sourcePatch.firstName : existing?.firstName || mergedLegacyProfile.firstNames || '') || null;
+    const legacyLastNamePaternal = toText(sourcePatch.lastNamePaternal !== undefined ? sourcePatch.lastNamePaternal : existing?.lastNamePaternal || mergedLegacyProfile.lastNamePaternal || '') || null;
+    const legacyLastNameMaternal = toText(sourcePatch.lastNameMaternal !== undefined ? sourcePatch.lastNameMaternal : existing?.lastNameMaternal || mergedLegacyProfile.lastNameMaternal || '') || null;
+    const legacyTreatmentId = toText(sourcePatch.treatmentId !== undefined ? sourcePatch.treatmentId : existing?.treatmentId || mergedLegacyProfile.treatmentId || '') || null;
+    const legacyDocumentTypeId = toText(sourcePatch.documentTypeId !== undefined ? sourcePatch.documentTypeId : existing?.documentTypeId || mergedLegacyProfile.documentTypeId || '') || null;
+    const legacyDocumentNumber = toText(sourcePatch.documentNumber !== undefined ? sourcePatch.documentNumber : existing?.documentNumber || mergedLegacyProfile.documentNumber || '') || null;
+    const legacyCustomerTypeId = toText(sourcePatch.customerTypeId !== undefined ? sourcePatch.customerTypeId : existing?.customerTypeId || mergedLegacyProfile.customerTypeId || '') || null;
+    const legacyAcquisitionSourceId = toText(sourcePatch.acquisitionSourceId !== undefined ? sourcePatch.acquisitionSourceId : existing?.acquisitionSourceId || mergedLegacyProfile.sourceId || '') || null;
+    const legacyNotes = toText(sourcePatch.notes !== undefined ? sourcePatch.notes : existing?.notes || mergedLegacyProfile.notes || '') || null;
     const updatedLegacy = {
         customerId: resolvedCustomerId,
         moduleId: toText(sourcePatch.moduleId !== undefined ? sourcePatch.moduleId : existing?.moduleId) || null,
@@ -467,9 +519,26 @@ async function updateCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '', pat
         phoneAlt: normalizePhone(sourcePatch.phoneAlt !== undefined ? sourcePatch.phoneAlt : existing?.phoneAlt),
         email: toLower(sourcePatch.email !== undefined ? sourcePatch.email : existing?.email) || null,
         tags: normalizeTags(sourcePatch.tags !== undefined ? sourcePatch.tags : existing?.tags || []),
+        firstName: legacyFirstName,
+        lastNamePaternal: legacyLastNamePaternal,
+        lastNameMaternal: legacyLastNameMaternal,
+        treatmentId: legacyTreatmentId,
+        documentTypeId: legacyDocumentTypeId,
+        documentNumber: legacyDocumentNumber,
+        customerTypeId: legacyCustomerTypeId,
+        acquisitionSourceId: legacyAcquisitionSourceId,
+        notes: legacyNotes,
         profile: {
-            ...normalizeObject(existing?.profile),
-            ...profilePatch
+            ...mergedLegacyProfile,
+            firstNames: legacyFirstName,
+            lastNamePaternal: legacyLastNamePaternal,
+            lastNameMaternal: legacyLastNameMaternal,
+            treatmentId: legacyTreatmentId,
+            documentTypeId: legacyDocumentTypeId,
+            documentNumber: legacyDocumentNumber,
+            customerTypeId: legacyCustomerTypeId,
+            sourceId: legacyAcquisitionSourceId,
+            notes: legacyNotes
         },
         metadata: {
             ...normalizeObject(existing?.metadata),
@@ -492,12 +561,21 @@ async function updateCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '', pat
                 phone_e164 = $5,
                 phone_alt = $6,
                 email = $7,
-                tags = $8::jsonb,
-                profile = $9::jsonb,
-                metadata = $10::jsonb,
-                is_active = $11,
-                last_interaction_at = $12,
-                updated_at = $13
+                treatment_id = $8,
+                first_name = $9,
+                last_name_paternal = $10,
+                last_name_maternal = $11,
+                document_type_id = $12,
+                document_number = $13,
+                customer_type_id = $14,
+                acquisition_source_id = $15,
+                notes = $16,
+                tags = $17::jsonb,
+                profile = $18::jsonb,
+                metadata = $19::jsonb,
+                is_active = $20,
+                last_interaction_at = $21,
+                updated_at = $22
              WHERE tenant_id = $1 AND customer_id = $2
              RETURNING *`,
             [
@@ -508,6 +586,15 @@ async function updateCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '', pat
                 updatedLegacy.phoneE164,
                 updatedLegacy.phoneAlt,
                 updatedLegacy.email,
+                updatedLegacy.treatmentId,
+                updatedLegacy.firstName,
+                updatedLegacy.lastNamePaternal,
+                updatedLegacy.lastNameMaternal,
+                updatedLegacy.documentTypeId,
+                updatedLegacy.documentNumber,
+                updatedLegacy.customerTypeId,
+                updatedLegacy.acquisitionSourceId,
+                updatedLegacy.notes,
                 JSON.stringify(updatedLegacy.tags || []),
                 JSON.stringify(updatedLegacy.profile || {}),
                 JSON.stringify(updatedLegacy.metadata || {}),

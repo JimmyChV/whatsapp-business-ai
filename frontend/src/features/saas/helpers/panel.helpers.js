@@ -237,6 +237,7 @@ export function normalizeWaModule(item = {}) {
         phoneNumber: String(source.phoneNumber || '').trim() || '',
         transportMode: 'cloud',
         imageUrl: String(source.imageUrl || '').trim() || '',
+        isActive: source.is_active !== false && source.isActive !== false,
         isDefault: source.isDefault === true,
         isSelected: source.isSelected === true,
         assignedUserIds: Array.isArray(source.assignedUserIds)

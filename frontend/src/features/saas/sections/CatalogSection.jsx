@@ -497,8 +497,8 @@ function CatalogSection(props = {}) {
                                                     <div className="saas-admin-detail-field"><span>Per page</span><strong>{selectedTenantCatalog.wooPerPage}</strong></div>
                                                     <div className="saas-admin-detail-field"><span>Max pages</span><strong>{selectedTenantCatalog.wooMaxPages}</strong></div>
                                                     <div className="saas-admin-detail-field"><span>Incluye sin stock</span><strong>{selectedTenantCatalog.wooIncludeOutOfStock ? 'Si' : 'No'}</strong></div>
-                                                    <div className="saas-admin-detail-field"><span>Consumer key</span><strong>{selectedTenantCatalog.wooConsumerKeyMasked || 'No configurada'}</strong></div>
-                                                    <div className="saas-admin-detail-field"><span>Consumer secret</span><strong>{selectedTenantCatalog.wooConsumerSecretMasked || 'No configurada'}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Consumer key</span><strong>{selectedTenantCatalog.wooConsumerKeyMasked || (selectedTenantCatalog.wooHasConsumerKey ? 'Configurada' : 'No configurada')}</strong></div>
+                                                    <div className="saas-admin-detail-field"><span>Consumer secret</span><strong>{selectedTenantCatalog.wooConsumerSecretMasked || (selectedTenantCatalog.wooHasConsumerSecret ? 'Configurada' : 'No configurada')}</strong></div>
                                                 </div>
                                             </div>
                                         )}

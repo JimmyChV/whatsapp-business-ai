@@ -11,6 +11,8 @@ module.exports = {
     tenantLabelService: tenantDomainServices.tenantLabelService,
     waModuleService: tenantDomainServices.waModuleService,
     customerService: tenantDomainServices.customerService,
+    customerAddressesService: tenantDomainServices.customerAddressesService,
+    customerCatalogsService: tenantDomainServices.customerCatalogsService,
     quickReplyLibrariesService: tenantDomainServices.quickReplyLibrariesService,
     quickRepliesManagerService: tenantDomainServices.quickRepliesManagerService,
     aiUsageService: tenantDomainServices.aiUsageService,

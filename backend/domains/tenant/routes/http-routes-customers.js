@@ -11,6 +11,8 @@ function registerTenantCustomerHttpRoutes({
     authService,
     accessPolicyService,
     customerService,
+    customerAddressesService,
+    customerCatalogsService,
     waModuleService,
     isTenantAllowedForUser,
     hasPermission
@@ -224,6 +226,128 @@ function registerTenantCustomerHttpRoutes({
             return res.json({ ok: true, tenantId, customerId, ...result });
         } catch (error) {
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar eventos del cliente.') });
+        }
+    });
+
+    app.get('/api/tenant/customers/:customerId/addresses', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const customerId = String(req.params?.customerId || '').trim();
+            if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
+            const items = await customerAddressesService.listAddresses(tenantId, { customerId });
+            return res.json({ ok: true, tenantId, customerId, items });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar direcciones del cliente.') });
+        }
+    });
+
+    app.post('/api/tenant/customers/:customerId/addresses', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const customerId = String(req.params?.customerId || '').trim();
+            if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
+            const payload = req.body && typeof req.body === 'object' ? req.body : {};
+            const item = await customerAddressesService.upsertAddress(tenantId, { ...payload, customerId });
+            return res.status(201).json({ ok: true, tenantId, customerId, item });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear direccion.') });
+        }
+    });
+
+    app.put('/api/tenant/customers/:customerId/addresses/:addressId', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const customerId = String(req.params?.customerId || '').trim();
+            const addressId = String(req.params?.addressId || '').trim();
+            if (!customerId || !addressId) return res.status(400).json({ ok: false, error: 'customerId/addressId invalido.' });
+            const payload = req.body && typeof req.body === 'object' ? req.body : {};
+            const item = await customerAddressesService.upsertAddress(tenantId, { ...payload, customerId, addressId });
+            return res.json({ ok: true, tenantId, customerId, item });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar direccion.') });
+        }
+    });
+
+    app.delete('/api/tenant/customers/:customerId/addresses/:addressId', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const customerId = String(req.params?.customerId || '').trim();
+            const addressId = String(req.params?.addressId || '').trim();
+            if (!customerId || !addressId) return res.status(400).json({ ok: false, error: 'customerId/addressId invalido.' });
+            const deleted = await customerAddressesService.deleteAddress(tenantId, { addressId });
+            return res.json({ ok: true, tenantId, customerId, addressId, deleted: Boolean(deleted) });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar direccion.') });
+        }
+    });
+
+    app.patch('/api/tenant/customers/:customerId/addresses/:addressId/set-primary', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const customerId = String(req.params?.customerId || '').trim();
+            const addressId = String(req.params?.addressId || '').trim();
+            if (!customerId || !addressId) return res.status(400).json({ ok: false, error: 'customerId/addressId invalido.' });
+            const item = await customerAddressesService.setPrimaryAddress(tenantId, { customerId, addressId });
+            return res.json({ ok: true, tenantId, customerId, item });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo marcar direccion primaria.') });
+        }
+    });
+
+    app.get('/api/tenant/customer-catalogs/treatments', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const items = await customerCatalogsService.getTreatments();
+            return res.json({ ok: true, items });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar catalogo de tratamientos.') });
+        }
+    });
+
+    app.get('/api/tenant/customer-catalogs/types', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const items = await customerCatalogsService.getCustomerTypes();
+            return res.json({ ok: true, items });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar catalogo de tipos de cliente.') });
+        }
+    });
+
+    app.get('/api/tenant/customer-catalogs/sources', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const items = await customerCatalogsService.getAcquisitionSources();
+            return res.json({ ok: true, items });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar catalogo de fuentes.') });
+        }
+    });
+
+    app.get('/api/tenant/customer-catalogs/document-types', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const items = await customerCatalogsService.getDocumentTypes();
+            return res.json({ ok: true, items });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar catalogo de documentos.') });
         }
     });
 

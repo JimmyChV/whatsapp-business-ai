@@ -140,11 +140,14 @@ export function normalizeTenantCatalogItem(item = {}) {
         sourceType: ['local', 'woocommerce', 'meta'].includes(String(source.sourceType || '').trim().toLowerCase())
             ? String(source.sourceType || '').trim().toLowerCase()
             : 'local',
+        isActive: source.is_active !== false && source.isActive !== false,
         isDefault: source.isDefault === true,
-        wooBaseUrl: String(woo.baseUrl || '').trim(),
+        wooBaseUrl: String(woo.baseUrl || woo.base_url || '').trim(),
         wooPerPage: Number(woo.perPage || 100) || 100,
         wooMaxPages: Number(woo.maxPages || 10) || 10,
         wooIncludeOutOfStock: woo.includeOutOfStock !== false,
+        wooHasConsumerKey: woo.hasConsumerKey === true || Boolean(String(woo.consumerKey || '').trim()),
+        wooHasConsumerSecret: woo.hasConsumerSecret === true || Boolean(String(woo.consumerSecret || '').trim()),
         wooConsumerKeyMasked: String(woo.consumerKeyMasked || '').trim(),
         wooConsumerSecretMasked: String(woo.consumerSecretMasked || '').trim(),
         createdAt: String(source.createdAt || '').trim() || null,
