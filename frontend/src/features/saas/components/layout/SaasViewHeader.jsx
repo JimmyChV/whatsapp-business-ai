@@ -9,6 +9,39 @@ const DEFAULT_OPERATORS = [
     { value: 'not_empty', label: 'No vacio' }
 ];
 
+const OPERATORS_BY_TYPE = {
+    text: [
+        { value: 'contains', label: 'Contiene' },
+        { value: 'equals', label: 'Igual a' },
+        { value: 'starts_with', label: 'Empieza con' },
+        { value: 'ends_with', label: 'Termina con' },
+        { value: 'is_empty', label: 'Vacio' },
+        { value: 'not_empty', label: 'No vacio' }
+    ],
+    option: [
+        { value: 'equals', label: 'Es' },
+        { value: 'not_equals', label: 'No es' },
+        { value: 'is_empty', label: 'Vacio' },
+        { value: 'not_empty', label: 'No vacio' }
+    ],
+    number: [
+        { value: 'equals', label: '=' },
+        { value: 'gt', label: '>' },
+        { value: 'gte', label: '>=' },
+        { value: 'lt', label: '<' },
+        { value: 'lte', label: '<=' },
+        { value: 'is_empty', label: 'Vacio' },
+        { value: 'not_empty', label: 'No vacio' }
+    ],
+    date: [
+        { value: 'on', label: 'En fecha' },
+        { value: 'before', label: 'Antes de' },
+        { value: 'after', label: 'Despues de' },
+        { value: 'is_empty', label: 'Vacio' },
+        { value: 'not_empty', label: 'No vacio' }
+    ]
+};
+
 const normalizeActions = (actions = []) => (
     Array.isArray(actions)
         ? actions.filter((action) => action && typeof action === 'object')
@@ -25,17 +58,28 @@ const SaasViewHeader = ({
     actions = [],
     filters = null,
     sortConfig = null,
-    onSortChange = null
+    onSortChange = null,
+    extra = null
 }) => {
     const safeActions = useMemo(() => normalizeActions(actions), [actions]);
     const filterColumns = useMemo(
         () => (Array.isArray(filters?.columns) ? filters.columns.filter((column) => column && column.key) : []),
         [filters]
     );
-    const operatorOptions = useMemo(
-        () => (Array.isArray(filters?.operators) && filters.operators.length > 0 ? filters.operators : DEFAULT_OPERATORS),
-        [filters]
-    );
+    const selectedFilterColumn = useMemo(() => {
+        const selectedKey = String(filters?.value?.columnKey || '').trim();
+        if (!selectedKey) return null;
+        return filterColumns.find((column) => String(column?.key || '').trim() === selectedKey) || null;
+    }, [filterColumns, filters]);
+    const selectedFilterType = String(selectedFilterColumn?.type || 'text').trim().toLowerCase();
+    const hasFilterOptions = Array.isArray(selectedFilterColumn?.options) && selectedFilterColumn.options.length > 0;
+    const operatorOptions = useMemo(() => {
+        if (Array.isArray(filters?.operators) && filters.operators.length > 0) return filters.operators;
+        if (hasFilterOptions) return OPERATORS_BY_TYPE.option;
+        if (selectedFilterType === 'number') return OPERATORS_BY_TYPE.number;
+        if (selectedFilterType === 'date') return OPERATORS_BY_TYPE.date;
+        return OPERATORS_BY_TYPE.text || DEFAULT_OPERATORS;
+    }, [filters, hasFilterOptions, selectedFilterType]);
     const showFilterValue = !['is_empty', 'not_empty'].includes(String(filters?.value?.operator || '').trim());
     const sortColumns = useMemo(
         () => (Array.isArray(sortConfig?.columns) ? sortConfig.columns.filter((column) => column && column.key) : []),
@@ -100,11 +144,30 @@ const SaasViewHeader = ({
                         </select>
 
                         {showFilterValue ? (
-                            <input
-                                value={String(filters?.value?.value || '')}
-                                onChange={(event) => filters?.onChange?.({ ...filters.value, value: event.target.value })}
-                                placeholder="Valor filtro"
-                            />
+                            hasFilterOptions ? (
+                                <select
+                                    value={String(filters?.value?.value || '')}
+                                    onChange={(event) => filters?.onChange?.({ ...filters.value, value: event.target.value })}
+                                >
+                                    <option value="">Seleccionar...</option>
+                                    {selectedFilterColumn.options.map((optionItem, optionIndex) => {
+                                        const optionValue = String(optionItem?.value ?? optionItem?.id ?? optionItem ?? '').trim();
+                                        const optionLabel = String((optionItem?.label ?? optionValue) || `Opcion ${optionIndex + 1}`).trim();
+                                        return (
+                                            <option key={`${selectedFilterColumn.key}-${optionValue}-${optionIndex}`} value={optionValue}>
+                                                {optionLabel}
+                                            </option>
+                                        );
+                                    })}
+                                </select>
+                            ) : (
+                                <input
+                                    type={selectedFilterType === 'number' ? 'number' : (selectedFilterType === 'date' ? 'date' : 'text')}
+                                    value={String(filters?.value?.value || '')}
+                                    onChange={(event) => filters?.onChange?.({ ...filters.value, value: event.target.value })}
+                                    placeholder="Valor filtro"
+                                />
+                            )
                         ) : (
                             <div className="saas-view-header__filter-placeholder">Sin valor</div>
                         )}
@@ -148,6 +211,7 @@ const SaasViewHeader = ({
                     </div>
                 ) : null}
             </div>
+            {extra ? <div className="saas-view-header__extra">{extra}</div> : null}
         </div>
     );
 };

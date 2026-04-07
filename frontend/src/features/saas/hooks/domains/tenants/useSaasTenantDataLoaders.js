@@ -155,8 +155,32 @@ export default function useSaasTenantDataLoaders({
             setSelectedCustomerId('');
             return;
         }
-        const payload = await fetchTenantCustomers(requestJson, cleanTenantId, { limit: 300, includeInactive: true });
-        const items = Array.isArray(payload?.items) ? payload.items : [];
+        const pageSize = 500;
+        const maxPages = 200;
+        let offset = 0;
+        let expectedTotal = null;
+        const aggregated = [];
+
+        for (let page = 0; page < maxPages; page += 1) {
+            const payload = await fetchTenantCustomers(requestJson, cleanTenantId, {
+                limit: pageSize,
+                offset,
+                includeInactive: true
+            });
+            const batch = Array.isArray(payload?.items) ? payload.items : [];
+            if (expectedTotal === null) {
+                const total = Number(payload?.total);
+                expectedTotal = Number.isFinite(total) && total >= 0 ? total : null;
+            }
+
+            if (!batch.length) break;
+            aggregated.push(...batch);
+            offset += batch.length;
+
+            if (expectedTotal !== null && offset >= expectedTotal) break;
+        }
+
+        const items = aggregated;
         setCustomers(items);
         setSelectedCustomerId((prev) => {
             const cleanPrev = String(prev || '').trim();

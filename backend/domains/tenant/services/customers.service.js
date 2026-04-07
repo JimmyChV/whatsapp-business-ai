@@ -429,9 +429,10 @@ async function upsertCustomer(tenantId = DEFAULT_TENANT_ID, payload = {}, option
 }
 
 async function getCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '') {
-    const cleanCustomerId = normalizeCustomerIdCandidate(customerId);
-    if (!cleanCustomerId) return null;
-    return findCustomer(tenantId, { customerId: cleanCustomerId });
+    const rawCustomerId = toText(customerId || '');
+    if (!rawCustomerId) return null;
+    const cleanCustomerId = normalizeCustomerIdCandidate(rawCustomerId);
+    return findCustomer(tenantId, { customerId: cleanCustomerId || rawCustomerId });
 }
 
 async function updateCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '', patch = {}) {

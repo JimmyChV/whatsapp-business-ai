@@ -1,6 +1,5 @@
 import SaasPanelHeader from './SaasPanelHeader';
 import SaasPanelNav from './SaasPanelNav';
-import SaasPanelTenantPicker from './SaasPanelTenantPicker';
 
 export default function SaasPanelFrame({
     embedded = false,
@@ -48,6 +47,16 @@ export default function SaasPanelFrame({
                     buildInitials={buildInitials}
                     closeLabel={closeLabel}
                     onClose={onClose}
+                    tenantPicker={requiresTenantSelection ? {
+                        visible: true,
+                        value: settingsTenantId,
+                        options: tenantOptions,
+                        disabled: isBusy,
+                        toTenantDisplayName,
+                        onChange: onChangeTenant,
+                        onClear: onClearTenant,
+                        canClear: Boolean(settingsTenantId)
+                    } : null}
                 />
 
                 {error && (
@@ -63,16 +72,6 @@ export default function SaasPanelFrame({
                         </div>
                     </div>
                 )}
-
-                <SaasPanelTenantPicker
-                    requiresTenantSelection={requiresTenantSelection}
-                    settingsTenantId={settingsTenantId}
-                    tenantOptions={tenantOptions}
-                    busy={isBusy}
-                    toTenantDisplayName={toTenantDisplayName}
-                    onChangeTenant={onChangeTenant}
-                    onClearTenant={onClearTenant}
-                />
 
                 <SaasPanelNav
                     showNavigation={showNavigation}

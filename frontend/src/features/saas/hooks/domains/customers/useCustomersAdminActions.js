@@ -9,7 +9,6 @@ function resolveCustomerId(value = '') {
 
 export default function useCustomersAdminActions({
     selectedCustomer = null,
-    customerImportModuleId = '',
     emptyCustomerForm = {},
     setSelectedCustomerId,
     setCustomerPanelMode,
@@ -18,10 +17,7 @@ export default function useCustomersAdminActions({
     const openCustomerCreate = () => {
         setSelectedCustomerId('');
         setCustomerPanelMode('create');
-        setCustomerForm({
-            ...emptyCustomerForm,
-            moduleId: String(customerImportModuleId || '').trim()
-        });
+        setCustomerForm({ ...emptyCustomerForm });
     };
 
     const openCustomerView = (customerId) => {
