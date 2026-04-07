@@ -5,17 +5,45 @@ import {
     SaasDetailPanel,
     SaasDetailPanelSection,
     SaasTableDetailLayout,
+    SaasViewHeader,
     useSaasColumnPrefs
 } from '../components/layout';
 
 const CUSTOMER_TABLE_COLUMNS = [
     { key: 'codigo', label: 'Codigo', width: '15%' },
-    { key: 'nombreCompleto', label: 'Nombre completo', width: '24%' },
+    { key: 'nombreCompleto', label: 'Nombre completo', width: '22%' },
+    { key: 'nombres', label: 'Nombres', width: '16%' },
+    { key: 'apellidoPaterno', label: 'Apellido paterno', width: '16%' },
+    { key: 'apellidoMaterno', label: 'Apellido materno', width: '16%' },
     { key: 'telefono', label: 'Telefono', width: '15%' },
+    { key: 'telefonoAlt', label: 'Telefono alterno', width: '15%' },
+    { key: 'email', label: 'Correo', width: '20%' },
     { key: 'tipoCliente', label: 'Tipo de cliente', width: '16%' },
-    { key: 'modulo', label: 'Modulo', width: '15%' },
-    { key: 'estado', label: 'Estado', width: '15%' }
+    { key: 'tipoDocumento', label: 'Tipo documento', width: '16%' },
+    { key: 'documento', label: 'Documento', width: '16%' },
+    { key: 'idioma', label: 'Idioma', width: '10%' },
+    { key: 'fuenteAdquisicion', label: 'Fuente', width: '16%' },
+    { key: 'tratamiento', label: 'Tratamiento', width: '14%' },
+    { key: 'etiquetas', label: 'Etiquetas', width: '20%' },
+    { key: 'ultimaInteraccion', label: 'Ultima interaccion', width: '16%' },
+    { key: 'actualizado', label: 'Actualizado', width: '16%' },
+    { key: 'estado', label: 'Estado', width: '10%' }
 ];
+
+const CUSTOMER_DEFAULT_COLUMN_KEYS = [
+    'codigo',
+    'nombreCompleto',
+    'telefono',
+    'email',
+    'tipoCliente',
+    'estado'
+];
+
+const CUSTOMER_ROWS_CHUNK_SIZE = 180;
+const CUSTOMER_DEFAULT_SORT = {
+    columnKey: 'actualizado',
+    direction: 'desc'
+};
 
 function resolveCustomerId(value = null) {
     if (!value || typeof value !== 'object') return '';
@@ -100,6 +128,59 @@ function buildCustomerTypeLabel(customer = null) {
     ).trim() || '-';
 }
 
+function buildDocumentTypeLabel(customer = null) {
+    if (!customer || typeof customer !== 'object') return '-';
+    return String(
+        customer.documentTypeLabel
+        || customer.document_type_label
+        || customer.documentType
+        || customer.document_type
+        || customer?.profile?.documentTypeLabel
+        || customer?.profile?.documentTypeId
+        || '-'
+    ).trim() || '-';
+}
+
+function buildDocumentNumber(customer = null) {
+    if (!customer || typeof customer !== 'object') return '-';
+    return String(customer.documentNumber || customer.document_number || customer?.profile?.documentNumber || '-').trim() || '-';
+}
+
+function buildLanguageLabel(customer = null) {
+    const value = normalizePreferredLanguage(customer);
+    if (value === 'en') return 'Ingles';
+    if (value === 'pt') return 'Portugues';
+    return 'Espanol';
+}
+
+function buildAcquisitionSourceLabel(customer = null) {
+    if (!customer || typeof customer !== 'object') return '-';
+    return String(
+        customer.acquisitionSourceLabel
+        || customer.acquisition_source_label
+        || customer.sourceLabel
+        || customer.source_label
+        || customer.sourceId
+        || customer.source_id
+        || customer?.profile?.sourceLabel
+        || customer?.profile?.sourceId
+        || '-'
+    ).trim() || '-';
+}
+
+function buildTreatmentLabel(customer = null) {
+    if (!customer || typeof customer !== 'object') return '-';
+    return String(
+        customer.treatmentLabel
+        || customer.treatment_label
+        || customer.treatmentId
+        || customer.treatment_id
+        || customer?.profile?.treatmentLabel
+        || customer?.profile?.treatmentId
+        || '-'
+    ).trim() || '-';
+}
+
 function CustomersSection(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const {
@@ -126,14 +207,16 @@ function CustomersSection(props = {}) {
         buildCustomerPayloadFromForm,
         setSelectedCustomerId,
         setCustomerPanelMode,
-        cancelCustomerEdit,
-        customerImportModuleId,
-        setCustomerImportModuleId,
-        customerCsvText,
-        setCustomerCsvText
+        cancelCustomerEdit
     } = context;
 
     const [showColumnsMenu, setShowColumnsMenu] = useState(false);
+    const [headerFilter, setHeaderFilter] = useState({
+        columnKey: '',
+        operator: 'contains',
+        value: ''
+    });
+    const [sortConfig, setSortConfig] = useState(CUSTOMER_DEFAULT_SORT);
     const [languageDraftByCustomer, setLanguageDraftByCustomer] = useState({});
     const [languageBusy, setLanguageBusy] = useState(false);
     const [moduleContexts, setModuleContexts] = useState([]);
@@ -145,8 +228,9 @@ function CustomersSection(props = {}) {
     const [customerAddresses, setCustomerAddresses] = useState([]);
     const [addressesLoading, setAddressesLoading] = useState(false);
     const [addressesError, setAddressesError] = useState('');
+    const [visibleRowsLimit, setVisibleRowsLimit] = useState(CUSTOMER_ROWS_CHUNK_SIZE);
 
-    const defaultColumnKeys = useMemo(() => CUSTOMER_TABLE_COLUMNS.map((column) => column.key), []);
+    const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
     const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys);
 
     const selectedCustomerIdResolved = useMemo(() => resolveCustomerId(selectedCustomer), [selectedCustomer]);
@@ -181,18 +265,89 @@ function CustomersSection(props = {}) {
         return source.map((customer = {}, index) => {
             const customerId = resolveCustomerId(customer);
             const safeId = customerId || String(customer.phoneE164 || customer.phone_e164 || customer.email || `customer-${index}`).trim();
+            const profile = customer?.profile && typeof customer.profile === 'object' ? customer.profile : {};
+            const tags = Array.isArray(customer?.tags) ? customer.tags : [];
             return {
                 id: safeId,
                 codigo: customerId || '-',
                 nombreCompleto: buildCustomerDisplayName(customer),
+                nombres: String(customer.firstName || customer.first_name || profile.firstNames || '-').trim() || '-',
+                apellidoPaterno: String(customer.lastNamePaternal || customer.last_name_paternal || profile.lastNamePaternal || '-').trim() || '-',
+                apellidoMaterno: String(customer.lastNameMaternal || customer.last_name_maternal || profile.lastNameMaternal || '-').trim() || '-',
                 telefono: String(customer.phoneE164 || customer.phone_e164 || '-').trim() || '-',
+                telefonoAlt: String(customer.phoneAlt || customer.phone_alt || '-').trim() || '-',
+                email: String(customer.email || '-').trim() || '-',
                 tipoCliente: buildCustomerTypeLabel(customer),
-                modulo: String(customer.moduleId || customer.module_id || '').trim() || 'Sin modulo',
+                tipoDocumento: buildDocumentTypeLabel(customer),
+                documento: buildDocumentNumber(customer),
+                idioma: buildLanguageLabel(customer),
+                fuenteAdquisicion: buildAcquisitionSourceLabel(customer),
+                tratamiento: buildTreatmentLabel(customer),
+                etiquetas: tags.length ? tags.join(', ') : '-',
+                ultimaInteraccion: formatDateTimeLabel(customer.lastInteractionAt || customer.last_interaction_at || ''),
+                actualizado: formatDateTimeLabel(customer.updatedAt || customer.updated_at || ''),
                 estado: customer.isActive === false ? 'Inactivo' : 'Activo',
                 _raw: customer
             };
         });
-    }, [filteredCustomers]);
+    }, [filteredCustomers, formatDateTimeLabel]);
+
+    const visibleColumns = useMemo(
+        () => tableColumns.filter((column) => column && column.hidden !== true),
+        [tableColumns]
+    );
+
+    const sortedAndFilteredRows = useMemo(() => {
+        const sourceRows = Array.isArray(tableRows) ? [...tableRows] : [];
+        const filterColumnKey = String(headerFilter?.columnKey || '').trim();
+        const filterOperator = String(headerFilter?.operator || 'contains').trim().toLowerCase();
+        const filterValue = String(headerFilter?.value || '').trim().toLowerCase();
+
+        const matchValue = (candidateValueRaw) => {
+            const candidateValue = String(candidateValueRaw ?? '').trim().toLowerCase();
+            if (!filterColumnKey) return true;
+            if (filterOperator === 'is_empty') return candidateValue.length === 0 || candidateValue === '-';
+            if (filterOperator === 'not_empty') return candidateValue.length > 0 && candidateValue !== '-';
+            if (!filterValue) return true;
+            if (filterOperator === 'equals') return candidateValue === filterValue;
+            if (filterOperator === 'starts_with') return candidateValue.startsWith(filterValue);
+            if (filterOperator === 'ends_with') return candidateValue.endsWith(filterValue);
+            return candidateValue.includes(filterValue);
+        };
+
+        const filteredRows = filterColumnKey
+            ? sourceRows.filter((row) => matchValue(row?.[filterColumnKey]))
+            : sourceRows;
+
+        const sortColumnKey = String(sortConfig?.columnKey || '').trim();
+        const sortDirection = String(sortConfig?.direction || 'asc').trim().toLowerCase() === 'desc' ? 'desc' : 'asc';
+        if (!sortColumnKey) return filteredRows;
+
+        const resolveSortValue = (row) => {
+            if (sortColumnKey === 'actualizado') {
+                return String(row?._raw?.updatedAt || row?.actualizado || '').trim();
+            }
+            if (sortColumnKey === 'ultimaInteraccion') {
+                return String(row?._raw?.lastInteractionAt || row?.ultimaInteraccion || '').trim();
+            }
+            return row?.[sortColumnKey];
+        };
+
+        const sortedRows = [...filteredRows].sort((left, right) => {
+            const leftValue = resolveSortValue(left);
+            const rightValue = resolveSortValue(right);
+
+            if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+                return leftValue - rightValue;
+            }
+
+            const leftText = String(leftValue ?? '').trim();
+            const rightText = String(rightValue ?? '').trim();
+            return leftText.localeCompare(rightText, 'es', { numeric: true, sensitivity: 'base' });
+        });
+
+        return sortDirection === 'desc' ? sortedRows.reverse() : sortedRows;
+    }, [headerFilter, sortConfig, tableRows]);
 
     const tableSelectedId = useMemo(() => {
         if (customerPanelMode === 'create') return '';
@@ -203,6 +358,27 @@ function CustomersSection(props = {}) {
         if (customerPanelMode === 'create') return '__create__';
         return String(selectedCustomerIdResolved || selectedCustomerId || '').trim();
     }, [customerPanelMode, selectedCustomerId, selectedCustomerIdResolved]);
+
+    const visibleTableRows = useMemo(() => {
+        if (!Array.isArray(sortedAndFilteredRows)) return [];
+        return sortedAndFilteredRows.slice(0, visibleRowsLimit);
+    }, [sortedAndFilteredRows, visibleRowsLimit]);
+
+    const canLoadMoreRows = visibleRowsLimit < sortedAndFilteredRows.length;
+
+    const handleLoadMoreRows = useCallback(() => {
+        if (!canLoadMoreRows) return;
+        setVisibleRowsLimit((prev) => Math.min(prev + CUSTOMER_ROWS_CHUNK_SIZE, sortedAndFilteredRows.length));
+    }, [canLoadMoreRows, sortedAndFilteredRows.length]);
+
+    const handleTableScroll = useCallback((event) => {
+        const target = event?.currentTarget;
+        if (!target) return;
+        const remaining = Number(target.scrollHeight || 0) - Number(target.scrollTop || 0) - Number(target.clientHeight || 0);
+        if (remaining <= 120) {
+            handleLoadMoreRows();
+        }
+    }, [handleLoadMoreRows]);
 
     const handlePreferredLanguageChange = useCallback(async (nextLanguageRaw = '') => {
         const customerId = selectedCustomerIdResolved;
@@ -372,6 +548,10 @@ function CustomersSection(props = {}) {
         selectedCustomerIdResolved
     ]);
 
+    useEffect(() => {
+        setVisibleRowsLimit(CUSTOMER_ROWS_CHUNK_SIZE);
+    }, [tenantScopeLocked, customerSearch, sortedAndFilteredRows.length, headerFilter.columnKey, headerFilter.operator, headerFilter.value]);
+
     if (!isCustomersSection) {
         return null;
     }
@@ -458,19 +638,57 @@ function CustomersSection(props = {}) {
         );
     };
 
+    const headerActions = useMemo(() => ([
+        {
+            key: 'add-customer',
+            label: 'Agregar cliente',
+            onClick: openCustomerCreate,
+            variant: 'primary',
+            disabled: busy || tenantScopeLocked
+        },
+        {
+            key: 'toggle-columns',
+            label: 'Columnas',
+            onClick: () => setShowColumnsMenu((prev) => !prev),
+            variant: 'secondary',
+            disabled: busy || tenantScopeLocked
+        }
+    ]), [busy, openCustomerCreate, tenantScopeLocked]);
+
+    const headerFilterColumns = useMemo(
+        () => visibleColumns.map((column) => ({ key: column.key, label: column.label || column.key })),
+        [visibleColumns]
+    );
+
+    const headerElement = (
+        <SaasViewHeader
+            title="Clientes"
+            count={tenantScopeLocked ? 0 : sortedAndFilteredRows.length}
+            searchValue={customerSearch}
+            onSearchChange={setCustomerSearch}
+            searchPlaceholder="Buscar por codigo, nombre, telefono, email o documento"
+            searchDisabled={busy || tenantScopeLocked}
+            actions={headerActions}
+            filters={{
+                columns: headerFilterColumns,
+                value: headerFilter,
+                onChange: setHeaderFilter,
+                onClear: () => setHeaderFilter({
+                    columnKey: '',
+                    operator: 'contains',
+                    value: ''
+                })
+            }}
+            sortConfig={{
+                ...sortConfig,
+                columns: headerFilterColumns
+            }}
+            onSortChange={setSortConfig}
+        />
+    );
+
     const leftPane = (
         <div className="saas-customers-pane">
-            <div className="saas-customers-toolbar">
-                <div>
-                    <h3>Clientes ({Array.isArray(filteredCustomers) ? filteredCustomers.length : 0})</h3>
-                    <small>Base de clientes por empresa y modulo.</small>
-                </div>
-                <div className="saas-customers-toolbar-actions">
-                    <button type="button" disabled={busy || tenantScopeLocked} onClick={openCustomerCreate}>Agregar cliente</button>
-                    <button type="button" disabled={busy || tenantScopeLocked} onClick={() => setShowColumnsMenu((prev) => !prev)}>Columnas</button>
-                </div>
-            </div>
-
             {showColumnsMenu && (
                 <div className="saas-customers-columns-menu">
                     {CUSTOMER_TABLE_COLUMNS.map((column) => (
@@ -481,75 +699,41 @@ function CustomersSection(props = {}) {
                                 onChange={() => columnPrefs.toggleColumn(column.key)}
                             />
                             <span>{column.label}</span>
+                            <small>{column.width || 'auto'}</small>
                         </label>
                     ))}
                     <div className="saas-customers-columns-menu__actions">
+                        <button type="button" onClick={() => columnPrefs.setVisibleColumnKeys(CUSTOMER_TABLE_COLUMNS.map((column) => column.key))}>
+                            Mostrar todo
+                        </button>
                         <button type="button" onClick={columnPrefs.resetColumns}>Restablecer</button>
                         <button type="button" onClick={() => setShowColumnsMenu(false)}>Cerrar</button>
                     </div>
                 </div>
             )}
 
-            <div className="saas-admin-form-row saas-customers-search-row">
-                <input
-                    value={customerSearch}
-                    onChange={(event) => setCustomerSearch(event.target.value)}
-                    placeholder="Buscar por codigo, nombre, telefono, email o documento"
-                    disabled={busy || tenantScopeLocked}
-                />
-            </div>
-
             <SaasDataTable
                 columns={tableColumns}
-                rows={tenantScopeLocked ? [] : tableRows}
+                rows={tenantScopeLocked ? [] : visibleTableRows}
                 selectedId={tableSelectedId}
                 onSelect={(row) => {
                     if (tenantScopeLocked) return;
                     openCustomerView(row?.id || row?._raw);
                 }}
                 loading={busy && !tenantScopeLocked}
+                containerProps={{
+                    onScroll: handleTableScroll
+                }}
                 emptyText={tenantScopeLocked ? 'Selecciona una empresa para ver clientes.' : 'No hay clientes para esta empresa.'}
             />
 
-            <div className="saas-customers-import-block">
-                <h4>Importacion masiva CSV</h4>
-                <div className="saas-admin-form-row">
-                    <select value={customerImportModuleId} onChange={(event) => setCustomerImportModuleId(String(event.target.value || '').trim())} disabled={busy}>
-                        <option value="">Sin modulo por defecto</option>
-                        {(Array.isArray(waModules) ? waModules : []).map((moduleItem) => (
-                            <option key={'import_module_' + moduleItem.moduleId} value={moduleItem.moduleId}>{moduleItem.name || moduleItem.moduleId}</option>
-                        ))}
-                    </select>
-                </div>
-                <div className="saas-admin-form-row">
-                    <textarea
-                        value={customerCsvText}
-                        onChange={(event) => setCustomerCsvText(event.target.value)}
-                        placeholder="Pega CSV con encabezados (IdCliente,Contacto,Telefono,CorreoElectronico,...)"
-                        rows={6}
-                        style={{ width: '100%' }}
-                        disabled={busy}
-                    />
-                </div>
-                <div className="saas-admin-form-row saas-admin-form-row--actions">
-                    <button
-                        type="button"
-                        disabled={busy || !customerCsvText.trim()}
-                        onClick={() => runAction('Importacion de clientes ejecutada', async () => {
-                            await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/import-csv', {
-                                method: 'POST',
-                                body: {
-                                    csvText: customerCsvText,
-                                    moduleId: customerImportModuleId || undefined
-                                }
-                            });
-                            setCustomerCsvText('');
-                            await loadCustomers(tenantScopeId);
-                        })}
-                    >
-                        Importar CSV
+            <div className="saas-customers-table-footer">
+                <small>Mostrando {tenantScopeLocked ? 0 : visibleTableRows.length} de {tenantScopeLocked ? 0 : sortedAndFilteredRows.length} clientes.</small>
+                {canLoadMoreRows ? (
+                    <button type="button" onClick={handleLoadMoreRows} disabled={busy}>
+                        Cargar mas
                     </button>
-                </div>
+                ) : null}
             </div>
         </div>
     );
@@ -584,7 +768,6 @@ function CustomersSection(props = {}) {
                         <div><span>Telefono</span><strong>{selectedCustomer?.phoneE164 || '-'}</strong></div>
                         <div><span>Telefono 2</span><strong>{selectedCustomer?.phoneAlt || '-'}</strong></div>
                         <div><span>Email</span><strong>{selectedCustomer?.email || '-'}</strong></div>
-                        <div><span>Modulo</span><strong>{selectedCustomer?.moduleId || 'Sin modulo'}</strong></div>
                         <div><span>Etiquetas</span><strong>{Array.isArray(selectedCustomer?.tags) ? selectedCustomer.tags.join(', ') : '-'}</strong></div>
                         <div><span>Actualizado</span><strong>{formatDateTimeLabel(selectedCustomer?.updatedAt)}</strong></div>
                     </div>
@@ -679,12 +862,6 @@ function CustomersSection(props = {}) {
                     </div>
                     <div className="saas-admin-form-row">
                         <input value={customerForm.email} onChange={(event) => setCustomerForm((prev) => ({ ...prev, email: event.target.value }))} placeholder="Correo" disabled={busy} />
-                        <select value={customerForm.moduleId} onChange={(event) => setCustomerForm((prev) => ({ ...prev, moduleId: event.target.value }))} disabled={busy}>
-                            <option value="">Sin modulo</option>
-                            {(Array.isArray(waModules) ? waModules : []).map((moduleItem) => (
-                                <option key={moduleItem.moduleId} value={moduleItem.moduleId}>{moduleItem.name || moduleItem.moduleId}</option>
-                            ))}
-                        </select>
                     </div>
                     <div className="saas-admin-form-row">
                         <input value={customerForm.tagsText} onChange={(event) => setCustomerForm((prev) => ({ ...prev, tagsText: event.target.value }))} placeholder="Etiquetas separadas por coma" disabled={busy} />
@@ -722,6 +899,7 @@ function CustomersSection(props = {}) {
             <SaasTableDetailLayout
                 selectedId={layoutSelectedId}
                 className="saas-customers-td-layout"
+                header={headerElement}
                 left={leftPane}
                 right={rightPane}
             />
