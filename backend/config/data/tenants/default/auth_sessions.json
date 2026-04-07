@@ -1,0 +1,50 @@
+{
+  "sessions": {
+    "sess_61f4ff9418ad8bb17a4dc5b6d8e2d644": {
+      "sessionId": "sess_61f4ff9418ad8bb17a4dc5b6d8e2d644",
+      "tenantId": "default",
+      "userId": "usr_owner_cleaning_001",
+      "userEmail": "jchuquizuta@cleaning.com.pe",
+      "userName": "Jimmy Chuquizuta",
+      "role": "seller",
+      "refreshTokenHash": "0eeeaeda6eeebd475e05cdf93fc8c4f810668d46f6cebfc927ee4fcf978e65cf",
+      "createdAtUnix": 1775493652,
+      "updatedAtUnix": 1775493652,
+      "lastUsedAtUnix": 1775493652,
+      "expiresAtUnix": 1778085652,
+      "revokedAtUnix": null,
+      "replacedBySessionId": null
+    },
+    "sess_deab7c301796dd4d6aaae70e4d4f0e11": {
+      "sessionId": "sess_deab7c301796dd4d6aaae70e4d4f0e11",
+      "tenantId": "default",
+      "userId": "usr_owner_cleaning_001",
+      "userEmail": "jchuquizuta@cleaning.com.pe",
+      "userName": "Jimmy Chuquizuta",
+      "role": "seller",
+      "refreshTokenHash": "ea0eaf9e4246d8e784263f7ab6270d32a682eb7ec53fbbc5c541a81806417c58",
+      "createdAtUnix": 1775493691,
+      "updatedAtUnix": 1775493691,
+      "lastUsedAtUnix": 1775493691,
+      "expiresAtUnix": 1778085691,
+      "revokedAtUnix": null,
+      "replacedBySessionId": null
+    },
+    "sess_ffb115e33d771772fc13122d96db69ca": {
+      "sessionId": "sess_ffb115e33d771772fc13122d96db69ca",
+      "tenantId": "default",
+      "userId": "usr_owner_cleaning_001",
+      "userEmail": "jchuquizuta@cleaning.com.pe",
+      "userName": "Jimmy Chuquizuta",
+      "role": "seller",
+      "refreshTokenHash": "b152c61f22f220e36aaedc29a3e28302b42c97cf8959b8a2754fff1b575ae342",
+      "createdAtUnix": 1775493856,
+      "updatedAtUnix": 1775493856,
+      "lastUsedAtUnix": 1775493856,
+      "expiresAtUnix": 1778085856,
+      "revokedAtUnix": null,
+      "replacedBySessionId": null
+    }
+  },
+  "revokedAccessTokens": {}
+}

@@ -1,7 +1,20 @@
+const fs = require('fs');
+const path = require('path');
 const {
     getStorageDriver,
     queryPostgres
 } = require('../../../config/persistence-runtime');
+const { parseCsvRows } = require('../../tenant/helpers/customers-normalizers.helpers');
+
+const ERP_DATA_DIR = path.join(__dirname, '../../../config/data/erp');
+const ERP_CATALOG_FILES = {
+    treatments: 'ERP Contable - TbTratamientosCliente.csv',
+    types: 'ERP Contable - TbTipoCliente.csv',
+    sources: 'ERP Contable - TbFuenteCliente.csv',
+    documentTypes: 'ERP Contable - TbDocumentosIdentidad.csv'
+};
+
+let customerCatalogFallbackCache = null;
 
 function ensureAuthenticated(req, res, authService) {
     if (authService.isAuthEnabled() && !req?.authContext?.isAuthenticated) {
@@ -39,6 +52,103 @@ function normalizePreferredLanguage(value = '') {
     const normalized = toLower(value || 'es').replace(/[^a-z_-]/g, '');
     if (!normalized) return 'es';
     return normalized.slice(0, 16);
+}
+
+function normalizeHeaderKey(value = '') {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '');
+}
+
+function pickCell(row = [], indexes = []) {
+    for (const index of indexes) {
+        if (index < 0) continue;
+        const value = toText(row[index] || '');
+        if (value) return value;
+    }
+    return '';
+}
+
+function parseCatalogCsv(fileName = '', {
+    idHeaders = [],
+    labelHeaders = [],
+    codeHeaders = [],
+    abbreviationHeaders = []
+} = {}) {
+    const absolutePath = path.join(ERP_DATA_DIR, fileName);
+    if (!fs.existsSync(absolutePath)) return [];
+
+    const text = fs.readFileSync(absolutePath, 'utf8');
+    const firstLine = String(text || '').split(/\r?\n/)[0] || '';
+    const delimiterHint = firstLine.includes(';') ? ';' : ',';
+    const rows = parseCsvRows(text, delimiterHint);
+    if (!Array.isArray(rows) || rows.length < 2) return [];
+
+    const headers = rows[0].map(normalizeHeaderKey);
+    const findIndexes = (candidates = []) => headers
+        .map((header, index) => ({ header, index }))
+        .filter(({ header }) => candidates.includes(header))
+        .map(({ index }) => index);
+
+    const idIndexes = findIndexes(idHeaders);
+    const labelIndexes = findIndexes(labelHeaders);
+    const codeIndexes = findIndexes(codeHeaders);
+    const abbreviationIndexes = findIndexes(abbreviationHeaders);
+
+    const items = [];
+    for (let i = 1; i < rows.length; i += 1) {
+        const row = rows[i];
+        const id = pickCell(row, idIndexes);
+        const label = pickCell(row, labelIndexes);
+        const code = pickCell(row, codeIndexes);
+        const abbreviation = pickCell(row, abbreviationIndexes);
+        const normalizedId = toText(id || code || label || '');
+        const normalizedLabel = toText(label || code || id || '');
+        if (!normalizedId || !normalizedLabel) continue;
+        items.push({
+            id: normalizedId,
+            code: toText(code || normalizedId || ''),
+            label: normalizedLabel,
+            abbreviation: toText(abbreviation || '')
+        });
+    }
+    return items;
+}
+
+function loadCustomerCatalogFallbacks() {
+    if (customerCatalogFallbackCache) return customerCatalogFallbackCache;
+
+    customerCatalogFallbackCache = {
+        treatments: parseCatalogCsv(ERP_CATALOG_FILES.treatments, {
+            idHeaders: ['idtratamientocliente', 'idtratamiento'],
+            labelHeaders: ['tratamientocliente', 'descripcion', 'nombre'],
+            codeHeaders: ['codigo', 'abreviatura'],
+            abbreviationHeaders: ['abreviatura']
+        }),
+        customerTypes: parseCatalogCsv(ERP_CATALOG_FILES.types, {
+            idHeaders: ['idtipocliente', 'idtipo'],
+            labelHeaders: ['tipocliente', 'descripcion', 'nombre'],
+            codeHeaders: ['codigo', 'abreviatura'],
+            abbreviationHeaders: ['abreviatura']
+        }),
+        acquisitionSources: parseCatalogCsv(ERP_CATALOG_FILES.sources, {
+            idHeaders: ['idfuentecliente', 'idfuente'],
+            labelHeaders: ['fuentecliente', 'descripcion', 'nombre'],
+            codeHeaders: ['codigo', 'abreviatura'],
+            abbreviationHeaders: ['abreviatura']
+        }),
+        documentTypes: parseCatalogCsv(ERP_CATALOG_FILES.documentTypes, {
+            idHeaders: ['iddocumentoidentidad', 'iddocumento', 'iddoc'],
+            labelHeaders: ['documentoidentidad', 'descripcion', 'nombre'],
+            codeHeaders: ['codigo', 'abreviatura'],
+            abbreviationHeaders: ['abreviatura']
+        })
+    };
+
+    return customerCatalogFallbackCache;
 }
 
 function registerOperationsHttpRoutes({
@@ -143,6 +253,17 @@ function registerOperationsHttpRoutes({
     const consentApi = customerConsentService && typeof customerConsentService === 'object'
         ? customerConsentService
         : {};
+    const customerApi = customerService && typeof customerService === 'object'
+        ? customerService
+        : {};
+    const getCustomerById = typeof customerApi.getCustomer === 'function'
+        ? customerApi.getCustomer.bind(customerApi)
+        : async () => null;
+    const updateCustomerById = typeof customerApi.updateCustomer === 'function'
+        ? customerApi.updateCustomer.bind(customerApi)
+        : async () => {
+            throw new Error('Servicio de clientes no disponible para actualizar.');
+        };
     const grantConsent = typeof consentApi.grantConsent === 'function'
         ? consentApi.grantConsent.bind(consentApi)
         : async () => {
@@ -230,6 +351,206 @@ function registerOperationsHttpRoutes({
             throw new Error('Servicio de campanas no disponible.');
         };
 
+    async function listCustomerCatalogItems(catalogKey = '') {
+        const fallbackCatalogs = loadCustomerCatalogFallbacks();
+        const fallbackItemsByKey = {
+            treatments: Array.isArray(fallbackCatalogs.treatments) ? fallbackCatalogs.treatments : [],
+            types: Array.isArray(fallbackCatalogs.customerTypes) ? fallbackCatalogs.customerTypes : [],
+            sources: Array.isArray(fallbackCatalogs.acquisitionSources) ? fallbackCatalogs.acquisitionSources : [],
+            'document-types': Array.isArray(fallbackCatalogs.documentTypes) ? fallbackCatalogs.documentTypes : []
+        };
+        const fallbackItems = fallbackItemsByKey[catalogKey] || [];
+
+        if (getStorageDriver() !== 'postgres') {
+            return fallbackItems;
+        }
+
+        try {
+            let sql = '';
+            if (catalogKey === 'treatments') {
+                sql = `SELECT id, code, label, abbreviation FROM global_customer_treatments ORDER BY id`;
+            } else if (catalogKey === 'types') {
+                sql = `SELECT id, NULL::text AS code, label, NULL::text AS abbreviation FROM global_customer_types ORDER BY id`;
+            } else if (catalogKey === 'sources') {
+                sql = `SELECT id, NULL::text AS code, label, NULL::text AS abbreviation FROM global_acquisition_sources ORDER BY id`;
+            } else if (catalogKey === 'document-types') {
+                sql = `SELECT id, code, label, abbreviation FROM global_document_types ORDER BY id`;
+            } else {
+                return [];
+            }
+
+            const result = await queryPostgres(sql, []);
+            const rows = Array.isArray(result?.rows) ? result.rows : [];
+            if (!rows.length) return fallbackItems;
+
+            return rows.map((row) => {
+                const id = toText(row?.id || '');
+                const code = toText(row?.code || '');
+                const label = toText(row?.label || code || id || '');
+                const abbreviation = toText(row?.abbreviation || '');
+                return {
+                    id: id || code || label,
+                    code: code || id || '',
+                    label: label || id || code,
+                    abbreviation
+                };
+            }).filter((item) => item.id && item.label);
+        } catch (_) {
+            return fallbackItems;
+        }
+    }
+
+    function buildAddressFallbackFromCustomer(customer = null) {
+        const source = customer && typeof customer === 'object' ? customer : {};
+        const profile = toSafeObject(source.profile);
+        const addresses = [];
+
+        if (Array.isArray(profile.addresses)) {
+            profile.addresses.forEach((entry = {}, index) => {
+                const street = toText(entry.street || entry.address || entry.fiscalAddress || '');
+                if (!street) return;
+                addresses.push({
+                    addressId: toText(entry.addressId || entry.address_id || `profile-${index + 1}`),
+                    addressType: toText(entry.addressType || entry.address_type || 'other') || 'other',
+                    street,
+                    reference: toText(entry.reference || ''),
+                    mapsUrl: toText(entry.mapsUrl || entry.maps_url || ''),
+                    districtName: toText(entry.districtName || entry.district_name || ''),
+                    provinceName: toText(entry.provinceName || entry.province_name || ''),
+                    departmentName: toText(entry.departmentName || entry.department_name || ''),
+                    isPrimary: Boolean(entry.isPrimary || entry.is_primary),
+                    latitude: toText(entry.latitude || ''),
+                    longitude: toText(entry.longitude || ''),
+                    createdAt: toText(entry.createdAt || entry.created_at || source.createdAt || ''),
+                    updatedAt: toText(entry.updatedAt || entry.updated_at || source.updatedAt || '')
+                });
+            });
+        }
+
+        const fiscalAddress = toText(profile.fiscalAddress || '');
+        if (fiscalAddress && !addresses.some((item) => toText(item.street || '').toLowerCase() === fiscalAddress.toLowerCase())) {
+            addresses.unshift({
+                addressId: 'profile-fiscal',
+                addressType: 'fiscal',
+                street: fiscalAddress,
+                reference: '',
+                mapsUrl: '',
+                districtName: toText(profile.districtName || ''),
+                provinceName: toText(profile.provinceName || ''),
+                departmentName: toText(profile.departmentName || ''),
+                isPrimary: true,
+                latitude: '',
+                longitude: '',
+                createdAt: toText(source.createdAt || ''),
+                updatedAt: toText(source.updatedAt || '')
+            });
+        }
+
+        return addresses;
+    }
+
+    function normalizeAddressPayload(payload = {}, fallback = {}) {
+        const source = isPlainObject(payload) ? payload : {};
+        const base = isPlainObject(fallback) ? fallback : {};
+        const addressType = toText(source.addressType || source.address_type || base.addressType || 'other') || 'other';
+        const street = toText(source.street || base.street || '');
+        const reference = toText(source.reference || base.reference || '');
+        const mapsUrl = toText(source.mapsUrl || source.maps_url || base.mapsUrl || '');
+        const districtName = toText(source.districtName || source.district_name || base.districtName || '');
+        const provinceName = toText(source.provinceName || source.province_name || base.provinceName || '');
+        const departmentName = toText(source.departmentName || source.department_name || base.departmentName || '');
+        const latitude = toText(source.latitude || base.latitude || '');
+        const longitude = toText(source.longitude || base.longitude || '');
+        const isPrimary = source.isPrimary !== undefined
+            ? Boolean(source.isPrimary)
+            : (source.is_primary !== undefined ? Boolean(source.is_primary) : Boolean(base.isPrimary));
+        const metadata = toSafeObject(source.metadata || base.metadata);
+        return {
+            addressType,
+            street,
+            reference,
+            mapsUrl,
+            districtName,
+            provinceName,
+            departmentName,
+            latitude,
+            longitude,
+            isPrimary,
+            metadata
+        };
+    }
+
+    async function listAddressesFromStorage(tenantId = '', customerId = '') {
+        let items = [];
+        let fromPostgres = false;
+        if (getStorageDriver() === 'postgres') {
+            try {
+                const result = await queryPostgres(
+                    `SELECT address_id, address_type, street, reference, maps_url, latitude, longitude,
+                            district_name, province_name, department_name, is_primary, metadata,
+                            created_at, updated_at
+                       FROM tenant_customer_addresses
+                      WHERE tenant_id = $1
+                        AND customer_id = $2
+                      ORDER BY is_primary DESC, updated_at DESC NULLS LAST, created_at DESC NULLS LAST`,
+                    [tenantId, customerId]
+                );
+                items = Array.isArray(result?.rows) ? result.rows.map((row) => ({
+                    addressId: toText(row?.address_id || ''),
+                    addressType: toText(row?.address_type || 'other') || 'other',
+                    street: toText(row?.street || ''),
+                    reference: toText(row?.reference || ''),
+                    mapsUrl: toText(row?.maps_url || ''),
+                    latitude: toText(row?.latitude || ''),
+                    longitude: toText(row?.longitude || ''),
+                    districtName: toText(row?.district_name || ''),
+                    provinceName: toText(row?.province_name || ''),
+                    departmentName: toText(row?.department_name || ''),
+                    isPrimary: Boolean(row?.is_primary),
+                    metadata: toSafeObject(row?.metadata),
+                    createdAt: toText(row?.created_at || ''),
+                    updatedAt: toText(row?.updated_at || '')
+                })) : [];
+                fromPostgres = true;
+            } catch (_) {
+                items = [];
+                fromPostgres = false;
+            }
+        }
+        if (!items.length) {
+            const customer = await getCustomerById(tenantId, customerId);
+            items = buildAddressFallbackFromCustomer(customer);
+        }
+        return { items, fromPostgres };
+    }
+
+    async function saveAddressesToCustomerProfile(tenantId = '', customerId = '', items = []) {
+        const customer = await getCustomerById(tenantId, customerId);
+        if (!customer) throw new Error('Cliente no encontrado.');
+        const profile = toSafeObject(customer.profile);
+        await updateCustomerById(tenantId, customerId, {
+            profile: {
+                ...profile,
+                addresses: Array.isArray(items) ? items.map((entry = {}) => ({
+                    addressId: toText(entry.addressId || ''),
+                    addressType: toText(entry.addressType || 'other') || 'other',
+                    street: toText(entry.street || ''),
+                    reference: toText(entry.reference || ''),
+                    mapsUrl: toText(entry.mapsUrl || ''),
+                    districtName: toText(entry.districtName || ''),
+                    provinceName: toText(entry.provinceName || ''),
+                    departmentName: toText(entry.departmentName || ''),
+                    latitude: toText(entry.latitude || ''),
+                    longitude: toText(entry.longitude || ''),
+                    isPrimary: Boolean(entry.isPrimary),
+                    metadata: toSafeObject(entry.metadata),
+                    createdAt: toText(entry.createdAt || ''),
+                    updatedAt: toText(entry.updatedAt || '')
+                })) : []
+            }
+        });
+    }
+
     app.get('/api/tenant/customers/:customerId/module-contexts', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
@@ -258,6 +579,308 @@ function registerOperationsHttpRoutes({
             });
         } catch (error) {
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar contextos por modulo del cliente.') });
+        }
+    });
+
+    app.get('/api/tenant/customers/:customerId/addresses', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+
+            const customerId = toText(req.params?.customerId || '');
+            if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
+
+            const { items } = await listAddressesFromStorage(tenantId, customerId);
+
+            return res.json({
+                ok: true,
+                tenantId,
+                customerId,
+                items,
+                total: items.length
+            });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar direcciones del cliente.') });
+        }
+    });
+
+    app.post('/api/tenant/customers/:customerId/addresses', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsWriteAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const customerId = toText(req.params?.customerId || '');
+            if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
+
+            const nowIso = new Date().toISOString();
+            const payload = normalizeAddressPayload(req.body || {});
+            if (!payload.street) return res.status(400).json({ ok: false, error: 'street es requerido.' });
+            const addressId = toText(req.body?.addressId || req.body?.address_id || `addr-${Date.now().toString(36)}`);
+            let savedItem = null;
+
+            if (getStorageDriver() === 'postgres') {
+                try {
+                    await queryPostgres(
+                        `INSERT INTO tenant_customer_addresses (
+                            tenant_id, customer_id, address_id, address_type, street, reference, maps_url,
+                            latitude, longitude, district_name, province_name, department_name,
+                            is_primary, metadata, created_at, updated_at
+                        ) VALUES (
+                            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16
+                        )`,
+                        [
+                            tenantId,
+                            customerId,
+                            addressId,
+                            payload.addressType,
+                            payload.street,
+                            payload.reference,
+                            payload.mapsUrl,
+                            payload.latitude || null,
+                            payload.longitude || null,
+                            payload.districtName,
+                            payload.provinceName,
+                            payload.departmentName,
+                            payload.isPrimary,
+                            JSON.stringify(payload.metadata || {}),
+                            nowIso,
+                            nowIso
+                        ]
+                    );
+                    if (payload.isPrimary) {
+                        await queryPostgres(
+                            `UPDATE tenant_customer_addresses
+                                SET is_primary = CASE WHEN address_id = $3 THEN TRUE ELSE FALSE END,
+                                    updated_at = $4
+                              WHERE tenant_id = $1
+                                AND customer_id = $2`,
+                            [tenantId, customerId, addressId, nowIso]
+                        );
+                    }
+                    const { items } = await listAddressesFromStorage(tenantId, customerId);
+                    savedItem = items.find((entry) => toText(entry.addressId || '') === addressId) || null;
+                } catch (_) {
+                    savedItem = null;
+                }
+            }
+
+            if (!savedItem) {
+                const existing = await listAddressesFromStorage(tenantId, customerId);
+                const baseItems = Array.isArray(existing.items) ? existing.items : [];
+                const nextItems = baseItems.map((entry = {}) => ({ ...entry, isPrimary: payload.isPrimary ? false : Boolean(entry.isPrimary) }));
+                nextItems.push({
+                    addressId,
+                    ...payload,
+                    createdAt: nowIso,
+                    updatedAt: nowIso
+                });
+                await saveAddressesToCustomerProfile(tenantId, customerId, nextItems);
+                savedItem = nextItems.find((entry) => toText(entry.addressId || '') === addressId) || null;
+            }
+
+            return res.status(201).json({ ok: true, tenantId, customerId, item: savedItem });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo crear direccion.') });
+        }
+    });
+
+    app.put('/api/tenant/customers/:customerId/addresses/:addressId', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsWriteAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const customerId = toText(req.params?.customerId || '');
+            const addressId = toText(req.params?.addressId || '');
+            if (!customerId || !addressId) return res.status(400).json({ ok: false, error: 'customerId/addressId invalido.' });
+
+            const nowIso = new Date().toISOString();
+            const existing = await listAddressesFromStorage(tenantId, customerId);
+            const current = (existing.items || []).find((entry) => toText(entry.addressId || '') === addressId);
+            if (!current) return res.status(404).json({ ok: false, error: 'Direccion no encontrada.' });
+            const payload = normalizeAddressPayload(req.body || {}, current);
+            if (!payload.street) return res.status(400).json({ ok: false, error: 'street es requerido.' });
+            let savedItem = null;
+
+            if (getStorageDriver() === 'postgres') {
+                try {
+                    await queryPostgres(
+                        `UPDATE tenant_customer_addresses
+                            SET address_type = $4,
+                                street = $5,
+                                reference = $6,
+                                maps_url = $7,
+                                latitude = $8,
+                                longitude = $9,
+                                district_name = $10,
+                                province_name = $11,
+                                department_name = $12,
+                                is_primary = $13,
+                                metadata = $14::jsonb,
+                                updated_at = $15
+                          WHERE tenant_id = $1
+                            AND customer_id = $2
+                            AND address_id = $3`,
+                        [
+                            tenantId,
+                            customerId,
+                            addressId,
+                            payload.addressType,
+                            payload.street,
+                            payload.reference,
+                            payload.mapsUrl,
+                            payload.latitude || null,
+                            payload.longitude || null,
+                            payload.districtName,
+                            payload.provinceName,
+                            payload.departmentName,
+                            payload.isPrimary,
+                            JSON.stringify(payload.metadata || {}),
+                            nowIso
+                        ]
+                    );
+                    if (payload.isPrimary) {
+                        await queryPostgres(
+                            `UPDATE tenant_customer_addresses
+                                SET is_primary = CASE WHEN address_id = $3 THEN TRUE ELSE FALSE END,
+                                    updated_at = $4
+                              WHERE tenant_id = $1
+                                AND customer_id = $2`,
+                            [tenantId, customerId, addressId, nowIso]
+                        );
+                    }
+                    const reload = await listAddressesFromStorage(tenantId, customerId);
+                    savedItem = reload.items.find((entry) => toText(entry.addressId || '') === addressId) || null;
+                } catch (_) {
+                    savedItem = null;
+                }
+            }
+
+            if (!savedItem) {
+                const nextItems = (existing.items || []).map((entry = {}) => {
+                    const isCurrent = toText(entry.addressId || '') === addressId;
+                    if (isCurrent) {
+                        return {
+                            ...entry,
+                            ...payload,
+                            addressId,
+                            updatedAt: nowIso
+                        };
+                    }
+                    if (payload.isPrimary) return { ...entry, isPrimary: false };
+                    return entry;
+                });
+                await saveAddressesToCustomerProfile(tenantId, customerId, nextItems);
+                savedItem = nextItems.find((entry) => toText(entry.addressId || '') === addressId) || null;
+            }
+
+            return res.json({ ok: true, tenantId, customerId, item: savedItem });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo actualizar direccion.') });
+        }
+    });
+
+    app.delete('/api/tenant/customers/:customerId/addresses/:addressId', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsWriteAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const customerId = toText(req.params?.customerId || '');
+            const addressId = toText(req.params?.addressId || '');
+            if (!customerId || !addressId) return res.status(400).json({ ok: false, error: 'customerId/addressId invalido.' });
+
+            if (getStorageDriver() === 'postgres') {
+                try {
+                    await queryPostgres(
+                        `DELETE FROM tenant_customer_addresses
+                          WHERE tenant_id = $1
+                            AND customer_id = $2
+                            AND address_id = $3`,
+                        [tenantId, customerId, addressId]
+                    );
+                    return res.json({ ok: true, tenantId, customerId, addressId });
+                } catch (_) {
+                    // fallback to profile storage
+                }
+            }
+
+            const existing = await listAddressesFromStorage(tenantId, customerId);
+            const nextItems = (existing.items || []).filter((entry) => toText(entry.addressId || '') !== addressId);
+            await saveAddressesToCustomerProfile(tenantId, customerId, nextItems);
+            return res.json({ ok: true, tenantId, customerId, addressId });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo eliminar direccion.') });
+        }
+    });
+
+    app.patch('/api/tenant/customers/:customerId/addresses/:addressId/set-primary', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsWriteAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const customerId = toText(req.params?.customerId || '');
+            const addressId = toText(req.params?.addressId || '');
+            if (!customerId || !addressId) return res.status(400).json({ ok: false, error: 'customerId/addressId invalido.' });
+            const nowIso = new Date().toISOString();
+
+            if (getStorageDriver() === 'postgres') {
+                try {
+                    await queryPostgres(
+                        `UPDATE tenant_customer_addresses
+                            SET is_primary = CASE WHEN address_id = $3 THEN TRUE ELSE FALSE END,
+                                updated_at = $4
+                          WHERE tenant_id = $1
+                            AND customer_id = $2`,
+                        [tenantId, customerId, addressId, nowIso]
+                    );
+                    return res.json({ ok: true, tenantId, customerId, addressId });
+                } catch (_) {
+                    // fallback to profile storage
+                }
+            }
+
+            const existing = await listAddressesFromStorage(tenantId, customerId);
+            const nextItems = (existing.items || []).map((entry = {}) => ({
+                ...entry,
+                isPrimary: toText(entry.addressId || '') === addressId,
+                updatedAt: nowIso
+            }));
+            await saveAddressesToCustomerProfile(tenantId, customerId, nextItems);
+            return res.json({ ok: true, tenantId, customerId, addressId });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo actualizar direccion principal.') });
+        }
+    });
+
+    app.get('/api/tenant/customer-catalogs/:catalogKey', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+
+            const catalogKey = toLower(req.params?.catalogKey || '');
+            if (!['treatments', 'types', 'sources', 'document-types'].includes(catalogKey)) {
+                return res.status(400).json({ ok: false, error: 'catalogKey invalido.' });
+            }
+
+            const items = await listCustomerCatalogItems(catalogKey);
+            return res.json({
+                ok: true,
+                tenantId,
+                catalogKey,
+                items,
+                total: items.length
+            });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar el catalogo solicitado.') });
         }
     });
 

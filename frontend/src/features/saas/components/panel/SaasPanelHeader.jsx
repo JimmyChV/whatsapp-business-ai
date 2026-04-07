@@ -11,7 +11,8 @@ export default function SaasPanelHeader({
     currentUserRoleLabel = 'Sin rol',
     buildInitials,
     closeLabel = 'Cerrar sesion',
-    onClose
+    onClose,
+    tenantPicker = null
 }) {
     if (!showHeader) return null;
 
@@ -19,7 +20,41 @@ export default function SaasPanelHeader({
         <div className="saas-admin-header">
             <div>
                 <h2>{title}</h2>
-                {subtitle ? <span>{subtitle}</span> : null}
+                <div className="saas-admin-header-subrow">
+                    {subtitle ? <span>{subtitle}</span> : null}
+                    {tenantPicker && tenantPicker.visible ? (
+                        <div className="saas-admin-header-tenant-inline">
+                            <span className="saas-admin-header-tenant-label">Empresa</span>
+                            <select
+                                value={String(tenantPicker.value || '')}
+                                onChange={(event) => {
+                                    const nextTenantId = String(event.target.value || '').trim();
+                                    tenantPicker.onChange?.(nextTenantId);
+                                }}
+                                disabled={Boolean(tenantPicker.disabled)}
+                                title="Empresa activa"
+                            >
+                                {(Array.isArray(tenantPicker.options) ? tenantPicker.options : []).map((tenant) => (
+                                    <option key={tenant.id} value={tenant.id}>
+                                        {typeof tenantPicker.toTenantDisplayName === 'function'
+                                            ? tenantPicker.toTenantDisplayName(tenant)
+                                            : (tenant?.name || tenant?.id || '')}
+                                    </option>
+                                ))}
+                            </select>
+                            {tenantPicker.canClear ? (
+                                <button
+                                    type="button"
+                                    className="saas-admin-header-tenant-clear"
+                                    disabled={Boolean(tenantPicker.disabled)}
+                                    onClick={() => tenantPicker.onClear?.()}
+                                >
+                                    Limpiar
+                                </button>
+                            ) : null}
+                        </div>
+                    ) : null}
+                </div>
             </div>
             {!embedded && (
                 <div className="saas-admin-header-actions">

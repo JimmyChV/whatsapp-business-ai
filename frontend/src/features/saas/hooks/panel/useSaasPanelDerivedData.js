@@ -21,6 +21,29 @@ function normalizeCustomerMatchId(value = '') {
     return String(value || '').trim().toUpperCase();
 }
 
+function collectPrimitiveValues(value, bucket = [], depth = 0, seen = new WeakSet()) {
+    if (value === null || value === undefined) return bucket;
+    if (depth > 5) return bucket;
+    if (Array.isArray(value)) {
+        value.forEach((entry) => collectPrimitiveValues(entry, bucket, depth + 1, seen));
+        return bucket;
+    }
+    if (value instanceof Date) {
+        if (Number.isFinite(value.getTime())) {
+            bucket.push(value.toISOString());
+        }
+        return bucket;
+    }
+    if (typeof value === 'object') {
+        if (seen.has(value)) return bucket;
+        seen.add(value);
+        Object.values(value).forEach((entry) => collectPrimitiveValues(entry, bucket, depth + 1, seen));
+        return bucket;
+    }
+    bucket.push(String(value || '').trim());
+    return bucket;
+}
+
 export default function useSaasPanelDerivedData({
     customerSearch = '',
     customers = [],
@@ -54,29 +77,60 @@ export default function useSaasPanelDerivedData({
     selectedPlanId = '',
     planOptions = [],
 } = {}) {
-    const filteredCustomers = useMemo(() => {
-        const query = String(customerSearch || '').trim().toLowerCase();
-        const sorted = [...(Array.isArray(customers) ? customers : [])].sort((a, b) =>
+    const sortedCustomers = useMemo(() => {
+        return [...(Array.isArray(customers) ? customers : [])].sort((a, b) =>
             String(b?.updatedAt || '').localeCompare(String(a?.updatedAt || ''))
         );
-        if (!query) return sorted;
-        return sorted.filter((item) => {
+    }, [customers]);
+
+    const customersSearchIndex = useMemo(() => {
+        return sortedCustomers.map((item = {}) => {
             const profile = item?.profile && typeof item.profile === 'object' ? item.profile : {};
-            const haystack = [
+            const metadata = item?.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+            const tags = Array.isArray(item?.tags) ? item.tags : [];
+            const values = [
                 resolveCustomerId(item),
                 item?.contactName,
                 item?.phoneE164,
                 item?.phoneAlt,
                 item?.email,
                 item?.moduleId,
-                profile?.firstNames,
-                profile?.lastNamePaternal,
-                profile?.lastNameMaternal,
-                profile?.documentNumber
-            ].map((entry) => String(entry || '').toLowerCase()).join(' ');
-            return haystack.includes(query);
+                item?.firstName,
+                item?.lastNamePaternal,
+                item?.lastNameMaternal,
+                item?.customerTypeId,
+                item?.customerTypeLabel,
+                item?.treatmentId,
+                item?.treatmentLabel,
+                item?.acquisitionSourceId,
+                item?.sourceId,
+                item?.sourceLabel,
+                item?.documentTypeId,
+                item?.documentTypeLabel,
+                item?.documentNumber,
+                item?.notes,
+                item?.preferredLanguage,
+                item?.lastInteractionAt,
+                item?.updatedAt,
+                tags.join(' ')
+            ];
+            collectPrimitiveValues(profile, values);
+            collectPrimitiveValues(metadata, values);
+            const haystack = values
+                .map((entry) => String(entry || '').trim().toLowerCase())
+                .filter(Boolean)
+                .join(' ');
+            return { item, haystack };
         });
-    }, [customers, customerSearch]);
+    }, [sortedCustomers]);
+
+    const filteredCustomers = useMemo(() => {
+        const query = String(customerSearch || '').trim().toLowerCase();
+        if (!query) return sortedCustomers;
+        return customersSearchIndex
+            .filter((entry) => String(entry?.haystack || '').includes(query))
+            .map((entry) => entry.item);
+    }, [customerSearch, customersSearchIndex, sortedCustomers]);
 
     const selectedCustomer = useMemo(() => {
         const cleanSelectedId = String(selectedCustomerId || '').trim();

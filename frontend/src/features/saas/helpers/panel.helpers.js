@@ -32,12 +32,15 @@ export const EMPTY_USER_FORM = {
 
 export const EMPTY_CUSTOMER_FORM = {
     customerId: '',
-    moduleId: '',
     contactName: '',
     phoneE164: '',
     phoneAlt: '',
     email: '',
     tagsText: '',
+    treatmentId: '',
+    customerTypeId: '',
+    acquisitionSourceId: '',
+    documentTypeId: '',
     profileFirstNames: '',
     profileLastNamePaternal: '',
     profileLastNameMaternal: '',
@@ -321,17 +324,20 @@ export function normalizeCustomerFormFromItem(item = null) {
     const profile = item.profile && typeof item.profile === 'object' ? item.profile : {};
     return {
         customerId: String(item.customerId || '').trim(),
-        moduleId: String(item.moduleId || '').trim(),
         contactName: String(item.contactName || '').trim(),
         phoneE164: String(item.phoneE164 || '').trim(),
         phoneAlt: String(item.phoneAlt || '').trim(),
         email: String(item.email || '').trim(),
         tagsText: Array.isArray(item.tags) ? item.tags.join(', ') : String(item.tags || '').trim(),
-        profileFirstNames: String(profile.firstNames || '').trim(),
-        profileLastNamePaternal: String(profile.lastNamePaternal || '').trim(),
-        profileLastNameMaternal: String(profile.lastNameMaternal || '').trim(),
-        profileDocumentNumber: String(profile.documentNumber || '').trim(),
-        profileNotes: String(profile.notes || '').trim(),
+        treatmentId: String(item.treatmentId || item.treatment_id || profile.treatmentId || '').trim(),
+        customerTypeId: String(item.customerTypeId || item.customer_type_id || profile.customerTypeId || '').trim(),
+        acquisitionSourceId: String(item.acquisitionSourceId || item.acquisition_source_id || profile.sourceId || '').trim(),
+        documentTypeId: String(item.documentTypeId || item.document_type_id || profile.documentTypeId || '').trim(),
+        profileFirstNames: String(item.firstName || item.first_name || profile.firstNames || profile.nombres || '').trim(),
+        profileLastNamePaternal: String(item.lastNamePaternal || item.last_name_paternal || profile.lastNamePaternal || profile.apellidoPaterno || '').trim(),
+        profileLastNameMaternal: String(item.lastNameMaternal || item.last_name_maternal || profile.lastNameMaternal || profile.apellidoMaterno || '').trim(),
+        profileDocumentNumber: String(item.documentNumber || item.document_number || profile.documentNumber || '').trim(),
+        profileNotes: String(item.notes || profile.notes || '').trim(),
         isActive: item.isActive !== false
     };
 }
@@ -345,17 +351,29 @@ export function buildCustomerPayloadFromForm(form = {}) {
 
     return {
         customerId: String(source.customerId || '').trim() || undefined,
-        moduleId: String(source.moduleId || '').trim() || null,
         contactName: String(source.contactName || '').trim() || null,
         phoneE164: String(source.phoneE164 || '').trim() || null,
         phoneAlt: String(source.phoneAlt || '').trim() || null,
         email: String(source.email || '').trim().toLowerCase() || null,
+        treatmentId: String(source.treatmentId || '').trim() || null,
+        customerTypeId: String(source.customerTypeId || '').trim() || null,
+        acquisitionSourceId: String(source.acquisitionSourceId || '').trim() || null,
+        documentTypeId: String(source.documentTypeId || '').trim() || null,
+        documentNumber: String(source.profileDocumentNumber || '').trim() || null,
+        notes: String(source.profileNotes || '').trim() || null,
+        firstName: String(source.profileFirstNames || '').trim() || null,
+        lastNamePaternal: String(source.profileLastNamePaternal || '').trim() || null,
+        lastNameMaternal: String(source.profileLastNameMaternal || '').trim() || null,
         tags,
         profile: {
             firstNames: String(source.profileFirstNames || '').trim() || null,
             lastNamePaternal: String(source.profileLastNamePaternal || '').trim() || null,
             lastNameMaternal: String(source.profileLastNameMaternal || '').trim() || null,
+            documentTypeId: String(source.documentTypeId || '').trim() || null,
             documentNumber: String(source.profileDocumentNumber || '').trim() || null,
+            treatmentId: String(source.treatmentId || '').trim() || null,
+            customerTypeId: String(source.customerTypeId || '').trim() || null,
+            sourceId: String(source.acquisitionSourceId || '').trim() || null,
             notes: String(source.profileNotes || '').trim() || null
         },
         isActive: source.isActive !== false

@@ -1,0 +1,14 @@
+{
+  "sessions": {},
+  "revokedAccessTokens": {
+    "a8285378845bdd4a5bc9c591c5232fb4e301ed0a836df0f5af54604d6d4dca28": {
+      "tenantId": "tenant_lavitat",
+      "tokenHash": "a8285378845bdd4a5bc9c591c5232fb4e301ed0a836df0f5af54604d6d4dca28",
+      "jti": "jti_050aa7099ce29966f0e08b53",
+      "userId": "owner_lavitat",
+      "reason": "api_logout",
+      "expiresAtUnix": 1775518653,
+      "createdAtUnix": 1775491922
+    }
+  }
+}

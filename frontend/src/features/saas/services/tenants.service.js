@@ -23,11 +23,13 @@ export async function fetchTenantCustomers(
     tenantId,
     {
         limit = 300,
+        offset = 0,
         includeInactive = true
     } = {}
 ) {
     const params = new URLSearchParams();
     params.set('limit', String(Number(limit) > 0 ? Number(limit) : 300));
+    params.set('offset', String(Number(offset) >= 0 ? Number(offset) : 0));
     params.set('includeInactive', includeInactive ? 'true' : 'false');
 
     return requestJson(`/api/admin/saas/tenants/${encodeTenantId(tenantId)}/customers?${params.toString()}`);
