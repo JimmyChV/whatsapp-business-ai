@@ -860,6 +860,7 @@ async function upsertFromInteraction(tenantId = DEFAULT_TENANT_ID, payload = {})
     const shouldAttachFirstOrigin = Object.keys(existingOrigin).length === 0 && Object.keys(incomingOrigin).length > 0;
 
     const upsertResult = await upsertCustomer(tenantId, {
+        customerId: toText(existingByPhone?.customerId || '') || undefined,
         moduleId: toText(payload?.moduleId || ''),
         phoneE164: phone,
         contactName: toText(payload?.contactName || payload?.name || payload?.pushname || ''),
@@ -875,7 +876,7 @@ async function upsertFromInteraction(tenantId = DEFAULT_TENANT_ID, payload = {})
         },
         lastInteractionAt: nowIso(),
         isActive: true
-    }, { allowPhoneMerge: true });
+    }, { allowPhoneMerge: false });
 
     const customerId = toText(upsertResult?.item?.customerId || '');
     if (customerId && getStorageDriver() === 'postgres') {
