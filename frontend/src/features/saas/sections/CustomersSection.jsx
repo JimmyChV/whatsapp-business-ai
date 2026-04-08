@@ -478,6 +478,36 @@ function CustomersSection(props = {}) {
         sourceById: buildCatalogLabelMap(sourceOptions)
     }), [customerTypeOptions, documentTypeOptions, treatmentOptions, sourceOptions]);
 
+    const firstNameValue = String(
+        customerForm?.first_name
+        ?? customerForm?.firstName
+        ?? customerForm?.profileFirstNames
+        ?? ''
+    );
+    const lastNamePaternalValue = String(
+        customerForm?.last_name_paternal
+        ?? customerForm?.lastNamePaternal
+        ?? customerForm?.profileLastNamePaternal
+        ?? ''
+    );
+    const lastNameMaternalValue = String(
+        customerForm?.last_name_maternal
+        ?? customerForm?.lastNameMaternal
+        ?? customerForm?.profileLastNameMaternal
+        ?? ''
+    );
+    const documentNumberValue = String(
+        customerForm?.document_number
+        ?? customerForm?.documentNumber
+        ?? customerForm?.profileDocumentNumber
+        ?? ''
+    );
+    const notesValue = String(
+        customerForm?.notes
+        ?? customerForm?.profileNotes
+        ?? ''
+    );
+
     const tableColumns = useMemo(
         () => CUSTOMER_TABLE_COLUMNS.map((column) => ({
             ...column,
@@ -1412,7 +1442,36 @@ function CustomersSection(props = {}) {
                             type="button"
                             disabled={busy || !customerForm.contactName.trim() || !customerForm.phoneE164.trim()}
                             onClick={() => runAction(customerPanelMode === 'create' ? 'Cliente creado' : 'Cliente actualizado', async () => {
-                                const payload = buildCustomerPayloadFromForm(customerForm);
+                                const basePayload = buildCustomerPayloadFromForm(customerForm);
+                                const firstName = String(firstNameValue || '').trim() || null;
+                                const lastNamePaternal = String(lastNamePaternalValue || '').trim() || null;
+                                const lastNameMaternal = String(lastNameMaternalValue || '').trim() || null;
+                                const treatmentId = String(customerForm?.treatmentId || '').trim() || null;
+                                const documentTypeId = String(customerForm?.documentTypeId || '').trim() || null;
+                                const documentNumber = String(documentNumberValue || '').trim() || null;
+                                const customerTypeId = String(customerForm?.customerTypeId || '').trim() || null;
+                                const acquisitionSourceId = String(customerForm?.acquisitionSourceId || '').trim() || null;
+                                const notes = String(notesValue || '').trim() || null;
+                                const payload = {
+                                    ...basePayload,
+                                    treatmentId,
+                                    treatment_id: treatmentId,
+                                    firstName,
+                                    first_name: firstName,
+                                    lastNamePaternal,
+                                    last_name_paternal: lastNamePaternal,
+                                    lastNameMaternal,
+                                    last_name_maternal: lastNameMaternal,
+                                    documentTypeId,
+                                    document_type_id: documentTypeId,
+                                    documentNumber,
+                                    document_number: documentNumber,
+                                    customerTypeId,
+                                    customer_type_id: customerTypeId,
+                                    acquisitionSourceId,
+                                    acquisition_source_id: acquisitionSourceId,
+                                    notes
+                                };
                                 if (customerPanelMode === 'create' || !selectedCustomer?.customerId) {
                                     const created = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers', {
                                         method: 'POST',
@@ -1443,11 +1502,41 @@ function CustomersSection(props = {}) {
                 <SaasDetailPanelSection title="Datos personales" defaultOpen>
                     <div className="saas-admin-form-row">
                         <input value={customerForm.contactName} onChange={(event) => setCustomerForm((prev) => ({ ...prev, contactName: event.target.value }))} placeholder="Nombre contacto" disabled={busy} />
-                        <input value={customerForm.profileFirstNames} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileFirstNames: event.target.value }))} placeholder="Nombres" disabled={busy} />
+                        <input
+                            value={firstNameValue}
+                            onChange={(event) => setCustomerForm((prev) => ({
+                                ...prev,
+                                firstName: event.target.value,
+                                first_name: event.target.value,
+                                profileFirstNames: event.target.value
+                            }))}
+                            placeholder="Nombres"
+                            disabled={busy}
+                        />
                     </div>
                     <div className="saas-admin-form-row">
-                        <input value={customerForm.profileLastNamePaternal} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileLastNamePaternal: event.target.value }))} placeholder="Apellido paterno" disabled={busy} />
-                        <input value={customerForm.profileLastNameMaternal} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileLastNameMaternal: event.target.value }))} placeholder="Apellido materno" disabled={busy} />
+                        <input
+                            value={lastNamePaternalValue}
+                            onChange={(event) => setCustomerForm((prev) => ({
+                                ...prev,
+                                lastNamePaternal: event.target.value,
+                                last_name_paternal: event.target.value,
+                                profileLastNamePaternal: event.target.value
+                            }))}
+                            placeholder="Apellido paterno"
+                            disabled={busy}
+                        />
+                        <input
+                            value={lastNameMaternalValue}
+                            onChange={(event) => setCustomerForm((prev) => ({
+                                ...prev,
+                                lastNameMaternal: event.target.value,
+                                last_name_maternal: event.target.value,
+                                profileLastNameMaternal: event.target.value
+                            }))}
+                            placeholder="Apellido materno"
+                            disabled={busy}
+                        />
                     </div>
                     <div className="saas-admin-form-row">
                         <select
@@ -1516,10 +1605,31 @@ function CustomersSection(props = {}) {
                                 <option key={`customer-document-${item.id}`} value={item.id}>{item.label}</option>
                             ))}
                         </select>
-                        <input value={customerForm.profileDocumentNumber} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileDocumentNumber: event.target.value }))} placeholder="Documento" disabled={busy} />
+                        <input
+                            value={documentNumberValue}
+                            onChange={(event) => setCustomerForm((prev) => ({
+                                ...prev,
+                                documentNumber: event.target.value,
+                                document_number: event.target.value,
+                                profileDocumentNumber: event.target.value
+                            }))}
+                            placeholder="Documento"
+                            disabled={busy}
+                        />
                     </div>
                     <div className="saas-admin-form-row">
-                        <textarea value={customerForm.profileNotes} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileNotes: event.target.value }))} placeholder="Observaciones" rows={3} style={{ width: '100%' }} disabled={busy} />
+                        <textarea
+                            value={notesValue}
+                            onChange={(event) => setCustomerForm((prev) => ({
+                                ...prev,
+                                notes: event.target.value,
+                                profileNotes: event.target.value
+                            }))}
+                            placeholder="Observaciones"
+                            rows={3}
+                            style={{ width: '100%' }}
+                            disabled={busy}
+                        />
                     </div>
                     {customerCatalogsError ? (
                         <div className="saas-admin-inline-feedback error">{customerCatalogsError}</div>
