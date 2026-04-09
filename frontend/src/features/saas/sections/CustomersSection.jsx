@@ -176,6 +176,15 @@ function buildOptimisticCustomerFromPayload(customer = null, payload = {}) {
     const payloadProfile = sourcePayload.profile && typeof sourcePayload.profile === 'object' ? sourcePayload.profile : {};
     const previousProfile = customer.profile && typeof customer.profile === 'object' ? customer.profile : {};
     const nowIso = new Date().toISOString();
+    const nextFirstName = pickPatchedValue(sourcePayload, 'firstName', customer.firstName);
+    const nextLastNamePaternal = pickPatchedValue(sourcePayload, 'lastNamePaternal', customer.lastNamePaternal);
+    const nextLastNameMaternal = pickPatchedValue(sourcePayload, 'lastNameMaternal', customer.lastNameMaternal);
+    const nextTreatmentId = pickPatchedValue(sourcePayload, 'treatmentId', customer.treatmentId);
+    const nextDocumentTypeId = pickPatchedValue(sourcePayload, 'documentTypeId', customer.documentTypeId);
+    const nextDocumentNumber = pickPatchedValue(sourcePayload, 'documentNumber', customer.documentNumber);
+    const nextCustomerTypeId = pickPatchedValue(sourcePayload, 'customerTypeId', customer.customerTypeId);
+    const nextAcquisitionSourceId = pickPatchedValue(sourcePayload, 'acquisitionSourceId', customer.acquisitionSourceId);
+    const nextNotes = pickPatchedValue(sourcePayload, 'notes', customer.notes);
 
     return {
         ...customer,
@@ -185,26 +194,35 @@ function buildOptimisticCustomerFromPayload(customer = null, payload = {}) {
         email: pickPatchedValue(sourcePayload, 'email', customer.email),
         isActive: pickPatchedValue(sourcePayload, 'isActive', customer.isActive),
         tags: Array.isArray(sourcePayload.tags) ? sourcePayload.tags : customer.tags,
-        treatmentId: pickPatchedValue(sourcePayload, 'treatmentId', customer.treatmentId),
+        treatmentId: nextTreatmentId,
         treatment_id: pickPatchedValue(sourcePayload, 'treatment_id', customer.treatment_id),
-        customerTypeId: pickPatchedValue(sourcePayload, 'customerTypeId', customer.customerTypeId),
+        customerTypeId: nextCustomerTypeId,
         customer_type_id: pickPatchedValue(sourcePayload, 'customer_type_id', customer.customer_type_id),
-        acquisitionSourceId: pickPatchedValue(sourcePayload, 'acquisitionSourceId', customer.acquisitionSourceId),
+        acquisitionSourceId: nextAcquisitionSourceId,
         acquisition_source_id: pickPatchedValue(sourcePayload, 'acquisition_source_id', customer.acquisition_source_id),
-        documentTypeId: pickPatchedValue(sourcePayload, 'documentTypeId', customer.documentTypeId),
+        documentTypeId: nextDocumentTypeId,
         document_type_id: pickPatchedValue(sourcePayload, 'document_type_id', customer.document_type_id),
-        documentNumber: pickPatchedValue(sourcePayload, 'documentNumber', customer.documentNumber),
+        documentNumber: nextDocumentNumber,
         document_number: pickPatchedValue(sourcePayload, 'document_number', customer.document_number),
-        firstName: pickPatchedValue(sourcePayload, 'firstName', customer.firstName),
+        firstName: nextFirstName,
         first_name: pickPatchedValue(sourcePayload, 'first_name', customer.first_name),
-        lastNamePaternal: pickPatchedValue(sourcePayload, 'lastNamePaternal', customer.lastNamePaternal),
+        lastNamePaternal: nextLastNamePaternal,
         last_name_paternal: pickPatchedValue(sourcePayload, 'last_name_paternal', customer.last_name_paternal),
-        lastNameMaternal: pickPatchedValue(sourcePayload, 'lastNameMaternal', customer.lastNameMaternal),
+        lastNameMaternal: nextLastNameMaternal,
         last_name_maternal: pickPatchedValue(sourcePayload, 'last_name_maternal', customer.last_name_maternal),
-        notes: pickPatchedValue(sourcePayload, 'notes', customer.notes),
+        notes: nextNotes,
         profile: {
             ...previousProfile,
-            ...payloadProfile
+            ...payloadProfile,
+            firstNames: nextFirstName,
+            lastNamePaternal: nextLastNamePaternal,
+            lastNameMaternal: nextLastNameMaternal,
+            treatmentId: nextTreatmentId,
+            documentTypeId: nextDocumentTypeId,
+            documentNumber: nextDocumentNumber,
+            customerTypeId: nextCustomerTypeId,
+            sourceId: nextAcquisitionSourceId,
+            notes: nextNotes
         },
         updatedAt: nowIso,
         updated_at: nowIso
@@ -1751,9 +1769,9 @@ function CustomersSection(props = {}) {
 
                 <SaasDetailPanelSection title="Documento" defaultOpen>
                     <div className="saas-customers-kv-grid">
-                        <div><span>Documento</span><strong>{readProfileValue(selectedCustomer?.profile, 'documentNumber', 'numeroDocumentoIdentidad', 'document_number') || selectedCustomer?.documentNumber || '-'}</strong></div>
+                        <div><span>Documento</span><strong>{selectedCustomer?.documentNumber || readProfileValue(selectedCustomer?.profile, 'documentNumber', 'numeroDocumentoIdentidad', 'document_number') || '-'}</strong></div>
                         <div><span>Tipo documento</span><strong>{buildDocumentTypeLabel(selectedCustomer, customerLabelMaps)}</strong></div>
-                        <div><span>Notas</span><strong>{readProfileValue(selectedCustomer?.profile, 'notes', 'observacionCliente', 'observacion_cliente') || selectedCustomer?.notes || '-'}</strong></div>
+                        <div><span>Notas</span><strong>{selectedCustomer?.notes || readProfileValue(selectedCustomer?.profile, 'notes', 'observacionCliente', 'observacion_cliente') || '-'}</strong></div>
                     </div>
                 </SaasDetailPanelSection>
 
