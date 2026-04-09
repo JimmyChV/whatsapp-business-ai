@@ -493,6 +493,7 @@ function CustomersSection(props = {}) {
     } = context;
 
     const [showColumnsMenu, setShowColumnsMenu] = useState(false);
+    const [searchInput, setSearchInput] = useState(String(customerSearch || ''));
     const [headerFilter, setHeaderFilter] = useState({
         columnKey: '',
         operator: 'contains',
@@ -1076,6 +1077,55 @@ function CustomersSection(props = {}) {
         loadCustomerCatalogs();
     }, [isCustomersSection, loadCustomerCatalogs]);
 
+    useEffect(() => {
+        const next = String(customerSearch || '');
+        setSearchInput((prev) => (prev === next ? prev : next));
+    }, [customerSearch]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            const normalized = String(searchInput || '');
+            if (normalized === String(customerSearch || '')) return;
+            if (typeof setCustomerSearch === 'function') {
+                setCustomerSearch(normalized);
+            }
+        }, 150);
+
+        return () => clearTimeout(timer);
+    }, [customerSearch, searchInput, setCustomerSearch]);
+
+    useEffect(() => {
+        if (!isCustomersSection) return undefined;
+        if (tenantScopeLocked) return undefined;
+        const cleanTenantId = String(tenantScopeId || '').trim();
+        if (!cleanTenantId) return undefined;
+        if (typeof syncCustomersDelta !== 'function') return undefined;
+
+        const syncTick = async () => {
+            try {
+                await syncCustomersDelta(cleanTenantId, {
+                    updatedSince: typeof maxCustomersUpdatedAt === 'function'
+                        ? maxCustomersUpdatedAt(cleanTenantId)
+                        : ''
+                });
+            } catch {
+                // silent sync tick failure; next interval retries
+            }
+        };
+
+        const intervalId = setInterval(() => {
+            void syncTick();
+        }, 60000);
+
+        return () => clearInterval(intervalId);
+    }, [
+        isCustomersSection,
+        maxCustomersUpdatedAt,
+        syncCustomersDelta,
+        tenantScopeId,
+        tenantScopeLocked
+    ]);
+
     const resetAddressEditor = useCallback(() => {
         setAddressEditorMode('create');
         setAddressEditorOpen(false);
@@ -1508,8 +1558,8 @@ function CustomersSection(props = {}) {
         <SaasViewHeader
             title="Clientes"
             count={tenantScopeLocked ? 0 : sortedAndFilteredRows.length}
-            searchValue={customerSearch}
-            onSearchChange={setCustomerSearch}
+            searchValue={searchInput}
+            onSearchChange={setSearchInput}
             searchPlaceholder="Buscar por codigo, nombre, telefono, email o documento"
             searchDisabled={busy || tenantScopeLocked}
             actions={headerActions}
