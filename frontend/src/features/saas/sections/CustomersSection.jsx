@@ -1,5 +1,6 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -128,6 +129,86 @@ function resolveCatalogSelectValue(value = '', options = []) {
 function resolveCustomerId(value = null) {
     if (!value || typeof value !== 'object') return '';
     return String(value.customerId || value.customer_id || value.id || '').trim();
+}
+
+function hasOwn(source, key) {
+    return Boolean(source && Object.prototype.hasOwnProperty.call(source, key));
+}
+
+function pickPatchedValue(source = {}, key, fallback) {
+    return hasOwn(source, key) ? source[key] : fallback;
+}
+
+function upsertCustomerById(items = [], customer = null) {
+    const source = Array.isArray(items) ? items : [];
+    const candidate = customer && typeof customer === 'object' ? customer : null;
+    const candidateId = resolveCustomerId(candidate);
+    if (!candidateId) return source;
+
+    let matched = false;
+    const next = source.map((item) => {
+        const itemId = resolveCustomerId(item);
+        if (itemId !== candidateId) return item;
+        matched = true;
+        return candidate;
+    });
+
+    if (!matched) next.unshift(candidate);
+    return next;
+}
+
+function cloneCustomerSnapshot(customer = null) {
+    if (!customer || typeof customer !== 'object') return null;
+    const profile = customer.profile && typeof customer.profile === 'object' ? { ...customer.profile } : {};
+    const metadata = customer.metadata && typeof customer.metadata === 'object' ? { ...customer.metadata } : {};
+    const tags = Array.isArray(customer.tags) ? [...customer.tags] : customer.tags;
+    return {
+        ...customer,
+        profile,
+        metadata,
+        tags
+    };
+}
+
+function buildOptimisticCustomerFromPayload(customer = null, payload = {}) {
+    if (!customer || typeof customer !== 'object') return customer;
+    const sourcePayload = payload && typeof payload === 'object' ? payload : {};
+    const payloadProfile = sourcePayload.profile && typeof sourcePayload.profile === 'object' ? sourcePayload.profile : {};
+    const previousProfile = customer.profile && typeof customer.profile === 'object' ? customer.profile : {};
+    const nowIso = new Date().toISOString();
+
+    return {
+        ...customer,
+        contactName: pickPatchedValue(sourcePayload, 'contactName', customer.contactName),
+        phoneE164: pickPatchedValue(sourcePayload, 'phoneE164', customer.phoneE164),
+        phoneAlt: pickPatchedValue(sourcePayload, 'phoneAlt', customer.phoneAlt),
+        email: pickPatchedValue(sourcePayload, 'email', customer.email),
+        isActive: pickPatchedValue(sourcePayload, 'isActive', customer.isActive),
+        tags: Array.isArray(sourcePayload.tags) ? sourcePayload.tags : customer.tags,
+        treatmentId: pickPatchedValue(sourcePayload, 'treatmentId', customer.treatmentId),
+        treatment_id: pickPatchedValue(sourcePayload, 'treatment_id', customer.treatment_id),
+        customerTypeId: pickPatchedValue(sourcePayload, 'customerTypeId', customer.customerTypeId),
+        customer_type_id: pickPatchedValue(sourcePayload, 'customer_type_id', customer.customer_type_id),
+        acquisitionSourceId: pickPatchedValue(sourcePayload, 'acquisitionSourceId', customer.acquisitionSourceId),
+        acquisition_source_id: pickPatchedValue(sourcePayload, 'acquisition_source_id', customer.acquisition_source_id),
+        documentTypeId: pickPatchedValue(sourcePayload, 'documentTypeId', customer.documentTypeId),
+        document_type_id: pickPatchedValue(sourcePayload, 'document_type_id', customer.document_type_id),
+        documentNumber: pickPatchedValue(sourcePayload, 'documentNumber', customer.documentNumber),
+        document_number: pickPatchedValue(sourcePayload, 'document_number', customer.document_number),
+        firstName: pickPatchedValue(sourcePayload, 'firstName', customer.firstName),
+        first_name: pickPatchedValue(sourcePayload, 'first_name', customer.first_name),
+        lastNamePaternal: pickPatchedValue(sourcePayload, 'lastNamePaternal', customer.lastNamePaternal),
+        last_name_paternal: pickPatchedValue(sourcePayload, 'last_name_paternal', customer.last_name_paternal),
+        lastNameMaternal: pickPatchedValue(sourcePayload, 'lastNameMaternal', customer.lastNameMaternal),
+        last_name_maternal: pickPatchedValue(sourcePayload, 'last_name_maternal', customer.last_name_maternal),
+        notes: pickPatchedValue(sourcePayload, 'notes', customer.notes),
+        profile: {
+            ...previousProfile,
+            ...payloadProfile
+        },
+        updatedAt: nowIso,
+        updated_at: nowIso
+    };
 }
 
 function normalizePreferredLanguage(customer = null) {
@@ -379,6 +460,7 @@ function buildTreatmentLabel(customer = null, labelMaps = {}) {
 }
 
 function CustomersSection(props = {}) {
+    const { notify } = useUiFeedback();
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const {
         isCustomersSection,
@@ -397,9 +479,12 @@ function CustomersSection(props = {}) {
         requestJson,
         tenantScopeId,
         loadCustomers,
+        syncCustomersDelta,
+        maxCustomersUpdatedAt,
         formatDateTimeLabel,
         customerForm,
         setCustomerForm,
+        setCustomers,
         waModules,
         buildCustomerPayloadFromForm,
         setSelectedCustomerId,
@@ -432,6 +517,7 @@ function CustomersSection(props = {}) {
     const [customerCatalogs, setCustomerCatalogs] = useState(EMPTY_CUSTOMER_CATALOGS);
     const [loadingCustomerCatalogs, setLoadingCustomerCatalogs] = useState(false);
     const [customerCatalogsError, setCustomerCatalogsError] = useState('');
+    const [savingCustomer, setSavingCustomer] = useState(false);
 
     const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
     const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys);
@@ -857,6 +943,133 @@ function CustomersSection(props = {}) {
             await loadCustomers(tenantScopeId);
         });
     }, [loadCustomers, requestJson, runAction, selectedCustomer, tenantScopeId]);
+
+    const updateCustomersState = useCallback((customerItem = null) => {
+        if (typeof setCustomers !== 'function') return;
+        const safeItem = customerItem && typeof customerItem === 'object' ? customerItem : null;
+        if (!safeItem) return;
+        setCustomers((prev) => upsertCustomerById(prev, safeItem));
+    }, [setCustomers]);
+
+    const buildCustomerSubmitPayload = useCallback(() => {
+        const basePayload = buildCustomerPayloadFromForm(customerForm);
+        const firstName = String(firstNameValue || '').trim() || null;
+        const lastNamePaternal = String(lastNamePaternalValue || '').trim() || null;
+        const lastNameMaternal = String(lastNameMaternalValue || '').trim() || null;
+        const treatmentId = String(customerForm?.treatmentId || '').trim() || null;
+        const documentTypeId = String(customerForm?.documentTypeId || '').trim() || null;
+        const documentNumber = String(documentNumberValue || '').trim() || null;
+        const customerTypeId = String(customerForm?.customerTypeId || '').trim() || null;
+        const acquisitionSourceId = String(customerForm?.acquisitionSourceId || '').trim() || null;
+        const notes = String(notesValue || '').trim() || null;
+        return {
+            ...basePayload,
+            treatmentId,
+            treatment_id: treatmentId,
+            firstName,
+            first_name: firstName,
+            lastNamePaternal,
+            last_name_paternal: lastNamePaternal,
+            lastNameMaternal,
+            last_name_maternal: lastNameMaternal,
+            documentTypeId,
+            document_type_id: documentTypeId,
+            documentNumber,
+            document_number: documentNumber,
+            customerTypeId,
+            customer_type_id: customerTypeId,
+            acquisitionSourceId,
+            acquisition_source_id: acquisitionSourceId,
+            notes
+        };
+    }, [
+        buildCustomerPayloadFromForm,
+        customerForm,
+        firstNameValue,
+        lastNamePaternalValue,
+        lastNameMaternalValue,
+        documentNumberValue,
+        notesValue
+    ]);
+
+    const handleSaveCustomer = useCallback(() => {
+        if (savingCustomer) return;
+        const payload = buildCustomerSubmitPayload();
+        const isCreate = customerPanelMode === 'create' || !selectedCustomer?.customerId;
+
+        if (isCreate) {
+            setSavingCustomer(true);
+            void (async () => {
+                try {
+                    const created = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers', {
+                        method: 'POST',
+                        body: payload
+                    });
+                    const createdItem = created?.item && typeof created.item === 'object' ? created.item : null;
+                    const createdId = String(createdItem?.customerId || created?.item?.customer_id || '').trim();
+                    if (createdItem) updateCustomersState(createdItem);
+                    if (createdId) setSelectedCustomerId(createdId);
+                    setCustomerPanelMode('view');
+                } catch (error) {
+                    notify({
+                        type: 'error',
+                        body: String(error?.message || 'No se pudo guardar el cliente.')
+                    });
+                } finally {
+                    setSavingCustomer(false);
+                }
+            })();
+            return;
+        }
+
+        const customerId = String(selectedCustomer?.customerId || '').trim();
+        if (!customerId) return;
+        const snapshot = cloneCustomerSnapshot(selectedCustomer);
+        const optimisticItem = buildOptimisticCustomerFromPayload(snapshot, payload);
+        if (optimisticItem) updateCustomersState(optimisticItem);
+        setCustomerPanelMode('view');
+        setSavingCustomer(true);
+
+        void (async () => {
+            try {
+                const response = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/' + encodeURIComponent(customerId), {
+                    method: 'PUT',
+                    body: payload
+                });
+                const serverItem = response?.item && typeof response.item === 'object' ? response.item : null;
+                if (serverItem) {
+                    updateCustomersState(serverItem);
+                } else if (typeof syncCustomersDelta === 'function') {
+                    await syncCustomersDelta(tenantScopeId, {
+                        updatedSince: typeof maxCustomersUpdatedAt === 'function'
+                            ? maxCustomersUpdatedAt(tenantScopeId)
+                            : ''
+                    });
+                }
+            } catch (error) {
+                if (snapshot) updateCustomersState(snapshot);
+                notify({
+                    type: 'error',
+                    body: 'No se pudo guardar el cliente. Se revirtieron los cambios locales.'
+                });
+            } finally {
+                setSavingCustomer(false);
+            }
+        })();
+    }, [
+        buildCustomerSubmitPayload,
+        customerPanelMode,
+        maxCustomersUpdatedAt,
+        notify,
+        requestJson,
+        savingCustomer,
+        selectedCustomer,
+        setCustomerPanelMode,
+        setSelectedCustomerId,
+        syncCustomersDelta,
+        tenantScopeId,
+        updateCustomersState
+    ]);
 
     useEffect(() => {
         if (!isCustomersSection) return;
@@ -1440,57 +1653,8 @@ function CustomersSection(props = {}) {
                     <div className="saas-customers-detail-actions">
                         <button
                             type="button"
-                            disabled={busy || !customerForm.contactName.trim() || !customerForm.phoneE164.trim()}
-                            onClick={() => runAction(customerPanelMode === 'create' ? 'Cliente creado' : 'Cliente actualizado', async () => {
-                                const basePayload = buildCustomerPayloadFromForm(customerForm);
-                                const firstName = String(firstNameValue || '').trim() || null;
-                                const lastNamePaternal = String(lastNamePaternalValue || '').trim() || null;
-                                const lastNameMaternal = String(lastNameMaternalValue || '').trim() || null;
-                                const treatmentId = String(customerForm?.treatmentId || '').trim() || null;
-                                const documentTypeId = String(customerForm?.documentTypeId || '').trim() || null;
-                                const documentNumber = String(documentNumberValue || '').trim() || null;
-                                const customerTypeId = String(customerForm?.customerTypeId || '').trim() || null;
-                                const acquisitionSourceId = String(customerForm?.acquisitionSourceId || '').trim() || null;
-                                const notes = String(notesValue || '').trim() || null;
-                                const payload = {
-                                    ...basePayload,
-                                    treatmentId,
-                                    treatment_id: treatmentId,
-                                    firstName,
-                                    first_name: firstName,
-                                    lastNamePaternal,
-                                    last_name_paternal: lastNamePaternal,
-                                    lastNameMaternal,
-                                    last_name_maternal: lastNameMaternal,
-                                    documentTypeId,
-                                    document_type_id: documentTypeId,
-                                    documentNumber,
-                                    document_number: documentNumber,
-                                    customerTypeId,
-                                    customer_type_id: customerTypeId,
-                                    acquisitionSourceId,
-                                    acquisition_source_id: acquisitionSourceId,
-                                    notes
-                                };
-                                if (customerPanelMode === 'create' || !selectedCustomer?.customerId) {
-                                    const created = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers', {
-                                        method: 'POST',
-                                        body: payload
-                                    });
-                                    const createdId = String(created?.item?.customerId || '').trim();
-                                    if (createdId) setSelectedCustomerId(createdId);
-                                    setCustomerPanelMode('view');
-                                    await loadCustomers(tenantScopeId);
-                                    return;
-                                }
-
-                                await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/' + encodeURIComponent(selectedCustomer.customerId), {
-                                    method: 'PUT',
-                                    body: payload
-                                });
-                                setCustomerPanelMode('view');
-                                await loadCustomers(tenantScopeId);
-                            })}
+                            disabled={busy || savingCustomer || !customerForm.contactName.trim() || !customerForm.phoneE164.trim()}
+                            onClick={handleSaveCustomer}
                         >
                             {customerPanelMode === 'create' ? 'Guardar cliente' : 'Actualizar cliente'}
                         </button>
