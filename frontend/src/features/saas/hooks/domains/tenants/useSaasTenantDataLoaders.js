@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
     CATALOG_MODE_OPTIONS,
     EMPTY_INTEGRATIONS_FORM,
@@ -110,6 +110,8 @@ export default function useSaasTenantDataLoaders({
     const customersByTenantRef = useRef({});
     const maxUpdatedAtByTenantRef = useRef({});
     const loadTokenByTenantRef = useRef({});
+    const [customersLoadProgress, setCustomersLoadProgress] = useState(0);
+    const [customersLoadingBatch, setCustomersLoadingBatch] = useState(false);
 
     const applyCustomersState = useCallback((items = []) => {
         const nextItems = Array.isArray(items) ? items : [];
@@ -228,8 +230,28 @@ export default function useSaasTenantDataLoaders({
         const cleanTenantId = String(tenantId || '').trim();
         if (!cleanTenantId) {
             applyCustomersState([]);
+            setCustomersLoadProgress(0);
+            setCustomersLoadingBatch(false);
             return;
         }
+
+        const updateLoadProgress = (loadedCount, totalCount = null) => {
+            const loaded = Number.isFinite(Number(loadedCount)) ? Math.max(0, Number(loadedCount)) : 0;
+            const total = Number.isFinite(Number(totalCount)) ? Math.max(0, Number(totalCount)) : null;
+            if (total && total > 0) {
+                const ratio = Math.min(1, loaded / total);
+                setCustomersLoadProgress(Math.round(ratio * 100));
+                return;
+            }
+            if (loaded > 0) {
+                setCustomersLoadProgress((prev) => (prev > 90 ? prev : 90));
+                return;
+            }
+            setCustomersLoadProgress(0);
+        };
+
+        setCustomersLoadingBatch(true);
+        setCustomersLoadProgress(0);
         const cached = Array.isArray(customersByTenantRef.current[cleanTenantId])
             ? customersByTenantRef.current[cleanTenantId]
             : [];
@@ -256,9 +278,18 @@ export default function useSaasTenantDataLoaders({
         customersByTenantRef.current[cleanTenantId] = mergedFirst;
         maxUpdatedAtByTenantRef.current[cleanTenantId] = computeMaxUpdatedAt(mergedFirst);
         applyCustomersState(mergedFirst);
+        updateLoadProgress(mergedFirst.length, expectedTotal);
 
-        if (!firstBatch.length) return;
-        if (expectedTotal !== null && firstBatch.length >= expectedTotal) return;
+        if (!firstBatch.length) {
+            setCustomersLoadProgress(100);
+            setCustomersLoadingBatch(false);
+            return;
+        }
+        if (expectedTotal !== null && firstBatch.length >= expectedTotal) {
+            setCustomersLoadProgress(100);
+            setCustomersLoadingBatch(false);
+            return;
+        }
 
         void (async () => {
             let offset = firstBatch.length;
@@ -285,11 +316,17 @@ export default function useSaasTenantDataLoaders({
                     customersByTenantRef.current[cleanTenantId] = merged;
                     maxUpdatedAtByTenantRef.current[cleanTenantId] = computeMaxUpdatedAt(merged);
                     applyCustomersState(merged);
+                    updateLoadProgress(offset, expectedTotal);
 
                     if (batch.length < pageSize && (expectedTotal === null || offset >= expectedTotal)) return;
                 }
             } catch {
                 // Keep first render data even if background pagination fails.
+            } finally {
+                if (loadTokenByTenantRef.current[cleanTenantId] === loadToken) {
+                    setCustomersLoadProgress(100);
+                    setCustomersLoadingBatch(false);
+                }
             }
         })();
     }, [applyCustomersState, requestJson]);
@@ -358,6 +395,50 @@ export default function useSaasTenantDataLoaders({
         return String(maxUpdatedAtByTenantRef.current[cleanTenantId] || '').trim();
     }, []);
 
+    const patchCustomerInCache = useCallback((tenantId, customerId, fields = {}) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        const cleanCustomerId = String(customerId || '').trim();
+        if (!cleanTenantId || !cleanCustomerId) return null;
+
+        const cacheItems = Array.isArray(customersByTenantRef.current[cleanTenantId])
+            ? customersByTenantRef.current[cleanTenantId]
+            : [];
+        if (!cacheItems.length) return null;
+
+        const normalizedTargetId = normalizeCustomerMatchId(cleanCustomerId);
+        let patchedItem = null;
+        const nextItems = cacheItems.map((item) => {
+            const itemId = normalizeCustomerMatchId(resolveCustomerId(item));
+            if (!itemId || itemId !== normalizedTargetId) return item;
+            const safeFields = fields && typeof fields === 'object' ? fields : {};
+            const nextProfile = safeFields.profile && typeof safeFields.profile === 'object'
+                ? {
+                    ...(item?.profile && typeof item.profile === 'object' ? item.profile : {}),
+                    ...safeFields.profile
+                }
+                : (item?.profile && typeof item.profile === 'object' ? item.profile : undefined);
+            const nextMetadata = safeFields.metadata && typeof safeFields.metadata === 'object'
+                ? {
+                    ...(item?.metadata && typeof item.metadata === 'object' ? item.metadata : {}),
+                    ...safeFields.metadata
+                }
+                : (item?.metadata && typeof item.metadata === 'object' ? item.metadata : undefined);
+            patchedItem = {
+                ...item,
+                ...safeFields,
+                ...(nextProfile ? { profile: nextProfile } : {}),
+                ...(nextMetadata ? { metadata: nextMetadata } : {})
+            };
+            return patchedItem;
+        });
+
+        if (!patchedItem) return null;
+        const merged = mergeCustomersByRecency([], nextItems);
+        customersByTenantRef.current[cleanTenantId] = merged;
+        maxUpdatedAtByTenantRef.current[cleanTenantId] = computeMaxUpdatedAt(merged);
+        return patchedItem;
+    }, []);
+
     return {
         refreshOverview,
         loadTenantSettings,
@@ -365,6 +446,9 @@ export default function useSaasTenantDataLoaders({
         loadWaModules,
         loadCustomers,
         syncCustomersDelta,
-        maxCustomersUpdatedAt
+        maxCustomersUpdatedAt,
+        patchCustomerInCache,
+        customersLoadProgress,
+        customersLoadingBatch
     };
 }

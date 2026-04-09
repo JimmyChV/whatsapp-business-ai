@@ -77,14 +77,11 @@ export default function useSaasPanelDerivedData({
     selectedPlanId = '',
     planOptions = [],
 } = {}) {
-    const sortedCustomers = useMemo(() => {
-        return [...(Array.isArray(customers) ? customers : [])].sort((a, b) =>
+    const customersSearchIndex = useMemo(() => {
+        const sortedSource = [...(Array.isArray(customers) ? customers : [])].sort((a, b) =>
             String(b?.updatedAt || '').localeCompare(String(a?.updatedAt || ''))
         );
-    }, [customers]);
-
-    const customersSearchIndex = useMemo(() => {
-        return sortedCustomers.map((item = {}) => {
+        return sortedSource.map((item = {}) => {
             const profile = item?.profile && typeof item.profile === 'object' ? item.profile : {};
             const metadata = item?.metadata && typeof item.metadata === 'object' ? item.metadata : {};
             const tags = Array.isArray(item?.tags) ? item.tags : [];
@@ -122,7 +119,12 @@ export default function useSaasPanelDerivedData({
                 .join(' ');
             return { item, haystack };
         });
-    }, [sortedCustomers]);
+    }, [customers]);
+
+    const sortedCustomers = useMemo(
+        () => customersSearchIndex.map((entry) => entry.item),
+        [customersSearchIndex]
+    );
 
     const filteredCustomers = useMemo(() => {
         const query = String(customerSearch || '').trim().toLowerCase();

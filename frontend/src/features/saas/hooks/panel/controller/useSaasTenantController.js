@@ -49,7 +49,10 @@ export default function useSaasTenantController(input = {}) {
         loadWaModules: tenantDataLoaders.loadWaModules,
         loadCustomers: tenantDataLoaders.loadCustomers,
         syncCustomersDelta: tenantDataLoaders.syncCustomersDelta,
-        maxCustomersUpdatedAt: tenantDataLoaders.maxCustomersUpdatedAt
+        maxCustomersUpdatedAt: tenantDataLoaders.maxCustomersUpdatedAt,
+        patchCustomerInCache: tenantDataLoaders.patchCustomerInCache,
+        customersLoadProgress: tenantDataLoaders.customersLoadProgress,
+        customersLoadingBatch: tenantDataLoaders.customersLoadingBatch
     };
 
     return {

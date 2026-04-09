@@ -473,7 +473,7 @@ function CustomersSection(props = {}) {
         selectedCustomerId,
         customerPanelMode,
         openCustomerView,
-        selectedCustomer,
+        selectedCustomer: selectedCustomerContext,
         openCustomerEdit,
         runAction,
         requestJson,
@@ -481,6 +481,9 @@ function CustomersSection(props = {}) {
         loadCustomers,
         syncCustomersDelta,
         maxCustomersUpdatedAt,
+        patchCustomerInCache,
+        customersLoadProgress = 0,
+        customersLoadingBatch = false,
         formatDateTimeLabel,
         customerForm,
         setCustomerForm,
@@ -519,9 +522,19 @@ function CustomersSection(props = {}) {
     const [loadingCustomerCatalogs, setLoadingCustomerCatalogs] = useState(false);
     const [customerCatalogsError, setCustomerCatalogsError] = useState('');
     const [savingCustomer, setSavingCustomer] = useState(false);
+    const [selectedCustomerLive, setSelectedCustomerLive] = useState(selectedCustomerContext || null);
 
     const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
     const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys);
+
+    useEffect(() => {
+        setSelectedCustomerLive(selectedCustomerContext || null);
+    }, [selectedCustomerContext]);
+
+    const selectedCustomer = useMemo(
+        () => selectedCustomerLive || selectedCustomerContext || null,
+        [selectedCustomerContext, selectedCustomerLive]
+    );
 
     const selectedCustomerIdResolved = useMemo(() => resolveCustomerId(selectedCustomer), [selectedCustomer]);
 
@@ -949,8 +962,16 @@ function CustomersSection(props = {}) {
         if (typeof setCustomers !== 'function') return;
         const safeItem = customerItem && typeof customerItem === 'object' ? customerItem : null;
         if (!safeItem) return;
+        const safeItemId = resolveCustomerId(safeItem);
         setCustomers((prev) => upsertCustomerById(prev, safeItem));
-    }, [setCustomers]);
+        if (tenantScopeId && safeItemId && typeof patchCustomerInCache === 'function') {
+            patchCustomerInCache(tenantScopeId, safeItemId, safeItem);
+        }
+        const currentSelectedId = String(selectedCustomerIdResolved || selectedCustomerId || '').trim();
+        if (currentSelectedId && safeItemId && normalizeCatalogLookupKey(currentSelectedId) === normalizeCatalogLookupKey(safeItemId)) {
+            setSelectedCustomerLive(safeItem);
+        }
+    }, [patchCustomerInCache, selectedCustomerId, selectedCustomerIdResolved, setCustomers, tenantScopeId]);
 
     const buildCustomerSubmitPayload = useCallback(() => {
         const basePayload = buildCustomerPayloadFromForm(customerForm);
@@ -1578,28 +1599,39 @@ function CustomersSection(props = {}) {
                 columns: headerFilterColumns
             }}
             onSortChange={setSortConfig}
-            extra={showColumnsMenu ? (
-                <div className="saas-customers-columns-menu">
-                    {CUSTOMER_TABLE_COLUMNS.map((column) => (
-                        <label key={column.key} className="saas-customers-columns-menu__item">
-                            <input
-                                type="checkbox"
-                                checked={columnPrefs.isColumnVisible(column.key)}
-                                onChange={() => columnPrefs.toggleColumn(column.key)}
-                            />
-                            <span>{column.label}</span>
-                            <small>{column.width || 'auto'}</small>
-                        </label>
-                    ))}
-                    <div className="saas-customers-columns-menu__actions">
-                        <button type="button" onClick={() => columnPrefs.setVisibleColumnKeys(CUSTOMER_TABLE_COLUMNS.map((column) => column.key))}>
-                            Mostrar todo
-                        </button>
-                        <button type="button" onClick={columnPrefs.resetColumns}>Restablecer</button>
-                        <button type="button" onClick={() => setShowColumnsMenu(false)}>Cerrar</button>
-                    </div>
+            extra={(
+                <div className="saas-customers-header-extra">
+                    {(customersLoadingBatch || savingCustomer) ? (
+                        <div className="saas-admin-inline-feedback">
+                            {customersLoadingBatch ? `Cargando clientes... ${Math.max(0, Math.min(100, Number(customersLoadProgress) || 0))}%` : null}
+                            {customersLoadingBatch && savingCustomer ? ' • ' : null}
+                            {savingCustomer ? 'Guardando cliente...' : null}
+                        </div>
+                    ) : null}
+                    {showColumnsMenu ? (
+                        <div className="saas-customers-columns-menu">
+                            {CUSTOMER_TABLE_COLUMNS.map((column) => (
+                                <label key={column.key} className="saas-customers-columns-menu__item">
+                                    <input
+                                        type="checkbox"
+                                        checked={columnPrefs.isColumnVisible(column.key)}
+                                        onChange={() => columnPrefs.toggleColumn(column.key)}
+                                    />
+                                    <span>{column.label}</span>
+                                    <small>{column.width || 'auto'}</small>
+                                </label>
+                            ))}
+                            <div className="saas-customers-columns-menu__actions">
+                                <button type="button" onClick={() => columnPrefs.setVisibleColumnKeys(CUSTOMER_TABLE_COLUMNS.map((column) => column.key))}>
+                                    Mostrar todo
+                                </button>
+                                <button type="button" onClick={columnPrefs.resetColumns}>Restablecer</button>
+                                <button type="button" onClick={() => setShowColumnsMenu(false)}>Cerrar</button>
+                            </div>
+                        </div>
+                    ) : null}
                 </div>
-            ) : null}
+            )}
         />
     );
 
