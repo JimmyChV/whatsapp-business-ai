@@ -29,12 +29,14 @@ function registerTenantCustomerHttpRoutes({
         try {
             const query = String(req.query?.q || req.query?.query || '').trim();
             const moduleId = String(req.query?.moduleId || '').trim();
+            const updatedSince = String(req.query?.updatedSince || '').trim();
             const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() !== 'false';
             const limit = Number(req.query?.limit || 50);
             const offset = Number(req.query?.offset || 0);
             const result = await customerService.listCustomers(tenantId, {
                 query,
                 moduleId,
+                updatedSince,
                 includeInactive,
                 limit,
                 offset
