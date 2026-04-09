@@ -524,18 +524,21 @@ function CustomersSection(props = {}) {
     const [savingCustomer, setSavingCustomer] = useState(false);
     const [selectedCustomerLive, setSelectedCustomerLive] = useState(selectedCustomerContext || null);
     const [showCustomerSynced, setShowCustomerSynced] = useState(false);
-    const isOptimisticUpdateRef = useRef(false);
     const syncedIndicatorTimeoutRef = useRef(null);
 
     const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
     const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys);
 
     useEffect(() => {
-        if (isOptimisticUpdateRef.current) {
-            isOptimisticUpdateRef.current = false;
+        if (!selectedCustomerContext) {
+            setSelectedCustomerLive(null);
             return;
         }
-        setSelectedCustomerLive(selectedCustomerContext || null);
+        const contextUpdatedAt = selectedCustomerContext?.updatedAt || '';
+        const liveUpdatedAt = selectedCustomerLive?.updatedAt || '';
+        if (!liveUpdatedAt || contextUpdatedAt > liveUpdatedAt) {
+            setSelectedCustomerLive(selectedCustomerContext);
+        }
     }, [selectedCustomerContext]);
 
     useEffect(() => {
@@ -984,7 +987,6 @@ function CustomersSection(props = {}) {
         }
         const currentSelectedId = String(selectedCustomerIdResolved || selectedCustomerId || '').trim();
         if (currentSelectedId && safeItemId && normalizeCatalogLookupKey(currentSelectedId) === normalizeCatalogLookupKey(safeItemId)) {
-            isOptimisticUpdateRef.current = true;
             setSelectedCustomerLive(safeItem);
         }
     }, [patchCustomerInCache, selectedCustomerId, selectedCustomerIdResolved, setCustomers, tenantScopeId]);
