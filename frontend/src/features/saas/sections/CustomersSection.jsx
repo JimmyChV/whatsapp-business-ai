@@ -1,5 +1,5 @@
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import {
     SaasDataTable,
@@ -523,13 +523,28 @@ function CustomersSection(props = {}) {
     const [customerCatalogsError, setCustomerCatalogsError] = useState('');
     const [savingCustomer, setSavingCustomer] = useState(false);
     const [selectedCustomerLive, setSelectedCustomerLive] = useState(selectedCustomerContext || null);
+    const [showCustomerSynced, setShowCustomerSynced] = useState(false);
+    const isOptimisticUpdateRef = useRef(false);
+    const syncedIndicatorTimeoutRef = useRef(null);
 
     const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
     const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys);
 
     useEffect(() => {
+        if (isOptimisticUpdateRef.current) {
+            isOptimisticUpdateRef.current = false;
+            return;
+        }
         setSelectedCustomerLive(selectedCustomerContext || null);
     }, [selectedCustomerContext]);
+
+    useEffect(() => {
+        return () => {
+            if (syncedIndicatorTimeoutRef.current) {
+                clearTimeout(syncedIndicatorTimeoutRef.current);
+            }
+        };
+    }, []);
 
     const selectedCustomer = useMemo(
         () => selectedCustomerLive || selectedCustomerContext || null,
@@ -969,9 +984,21 @@ function CustomersSection(props = {}) {
         }
         const currentSelectedId = String(selectedCustomerIdResolved || selectedCustomerId || '').trim();
         if (currentSelectedId && safeItemId && normalizeCatalogLookupKey(currentSelectedId) === normalizeCatalogLookupKey(safeItemId)) {
+            isOptimisticUpdateRef.current = true;
             setSelectedCustomerLive(safeItem);
         }
     }, [patchCustomerInCache, selectedCustomerId, selectedCustomerIdResolved, setCustomers, tenantScopeId]);
+
+    const showSyncedIndicator = useCallback(() => {
+        setShowCustomerSynced(true);
+        if (syncedIndicatorTimeoutRef.current) {
+            clearTimeout(syncedIndicatorTimeoutRef.current);
+        }
+        syncedIndicatorTimeoutRef.current = setTimeout(() => {
+            setShowCustomerSynced(false);
+            syncedIndicatorTimeoutRef.current = null;
+        }, 2000);
+    }, []);
 
     const buildCustomerSubmitPayload = useCallback(() => {
         const basePayload = buildCustomerPayloadFromForm(customerForm);
@@ -1016,6 +1043,7 @@ function CustomersSection(props = {}) {
 
     const handleSaveCustomer = useCallback(() => {
         if (savingCustomer) return;
+        setShowCustomerSynced(false);
         const payload = buildCustomerSubmitPayload();
         const isCreate = customerPanelMode === 'create' || !selectedCustomer?.customerId;
 
@@ -1032,6 +1060,7 @@ function CustomersSection(props = {}) {
                     if (createdItem) updateCustomersState(createdItem);
                     if (createdId) setSelectedCustomerId(createdId);
                     setCustomerPanelMode('view');
+                    showSyncedIndicator();
                 } catch (error) {
                     notify({
                         type: 'error',
@@ -1068,6 +1097,7 @@ function CustomersSection(props = {}) {
                             : ''
                     });
                 }
+                showSyncedIndicator();
             } catch (error) {
                 if (snapshot) updateCustomersState(snapshot);
                 notify({
@@ -1090,7 +1120,8 @@ function CustomersSection(props = {}) {
         setSelectedCustomerId,
         syncCustomersDelta,
         tenantScopeId,
-        updateCustomersState
+        updateCustomersState,
+        showSyncedIndicator
     ]);
 
     useEffect(() => {
@@ -1606,6 +1637,12 @@ function CustomersSection(props = {}) {
                             {customersLoadingBatch ? `Cargando clientes... ${Math.max(0, Math.min(100, Number(customersLoadProgress) || 0))}%` : null}
                             {customersLoadingBatch && savingCustomer ? ' • ' : null}
                             {savingCustomer ? 'Guardando cliente...' : null}
+                        </div>
+                    ) : null}
+                    {(savingCustomer || showCustomerSynced) ? (
+                        <div className={`saas-customers-sync-indicator${savingCustomer ? ' is-saving' : ' is-synced'}`}>
+                            <span className="saas-customers-sync-indicator__dot" />
+                            <span>{savingCustomer ? 'Guardando...' : 'Sincronizado'}</span>
                         </div>
                     ) : null}
                     {showColumnsMenu ? (
