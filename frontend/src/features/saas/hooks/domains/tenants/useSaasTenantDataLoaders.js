@@ -352,12 +352,19 @@ export default function useSaasTenantDataLoaders({
         };
     }, [applyCustomersState, requestJson]);
 
+    const maxCustomersUpdatedAt = useCallback((tenantId) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        if (!cleanTenantId) return '';
+        return String(maxUpdatedAtByTenantRef.current[cleanTenantId] || '').trim();
+    }, []);
+
     return {
         refreshOverview,
         loadTenantSettings,
         loadTenantIntegrations,
         loadWaModules,
         loadCustomers,
-        syncCustomersDelta
+        syncCustomersDelta,
+        maxCustomersUpdatedAt
     };
 }

@@ -20,6 +20,8 @@ export default function useSaasTenantController(input = {}) {
         setTenantPanelMode: panelCoreState.setTenantPanelMode,
         tenantIntegrations: panelCoreState.tenantIntegrations,
         setTenantIntegrations: panelCoreState.setTenantIntegrations,
+        customers: panelCoreState.customers,
+        setCustomers: panelCoreState.setCustomers,
         loadingSettings: panelCoreState.loadingSettings,
         setLoadingSettings: panelCoreState.setLoadingSettings,
         loadingIntegrations: panelCoreState.loadingIntegrations,
@@ -45,7 +47,9 @@ export default function useSaasTenantController(input = {}) {
         loadTenantSettings: tenantDataLoaders.loadTenantSettings,
         loadTenantIntegrations: tenantDataLoaders.loadTenantIntegrations,
         loadWaModules: tenantDataLoaders.loadWaModules,
-        loadCustomers: tenantDataLoaders.loadCustomers
+        loadCustomers: tenantDataLoaders.loadCustomers,
+        syncCustomersDelta: tenantDataLoaders.syncCustomersDelta,
+        maxCustomersUpdatedAt: tenantDataLoaders.maxCustomersUpdatedAt
     };
 
     return {
