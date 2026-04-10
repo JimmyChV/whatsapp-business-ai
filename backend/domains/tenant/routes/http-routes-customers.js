@@ -353,6 +353,18 @@ function registerTenantCustomerHttpRoutes({
         }
     });
 
+    app.get('/api/tenant/customer-catalogs/geo', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const departmentId = String(req.query?.departmentId || '').trim();
+            const provinceId = String(req.query?.provinceId || '').trim();
+            const payload = await customerCatalogsService.getGeoCatalog({ departmentId, provinceId });
+            return res.json({ ok: true, ...payload });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar catalogo geografico.') });
+        }
+    });
+
     app.get('/api/tenant/wa-modules', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;

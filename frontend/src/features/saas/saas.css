@@ -3479,7 +3479,8 @@
 .saas-admin-shell .saas-data-table-wrap,
 .saas-admin-shell .saas-customers-detail-panel .saas-detail-panel__body,
 .saas-admin-shell .saas-admin-nav,
-.saas-admin-shell .saas-customers-columns-menu {
+.saas-admin-shell .saas-customers-columns-menu,
+.saas-admin-shell #saas_clientes .saas-td-layout__right {
   scrollbar-width: thin;
   scrollbar-color: var(--saas-scrollbar-thumb) var(--saas-scrollbar-track);
 }
@@ -3487,7 +3488,8 @@
 .saas-admin-shell .saas-data-table-wrap::-webkit-scrollbar,
 .saas-admin-shell .saas-customers-detail-panel .saas-detail-panel__body::-webkit-scrollbar,
 .saas-admin-shell .saas-admin-nav::-webkit-scrollbar,
-.saas-admin-shell .saas-customers-columns-menu::-webkit-scrollbar {
+.saas-admin-shell .saas-customers-columns-menu::-webkit-scrollbar,
+.saas-admin-shell #saas_clientes .saas-td-layout__right::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
@@ -3495,7 +3497,8 @@
 .saas-admin-shell .saas-data-table-wrap::-webkit-scrollbar-track,
 .saas-admin-shell .saas-customers-detail-panel .saas-detail-panel__body::-webkit-scrollbar-track,
 .saas-admin-shell .saas-admin-nav::-webkit-scrollbar-track,
-.saas-admin-shell .saas-customers-columns-menu::-webkit-scrollbar-track {
+.saas-admin-shell .saas-customers-columns-menu::-webkit-scrollbar-track,
+.saas-admin-shell #saas_clientes .saas-td-layout__right::-webkit-scrollbar-track {
   background: var(--saas-scrollbar-track);
   border-radius: 999px;
 }
@@ -3503,7 +3506,8 @@
 .saas-admin-shell .saas-data-table-wrap::-webkit-scrollbar-thumb,
 .saas-admin-shell .saas-customers-detail-panel .saas-detail-panel__body::-webkit-scrollbar-thumb,
 .saas-admin-shell .saas-admin-nav::-webkit-scrollbar-thumb,
-.saas-admin-shell .saas-customers-columns-menu::-webkit-scrollbar-thumb {
+.saas-admin-shell .saas-customers-columns-menu::-webkit-scrollbar-thumb,
+.saas-admin-shell #saas_clientes .saas-td-layout__right::-webkit-scrollbar-thumb {
   background: var(--saas-scrollbar-thumb);
   border-radius: 999px;
 }
@@ -3511,7 +3515,8 @@
 .saas-admin-shell .saas-data-table-wrap::-webkit-scrollbar-thumb:hover,
 .saas-admin-shell .saas-customers-detail-panel .saas-detail-panel__body::-webkit-scrollbar-thumb:hover,
 .saas-admin-shell .saas-admin-nav::-webkit-scrollbar-thumb:hover,
-.saas-admin-shell .saas-customers-columns-menu::-webkit-scrollbar-thumb:hover {
+.saas-admin-shell .saas-customers-columns-menu::-webkit-scrollbar-thumb:hover,
+.saas-admin-shell #saas_clientes .saas-td-layout__right::-webkit-scrollbar-thumb:hover {
   background: var(--saas-scrollbar-thumb-hover);
 }
 
@@ -3818,6 +3823,7 @@
 .saas-admin-shell #saas_clientes.saas-admin-card {
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -3849,6 +3855,12 @@
   overflow: hidden;
 }
 
+.saas-admin-shell #saas_clientes .saas-td-layout__right {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .saas-admin-shell #saas_clientes .saas-customers-pane {
   height: 100%;
   min-height: 0;
@@ -3866,27 +3878,37 @@
 .saas-admin-shell #saas_clientes .saas-customers-right-shell {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   min-height: 0;
   height: 100%;
+  max-height: 100%;
   overflow: hidden;
 }
 
 .saas-admin-shell #saas_clientes .saas-customers-detail-panel {
   width: 100%;
   height: 100%;
+  flex: 1 1 auto;
   min-height: 0;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
+.saas-admin-shell #saas_clientes .saas-customers-detail-panel .saas-detail-panel__header {
+  flex: 0 0 auto;
+}
+
 .saas-admin-shell #saas_clientes .saas-customers-detail-panel__body {
   flex: 1 1 auto;
   min-height: 0;
+  max-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
   padding-bottom: 14px;
+  scrollbar-gutter: stable both-edges;
 }
 
 .saas-admin-shell #saas_clientes .saas-view-header {
@@ -4003,6 +4025,86 @@
   box-shadow: 0 0 0 0 rgba(0, 184, 120, 0.36);
 }
 
+/* Customers final scroll ownership:
+   detail body owns vertical scroll and sections never shrink/compress */
+.saas-admin-shell #saas_clientes .saas-td-layout--split .saas-td-layout__right {
+  height: calc(100vh - var(--saas-header-height, 74px) - 34px) !important;
+  max-height: calc(100vh - var(--saas-header-height, 74px) - 34px) !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  align-self: stretch !important;
+  scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell #saas_clientes .saas-td-layout--split .saas-td-layout__content {
+  grid-template-columns: minmax(0, 2.35fr) minmax(520px, 1.65fr) !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-right-shell {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-detail-panel {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-detail-panel__body {
+  display: block !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-bottom: 14px !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-detail-panel__body > .saas-detail-panel__section {
+  flex: 0 0 auto !important;
+  margin-bottom: 10px;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-detail-panel__body > .saas-detail-panel__section:last-child {
+  margin-bottom: 0;
+}
+
+/* Customers main list: guarantee horizontal + vertical scroll at 100% zoom */
+.saas-admin-shell #saas_clientes .saas-customers-pane .saas-data-table-wrap {
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-pane .saas-data-table {
+  width: max-content !important;
+  min-width: 100% !important;
+}
+
+/* Address subtable: horizontal scroll when content is wider than panel */
+.saas-customers-address-table-wrap .saas-data-table-wrap {
+  max-height: 260px;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+}
+
+.saas-customers-address-table-wrap .saas-data-table {
+  width: max-content !important;
+  min-width: 980px;
+}
+
+.saas-customers-address-table-wrap .saas-data-table th,
+.saas-customers-address-table-wrap .saas-data-table td {
+  white-space: nowrap;
+}
+
 @keyframes saasCustomersSyncPulse {
   0% {
     transform: scale(0.85);
@@ -4016,4 +4118,191 @@
     transform: scale(0.85);
     box-shadow: 0 0 0 0 rgba(58, 166, 255, 0);
   }
+}
+
+/* Customers hard-final: right pane must always scroll and stay reachable */
+.saas-admin-shell #saas_clientes .saas-td-layout--split .saas-td-layout__content {
+  grid-template-columns: minmax(0, 2.1fr) minmax(620px, 1.9fr) !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  align-items: stretch !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-td-layout--split .saas-td-layout__right {
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-right-shell,
+.saas-admin-shell #saas_clientes .saas-customers-detail-panel {
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-detail-panel__body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-bottom: 20px !important;
+  scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-detail-panel__body > .saas-detail-panel__section {
+  flex: 0 0 auto !important;
+  min-height: 0 !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-address-table-wrap {
+  overflow-x: auto;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-address-table-wrap .saas-data-table-wrap {
+  max-height: 220px !important;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-address-table-wrap .saas-data-table {
+  min-width: 1080px !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-address-detail {
+  border: 1px solid rgba(122, 168, 194, 0.28);
+  border-radius: 10px;
+  background: rgba(7, 20, 30, 0.56);
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-address-detail__header {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-address-detail__header strong {
+  font-size: 0.84rem;
+  color: #eaf7ff;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-address-detail__header small {
+  font-size: 0.75rem;
+  color: #9ec0d7;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-context-list {
+  overflow-x: auto;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-context-item .saas-customers-kv-grid {
+  min-width: 620px;
+}
+
+/* Customers final-fixed layout (single source of truth) */
+.saas-admin-shell #saas_clientes.saas-admin-card,
+.saas-admin-shell #saas_clientes .saas-td-layout,
+.saas-admin-shell #saas_clientes .saas-td-layout__content,
+.saas-admin-shell #saas_clientes .saas-td-layout__left,
+.saas-admin-shell #saas_clientes .saas-td-layout__right,
+.saas-admin-shell #saas_clientes .saas-customers-pane,
+.saas-admin-shell #saas_clientes .saas-customers-right-shell {
+  min-height: 0 !important;
+}
+
+.saas-admin-shell #saas_clientes.saas-admin-card,
+.saas-admin-shell #saas_clientes .saas-td-layout {
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-td-layout--split .saas-td-layout__content {
+  height: 100% !important;
+  align-items: stretch !important;
+  grid-template-columns: minmax(0, 1.9fr) minmax(700px, 2.1fr) !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-pane .saas-data-table-wrap {
+  flex: 1 1 auto !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-pane .saas-data-table {
+  width: max-content !important;
+  min-width: 100% !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-pane .saas-data-table th,
+.saas-admin-shell #saas_clientes .saas-customers-pane .saas-data-table td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-detail-panel {
+  height: 100% !important;
+  max-height: 100% !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  overflow: hidden !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-detail-panel__body {
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-bottom: 18px !important;
+  scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-detail-panel__body .saas-detail-panel__section {
+  flex: 0 0 auto !important;
+}
+
+/* Keep list height fixed when column picker is open */
+.saas-admin-shell #saas_clientes .saas-view-header__extra,
+.saas-admin-shell #saas_clientes .saas-customers-header-extra {
+  position: relative;
+  height: 0;
+  min-height: 0;
+  overflow: visible;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-columns-menu {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  width: min(1060px, calc(100vw - 360px));
+  max-height: 240px;
+  overflow: auto;
+  z-index: 55;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-address-table-wrap {
+  overflow-x: auto;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-address-table-wrap .saas-data-table-wrap {
+  max-height: 260px !important;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-address-table-wrap .saas-data-table {
+  min-width: 980px !important;
+  width: max-content !important;
 }

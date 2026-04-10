@@ -12,24 +12,24 @@ import {
 } from '../components/layout';
 
 const CUSTOMER_TABLE_COLUMNS = [
-    { key: 'codigo', label: 'Codigo', width: '15%', type: 'text' },
-    { key: 'nombreCompleto', label: 'Nombre completo', width: '22%', type: 'text' },
-    { key: 'nombres', label: 'Nombres', width: '16%', type: 'text' },
-    { key: 'apellidoPaterno', label: 'Apellido paterno', width: '16%', type: 'text' },
-    { key: 'apellidoMaterno', label: 'Apellido materno', width: '16%', type: 'text' },
-    { key: 'telefono', label: 'Telefono', width: '15%', type: 'text' },
-    { key: 'telefonoAlt', label: 'Telefono alterno', width: '15%', type: 'text' },
-    { key: 'email', label: 'Correo', width: '20%', type: 'text' },
-    { key: 'tipoCliente', label: 'Tipo de cliente', width: '16%', type: 'option' },
-    { key: 'tipoDocumento', label: 'Tipo documento', width: '16%', type: 'option' },
-    { key: 'documento', label: 'Documento', width: '16%', type: 'text' },
-    { key: 'idioma', label: 'Idioma', width: '10%', type: 'option' },
-    { key: 'fuenteAdquisicion', label: 'Fuente', width: '16%', type: 'option' },
-    { key: 'tratamiento', label: 'Tratamiento', width: '14%', type: 'option' },
-    { key: 'etiquetas', label: 'Etiquetas', width: '20%', type: 'text' },
-    { key: 'ultimaInteraccion', label: 'Ultima interaccion', width: '16%', type: 'date' },
-    { key: 'actualizado', label: 'Actualizado', width: '16%', type: 'date' },
-    { key: 'estado', label: 'Estado', width: '10%', type: 'option' }
+    { key: 'codigo', label: 'Codigo', width: '132px', minWidth: '120px', maxWidth: '152px', type: 'text' },
+    { key: 'nombreCompleto', label: 'Nombre completo', width: '208px', minWidth: '160px', maxWidth: '260px', type: 'text' },
+    { key: 'nombres', label: 'Nombres', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
+    { key: 'apellidoPaterno', label: 'Apellido paterno', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
+    { key: 'apellidoMaterno', label: 'Apellido materno', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
+    { key: 'telefono', label: 'Telefono', width: '156px', minWidth: '132px', maxWidth: '190px', type: 'text' },
+    { key: 'telefonoAlt', label: 'Telefono alterno', width: '168px', minWidth: '140px', maxWidth: '208px', type: 'text' },
+    { key: 'email', label: 'Correo', width: '220px', minWidth: '180px', maxWidth: '280px', type: 'text' },
+    { key: 'tipoCliente', label: 'Tipo de cliente', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
+    { key: 'tipoDocumento', label: 'Tipo documento', width: '162px', minWidth: '136px', maxWidth: '216px', type: 'option' },
+    { key: 'documento', label: 'Documento', width: '150px', minWidth: '130px', maxWidth: '190px', type: 'text' },
+    { key: 'idioma', label: 'Idioma', width: '118px', minWidth: '100px', maxWidth: '150px', type: 'option' },
+    { key: 'fuenteAdquisicion', label: 'Fuente', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
+    { key: 'tratamiento', label: 'Tratamiento', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
+    { key: 'etiquetas', label: 'Etiquetas', width: '220px', minWidth: '180px', maxWidth: '300px', type: 'text' },
+    { key: 'ultimaInteraccion', label: 'Ultima interaccion', width: '166px', minWidth: '144px', maxWidth: '220px', type: 'date' },
+    { key: 'actualizado', label: 'Actualizado', width: '166px', minWidth: '144px', maxWidth: '220px', type: 'date' },
+    { key: 'estado', label: 'Estado', width: '116px', minWidth: '96px', maxWidth: '146px', type: 'option' }
 ];
 
 const CUSTOMER_DEFAULT_COLUMN_KEYS = [
@@ -50,12 +50,20 @@ const EMPTY_CUSTOMER_CATALOGS = {
     acquisitionSources: [],
     documentTypes: []
 };
+const EMPTY_GEO_CATALOG = {
+    departments: [],
+    provinces: [],
+    districts: []
+};
 const EMPTY_ADDRESS_FORM = {
     addressId: '',
     addressType: 'other',
     street: '',
     reference: '',
     mapsUrl: '',
+    departmentId: '',
+    provinceId: '',
+    districtId: '',
     districtName: '',
     provinceName: '',
     departmentName: '',
@@ -79,6 +87,60 @@ const FORM_LANGUAGE_OPTIONS = [
     { value: 'en', label: 'Ingles (en)' },
     { value: 'pt', label: 'Portugues (pt)' }
 ];
+
+function normalizeGeoNumericId(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (!/^\d+$/.test(raw)) return raw;
+    return String(Number(raw));
+}
+
+function normalizeGeoDistrictId(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (!/^\d+$/.test(raw)) return raw;
+    return raw.padStart(6, '0');
+}
+
+function normalizeGeoNameKey(value = '') {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ');
+}
+
+function isLikelyGeoCode(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return false;
+    return /^\d{1,6}$/.test(raw);
+}
+
+function normalizeGeoCatalogItems(items = [], type = 'department') {
+    if (!Array.isArray(items)) return [];
+    return items.map((item = {}) => {
+        if (type === 'department') {
+            return {
+                id: normalizeGeoNumericId(item.id || item.departmentId || item.department_id),
+                name: String(item.name || item.departmentName || item.department_name || '').trim()
+            };
+        }
+        if (type === 'province') {
+            return {
+                id: normalizeGeoNumericId(item.id || item.provinceId || item.province_id),
+                departmentId: normalizeGeoNumericId(item.departmentId || item.department_id),
+                name: String(item.name || item.provinceName || item.province_name || '').trim()
+            };
+        }
+        return {
+            id: normalizeGeoDistrictId(item.id || item.districtId || item.district_id),
+            provinceId: normalizeGeoNumericId(item.provinceId || item.province_id),
+            departmentId: normalizeGeoNumericId(item.departmentId || item.department_id),
+            name: String(item.name || item.districtName || item.district_name || '').trim()
+        };
+    }).filter((item) => item.id && item.name);
+}
 
 function normalizeCatalogItems(items = []) {
     if (!Array.isArray(items)) return [];
@@ -299,7 +361,7 @@ function normalizeAddressRecord(value = null) {
     const locationLabel = [districtName, provinceName, departmentName]
         .map((entry) => String(entry || '').trim())
         .filter(Boolean)
-        .join(', ');
+        .join(' - ');
     return {
         addressId: String(source.addressId || source.address_id || '').trim(),
         addressType: String(source.addressType || source.address_type || '').trim() || 'other',
@@ -312,7 +374,7 @@ function normalizeAddressRecord(value = null) {
         districtName,
         provinceName,
         departmentName,
-        locationLabel: locationLabel || districtId || '-',
+        locationLabel: locationLabel || '-',
         isPrimary: Boolean(source.isPrimary || source.is_primary),
         updatedAt: String(source.updatedAt || source.updated_at || source.createdAt || source.created_at || '').trim()
     };
@@ -320,12 +382,16 @@ function normalizeAddressRecord(value = null) {
 
 function buildAddressFormFromRecord(value = null) {
     const source = normalizeAddressRecord(value);
+    const raw = value && typeof value === 'object' ? value : {};
     return {
         addressId: String(source.addressId || '').trim(),
         addressType: String(source.addressType || 'other').trim() || 'other',
         street: String(source.street || '').trim(),
         reference: String(source.reference || '').trim(),
         mapsUrl: String(value?.mapsUrl || value?.maps_url || '').trim(),
+        departmentId: normalizeGeoNumericId(raw.departmentId || raw.department_id || ''),
+        provinceId: normalizeGeoNumericId(raw.provinceId || raw.province_id || ''),
+        districtId: normalizeGeoDistrictId(source.districtId || (isLikelyGeoCode(source.districtName) ? source.districtName : '')),
         districtName: String(source.districtName || '').trim(),
         provinceName: String(source.provinceName || '').trim(),
         departmentName: String(source.departmentName || '').trim(),
@@ -346,9 +412,49 @@ function buildAddressLocationLabel(address = {}) {
         String(source.districtName || source.district_name || '').trim(),
         String(source.provinceName || source.province_name || '').trim(),
         String(source.departmentName || source.department_name || '').trim()
-    ].filter(Boolean).join(', ');
+    ].filter(Boolean).join(' - ');
     if (resolved) return resolved;
-    return String(source.districtId || source.district_id || source.locationLabel || '').trim() || '-';
+    return String(source.locationLabel || '').trim() || '-';
+}
+
+function buildProfileAddressesFromCustomer(customer = null) {
+    const profile = customer?.profile && typeof customer.profile === 'object' ? customer.profile : {};
+    const items = [];
+    if (Array.isArray(profile.addresses)) {
+        profile.addresses.forEach((entry = {}, index) => {
+            const street = String(entry?.street || entry?.direccion || '').trim();
+            if (!street) return;
+            items.push({
+                addressId: String(entry?.addressId || `profile-address-${index + 1}`),
+                addressType: String(entry?.addressType || entry?.tipo || 'other').trim() || 'other',
+                street,
+                reference: String(entry?.reference || entry?.referencia || '').trim(),
+                mapsUrl: String(entry?.mapsUrl || entry?.maps_url || entry?.googleMapsUrl || '').trim(),
+                latitude: String(entry?.latitude || '').trim(),
+                longitude: String(entry?.longitude || '').trim(),
+                districtName: String(entry?.districtName || entry?.distrito || '').trim(),
+                provinceName: String(entry?.provinceName || entry?.provincia || '').trim(),
+                departmentName: String(entry?.departmentName || entry?.departamento || '').trim(),
+                isPrimary: Boolean(entry?.isPrimary || entry?.principal),
+                updatedAt: String(entry?.updatedAt || customer?.updatedAt || '').trim()
+            });
+        });
+    }
+    const fiscalAddress = String(profile.fiscalAddress || '').trim();
+    if (fiscalAddress && !items.some((item) => String(item.street || '').trim().toLowerCase() === fiscalAddress.toLowerCase())) {
+        items.unshift({
+            addressId: 'profile-fiscal',
+            addressType: 'fiscal',
+            street: fiscalAddress,
+            reference: '',
+            districtName: '',
+            provinceName: '',
+            departmentName: '',
+            isPrimary: true,
+            updatedAt: String(customer?.updatedAt || '').trim()
+        });
+    }
+    return items;
 }
 
 function buildCustomerDisplayName(customer = null) {
@@ -590,6 +696,8 @@ function CustomersSection(props = {}) {
     const [customerAddresses, setCustomerAddresses] = useState([]);
     const [addressesLoading, setAddressesLoading] = useState(false);
     const [addressesError, setAddressesError] = useState('');
+    const [selectedAddressId, setSelectedAddressId] = useState('');
+    const [addressPanelMode, setAddressPanelMode] = useState('customer');
     const [addressEditorMode, setAddressEditorMode] = useState('create');
     const [addressEditorOpen, setAddressEditorOpen] = useState(false);
     const [addressBusy, setAddressBusy] = useState(false);
@@ -597,6 +705,9 @@ function CustomersSection(props = {}) {
     const [customerCatalogs, setCustomerCatalogs] = useState(EMPTY_CUSTOMER_CATALOGS);
     const [loadingCustomerCatalogs, setLoadingCustomerCatalogs] = useState(false);
     const [customerCatalogsError, setCustomerCatalogsError] = useState('');
+    const [geoCatalog, setGeoCatalog] = useState(EMPTY_GEO_CATALOG);
+    const [loadingGeoCatalog, setLoadingGeoCatalog] = useState(false);
+    const [geoCatalogError, setGeoCatalogError] = useState('');
     const [savingCustomer, setSavingCustomer] = useState(false);
     const [selectedCustomerLive, setSelectedCustomerLive] = useState(selectedCustomerContext || null);
     const [customerOverridesById, setCustomerOverridesById] = useState({});
@@ -655,6 +766,19 @@ function CustomersSection(props = {}) {
     );
 
     const selectedCustomerIdResolved = useMemo(() => resolveCustomerId(selectedCustomer), [selectedCustomer]);
+    const profileAddresses = useMemo(
+        () => buildProfileAddressesFromCustomer(selectedCustomer),
+        [selectedCustomer]
+    );
+    const effectiveAddresses = useMemo(
+        () => (customerAddresses.length > 0 ? customerAddresses : profileAddresses),
+        [customerAddresses, profileAddresses]
+    );
+    const selectedAddress = useMemo(() => {
+        const selectedId = String(selectedAddressId || '').trim();
+        if (!selectedId) return null;
+        return effectiveAddresses.find((item) => String(item?.addressId || '').trim() === selectedId) || null;
+    }, [effectiveAddresses, selectedAddressId]);
 
     const selectedPreferredLanguage = useMemo(() => {
         if (!selectedCustomerIdResolved) return normalizePreferredLanguage(selectedCustomer);
@@ -695,6 +819,74 @@ function CustomersSection(props = {}) {
         treatmentById: buildCatalogLabelMap(treatmentOptions),
         sourceById: buildCatalogLabelMap(sourceOptions)
     }), [customerTypeOptions, documentTypeOptions, treatmentOptions, sourceOptions]);
+    const geoDepartmentOptions = useMemo(
+        () => normalizeGeoCatalogItems(geoCatalog.departments, 'department'),
+        [geoCatalog.departments]
+    );
+    const geoProvinceOptionsAll = useMemo(
+        () => normalizeGeoCatalogItems(geoCatalog.provinces, 'province'),
+        [geoCatalog.provinces]
+    );
+    const geoDistrictOptionsAll = useMemo(
+        () => normalizeGeoCatalogItems(geoCatalog.districts, 'district'),
+        [geoCatalog.districts]
+    );
+    const geoProvinceById = useMemo(() => {
+        const map = new Map();
+        geoProvinceOptionsAll.forEach((entry) => map.set(String(entry.id || '').trim(), entry));
+        return map;
+    }, [geoProvinceOptionsAll]);
+    const geoDepartmentById = useMemo(() => {
+        const map = new Map();
+        geoDepartmentOptions.forEach((entry) => map.set(String(entry.id || '').trim(), entry));
+        return map;
+    }, [geoDepartmentOptions]);
+    const geoDistrictById = useMemo(() => {
+        const map = new Map();
+        geoDistrictOptionsAll.forEach((entry) => map.set(String(entry.id || '').trim(), entry));
+        return map;
+    }, [geoDistrictOptionsAll]);
+    const geoDepartmentByName = useMemo(() => {
+        const map = new Map();
+        geoDepartmentOptions.forEach((entry) => {
+            const key = normalizeGeoNameKey(entry?.name || '');
+            if (!key) return;
+            map.set(key, entry);
+        });
+        return map;
+    }, [geoDepartmentOptions]);
+    const geoProvinceByName = useMemo(() => {
+        const map = new Map();
+        geoProvinceOptionsAll.forEach((entry) => {
+            const key = normalizeGeoNameKey(entry?.name || '');
+            if (!key) return;
+            const list = map.get(key) || [];
+            list.push(entry);
+            map.set(key, list);
+        });
+        return map;
+    }, [geoProvinceOptionsAll]);
+    const geoDistrictByName = useMemo(() => {
+        const map = new Map();
+        geoDistrictOptionsAll.forEach((entry) => {
+            const key = normalizeGeoNameKey(entry?.name || '');
+            if (!key) return;
+            const list = map.get(key) || [];
+            list.push(entry);
+            map.set(key, list);
+        });
+        return map;
+    }, [geoDistrictOptionsAll]);
+    const addressProvinceOptions = useMemo(() => {
+        const departmentId = normalizeGeoNumericId(addressForm.departmentId || '');
+        if (!departmentId) return [];
+        return geoProvinceOptionsAll.filter((entry) => String(entry.departmentId || '').trim() === departmentId);
+    }, [addressForm.departmentId, geoProvinceOptionsAll]);
+    const addressDistrictOptions = useMemo(() => {
+        const provinceId = normalizeGeoNumericId(addressForm.provinceId || '');
+        if (!provinceId) return [];
+        return geoDistrictOptionsAll.filter((entry) => String(entry.provinceId || '').trim() === provinceId);
+    }, [addressForm.provinceId, geoDistrictOptionsAll]);
 
     const firstNameValue = String(
         customerForm?.first_name
@@ -998,6 +1190,7 @@ function CustomersSection(props = {}) {
         if (!customerId) {
             setCustomerAddresses([]);
             setAddressesError('');
+            setSelectedAddressId('');
             return;
         }
 
@@ -1008,9 +1201,17 @@ function CustomersSection(props = {}) {
             const items = Array.isArray(payload?.items) ? payload.items : [];
             const normalized = items.map((item) => normalizeAddressRecord(item));
             setCustomerAddresses(normalized);
+            setSelectedAddressId((previous) => {
+                const previousId = String(previous || '').trim();
+                if (previousId && normalized.some((item) => String(item?.addressId || '').trim() === previousId)) {
+                    return previousId;
+                }
+                return '';
+            });
         } catch (error) {
             setCustomerAddresses([]);
             setAddressesError(String(error?.message || 'No se pudieron cargar direcciones del cliente.'));
+            setSelectedAddressId('');
         } finally {
             setAddressesLoading(false);
         }
@@ -1019,13 +1220,16 @@ function CustomersSection(props = {}) {
     const loadCustomerCatalogs = useCallback(async () => {
         if (typeof requestJson !== 'function' || !isCustomersSection) return;
         setLoadingCustomerCatalogs(true);
+        setLoadingGeoCatalog(true);
         setCustomerCatalogsError('');
+        setGeoCatalogError('');
         try {
-            const [treatmentsPayload, typesPayload, sourcesPayload, documentsPayload] = await Promise.all([
+            const [treatmentsPayload, typesPayload, sourcesPayload, documentsPayload, geoPayload] = await Promise.all([
                 requestJson('/api/tenant/customer-catalogs/treatments', { method: 'GET' }),
                 requestJson('/api/tenant/customer-catalogs/types', { method: 'GET' }),
                 requestJson('/api/tenant/customer-catalogs/sources', { method: 'GET' }),
-                requestJson('/api/tenant/customer-catalogs/document-types', { method: 'GET' })
+                requestJson('/api/tenant/customer-catalogs/document-types', { method: 'GET' }),
+                requestJson('/api/tenant/customer-catalogs/geo', { method: 'GET' })
             ]);
             setCustomerCatalogs({
                 treatments: normalizeCatalogItems(treatmentsPayload?.items || []),
@@ -1033,11 +1237,19 @@ function CustomersSection(props = {}) {
                 acquisitionSources: normalizeCatalogItems(sourcesPayload?.items || []),
                 documentTypes: normalizeCatalogItems(documentsPayload?.items || [])
             });
+            setGeoCatalog({
+                departments: Array.isArray(geoPayload?.departments) ? geoPayload.departments : [],
+                provinces: Array.isArray(geoPayload?.provinces) ? geoPayload.provinces : [],
+                districts: Array.isArray(geoPayload?.districts) ? geoPayload.districts : []
+            });
         } catch (error) {
             setCustomerCatalogs(EMPTY_CUSTOMER_CATALOGS);
             setCustomerCatalogsError(String(error?.message || 'No se pudieron cargar catalogos de clientes.'));
+            setGeoCatalog(EMPTY_GEO_CATALOG);
+            setGeoCatalogError(String(error?.message || 'No se pudo cargar el catalogo geografico.'));
         } finally {
             setLoadingCustomerCatalogs(false);
+            setLoadingGeoCatalog(false);
         }
     }, [isCustomersSection, requestJson]);
 
@@ -1342,27 +1554,246 @@ function CustomersSection(props = {}) {
         tenantScopeLocked
     ]);
 
+    useEffect(() => {
+        if (!addressEditorOpen) return;
+        setAddressForm((prev) => {
+            const next = { ...prev };
+            let changed = false;
+
+            const districtId = normalizeGeoDistrictId(prev.districtId || '');
+            const provinceId = normalizeGeoNumericId(prev.provinceId || '');
+            const departmentId = normalizeGeoNumericId(prev.departmentId || '');
+            const districtNameKey = normalizeGeoNameKey(prev.districtName || '');
+            const provinceNameKey = normalizeGeoNameKey(prev.provinceName || '');
+            const departmentNameKey = normalizeGeoNameKey(prev.departmentName || '');
+
+            let department = departmentId ? geoDepartmentById.get(departmentId) || null : null;
+            if (!department && departmentNameKey) {
+                department = geoDepartmentByName.get(departmentNameKey) || null;
+                if (department && !departmentId) {
+                    next.departmentId = String(department.id || '').trim();
+                    changed = true;
+                }
+            }
+
+            let province = provinceId ? geoProvinceById.get(provinceId) || null : null;
+            if (!province && provinceNameKey) {
+                const candidates = geoProvinceByName.get(provinceNameKey) || [];
+                const scoped = department
+                    ? candidates.find((entry) => String(entry.departmentId || '').trim() === String(department.id || '').trim())
+                    : candidates[0] || null;
+                province = scoped || null;
+                if (province && !provinceId) {
+                    next.provinceId = String(province.id || '').trim();
+                    changed = true;
+                }
+                if (province && !next.departmentId) {
+                    next.departmentId = String(province.departmentId || '').trim();
+                    changed = true;
+                }
+            }
+
+            let district = districtId ? geoDistrictById.get(districtId) || null : null;
+            if (!district && districtNameKey) {
+                const candidates = geoDistrictByName.get(districtNameKey) || [];
+                const scoped = province
+                    ? candidates.find((entry) => String(entry.provinceId || '').trim() === String(province.id || '').trim())
+                    : candidates[0] || null;
+                district = scoped || null;
+                if (district && !districtId) {
+                    next.districtId = String(district.id || '').trim();
+                    changed = true;
+                }
+            }
+
+            if (!district && next.districtId) {
+                district = geoDistrictById.get(normalizeGeoDistrictId(next.districtId)) || null;
+            }
+            if (!province && district) {
+                province = geoProvinceById.get(String(district.provinceId || '').trim()) || null;
+            }
+            if (!department && district) {
+                department = geoDepartmentById.get(String(district.departmentId || '').trim()) || null;
+            }
+            if (!department && province) {
+                department = geoDepartmentById.get(String(province.departmentId || '').trim()) || null;
+            }
+
+            if (district) {
+                const nextDistrictName = String(district.name || '').trim();
+                if (nextDistrictName && next.districtName !== nextDistrictName) {
+                    next.districtName = nextDistrictName;
+                    changed = true;
+                }
+                const nextProvinceId = String(district.provinceId || '').trim();
+                if (nextProvinceId && next.provinceId !== nextProvinceId) {
+                    next.provinceId = nextProvinceId;
+                    changed = true;
+                }
+                const nextDepartmentId = String(district.departmentId || '').trim();
+                if (nextDepartmentId && next.departmentId !== nextDepartmentId) {
+                    next.departmentId = nextDepartmentId;
+                    changed = true;
+                }
+            }
+
+            if (province) {
+                const nextProvinceName = String(province.name || '').trim();
+                if (nextProvinceName && next.provinceName !== nextProvinceName) {
+                    next.provinceName = nextProvinceName;
+                    changed = true;
+                }
+            }
+
+            if (department) {
+                const nextDepartmentName = String(department.name || '').trim();
+                if (nextDepartmentName && next.departmentName !== nextDepartmentName) {
+                    next.departmentName = nextDepartmentName;
+                    changed = true;
+                }
+            }
+
+            return changed ? next : prev;
+        });
+    }, [
+        addressEditorOpen,
+        geoDepartmentById,
+        geoDepartmentByName,
+        geoDistrictById,
+        geoDistrictByName,
+        geoProvinceById,
+        geoProvinceByName
+    ]);
+
+    const handleAddressDepartmentChange = useCallback((nextDepartmentIdRaw = '') => {
+        const departmentId = normalizeGeoNumericId(nextDepartmentIdRaw);
+        const department = geoDepartmentOptions.find((item) => item.id === departmentId) || null;
+        setAddressForm((prev) => ({
+            ...prev,
+            departmentId,
+            departmentName: String(department?.name || '').trim(),
+            provinceId: '',
+            provinceName: '',
+            districtId: '',
+            districtName: ''
+        }));
+    }, [geoDepartmentOptions]);
+
+    const handleAddressProvinceChange = useCallback((nextProvinceIdRaw = '') => {
+        const provinceId = normalizeGeoNumericId(nextProvinceIdRaw);
+        const province = geoProvinceById.get(provinceId) || null;
+        setAddressForm((prev) => ({
+            ...prev,
+            provinceId,
+            provinceName: String(province?.name || '').trim(),
+            districtId: '',
+            districtName: ''
+        }));
+    }, [geoProvinceById]);
+
+    const handleAddressDistrictChange = useCallback((nextDistrictIdRaw = '') => {
+        const districtId = normalizeGeoDistrictId(nextDistrictIdRaw);
+        const district = geoDistrictById.get(districtId) || null;
+        const province = district ? geoProvinceById.get(String(district.provinceId || '').trim()) || null : null;
+        const department = district
+            ? geoDepartmentOptions.find((item) => item.id === String(district.departmentId || '').trim()) || null
+            : null;
+        setAddressForm((prev) => ({
+            ...prev,
+            districtId,
+            districtName: String(district?.name || '').trim(),
+            provinceId: String(district?.provinceId || prev.provinceId || '').trim(),
+            provinceName: String(province?.name || prev.provinceName || '').trim(),
+            departmentId: String(district?.departmentId || prev.departmentId || '').trim(),
+            departmentName: String(department?.name || prev.departmentName || '').trim()
+        }));
+    }, [geoDepartmentOptions, geoDistrictById, geoProvinceById]);
+
+    const resolveAddressLocationLabel = useCallback((address = {}) => {
+        const source = address && typeof address === 'object' ? address : {};
+        const rawDistrictName = String(source.districtName || source.district_name || '').trim();
+        const rawProvinceName = String(source.provinceName || source.province_name || '').trim();
+        const rawDepartmentName = String(source.departmentName || source.department_name || '').trim();
+        const districtId = normalizeGeoDistrictId(
+            source.districtId
+            || source.district_id
+            || (isLikelyGeoCode(rawDistrictName) ? rawDistrictName : '')
+        );
+
+        if (districtId) {
+            const district = geoDistrictById.get(districtId) || null;
+            if (district) {
+                const province = geoProvinceById.get(String(district.provinceId || '').trim()) || null;
+                const department = geoDepartmentById.get(String(district.departmentId || '').trim()) || null;
+                const resolved = [
+                    String(district.name || '').trim(),
+                    String(province?.name || '').trim(),
+                    String(department?.name || '').trim()
+                ].filter(Boolean).join(' - ');
+                if (resolved) return resolved;
+            }
+        }
+
+        const fromNames = [rawDistrictName, rawProvinceName, rawDepartmentName]
+            .filter((entry) => entry && !isLikelyGeoCode(entry))
+            .join(' - ');
+        if (fromNames) return fromNames;
+
+        const generic = buildAddressLocationLabel(source);
+        return generic || '-';
+    }, [geoDepartmentById, geoDistrictById, geoProvinceById]);
+
     const resetAddressEditor = useCallback(() => {
         setAddressEditorMode('create');
         setAddressEditorOpen(false);
         setAddressForm(EMPTY_ADDRESS_FORM);
     }, []);
 
+    const handleSelectAddress = useCallback((address = {}) => {
+        const addressId = String(address?.addressId || '').trim();
+        if (!addressId) return;
+        setSelectedAddressId(addressId);
+        setAddressPanelMode('address-detail');
+        setAddressEditorOpen(false);
+        setAddressEditorMode('create');
+        setAddressForm(EMPTY_ADDRESS_FORM);
+        setAddressesError('');
+    }, []);
+
     const handleStartCreateAddress = useCallback(() => {
         if (!selectedCustomerIdResolved) return;
+        setAddressPanelMode('address-edit');
         setAddressEditorMode('create');
         setAddressEditorOpen(true);
         setAddressForm({ ...EMPTY_ADDRESS_FORM });
         setAddressesError('');
+        setSelectedAddressId('');
     }, [selectedCustomerIdResolved]);
 
     const handleStartEditAddress = useCallback((address = {}) => {
         if (!selectedCustomerIdResolved) return;
+        const addressId = String(address?.addressId || '').trim();
+        setAddressPanelMode('address-edit');
         setAddressEditorMode('edit');
         setAddressEditorOpen(true);
         setAddressForm(buildAddressFormFromRecord(address));
         setAddressesError('');
+        setSelectedAddressId(addressId);
     }, [selectedCustomerIdResolved]);
+
+    const handleBackToCustomerDetail = useCallback(() => {
+        setAddressPanelMode('customer');
+        setAddressEditorOpen(false);
+        setAddressEditorMode('create');
+        setAddressForm(EMPTY_ADDRESS_FORM);
+        setAddressesError('');
+    }, []);
+
+    const handleCancelAddressEdit = useCallback(() => {
+        const hasSelectedAddress = String(selectedAddressId || '').trim();
+        resetAddressEditor();
+        setAddressPanelMode(hasSelectedAddress ? 'address-detail' : 'customer');
+    }, [resetAddressEditor, selectedAddressId]);
 
     const handleSaveAddress = useCallback(async () => {
         const customerId = selectedCustomerIdResolved;
@@ -1377,6 +1808,7 @@ function CustomersSection(props = {}) {
             street,
             reference: String(addressForm.reference || '').trim(),
             mapsUrl: String(addressForm.mapsUrl || '').trim(),
+            districtId: normalizeGeoDistrictId(addressForm.districtId || ''),
             districtName: String(addressForm.districtName || '').trim(),
             provinceName: String(addressForm.provinceName || '').trim(),
             departmentName: String(addressForm.departmentName || '').trim(),
@@ -1387,18 +1819,27 @@ function CustomersSection(props = {}) {
         setAddressBusy(true);
         setAddressesError('');
         try {
+            let savedAddressId = '';
             if (addressEditorMode === 'edit' && String(addressForm.addressId || '').trim()) {
                 await requestJson(`/api/tenant/customers/${encodeURIComponent(customerId)}/addresses/${encodeURIComponent(String(addressForm.addressId || '').trim())}`, {
                     method: 'PUT',
                     body: payload
                 });
+                savedAddressId = String(addressForm.addressId || '').trim();
             } else {
-                await requestJson(`/api/tenant/customers/${encodeURIComponent(customerId)}/addresses`, {
+                const createdPayload = await requestJson(`/api/tenant/customers/${encodeURIComponent(customerId)}/addresses`, {
                     method: 'POST',
                     body: payload
                 });
+                savedAddressId = String(createdPayload?.item?.addressId || createdPayload?.item?.address_id || '').trim();
             }
             await loadCustomerAddressesByCustomer(customerId);
+            if (savedAddressId) {
+                setSelectedAddressId(savedAddressId);
+                setAddressPanelMode('address-detail');
+            } else {
+                setAddressPanelMode('customer');
+            }
             resetAddressEditor();
         } catch (error) {
             setAddressesError(String(error?.message || 'No se pudo guardar la direccion.'));
@@ -1421,12 +1862,17 @@ function CustomersSection(props = {}) {
             if (String(addressForm.addressId || '').trim() === addressId) {
                 resetAddressEditor();
             }
+            const previousSelectedId = String(selectedAddressId || '').trim();
+            if (previousSelectedId === addressId) {
+                setSelectedAddressId('');
+                setAddressPanelMode('customer');
+            }
         } catch (error) {
             setAddressesError(String(error?.message || 'No se pudo eliminar la direccion.'));
         } finally {
             setAddressBusy(false);
         }
-    }, [addressForm.addressId, loadCustomerAddressesByCustomer, requestJson, resetAddressEditor, selectedCustomerIdResolved]);
+    }, [addressForm.addressId, loadCustomerAddressesByCustomer, requestJson, resetAddressEditor, selectedAddressId, selectedCustomerIdResolved]);
 
     const handleSetPrimaryAddress = useCallback(async (addressIdRaw = '') => {
         const customerId = selectedCustomerIdResolved;
@@ -1453,6 +1899,8 @@ function CustomersSection(props = {}) {
             setModuleConsentDraftByModuleId({});
             setCustomerAddresses([]);
             setAddressesError('');
+            setSelectedAddressId('');
+            setAddressPanelMode('customer');
             resetAddressEditor();
             return;
         }
@@ -1463,6 +1911,8 @@ function CustomersSection(props = {}) {
             setModuleConsentDraftByModuleId({});
             setCustomerAddresses([]);
             setAddressesError('');
+            setSelectedAddressId('');
+            setAddressPanelMode('customer');
             resetAddressEditor();
             return;
         }
@@ -1477,6 +1927,12 @@ function CustomersSection(props = {}) {
         resetAddressEditor,
         selectedCustomerIdResolved
     ]);
+
+    useEffect(() => {
+        setAddressPanelMode('customer');
+        setSelectedAddressId('');
+        resetAddressEditor();
+    }, [resetAddressEditor, selectedCustomerIdResolved]);
 
     if (!isCustomersSection) {
         return null;
@@ -1534,48 +1990,6 @@ function CustomersSection(props = {}) {
     };
 
     const renderAddressesContent = () => {
-        const profileAddresses = (() => {
-            const profile = selectedCustomer?.profile && typeof selectedCustomer.profile === 'object' ? selectedCustomer.profile : {};
-            const items = [];
-            if (Array.isArray(profile.addresses)) {
-                profile.addresses.forEach((entry = {}, index) => {
-                    const street = String(entry?.street || entry?.direccion || '').trim();
-                    if (!street) return;
-                    items.push({
-                        addressId: String(entry?.addressId || `profile-address-${index + 1}`),
-                        addressType: String(entry?.addressType || entry?.tipo || 'other').trim() || 'other',
-                        street,
-                        reference: String(entry?.reference || entry?.referencia || '').trim(),
-                        mapsUrl: String(entry?.mapsUrl || entry?.maps_url || entry?.googleMapsUrl || '').trim(),
-                        latitude: String(entry?.latitude || '').trim(),
-                        longitude: String(entry?.longitude || '').trim(),
-                        districtName: String(entry?.districtName || entry?.distrito || '').trim(),
-                        provinceName: String(entry?.provinceName || entry?.provincia || '').trim(),
-                        departmentName: String(entry?.departmentName || entry?.departamento || '').trim(),
-                        isPrimary: Boolean(entry?.isPrimary || entry?.principal),
-                        updatedAt: String(entry?.updatedAt || selectedCustomer?.updatedAt || '').trim()
-                    });
-                });
-            }
-            const fiscalAddress = String(profile.fiscalAddress || '').trim();
-            if (fiscalAddress && !items.some((item) => String(item.street || '').trim().toLowerCase() === fiscalAddress.toLowerCase())) {
-                items.unshift({
-                    addressId: 'profile-fiscal',
-                    addressType: 'fiscal',
-                    street: fiscalAddress,
-                    reference: '',
-                    districtName: '',
-                    provinceName: '',
-                    departmentName: '',
-                    isPrimary: true,
-                    updatedAt: String(selectedCustomer?.updatedAt || '').trim()
-                });
-            }
-            return items;
-        })();
-
-        const effectiveAddresses = customerAddresses.length > 0 ? customerAddresses : profileAddresses;
-
         if (addressesLoading) {
             return <p>Cargando direcciones...</p>;
         }
@@ -1590,107 +2004,7 @@ function CustomersSection(props = {}) {
                     >
                         Agregar direccion
                     </button>
-                    {addressEditorOpen ? (
-                        <button
-                            type="button"
-                            disabled={busy || addressBusy}
-                            onClick={resetAddressEditor}
-                        >
-                            Cancelar edicion
-                        </button>
-                    ) : null}
                 </div>
-                {addressEditorOpen ? (
-                    <div className="saas-customers-address-editor">
-                        <div className="saas-admin-form-row">
-                            <select
-                                value={addressForm.addressType}
-                                onChange={(event) => setAddressForm((prev) => ({ ...prev, addressType: event.target.value }))}
-                                disabled={busy || addressBusy}
-                            >
-                                {ADDRESS_TYPE_OPTIONS.map((option) => (
-                                    <option key={`address-type-${option.value}`} value={option.value}>
-                                        {option.label}
-                                    </option>
-                                ))}
-                            </select>
-                            <label className="saas-admin-module-toggle">
-                                <input
-                                    type="checkbox"
-                                    checked={Boolean(addressForm.isPrimary)}
-                                    onChange={(event) => setAddressForm((prev) => ({ ...prev, isPrimary: event.target.checked }))}
-                                    disabled={busy || addressBusy}
-                                />
-                                <span>Principal</span>
-                            </label>
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <input
-                                value={addressForm.street}
-                                onChange={(event) => setAddressForm((prev) => ({ ...prev, street: event.target.value }))}
-                                placeholder="Direccion"
-                                disabled={busy || addressBusy}
-                            />
-                            <input
-                                value={addressForm.reference}
-                                onChange={(event) => setAddressForm((prev) => ({ ...prev, reference: event.target.value }))}
-                                placeholder="Referencia"
-                                disabled={busy || addressBusy}
-                            />
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <input
-                                value={addressForm.districtName}
-                                onChange={(event) => setAddressForm((prev) => ({ ...prev, districtName: event.target.value }))}
-                                placeholder="Distrito"
-                                disabled={busy || addressBusy}
-                            />
-                            <input
-                                value={addressForm.provinceName}
-                                onChange={(event) => setAddressForm((prev) => ({ ...prev, provinceName: event.target.value }))}
-                                placeholder="Provincia"
-                                disabled={busy || addressBusy}
-                            />
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <input
-                                value={addressForm.departmentName}
-                                onChange={(event) => setAddressForm((prev) => ({ ...prev, departmentName: event.target.value }))}
-                                placeholder="Departamento"
-                                disabled={busy || addressBusy}
-                            />
-                            <input
-                                value={addressForm.mapsUrl}
-                                onChange={(event) => setAddressForm((prev) => ({ ...prev, mapsUrl: event.target.value }))}
-                                placeholder="URL Google Maps"
-                                disabled={busy || addressBusy}
-                            />
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <input
-                                value={addressForm.latitude}
-                                onChange={(event) => setAddressForm((prev) => ({ ...prev, latitude: event.target.value }))}
-                                placeholder="Latitud"
-                                disabled={busy || addressBusy}
-                            />
-                            <input
-                                value={addressForm.longitude}
-                                onChange={(event) => setAddressForm((prev) => ({ ...prev, longitude: event.target.value }))}
-                                placeholder="Longitud"
-                                disabled={busy || addressBusy}
-                            />
-                        </div>
-                        <div className="saas-customers-address-toolbar">
-                            <button
-                                type="button"
-                                disabled={busy || addressBusy || !String(addressForm.street || '').trim()}
-                                onClick={handleSaveAddress}
-                            >
-                                {addressEditorMode === 'edit' ? 'Actualizar direccion' : 'Guardar direccion'}
-                            </button>
-                        </div>
-                    </div>
-                ) : null}
                 {addressesError ? (
                     <div className="saas-admin-inline-feedback error">{addressesError}</div>
                 ) : null}
@@ -1699,61 +2013,25 @@ function CustomersSection(props = {}) {
                         <SaasDataTable
                             columns={[
                                 { key: 'tipo', label: 'Tipo', width: '12%' },
-                                { key: 'direccion', label: 'Direccion', width: '28%' },
-                                { key: 'referencia', label: 'Referencia', width: '20%' },
-                                { key: 'ubicacion', label: 'Ubicacion', width: '22%' },
-                                { key: 'principal', label: 'Principal', width: '8%', align: 'center' },
-                                { key: 'acciones', label: 'Acciones', width: '22%' }
+                                { key: 'direccion', label: 'Direccion', width: '34%' },
+                                { key: 'referencia', label: 'Referencia', width: '22%' },
+                                { key: 'ubicacion', label: 'Ubicacion', width: '24%' },
+                                { key: 'principal', label: 'Principal', width: '8%', align: 'center' }
                             ]}
                             rows={effectiveAddresses.map((address, index) => ({
                                 id: String(address?.addressId || `address-${index}`).trim(),
                                 tipo: resolveAddressTypeLabel(address?.addressType),
                                 direccion: String(address?.street || '-').trim() || '-',
                                 referencia: String(address?.reference || '-').trim() || '-',
-                                ubicacion: buildAddressLocationLabel(address),
+                                ubicacion: resolveAddressLocationLabel(address),
                                 principal: address?.isPrimary ? 'Si' : 'No',
-                                acciones: (
-                                    <div className="saas-customers-address-item__actions">
-                                        <button
-                                            type="button"
-                                            disabled={busy || addressBusy}
-                                            onClick={(event) => {
-                                                event.stopPropagation();
-                                                handleStartEditAddress(address);
-                                            }}
-                                        >
-                                            Editar
-                                        </button>
-                                        <button
-                                            type="button"
-                                            disabled={busy || addressBusy}
-                                            onClick={(event) => {
-                                                event.stopPropagation();
-                                                handleDeleteAddress(address.addressId);
-                                            }}
-                                        >
-                                            Eliminar
-                                        </button>
-                                        {!address?.isPrimary ? (
-                                            <button
-                                                type="button"
-                                                disabled={busy || addressBusy}
-                                                onClick={(event) => {
-                                                    event.stopPropagation();
-                                                    handleSetPrimaryAddress(address.addressId);
-                                                }}
-                                            >
-                                                Principal
-                                            </button>
-                                        ) : null}
-                                    </div>
-                                ),
                                 _raw: address
                             }))}
                             loading={Boolean(addressesLoading)}
                             emptyText="No hay direcciones registradas."
                             enableInfinite={false}
-                            onSelect={(row) => handleStartEditAddress(row?._raw)}
+                            selectedId={String(selectedAddressId || '').trim() || null}
+                            onSelect={(row) => handleSelectAddress(row?._raw)}
                         />
                     </div>
                 ) : (
@@ -1761,6 +2039,136 @@ function CustomersSection(props = {}) {
                         <p>Este cliente no tiene direcciones registradas.</p>
                     </div>
                 )}
+            </div>
+        );
+    };
+
+    const renderAddressEditorContent = () => (
+        <div className="saas-customers-address-editor">
+            <div className="saas-admin-form-row">
+                <select
+                    value={addressForm.addressType}
+                    onChange={(event) => setAddressForm((prev) => ({ ...prev, addressType: event.target.value }))}
+                    disabled={busy || addressBusy}
+                >
+                    {ADDRESS_TYPE_OPTIONS.map((option) => (
+                        <option key={`address-type-${option.value}`} value={option.value}>
+                            {option.label}
+                        </option>
+                    ))}
+                </select>
+                <label className="saas-admin-module-toggle">
+                    <input
+                        type="checkbox"
+                        checked={Boolean(addressForm.isPrimary)}
+                        onChange={(event) => setAddressForm((prev) => ({ ...prev, isPrimary: event.target.checked }))}
+                        disabled={busy || addressBusy}
+                    />
+                    <span>Principal</span>
+                </label>
+            </div>
+            <div className="saas-admin-form-row">
+                <input
+                    value={addressForm.street}
+                    onChange={(event) => setAddressForm((prev) => ({ ...prev, street: event.target.value }))}
+                    placeholder="Direccion"
+                    disabled={busy || addressBusy}
+                />
+                <input
+                    value={addressForm.reference}
+                    onChange={(event) => setAddressForm((prev) => ({ ...prev, reference: event.target.value }))}
+                    placeholder="Referencia"
+                    disabled={busy || addressBusy}
+                />
+            </div>
+            <div className="saas-admin-form-row">
+                <select
+                    value={String(addressForm.departmentId || '').trim()}
+                    onChange={(event) => handleAddressDepartmentChange(event.target.value)}
+                    disabled={busy || addressBusy || loadingGeoCatalog}
+                >
+                    <option value="">
+                        {loadingGeoCatalog ? 'Cargando departamentos...' : 'Departamento'}
+                    </option>
+                    {geoDepartmentOptions.map((entry) => (
+                        <option key={`geo-dep-${entry.id}`} value={entry.id}>{entry.name}</option>
+                    ))}
+                </select>
+                <select
+                    value={String(addressForm.provinceId || '').trim()}
+                    onChange={(event) => handleAddressProvinceChange(event.target.value)}
+                    disabled={busy || addressBusy || !String(addressForm.departmentId || '').trim()}
+                >
+                    <option value="">
+                        {String(addressForm.departmentId || '').trim() ? 'Provincia' : 'Selecciona departamento'}
+                    </option>
+                    {addressProvinceOptions.map((entry) => (
+                        <option key={`geo-prov-${entry.id}`} value={entry.id}>{entry.name}</option>
+                    ))}
+                </select>
+            </div>
+            <div className="saas-admin-form-row">
+                <select
+                    value={String(addressForm.districtId || '').trim()}
+                    onChange={(event) => handleAddressDistrictChange(event.target.value)}
+                    disabled={busy || addressBusy || !String(addressForm.provinceId || '').trim()}
+                >
+                    <option value="">
+                        {String(addressForm.provinceId || '').trim() ? 'Distrito' : 'Selecciona provincia'}
+                    </option>
+                    {addressDistrictOptions.map((entry) => (
+                        <option key={`geo-dist-${entry.id}`} value={entry.id}>{entry.name}</option>
+                    ))}
+                </select>
+                <input
+                    value={addressForm.mapsUrl}
+                    onChange={(event) => setAddressForm((prev) => ({ ...prev, mapsUrl: event.target.value }))}
+                    placeholder="URL Google Maps"
+                    disabled={busy || addressBusy}
+                />
+            </div>
+            {geoCatalogError ? (
+                <div className="saas-admin-inline-feedback error">{geoCatalogError}</div>
+            ) : null}
+            <div className="saas-admin-form-row">
+                <input
+                    value={addressForm.latitude}
+                    onChange={(event) => setAddressForm((prev) => ({ ...prev, latitude: event.target.value }))}
+                    placeholder="Latitud"
+                    disabled={busy || addressBusy}
+                />
+                <input
+                    value={addressForm.longitude}
+                    onChange={(event) => setAddressForm((prev) => ({ ...prev, longitude: event.target.value }))}
+                    placeholder="Longitud"
+                    disabled={busy || addressBusy}
+                />
+            </div>
+            {addressesError ? (
+                <div className="saas-admin-inline-feedback error">{addressesError}</div>
+            ) : null}
+        </div>
+    );
+
+    const renderAddressDetailContent = () => {
+        if (!selectedAddress) {
+            return <p>No se encontro la direccion seleccionada.</p>;
+        }
+        return (
+            <div className="saas-customers-address-detail">
+                <div className="saas-customers-kv-grid">
+                    <div><span>Tipo</span><strong>{resolveAddressTypeLabel(selectedAddress.addressType)}</strong></div>
+                    <div><span>Principal</span><strong>{selectedAddress.isPrimary ? 'Si' : 'No'}</strong></div>
+                    <div><span>Direccion</span><strong>{selectedAddress.street || '-'}</strong></div>
+                    <div><span>Referencia</span><strong>{selectedAddress.reference || '-'}</strong></div>
+                    <div><span>Ubicacion</span><strong>{resolveAddressLocationLabel(selectedAddress)}</strong></div>
+                    <div><span>Google Maps</span><strong>{selectedAddress.mapsUrl || '-'}</strong></div>
+                    <div><span>Latitud</span><strong>{selectedAddress.latitude || '-'}</strong></div>
+                    <div><span>Longitud</span><strong>{selectedAddress.longitude || '-'}</strong></div>
+                </div>
+                {addressesError ? (
+                    <div className="saas-admin-inline-feedback error">{addressesError}</div>
+                ) : null}
             </div>
         );
     };
@@ -1818,7 +2226,7 @@ function CustomersSection(props = {}) {
                     {(customersLoadingBatch || savingCustomer) ? (
                         <div className="saas-admin-inline-feedback">
                             {customersLoadingBatch ? `Cargando clientes... ${Math.max(0, Math.min(100, Number(customersLoadProgress) || 0))}%` : null}
-                            {customersLoadingBatch && savingCustomer ? ' • ' : null}
+                            {customersLoadingBatch && savingCustomer ? ' | ' : null}
                             {savingCustomer ? 'Guardando cliente...' : null}
                         </div>
                     ) : null}
@@ -1873,101 +2281,144 @@ function CustomersSection(props = {}) {
 
     const rightPane = (!tenantScopeLocked && (selectedCustomer || customerPanelMode === 'create')) ? (
         <div className="saas-customers-right-shell">
-            {customerPanelMode === 'view' && selectedCustomer ? (
-            <SaasDetailPanel
-                title={selectedCustomer?.contactName || selectedCustomer?.customerId || 'Cliente'}
-                subtitle={`Codigo: ${selectedCustomer?.customerId || '-'}`}
-                className="saas-customers-detail-panel"
-                bodyClassName="saas-customers-detail-panel__body"
-                actions={(
-                    <div className="saas-customers-detail-actions">
-                        <button type="button" disabled={editClickBusy} onClick={handleOpenCustomerEdit}>Editar</button>
-                        <button type="button" disabled={busy} onClick={handleSoftDeleteCustomer}>Eliminar</button>
-                        <button type="button" disabled={busy} onClick={handleCloseDetail}>Cerrar</button>
-                    </div>
-                )}
-            >
-                <SaasDetailPanelSection title="Datos personales" defaultOpen>
-                    {(() => {
-                        const nameParts = buildNamePartsFromCustomer(selectedCustomer);
-                        return (
-                    <div className="saas-customers-kv-grid">
-                        <div><span>Nombre completo</span><strong>{buildCustomerDisplayName(selectedCustomer)}</strong></div>
-                        <div><span>Nombres</span><strong>{nameParts.firstName || '-'}</strong></div>
-                        <div><span>Apellido paterno</span><strong>{nameParts.lastNamePaternal || '-'}</strong></div>
-                        <div><span>Apellido materno</span><strong>{nameParts.lastNameMaternal || '-'}</strong></div>
-                        <div><span>Tipo de cliente</span><strong>{buildCustomerTypeLabel(selectedCustomer, customerLabelMaps)}</strong></div>
-                        <div><span>Fuente</span><strong>{buildAcquisitionSourceLabel(selectedCustomer, customerLabelMaps)}</strong></div>
-                        <div><span>Tratamiento</span><strong>{buildTreatmentLabel(selectedCustomer, customerLabelMaps)}</strong></div>
-                        <div><span>Estado</span><strong>{selectedCustomer?.isActive === false ? 'Inactivo' : 'Activo'}</strong></div>
-                    </div>
-                        );
-                    })()}
-                </SaasDetailPanelSection>
+            {customerPanelMode === 'view' && selectedCustomer && addressPanelMode === 'address-detail' ? (
+                <SaasDetailPanel
+                    title="Detalle de direccion"
+                    subtitle={`${selectedCustomer?.contactName || selectedCustomer?.customerId || 'Cliente'}${selectedAddress ? ` · ${resolveAddressTypeLabel(selectedAddress?.addressType)}` : ''}`}
+                    className="saas-customers-detail-panel"
+                    bodyClassName="saas-customers-detail-panel__body"
+                    actions={(
+                        <div className="saas-customers-detail-actions">
+                            <button type="button" disabled={busy || addressBusy || !selectedAddress} onClick={() => handleStartEditAddress(selectedAddress || {})}>Editar direccion</button>
+                            <button type="button" disabled={busy || addressBusy || !selectedAddress || Boolean(selectedAddress?.isPrimary)} onClick={() => handleSetPrimaryAddress(selectedAddress?.addressId || '')}>Marcar principal</button>
+                            <button type="button" disabled={busy || addressBusy || !selectedAddress} onClick={() => handleDeleteAddress(selectedAddress?.addressId || '')}>Eliminar direccion</button>
+                            <button type="button" disabled={busy || addressBusy} onClick={handleBackToCustomerDetail}>Volver al cliente</button>
+                        </div>
+                    )}
+                >
+                    <SaasDetailPanelSection title="Datos de direccion" defaultOpen>
+                        {renderAddressDetailContent()}
+                    </SaasDetailPanelSection>
+                </SaasDetailPanel>
+            ) : customerPanelMode === 'view' && selectedCustomer && addressPanelMode === 'address-edit' ? (
+                <SaasDetailPanel
+                    title={addressEditorMode === 'edit' ? 'Editar direccion' : 'Nueva direccion'}
+                    subtitle={`${selectedCustomer?.contactName || selectedCustomer?.customerId || 'Cliente'}`}
+                    className="saas-customers-detail-panel"
+                    bodyClassName="saas-customers-detail-panel__body"
+                    actions={(
+                        <div className="saas-customers-detail-actions">
+                            <button
+                                type="button"
+                                disabled={busy || addressBusy || !selectedCustomerIdResolved}
+                                onClick={handleSaveAddress}
+                            >
+                                {addressEditorMode === 'edit' ? 'Actualizar direccion' : 'Guardar direccion'}
+                            </button>
+                            <button type="button" disabled={busy || addressBusy} onClick={handleCancelAddressEdit}>Cancelar</button>
+                            <button type="button" disabled={busy || addressBusy} onClick={handleBackToCustomerDetail}>Volver al cliente</button>
+                        </div>
+                    )}
+                >
+                    <SaasDetailPanelSection title="Formulario de direccion" defaultOpen>
+                        {renderAddressEditorContent()}
+                    </SaasDetailPanelSection>
+                </SaasDetailPanel>
+            ) : customerPanelMode === 'view' && selectedCustomer ? (
+                <SaasDetailPanel
+                    title={selectedCustomer?.contactName || selectedCustomer?.customerId || 'Cliente'}
+                    subtitle={`Codigo: ${selectedCustomer?.customerId || '-'}`}
+                    className="saas-customers-detail-panel"
+                    bodyClassName="saas-customers-detail-panel__body"
+                    actions={(
+                        <div className="saas-customers-detail-actions">
+                            <button type="button" disabled={editClickBusy} onClick={handleOpenCustomerEdit}>Editar</button>
+                            <button type="button" disabled={busy} onClick={handleSoftDeleteCustomer}>Eliminar</button>
+                            <button type="button" disabled={busy} onClick={handleCloseDetail}>Cerrar</button>
+                        </div>
+                    )}
+                >
+                    <SaasDetailPanelSection title="Datos personales" defaultOpen>
+                        {(() => {
+                            const nameParts = buildNamePartsFromCustomer(selectedCustomer);
+                            return (
+                                <div className="saas-customers-kv-grid">
+                                    <div><span>Nombre completo</span><strong>{buildCustomerDisplayName(selectedCustomer)}</strong></div>
+                                    <div><span>Nombres</span><strong>{nameParts.firstName || '-'}</strong></div>
+                                    <div><span>Apellido paterno</span><strong>{nameParts.lastNamePaternal || '-'}</strong></div>
+                                    <div><span>Apellido materno</span><strong>{nameParts.lastNameMaternal || '-'}</strong></div>
+                                    <div><span>Tipo de cliente</span><strong>{buildCustomerTypeLabel(selectedCustomer, customerLabelMaps)}</strong></div>
+                                    <div><span>Fuente</span><strong>{buildAcquisitionSourceLabel(selectedCustomer, customerLabelMaps)}</strong></div>
+                                    <div><span>Tratamiento</span><strong>{buildTreatmentLabel(selectedCustomer, customerLabelMaps)}</strong></div>
+                                    <div><span>Estado</span><strong>{selectedCustomer?.isActive === false ? 'Inactivo' : 'Activo'}</strong></div>
+                                </div>
+                            );
+                        })()}
+                    </SaasDetailPanelSection>
 
-                <SaasDetailPanelSection title="Contacto" defaultOpen>
-                    <div className="saas-customers-kv-grid">
-                        <div><span>Telefono</span><strong>{selectedCustomer?.phoneE164 || '-'}</strong></div>
-                        <div><span>Telefono 2</span><strong>{selectedCustomer?.phoneAlt || '-'}</strong></div>
-                        <div><span>Email</span><strong>{selectedCustomer?.email || '-'}</strong></div>
-                        <div><span>Etiquetas</span><strong>{Array.isArray(selectedCustomer?.tags) ? selectedCustomer.tags.join(', ') : '-'}</strong></div>
-                        <div><span>Actualizado</span><strong>{formatDateTimeLabel(selectedCustomer?.updatedAt)}</strong></div>
-                    </div>
-                    <div className="saas-admin-form-row">
-                        <label className="saas-admin-module-toggle" style={{ minWidth: 220 }}>
-                            <span>Idioma preferido</span>
-                        </label>
-                        <select
-                            value={selectedPreferredLanguage}
-                            onChange={(event) => {
-                                handlePreferredLanguageChange(event.target.value);
-                            }}
-                            disabled={busy || languageBusy}
-                        >
-                            <option value="es">Espanol (es)</option>
-                            <option value="en">Ingles (en)</option>
-                            <option value="pt">Portugues (pt)</option>
-                        </select>
-                    </div>
-                </SaasDetailPanelSection>
+                    <SaasDetailPanelSection title="Contacto" defaultOpen>
+                        <div className="saas-customers-kv-grid">
+                            <div><span>Telefono</span><strong>{selectedCustomer?.phoneE164 || '-'}</strong></div>
+                            <div><span>Telefono 2</span><strong>{selectedCustomer?.phoneAlt || '-'}</strong></div>
+                            <div><span>Email</span><strong>{selectedCustomer?.email || '-'}</strong></div>
+                            <div><span>Etiquetas</span><strong>{Array.isArray(selectedCustomer?.tags) ? selectedCustomer.tags.join(', ') : '-'}</strong></div>
+                            <div><span>Actualizado</span><strong>{formatDateTimeLabel(selectedCustomer?.updatedAt)}</strong></div>
+                        </div>
+                        <div className="saas-admin-form-row">
+                            <label className="saas-admin-module-toggle" style={{ minWidth: 220 }}>
+                                <span>Idioma preferido</span>
+                            </label>
+                            <select
+                                value={selectedPreferredLanguage}
+                                onChange={(event) => {
+                                    handlePreferredLanguageChange(event.target.value);
+                                }}
+                                disabled={busy || languageBusy}
+                            >
+                                <option value="es">Espanol (es)</option>
+                                <option value="en">Ingles (en)</option>
+                                <option value="pt">Portugues (pt)</option>
+                            </select>
+                        </div>
+                    </SaasDetailPanelSection>
 
-                <SaasDetailPanelSection title="Documento" defaultOpen>
-                    <div className="saas-customers-kv-grid">
-                        <div><span>Documento</span><strong>{selectedCustomer?.documentNumber || readProfileValue(selectedCustomer?.profile, 'documentNumber', 'numeroDocumentoIdentidad', 'document_number') || '-'}</strong></div>
-                        <div><span>Tipo documento</span><strong>{buildDocumentTypeLabel(selectedCustomer, customerLabelMaps)}</strong></div>
-                        <div><span>Notas</span><strong>{selectedCustomer?.notes || readProfileValue(selectedCustomer?.profile, 'notes', 'observacionCliente', 'observacion_cliente') || '-'}</strong></div>
-                    </div>
-                </SaasDetailPanelSection>
+                    <SaasDetailPanelSection title="Documento" defaultOpen>
+                        <div className="saas-customers-kv-grid">
+                            <div><span>Documento</span><strong>{selectedCustomer?.documentNumber || readProfileValue(selectedCustomer?.profile, 'documentNumber', 'numeroDocumentoIdentidad', 'document_number') || '-'}</strong></div>
+                            <div><span>Tipo documento</span><strong>{buildDocumentTypeLabel(selectedCustomer, customerLabelMaps)}</strong></div>
+                            <div><span>Notas</span><strong>{selectedCustomer?.notes || readProfileValue(selectedCustomer?.profile, 'notes', 'observacionCliente', 'observacion_cliente') || '-'}</strong></div>
+                        </div>
+                    </SaasDetailPanelSection>
 
-                <SaasDetailPanelSection title="Direcciones" defaultOpen>
-                    {renderAddressesContent()}
-                </SaasDetailPanelSection>
+                    <SaasDetailPanelSection title="Direcciones" defaultOpen>
+                        {renderAddressesContent()}
+                    </SaasDetailPanelSection>
 
-                <SaasDetailPanelSection title="Contextos por modulo" defaultOpen>
-                    {renderModuleContextsContent()}
-                </SaasDetailPanelSection>
-            </SaasDetailPanel>
-        ) : (
-            <SaasDetailPanel
-                title={customerPanelMode === 'create' ? 'Nuevo cliente' : 'Editando cliente'}
-                subtitle="Completa los datos y guarda cambios."
-                className="saas-customers-detail-panel"
-                bodyClassName="saas-customers-detail-panel__body"
-                actions={(
-                    <div className="saas-customers-detail-actions">
-                        <button
-                            type="button"
-                            disabled={busy || savingCustomer || !customerForm.contactName.trim() || !customerForm.phoneE164.trim()}
-                            onClick={handleSaveCustomer}
-                        >
-                            {customerPanelMode === 'create' ? 'Guardar cliente' : 'Actualizar cliente'}
-                        </button>
-                        <button type="button" disabled={busy} onClick={cancelCustomerEdit}>Cancelar</button>
-                        <button type="button" disabled={busy} onClick={handleCloseDetail}>Cerrar</button>
-                    </div>
-                )}
-            >
-                <SaasDetailPanelSection title="Datos personales" defaultOpen>
+                    <SaasDetailPanelSection title="Contextos por modulo" defaultOpen>
+                        {renderModuleContextsContent()}
+                    </SaasDetailPanelSection>
+                </SaasDetailPanel>
+            ) : (
+                <SaasDetailPanel
+                    title={customerPanelMode === 'create' ? 'Nuevo cliente' : 'Editando cliente'}
+                    subtitle="Completa los datos y guarda cambios."
+                    className="saas-customers-detail-panel"
+                    bodyClassName="saas-customers-detail-panel__body"
+                    actions={(
+                        <div className="saas-customers-detail-actions">
+                            <button
+                                type="button"
+                                disabled={busy || savingCustomer || !customerForm.contactName.trim() || !customerForm.phoneE164.trim()}
+                                onClick={handleSaveCustomer}
+                            >
+                                {customerPanelMode === 'create' ? 'Guardar cliente' : 'Actualizar cliente'}
+                            </button>
+                            <button type="button" disabled={busy} onClick={cancelCustomerEdit}>Cancelar</button>
+                            <button type="button" disabled={busy} onClick={handleCloseDetail}>Cerrar</button>
+                        </div>
+                    )}
+                >
+                    <SaasDetailPanelSection title="Datos personales" defaultOpen>
                     <div className="saas-admin-form-row">
                         <input value={customerForm.contactName} onChange={(event) => setCustomerForm((prev) => ({ ...prev, contactName: event.target.value }))} placeholder="Nombre contacto" disabled={busy} />
                         <input
@@ -2120,8 +2571,8 @@ function CustomersSection(props = {}) {
                 <SaasDetailPanelSection title="Contextos por modulo" defaultOpen>
                     {selectedCustomer ? renderModuleContextsContent() : <p>Guarda el cliente para ver contextos por modulo.</p>}
                 </SaasDetailPanelSection>
-            </SaasDetailPanel>
-        )}
+                </SaasDetailPanel>
+            )}
         </div>
     ) : null;
 

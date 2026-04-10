@@ -1,4 +1,6 @@
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -7,10 +9,12 @@ const {
     writeTenantJsonFile,
     queryPostgres
 } = require('../../../config/persistence-runtime');
+const { parseCsvRows } = require('../helpers/customers-normalizers.helpers');
 
 const STORE_FILE = 'customer_addresses.json';
 const ALLOWED_ADDRESS_TYPES = new Set(['fiscal', 'delivery', 'other']);
 let schemaPromise = null;
+let geoLookupCache = null;
 
 function nowIso() {
     return new Date().toISOString();
@@ -61,6 +65,160 @@ function normalizeAddressType(value = '') {
     const type = toText(value).toLowerCase();
     if (ALLOWED_ADDRESS_TYPES.has(type)) return type;
     return 'other';
+}
+
+function normalizeHeader(value = '') {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '');
+}
+
+function readCsvText(csvPath = '') {
+    const buffer = fs.readFileSync(csvPath);
+    const utf8 = buffer.toString('utf8');
+    const latin1 = buffer.toString('latin1');
+    const maybeMojibake = /Ãƒ.|Ã¢.|ï¿½/.test(utf8);
+    return maybeMojibake ? latin1 : utf8;
+}
+
+function normalizeDistrictKey(value = '') {
+    const text = toText(value);
+    if (!text) return '';
+    if (!/^\d+$/.test(text)) return text;
+    return text.padStart(6, '0');
+}
+
+function isLikelyGeoCode(value = '') {
+    const text = toText(value);
+    if (!text) return false;
+    return /^\d{1,6}$/.test(text);
+}
+
+function normalizeNumericKey(value = '') {
+    const text = toText(value);
+    if (!text) return '';
+    const numeric = Number.parseInt(text, 10);
+    return Number.isFinite(numeric) ? String(numeric) : text;
+}
+
+function findCsvByToken(dirPath = '', token = '') {
+    const target = normalizeHeader(token);
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        if (!entry.name.toLowerCase().endsWith('.csv')) continue;
+        const normalized = normalizeHeader(entry.name);
+        if (normalized.includes(target)) return path.join(dirPath, entry.name);
+    }
+    return '';
+}
+
+function parseCsvObjects(csvPath = '') {
+    if (!csvPath || !fs.existsSync(csvPath)) return [];
+    const rows = parseCsvRows(readCsvText(csvPath), ',');
+    if (!Array.isArray(rows) || rows.length < 2) return [];
+    const headers = (rows[0] || []).map((entry) => normalizeHeader(entry));
+    return rows.slice(1).map((row) => {
+        const obj = {};
+        headers.forEach((header, idx) => {
+            obj[header] = toText(row[idx] || '');
+        });
+        return obj;
+    });
+}
+
+function loadGeoLookup() {
+    if (geoLookupCache) return geoLookupCache;
+
+    const erpDir = path.resolve(__dirname, '../../../config/data/erp');
+    if (!fs.existsSync(erpDir)) {
+        geoLookupCache = { districts: new Map() };
+        return geoLookupCache;
+    }
+
+    const districtsCsv = findCsvByToken(erpDir, 'tbdistritos');
+    const provincesCsv = findCsvByToken(erpDir, 'tbprovincias');
+    const departmentsCsv = findCsvByToken(erpDir, 'tbdepartamentos');
+
+    const departmentRows = parseCsvObjects(departmentsCsv);
+    const provinceRows = parseCsvObjects(provincesCsv);
+    const districtRows = parseCsvObjects(districtsCsv);
+
+    const departmentById = new Map();
+    for (const row of departmentRows) {
+        const depId = normalizeNumericKey(row.iddepartamento);
+        if (!depId) continue;
+        departmentById.set(depId, {
+            id: depId,
+            name: toText(row.departamento)
+        });
+    }
+
+    const provinceById = new Map();
+    for (const row of provinceRows) {
+        const provId = normalizeNumericKey(row.idprovincia);
+        if (!provId) continue;
+        const depId = normalizeNumericKey(row.iddepartamento);
+        provinceById.set(provId, {
+            id: provId,
+            name: toText(row.provincia),
+            departmentId: depId
+        });
+    }
+
+    const districts = new Map();
+    for (const row of districtRows) {
+        const districtId = normalizeDistrictKey(row.iddistrito);
+        if (!districtId) continue;
+        const provId = normalizeNumericKey(row.idprovincia);
+        const province = provinceById.get(provId) || null;
+        const department = province ? departmentById.get(province.departmentId) || null : null;
+        districts.set(districtId, {
+            districtName: toText(row.distrito) || null,
+            provinceName: toText(province?.name || '') || null,
+            departmentName: toText(department?.name || '') || null
+        });
+    }
+
+    geoLookupCache = { districts };
+    return geoLookupCache;
+}
+
+function enrichAddressGeo(address = {}) {
+    const source = normalizeObject(address);
+    const districtName = toText(source.districtName || source.district_name);
+    const provinceName = toText(source.provinceName || source.province_name);
+    const departmentName = toText(source.departmentName || source.department_name);
+    const districtLooksLikeCode = isLikelyGeoCode(districtName);
+    const provinceLooksLikeCode = isLikelyGeoCode(provinceName);
+    const departmentLooksLikeCode = isLikelyGeoCode(departmentName);
+    const hasResolvedGeoNames = districtName && provinceName && departmentName
+        && !districtLooksLikeCode
+        && !provinceLooksLikeCode
+        && !departmentLooksLikeCode;
+    if (hasResolvedGeoNames) return source;
+
+    const districtId = normalizeDistrictKey(
+        source.districtId
+        || source.district_id
+        || (districtLooksLikeCode ? districtName : '')
+    );
+    if (!districtId) return source;
+
+    const lookup = loadGeoLookup();
+    const geo = lookup?.districts instanceof Map ? lookup.districts.get(districtId) : null;
+    if (!geo) return source;
+
+    return {
+        ...source,
+        districtId: source.districtId || source.district_id || districtId,
+        districtName: districtName || geo.districtName || null,
+        provinceName: provinceName || geo.provinceName || null,
+        departmentName: departmentName || geo.departmentName || null
+    };
 }
 
 function normalizeObject(value = {}) {
@@ -216,7 +374,7 @@ async function listAddresses(tenantId = DEFAULT_TENANT_ID, options = {}) {
                  ORDER BY is_primary DESC, updated_at DESC`,
                 [cleanTenantId, customerId]
             );
-            return ensureArray(result?.rows).map(mapPostgresRow);
+            return ensureArray(result?.rows).map(mapPostgresRow).map(enrichAddressGeo).map(normalizeAddress);
         } catch (error) {
             if (!missingRelation(error)) throw error;
         }
@@ -225,6 +383,8 @@ async function listAddresses(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const store = await readStore(cleanTenantId);
     return store.items
         .filter((item) => item.customerId === customerId)
+        .map(enrichAddressGeo)
+        .map(normalizeAddress)
         .sort((a, b) => {
             if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
             return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
