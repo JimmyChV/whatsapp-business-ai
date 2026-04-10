@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
-import { SaasDataTable, useSaasColumnPrefs } from '../components/layout';
+import { SaasDataTable, SaasTableDetailLayout, useSaasColumnPrefs } from '../components/layout';
 
 const STATUS_META = {
     approved: { label: 'Aprobado', className: 'saas-meta-template-status--approved' },
@@ -1159,8 +1159,11 @@ function MetaTemplatesSection(props = {}) {
 
     return (
         <section id="saas_templates" className="saas-admin-card saas-admin-card--full">
-            <div className={`saas-admin-master-detail ${panelMode === 'create' ? 'saas-admin-master-detail--template-create' : ''}`.trim()}>
-                <aside className="saas-admin-master-pane">
+            <SaasTableDetailLayout
+                selectedId={tenantScopeLocked ? '' : (panelMode === 'create' ? '__template_create__' : selectedTemplateId)}
+                className={`saas-meta-templates-td-layout ${panelMode === 'create' ? 'saas-meta-templates-td-layout--create' : ''}`.trim()}
+                left={(
+                    <aside className="saas-admin-master-pane">
                     <div className="saas-admin-pane-header">
                         <div>
                             <h3>Templates Meta</h3>
@@ -1316,7 +1319,8 @@ function MetaTemplatesSection(props = {}) {
                         </>
                     )}
                 </aside>
-
+                )}
+                right={(
                 <div className="saas-admin-detail-pane">
                     {hasErrors && (
                         <div className="saas-admin-empty-state">
@@ -1889,7 +1893,8 @@ function MetaTemplatesSection(props = {}) {
                         </>
                     )}
                 </div>
-            </div>
+                )}
+            />
         </section>
     );
 }
