@@ -549,6 +549,7 @@ function CustomersSection(props = {}) {
     const [customerCatalogsError, setCustomerCatalogsError] = useState('');
     const [savingCustomer, setSavingCustomer] = useState(false);
     const [selectedCustomerLive, setSelectedCustomerLive] = useState(selectedCustomerContext || null);
+    const [customerOverridesById, setCustomerOverridesById] = useState({});
     const [showCustomerSynced, setShowCustomerSynced] = useState(false);
     const syncedIndicatorTimeoutRef = useRef(null);
 
@@ -586,9 +587,21 @@ function CustomersSection(props = {}) {
         };
     }, []);
 
+    const getCustomerOverride = useCallback((customerId = '') => {
+        const normalizedId = normalizeCatalogLookupKey(customerId);
+        if (!normalizedId) return null;
+        const found = customerOverridesById[normalizedId];
+        return found && typeof found === 'object' ? found : null;
+    }, [customerOverridesById]);
+
     const selectedCustomer = useMemo(
-        () => selectedCustomerLive || selectedCustomerContext || null,
-        [selectedCustomerContext, selectedCustomerLive]
+        () => {
+            const base = selectedCustomerLive || selectedCustomerContext || null;
+            const selectedId = resolveCustomerId(base) || selectedCustomerId || '';
+            const override = getCustomerOverride(selectedId);
+            return override || base;
+        },
+        [getCustomerOverride, selectedCustomerContext, selectedCustomerId, selectedCustomerLive]
     );
 
     const selectedCustomerIdResolved = useMemo(() => resolveCustomerId(selectedCustomer), [selectedCustomer]);
@@ -673,16 +686,13 @@ function CustomersSection(props = {}) {
 
     const filteredCustomersLive = useMemo(() => {
         const source = Array.isArray(filteredCustomers) ? filteredCustomers : [];
-        const live = selectedCustomerLive && typeof selectedCustomerLive === 'object' ? selectedCustomerLive : null;
-        if (!live) return source;
-        const liveId = resolveCustomerId(live);
-        if (!liveId) return source;
         return source.map((item) => {
             const itemId = resolveCustomerId(item);
             if (!itemId) return item;
-            return normalizeCatalogLookupKey(itemId) === normalizeCatalogLookupKey(liveId) ? live : item;
+            const override = getCustomerOverride(itemId);
+            return override || item;
         });
-    }, [filteredCustomers, selectedCustomerLive]);
+    }, [filteredCustomers, getCustomerOverride]);
 
     const tableRows = useMemo(() => {
         const source = Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [];
@@ -1035,6 +1045,15 @@ function CustomersSection(props = {}) {
         const safeItem = customerItem && typeof customerItem === 'object' ? customerItem : null;
         if (!safeItem) return;
         const safeItemId = resolveCustomerId(safeItem);
+        if (safeItemId) {
+            const normalizedId = normalizeCatalogLookupKey(safeItemId);
+            if (normalizedId) {
+                setCustomerOverridesById((prev) => ({
+                    ...(prev && typeof prev === 'object' ? prev : {}),
+                    [normalizedId]: safeItem
+                }));
+            }
+        }
         setCustomers((prev) => upsertCustomerById(prev, safeItem));
         if (tenantScopeId && safeItemId && typeof patchCustomerInCache === 'function') {
             patchCustomerInCache(tenantScopeId, safeItemId, safeItem);
