@@ -1,5 +1,7 @@
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
+import { normalizeCustomerFormFromItem } from '../helpers';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -128,6 +130,104 @@ function resolveCatalogSelectValue(value = '', options = []) {
 function resolveCustomerId(value = null) {
     if (!value || typeof value !== 'object') return '';
     return String(value.customerId || value.customer_id || value.id || '').trim();
+}
+
+function hasOwn(source, key) {
+    return Boolean(source && Object.prototype.hasOwnProperty.call(source, key));
+}
+
+function pickPatchedValue(source = {}, key, fallback) {
+    return hasOwn(source, key) ? source[key] : fallback;
+}
+
+function upsertCustomerById(items = [], customer = null) {
+    const source = Array.isArray(items) ? items : [];
+    const candidate = customer && typeof customer === 'object' ? customer : null;
+    const candidateId = resolveCustomerId(candidate);
+    if (!candidateId) return source;
+
+    let matched = false;
+    const next = source.map((item) => {
+        const itemId = resolveCustomerId(item);
+        if (itemId !== candidateId) return item;
+        matched = true;
+        return candidate;
+    });
+
+    if (!matched) next.unshift(candidate);
+    return next;
+}
+
+function cloneCustomerSnapshot(customer = null) {
+    if (!customer || typeof customer !== 'object') return null;
+    const profile = customer.profile && typeof customer.profile === 'object' ? { ...customer.profile } : {};
+    const metadata = customer.metadata && typeof customer.metadata === 'object' ? { ...customer.metadata } : {};
+    const tags = Array.isArray(customer.tags) ? [...customer.tags] : customer.tags;
+    return {
+        ...customer,
+        profile,
+        metadata,
+        tags
+    };
+}
+
+function buildOptimisticCustomerFromPayload(customer = null, payload = {}) {
+    if (!customer || typeof customer !== 'object') return customer;
+    const sourcePayload = payload && typeof payload === 'object' ? payload : {};
+    const payloadProfile = sourcePayload.profile && typeof sourcePayload.profile === 'object' ? sourcePayload.profile : {};
+    const previousProfile = customer.profile && typeof customer.profile === 'object' ? customer.profile : {};
+    const nowIso = new Date().toISOString();
+    const nextFirstName = pickPatchedValue(sourcePayload, 'firstName', customer.firstName);
+    const nextLastNamePaternal = pickPatchedValue(sourcePayload, 'lastNamePaternal', customer.lastNamePaternal);
+    const nextLastNameMaternal = pickPatchedValue(sourcePayload, 'lastNameMaternal', customer.lastNameMaternal);
+    const nextTreatmentId = pickPatchedValue(sourcePayload, 'treatmentId', customer.treatmentId);
+    const nextDocumentTypeId = pickPatchedValue(sourcePayload, 'documentTypeId', customer.documentTypeId);
+    const nextDocumentNumber = pickPatchedValue(sourcePayload, 'documentNumber', customer.documentNumber);
+    const nextCustomerTypeId = pickPatchedValue(sourcePayload, 'customerTypeId', customer.customerTypeId);
+    const nextAcquisitionSourceId = pickPatchedValue(sourcePayload, 'acquisitionSourceId', customer.acquisitionSourceId);
+    const nextNotes = pickPatchedValue(sourcePayload, 'notes', customer.notes);
+
+    return {
+        ...customer,
+        contactName: pickPatchedValue(sourcePayload, 'contactName', customer.contactName),
+        phoneE164: pickPatchedValue(sourcePayload, 'phoneE164', customer.phoneE164),
+        phoneAlt: pickPatchedValue(sourcePayload, 'phoneAlt', customer.phoneAlt),
+        email: pickPatchedValue(sourcePayload, 'email', customer.email),
+        isActive: pickPatchedValue(sourcePayload, 'isActive', customer.isActive),
+        tags: Array.isArray(sourcePayload.tags) ? sourcePayload.tags : customer.tags,
+        treatmentId: nextTreatmentId,
+        treatment_id: pickPatchedValue(sourcePayload, 'treatment_id', customer.treatment_id),
+        customerTypeId: nextCustomerTypeId,
+        customer_type_id: pickPatchedValue(sourcePayload, 'customer_type_id', customer.customer_type_id),
+        acquisitionSourceId: nextAcquisitionSourceId,
+        acquisition_source_id: pickPatchedValue(sourcePayload, 'acquisition_source_id', customer.acquisition_source_id),
+        documentTypeId: nextDocumentTypeId,
+        document_type_id: pickPatchedValue(sourcePayload, 'document_type_id', customer.document_type_id),
+        documentNumber: nextDocumentNumber,
+        document_number: pickPatchedValue(sourcePayload, 'document_number', customer.document_number),
+        firstName: nextFirstName,
+        first_name: pickPatchedValue(sourcePayload, 'first_name', customer.first_name),
+        lastNamePaternal: nextLastNamePaternal,
+        last_name_paternal: pickPatchedValue(sourcePayload, 'last_name_paternal', customer.last_name_paternal),
+        lastNameMaternal: nextLastNameMaternal,
+        last_name_maternal: pickPatchedValue(sourcePayload, 'last_name_maternal', customer.last_name_maternal),
+        notes: nextNotes,
+        profile: {
+            ...previousProfile,
+            ...payloadProfile,
+            firstNames: nextFirstName,
+            lastNamePaternal: nextLastNamePaternal,
+            lastNameMaternal: nextLastNameMaternal,
+            treatmentId: nextTreatmentId,
+            documentTypeId: nextDocumentTypeId,
+            documentNumber: nextDocumentNumber,
+            customerTypeId: nextCustomerTypeId,
+            sourceId: nextAcquisitionSourceId,
+            notes: nextNotes
+        },
+        updatedAt: nowIso,
+        updated_at: nowIso
+    };
 }
 
 function normalizePreferredLanguage(customer = null) {
@@ -378,7 +478,16 @@ function buildTreatmentLabel(customer = null, labelMaps = {}) {
     ).trim() || '-';
 }
 
+function resolveUpdatedAtTimestamp(item = null) {
+    if (!item || typeof item !== 'object') return 0;
+    const raw = String(item.updatedAt || item.updated_at || '').trim();
+    if (!raw) return 0;
+    const parsed = Date.parse(raw);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function CustomersSection(props = {}) {
+    const { notify } = useUiFeedback();
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const {
         isCustomersSection,
@@ -391,15 +500,20 @@ function CustomersSection(props = {}) {
         selectedCustomerId,
         customerPanelMode,
         openCustomerView,
-        selectedCustomer,
-        openCustomerEdit,
+        selectedCustomer: selectedCustomerContext,
         runAction,
         requestJson,
         tenantScopeId,
         loadCustomers,
+        syncCustomersDelta,
+        maxCustomersUpdatedAt,
+        patchCustomerInCache,
+        customersLoadProgress = 0,
+        customersLoadingBatch = false,
         formatDateTimeLabel,
         customerForm,
         setCustomerForm,
+        setCustomers,
         waModules,
         buildCustomerPayloadFromForm,
         setSelectedCustomerId,
@@ -408,6 +522,7 @@ function CustomersSection(props = {}) {
     } = context;
 
     const [showColumnsMenu, setShowColumnsMenu] = useState(false);
+    const [searchInput, setSearchInput] = useState(String(customerSearch || ''));
     const [headerFilter, setHeaderFilter] = useState({
         columnKey: '',
         operator: 'contains',
@@ -432,9 +547,62 @@ function CustomersSection(props = {}) {
     const [customerCatalogs, setCustomerCatalogs] = useState(EMPTY_CUSTOMER_CATALOGS);
     const [loadingCustomerCatalogs, setLoadingCustomerCatalogs] = useState(false);
     const [customerCatalogsError, setCustomerCatalogsError] = useState('');
+    const [savingCustomer, setSavingCustomer] = useState(false);
+    const [selectedCustomerLive, setSelectedCustomerLive] = useState(selectedCustomerContext || null);
+    const [customerOverridesById, setCustomerOverridesById] = useState({});
+    const [showCustomerSynced, setShowCustomerSynced] = useState(false);
+    const syncedIndicatorTimeoutRef = useRef(null);
 
     const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
     const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys);
+
+    useEffect(() => {
+        setSelectedCustomerLive((prev) => {
+            if (!selectedCustomerContext) return null;
+            if (!prev) return selectedCustomerContext;
+
+            const prevId = resolveCustomerId(prev);
+            const nextId = resolveCustomerId(selectedCustomerContext);
+            if (
+                prevId
+                && nextId
+                && normalizeCatalogLookupKey(prevId) !== normalizeCatalogLookupKey(nextId)
+            ) {
+                return selectedCustomerContext;
+            }
+
+            const prevTs = resolveUpdatedAtTimestamp(prev);
+            const nextTs = resolveUpdatedAtTimestamp(selectedCustomerContext);
+            if (!prevTs && nextTs) return selectedCustomerContext;
+            if (nextTs >= prevTs && nextTs > 0) return selectedCustomerContext;
+            return prev;
+        });
+    }, [selectedCustomerContext]);
+
+    useEffect(() => {
+        return () => {
+            if (syncedIndicatorTimeoutRef.current) {
+                clearTimeout(syncedIndicatorTimeoutRef.current);
+            }
+        };
+    }, []);
+
+    const getCustomerOverride = useCallback((customerId = '') => {
+        const normalizedId = normalizeCatalogLookupKey(customerId);
+        if (!normalizedId) return null;
+        const found = customerOverridesById[normalizedId];
+        return found && typeof found === 'object' ? found : null;
+    }, [customerOverridesById]);
+
+    const selectedCustomer = useMemo(
+        () => {
+            const base = selectedCustomerLive || selectedCustomerContext || null;
+            const selectedId = resolveCustomerId(base) || selectedCustomerId || '';
+            const override = getCustomerOverride(selectedId);
+            return override || base;
+        },
+        [getCustomerOverride, selectedCustomerContext, selectedCustomerId, selectedCustomerLive]
+    );
 
     const selectedCustomerIdResolved = useMemo(() => resolveCustomerId(selectedCustomer), [selectedCustomer]);
 
@@ -478,6 +646,36 @@ function CustomersSection(props = {}) {
         sourceById: buildCatalogLabelMap(sourceOptions)
     }), [customerTypeOptions, documentTypeOptions, treatmentOptions, sourceOptions]);
 
+    const firstNameValue = String(
+        customerForm?.first_name
+        ?? customerForm?.firstName
+        ?? customerForm?.profileFirstNames
+        ?? ''
+    );
+    const lastNamePaternalValue = String(
+        customerForm?.last_name_paternal
+        ?? customerForm?.lastNamePaternal
+        ?? customerForm?.profileLastNamePaternal
+        ?? ''
+    );
+    const lastNameMaternalValue = String(
+        customerForm?.last_name_maternal
+        ?? customerForm?.lastNameMaternal
+        ?? customerForm?.profileLastNameMaternal
+        ?? ''
+    );
+    const documentNumberValue = String(
+        customerForm?.document_number
+        ?? customerForm?.documentNumber
+        ?? customerForm?.profileDocumentNumber
+        ?? ''
+    );
+    const notesValue = String(
+        customerForm?.notes
+        ?? customerForm?.profileNotes
+        ?? ''
+    );
+
     const tableColumns = useMemo(
         () => CUSTOMER_TABLE_COLUMNS.map((column) => ({
             ...column,
@@ -486,8 +684,18 @@ function CustomersSection(props = {}) {
         [columnPrefs, columnPrefs.visibleColumnKeys]
     );
 
-    const tableRows = useMemo(() => {
+    const filteredCustomersLive = useMemo(() => {
         const source = Array.isArray(filteredCustomers) ? filteredCustomers : [];
+        return source.map((item) => {
+            const itemId = resolveCustomerId(item);
+            if (!itemId) return item;
+            const override = getCustomerOverride(itemId);
+            return override || item;
+        });
+    }, [filteredCustomers, getCustomerOverride]);
+
+    const tableRows = useMemo(() => {
+        const source = Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [];
         return source.map((customer = {}, index) => {
             const customerId = resolveCustomerId(customer);
             const safeId = customerId || String(customer.phoneE164 || customer.phone_e164 || customer.email || `customer-${index}`).trim();
@@ -516,7 +724,7 @@ function CustomersSection(props = {}) {
                 _raw: customer
             };
         });
-    }, [customerLabelMaps, filteredCustomers, formatDateTimeLabel]);
+    }, [customerLabelMaps, filteredCustomersLive, formatDateTimeLabel]);
 
     const visibleColumns = useMemo(
         () => tableColumns.filter((column) => column && column.hidden !== true),
@@ -806,11 +1014,14 @@ function CustomersSection(props = {}) {
         if (editClickBusy) return;
         setEditClickBusy(true);
         try {
-            openCustomerEdit();
+            if (selectedCustomer) {
+                setCustomerForm(normalizeCustomerFormFromItem(selectedCustomer));
+            }
+            setCustomerPanelMode('edit');
         } finally {
             setEditClickBusy(false);
         }
-    }, [editClickBusy, openCustomerEdit]);
+    }, [editClickBusy, selectedCustomer, setCustomerForm, setCustomerPanelMode]);
 
     const handleCloseDetail = useCallback(() => {
         setSelectedCustomerId('');
@@ -818,9 +1029,10 @@ function CustomersSection(props = {}) {
     }, [setCustomerPanelMode, setSelectedCustomerId]);
 
     const handleSoftDeleteCustomer = useCallback(() => {
-        if (!selectedCustomer?.customerId) return;
+        const customerId = resolveCustomerId(selectedCustomer);
+        if (!customerId) return;
         runAction('Cliente marcado como inactivo', async () => {
-            await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/' + encodeURIComponent(selectedCustomer.customerId), {
+            await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/' + encodeURIComponent(customerId), {
                 method: 'PUT',
                 body: { isActive: false }
             });
@@ -828,10 +1040,224 @@ function CustomersSection(props = {}) {
         });
     }, [loadCustomers, requestJson, runAction, selectedCustomer, tenantScopeId]);
 
+    const updateCustomersState = useCallback((customerItem = null) => {
+        if (typeof setCustomers !== 'function') return;
+        const safeItem = customerItem && typeof customerItem === 'object' ? customerItem : null;
+        if (!safeItem) return;
+        const safeItemId = resolveCustomerId(safeItem);
+        if (safeItemId) {
+            const normalizedId = normalizeCatalogLookupKey(safeItemId);
+            if (normalizedId) {
+                setCustomerOverridesById((prev) => ({
+                    ...(prev && typeof prev === 'object' ? prev : {}),
+                    [normalizedId]: safeItem
+                }));
+            }
+        }
+        setCustomers((prev) => upsertCustomerById(prev, safeItem));
+        if (tenantScopeId && safeItemId && typeof patchCustomerInCache === 'function') {
+            patchCustomerInCache(tenantScopeId, safeItemId, safeItem);
+        }
+        const currentSelectedId = String(selectedCustomerIdResolved || selectedCustomerId || '').trim();
+        if (!safeItemId) return;
+        if (!currentSelectedId) {
+            setSelectedCustomerLive(safeItem);
+            return;
+        }
+        if (normalizeCatalogLookupKey(currentSelectedId) === normalizeCatalogLookupKey(safeItemId)) {
+            setSelectedCustomerLive(safeItem);
+        }
+    }, [patchCustomerInCache, selectedCustomerId, selectedCustomerIdResolved, setCustomers, tenantScopeId]);
+
+    const showSyncedIndicator = useCallback(() => {
+        setShowCustomerSynced(true);
+        if (syncedIndicatorTimeoutRef.current) {
+            clearTimeout(syncedIndicatorTimeoutRef.current);
+        }
+        syncedIndicatorTimeoutRef.current = setTimeout(() => {
+            setShowCustomerSynced(false);
+            syncedIndicatorTimeoutRef.current = null;
+        }, 2000);
+    }, []);
+
+    const buildCustomerSubmitPayload = useCallback(() => {
+        const basePayload = buildCustomerPayloadFromForm(customerForm);
+        const firstName = String(firstNameValue || '').trim() || null;
+        const lastNamePaternal = String(lastNamePaternalValue || '').trim() || null;
+        const lastNameMaternal = String(lastNameMaternalValue || '').trim() || null;
+        const treatmentId = String(customerForm?.treatmentId || '').trim() || null;
+        const documentTypeId = String(customerForm?.documentTypeId || '').trim() || null;
+        const documentNumber = String(documentNumberValue || '').trim() || null;
+        const customerTypeId = String(customerForm?.customerTypeId || '').trim() || null;
+        const acquisitionSourceId = String(customerForm?.acquisitionSourceId || '').trim() || null;
+        const notes = String(notesValue || '').trim() || null;
+        return {
+            ...basePayload,
+            treatmentId,
+            treatment_id: treatmentId,
+            firstName,
+            first_name: firstName,
+            lastNamePaternal,
+            last_name_paternal: lastNamePaternal,
+            lastNameMaternal,
+            last_name_maternal: lastNameMaternal,
+            documentTypeId,
+            document_type_id: documentTypeId,
+            documentNumber,
+            document_number: documentNumber,
+            customerTypeId,
+            customer_type_id: customerTypeId,
+            acquisitionSourceId,
+            acquisition_source_id: acquisitionSourceId,
+            notes
+        };
+    }, [
+        buildCustomerPayloadFromForm,
+        customerForm,
+        firstNameValue,
+        lastNamePaternalValue,
+        lastNameMaternalValue,
+        documentNumberValue,
+        notesValue
+    ]);
+
+    const handleSaveCustomer = useCallback(() => {
+        if (savingCustomer) return;
+        setShowCustomerSynced(false);
+        const payload = buildCustomerSubmitPayload();
+        const selectedCustomerIdForSave = resolveCustomerId(selectedCustomer);
+        const isCreate = customerPanelMode === 'create' || !selectedCustomerIdForSave;
+
+        if (isCreate) {
+            setSavingCustomer(true);
+            void (async () => {
+                try {
+                    const created = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers', {
+                        method: 'POST',
+                        body: payload
+                    });
+                    const createdItem = created?.item && typeof created.item === 'object' ? created.item : null;
+                    const createdId = String(createdItem?.customerId || created?.item?.customer_id || '').trim();
+                    if (createdItem) updateCustomersState(createdItem);
+                    if (createdId) setSelectedCustomerId(createdId);
+                    setCustomerPanelMode('view');
+                    showSyncedIndicator();
+                } catch (error) {
+                    notify({
+                        type: 'error',
+                        body: String(error?.message || 'No se pudo guardar el cliente.')
+                    });
+                } finally {
+                    setSavingCustomer(false);
+                }
+            })();
+            return;
+        }
+
+        const customerId = String(selectedCustomerIdForSave || '').trim();
+        if (!customerId) return;
+        const snapshot = cloneCustomerSnapshot(selectedCustomer);
+        const optimisticItem = buildOptimisticCustomerFromPayload(snapshot, payload);
+        if (optimisticItem) updateCustomersState(optimisticItem);
+        setCustomerPanelMode('view');
+        setSavingCustomer(true);
+
+        void (async () => {
+            try {
+                const response = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/' + encodeURIComponent(customerId), {
+                    method: 'PUT',
+                    body: payload
+                });
+                const serverItem = response?.item && typeof response.item === 'object' ? response.item : null;
+                if (serverItem) {
+                    updateCustomersState(serverItem);
+                } else if (typeof syncCustomersDelta === 'function') {
+                    await syncCustomersDelta(tenantScopeId, {
+                        updatedSince: typeof maxCustomersUpdatedAt === 'function'
+                            ? maxCustomersUpdatedAt(tenantScopeId)
+                            : ''
+                    });
+                }
+                showSyncedIndicator();
+            } catch (error) {
+                if (snapshot) updateCustomersState(snapshot);
+                notify({
+                    type: 'error',
+                    body: 'No se pudo guardar el cliente. Se revirtieron los cambios locales.'
+                });
+            } finally {
+                setSavingCustomer(false);
+            }
+        })();
+    }, [
+        buildCustomerSubmitPayload,
+        customerPanelMode,
+        maxCustomersUpdatedAt,
+        notify,
+        requestJson,
+        savingCustomer,
+        selectedCustomer,
+        setCustomerPanelMode,
+        setSelectedCustomerId,
+        syncCustomersDelta,
+        tenantScopeId,
+        updateCustomersState,
+        showSyncedIndicator
+    ]);
+
     useEffect(() => {
         if (!isCustomersSection) return;
         loadCustomerCatalogs();
     }, [isCustomersSection, loadCustomerCatalogs]);
+
+    useEffect(() => {
+        const next = String(customerSearch || '');
+        setSearchInput((prev) => (prev === next ? prev : next));
+    }, [customerSearch]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            const normalized = String(searchInput || '');
+            if (normalized === String(customerSearch || '')) return;
+            if (typeof setCustomerSearch === 'function') {
+                setCustomerSearch(normalized);
+            }
+        }, 150);
+
+        return () => clearTimeout(timer);
+    }, [customerSearch, searchInput, setCustomerSearch]);
+
+    useEffect(() => {
+        if (!isCustomersSection) return undefined;
+        if (tenantScopeLocked) return undefined;
+        const cleanTenantId = String(tenantScopeId || '').trim();
+        if (!cleanTenantId) return undefined;
+        if (typeof syncCustomersDelta !== 'function') return undefined;
+
+        const syncTick = async () => {
+            try {
+                await syncCustomersDelta(cleanTenantId, {
+                    updatedSince: typeof maxCustomersUpdatedAt === 'function'
+                        ? maxCustomersUpdatedAt(cleanTenantId)
+                        : ''
+                });
+            } catch {
+                // silent sync tick failure; next interval retries
+            }
+        };
+
+        const intervalId = setInterval(() => {
+            void syncTick();
+        }, 60000);
+
+        return () => clearInterval(intervalId);
+    }, [
+        isCustomersSection,
+        maxCustomersUpdatedAt,
+        syncCustomersDelta,
+        tenantScopeId,
+        tenantScopeLocked
+    ]);
 
     const resetAddressEditor = useCallback(() => {
         setAddressEditorMode('create');
@@ -1265,8 +1691,8 @@ function CustomersSection(props = {}) {
         <SaasViewHeader
             title="Clientes"
             count={tenantScopeLocked ? 0 : sortedAndFilteredRows.length}
-            searchValue={customerSearch}
-            onSearchChange={setCustomerSearch}
+            searchValue={searchInput}
+            onSearchChange={setSearchInput}
             searchPlaceholder="Buscar por codigo, nombre, telefono, email o documento"
             searchDisabled={busy || tenantScopeLocked}
             actions={headerActions}
@@ -1285,28 +1711,45 @@ function CustomersSection(props = {}) {
                 columns: headerFilterColumns
             }}
             onSortChange={setSortConfig}
-            extra={showColumnsMenu ? (
-                <div className="saas-customers-columns-menu">
-                    {CUSTOMER_TABLE_COLUMNS.map((column) => (
-                        <label key={column.key} className="saas-customers-columns-menu__item">
-                            <input
-                                type="checkbox"
-                                checked={columnPrefs.isColumnVisible(column.key)}
-                                onChange={() => columnPrefs.toggleColumn(column.key)}
-                            />
-                            <span>{column.label}</span>
-                            <small>{column.width || 'auto'}</small>
-                        </label>
-                    ))}
-                    <div className="saas-customers-columns-menu__actions">
-                        <button type="button" onClick={() => columnPrefs.setVisibleColumnKeys(CUSTOMER_TABLE_COLUMNS.map((column) => column.key))}>
-                            Mostrar todo
-                        </button>
-                        <button type="button" onClick={columnPrefs.resetColumns}>Restablecer</button>
-                        <button type="button" onClick={() => setShowColumnsMenu(false)}>Cerrar</button>
-                    </div>
+            extra={(
+                <div className="saas-customers-header-extra">
+                    {(customersLoadingBatch || savingCustomer) ? (
+                        <div className="saas-admin-inline-feedback">
+                            {customersLoadingBatch ? `Cargando clientes... ${Math.max(0, Math.min(100, Number(customersLoadProgress) || 0))}%` : null}
+                            {customersLoadingBatch && savingCustomer ? ' • ' : null}
+                            {savingCustomer ? 'Guardando cliente...' : null}
+                        </div>
+                    ) : null}
+                    {(savingCustomer || showCustomerSynced) ? (
+                        <div className={`saas-customers-sync-indicator${savingCustomer ? ' is-saving' : ' is-synced'}`}>
+                            <span className="saas-customers-sync-indicator__dot" />
+                            <span>{savingCustomer ? 'Guardando...' : 'Sincronizado'}</span>
+                        </div>
+                    ) : null}
+                    {showColumnsMenu ? (
+                        <div className="saas-customers-columns-menu">
+                            {CUSTOMER_TABLE_COLUMNS.map((column) => (
+                                <label key={column.key} className="saas-customers-columns-menu__item">
+                                    <input
+                                        type="checkbox"
+                                        checked={columnPrefs.isColumnVisible(column.key)}
+                                        onChange={() => columnPrefs.toggleColumn(column.key)}
+                                    />
+                                    <span>{column.label}</span>
+                                    <small>{column.width || 'auto'}</small>
+                                </label>
+                            ))}
+                            <div className="saas-customers-columns-menu__actions">
+                                <button type="button" onClick={() => columnPrefs.setVisibleColumnKeys(CUSTOMER_TABLE_COLUMNS.map((column) => column.key))}>
+                                    Mostrar todo
+                                </button>
+                                <button type="button" onClick={columnPrefs.resetColumns}>Restablecer</button>
+                                <button type="button" onClick={() => setShowColumnsMenu(false)}>Cerrar</button>
+                            </div>
+                        </div>
+                    ) : null}
                 </div>
-            ) : null}
+            )}
         />
     );
 
@@ -1387,9 +1830,9 @@ function CustomersSection(props = {}) {
 
                 <SaasDetailPanelSection title="Documento" defaultOpen>
                     <div className="saas-customers-kv-grid">
-                        <div><span>Documento</span><strong>{readProfileValue(selectedCustomer?.profile, 'documentNumber', 'numeroDocumentoIdentidad', 'document_number') || selectedCustomer?.documentNumber || '-'}</strong></div>
+                        <div><span>Documento</span><strong>{selectedCustomer?.documentNumber || readProfileValue(selectedCustomer?.profile, 'documentNumber', 'numeroDocumentoIdentidad', 'document_number') || '-'}</strong></div>
                         <div><span>Tipo documento</span><strong>{buildDocumentTypeLabel(selectedCustomer, customerLabelMaps)}</strong></div>
-                        <div><span>Notas</span><strong>{readProfileValue(selectedCustomer?.profile, 'notes', 'observacionCliente', 'observacion_cliente') || selectedCustomer?.notes || '-'}</strong></div>
+                        <div><span>Notas</span><strong>{selectedCustomer?.notes || readProfileValue(selectedCustomer?.profile, 'notes', 'observacionCliente', 'observacion_cliente') || '-'}</strong></div>
                     </div>
                 </SaasDetailPanelSection>
 
@@ -1410,28 +1853,8 @@ function CustomersSection(props = {}) {
                     <div className="saas-customers-detail-actions">
                         <button
                             type="button"
-                            disabled={busy || !customerForm.contactName.trim() || !customerForm.phoneE164.trim()}
-                            onClick={() => runAction(customerPanelMode === 'create' ? 'Cliente creado' : 'Cliente actualizado', async () => {
-                                const payload = buildCustomerPayloadFromForm(customerForm);
-                                if (customerPanelMode === 'create' || !selectedCustomer?.customerId) {
-                                    const created = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers', {
-                                        method: 'POST',
-                                        body: payload
-                                    });
-                                    const createdId = String(created?.item?.customerId || '').trim();
-                                    if (createdId) setSelectedCustomerId(createdId);
-                                    setCustomerPanelMode('view');
-                                    await loadCustomers(tenantScopeId);
-                                    return;
-                                }
-
-                                await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/' + encodeURIComponent(selectedCustomer.customerId), {
-                                    method: 'PUT',
-                                    body: payload
-                                });
-                                setCustomerPanelMode('view');
-                                await loadCustomers(tenantScopeId);
-                            })}
+                            disabled={busy || savingCustomer || !customerForm.contactName.trim() || !customerForm.phoneE164.trim()}
+                            onClick={handleSaveCustomer}
                         >
                             {customerPanelMode === 'create' ? 'Guardar cliente' : 'Actualizar cliente'}
                         </button>
@@ -1443,11 +1866,41 @@ function CustomersSection(props = {}) {
                 <SaasDetailPanelSection title="Datos personales" defaultOpen>
                     <div className="saas-admin-form-row">
                         <input value={customerForm.contactName} onChange={(event) => setCustomerForm((prev) => ({ ...prev, contactName: event.target.value }))} placeholder="Nombre contacto" disabled={busy} />
-                        <input value={customerForm.profileFirstNames} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileFirstNames: event.target.value }))} placeholder="Nombres" disabled={busy} />
+                        <input
+                            value={firstNameValue}
+                            onChange={(event) => setCustomerForm((prev) => ({
+                                ...prev,
+                                firstName: event.target.value,
+                                first_name: event.target.value,
+                                profileFirstNames: event.target.value
+                            }))}
+                            placeholder="Nombres"
+                            disabled={busy}
+                        />
                     </div>
                     <div className="saas-admin-form-row">
-                        <input value={customerForm.profileLastNamePaternal} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileLastNamePaternal: event.target.value }))} placeholder="Apellido paterno" disabled={busy} />
-                        <input value={customerForm.profileLastNameMaternal} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileLastNameMaternal: event.target.value }))} placeholder="Apellido materno" disabled={busy} />
+                        <input
+                            value={lastNamePaternalValue}
+                            onChange={(event) => setCustomerForm((prev) => ({
+                                ...prev,
+                                lastNamePaternal: event.target.value,
+                                last_name_paternal: event.target.value,
+                                profileLastNamePaternal: event.target.value
+                            }))}
+                            placeholder="Apellido paterno"
+                            disabled={busy}
+                        />
+                        <input
+                            value={lastNameMaternalValue}
+                            onChange={(event) => setCustomerForm((prev) => ({
+                                ...prev,
+                                lastNameMaternal: event.target.value,
+                                last_name_maternal: event.target.value,
+                                profileLastNameMaternal: event.target.value
+                            }))}
+                            placeholder="Apellido materno"
+                            disabled={busy}
+                        />
                     </div>
                     <div className="saas-admin-form-row">
                         <select
@@ -1516,10 +1969,31 @@ function CustomersSection(props = {}) {
                                 <option key={`customer-document-${item.id}`} value={item.id}>{item.label}</option>
                             ))}
                         </select>
-                        <input value={customerForm.profileDocumentNumber} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileDocumentNumber: event.target.value }))} placeholder="Documento" disabled={busy} />
+                        <input
+                            value={documentNumberValue}
+                            onChange={(event) => setCustomerForm((prev) => ({
+                                ...prev,
+                                documentNumber: event.target.value,
+                                document_number: event.target.value,
+                                profileDocumentNumber: event.target.value
+                            }))}
+                            placeholder="Documento"
+                            disabled={busy}
+                        />
                     </div>
                     <div className="saas-admin-form-row">
-                        <textarea value={customerForm.profileNotes} onChange={(event) => setCustomerForm((prev) => ({ ...prev, profileNotes: event.target.value }))} placeholder="Observaciones" rows={3} style={{ width: '100%' }} disabled={busy} />
+                        <textarea
+                            value={notesValue}
+                            onChange={(event) => setCustomerForm((prev) => ({
+                                ...prev,
+                                notes: event.target.value,
+                                profileNotes: event.target.value
+                            }))}
+                            placeholder="Observaciones"
+                            rows={3}
+                            style={{ width: '100%' }}
+                            disabled={busy}
+                        />
                     </div>
                     {customerCatalogsError ? (
                         <div className="saas-admin-inline-feedback error">{customerCatalogsError}</div>

@@ -151,6 +151,14 @@ function getPageOptions(options = {}) {
     return { limit, offset };
 }
 
+function normalizeUpdatedSince(value = '') {
+    const raw = toText(value || '');
+    if (!raw) return '';
+    const parsed = new Date(raw);
+    if (!Number.isFinite(parsed.getTime())) return '';
+    return parsed.toISOString();
+}
+
 function buildWhereClause(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const where = ['tenant_id = $1'];
     const params = [tenantId];
@@ -180,6 +188,13 @@ function buildWhereClause(tenantId = DEFAULT_TENANT_ID, options = {}) {
             OR LOWER(COALESCE(profile ->> 'documentNumber', '')) LIKE $${idx}
         )`);
         params.push(`%${query}%`);
+        idx += 1;
+    }
+
+    const updatedSince = normalizeUpdatedSince(options.updatedSince || '');
+    if (updatedSince) {
+        where.push(`updated_at > $${idx}`);
+        params.push(updatedSince);
         idx += 1;
     }
 
@@ -224,6 +239,8 @@ async function listCustomersFile(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const query = toLower(options.query || '');
     const moduleId = toText(options.moduleId || '');
     const includeInactive = options.includeInactive !== false;
+    const updatedSinceIso = normalizeUpdatedSince(options.updatedSince || '');
+    const updatedSinceTime = updatedSinceIso ? new Date(updatedSinceIso).getTime() : NaN;
 
     let filtered = items;
     if (!includeInactive) {
@@ -246,6 +263,15 @@ async function listCustomersFile(tenantId = DEFAULT_TENANT_ID, options = {}) {
                 profile.documentNumber
             ].map((entry) => toLower(entry)).join(' ');
             return haystack.includes(query);
+        });
+    }
+    if (Number.isFinite(updatedSinceTime)) {
+        filtered = filtered.filter((item) => {
+            const candidateRaw = toText(item?.updatedAt || item?.updated_at || '');
+            if (!candidateRaw) return false;
+            const candidateTime = new Date(candidateRaw).getTime();
+            if (!Number.isFinite(candidateTime)) return false;
+            return candidateTime > updatedSinceTime;
         });
     }
 
@@ -860,6 +886,7 @@ async function upsertFromInteraction(tenantId = DEFAULT_TENANT_ID, payload = {})
     const shouldAttachFirstOrigin = Object.keys(existingOrigin).length === 0 && Object.keys(incomingOrigin).length > 0;
 
     const upsertResult = await upsertCustomer(tenantId, {
+        customerId: toText(existingByPhone?.customerId || '') || undefined,
         moduleId: toText(payload?.moduleId || ''),
         phoneE164: phone,
         contactName: toText(payload?.contactName || payload?.name || payload?.pushname || ''),
@@ -875,7 +902,7 @@ async function upsertFromInteraction(tenantId = DEFAULT_TENANT_ID, payload = {})
         },
         lastInteractionAt: nowIso(),
         isActive: true
-    }, { allowPhoneMerge: true });
+    }, { allowPhoneMerge: false });
 
     const customerId = toText(upsertResult?.item?.customerId || '');
     if (customerId && getStorageDriver() === 'postgres') {

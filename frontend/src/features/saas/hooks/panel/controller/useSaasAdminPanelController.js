@@ -1029,6 +1029,7 @@ export default function useSaasAdminPanelController({
         customerImportModuleId: panelCoreState.customerImportModuleId,
         customerPanelMode: panelCoreState.customerPanelMode,
         customerSearch: panelCoreState.customerSearch,
+        setCustomers: panelCoreState.setCustomers,
         loadingAccessCatalog: panelCoreState.loadingAccessCatalog,
         catalogProductImageUploading: panelCoreState.catalogProductImageUploading,
         labelForm: panelCoreState.labelForm,
