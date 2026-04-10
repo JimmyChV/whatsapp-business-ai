@@ -68,6 +68,17 @@ const ADDRESS_TYPE_OPTIONS = [
     { value: 'delivery', label: 'Entrega' },
     { value: 'other', label: 'Otro' }
 ];
+const ADDRESS_TYPE_LABEL_BY_VALUE = ADDRESS_TYPE_OPTIONS.reduce((acc, option) => {
+    const key = String(option?.value || '').trim().toLowerCase();
+    if (!key) return acc;
+    acc[key] = String(option?.label || key).trim() || key;
+    return acc;
+}, {});
+const FORM_LANGUAGE_OPTIONS = [
+    { value: 'es', label: 'Espanol (es)' },
+    { value: 'en', label: 'Ingles (en)' },
+    { value: 'pt', label: 'Portugues (pt)' }
+];
 
 function normalizeCatalogItems(items = []) {
     if (!Array.isArray(items)) return [];
@@ -186,6 +197,13 @@ function buildOptimisticCustomerFromPayload(customer = null, payload = {}) {
     const nextCustomerTypeId = pickPatchedValue(sourcePayload, 'customerTypeId', customer.customerTypeId);
     const nextAcquisitionSourceId = pickPatchedValue(sourcePayload, 'acquisitionSourceId', customer.acquisitionSourceId);
     const nextNotes = pickPatchedValue(sourcePayload, 'notes', customer.notes);
+    const nextPreferredLanguage = String(
+        pickPatchedValue(
+            sourcePayload,
+            'preferredLanguage',
+            customer.preferredLanguage || customer.preferred_language || customer?.metadata?.preferredLanguage || 'es'
+        ) || 'es'
+    ).trim().toLowerCase();
 
     return {
         ...customer,
@@ -212,6 +230,8 @@ function buildOptimisticCustomerFromPayload(customer = null, payload = {}) {
         lastNameMaternal: nextLastNameMaternal,
         last_name_maternal: pickPatchedValue(sourcePayload, 'last_name_maternal', customer.last_name_maternal),
         notes: nextNotes,
+        preferredLanguage: nextPreferredLanguage,
+        preferred_language: nextPreferredLanguage,
         profile: {
             ...previousProfile,
             ...payloadProfile,
@@ -224,6 +244,10 @@ function buildOptimisticCustomerFromPayload(customer = null, payload = {}) {
             customerTypeId: nextCustomerTypeId,
             sourceId: nextAcquisitionSourceId,
             notes: nextNotes
+        },
+        metadata: {
+            ...(customer?.metadata && typeof customer.metadata === 'object' ? customer.metadata : {}),
+            preferredLanguage: nextPreferredLanguage
         },
         updatedAt: nowIso,
         updated_at: nowIso
@@ -268,6 +292,14 @@ function normalizeModuleContextRecord(value = null) {
 
 function normalizeAddressRecord(value = null) {
     const source = value && typeof value === 'object' ? value : {};
+    const districtName = String(source.districtName || source.district_name || '').trim();
+    const provinceName = String(source.provinceName || source.province_name || '').trim();
+    const departmentName = String(source.departmentName || source.department_name || '').trim();
+    const districtId = String(source.districtId || source.district_id || '').trim();
+    const locationLabel = [districtName, provinceName, departmentName]
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean)
+        .join(', ');
     return {
         addressId: String(source.addressId || source.address_id || '').trim(),
         addressType: String(source.addressType || source.address_type || '').trim() || 'other',
@@ -276,9 +308,11 @@ function normalizeAddressRecord(value = null) {
         mapsUrl: String(source.mapsUrl || source.maps_url || '').trim(),
         latitude: String(source.latitude || '').trim(),
         longitude: String(source.longitude || '').trim(),
-        districtName: String(source.districtName || source.district_name || '').trim(),
-        provinceName: String(source.provinceName || source.province_name || '').trim(),
-        departmentName: String(source.departmentName || source.department_name || '').trim(),
+        districtId,
+        districtName,
+        provinceName,
+        departmentName,
+        locationLabel: locationLabel || districtId || '-',
         isPrimary: Boolean(source.isPrimary || source.is_primary),
         updatedAt: String(source.updatedAt || source.updated_at || source.createdAt || source.created_at || '').trim()
     };
@@ -299,6 +333,22 @@ function buildAddressFormFromRecord(value = null) {
         longitude: String(value?.longitude || '').trim(),
         isPrimary: Boolean(source.isPrimary)
     };
+}
+
+function resolveAddressTypeLabel(value = '') {
+    const key = String(value || '').trim().toLowerCase();
+    return ADDRESS_TYPE_LABEL_BY_VALUE[key] || key || '-';
+}
+
+function buildAddressLocationLabel(address = {}) {
+    const source = address && typeof address === 'object' ? address : {};
+    const resolved = [
+        String(source.districtName || source.district_name || '').trim(),
+        String(source.provinceName || source.province_name || '').trim(),
+        String(source.departmentName || source.department_name || '').trim()
+    ].filter(Boolean).join(', ');
+    if (resolved) return resolved;
+    return String(source.districtId || source.district_id || source.locationLabel || '').trim() || '-';
 }
 
 function buildCustomerDisplayName(customer = null) {
@@ -675,6 +725,21 @@ function CustomersSection(props = {}) {
         ?? customerForm?.profileNotes
         ?? ''
     );
+    const formPreferredLanguageValue = useMemo(() => {
+        const direct = String(customerForm?.preferredLanguage || customerForm?.preferred_language || '').trim().toLowerCase();
+        if (direct === 'en' || direct === 'pt' || direct === 'es') return direct;
+        if (selectedCustomer && customerPanelMode !== 'create') return normalizePreferredLanguage(selectedCustomer);
+        return 'es';
+    }, [customerForm?.preferredLanguage, customerForm?.preferred_language, customerPanelMode, selectedCustomer]);
+
+    useEffect(() => {
+        if (customerPanelMode !== 'create') return;
+        if (String(customerForm?.preferredLanguage || customerForm?.preferred_language || '').trim()) return;
+        setCustomerForm((prev) => ({
+            ...prev,
+            preferredLanguage: 'es'
+        }));
+    }, [customerForm?.preferredLanguage, customerForm?.preferred_language, customerPanelMode, setCustomerForm]);
 
     const tableColumns = useMemo(
         () => CUSTOMER_TABLE_COLUMNS.map((column) => ({
@@ -1015,7 +1080,10 @@ function CustomersSection(props = {}) {
         setEditClickBusy(true);
         try {
             if (selectedCustomer) {
-                setCustomerForm(normalizeCustomerFormFromItem(selectedCustomer));
+                setCustomerForm({
+                    ...normalizeCustomerFormFromItem(selectedCustomer),
+                    preferredLanguage: normalizePreferredLanguage(selectedCustomer)
+                });
             }
             setCustomerPanelMode('edit');
         } finally {
@@ -1091,6 +1159,7 @@ function CustomersSection(props = {}) {
         const customerTypeId = String(customerForm?.customerTypeId || '').trim() || null;
         const acquisitionSourceId = String(customerForm?.acquisitionSourceId || '').trim() || null;
         const notes = String(notesValue || '').trim() || null;
+        const preferredLanguage = String(formPreferredLanguageValue || '').trim().toLowerCase() || 'es';
         return {
             ...basePayload,
             treatmentId,
@@ -1109,7 +1178,8 @@ function CustomersSection(props = {}) {
             customer_type_id: customerTypeId,
             acquisitionSourceId,
             acquisition_source_id: acquisitionSourceId,
-            notes
+            notes,
+            preferredLanguage
         };
     }, [
         buildCustomerPayloadFromForm,
@@ -1118,7 +1188,8 @@ function CustomersSection(props = {}) {
         lastNamePaternalValue,
         lastNameMaternalValue,
         documentNumberValue,
-        notesValue
+        notesValue,
+        formPreferredLanguageValue
     ]);
 
     const handleSaveCustomer = useCallback(() => {
@@ -1138,7 +1209,14 @@ function CustomersSection(props = {}) {
                     });
                     const createdItem = created?.item && typeof created.item === 'object' ? created.item : null;
                     const createdId = String(createdItem?.customerId || created?.item?.customer_id || '').trim();
+                    const preferredLanguage = String(payload?.preferredLanguage || 'es').trim().toLowerCase() || 'es';
                     if (createdItem) updateCustomersState(createdItem);
+                    if (createdId) {
+                        await requestJson('/api/tenant/customers/' + encodeURIComponent(createdId) + '/language', {
+                            method: 'PATCH',
+                            body: { preferredLanguage }
+                        });
+                    }
                     if (createdId) setSelectedCustomerId(createdId);
                     setCustomerPanelMode('view');
                     showSyncedIndicator();
@@ -1167,6 +1245,11 @@ function CustomersSection(props = {}) {
                 const response = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/' + encodeURIComponent(customerId), {
                     method: 'PUT',
                     body: payload
+                });
+                const preferredLanguage = String(payload?.preferredLanguage || 'es').trim().toLowerCase() || 'es';
+                await requestJson('/api/tenant/customers/' + encodeURIComponent(customerId) + '/language', {
+                    method: 'PATCH',
+                    body: { preferredLanguage }
                 });
                 const serverItem = response?.item && typeof response.item === 'object' ? response.item : null;
                 if (serverItem) {
@@ -1612,47 +1695,66 @@ function CustomersSection(props = {}) {
                     <div className="saas-admin-inline-feedback error">{addressesError}</div>
                 ) : null}
                 {hasAddresses ? (
-                    <div className="saas-customers-address-list">
-                        {effectiveAddresses.map((address, index) => {
-                            const locationLabel = [address.districtName, address.provinceName, address.departmentName].filter(Boolean).join(', ');
-                            return (
-                                <div key={address.addressId || `address-${index}`} className="saas-customers-address-item">
-                                    <div className="saas-customers-address-item__header">
-                                        <strong>{address.addressType || 'other'}</strong>
-                                        {address.isPrimary ? <small>Principal</small> : null}
-                                    </div>
-                                    <p>{address.street || '-'}</p>
-                                    {address.reference ? <p>{address.reference}</p> : null}
-                                    {locationLabel ? <p>{locationLabel}</p> : null}
+                    <div className="saas-customers-address-table-wrap">
+                        <SaasDataTable
+                            columns={[
+                                { key: 'tipo', label: 'Tipo', width: '12%' },
+                                { key: 'direccion', label: 'Direccion', width: '28%' },
+                                { key: 'referencia', label: 'Referencia', width: '20%' },
+                                { key: 'ubicacion', label: 'Ubicacion', width: '22%' },
+                                { key: 'principal', label: 'Principal', width: '8%', align: 'center' },
+                                { key: 'acciones', label: 'Acciones', width: '22%' }
+                            ]}
+                            rows={effectiveAddresses.map((address, index) => ({
+                                id: String(address?.addressId || `address-${index}`).trim(),
+                                tipo: resolveAddressTypeLabel(address?.addressType),
+                                direccion: String(address?.street || '-').trim() || '-',
+                                referencia: String(address?.reference || '-').trim() || '-',
+                                ubicacion: buildAddressLocationLabel(address),
+                                principal: address?.isPrimary ? 'Si' : 'No',
+                                acciones: (
                                     <div className="saas-customers-address-item__actions">
                                         <button
                                             type="button"
                                             disabled={busy || addressBusy}
-                                            onClick={() => handleStartEditAddress(address)}
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                handleStartEditAddress(address);
+                                            }}
                                         >
                                             Editar
                                         </button>
                                         <button
                                             type="button"
                                             disabled={busy || addressBusy}
-                                            onClick={() => handleDeleteAddress(address.addressId)}
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                handleDeleteAddress(address.addressId);
+                                            }}
                                         >
                                             Eliminar
                                         </button>
-                                        {!address.isPrimary ? (
+                                        {!address?.isPrimary ? (
                                             <button
                                                 type="button"
                                                 disabled={busy || addressBusy}
-                                                onClick={() => handleSetPrimaryAddress(address.addressId)}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    handleSetPrimaryAddress(address.addressId);
+                                                }}
                                             >
-                                                Marcar principal
+                                                Principal
                                             </button>
                                         ) : null}
                                     </div>
-                                    <small>Actualizado: {formatDateTimeLabel(address.updatedAt)}</small>
-                                </div>
-                            );
-                        })}
+                                ),
+                                _raw: address
+                            }))}
+                            loading={Boolean(addressesLoading)}
+                            emptyText="No hay direcciones registradas."
+                            enableInfinite={false}
+                            onSelect={(row) => handleStartEditAddress(row?._raw)}
+                        />
                     </div>
                 ) : (
                     <div className="saas-customers-address-editor-wrap">
@@ -1776,6 +1878,7 @@ function CustomersSection(props = {}) {
                 title={selectedCustomer?.contactName || selectedCustomer?.customerId || 'Cliente'}
                 subtitle={`Codigo: ${selectedCustomer?.customerId || '-'}`}
                 className="saas-customers-detail-panel"
+                bodyClassName="saas-customers-detail-panel__body"
                 actions={(
                     <div className="saas-customers-detail-actions">
                         <button type="button" disabled={editClickBusy} onClick={handleOpenCustomerEdit}>Editar</button>
@@ -1849,6 +1952,7 @@ function CustomersSection(props = {}) {
                 title={customerPanelMode === 'create' ? 'Nuevo cliente' : 'Editando cliente'}
                 subtitle="Completa los datos y guarda cambios."
                 className="saas-customers-detail-panel"
+                bodyClassName="saas-customers-detail-panel__body"
                 actions={(
                     <div className="saas-customers-detail-actions">
                         <button
@@ -1945,6 +2049,15 @@ function CustomersSection(props = {}) {
                     </div>
                     <div className="saas-admin-form-row">
                         <input value={customerForm.email} onChange={(event) => setCustomerForm((prev) => ({ ...prev, email: event.target.value }))} placeholder="Correo" disabled={busy} />
+                        <select
+                            value={formPreferredLanguageValue}
+                            onChange={(event) => setCustomerForm((prev) => ({ ...prev, preferredLanguage: event.target.value }))}
+                            disabled={busy}
+                        >
+                            {FORM_LANGUAGE_OPTIONS.map((option) => (
+                                <option key={`customer-form-lang-${option.value}`} value={option.value}>{option.label}</option>
+                            ))}
+                        </select>
                     </div>
                     <div className="saas-admin-form-row">
                         <input value={customerForm.tagsText} onChange={(event) => setCustomerForm((prev) => ({ ...prev, tagsText: event.target.value }))} placeholder="Etiquetas separadas por coma" disabled={busy} />
