@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
+import { SaasDataTable, useSaasColumnPrefs } from '../components/layout';
 
 const STATUS_META = {
     approved: { label: 'Aprobado', className: 'saas-meta-template-status--approved' },
@@ -29,6 +30,24 @@ const HEADER_TYPE_OPTIONS = [
     { value: 'image', label: 'Imagen' },
     { value: 'video', label: 'Video' },
     { value: 'document', label: 'Documento' }
+];
+
+const TEMPLATE_TABLE_COLUMNS = [
+    { key: 'templateName', label: 'Nombre', width: '280px', minWidth: '220px', maxWidth: '360px', type: 'text' },
+    { key: 'category', label: 'Categoria', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option' },
+    { key: 'templateLanguage', label: 'Idioma', width: '120px', minWidth: '100px', maxWidth: '150px', type: 'option' },
+    { key: 'statusLabel', label: 'Estado', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option' },
+    { key: 'moduleLabel', label: 'Modulo', width: '200px', minWidth: '160px', maxWidth: '280px', type: 'text' },
+    { key: 'updatedAt', label: 'Actualizado', width: '190px', minWidth: '160px', maxWidth: '230px', type: 'date' }
+];
+
+const TEMPLATE_DEFAULT_COLUMN_KEYS = [
+    'templateName',
+    'category',
+    'templateLanguage',
+    'statusLabel',
+    'moduleLabel',
+    'updatedAt'
 ];
 
 const EMPTY_CREATE_FORM = {
@@ -550,6 +569,11 @@ function MetaTemplatesSection(props = {}) {
     const [previewMode, setPreviewMode] = useState('delivery');
     const bodyTextareaRef = useRef(null);
     const headerMediaInputRef = useRef(null);
+    const {
+        visibleKeys: visibleTableColumnKeys,
+        setVisibleKeys: setVisibleTableColumnKeys,
+        resetVisibleKeys: resetVisibleTableColumnKeys
+    } = useSaasColumnPrefs('meta_templates', TEMPLATE_DEFAULT_COLUMN_KEYS);
     const lastVariableIndexMapRef = useRef({
         header: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },
         body: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },
@@ -698,6 +722,35 @@ function MetaTemplatesSection(props = {}) {
     const selectedTemplate = useMemo(() => {
         return visibleItems.find((entry) => String(entry?.templateId || '').trim() === selectedTemplateId) || null;
     }, [selectedTemplateId, visibleItems]);
+
+    const tableRows = useMemo(() => {
+        return Array.isArray(visibleItems)
+            ? visibleItems.map((template = {}) => {
+                const templateId = toText(template?.templateId);
+                const statusMeta = resolveStatusMeta(template?.status);
+                return {
+                    id: templateId,
+                    templateId,
+                    templateName: toText(template?.templateName) || templateId || '-',
+                    category: toText(template?.category) || '-',
+                    templateLanguage: toText(template?.templateLanguage).toUpperCase() || '-',
+                    statusLabel: statusMeta.label,
+                    moduleLabel: toText(template?.moduleId) || '-',
+                    updatedAt: toText(template?.updatedAt) || '-'
+                };
+            })
+            : [];
+    }, [visibleItems]);
+
+    const tableColumns = useMemo(() => {
+        const visibleSet = new Set((Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : [])
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean));
+        return TEMPLATE_TABLE_COLUMNS.map((column) => ({
+            ...column,
+            hidden: visibleSet.size > 0 ? !visibleSet.has(column.key) : false
+        }));
+    }, [visibleTableColumnKeys]);
 
     const selectedTemplatePreview = useMemo(
         () => buildTemplatePreviewFromComponents(selectedTemplate?.componentsJson || []),
@@ -1216,34 +1269,50 @@ function MetaTemplatesSection(props = {}) {
                                 </button>
                             </div>
 
-                            <div className="saas-admin-list saas-admin-list--compact">
-                                {visibleItems.length === 0 && (
-                                    <div className="saas-admin-empty-state">
-                                        <h4>Sin templates</h4>
-                                        <p>No hay templates para los filtros seleccionados.</p>
-                                    </div>
-                                )}
-                                {visibleItems.map((template) => {
-                                    const templateId = toText(template?.templateId);
-                                    const statusMeta = resolveStatusMeta(template?.status);
-                                    return (
-                                        <button
-                                            key={`meta_template_item_${templateId}`}
-                                            type="button"
-                                            className={`saas-admin-list-item saas-admin-list-item--button ${selectedTemplateId === templateId ? 'active' : ''}`.trim()}
-                                            onClick={() => {
-                                                setSelectedTemplateId(templateId);
-                                                setPanelMode('view');
-                                            }}
-                                        >
-                                            <strong>{toText(template?.templateName) || templateId}</strong>
-                                            <small>{toText(template?.templateLanguage).toUpperCase()} | {toText(template?.category) || '-'}</small>
-                                            <small>{toText(template?.moduleId) || '-'}</small>
-                                            <span className={`saas-meta-template-status ${statusMeta.className}`.trim()}>{statusMeta.label}</span>
-                                        </button>
-                                    );
-                                })}
+                            <div className="saas-customers-columns-panel">
+                                <div className="saas-customers-columns-header">
+                                    <strong>Columnas</strong>
+                                    <button type="button" onClick={resetVisibleTableColumnKeys}>Restaurar</button>
+                                </div>
+                                <div className="saas-customers-columns-grid">
+                                    {TEMPLATE_TABLE_COLUMNS.map((column) => {
+                                        const isChecked = (Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : []).includes(column.key);
+                                        return (
+                                            <label key={`meta-template-col-${column.key}`} className="saas-customers-columns-item">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isChecked}
+                                                    onChange={(event) => {
+                                                        const current = Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : [];
+                                                        const next = event.target.checked
+                                                            ? [...current, column.key]
+                                                            : current.filter((entry) => entry !== column.key);
+                                                        setVisibleTableColumnKeys(next.length > 0 ? next : TEMPLATE_DEFAULT_COLUMN_KEYS);
+                                                    }}
+                                                />
+                                                <span>{column.label}</span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
                             </div>
+
+                            <SaasDataTable
+                                columns={tableColumns}
+                                rows={tableRows}
+                                selectedId={selectedTemplateId}
+                                loading={loadingList}
+                                emptyText="No hay templates para los filtros seleccionados."
+                                onSelect={(row) => {
+                                    const nextTemplateId = toText(row?.templateId || row?.id);
+                                    if (!nextTemplateId) return;
+                                    setSelectedTemplateId(nextTemplateId);
+                                    setPanelMode('view');
+                                }}
+                                enableInfinite
+                                initialBatch={80}
+                                batchSize={80}
+                            />
                         </>
                     )}
                 </aside>
