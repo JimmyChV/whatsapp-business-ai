@@ -5,6 +5,7 @@ import {
     SaasDetailPanel,
     SaasDetailPanelSection,
     SaasTableDetailLayout,
+    SaasViewHeader,
     useSaasColumnPrefs
 } from '../components/layout';
 
@@ -562,6 +563,7 @@ function MetaTemplatesSection(props = {}) {
     const { confirm, notify } = useUiFeedback();
     const [panelMode, setPanelMode] = useState('view');
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
+    const [showColumnsPanel, setShowColumnsPanel] = useState(false);
     const [syncModuleId, setSyncModuleId] = useState('');
     const [createForm, setCreateForm] = useState(() => buildInitialForm(''));
     const [templateVarCatalog, setTemplateVarCatalog] = useState([]);
@@ -1159,6 +1161,127 @@ function MetaTemplatesSection(props = {}) {
         previewText.header
     ]);
 
+    const headerElement = useMemo(() => (
+        <SaasViewHeader
+            title="Templates Meta"
+            count={total}
+            searchValue={filters.search || ''}
+            onSearchChange={(value) => {
+                updateFilter({ search: value, offset: 0 }).catch((error) => {
+                    setError?.(String(error?.message || error || 'No se pudo actualizar la busqueda.'));
+                });
+            }}
+            searchPlaceholder="Buscar template por nombre, categoria o idioma"
+            searchDisabled={templatesBusy || tenantScopeLocked}
+            actions={[
+                {
+                    key: 'reload',
+                    label: 'Recargar',
+                    onClick: () => reloadTemplates().catch((error) => {
+                        setError?.(String(error?.message || error || 'No se pudo recargar templates.'));
+                    }),
+                    disabled: templatesBusy || !settingsTenantId
+                },
+                {
+                    key: 'columns',
+                    label: showColumnsPanel ? 'Ocultar columnas' : 'Columnas',
+                    onClick: () => setShowColumnsPanel((prev) => !prev),
+                    disabled: tenantScopeLocked
+                },
+                {
+                    key: 'create',
+                    label: 'Crear template',
+                    onClick: () => openCreateTemplatePanel().catch((error) => {
+                        const message = String(error?.message || error || 'No se pudo abrir el formulario de templates.');
+                        notify({ type: 'error', message });
+                        setError?.(message);
+                    }),
+                    disabled: templatesBusy || !canWrite
+                }
+            ]}
+            extra={!tenantScopeLocked ? (
+                <div className="saas-admin-form-row">
+                    <select
+                        value={filters.scopeModuleId || ''}
+                        disabled={templatesBusy}
+                        onChange={(event) => {
+                            const nextScopeModuleId = toText(event.target.value);
+                            updateFilter({ scopeModuleId: nextScopeModuleId, offset: 0 }).catch((error) => {
+                                setError?.(String(error?.message || error || 'No se pudo filtrar por modulo.'));
+                            });
+                        }}
+                    >
+                        <option value="">Todos los modulos</option>
+                        {moduleOptions.map((moduleItem) => (
+                            <option key={`meta_template_scope_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
+                                {moduleItem.label}
+                            </option>
+                        ))}
+                    </select>
+                    <select
+                        value={filters.status || ''}
+                        disabled={templatesBusy}
+                        onChange={(event) => {
+                            const nextStatus = toLower(event.target.value);
+                            updateFilter({ status: nextStatus, offset: 0 }).catch((error) => {
+                                setError?.(String(error?.message || error || 'No se pudo filtrar por estado.'));
+                            });
+                        }}
+                    >
+                        <option value="">Todos los estados</option>
+                        {statusOptions
+                            .filter((option) => Boolean(option))
+                            .map((option) => (
+                                <option key={`meta_template_status_${option}`} value={option}>
+                                    {resolveStatusMeta(option).label}
+                                </option>
+                            ))}
+                    </select>
+                    <select
+                        value={syncModuleId}
+                        onChange={(event) => setSyncModuleId(toText(event.target.value))}
+                        disabled={templatesBusy || !canWrite}
+                    >
+                        <option value="">Modulo para sincronizar</option>
+                        {moduleOptions.map((moduleItem) => (
+                            <option key={`meta_template_sync_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
+                                {moduleItem.label}
+                            </option>
+                        ))}
+                    </select>
+                    <button
+                        type="button"
+                        disabled={templatesBusy || !canWrite || !syncModuleId}
+                        onClick={() => handleSyncTemplates().catch((error) => {
+                            setError?.(String(error?.message || error || 'No se pudo sincronizar templates.'));
+                        })}
+                    >
+                        Sincronizar
+                    </button>
+                </div>
+            ) : null}
+        />
+    ), [
+        canWrite,
+        filters.scopeModuleId,
+        filters.search,
+        filters.status,
+        handleSyncTemplates,
+        moduleOptions,
+        notify,
+        openCreateTemplatePanel,
+        reloadTemplates,
+        setError,
+        settingsTenantId,
+        showColumnsPanel,
+        statusOptions,
+        syncModuleId,
+        templatesBusy,
+        tenantScopeLocked,
+        total,
+        updateFilter
+    ]);
+
     if (!isMetaTemplatesSection) {
         return null;
     }
@@ -1168,35 +1291,9 @@ function MetaTemplatesSection(props = {}) {
             <SaasTableDetailLayout
                 selectedId={tenantScopeLocked ? '' : (panelMode === 'create' ? '__template_create__' : selectedTemplateId)}
                 className={`saas-meta-templates-td-layout ${panelMode === 'create' ? 'saas-meta-templates-td-layout--create' : ''}`.trim()}
+                header={headerElement}
                 left={(
                     <aside className="saas-admin-master-pane">
-                    <div className="saas-admin-pane-header">
-                        <div>
-                            <h3>Templates Meta</h3>
-                            <small>Gestiona templates aprobados para WhatsApp Cloud API.</small>
-                        </div>
-                        <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                            <button
-                                type="button"
-                                disabled={templatesBusy || !settingsTenantId}
-                                onClick={() => reloadTemplates().catch((error) => setError?.(String(error?.message || error || 'No se pudo recargar templates.')))}
-                            >
-                                Recargar
-                            </button>
-                            <button
-                                type="button"
-                                disabled={templatesBusy || !canWrite}
-                                onClick={() => openCreateTemplatePanel().catch((error) => {
-                                    const message = String(error?.message || error || 'No se pudo abrir el formulario de templates.');
-                                    notify({ type: 'error', message });
-                                    setError?.(message);
-                                })}
-                            >
-                                Crear template
-                            </button>
-                        </div>
-                    </div>
-
                     {tenantScopeLocked && (
                         <div className="saas-admin-empty-state">
                             <h4>Selecciona una empresa</h4>
@@ -1206,105 +1303,35 @@ function MetaTemplatesSection(props = {}) {
 
                     {!tenantScopeLocked && (
                         <>
-                            <div className="saas-admin-form-row">
-                                <select
-                                    value={filters.scopeModuleId || ''}
-                                    disabled={templatesBusy}
-                                    onChange={(event) => {
-                                        const nextScopeModuleId = toText(event.target.value);
-                                        updateFilter({ scopeModuleId: nextScopeModuleId, offset: 0 }).catch((error) => {
-                                            setError?.(String(error?.message || error || 'No se pudo filtrar por modulo.'));
-                                        });
-                                    }}
-                                >
-                                    <option value="">Todos los modulos</option>
-                                    {moduleOptions.map((moduleItem) => (
-                                        <option key={`meta_template_scope_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
-                                            {moduleItem.label}
-                                        </option>
-                                    ))}
-                                </select>
-                                <select
-                                    value={filters.status || ''}
-                                    disabled={templatesBusy}
-                                    onChange={(event) => {
-                                        const nextStatus = toLower(event.target.value);
-                                        updateFilter({ status: nextStatus, offset: 0 }).catch((error) => {
-                                            setError?.(String(error?.message || error || 'No se pudo filtrar por estado.'));
-                                        });
-                                    }}
-                                >
-                                    <option value="">Todos los estados</option>
-                                    {statusOptions
-                                        .filter((option) => Boolean(option))
-                                        .map((option) => (
-                                            <option key={`meta_template_status_${option}`} value={option}>
-                                                {resolveStatusMeta(option).label}
-                                            </option>
-                                        ))}
-                                </select>
-                            </div>
-
-                            <div className="saas-admin-form-row">
-                                <input
-                                    value={filters.search || ''}
-                                    onChange={(event) => setFilters?.({ ...filters, search: event.target.value })}
-                                    placeholder="Buscar template por nombre, categoria o idioma"
-                                    disabled={templatesBusy}
-                                />
-                            </div>
-
-                            <div className="saas-admin-form-row">
-                                <select
-                                    value={syncModuleId}
-                                    onChange={(event) => setSyncModuleId(toText(event.target.value))}
-                                    disabled={templatesBusy || !canWrite}
-                                >
-                                    <option value="">Selecciona modulo para sincronizar</option>
-                                    {moduleOptions.map((moduleItem) => (
-                                        <option key={`meta_template_sync_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
-                                            {moduleItem.label}
-                                        </option>
-                                    ))}
-                                </select>
-                                <button
-                                    type="button"
-                                    disabled={templatesBusy || !canWrite || !syncModuleId}
-                                    onClick={() => handleSyncTemplates().catch((error) => {
-                                        setError?.(String(error?.message || error || 'No se pudo sincronizar templates.'));
-                                    })}
-                                >
-                                    Sincronizar
-                                </button>
-                            </div>
-
-                            <div className="saas-customers-columns-panel">
-                                <div className="saas-customers-columns-header">
-                                    <strong>Columnas</strong>
-                                    <button type="button" onClick={resetVisibleTableColumnKeys}>Restaurar</button>
+                            {showColumnsPanel ? (
+                                <div className="saas-customers-columns-panel">
+                                    <div className="saas-customers-columns-header">
+                                        <strong>Columnas</strong>
+                                        <button type="button" onClick={resetVisibleTableColumnKeys}>Restaurar</button>
+                                    </div>
+                                    <div className="saas-customers-columns-grid">
+                                        {TEMPLATE_TABLE_COLUMNS.map((column) => {
+                                            const isChecked = (Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : []).includes(column.key);
+                                            return (
+                                                <label key={`meta-template-col-${column.key}`} className="saas-customers-columns-item">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isChecked}
+                                                        onChange={(event) => {
+                                                            const current = Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : [];
+                                                            const next = event.target.checked
+                                                                ? [...current, column.key]
+                                                                : current.filter((entry) => entry !== column.key);
+                                                            setVisibleTableColumnKeys(next.length > 0 ? next : TEMPLATE_DEFAULT_COLUMN_KEYS);
+                                                        }}
+                                                    />
+                                                    <span>{column.label}</span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                                <div className="saas-customers-columns-grid">
-                                    {TEMPLATE_TABLE_COLUMNS.map((column) => {
-                                        const isChecked = (Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : []).includes(column.key);
-                                        return (
-                                            <label key={`meta-template-col-${column.key}`} className="saas-customers-columns-item">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={isChecked}
-                                                    onChange={(event) => {
-                                                        const current = Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : [];
-                                                        const next = event.target.checked
-                                                            ? [...current, column.key]
-                                                            : current.filter((entry) => entry !== column.key);
-                                                        setVisibleTableColumnKeys(next.length > 0 ? next : TEMPLATE_DEFAULT_COLUMN_KEYS);
-                                                    }}
-                                                />
-                                                <span>{column.label}</span>
-                                            </label>
-                                        );
-                                    })}
-                                </div>
-                            </div>
+                            ) : null}
 
                             <SaasDataTable
                                 columns={tableColumns}
@@ -1343,15 +1370,36 @@ function MetaTemplatesSection(props = {}) {
                     )}
 
                     {!tenantScopeLocked && panelMode === 'create' && (
-                        <div className="saas-admin-related-block">
-                            <div className="saas-admin-pane-header">
-                                <div>
-                                    <h3>Crear template</h3>
-                                    <small>Formulario inteligente con variables, ejemplos y preview en tiempo real.</small>
+                        <SaasDetailPanel
+                            title="Crear template"
+                            subtitle="Formulario inteligente con variables, ejemplos y preview en tiempo real."
+                            className="saas-meta-templates-detail-panel"
+                            bodyClassName="saas-meta-templates-detail-panel__body"
+                            actions={(
+                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                    <button
+                                        type="button"
+                                        disabled={templatesBusy || !canWrite}
+                                        onClick={() => setPanelMode('view')}
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={templatesBusy || !canWrite}
+                                        onClick={() => handleCreateTemplate().catch((error) => {
+                                            const message = String(error?.message || error || 'No se pudo crear template Meta.');
+                                            notify({ type: 'error', message });
+                                            setError?.(message);
+                                        })}
+                                    >
+                                        Guardar template
+                                    </button>
                                 </div>
-                            </div>
-
-                            <div className="saas-meta-template-builder">
+                            )}
+                        >
+                            <SaasDetailPanelSection title="Builder" defaultOpen>
+                                <div className="saas-meta-template-builder">
                                 <section className="saas-meta-template-builder__form">
                                     <div className="saas-meta-template-field-grid saas-meta-template-field-grid--2">
                                         <div className="saas-meta-template-field">
@@ -1805,7 +1853,8 @@ function MetaTemplatesSection(props = {}) {
                                     </section>
                                 </aside>
                             </div>
-                        </div>
+                            </SaasDetailPanelSection>
+                        </SaasDetailPanel>
                     )}
 
                     {!tenantScopeLocked && panelMode !== 'create' && selectedTemplate && (
