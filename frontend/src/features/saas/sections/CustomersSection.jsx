@@ -1,6 +1,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
+import { normalizeCustomerFormFromItem } from '../helpers';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -477,6 +478,14 @@ function buildTreatmentLabel(customer = null, labelMaps = {}) {
     ).trim() || '-';
 }
 
+function resolveUpdatedAtTimestamp(item = null) {
+    if (!item || typeof item !== 'object') return 0;
+    const raw = String(item.updatedAt || item.updated_at || '').trim();
+    if (!raw) return 0;
+    const parsed = Date.parse(raw);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function CustomersSection(props = {}) {
     const { notify } = useUiFeedback();
     const context = props.context && typeof props.context === 'object' ? props.context : props;
@@ -492,7 +501,6 @@ function CustomersSection(props = {}) {
         customerPanelMode,
         openCustomerView,
         selectedCustomer: selectedCustomerContext,
-        openCustomerEdit,
         runAction,
         requestJson,
         tenantScopeId,
@@ -548,15 +556,26 @@ function CustomersSection(props = {}) {
     const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys);
 
     useEffect(() => {
-        if (!selectedCustomerContext) {
-            setSelectedCustomerLive(null);
-            return;
-        }
-        const contextUpdatedAt = selectedCustomerContext?.updatedAt || '';
-        const liveUpdatedAt = selectedCustomerLive?.updatedAt || '';
-        if (!liveUpdatedAt || contextUpdatedAt > liveUpdatedAt) {
-            setSelectedCustomerLive(selectedCustomerContext);
-        }
+        setSelectedCustomerLive((prev) => {
+            if (!selectedCustomerContext) return null;
+            if (!prev) return selectedCustomerContext;
+
+            const prevId = resolveCustomerId(prev);
+            const nextId = resolveCustomerId(selectedCustomerContext);
+            if (
+                prevId
+                && nextId
+                && normalizeCatalogLookupKey(prevId) !== normalizeCatalogLookupKey(nextId)
+            ) {
+                return selectedCustomerContext;
+            }
+
+            const prevTs = resolveUpdatedAtTimestamp(prev);
+            const nextTs = resolveUpdatedAtTimestamp(selectedCustomerContext);
+            if (!prevTs && nextTs) return selectedCustomerContext;
+            if (nextTs >= prevTs && nextTs > 0) return selectedCustomerContext;
+            return prev;
+        });
     }, [selectedCustomerContext]);
 
     useEffect(() => {
@@ -652,8 +671,21 @@ function CustomersSection(props = {}) {
         [columnPrefs, columnPrefs.visibleColumnKeys]
     );
 
-    const tableRows = useMemo(() => {
+    const filteredCustomersLive = useMemo(() => {
         const source = Array.isArray(filteredCustomers) ? filteredCustomers : [];
+        const live = selectedCustomerLive && typeof selectedCustomerLive === 'object' ? selectedCustomerLive : null;
+        if (!live) return source;
+        const liveId = resolveCustomerId(live);
+        if (!liveId) return source;
+        return source.map((item) => {
+            const itemId = resolveCustomerId(item);
+            if (!itemId) return item;
+            return normalizeCatalogLookupKey(itemId) === normalizeCatalogLookupKey(liveId) ? live : item;
+        });
+    }, [filteredCustomers, selectedCustomerLive]);
+
+    const tableRows = useMemo(() => {
+        const source = Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [];
         return source.map((customer = {}, index) => {
             const customerId = resolveCustomerId(customer);
             const safeId = customerId || String(customer.phoneE164 || customer.phone_e164 || customer.email || `customer-${index}`).trim();
@@ -682,7 +714,7 @@ function CustomersSection(props = {}) {
                 _raw: customer
             };
         });
-    }, [customerLabelMaps, filteredCustomers, formatDateTimeLabel]);
+    }, [customerLabelMaps, filteredCustomersLive, formatDateTimeLabel]);
 
     const visibleColumns = useMemo(
         () => tableColumns.filter((column) => column && column.hidden !== true),
@@ -972,11 +1004,14 @@ function CustomersSection(props = {}) {
         if (editClickBusy) return;
         setEditClickBusy(true);
         try {
-            openCustomerEdit();
+            if (selectedCustomer) {
+                setCustomerForm(normalizeCustomerFormFromItem(selectedCustomer));
+            }
+            setCustomerPanelMode('edit');
         } finally {
             setEditClickBusy(false);
         }
-    }, [editClickBusy, openCustomerEdit]);
+    }, [editClickBusy, selectedCustomer, setCustomerForm, setCustomerPanelMode]);
 
     const handleCloseDetail = useCallback(() => {
         setSelectedCustomerId('');
@@ -984,9 +1019,10 @@ function CustomersSection(props = {}) {
     }, [setCustomerPanelMode, setSelectedCustomerId]);
 
     const handleSoftDeleteCustomer = useCallback(() => {
-        if (!selectedCustomer?.customerId) return;
+        const customerId = resolveCustomerId(selectedCustomer);
+        if (!customerId) return;
         runAction('Cliente marcado como inactivo', async () => {
-            await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/' + encodeURIComponent(selectedCustomer.customerId), {
+            await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/' + encodeURIComponent(customerId), {
                 method: 'PUT',
                 body: { isActive: false }
             });
@@ -1004,7 +1040,12 @@ function CustomersSection(props = {}) {
             patchCustomerInCache(tenantScopeId, safeItemId, safeItem);
         }
         const currentSelectedId = String(selectedCustomerIdResolved || selectedCustomerId || '').trim();
-        if (currentSelectedId && safeItemId && normalizeCatalogLookupKey(currentSelectedId) === normalizeCatalogLookupKey(safeItemId)) {
+        if (!safeItemId) return;
+        if (!currentSelectedId) {
+            setSelectedCustomerLive(safeItem);
+            return;
+        }
+        if (normalizeCatalogLookupKey(currentSelectedId) === normalizeCatalogLookupKey(safeItemId)) {
             setSelectedCustomerLive(safeItem);
         }
     }, [patchCustomerInCache, selectedCustomerId, selectedCustomerIdResolved, setCustomers, tenantScopeId]);
@@ -1065,7 +1106,8 @@ function CustomersSection(props = {}) {
         if (savingCustomer) return;
         setShowCustomerSynced(false);
         const payload = buildCustomerSubmitPayload();
-        const isCreate = customerPanelMode === 'create' || !selectedCustomer?.customerId;
+        const selectedCustomerIdForSave = resolveCustomerId(selectedCustomer);
+        const isCreate = customerPanelMode === 'create' || !selectedCustomerIdForSave;
 
         if (isCreate) {
             setSavingCustomer(true);
@@ -1093,7 +1135,7 @@ function CustomersSection(props = {}) {
             return;
         }
 
-        const customerId = String(selectedCustomer?.customerId || '').trim();
+        const customerId = String(selectedCustomerIdForSave || '').trim();
         if (!customerId) return;
         const snapshot = cloneCustomerSnapshot(selectedCustomer);
         const optimisticItem = buildOptimisticCustomerFromPayload(snapshot, payload);
