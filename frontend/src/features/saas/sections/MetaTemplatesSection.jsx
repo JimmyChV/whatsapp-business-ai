@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
-import { SaasDataTable, SaasTableDetailLayout, useSaasColumnPrefs } from '../components/layout';
+import {
+    SaasDataTable,
+    SaasDetailPanel,
+    SaasDetailPanelSection,
+    SaasTableDetailLayout,
+    useSaasColumnPrefs
+} from '../components/layout';
 
 const STATUS_META = {
     approved: { label: 'Aprobado', className: 'saas-meta-template-status--approved' },
@@ -1803,12 +1809,12 @@ function MetaTemplatesSection(props = {}) {
                     )}
 
                     {!tenantScopeLocked && panelMode !== 'create' && selectedTemplate && (
-                        <>
-                            <div className="saas-admin-pane-header">
-                                <div>
-                                    <h3>{toText(selectedTemplate.templateName) || selectedTemplate.templateId}</h3>
-                                    <small>{selectedTemplate.templateId}</small>
-                                </div>
+                        <SaasDetailPanel
+                            title={toText(selectedTemplate.templateName) || selectedTemplate.templateId}
+                            subtitle={selectedTemplate.templateId}
+                            className="saas-meta-templates-detail-panel"
+                            bodyClassName="saas-meta-templates-detail-panel__body"
+                            actions={(
                                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
                                     <button
                                         type="button"
@@ -1833,64 +1839,68 @@ function MetaTemplatesSection(props = {}) {
                                         Crear template
                                     </button>
                                 </div>
-                            </div>
-
-                            <div className="saas-admin-detail-grid">
-                                <div className="saas-admin-detail-field"><span>Estado</span><strong>{resolveStatusMeta(selectedTemplate?.status).label}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Modulo</span><strong>{toText(selectedTemplate?.moduleId) || '-'}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Idioma</span><strong>{toText(selectedTemplate?.templateLanguage).toUpperCase() || '-'}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Categoria</span><strong>{toText(selectedTemplate?.category) || '-'}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Quality</span><strong>{(() => {
-                                    const q = selectedTemplate?.qualityScore;
-                                    if (!q) return 'N/A';
-                                    try {
-                                        const parsed = typeof q === 'string' ? JSON.parse(q) : q;
-                                        return parsed?.score || q;
-                                    } catch { return q; }
-                                })()}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Meta ID</span><strong>{toText(selectedTemplate?.metaTemplateId) || '-'}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{toText(selectedTemplate?.updatedAt) || '-'}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Total listados</span><strong>{Number(total || 0)}</strong></div>
-                            </div>
-
-                            <div className="saas-template-detail-layout">
-                                <div className="saas-admin-related-block saas-template-detail-preview-pane">
-                                    <h4>Preview WhatsApp</h4>
-                                    <small className="saas-meta-template-help">Vista estimada del mensaje final para cliente usando examples del template.</small>
-                                    <WhatsAppTemplatePreview
-                                        headerType={selectedTemplatePreview?.headerType}
-                                        headerText={selectedTemplatePreview?.headerText}
-                                        headerMediaSrc={selectedTemplatePreview?.headerMediaSrc}
-                                        headerMediaLabel={selectedTemplatePreview?.headerMediaLabel}
-                                        bodyText={selectedTemplatePreview?.bodyText}
-                                        footerText={selectedTemplatePreview?.footerText}
-                                        buttons={selectedTemplatePreview?.buttons}
-                                        timeLabel={new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
-                                        emptyBodyText="Template sin body"
-                                    />
+                            )}
+                        >
+                            <SaasDetailPanelSection title="Metadata" defaultOpen>
+                                <div className="saas-admin-detail-grid">
+                                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{resolveStatusMeta(selectedTemplate?.status).label}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Modulo</span><strong>{toText(selectedTemplate?.moduleId) || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Idioma</span><strong>{toText(selectedTemplate?.templateLanguage).toUpperCase() || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Categoria</span><strong>{toText(selectedTemplate?.category) || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Quality</span><strong>{(() => {
+                                        const q = selectedTemplate?.qualityScore;
+                                        if (!q) return 'N/A';
+                                        try {
+                                            const parsed = typeof q === 'string' ? JSON.parse(q) : q;
+                                            return parsed?.score || q;
+                                        } catch { return q; }
+                                    })()}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Meta ID</span><strong>{toText(selectedTemplate?.metaTemplateId) || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{toText(selectedTemplate?.updatedAt) || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Total listados</span><strong>{Number(total || 0)}</strong></div>
                                 </div>
-                                <div className="saas-admin-related-block saas-template-detail-payload-pane">
-                                    <h4>Payload tecnico</h4>
-                                    <div className="saas-template-detail-meta-grid">
-                                        <div className="saas-template-detail-meta-item">
-                                            <span>Estado Meta</span>
-                                            <strong>{resolveStatusMeta(selectedTemplate?.status).label}</strong>
-                                        </div>
-                                        <div className="saas-template-detail-meta-item">
-                                            <span>Meta ID</span>
-                                            <strong>{toText(selectedTemplate?.metaTemplateId) || '-'}</strong>
-                                        </div>
+                            </SaasDetailPanelSection>
+
+                            <SaasDetailPanelSection title="Preview + Payload tecnico" defaultOpen>
+                                <div className="saas-template-detail-layout">
+                                    <div className="saas-admin-related-block saas-template-detail-preview-pane">
+                                        <h4>Preview WhatsApp</h4>
+                                        <small className="saas-meta-template-help">Vista estimada del mensaje final para cliente usando examples del template.</small>
+                                        <WhatsAppTemplatePreview
+                                            headerType={selectedTemplatePreview?.headerType}
+                                            headerText={selectedTemplatePreview?.headerText}
+                                            headerMediaSrc={selectedTemplatePreview?.headerMediaSrc}
+                                            headerMediaLabel={selectedTemplatePreview?.headerMediaLabel}
+                                            bodyText={selectedTemplatePreview?.bodyText}
+                                            footerText={selectedTemplatePreview?.footerText}
+                                            buttons={selectedTemplatePreview?.buttons}
+                                            timeLabel={new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
+                                            emptyBodyText="Template sin body"
+                                        />
                                     </div>
-                                    {selectedTemplate?.rejectionReason && (
-                                        <div className="saas-template-detail-rejection">
-                                            <span>Motivo de rechazo</span>
-                                            <p>{toText(selectedTemplate?.rejectionReason)}</p>
+                                    <div className="saas-admin-related-block saas-template-detail-payload-pane">
+                                        <h4>Payload tecnico</h4>
+                                        <div className="saas-template-detail-meta-grid">
+                                            <div className="saas-template-detail-meta-item">
+                                                <span>Estado Meta</span>
+                                                <strong>{resolveStatusMeta(selectedTemplate?.status).label}</strong>
+                                            </div>
+                                            <div className="saas-template-detail-meta-item">
+                                                <span>Meta ID</span>
+                                                <strong>{toText(selectedTemplate?.metaTemplateId) || '-'}</strong>
+                                            </div>
                                         </div>
-                                    )}
-                                    <pre>{JSON.stringify(selectedTemplate?.componentsJson || [], null, 2)}</pre>
+                                        {selectedTemplate?.rejectionReason && (
+                                            <div className="saas-template-detail-rejection">
+                                                <span>Motivo de rechazo</span>
+                                                <p>{toText(selectedTemplate?.rejectionReason)}</p>
+                                            </div>
+                                        )}
+                                        <pre>{JSON.stringify(selectedTemplate?.componentsJson || [], null, 2)}</pre>
+                                    </div>
                                 </div>
-                            </div>
-                        </>
+                            </SaasDetailPanelSection>
+                        </SaasDetailPanel>
                     )}
                 </div>
                 )}
