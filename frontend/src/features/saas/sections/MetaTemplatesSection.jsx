@@ -719,11 +719,8 @@ function MetaTemplatesSection(props = {}) {
 
     useEffect(() => {
         if (!isMetaTemplatesSection) return;
-        if (!selectedTemplateId && visibleItems.length > 0) {
-            setSelectedTemplateId(String(visibleItems[0]?.templateId || '').trim());
-        }
         if (selectedTemplateId && !visibleItems.some((entry) => String(entry?.templateId || '').trim() === selectedTemplateId)) {
-            setSelectedTemplateId(String(visibleItems[0]?.templateId || '').trim());
+            setSelectedTemplateId('');
         }
     }, [isMetaTemplatesSection, selectedTemplateId, visibleItems]);
 
@@ -868,6 +865,7 @@ function MetaTemplatesSection(props = {}) {
 
     const openCreateTemplatePanel = useCallback(async () => {
         setPanelMode('create');
+        setSelectedTemplateId('');
         setVariableSearchQuery('');
         setPreviewMode('delivery');
         try {
@@ -1289,7 +1287,7 @@ function MetaTemplatesSection(props = {}) {
     return (
         <section id="saas_templates" className="saas-admin-card saas-admin-card--full">
             <SaasTableDetailLayout
-                selectedId={tenantScopeLocked ? '' : (panelMode === 'create' ? '__template_create__' : selectedTemplateId)}
+                selectedId={tenantScopeLocked ? '' : (panelMode === 'create' ? '__create__' : (selectedTemplateId || ''))}
                 className={`saas-meta-templates-td-layout ${panelMode === 'create' ? 'saas-meta-templates-td-layout--create' : ''}`.trim()}
                 header={headerElement}
                 left={(
@@ -1380,7 +1378,10 @@ function MetaTemplatesSection(props = {}) {
                                     <button
                                         type="button"
                                         disabled={templatesBusy || !canWrite}
-                                        onClick={() => setPanelMode('view')}
+                                        onClick={() => {
+                                            setPanelMode('view');
+                                            setSelectedTemplateId('');
+                                        }}
                                     >
                                         Cancelar
                                     </button>
@@ -1670,6 +1671,7 @@ function MetaTemplatesSection(props = {}) {
                                             disabled={templatesBusy}
                                             onClick={() => {
                                                 setPanelMode('view');
+                                                setSelectedTemplateId('');
                                                 setCreateForm(buildInitialForm(createForm.moduleId || moduleOptions[0]?.moduleId || ''));
                                             }}
                                         >
@@ -1865,6 +1867,16 @@ function MetaTemplatesSection(props = {}) {
                             bodyClassName="saas-meta-templates-detail-panel__body"
                             actions={(
                                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                    <button
+                                        type="button"
+                                        disabled={templatesBusy}
+                                        onClick={() => {
+                                            setPanelMode('view');
+                                            setSelectedTemplateId('');
+                                        }}
+                                    >
+                                        Cerrar
+                                    </button>
                                     <button
                                         type="button"
                                         disabled={templatesBusy || !canWrite || Boolean(loadingDeleteById?.[selectedTemplate.templateId])}
