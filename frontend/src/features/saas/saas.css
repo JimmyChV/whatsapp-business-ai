@@ -3486,7 +3486,7 @@
 }
 
 .saas-admin-shell .saas-admin-panel {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .saas-admin-shell .saas-admin-grid {
@@ -3631,7 +3631,7 @@
 }
 
 .saas-admin-shell .saas-admin-panel {
-  overflow: hidden !important;
+  overflow: visible !important;
   font-size: 13px;
 }
 
