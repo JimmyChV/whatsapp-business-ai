@@ -865,7 +865,6 @@ function MetaTemplatesSection(props = {}) {
 
     const openCreateTemplatePanel = useCallback(async () => {
         setPanelMode('create');
-        setSelectedTemplateId('');
         setVariableSearchQuery('');
         setPreviewMode('delivery');
         try {
@@ -1288,7 +1287,7 @@ function MetaTemplatesSection(props = {}) {
         <section id="saas_templates" className="saas-admin-card saas-admin-card--full">
             <SaasTableDetailLayout
                 selectedId={tenantScopeLocked ? '' : (panelMode === 'create' ? '__create__' : (selectedTemplateId || ''))}
-                className={`saas-meta-templates-td-layout ${panelMode === 'create' ? 'saas-meta-templates-td-layout--create' : ''}`.trim()}
+                className="saas-meta-templates-td-layout"
                 header={headerElement}
                 left={(
                     <aside className="saas-admin-master-pane">
@@ -1368,11 +1367,13 @@ function MetaTemplatesSection(props = {}) {
                     )}
 
                     {!tenantScopeLocked && panelMode === 'create' && (
+                        <div className="saas-template-builder-modal-overlay">
+                        <div className="saas-template-builder-modal-shell" onClick={(event) => event.stopPropagation()}>
                         <SaasDetailPanel
                             title="Crear template"
                             subtitle="Formulario inteligente con variables, ejemplos y preview en tiempo real."
-                            className="saas-meta-templates-detail-panel"
-                            bodyClassName="saas-meta-templates-detail-panel__body"
+                            className="saas-meta-templates-detail-panel saas-template-builder-modal-panel"
+                            bodyClassName="saas-meta-templates-detail-panel__body saas-template-builder-modal-panel__body"
                             actions={(
                                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
                                     <button
@@ -1380,7 +1381,6 @@ function MetaTemplatesSection(props = {}) {
                                         disabled={templatesBusy || !canWrite}
                                         onClick={() => {
                                             setPanelMode('view');
-                                            setSelectedTemplateId('');
                                         }}
                                     >
                                         Cancelar
@@ -1671,7 +1671,6 @@ function MetaTemplatesSection(props = {}) {
                                             disabled={templatesBusy}
                                             onClick={() => {
                                                 setPanelMode('view');
-                                                setSelectedTemplateId('');
                                                 setCreateForm(buildInitialForm(createForm.moduleId || moduleOptions[0]?.moduleId || ''));
                                             }}
                                         >
@@ -1857,6 +1856,8 @@ function MetaTemplatesSection(props = {}) {
                             </div>
                             </SaasDetailPanelSection>
                         </SaasDetailPanel>
+                        </div>
+                        </div>
                     )}
 
                     {!tenantScopeLocked && panelMode !== 'create' && selectedTemplate && (

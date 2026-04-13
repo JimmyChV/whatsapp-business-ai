@@ -1502,6 +1502,78 @@
   min-height: clamp(620px, 72vh, 980px);
 }
 
+.saas-template-builder-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 8, 14, 0.72);
+  backdrop-filter: blur(2px);
+  padding: 2vh 2vw;
+}
+
+.saas-template-builder-modal-shell {
+  width: min(85vw, 1880px);
+  height: 90vh;
+  min-height: 640px;
+  max-height: 90vh;
+  display: flex;
+  min-width: 320px;
+}
+
+.saas-template-builder-modal-panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+}
+
+.saas-template-builder-modal-panel .saas-detail-panel__header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: linear-gradient(180deg, rgba(5, 14, 22, 0.98), rgba(5, 14, 22, 0.9));
+}
+
+.saas-template-builder-modal-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
+}
+
+.saas-template-builder-modal-panel__body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.saas-template-builder-modal-panel__body::-webkit-scrollbar-track {
+  background: rgba(12, 28, 41, 0.7);
+  border-radius: 999px;
+}
+
+.saas-template-builder-modal-panel__body::-webkit-scrollbar-thumb {
+  background: rgba(24, 170, 138, 0.58);
+  border-radius: 999px;
+}
+
+.saas-template-builder-modal-panel__body::-webkit-scrollbar-thumb:hover {
+  background: rgba(24, 170, 138, 0.78);
+}
+
+.saas-template-builder-modal-panel .saas-meta-template-builder {
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.95fr) minmax(320px, 1fr);
+  min-height: 100%;
+}
+
+.saas-template-builder-modal-panel .saas-meta-template-builder__side {
+  display: contents;
+}
+
 .saas-meta-template-builder__form,
 .saas-meta-template-builder__variables,
 .saas-meta-template-builder__preview,
