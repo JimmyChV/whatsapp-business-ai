@@ -1286,11 +1286,19 @@ function MetaTemplatesSection(props = {}) {
     return (
         <section id="saas_templates" className="saas-admin-card saas-admin-card--full">
             <SaasTableDetailLayout
-                selectedId={tenantScopeLocked ? '' : (panelMode === 'create' ? '__create__' : (selectedTemplateId || ''))}
+                selectedId={
+                    tenantScopeLocked
+                        ? ''
+                        : (
+                            panelMode === 'create'
+                                ? '__create__'
+                                : (selectedTemplate ? (toText(selectedTemplate?.templateId) || toText(selectedTemplate?.id)) : '')
+                        )
+                }
                 className="saas-meta-templates-td-layout"
                 header={headerElement}
                 left={(
-                    <aside className="saas-admin-master-pane">
+                    <aside className="saas-admin-master-pane saas-meta-templates-pane">
                     {tenantScopeLocked && (
                         <div className="saas-admin-empty-state">
                             <h4>Selecciona una empresa</h4>
@@ -1351,7 +1359,7 @@ function MetaTemplatesSection(props = {}) {
                 </aside>
                 )}
                 right={(
-                <div className="saas-admin-detail-pane">
+                <div className="saas-meta-templates-right-shell">
                     {hasErrors && (
                         <div className="saas-admin-empty-state">
                             <h4>Se detectaron errores</h4>
