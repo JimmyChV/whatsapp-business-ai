@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import {
     createMetaTemplate,
@@ -58,6 +58,7 @@ export default function useSaasMetaTemplatesController({
 } = {}) {
     const { notify } = useUiFeedback();
     const [filters, setFilters] = useState(() => normalizeFilters({ ...DEFAULT_FILTERS, ...initialFilters }));
+    const filtersRef = useRef(filters);
     const [items, setItems] = useState([]);
     const [total, setTotal] = useState(0);
 
@@ -78,6 +79,10 @@ export default function useSaasMetaTemplatesController({
         });
     }, []);
 
+    useEffect(() => {
+        filtersRef.current = filters;
+    }, [filters]);
+
     const clearErrors = useCallback(() => {
         setListError('');
         setCreateError('');
@@ -92,7 +97,7 @@ export default function useSaasMetaTemplatesController({
         setListError('');
         try {
             const query = normalizeFilters({
-                ...filters,
+                ...(filtersRef.current || DEFAULT_FILTERS),
                 ...(overrideFilters && typeof overrideFilters === 'object' ? overrideFilters : {})
             });
             const response = await listMetaTemplates(requestJson, query);
@@ -108,7 +113,7 @@ export default function useSaasMetaTemplatesController({
         } finally {
             setLoadingList(false);
         }
-    }, [filters, requestJson]);
+    }, [requestJson]);
 
     const createTemplate = useCallback(async ({ moduleId, templatePayload, reload = true } = {}) => {
         if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
@@ -171,8 +176,9 @@ export default function useSaasMetaTemplatesController({
         try {
             const response = await syncMetaTemplates(requestJson, { moduleId });
             if (reload) {
+                const activeScopeModuleId = String(filtersRef.current?.scopeModuleId || '').trim().toLowerCase();
                 await loadTemplates({
-                    scopeModuleId: String(moduleId || '').trim().toLowerCase() || filters.scopeModuleId
+                    scopeModuleId: String(moduleId || '').trim().toLowerCase() || activeScopeModuleId
                 });
             }
             return response;
@@ -183,7 +189,7 @@ export default function useSaasMetaTemplatesController({
         } finally {
             setLoadingSync(false);
         }
-    }, [filters.scopeModuleId, loadTemplates, requestJson]);
+    }, [loadTemplates, requestJson]);
 
     const visibleItems = useMemo(() => {
         const term = String(filters.search || '').trim().toLowerCase();

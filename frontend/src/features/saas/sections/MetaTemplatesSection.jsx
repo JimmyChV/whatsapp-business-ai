@@ -587,6 +587,7 @@ function MetaTemplatesSection(props = {}) {
         body: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },
         footer: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} }
     });
+    const templatesLoadedOnEnterRef = useRef(false);
 
     const moduleOptions = useMemo(() => {
         return Array.isArray(waModules)
@@ -709,7 +710,12 @@ function MetaTemplatesSection(props = {}) {
     }, [templateVarCategories]);
 
     useEffect(() => {
-        if (!isMetaTemplatesSection || !settingsTenantId || typeof loadTemplates !== 'function') return;
+        if (!isMetaTemplatesSection || !settingsTenantId || typeof loadTemplates !== 'function') {
+            templatesLoadedOnEnterRef.current = false;
+            return;
+        }
+        if (templatesLoadedOnEnterRef.current) return;
+        templatesLoadedOnEnterRef.current = true;
         clearErrors?.();
         loadTemplates().catch((error) => {
             const message = String(error?.message || 'No se pudieron cargar templates Meta.');
@@ -1161,12 +1167,14 @@ function MetaTemplatesSection(props = {}) {
     const headerElement = useMemo(() => (
         <SaasViewHeader
             title="Templates Meta"
-            count={total}
+            count={tenantScopeLocked ? 0 : visibleItems.length}
             searchValue={filters.search || ''}
             onSearchChange={(value) => {
-                updateFilter({ search: value, offset: 0 }).catch((error) => {
-                    setError?.(String(error?.message || error || 'No se pudo actualizar la busqueda.'));
-                });
+                setFilters?.((prev) => ({
+                    ...(prev && typeof prev === 'object' ? prev : {}),
+                    search: toText(value).toLowerCase(),
+                    offset: 0
+                }));
             }}
             searchPlaceholder="Buscar template por nombre, categoria o idioma"
             searchDisabled={templatesBusy || tenantScopeLocked}
@@ -1269,13 +1277,14 @@ function MetaTemplatesSection(props = {}) {
         openCreateTemplatePanel,
         reloadTemplates,
         setError,
+        setFilters,
         settingsTenantId,
         showColumnsPanel,
         statusOptions,
         syncModuleId,
         templatesBusy,
         tenantScopeLocked,
-        total,
+        visibleItems.length,
         updateFilter
     ]);
 
