@@ -191,16 +191,25 @@ export default function useSaasMetaTemplatesController({
         }
     }, [loadTemplates, requestJson]);
 
-    const visibleItems = useMemo(() => {
+    const filteredItems = useMemo(() => {
         const term = String(filters.search || '').trim().toLowerCase();
-        if (!term) return items;
+        const activeScopeModuleId = String(filters.scopeModuleId || '').trim().toLowerCase();
+        const activeStatus = String(filters.status || '').trim().toLowerCase();
+
         return items.filter((item) => {
-            const name = String(item?.templateName || '').toLowerCase();
-            const category = String(item?.category || '').toLowerCase();
-            const language = String(item?.templateLanguage || '').toLowerCase();
+            const itemScopeModuleId = String(item?.scopeModuleId || item?.moduleId || '').trim().toLowerCase();
+            const itemStatus = String(item?.status || '').trim().toLowerCase();
+            const name = String(item?.templateName || '').trim().toLowerCase();
+            const category = String(item?.category || '').trim().toLowerCase();
+            const language = String(item?.templateLanguage || '').trim().toLowerCase();
+
+            if (activeScopeModuleId && itemScopeModuleId !== activeScopeModuleId) return false;
+            if (activeStatus && itemStatus !== activeStatus) return false;
+            if (!term) return true;
+
             return name.includes(term) || category.includes(term) || language.includes(term);
         });
-    }, [filters.search, items]);
+    }, [filters.scopeModuleId, filters.search, filters.status, items]);
 
     const loading = loadingList || loadingCreate || loadingSync || Object.keys(loadingDeleteById).length > 0;
 
@@ -283,7 +292,7 @@ export default function useSaasMetaTemplatesController({
         statusOptions: STATUS_OPTIONS,
 
         items,
-        visibleItems,
+        filteredItems,
         total,
 
         loading,

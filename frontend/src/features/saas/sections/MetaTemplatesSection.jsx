@@ -638,7 +638,7 @@ function MetaTemplatesSection(props = {}) {
         filters = { scopeModuleId: '', status: '', search: '', limit: 50, offset: 0 },
         setFilters = null,
         statusOptions = [''],
-        visibleItems = [],
+        filteredItems = [],
         total = 0,
         loadingList = false,
         loadingCreate = false,
@@ -725,18 +725,18 @@ function MetaTemplatesSection(props = {}) {
 
     useEffect(() => {
         if (!isMetaTemplatesSection) return;
-        if (selectedTemplateId && !visibleItems.some((entry) => String(entry?.templateId || '').trim() === selectedTemplateId)) {
+        if (selectedTemplateId && !filteredItems.some((entry) => String(entry?.templateId || '').trim() === selectedTemplateId)) {
             setSelectedTemplateId('');
         }
-    }, [isMetaTemplatesSection, selectedTemplateId, visibleItems]);
+    }, [filteredItems, isMetaTemplatesSection, selectedTemplateId]);
 
     const selectedTemplate = useMemo(() => {
-        return visibleItems.find((entry) => String(entry?.templateId || '').trim() === selectedTemplateId) || null;
-    }, [selectedTemplateId, visibleItems]);
+        return filteredItems.find((entry) => String(entry?.templateId || '').trim() === selectedTemplateId) || null;
+    }, [filteredItems, selectedTemplateId]);
 
     const tableRows = useMemo(() => {
-        return Array.isArray(visibleItems)
-            ? visibleItems.map((template = {}) => {
+        return Array.isArray(filteredItems)
+            ? filteredItems.map((template = {}) => {
                 const templateId = toText(template?.templateId);
                 const statusMeta = resolveStatusMeta(template?.status);
                 return {
@@ -751,7 +751,7 @@ function MetaTemplatesSection(props = {}) {
                 };
             })
             : [];
-    }, [visibleItems]);
+    }, [filteredItems]);
 
     const tableColumns = useMemo(() => {
         const visibleSet = new Set((Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : [])
@@ -779,16 +779,12 @@ function MetaTemplatesSection(props = {}) {
         });
     }, [loadTemplates, runActionSafe]);
 
-    const updateFilter = useCallback(async (patch = {}) => {
-        const nextFilters = {
-            ...filters,
+    const updateFilter = useCallback((patch = {}) => {
+        setFilters?.((prev) => ({
+            ...(prev && typeof prev === 'object' ? prev : {}),
             ...(patch && typeof patch === 'object' ? patch : {})
-        };
-        setFilters?.(nextFilters);
-        if (typeof loadTemplates === 'function') {
-            await loadTemplates(nextFilters);
-        }
-    }, [filters, setFilters, loadTemplates]);
+        }));
+    }, [setFilters]);
 
     const handleCreateTemplate = useCallback(async () => {
         if (!canWrite || typeof createTemplate !== 'function') return;
@@ -1167,7 +1163,7 @@ function MetaTemplatesSection(props = {}) {
     const headerElement = useMemo(() => (
         <SaasViewHeader
             title="Templates Meta"
-            count={tenantScopeLocked ? 0 : visibleItems.length}
+            count={tenantScopeLocked ? 0 : filteredItems.length}
             searchValue={filters.search || ''}
             onSearchChange={(value) => {
                 setFilters?.((prev) => ({
@@ -1211,9 +1207,7 @@ function MetaTemplatesSection(props = {}) {
                         disabled={templatesBusy}
                         onChange={(event) => {
                             const nextScopeModuleId = toText(event.target.value);
-                            updateFilter({ scopeModuleId: nextScopeModuleId, offset: 0 }).catch((error) => {
-                                setError?.(String(error?.message || error || 'No se pudo filtrar por modulo.'));
-                            });
+                            updateFilter({ scopeModuleId: nextScopeModuleId, offset: 0 });
                         }}
                     >
                         <option value="">Todos los modulos</option>
@@ -1228,9 +1222,7 @@ function MetaTemplatesSection(props = {}) {
                         disabled={templatesBusy}
                         onChange={(event) => {
                             const nextStatus = toLower(event.target.value);
-                            updateFilter({ status: nextStatus, offset: 0 }).catch((error) => {
-                                setError?.(String(error?.message || error || 'No se pudo filtrar por estado.'));
-                            });
+                            updateFilter({ status: nextStatus, offset: 0 });
                         }}
                     >
                         <option value="">Todos los estados</option>
@@ -1284,7 +1276,7 @@ function MetaTemplatesSection(props = {}) {
         syncModuleId,
         templatesBusy,
         tenantScopeLocked,
-        visibleItems.length,
+        filteredItems.length,
         updateFilter
     ]);
 
