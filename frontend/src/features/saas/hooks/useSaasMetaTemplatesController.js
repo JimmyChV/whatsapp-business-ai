@@ -25,6 +25,12 @@ const STATUS_OPTIONS = Object.freeze([
     'archived'
 ]);
 
+const metaTemplatesCacheByRequestJson = new WeakMap();
+const metaTemplatesFallbackCache = {
+    items: [],
+    total: 0
+};
+
 function normalizeFilters(value = {}) {
     const scopeModuleId = String(value?.scopeModuleId || '').trim().toLowerCase();
     const statusCandidate = String(value?.status || '').trim().toLowerCase();
@@ -51,16 +57,27 @@ function sortTemplates(items = []) {
     });
 }
 
+function resolveMetaTemplatesCache(requestJson) {
+    if (typeof requestJson !== 'function') return metaTemplatesFallbackCache;
+    let cacheEntry = metaTemplatesCacheByRequestJson.get(requestJson);
+    if (!cacheEntry) {
+        cacheEntry = { items: [], total: 0 };
+        metaTemplatesCacheByRequestJson.set(requestJson, cacheEntry);
+    }
+    return cacheEntry;
+}
+
 export default function useSaasMetaTemplatesController({
     requestJson = null,
     socket = null,
     initialFilters = {}
 } = {}) {
     const { notify } = useUiFeedback();
+    const cacheRef = useRef(resolveMetaTemplatesCache(requestJson));
     const [filters, setFilters] = useState(() => normalizeFilters({ ...DEFAULT_FILTERS, ...initialFilters }));
     const filtersRef = useRef(filters);
-    const [items, setItems] = useState([]);
-    const [total, setTotal] = useState(0);
+    const [items, setItems] = useState(() => cacheRef.current.items);
+    const [total, setTotal] = useState(() => cacheRef.current.total);
 
     const [loadingList, setLoadingList] = useState(false);
     const [loadingCreate, setLoadingCreate] = useState(false);
@@ -83,6 +100,19 @@ export default function useSaasMetaTemplatesController({
         filtersRef.current = filters;
     }, [filters]);
 
+    useEffect(() => {
+        cacheRef.current = resolveMetaTemplatesCache(requestJson);
+        setItems(cacheRef.current.items);
+        setTotal(cacheRef.current.total);
+    }, [requestJson]);
+
+    const writeCache = useCallback((nextItems, nextTotal) => {
+        cacheRef.current.items = Array.isArray(nextItems) ? nextItems : [];
+        cacheRef.current.total = Number.isFinite(Number(nextTotal))
+            ? Math.max(0, Number(nextTotal))
+            : cacheRef.current.items.length;
+    }, []);
+
     const clearErrors = useCallback(() => {
         setListError('');
         setCreateError('');
@@ -93,7 +123,7 @@ export default function useSaasMetaTemplatesController({
     const loadTemplates = useCallback(async (overrideFilters = null) => {
         if (typeof requestJson !== 'function') return { items: [], total: 0, limit: 0, offset: 0 };
 
-        setLoadingList(true);
+        setLoadingList(cacheRef.current.items.length === 0);
         setListError('');
         try {
             const query = normalizeFilters({
@@ -101,9 +131,10 @@ export default function useSaasMetaTemplatesController({
                 ...(overrideFilters && typeof overrideFilters === 'object' ? overrideFilters : {})
             });
             const response = await listMetaTemplates(requestJson, query);
-            const nextItems = Array.isArray(response?.items) ? response.items : [];
+            const nextItems = sortTemplates(Array.isArray(response?.items) ? response.items : []);
             const nextTotal = Number.isFinite(Number(response?.total)) ? Math.max(0, Number(response.total)) : nextItems.length;
-            setItems(sortTemplates(nextItems));
+            writeCache(nextItems, nextTotal);
+            setItems(nextItems);
             setTotal(nextTotal);
             return response;
         } catch (error) {
@@ -113,7 +144,7 @@ export default function useSaasMetaTemplatesController({
         } finally {
             setLoadingList(false);
         }
-    }, [requestJson]);
+    }, [requestJson, writeCache]);
 
     const createTemplate = useCallback(async ({ moduleId, templatePayload, reload = true } = {}) => {
         if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
@@ -127,8 +158,13 @@ export default function useSaasMetaTemplatesController({
                 : null;
 
             if (createdTemplate) {
-                setItems((prev) => sortTemplates([createdTemplate, ...prev]));
-                setTotal((prev) => Math.max(Number(prev) || 0, 0) + 1);
+                setItems((prev) => {
+                    const nextItems = sortTemplates([createdTemplate, ...prev]);
+                    const nextTotal = Math.max(Number(cacheRef.current.total) || 0, nextItems.length);
+                    writeCache(nextItems, nextTotal);
+                    setTotal(nextTotal);
+                    return nextItems;
+                });
             }
 
             if (reload) await loadTemplates();
@@ -151,8 +187,13 @@ export default function useSaasMetaTemplatesController({
         setDeleteError('');
         try {
             const response = await deleteMetaTemplate(requestJson, { templateId: key, moduleId });
-            setItems((prev) => prev.filter((entry) => String(entry?.templateId || '') !== key));
-            setTotal((prev) => Math.max((Number(prev) || 1) - 1, 0));
+            setItems((prev) => {
+                const nextItems = prev.filter((entry) => String(entry?.templateId || '') !== key);
+                const nextTotal = Math.max((Number(cacheRef.current.total) || 1) - 1, 0);
+                writeCache(nextItems, nextTotal);
+                setTotal(nextTotal);
+                return nextItems;
+            });
             if (reload) await loadTemplates();
             return response;
         } catch (error) {
@@ -272,7 +313,10 @@ export default function useSaasMetaTemplatesController({
                     return merged;
                 });
 
-                return didUpdate ? sortTemplates(next) : prev;
+                if (!didUpdate) return prev;
+                const nextItems = sortTemplates(next);
+                writeCache(nextItems, cacheRef.current.total);
+                return nextItems;
             });
 
             if (toastToShow && typeof notify === 'function') {
