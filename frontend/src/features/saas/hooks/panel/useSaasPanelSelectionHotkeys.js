@@ -14,6 +14,17 @@ export default function useSaasPanelSelectionHotkeys({
         if (!isOpen) return;
         const onKeyDown = (event) => {
             if (event.key !== 'Escape' || event.repeat) return;
+            const escapeEvent = new CustomEvent('saas-panel-escape', {
+                cancelable: true,
+                detail: {
+                    hasSelection
+                }
+            });
+            window.dispatchEvent(escapeEvent);
+            if (escapeEvent.defaultPrevented) {
+                event.preventDefault();
+                return;
+            }
             if (!hasSelection) return;
             event.preventDefault();
             clearPanelSelection?.();
