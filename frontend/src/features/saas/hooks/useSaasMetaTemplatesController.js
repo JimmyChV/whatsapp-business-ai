@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import {
     createMetaTemplate,
@@ -24,6 +24,12 @@ const STATUS_OPTIONS = Object.freeze([
     'disabled',
     'archived'
 ]);
+
+const metaTemplatesCacheByRequestJson = new WeakMap();
+const metaTemplatesFallbackCache = {
+    items: [],
+    total: 0
+};
 
 function normalizeFilters(value = {}) {
     const scopeModuleId = String(value?.scopeModuleId || '').trim().toLowerCase();
@@ -51,15 +57,27 @@ function sortTemplates(items = []) {
     });
 }
 
+function resolveMetaTemplatesCache(requestJson) {
+    if (typeof requestJson !== 'function') return metaTemplatesFallbackCache;
+    let cacheEntry = metaTemplatesCacheByRequestJson.get(requestJson);
+    if (!cacheEntry) {
+        cacheEntry = { items: [], total: 0 };
+        metaTemplatesCacheByRequestJson.set(requestJson, cacheEntry);
+    }
+    return cacheEntry;
+}
+
 export default function useSaasMetaTemplatesController({
     requestJson = null,
     socket = null,
     initialFilters = {}
 } = {}) {
     const { notify } = useUiFeedback();
+    const cacheRef = useRef(resolveMetaTemplatesCache(requestJson));
     const [filters, setFilters] = useState(() => normalizeFilters({ ...DEFAULT_FILTERS, ...initialFilters }));
-    const [items, setItems] = useState([]);
-    const [total, setTotal] = useState(0);
+    const filtersRef = useRef(filters);
+    const [items, setItems] = useState(() => cacheRef.current.items);
+    const [total, setTotal] = useState(() => cacheRef.current.total);
 
     const [loadingList, setLoadingList] = useState(false);
     const [loadingCreate, setLoadingCreate] = useState(false);
@@ -78,6 +96,23 @@ export default function useSaasMetaTemplatesController({
         });
     }, []);
 
+    useEffect(() => {
+        filtersRef.current = filters;
+    }, [filters]);
+
+    useEffect(() => {
+        cacheRef.current = resolveMetaTemplatesCache(requestJson);
+        setItems(cacheRef.current.items);
+        setTotal(cacheRef.current.total);
+    }, [requestJson]);
+
+    const writeCache = useCallback((nextItems, nextTotal) => {
+        cacheRef.current.items = Array.isArray(nextItems) ? nextItems : [];
+        cacheRef.current.total = Number.isFinite(Number(nextTotal))
+            ? Math.max(0, Number(nextTotal))
+            : cacheRef.current.items.length;
+    }, []);
+
     const clearErrors = useCallback(() => {
         setListError('');
         setCreateError('');
@@ -88,17 +123,18 @@ export default function useSaasMetaTemplatesController({
     const loadTemplates = useCallback(async (overrideFilters = null) => {
         if (typeof requestJson !== 'function') return { items: [], total: 0, limit: 0, offset: 0 };
 
-        setLoadingList(true);
+        setLoadingList(cacheRef.current.items.length === 0);
         setListError('');
         try {
             const query = normalizeFilters({
-                ...filters,
+                ...(filtersRef.current || DEFAULT_FILTERS),
                 ...(overrideFilters && typeof overrideFilters === 'object' ? overrideFilters : {})
             });
             const response = await listMetaTemplates(requestJson, query);
-            const nextItems = Array.isArray(response?.items) ? response.items : [];
+            const nextItems = sortTemplates(Array.isArray(response?.items) ? response.items : []);
             const nextTotal = Number.isFinite(Number(response?.total)) ? Math.max(0, Number(response.total)) : nextItems.length;
-            setItems(sortTemplates(nextItems));
+            writeCache(nextItems, nextTotal);
+            setItems(nextItems);
             setTotal(nextTotal);
             return response;
         } catch (error) {
@@ -108,7 +144,7 @@ export default function useSaasMetaTemplatesController({
         } finally {
             setLoadingList(false);
         }
-    }, [filters, requestJson]);
+    }, [requestJson, writeCache]);
 
     const createTemplate = useCallback(async ({ moduleId, templatePayload, reload = true } = {}) => {
         if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
@@ -122,8 +158,13 @@ export default function useSaasMetaTemplatesController({
                 : null;
 
             if (createdTemplate) {
-                setItems((prev) => sortTemplates([createdTemplate, ...prev]));
-                setTotal((prev) => Math.max(Number(prev) || 0, 0) + 1);
+                setItems((prev) => {
+                    const nextItems = sortTemplates([createdTemplate, ...prev]);
+                    const nextTotal = Math.max(Number(cacheRef.current.total) || 0, nextItems.length);
+                    writeCache(nextItems, nextTotal);
+                    setTotal(nextTotal);
+                    return nextItems;
+                });
             }
 
             if (reload) await loadTemplates();
@@ -146,8 +187,13 @@ export default function useSaasMetaTemplatesController({
         setDeleteError('');
         try {
             const response = await deleteMetaTemplate(requestJson, { templateId: key, moduleId });
-            setItems((prev) => prev.filter((entry) => String(entry?.templateId || '') !== key));
-            setTotal((prev) => Math.max((Number(prev) || 1) - 1, 0));
+            setItems((prev) => {
+                const nextItems = prev.filter((entry) => String(entry?.templateId || '') !== key);
+                const nextTotal = Math.max((Number(cacheRef.current.total) || 1) - 1, 0);
+                writeCache(nextItems, nextTotal);
+                setTotal(nextTotal);
+                return nextItems;
+            });
             if (reload) await loadTemplates();
             return response;
         } catch (error) {
@@ -171,8 +217,9 @@ export default function useSaasMetaTemplatesController({
         try {
             const response = await syncMetaTemplates(requestJson, { moduleId });
             if (reload) {
+                const activeScopeModuleId = String(filtersRef.current?.scopeModuleId || '').trim().toLowerCase();
                 await loadTemplates({
-                    scopeModuleId: String(moduleId || '').trim().toLowerCase() || filters.scopeModuleId
+                    scopeModuleId: String(moduleId || '').trim().toLowerCase() || activeScopeModuleId
                 });
             }
             return response;
@@ -183,18 +230,27 @@ export default function useSaasMetaTemplatesController({
         } finally {
             setLoadingSync(false);
         }
-    }, [filters.scopeModuleId, loadTemplates, requestJson]);
+    }, [loadTemplates, requestJson]);
 
-    const visibleItems = useMemo(() => {
+    const filteredItems = useMemo(() => {
         const term = String(filters.search || '').trim().toLowerCase();
-        if (!term) return items;
+        const activeScopeModuleId = String(filters.scopeModuleId || '').trim().toLowerCase();
+        const activeStatus = String(filters.status || '').trim().toLowerCase();
+
         return items.filter((item) => {
-            const name = String(item?.templateName || '').toLowerCase();
-            const category = String(item?.category || '').toLowerCase();
-            const language = String(item?.templateLanguage || '').toLowerCase();
+            const itemScopeModuleId = String(item?.scopeModuleId || item?.moduleId || '').trim().toLowerCase();
+            const itemStatus = String(item?.status || '').trim().toLowerCase();
+            const name = String(item?.templateName || '').trim().toLowerCase();
+            const category = String(item?.category || '').trim().toLowerCase();
+            const language = String(item?.templateLanguage || '').trim().toLowerCase();
+
+            if (activeScopeModuleId && itemScopeModuleId !== activeScopeModuleId) return false;
+            if (activeStatus && itemStatus !== activeStatus) return false;
+            if (!term) return true;
+
             return name.includes(term) || category.includes(term) || language.includes(term);
         });
-    }, [filters.search, items]);
+    }, [filters.scopeModuleId, filters.search, filters.status, items]);
 
     const loading = loadingList || loadingCreate || loadingSync || Object.keys(loadingDeleteById).length > 0;
 
@@ -257,7 +313,10 @@ export default function useSaasMetaTemplatesController({
                     return merged;
                 });
 
-                return didUpdate ? sortTemplates(next) : prev;
+                if (!didUpdate) return prev;
+                const nextItems = sortTemplates(next);
+                writeCache(nextItems, cacheRef.current.total);
+                return nextItems;
             });
 
             if (toastToShow && typeof notify === 'function') {
@@ -277,7 +336,7 @@ export default function useSaasMetaTemplatesController({
         statusOptions: STATUS_OPTIONS,
 
         items,
-        visibleItems,
+        filteredItems,
         total,
 
         loading,

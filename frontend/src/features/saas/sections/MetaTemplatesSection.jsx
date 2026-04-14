@@ -1,5 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
+import {
+    SaasDataTable,
+    SaasDetailPanel,
+    SaasDetailPanelSection,
+    SaasTableDetailLayout,
+    SaasViewHeader,
+    useSaasColumnPrefs
+} from '../components/layout';
 
 const STATUS_META = {
     approved: { label: 'Aprobado', className: 'saas-meta-template-status--approved' },
@@ -29,6 +37,24 @@ const HEADER_TYPE_OPTIONS = [
     { value: 'image', label: 'Imagen' },
     { value: 'video', label: 'Video' },
     { value: 'document', label: 'Documento' }
+];
+
+const TEMPLATE_TABLE_COLUMNS = [
+    { key: 'templateName', label: 'Nombre', width: '280px', minWidth: '220px', maxWidth: '360px', type: 'text' },
+    { key: 'category', label: 'Categoria', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option' },
+    { key: 'templateLanguage', label: 'Idioma', width: '120px', minWidth: '100px', maxWidth: '150px', type: 'option' },
+    { key: 'statusLabel', label: 'Estado', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option' },
+    { key: 'moduleLabel', label: 'Modulo', width: '200px', minWidth: '160px', maxWidth: '280px', type: 'text' },
+    { key: 'updatedAt', label: 'Actualizado', width: '190px', minWidth: '160px', maxWidth: '230px', type: 'date' }
+];
+
+const TEMPLATE_DEFAULT_COLUMN_KEYS = [
+    'templateName',
+    'category',
+    'templateLanguage',
+    'statusLabel',
+    'moduleLabel',
+    'updatedAt'
 ];
 
 const EMPTY_CREATE_FORM = {
@@ -537,6 +563,7 @@ function MetaTemplatesSection(props = {}) {
     const { confirm, notify } = useUiFeedback();
     const [panelMode, setPanelMode] = useState('view');
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
+    const [showColumnsPanel, setShowColumnsPanel] = useState(false);
     const [syncModuleId, setSyncModuleId] = useState('');
     const [createForm, setCreateForm] = useState(() => buildInitialForm(''));
     const [templateVarCatalog, setTemplateVarCatalog] = useState([]);
@@ -550,11 +577,17 @@ function MetaTemplatesSection(props = {}) {
     const [previewMode, setPreviewMode] = useState('delivery');
     const bodyTextareaRef = useRef(null);
     const headerMediaInputRef = useRef(null);
+    const {
+        visibleKeys: visibleTableColumnKeys,
+        setVisibleKeys: setVisibleTableColumnKeys,
+        resetVisibleKeys: resetVisibleTableColumnKeys
+    } = useSaasColumnPrefs('meta_templates', TEMPLATE_DEFAULT_COLUMN_KEYS);
     const lastVariableIndexMapRef = useRef({
         header: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },
         body: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },
         footer: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} }
     });
+    const templatesLoadedOnEnterRef = useRef(false);
 
     const moduleOptions = useMemo(() => {
         return Array.isArray(waModules)
@@ -605,7 +638,7 @@ function MetaTemplatesSection(props = {}) {
         filters = { scopeModuleId: '', status: '', search: '', limit: 50, offset: 0 },
         setFilters = null,
         statusOptions = [''],
-        visibleItems = [],
+        filteredItems = [],
         total = 0,
         loadingList = false,
         loadingCreate = false,
@@ -677,7 +710,12 @@ function MetaTemplatesSection(props = {}) {
     }, [templateVarCategories]);
 
     useEffect(() => {
-        if (!isMetaTemplatesSection || !settingsTenantId || typeof loadTemplates !== 'function') return;
+        if (!isMetaTemplatesSection || !settingsTenantId || typeof loadTemplates !== 'function') {
+            templatesLoadedOnEnterRef.current = false;
+            return;
+        }
+        if (templatesLoadedOnEnterRef.current) return;
+        templatesLoadedOnEnterRef.current = true;
         clearErrors?.();
         loadTemplates().catch((error) => {
             const message = String(error?.message || 'No se pudieron cargar templates Meta.');
@@ -687,17 +725,43 @@ function MetaTemplatesSection(props = {}) {
 
     useEffect(() => {
         if (!isMetaTemplatesSection) return;
-        if (!selectedTemplateId && visibleItems.length > 0) {
-            setSelectedTemplateId(String(visibleItems[0]?.templateId || '').trim());
+        if (selectedTemplateId && !filteredItems.some((entry) => String(entry?.templateId || '').trim() === selectedTemplateId)) {
+            setSelectedTemplateId('');
         }
-        if (selectedTemplateId && !visibleItems.some((entry) => String(entry?.templateId || '').trim() === selectedTemplateId)) {
-            setSelectedTemplateId(String(visibleItems[0]?.templateId || '').trim());
-        }
-    }, [isMetaTemplatesSection, selectedTemplateId, visibleItems]);
+    }, [filteredItems, isMetaTemplatesSection, selectedTemplateId]);
 
     const selectedTemplate = useMemo(() => {
-        return visibleItems.find((entry) => String(entry?.templateId || '').trim() === selectedTemplateId) || null;
-    }, [selectedTemplateId, visibleItems]);
+        return filteredItems.find((entry) => String(entry?.templateId || '').trim() === selectedTemplateId) || null;
+    }, [filteredItems, selectedTemplateId]);
+
+    const tableRows = useMemo(() => {
+        return Array.isArray(filteredItems)
+            ? filteredItems.map((template = {}) => {
+                const templateId = toText(template?.templateId);
+                const statusMeta = resolveStatusMeta(template?.status);
+                return {
+                    id: templateId,
+                    templateId,
+                    templateName: toText(template?.templateName) || templateId || '-',
+                    category: toText(template?.category) || '-',
+                    templateLanguage: toText(template?.templateLanguage).toUpperCase() || '-',
+                    statusLabel: statusMeta.label,
+                    moduleLabel: toText(template?.moduleId) || '-',
+                    updatedAt: toText(template?.updatedAt) || '-'
+                };
+            })
+            : [];
+    }, [filteredItems]);
+
+    const tableColumns = useMemo(() => {
+        const visibleSet = new Set((Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : [])
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean));
+        return TEMPLATE_TABLE_COLUMNS.map((column) => ({
+            ...column,
+            hidden: visibleSet.size > 0 ? !visibleSet.has(column.key) : false
+        }));
+    }, [visibleTableColumnKeys]);
 
     const selectedTemplatePreview = useMemo(
         () => buildTemplatePreviewFromComponents(selectedTemplate?.componentsJson || []),
@@ -715,16 +779,12 @@ function MetaTemplatesSection(props = {}) {
         });
     }, [loadTemplates, runActionSafe]);
 
-    const updateFilter = useCallback(async (patch = {}) => {
-        const nextFilters = {
-            ...filters,
+    const updateFilter = useCallback((patch = {}) => {
+        setFilters?.((prev) => ({
+            ...(prev && typeof prev === 'object' ? prev : {}),
             ...(patch && typeof patch === 'object' ? patch : {})
-        };
-        setFilters?.(nextFilters);
-        if (typeof loadTemplates === 'function') {
-            await loadTemplates(nextFilters);
-        }
-    }, [filters, setFilters, loadTemplates]);
+        }));
+    }, [setFilters]);
 
     const handleCreateTemplate = useCallback(async () => {
         if (!canWrite || typeof createTemplate !== 'function') return;
@@ -1100,41 +1160,146 @@ function MetaTemplatesSection(props = {}) {
         previewText.header
     ]);
 
+    const headerElement = useMemo(() => (
+        <SaasViewHeader
+            title="Templates Meta"
+            count={tenantScopeLocked ? 0 : filteredItems.length}
+            searchValue={filters.search || ''}
+            onSearchChange={(value) => {
+                setFilters?.((prev) => ({
+                    ...(prev && typeof prev === 'object' ? prev : {}),
+                    search: toText(value).toLowerCase(),
+                    offset: 0
+                }));
+            }}
+            searchPlaceholder="Buscar template por nombre, categoria o idioma"
+            searchDisabled={templatesBusy || tenantScopeLocked}
+            actions={[
+                {
+                    key: 'reload',
+                    label: 'Recargar',
+                    onClick: () => reloadTemplates().catch((error) => {
+                        setError?.(String(error?.message || error || 'No se pudo recargar templates.'));
+                    }),
+                    disabled: templatesBusy || !settingsTenantId
+                },
+                {
+                    key: 'columns',
+                    label: showColumnsPanel ? 'Ocultar columnas' : 'Columnas',
+                    onClick: () => setShowColumnsPanel((prev) => !prev),
+                    disabled: tenantScopeLocked
+                },
+                {
+                    key: 'create',
+                    label: 'Crear template',
+                    onClick: () => openCreateTemplatePanel().catch((error) => {
+                        const message = String(error?.message || error || 'No se pudo abrir el formulario de templates.');
+                        notify({ type: 'error', message });
+                        setError?.(message);
+                    }),
+                    disabled: templatesBusy || !canWrite
+                }
+            ]}
+            extra={!tenantScopeLocked ? (
+                <div className="saas-admin-form-row">
+                    <select
+                        value={filters.scopeModuleId || ''}
+                        disabled={templatesBusy}
+                        onChange={(event) => {
+                            const nextScopeModuleId = toText(event.target.value);
+                            updateFilter({ scopeModuleId: nextScopeModuleId, offset: 0 });
+                        }}
+                    >
+                        <option value="">Todos los modulos</option>
+                        {moduleOptions.map((moduleItem) => (
+                            <option key={`meta_template_scope_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
+                                {moduleItem.label}
+                            </option>
+                        ))}
+                    </select>
+                    <select
+                        value={filters.status || ''}
+                        disabled={templatesBusy}
+                        onChange={(event) => {
+                            const nextStatus = toLower(event.target.value);
+                            updateFilter({ status: nextStatus, offset: 0 });
+                        }}
+                    >
+                        <option value="">Todos los estados</option>
+                        {statusOptions
+                            .filter((option) => Boolean(option))
+                            .map((option) => (
+                                <option key={`meta_template_status_${option}`} value={option}>
+                                    {resolveStatusMeta(option).label}
+                                </option>
+                            ))}
+                    </select>
+                    <select
+                        value={syncModuleId}
+                        onChange={(event) => setSyncModuleId(toText(event.target.value))}
+                        disabled={templatesBusy || !canWrite}
+                    >
+                        <option value="">Modulo para sincronizar</option>
+                        {moduleOptions.map((moduleItem) => (
+                            <option key={`meta_template_sync_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
+                                {moduleItem.label}
+                            </option>
+                        ))}
+                    </select>
+                    <button
+                        type="button"
+                        disabled={templatesBusy || !canWrite || !syncModuleId}
+                        onClick={() => handleSyncTemplates().catch((error) => {
+                            setError?.(String(error?.message || error || 'No se pudo sincronizar templates.'));
+                        })}
+                    >
+                        Sincronizar
+                    </button>
+                </div>
+            ) : null}
+        />
+    ), [
+        canWrite,
+        filters.scopeModuleId,
+        filters.search,
+        filters.status,
+        handleSyncTemplates,
+        moduleOptions,
+        notify,
+        openCreateTemplatePanel,
+        reloadTemplates,
+        setError,
+        setFilters,
+        settingsTenantId,
+        showColumnsPanel,
+        statusOptions,
+        syncModuleId,
+        templatesBusy,
+        tenantScopeLocked,
+        filteredItems.length,
+        updateFilter
+    ]);
+
     if (!isMetaTemplatesSection) {
         return null;
     }
 
     return (
         <section id="saas_templates" className="saas-admin-card saas-admin-card--full">
-            <div className={`saas-admin-master-detail ${panelMode === 'create' ? 'saas-admin-master-detail--template-create' : ''}`.trim()}>
-                <aside className="saas-admin-master-pane">
-                    <div className="saas-admin-pane-header">
-                        <div>
-                            <h3>Templates Meta</h3>
-                            <small>Gestiona templates aprobados para WhatsApp Cloud API.</small>
-                        </div>
-                        <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                            <button
-                                type="button"
-                                disabled={templatesBusy || !settingsTenantId}
-                                onClick={() => reloadTemplates().catch((error) => setError?.(String(error?.message || error || 'No se pudo recargar templates.')))}
-                            >
-                                Recargar
-                            </button>
-                            <button
-                                type="button"
-                                disabled={templatesBusy || !canWrite}
-                                onClick={() => openCreateTemplatePanel().catch((error) => {
-                                    const message = String(error?.message || error || 'No se pudo abrir el formulario de templates.');
-                                    notify({ type: 'error', message });
-                                    setError?.(message);
-                                })}
-                            >
-                                Crear template
-                            </button>
-                        </div>
-                    </div>
-
+            <SaasTableDetailLayout
+                selectedId={
+                    tenantScopeLocked
+                        ? ''
+                        : (
+                            panelMode === 'create'
+                                ? '__create__'
+                                : (selectedTemplate ? (toText(selectedTemplate?.templateId) || toText(selectedTemplate?.id)) : '')
+                        )
+                }
+                className="saas-meta-templates-td-layout"
+                header={headerElement}
+                left={(
+                    <aside className="saas-admin-master-pane saas-meta-templates-pane">
                     {tenantScopeLocked && (
                         <div className="saas-admin-empty-state">
                             <h4>Selecciona una empresa</h4>
@@ -1144,111 +1309,58 @@ function MetaTemplatesSection(props = {}) {
 
                     {!tenantScopeLocked && (
                         <>
-                            <div className="saas-admin-form-row">
-                                <select
-                                    value={filters.scopeModuleId || ''}
-                                    disabled={templatesBusy}
-                                    onChange={(event) => {
-                                        const nextScopeModuleId = toText(event.target.value);
-                                        updateFilter({ scopeModuleId: nextScopeModuleId, offset: 0 }).catch((error) => {
-                                            setError?.(String(error?.message || error || 'No se pudo filtrar por modulo.'));
-                                        });
-                                    }}
-                                >
-                                    <option value="">Todos los modulos</option>
-                                    {moduleOptions.map((moduleItem) => (
-                                        <option key={`meta_template_scope_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
-                                            {moduleItem.label}
-                                        </option>
-                                    ))}
-                                </select>
-                                <select
-                                    value={filters.status || ''}
-                                    disabled={templatesBusy}
-                                    onChange={(event) => {
-                                        const nextStatus = toLower(event.target.value);
-                                        updateFilter({ status: nextStatus, offset: 0 }).catch((error) => {
-                                            setError?.(String(error?.message || error || 'No se pudo filtrar por estado.'));
-                                        });
-                                    }}
-                                >
-                                    <option value="">Todos los estados</option>
-                                    {statusOptions
-                                        .filter((option) => Boolean(option))
-                                        .map((option) => (
-                                            <option key={`meta_template_status_${option}`} value={option}>
-                                                {resolveStatusMeta(option).label}
-                                            </option>
-                                        ))}
-                                </select>
-                            </div>
-
-                            <div className="saas-admin-form-row">
-                                <input
-                                    value={filters.search || ''}
-                                    onChange={(event) => setFilters?.({ ...filters, search: event.target.value })}
-                                    placeholder="Buscar template por nombre, categoria o idioma"
-                                    disabled={templatesBusy}
-                                />
-                            </div>
-
-                            <div className="saas-admin-form-row">
-                                <select
-                                    value={syncModuleId}
-                                    onChange={(event) => setSyncModuleId(toText(event.target.value))}
-                                    disabled={templatesBusy || !canWrite}
-                                >
-                                    <option value="">Selecciona modulo para sincronizar</option>
-                                    {moduleOptions.map((moduleItem) => (
-                                        <option key={`meta_template_sync_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
-                                            {moduleItem.label}
-                                        </option>
-                                    ))}
-                                </select>
-                                <button
-                                    type="button"
-                                    disabled={templatesBusy || !canWrite || !syncModuleId}
-                                    onClick={() => handleSyncTemplates().catch((error) => {
-                                        setError?.(String(error?.message || error || 'No se pudo sincronizar templates.'));
-                                    })}
-                                >
-                                    Sincronizar
-                                </button>
-                            </div>
-
-                            <div className="saas-admin-list saas-admin-list--compact">
-                                {visibleItems.length === 0 && (
-                                    <div className="saas-admin-empty-state">
-                                        <h4>Sin templates</h4>
-                                        <p>No hay templates para los filtros seleccionados.</p>
+                            {showColumnsPanel ? (
+                                <div className="saas-customers-columns-panel">
+                                    <div className="saas-customers-columns-header">
+                                        <strong>Columnas</strong>
+                                        <button type="button" onClick={resetVisibleTableColumnKeys}>Restaurar</button>
                                     </div>
-                                )}
-                                {visibleItems.map((template) => {
-                                    const templateId = toText(template?.templateId);
-                                    const statusMeta = resolveStatusMeta(template?.status);
-                                    return (
-                                        <button
-                                            key={`meta_template_item_${templateId}`}
-                                            type="button"
-                                            className={`saas-admin-list-item saas-admin-list-item--button ${selectedTemplateId === templateId ? 'active' : ''}`.trim()}
-                                            onClick={() => {
-                                                setSelectedTemplateId(templateId);
-                                                setPanelMode('view');
-                                            }}
-                                        >
-                                            <strong>{toText(template?.templateName) || templateId}</strong>
-                                            <small>{toText(template?.templateLanguage).toUpperCase()} | {toText(template?.category) || '-'}</small>
-                                            <small>{toText(template?.moduleId) || '-'}</small>
-                                            <span className={`saas-meta-template-status ${statusMeta.className}`.trim()}>{statusMeta.label}</span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                                    <div className="saas-customers-columns-grid">
+                                        {TEMPLATE_TABLE_COLUMNS.map((column) => {
+                                            const isChecked = (Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : []).includes(column.key);
+                                            return (
+                                                <label key={`meta-template-col-${column.key}`} className="saas-customers-columns-item">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isChecked}
+                                                        onChange={(event) => {
+                                                            const current = Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : [];
+                                                            const next = event.target.checked
+                                                                ? [...current, column.key]
+                                                                : current.filter((entry) => entry !== column.key);
+                                                            setVisibleTableColumnKeys(next.length > 0 ? next : TEMPLATE_DEFAULT_COLUMN_KEYS);
+                                                        }}
+                                                    />
+                                                    <span>{column.label}</span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            <SaasDataTable
+                                columns={tableColumns}
+                                rows={tableRows}
+                                selectedId={selectedTemplateId}
+                                loading={loadingList}
+                                emptyText="No hay templates para los filtros seleccionados."
+                                onSelect={(row) => {
+                                    const nextTemplateId = toText(row?.templateId || row?.id);
+                                    if (!nextTemplateId) return;
+                                    setSelectedTemplateId(nextTemplateId);
+                                    setPanelMode('view');
+                                }}
+                                enableInfinite
+                                initialBatch={80}
+                                batchSize={80}
+                            />
                         </>
                     )}
                 </aside>
-
-                <div className="saas-admin-detail-pane">
+                )}
+                right={(
+                <div className="saas-meta-templates-right-shell">
                     {hasErrors && (
                         <div className="saas-admin-empty-state">
                             <h4>Se detectaron errores</h4>
@@ -1264,15 +1376,40 @@ function MetaTemplatesSection(props = {}) {
                     )}
 
                     {!tenantScopeLocked && panelMode === 'create' && (
-                        <div className="saas-admin-related-block">
-                            <div className="saas-admin-pane-header">
-                                <div>
-                                    <h3>Crear template</h3>
-                                    <small>Formulario inteligente con variables, ejemplos y preview en tiempo real.</small>
+                        <div className="saas-template-builder-modal-overlay">
+                        <div className="saas-template-builder-modal-shell" onClick={(event) => event.stopPropagation()}>
+                        <SaasDetailPanel
+                            title="Crear template"
+                            subtitle="Formulario inteligente con variables, ejemplos y preview en tiempo real."
+                            className="saas-meta-templates-detail-panel saas-template-builder-modal-panel"
+                            bodyClassName="saas-meta-templates-detail-panel__body saas-template-builder-modal-panel__body"
+                            actions={(
+                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                    <button
+                                        type="button"
+                                        disabled={templatesBusy || !canWrite}
+                                        onClick={() => {
+                                            setPanelMode('view');
+                                        }}
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={templatesBusy || !canWrite}
+                                        onClick={() => handleCreateTemplate().catch((error) => {
+                                            const message = String(error?.message || error || 'No se pudo crear template Meta.');
+                                            notify({ type: 'error', message });
+                                            setError?.(message);
+                                        })}
+                                    >
+                                        Guardar template
+                                    </button>
                                 </div>
-                            </div>
-
-                            <div className="saas-meta-template-builder">
+                            )}
+                        >
+                            <SaasDetailPanelSection title="Builder" defaultOpen>
+                                <div className="saas-meta-template-builder">
                                 <section className="saas-meta-template-builder__form">
                                     <div className="saas-meta-template-field-grid saas-meta-template-field-grid--2">
                                         <div className="saas-meta-template-field">
@@ -1726,17 +1863,30 @@ function MetaTemplatesSection(props = {}) {
                                     </section>
                                 </aside>
                             </div>
+                            </SaasDetailPanelSection>
+                        </SaasDetailPanel>
+                        </div>
                         </div>
                     )}
 
                     {!tenantScopeLocked && panelMode !== 'create' && selectedTemplate && (
-                        <>
-                            <div className="saas-admin-pane-header">
-                                <div>
-                                    <h3>{toText(selectedTemplate.templateName) || selectedTemplate.templateId}</h3>
-                                    <small>{selectedTemplate.templateId}</small>
-                                </div>
+                        <SaasDetailPanel
+                            title={toText(selectedTemplate.templateName) || selectedTemplate.templateId}
+                            subtitle={selectedTemplate.templateId}
+                            className="saas-meta-templates-detail-panel"
+                            bodyClassName="saas-meta-templates-detail-panel__body"
+                            actions={(
                                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                    <button
+                                        type="button"
+                                        disabled={templatesBusy}
+                                        onClick={() => {
+                                            setPanelMode('view');
+                                            setSelectedTemplateId('');
+                                        }}
+                                    >
+                                        Cerrar
+                                    </button>
                                     <button
                                         type="button"
                                         disabled={templatesBusy || !canWrite || Boolean(loadingDeleteById?.[selectedTemplate.templateId])}
@@ -1760,67 +1910,72 @@ function MetaTemplatesSection(props = {}) {
                                         Crear template
                                     </button>
                                 </div>
-                            </div>
-
-                            <div className="saas-admin-detail-grid">
-                                <div className="saas-admin-detail-field"><span>Estado</span><strong>{resolveStatusMeta(selectedTemplate?.status).label}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Modulo</span><strong>{toText(selectedTemplate?.moduleId) || '-'}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Idioma</span><strong>{toText(selectedTemplate?.templateLanguage).toUpperCase() || '-'}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Categoria</span><strong>{toText(selectedTemplate?.category) || '-'}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Quality</span><strong>{(() => {
-                                    const q = selectedTemplate?.qualityScore;
-                                    if (!q) return 'N/A';
-                                    try {
-                                        const parsed = typeof q === 'string' ? JSON.parse(q) : q;
-                                        return parsed?.score || q;
-                                    } catch { return q; }
-                                })()}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Meta ID</span><strong>{toText(selectedTemplate?.metaTemplateId) || '-'}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{toText(selectedTemplate?.updatedAt) || '-'}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Total listados</span><strong>{Number(total || 0)}</strong></div>
-                            </div>
-
-                            <div className="saas-template-detail-layout">
-                                <div className="saas-admin-related-block saas-template-detail-preview-pane">
-                                    <h4>Preview WhatsApp</h4>
-                                    <small className="saas-meta-template-help">Vista estimada del mensaje final para cliente usando examples del template.</small>
-                                    <WhatsAppTemplatePreview
-                                        headerType={selectedTemplatePreview?.headerType}
-                                        headerText={selectedTemplatePreview?.headerText}
-                                        headerMediaSrc={selectedTemplatePreview?.headerMediaSrc}
-                                        headerMediaLabel={selectedTemplatePreview?.headerMediaLabel}
-                                        bodyText={selectedTemplatePreview?.bodyText}
-                                        footerText={selectedTemplatePreview?.footerText}
-                                        buttons={selectedTemplatePreview?.buttons}
-                                        timeLabel={new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
-                                        emptyBodyText="Template sin body"
-                                    />
+                            )}
+                        >
+                            <SaasDetailPanelSection title="Metadata" defaultOpen>
+                                <div className="saas-admin-detail-grid">
+                                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{resolveStatusMeta(selectedTemplate?.status).label}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Modulo</span><strong>{toText(selectedTemplate?.moduleId) || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Idioma</span><strong>{toText(selectedTemplate?.templateLanguage).toUpperCase() || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Categoria</span><strong>{toText(selectedTemplate?.category) || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Quality</span><strong>{(() => {
+                                        const q = selectedTemplate?.qualityScore;
+                                        if (!q) return 'N/A';
+                                        try {
+                                            const parsed = typeof q === 'string' ? JSON.parse(q) : q;
+                                            return parsed?.score || q;
+                                        } catch { return q; }
+                                    })()}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Meta ID</span><strong>{toText(selectedTemplate?.metaTemplateId) || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{toText(selectedTemplate?.updatedAt) || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Total listados</span><strong>{Number(total || 0)}</strong></div>
                                 </div>
-                                <div className="saas-admin-related-block saas-template-detail-payload-pane">
-                                    <h4>Payload tecnico</h4>
-                                    <div className="saas-template-detail-meta-grid">
-                                        <div className="saas-template-detail-meta-item">
-                                            <span>Estado Meta</span>
-                                            <strong>{resolveStatusMeta(selectedTemplate?.status).label}</strong>
-                                        </div>
-                                        <div className="saas-template-detail-meta-item">
-                                            <span>Meta ID</span>
-                                            <strong>{toText(selectedTemplate?.metaTemplateId) || '-'}</strong>
-                                        </div>
+                            </SaasDetailPanelSection>
+
+                            <SaasDetailPanelSection title="Preview + Payload tecnico" defaultOpen>
+                                <div className="saas-template-detail-layout">
+                                    <div className="saas-admin-related-block saas-template-detail-preview-pane">
+                                        <h4>Preview WhatsApp</h4>
+                                        <small className="saas-meta-template-help">Vista estimada del mensaje final para cliente usando examples del template.</small>
+                                        <WhatsAppTemplatePreview
+                                            headerType={selectedTemplatePreview?.headerType}
+                                            headerText={selectedTemplatePreview?.headerText}
+                                            headerMediaSrc={selectedTemplatePreview?.headerMediaSrc}
+                                            headerMediaLabel={selectedTemplatePreview?.headerMediaLabel}
+                                            bodyText={selectedTemplatePreview?.bodyText}
+                                            footerText={selectedTemplatePreview?.footerText}
+                                            buttons={selectedTemplatePreview?.buttons}
+                                            timeLabel={new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
+                                            emptyBodyText="Template sin body"
+                                        />
                                     </div>
-                                    {selectedTemplate?.rejectionReason && (
-                                        <div className="saas-template-detail-rejection">
-                                            <span>Motivo de rechazo</span>
-                                            <p>{toText(selectedTemplate?.rejectionReason)}</p>
+                                    <div className="saas-admin-related-block saas-template-detail-payload-pane">
+                                        <h4>Payload tecnico</h4>
+                                        <div className="saas-template-detail-meta-grid">
+                                            <div className="saas-template-detail-meta-item">
+                                                <span>Estado Meta</span>
+                                                <strong>{resolveStatusMeta(selectedTemplate?.status).label}</strong>
+                                            </div>
+                                            <div className="saas-template-detail-meta-item">
+                                                <span>Meta ID</span>
+                                                <strong>{toText(selectedTemplate?.metaTemplateId) || '-'}</strong>
+                                            </div>
                                         </div>
-                                    )}
-                                    <pre>{JSON.stringify(selectedTemplate?.componentsJson || [], null, 2)}</pre>
+                                        {selectedTemplate?.rejectionReason && (
+                                            <div className="saas-template-detail-rejection">
+                                                <span>Motivo de rechazo</span>
+                                                <p>{toText(selectedTemplate?.rejectionReason)}</p>
+                                            </div>
+                                        )}
+                                        <pre>{JSON.stringify(selectedTemplate?.componentsJson || [], null, 2)}</pre>
+                                    </div>
                                 </div>
-                            </div>
-                        </>
+                            </SaasDetailPanelSection>
+                        </SaasDetailPanel>
                     )}
                 </div>
-            </div>
+                )}
+            />
         </section>
     );
 }

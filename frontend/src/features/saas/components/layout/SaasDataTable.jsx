@@ -94,7 +94,13 @@ const SaasDataTable = ({
                         {visibleColumns.map((column) => (
                             <th
                                 key={column.key}
-                                style={column.width ? { width: column.width } : undefined}
+                                style={(() => {
+                                    const style = {};
+                                    if (column.width) style.width = column.width;
+                                    if (column.minWidth) style.minWidth = column.minWidth;
+                                    if (column.maxWidth) style.maxWidth = column.maxWidth;
+                                    return Object.keys(style).length > 0 ? style : undefined;
+                                })()}
                                 className={column.align ? `is-${column.align}` : ''}
                             >
                                 {column.label || column.key}
@@ -135,7 +141,17 @@ const SaasDataTable = ({
                                 {visibleColumns.map((column) => {
                                     const value = row && typeof row === 'object' ? row[column.key] : undefined;
                                     return (
-                                        <td key={`${rowId}-${column.key}`} className={column.align ? `is-${column.align}` : ''}>
+                                        <td
+                                            key={`${rowId}-${column.key}`}
+                                            className={column.align ? `is-${column.align}` : ''}
+                                            style={(() => {
+                                                const style = {};
+                                                if (column.width) style.width = column.width;
+                                                if (column.minWidth) style.minWidth = column.minWidth;
+                                                if (column.maxWidth) style.maxWidth = column.maxWidth;
+                                                return Object.keys(style).length > 0 ? style : undefined;
+                                            })()}
+                                        >
                                             {typeof column.render === 'function' ? column.render(value, row, rowId) : (value ?? '-')}
                                         </td>
                                     );

@@ -1,4 +1,7 @@
+const fs = require('fs');
+const path = require('path');
 const { getStorageDriver, queryPostgres } = require('../../../config/persistence-runtime');
+const { parseCsvRows } = require('../helpers/customers-normalizers.helpers');
 
 const DEFAULT_TREATMENTS = Object.freeze([
     { id: '01', code: 'SR', label: 'SEÑOR', abbreviation: 'SR.' },
@@ -43,6 +46,8 @@ const DEFAULT_DOCUMENT_TYPES = Object.freeze([
     { id: 'D', code: 'D', label: 'Identification Number – IN – Doc Trib PP. JJ', abbreviation: 'IN' }
 ]);
 
+let geoCatalogCache = null;
+
 function toText(value = '') {
     return String(value || '').trim();
 }
@@ -65,6 +70,117 @@ function toCustomerTypeRow(input = {}) {
 
 function missingRelation(error) {
     return String(error?.code || '').trim() === '42P01';
+}
+
+function normalizeHeader(value = '') {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '');
+}
+
+function readCsvText(csvPath = '') {
+    const buffer = fs.readFileSync(csvPath);
+    const utf8 = buffer.toString('utf8');
+    const latin1 = buffer.toString('latin1');
+    const maybeMojibake = /Ãƒ.|Ã¢.|ï¿½/.test(utf8);
+    return maybeMojibake ? latin1 : utf8;
+}
+
+function parseCsvObjects(csvPath = '') {
+    if (!csvPath || !fs.existsSync(csvPath)) return [];
+    const rows = parseCsvRows(readCsvText(csvPath), ',');
+    if (!Array.isArray(rows) || rows.length < 2) return [];
+    const headers = (rows[0] || []).map((entry) => normalizeHeader(entry));
+    return rows.slice(1).map((row) => {
+        const out = {};
+        headers.forEach((header, idx) => {
+            out[header] = toText(row[idx] || '');
+        });
+        return out;
+    });
+}
+
+function findCsvByToken(dirPath = '', token = '') {
+    const target = normalizeHeader(token);
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        if (!entry.name.toLowerCase().endsWith('.csv')) continue;
+        const normalizedName = normalizeHeader(entry.name);
+        if (normalizedName.includes(target)) return path.join(dirPath, entry.name);
+    }
+    return '';
+}
+
+function normalizeNumericKey(value = '') {
+    const text = toText(value);
+    if (!text) return '';
+    const parsed = Number.parseInt(text, 10);
+    return Number.isFinite(parsed) ? String(parsed) : text;
+}
+
+function normalizeDistrictId(value = '') {
+    const text = toText(value);
+    if (!text) return '';
+    if (/^\d+$/.test(text)) return text.padStart(6, '0');
+    return text;
+}
+
+function loadGeoCatalogFromCsv() {
+    if (geoCatalogCache) return geoCatalogCache;
+
+    const erpDir = path.resolve(__dirname, '../../../config/data/erp');
+    if (!fs.existsSync(erpDir)) {
+        geoCatalogCache = { departments: [], provinces: [], districts: [] };
+        return geoCatalogCache;
+    }
+
+    const departmentsCsv = findCsvByToken(erpDir, 'tbdepartamentos');
+    const provincesCsv = findCsvByToken(erpDir, 'tbprovincias');
+    const districtsCsv = findCsvByToken(erpDir, 'tbdistritos');
+
+    const departmentsRaw = parseCsvObjects(departmentsCsv);
+    const provincesRaw = parseCsvObjects(provincesCsv);
+    const districtsRaw = parseCsvObjects(districtsCsv);
+
+    const departments = departmentsRaw
+        .map((row) => ({
+            id: normalizeNumericKey(row.iddepartamento),
+            name: toText(row.departamento)
+        }))
+        .filter((row) => row.id && row.name)
+        .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+
+    const provinces = provincesRaw
+        .map((row) => ({
+            id: normalizeNumericKey(row.idprovincia),
+            departmentId: normalizeNumericKey(row.iddepartamento),
+            name: toText(row.provincia)
+        }))
+        .filter((row) => row.id && row.departmentId && row.name)
+        .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+
+    const provinceById = new Map(provinces.map((item) => [item.id, item]));
+
+    const districts = districtsRaw
+        .map((row) => {
+            const provinceId = normalizeNumericKey(row.idprovincia);
+            const province = provinceById.get(provinceId) || null;
+            return {
+                id: normalizeDistrictId(row.iddistrito),
+                provinceId,
+                departmentId: province?.departmentId || '',
+                name: toText(row.distrito)
+            };
+        })
+        .filter((row) => row.id && row.provinceId && row.departmentId && row.name)
+        .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+
+    geoCatalogCache = { departments, provinces, districts };
+    return geoCatalogCache;
 }
 
 async function getTreatments() {
@@ -135,9 +251,31 @@ async function getDocumentTypes() {
     return DEFAULT_DOCUMENT_TYPES.map((item) => ({ ...item }));
 }
 
+async function getGeoCatalog(options = {}) {
+    const source = loadGeoCatalogFromCsv();
+    const departmentId = normalizeNumericKey(options?.departmentId || '');
+    const provinceId = normalizeNumericKey(options?.provinceId || '');
+
+    const departments = Array.isArray(source.departments) ? [...source.departments] : [];
+    let provinces = Array.isArray(source.provinces) ? [...source.provinces] : [];
+    let districts = Array.isArray(source.districts) ? [...source.districts] : [];
+
+    if (departmentId) {
+        provinces = provinces.filter((item) => item.departmentId === departmentId);
+        districts = districts.filter((item) => item.departmentId === departmentId);
+    }
+
+    if (provinceId) {
+        districts = districts.filter((item) => item.provinceId === provinceId);
+    }
+
+    return { departments, provinces, districts };
+}
+
 module.exports = {
     getTreatments,
     getCustomerTypes,
     getAcquisitionSources,
-    getDocumentTypes
+    getDocumentTypes,
+    getGeoCatalog
 };

@@ -38,6 +38,7 @@ const SaasDetailPanel = ({
     subtitle = '',
     actions = null,
     className = '',
+    bodyClassName = '',
     children
 }) => {
     const rootClassName = useMemo(
@@ -56,7 +57,7 @@ const SaasDetailPanel = ({
                     <div className="saas-detail-panel__actions">{actions}</div>
                 ) : null}
             </header>
-            <div className="saas-detail-panel__body">
+            <div className={['saas-detail-panel__body', bodyClassName].filter(Boolean).join(' ')}>
                 {children}
             </div>
         </article>
