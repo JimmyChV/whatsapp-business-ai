@@ -537,136 +537,13 @@ export default React.memo(function CampaignsSection(props = {}) {
         <div className="saas-campaigns-right-shell">
             {tenantScopeLocked && <div className="saas-admin-empty-state saas-admin-empty-state--detail"><h4>Sin empresa activa</h4><p>Selecciona una empresa para continuar.</p></div>}
             {!tenantScopeLocked && (panelMode === 'create' || panelMode === 'edit') && (
-                <div className="saas-campaigns-builder">
-                    <div className="saas-campaigns-builder__form">
-                        <div className="saas-admin-form-row">
-                            <div className="saas-admin-field">
-                                <label>Nombre</label>
-                                <input value={form.campaignName} onChange={(e) => setForm((p) => ({ ...p, campaignName: e.target.value }))} />
-                            </div>
-                            <div className="saas-admin-field">
-                                <label>Modulo</label>
-                                <select value={form.moduleId} onChange={(e) => setForm((p) => ({ ...p, moduleId: e.target.value, templateId: '', templateName: '' }))}>
-                                    <option value="">Selecciona modulo</option>
-                                    {moduleOptions.map((m) => <option key={m.moduleId} value={m.moduleId}>{m.label}</option>)}
-                                </select>
-                            </div>
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <div className="saas-admin-field">
-                                <label>Template aprobado</label>
-                                <select
-                                    value={form.templateId}
-                                    onChange={(e) => {
-                                        const id = toText(e.target.value);
-                                        const t = templatesByModule.find((x) => x.templateId === id) || null;
-                                        setForm((p) => ({ ...p, templateId: id, templateName: t?.templateName || '', templateLanguage: t?.templateLanguage || 'es' }));
-                                    }}
-                                >
-                                    <option value="">Selecciona template</option>
-                                    {templatesByModule.map((t) => <option key={t.templateId} value={t.templateId}>{`${t.templateName} (${toText(t.templateLanguage).toUpperCase()})`}</option>)}
-                                </select>
-                            </div>
-                            <div className="saas-admin-field">
-                                <label>Programada</label>
-                                <input type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm((p) => ({ ...p, scheduledAt: e.target.value }))} />
-                            </div>
-                        </div>
-                        <div className="saas-admin-form-row saas-admin-form-row--single">
-                            <div className="saas-admin-field">
-                                <label>Descripcion</label>
-                                <textarea value={form.campaignDescription} onChange={(e) => setForm((p) => ({ ...p, campaignDescription: e.target.value }))} />
-                            </div>
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <div className="saas-admin-field">
-                                <label>Estado comercial (multiseleccion)</label>
-                                <div className="saas-campaigns-chip-group">
-                                    {COMMERCIAL_STATUS_OPTIONS.map((option) => {
-                                        const active = normalizeCommercialStatuses(form.commercialStatuses).includes(option.key);
-                                        return (
-                                            <button
-                                                key={option.key}
-                                                type="button"
-                                                className={`saas-campaigns-chip ${active ? 'active' : ''}`}
-                                                onClick={() => toggleCommercialStatus(option.key)}
-                                            >
-                                                {option.label}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                            <div className="saas-admin-field">
-                                <label>Idioma</label>
-                                <select value={form.languageFilter} onChange={(e) => setForm((p) => ({ ...p, languageFilter: e.target.value }))}>
-                                    <option value="">Todos</option>
-                                    <option value="es">Espanol</option>
-                                    <option value="en">English</option>
-                                    <option value="pt">Portugues</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <div className="saas-admin-field">
-                                <label>Etiquetas (multiseleccion)</label>
-                                <div className="saas-campaigns-chip-group">
-                                    {labelOptions.length === 0 ? <small className="saas-admin-empty-inline">No hay etiquetas activas.</small> : labelOptions.map((entry) => {
-                                        const active = selectedLabels.some((item) => item.labelId === entry.labelId);
-                                        return (
-                                            <button
-                                                key={entry.labelId}
-                                                type="button"
-                                                className={`saas-campaigns-chip ${active ? 'active' : ''}`}
-                                                onClick={() => toggleLabel(entry.labelId)}
-                                            >
-                                                {entry.name}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                            <div className="saas-admin-field">
-                                <label>Busqueda</label>
-                                <input value={form.searchText} onChange={(e) => setForm((p) => ({ ...p, searchText: e.target.value }))} placeholder="nombre o telefono" />
-                            </div>
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <div className="saas-admin-field">
-                                <label>Opt-in marketing</label>
-                                <div className="saas-campaigns-fixed-info">Campanas de marketing usan solo clientes con opt-in: <strong>opted_in</strong>.</div>
-                            </div>
-                            <div className="saas-admin-field">
-                                <label>Max destinatarios</label>
-                                <div className="saas-campaigns-max-recipients">
-                                    <input
-                                        type="range"
-                                        min={1}
-                                        max={maxRecipientsRange}
-                                        value={Math.max(1, Math.min(maxRecipientsRange, toNumber(form.maxRecipients || maxRecipientsRange)))}
-                                        onChange={(e) => {
-                                            const value = Math.max(1, Math.min(maxRecipientsRange, Math.floor(toNumber(e.target.value, 1))));
-                                            setMaxRecipientsTouched(true);
-                                            setForm((p) => ({ ...p, maxRecipients: String(value) }));
-                                        }}
-                                        disabled={maxRecipientsRange <= 1}
-                                    />
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        max={maxRecipientsRange}
-                                        value={form.maxRecipients}
-                                        onChange={(e) => {
-                                            const raw = Math.floor(toNumber(e.target.value, 1));
-                                            const value = raw > 0 ? Math.min(maxRecipientsRange, raw) : '';
-                                            setMaxRecipientsTouched(true);
-                                            setForm((p) => ({ ...p, maxRecipients: value ? String(value) : '' }));
-                                        }}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                        <div className="saas-admin-form-row saas-admin-form-row--actions">
+                <SaasDetailPanel
+                    title={panelMode === 'edit' ? (toText(form.campaignName) || 'Editar campana') : 'Nueva campana'}
+                    subtitle={panelMode === 'edit' ? 'Actualiza segmentacion, template y programacion.' : 'Configura segmentacion, template y estimacion.'}
+                    className="saas-campaigns-detail-panel saas-campaigns-detail-panel--builder"
+                    bodyClassName="saas-campaigns-detail-panel__body"
+                    actions={(
+                        <>
                             <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => {
                                 const payload = buildCampaignPayload();
                                 if (!payload.moduleId || !payload.templateName || !payload.campaignName) throw new Error('Nombre, modulo y template son obligatorios.');
@@ -706,41 +583,185 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 }
                                 notify({ type: 'info', message: 'Campana iniciada.' });
                             }, 'No se pudo iniciar campana.')} className={canStartWithGuardrails ? '' : 'saas-campaigns-button-danger'}>Guardar e iniciar</button>
-                            <button type="button" disabled={loading} onClick={() => { setPanelMode(selectedCampaignId ? 'detail' : 'list'); setLocalEstimate(null); }}>Cancelar</button>
-                        </div>
-                    </div>
-                    <aside className="saas-campaigns-builder__summary">
-                        <div className="saas-admin-related-block">
-                            <h4>Estimacion de alcance</h4>
-                            <div className="saas-campaigns-estimation-grid">
-                                <div><small>Total</small><strong>{estimateNumbers.total}</strong></div>
-                                <div><small>Elegibles</small><strong>{estimateNumbers.eligible}</strong></div>
-                                <div><small>Excluidos</small><strong>{estimateNumbers.excluded}</strong></div>
+                            <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { setPanelMode(selectedCampaignId ? 'detail' : 'list'); setLocalEstimate(null); }}>Cancelar</button>
+                        </>
+                    )}
+                >
+                    <SaasDetailPanelSection title="Configuracion base">
+                        <div className="saas-campaigns-builder">
+                            <div className="saas-campaigns-builder__form">
+                                <div className="saas-admin-form-row">
+                                    <div className="saas-admin-field">
+                                        <label>Nombre</label>
+                                        <input value={form.campaignName} onChange={(e) => setForm((p) => ({ ...p, campaignName: e.target.value }))} />
+                                    </div>
+                                    <div className="saas-admin-field">
+                                        <label>Modulo</label>
+                                        <select value={form.moduleId} onChange={(e) => setForm((p) => ({ ...p, moduleId: e.target.value, templateId: '', templateName: '' }))}>
+                                            <option value="">Selecciona modulo</option>
+                                            {moduleOptions.map((m) => <option key={m.moduleId} value={m.moduleId}>{m.label}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="saas-admin-form-row">
+                                    <div className="saas-admin-field">
+                                        <label>Template aprobado</label>
+                                        <select
+                                            value={form.templateId}
+                                            onChange={(e) => {
+                                                const id = toText(e.target.value);
+                                                const t = templatesByModule.find((x) => x.templateId === id) || null;
+                                                setForm((p) => ({ ...p, templateId: id, templateName: t?.templateName || '', templateLanguage: t?.templateLanguage || 'es' }));
+                                            }}
+                                        >
+                                            <option value="">Selecciona template</option>
+                                            {templatesByModule.map((t) => <option key={t.templateId} value={t.templateId}>{`${t.templateName} (${toText(t.templateLanguage).toUpperCase()})`}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="saas-admin-field">
+                                        <label>Programada</label>
+                                        <input type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm((p) => ({ ...p, scheduledAt: e.target.value }))} />
+                                    </div>
+                                </div>
+                                <div className="saas-admin-form-row saas-admin-form-row--single">
+                                    <div className="saas-admin-field">
+                                        <label>Descripcion</label>
+                                        <textarea value={form.campaignDescription} onChange={(e) => setForm((p) => ({ ...p, campaignDescription: e.target.value }))} />
+                                    </div>
+                                </div>
                             </div>
-                            <span className="saas-campaigns-estimation-help">{reachEstimate ? 'Estimacion calculada con filtros actuales.' : 'Haz clic en "Estimar alcance" para precalcular audiencia.'}</span>
                         </div>
-                        <div className="saas-admin-related-block">
-                            <h4>Validaciones antes de iniciar</h4>
-                            <div className="saas-campaigns-guardrails">
-                                {canStartGuardrails.map((check) => (
-                                    <article key={check.key} className={`saas-campaigns-guardrail ${check.ok ? 'ok' : 'warn'}`}>
-                                        <strong>{check.ok ? 'OK' : 'Pendiente'}: {check.label}</strong>
-                                        <small>{check.hint}</small>
-                                    </article>
-                                ))}
+                    </SaasDetailPanelSection>
+                    <SaasDetailPanelSection title="Segmentacion y filtros">
+                        <div className="saas-campaigns-builder">
+                            <div className="saas-campaigns-builder__form">
+                                <div className="saas-admin-form-row">
+                                    <div className="saas-admin-field">
+                                        <label>Estado comercial (multiseleccion)</label>
+                                        <div className="saas-campaigns-chip-group">
+                                            {COMMERCIAL_STATUS_OPTIONS.map((option) => {
+                                                const active = normalizeCommercialStatuses(form.commercialStatuses).includes(option.key);
+                                                return (
+                                                    <button
+                                                        key={option.key}
+                                                        type="button"
+                                                        className={`saas-campaigns-chip ${active ? 'active' : ''}`}
+                                                        onClick={() => toggleCommercialStatus(option.key)}
+                                                    >
+                                                        {option.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                    <div className="saas-admin-field">
+                                        <label>Idioma</label>
+                                        <select value={form.languageFilter} onChange={(e) => setForm((p) => ({ ...p, languageFilter: e.target.value }))}>
+                                            <option value="">Todos</option>
+                                            <option value="es">Espanol</option>
+                                            <option value="en">English</option>
+                                            <option value="pt">Portugues</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="saas-admin-form-row">
+                                    <div className="saas-admin-field">
+                                        <label>Etiquetas (multiseleccion)</label>
+                                        <div className="saas-campaigns-chip-group">
+                                            {labelOptions.length === 0 ? <small className="saas-admin-empty-inline">No hay etiquetas activas.</small> : labelOptions.map((entry) => {
+                                                const active = selectedLabels.some((item) => item.labelId === entry.labelId);
+                                                return (
+                                                    <button
+                                                        key={entry.labelId}
+                                                        type="button"
+                                                        className={`saas-campaigns-chip ${active ? 'active' : ''}`}
+                                                        onClick={() => toggleLabel(entry.labelId)}
+                                                    >
+                                                        {entry.name}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                    <div className="saas-admin-field">
+                                        <label>Busqueda</label>
+                                        <input value={form.searchText} onChange={(e) => setForm((p) => ({ ...p, searchText: e.target.value }))} placeholder="nombre o telefono" />
+                                    </div>
+                                </div>
+                                <div className="saas-admin-form-row">
+                                    <div className="saas-admin-field">
+                                        <label>Opt-in marketing</label>
+                                        <div className="saas-campaigns-fixed-info">Campanas de marketing usan solo clientes con opt-in: <strong>opted_in</strong>.</div>
+                                    </div>
+                                    <div className="saas-admin-field">
+                                        <label>Max destinatarios</label>
+                                        <div className="saas-campaigns-max-recipients">
+                                            <input
+                                                type="range"
+                                                min={1}
+                                                max={maxRecipientsRange}
+                                                value={Math.max(1, Math.min(maxRecipientsRange, toNumber(form.maxRecipients || maxRecipientsRange)))}
+                                                onChange={(e) => {
+                                                    const value = Math.max(1, Math.min(maxRecipientsRange, Math.floor(toNumber(e.target.value, 1))));
+                                                    setMaxRecipientsTouched(true);
+                                                    setForm((p) => ({ ...p, maxRecipients: String(value) }));
+                                                }}
+                                                disabled={maxRecipientsRange <= 1}
+                                            />
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                max={maxRecipientsRange}
+                                                value={form.maxRecipients}
+                                                onChange={(e) => {
+                                                    const raw = Math.floor(toNumber(e.target.value, 1));
+                                                    const value = raw > 0 ? Math.min(maxRecipientsRange, raw) : '';
+                                                    setMaxRecipientsTouched(true);
+                                                    setForm((p) => ({ ...p, maxRecipients: value ? String(value) : '' }));
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div className="saas-admin-related-block">
-                            <h4>Resumen</h4>
-                            <div className="saas-campaigns-builder-preview">
-                                <div><span>Template</span><strong>{toText(form.templateName) || '-'}</strong></div>
-                                <div><span>Idioma</span><strong>{toText(form.templateLanguage).toUpperCase() || '-'}</strong></div>
-                                <div><span>Programacion</span><strong>{form.scheduledAt ? formatDateTime(toIsoDateTimeLocal(form.scheduledAt)) : 'Inmediata'}</strong></div>
-                                <div><span>Etiquetas</span><strong>{selectedLabels.length > 0 ? selectedLabels.map((entry) => entry.name).join(', ') : 'Sin filtro'}</strong></div>
-                            </div>
+                    </SaasDetailPanelSection>
+                    <SaasDetailPanelSection title="Audiencia y validaciones">
+                        <div className="saas-campaigns-builder">
+                            <aside className="saas-campaigns-builder__summary">
+                                <div className="saas-admin-related-block">
+                                    <h4>Estimacion de alcance</h4>
+                                    <div className="saas-campaigns-estimation-grid">
+                                        <div><small>Total</small><strong>{estimateNumbers.total}</strong></div>
+                                        <div><small>Elegibles</small><strong>{estimateNumbers.eligible}</strong></div>
+                                        <div><small>Excluidos</small><strong>{estimateNumbers.excluded}</strong></div>
+                                    </div>
+                                    <span className="saas-campaigns-estimation-help">{reachEstimate ? 'Estimacion calculada con filtros actuales.' : 'Haz clic en \"Estimar alcance\" para precalcular audiencia.'}</span>
+                                </div>
+                                <div className="saas-admin-related-block">
+                                    <h4>Validaciones antes de iniciar</h4>
+                                    <div className="saas-campaigns-guardrails">
+                                        {canStartGuardrails.map((check) => (
+                                            <article key={check.key} className={`saas-campaigns-guardrail ${check.ok ? 'ok' : 'warn'}`}>
+                                                <strong>{check.ok ? 'OK' : 'Pendiente'}: {check.label}</strong>
+                                                <small>{check.hint}</small>
+                                            </article>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="saas-admin-related-block">
+                                    <h4>Resumen</h4>
+                                    <div className="saas-campaigns-builder-preview">
+                                        <div><span>Template</span><strong>{toText(form.templateName) || '-'}</strong></div>
+                                        <div><span>Idioma</span><strong>{toText(form.templateLanguage).toUpperCase() || '-'}</strong></div>
+                                        <div><span>Programacion</span><strong>{form.scheduledAt ? formatDateTime(toIsoDateTimeLocal(form.scheduledAt)) : 'Inmediata'}</strong></div>
+                                        <div><span>Etiquetas</span><strong>{selectedLabels.length > 0 ? selectedLabels.map((entry) => entry.name).join(', ') : 'Sin filtro'}</strong></div>
+                                    </div>
+                                </div>
+                            </aside>
                         </div>
-                    </aside>
-                </div>
+                    </SaasDetailPanelSection>
+                </SaasDetailPanel>
             )}
             {!tenantScopeLocked && panelMode === 'detail' && (
                 !selectedCampaignId ? <div className="saas-admin-empty-state saas-admin-empty-state--detail"><p>Selecciona una campana para ver tracking.</p></div> : (
