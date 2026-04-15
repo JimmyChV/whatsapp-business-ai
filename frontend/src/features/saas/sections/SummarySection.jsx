@@ -66,14 +66,18 @@ function SummarySection(props = {}) {
 
     return (
         <section id="saas_resumen" className="saas-admin-card saas-admin-card--full saas-admin-flow-card">
-            <div className="saas-summary-dashboard">
-                <aside className="saas-summary-dashboard__sidebar">
+            <div className="saas-summary-shell">
+                <div className="saas-summary-top">
                     <section className="saas-summary-card saas-summary-card--profile" aria-label="Resumen del usuario actual">
+                        <div className="saas-summary-card__header">
+                            <h3>Tu sesion</h3>
+                            <span>Resumen del usuario y alcance actual.</span>
+                        </div>
                         <div className="saas-summary-profile__head">
                             <div className="saas-summary-profile__avatar">
-                            {currentUserAvatarUrl
-                                ? <img src={currentUserAvatarUrl} alt={currentUserDisplayName} className="saas-admin-inline-avatar" />
-                                : buildInitials(currentUserDisplayName)}
+                                {currentUserAvatarUrl
+                                    ? <img src={currentUserAvatarUrl} alt={currentUserDisplayName} className="saas-admin-inline-avatar" />
+                                    : buildInitials(currentUserDisplayName)}
                             </div>
                             <div className="saas-summary-profile__meta">
                                 <strong>{currentUserDisplayName}</strong>
@@ -90,11 +94,10 @@ function SummarySection(props = {}) {
                                 <small>Empresas</small>
                                 <strong>{currentUserTenantCount}</strong>
                             </div>
-                        </div>
-
-                        <div className="saas-summary-profile__tenant">
-                            <small>Empresa activa</small>
-                            <strong>{activeTenantLabel}</strong>
+                            <div className="saas-summary-profile__stat saas-summary-profile__stat--span">
+                                <small>Empresa activa</small>
+                                <strong>{activeTenantLabel}</strong>
+                            </div>
                         </div>
 
                         <div className="saas-summary-profile__caps">
@@ -104,37 +107,6 @@ function SummarySection(props = {}) {
                             ))}
                         </div>
                     </section>
-
-                    <section className="saas-summary-card saas-summary-card--actions">
-                        <h4>Acciones rapidas</h4>
-                        <div className="saas-summary-actions">
-                            <button type="button" disabled={busy || !isSectionEnabled('saas_empresas')} onClick={() => handleSectionChange('saas_empresas')}>Gestionar empresas</button>
-                            <button type="button" disabled={busy || !isSectionEnabled('saas_usuarios')} onClick={() => handleSectionChange('saas_usuarios')}>Gestionar usuarios</button>
-                            <button type="button" disabled={busy || !isSectionEnabled('saas_modulos')} onClick={() => handleSectionChange('saas_modulos')}>Gestionar modulos</button>
-                            <button type="button" disabled={busy || !isSectionEnabled('saas_config')} onClick={() => handleSectionChange('saas_config')}>Configuracion general</button>
-                        </div>
-                    </section>
-                </aside>
-
-                <div className="saas-summary-dashboard__main">
-                    <div className="saas-summary-kpis">
-                        <div className="saas-summary-kpi">
-                            <small>Chats activos hoy</small>
-                            <strong>{tenantScopeLocked ? 0 : activeChatsToday}</strong>
-                        </div>
-                        <div className="saas-summary-kpi">
-                            <small>Clientes nuevos esta semana</small>
-                            <strong>{tenantScopeLocked ? 0 : customersCreatedThisWeek}</strong>
-                        </div>
-                        <div className="saas-summary-kpi">
-                            <small>Campanas activas</small>
-                            <strong>{tenantScopeLocked ? 0 : activeCampaignsCount}</strong>
-                        </div>
-                        <div className="saas-summary-kpi">
-                            <small>Templates aprobados</small>
-                            <strong>{tenantScopeLocked ? 0 : approvedTemplatesCount}</strong>
-                        </div>
-                    </div>
 
                     <section className="saas-summary-card saas-summary-card--context" aria-label="Estado operativo">
                         <div className="saas-summary-card__header">
@@ -157,6 +129,38 @@ function SummarySection(props = {}) {
                         </div>
                     </section>
                 </div>
+
+                <div className="saas-summary-kpis">
+                    <div className="saas-summary-kpi">
+                        <small>Chats activos hoy</small>
+                        <strong>{tenantScopeLocked ? 0 : activeChatsToday}</strong>
+                    </div>
+                    <div className="saas-summary-kpi">
+                        <small>Clientes nuevos esta semana</small>
+                        <strong>{tenantScopeLocked ? 0 : customersCreatedThisWeek}</strong>
+                    </div>
+                    <div className="saas-summary-kpi">
+                        <small>Campanas activas</small>
+                        <strong>{tenantScopeLocked ? 0 : activeCampaignsCount}</strong>
+                    </div>
+                    <div className="saas-summary-kpi">
+                        <small>Templates aprobados</small>
+                        <strong>{tenantScopeLocked ? 0 : approvedTemplatesCount}</strong>
+                    </div>
+                </div>
+
+                <section className="saas-summary-card saas-summary-card--actions">
+                    <div className="saas-summary-card__header">
+                        <h3>Acciones rapidas</h3>
+                        <span>Atajos a las secciones que mas se usan en el panel.</span>
+                    </div>
+                    <div className="saas-summary-actions">
+                        <button type="button" disabled={busy || !isSectionEnabled('saas_empresas')} onClick={() => handleSectionChange('saas_empresas')}>Gestionar empresas</button>
+                        <button type="button" disabled={busy || !isSectionEnabled('saas_usuarios')} onClick={() => handleSectionChange('saas_usuarios')}>Gestionar usuarios</button>
+                        <button type="button" disabled={busy || !isSectionEnabled('saas_modulos')} onClick={() => handleSectionChange('saas_modulos')}>Gestionar modulos</button>
+                        <button type="button" disabled={busy || !isSectionEnabled('saas_config')} onClick={() => handleSectionChange('saas_config')}>Configuracion general</button>
+                    </div>
+                </section>
             </div>
         </section>
     );
