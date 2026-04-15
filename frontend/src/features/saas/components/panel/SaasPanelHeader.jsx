@@ -34,6 +34,9 @@ export default function SaasPanelHeader({
                                 disabled={Boolean(tenantPicker.disabled)}
                                 title="Empresa activa"
                             >
+                                <option value="">
+                                    Seleccionar empresa
+                                </option>
                                 {(Array.isArray(tenantPicker.options) ? tenantPicker.options : []).map((tenant) => (
                                     <option key={tenant.id} value={tenant.id}>
                                         {typeof tenantPicker.toTenantDisplayName === 'function'

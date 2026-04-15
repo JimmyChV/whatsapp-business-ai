@@ -1,4 +1,4 @@
-const TENANT_LOCK_EXEMPT_SECTIONS = new Set(['saas_resumen', 'saas_empresas', 'saas_planes', 'saas_roles', 'saas_operacion']);
+const TENANT_LOCK_EXEMPT_SECTIONS = new Set(['saas_resumen', 'saas_empresas', 'saas_planes', 'saas_roles']);
 
 function NavSectionIcon({ sectionId }) {
     const commonProps = {
@@ -59,26 +59,38 @@ export default function SaasPanelNav({
 
     return (
         <div className="saas-admin-nav">
-            {adminNavItems.map((item) => {
+            {adminNavItems.map((item, index) => {
+                const previousGroup = index > 0 ? String(adminNavItems[index - 1]?.group || '') : '';
+                const currentGroup = String(item?.group || '');
                 const blockedByTenantScope = tenantScopeLocked && !TENANT_LOCK_EXEMPT_SECTIONS.has(item.id);
                 return (
-                    <button
-                        key={item.id}
-                        type="button"
-                        className={`saas-admin-nav-btn ${selectedSectionId === item.id ? 'active' : ''}`.trim()}
-                        disabled={busy || !item.enabled || blockedByTenantScope}
-                        onClick={() => onSectionChange?.(item.id)}
-                        title={item.label}
-                        data-tooltip={item.label}
-                        aria-label={item.label}
-                    >
-                        <span className="saas-admin-nav-btn__icon">
-                            <NavSectionIcon sectionId={item.id} />
-                        </span>
-                        <span className="saas-admin-nav-btn__label">
-                            {item.label}
-                        </span>
-                    </button>
+                    <div key={item.id} className="saas-admin-nav__entry">
+                        {index > 0 && currentGroup === 'tenant' && currentGroup !== previousGroup ? (
+                            <div
+                                className="saas-admin-nav__divider"
+                                aria-hidden="true"
+                                data-group={currentGroup}
+                            >
+                                <span>Tenant</span>
+                            </div>
+                        ) : null}
+                        <button
+                            type="button"
+                            className={`saas-admin-nav-btn ${selectedSectionId === item.id ? 'active' : ''}`.trim()}
+                            disabled={busy || !item.enabled || blockedByTenantScope}
+                            onClick={() => onSectionChange?.(item.id)}
+                            title={item.label}
+                            data-tooltip={item.label}
+                            aria-label={item.label}
+                        >
+                            <span className="saas-admin-nav-btn__icon">
+                                <NavSectionIcon sectionId={item.id} />
+                            </span>
+                            <span className="saas-admin-nav-btn__label">
+                                {item.label}
+                            </span>
+                        </button>
+                    </div>
                 );
             })}
         </div>

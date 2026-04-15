@@ -2953,6 +2953,39 @@
   scrollbar-color: rgba(95, 148, 181, 0.68) rgba(5, 17, 24, 0.45);
 }
 
+.saas-admin-shell .saas-admin-nav__entry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.saas-admin-shell .saas-admin-nav__divider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 4px 0;
+  color: rgba(139, 180, 202, 0.72);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.saas-admin-shell .saas-admin-nav__divider::before {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(72, 116, 142, 0), rgba(72, 116, 142, 0.72));
+}
+
+.saas-admin-shell .saas-admin-nav__divider::after {
+  content: '';
+  flex: 999;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(72, 116, 142, 0.72), rgba(72, 116, 142, 0));
+}
+
 .saas-admin-shell .saas-admin-nav::-webkit-scrollbar {
   width: 8px;
 }
@@ -3011,6 +3044,22 @@
   padding: 12px 7px;
   padding-top: 52px;
   overflow-x: visible;
+}
+
+.saas-admin-shell.is-nav-collapsed .saas-admin-nav__divider {
+  margin: 0 6px;
+  justify-content: center;
+}
+
+.saas-admin-shell.is-nav-collapsed .saas-admin-nav__divider span {
+  display: none;
+}
+
+.saas-admin-shell.is-nav-collapsed .saas-admin-nav__divider::before,
+.saas-admin-shell.is-nav-collapsed .saas-admin-nav__divider::after {
+  flex: none;
+  width: 18px;
+  background: rgba(72, 116, 142, 0.6);
 }
 
 .saas-admin-shell.is-nav-collapsed .saas-admin-nav-btn {
