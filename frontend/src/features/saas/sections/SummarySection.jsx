@@ -1,30 +1,68 @@
-﻿import React from 'react';
+import React, { useMemo } from 'react';
+
+function startOfCurrentWeek() {
+    const now = new Date();
+    const result = new Date(now);
+    const day = result.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    result.setHours(0, 0, 0, 0);
+    result.setDate(result.getDate() + diff);
+    return result;
+}
 
 function SummarySection(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const {
-    selectedSectionId,
-    currentUserAvatarUrl,
-    buildInitials,
-    currentUserDisplayName,
-    currentUserRoleLabel,
-    currentUserEmail,
-    activeTenantLabel,
-    currentUserTenantCount,
-    currentUserCapabilities,
-    tenantScopeLocked,
-    tenantScopeId,
-    tenantOptions,
-    overview,
-    scopedUsers,
-    waModules,
-    busy,
-    isSectionEnabled,
-    handleSectionChange
+        selectedSectionId,
+        currentUserAvatarUrl,
+        buildInitials,
+        currentUserDisplayName,
+        currentUserRoleLabel,
+        currentUserEmail,
+        activeTenantLabel,
+        currentUserTenantCount,
+        currentUserCapabilities,
+        tenantScopeLocked,
+        tenantScopeId,
+        tenantOptions,
+        customers = [],
+        operationsSnapshot = {},
+        campaignsController = null,
+        metaTemplatesController = null,
+        busy,
+        isSectionEnabled,
+        handleSectionChange
     } = context;
+
     if (selectedSectionId !== 'saas_resumen') {
         return null;
     }
+
+    const customersCreatedThisWeek = useMemo(() => {
+        const weekStart = startOfCurrentWeek().getTime();
+        return (Array.isArray(customers) ? customers : []).filter((customer) => {
+            const createdAt = Date.parse(customer?.createdAt || customer?.created_at || '');
+            return Number.isFinite(createdAt) && createdAt >= weekStart;
+        }).length;
+    }, [customers]);
+
+    const activeCampaignsCount = useMemo(() => {
+        const items = Array.isArray(campaignsController?.campaigns)
+            ? campaignsController.campaigns
+            : Array.isArray(campaignsController?.items)
+                ? campaignsController.items
+                : [];
+        return items.filter((campaign) => String(campaign?.status || '').trim().toLowerCase() === 'running').length;
+    }, [campaignsController]);
+
+    const approvedTemplatesCount = useMemo(() => {
+        const items = Array.isArray(metaTemplatesController?.filteredItems)
+            ? metaTemplatesController.filteredItems
+            : [];
+        return items.filter((template) => String(template?.status || '').trim().toLowerCase() === 'approved').length;
+    }, [metaTemplatesController]);
+
+    const activeChatsToday = Number(operationsSnapshot?.activeAssignments || 0);
 
     return (
         <section id="saas_resumen" className="saas-admin-card saas-admin-card--full saas-admin-flow-card">
@@ -75,20 +113,20 @@ function SummarySection(props = {}) {
 
             <div className="saas-admin-kpis saas-admin-kpis--embedded">
                 <div className="saas-admin-kpi">
-                    <small>Empresas activas</small>
-                    <strong>{(overview.tenants || []).filter((tenant) => tenant.active !== false).length}</strong>
+                    <small>Chats activos hoy</small>
+                    <strong>{tenantScopeLocked ? 0 : activeChatsToday}</strong>
                 </div>
                 <div className="saas-admin-kpi">
-                    <small>Usuarios activos (alcance)</small>
-                    <strong>{(scopedUsers || []).filter((user) => user.active !== false).length}</strong>
+                    <small>Clientes nuevos esta semana</small>
+                    <strong>{tenantScopeLocked ? 0 : customersCreatedThisWeek}</strong>
                 </div>
                 <div className="saas-admin-kpi">
-                    <small>Modulos WhatsApp</small>
-                    <strong>{waModules.length}</strong>
+                    <small>Campanas activas</small>
+                    <strong>{tenantScopeLocked ? 0 : activeCampaignsCount}</strong>
                 </div>
                 <div className="saas-admin-kpi">
-                    <small>Bandeja multicanal</small>
-                    <strong>Todos los modulos</strong>
+                    <small>Templates aprobados</small>
+                    <strong>{tenantScopeLocked ? 0 : approvedTemplatesCount}</strong>
                 </div>
             </div>
 
