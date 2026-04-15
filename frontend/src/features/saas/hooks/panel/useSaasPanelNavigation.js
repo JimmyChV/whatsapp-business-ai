@@ -5,6 +5,9 @@ export default function useSaasPanelNavigation({
     currentSection = '',
     activeSection = '',
     initialSection = 'saas_resumen',
+    userRole = 'seller',
+    isSuperAdmin = false,
+    settingsTenantId = '',
     canManageTenants = false,
     canManageUsers = false,
     canViewCustomers = false,
@@ -17,6 +20,25 @@ export default function useSaasPanelNavigation({
     canViewSuperAdminSections = false,
     canViewTenantSettings = false
 } = {}) {
+    const normalizedRole = String(userRole || 'seller').trim().toLowerCase() || 'seller';
+    const hasTenantScope = Boolean(String(settingsTenantId || '').trim());
+    const isSuperAdminOutsideTenant = Boolean((isSuperAdmin || normalizedRole === 'superadmin') && !hasTenantScope);
+
+    const isSectionVisibleByRole = useCallback((sectionId) => {
+        const cleanId = String(sectionId || '').trim();
+        if (!cleanId) return false;
+
+        if (normalizedRole === 'seller') {
+            return cleanId === 'saas_clientes';
+        }
+
+        if (['saas_empresas', 'saas_roles', 'saas_planes'].includes(cleanId)) {
+            return isSuperAdminOutsideTenant;
+        }
+
+        return true;
+    }, [isSuperAdminOutsideTenant, normalizedRole]);
+
     const isSectionEnabled = useCallback((sectionId) => {
         const cleanId = String(sectionId || '').trim();
         if (cleanId === 'saas_empresas') return canManageTenants;
@@ -50,12 +72,12 @@ export default function useSaasPanelNavigation({
 
     const adminNavItems = useMemo(() => {
         return navItems
-            .filter((item) => canViewSuperAdminSections || !['saas_planes', 'saas_roles'].includes(String(item?.id || '').trim()))
+            .filter((item) => isSectionVisibleByRole(item?.id))
             .map((item) => ({
                 ...item,
                 enabled: isSectionEnabled(item.id)
             }));
-    }, [canViewSuperAdminSections, isSectionEnabled, navItems]);
+    }, [isSectionEnabled, isSectionVisibleByRole, navItems]);
 
     const selectedSectionId = useMemo(() => {
         const preferred = String(currentSection || activeSection || initialSection || 'saas_resumen').trim();
