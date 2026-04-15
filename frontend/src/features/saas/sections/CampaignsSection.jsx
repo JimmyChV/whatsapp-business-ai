@@ -158,6 +158,26 @@ function buildAudienceFiltersFromForm(form = {}, labelOptions = []) {
     };
 }
 
+function serializeCampaignForm(form = {}) {
+    const source = form && typeof form === 'object' ? form : {};
+    return JSON.stringify({
+        campaignName: toText(source.campaignName),
+        campaignDescription: toText(source.campaignDescription),
+        moduleId: toText(source.moduleId),
+        templateId: toText(source.templateId),
+        templateName: toText(source.templateName),
+        templateLanguage: toLower(source.templateLanguage || 'es'),
+        scheduledAt: toText(source.scheduledAt),
+        commercialStatuses: normalizeCommercialStatuses(source.commercialStatuses || []),
+        selectedLabelIds: Array.from(
+            new Set((Array.isArray(source.selectedLabelIds) ? source.selectedLabelIds : []).map((entry) => toUpper(entry)))
+        ).sort(),
+        languageFilter: toLower(source.languageFilter || ''),
+        searchText: toText(source.searchText),
+        maxRecipients: toText(source.maxRecipients)
+    });
+}
+
 export default React.memo(function CampaignsSection(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const { notify, confirm } = useUiFeedback();
@@ -192,6 +212,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         events = [],
         loading = false,
         error = '',
+        hasLoadedCampaigns = false,
         loadCampaigns,
         selectCampaign,
         createCampaign,
@@ -300,6 +321,19 @@ export default React.memo(function CampaignsSection(props = {}) {
         eligible: Math.max(0, toNumber(reachEstimate?.eligible)),
         excluded: Math.max(0, toNumber(reachEstimate?.excluded))
     }), [reachEstimate]);
+    const formBaseline = useMemo(() => {
+        if (panelMode === 'edit' && selectedCampaign) {
+            return serializeCampaignForm(mapCampaignToForm(selectedCampaign, labelOptions));
+        }
+        if (panelMode === 'create') {
+            return serializeCampaignForm({ ...EMPTY_FORM, moduleId: moduleOptions[0]?.moduleId || '' });
+        }
+        return serializeCampaignForm(EMPTY_FORM);
+    }, [labelOptions, moduleOptions, panelMode, selectedCampaign]);
+    const formDraft = useMemo(() => serializeCampaignForm(form), [form]);
+    const isCampaignFormDirty = useMemo(() => (
+        (panelMode === 'create' || panelMode === 'edit') && formDraft !== formBaseline
+    ), [formBaseline, formDraft, panelMode]);
 
     const canStartGuardrails = useMemo(() => {
         const templateApproved = Boolean(selectedTemplate?.templateId);
@@ -355,9 +389,21 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     useEffect(() => {
         if (!isCampaignsSection || tenantScopeLocked || !settingsTenantId) return;
-        loadCampaigns?.().catch(() => {});
-        loadTemplates?.({ status: 'approved', limit: 300, offset: 0 }).catch(() => {});
-    }, [isCampaignsSection, loadCampaigns, loadTemplates, settingsTenantId, tenantScopeLocked]);
+        if (!hasLoadedCampaigns) {
+            loadCampaigns?.().catch(() => {});
+        }
+        if (!Array.isArray(templateItems) || templateItems.length === 0) {
+            loadTemplates?.({ status: 'approved', limit: 300, offset: 0 }).catch(() => {});
+        }
+    }, [
+        hasLoadedCampaigns,
+        isCampaignsSection,
+        loadCampaigns,
+        loadTemplates,
+        settingsTenantId,
+        templateItems,
+        tenantScopeLocked
+    ]);
 
     useEffect(() => {
         if (panelMode !== 'create' && panelMode !== 'edit') return;
@@ -425,6 +471,94 @@ export default React.memo(function CampaignsSection(props = {}) {
         }
     }, [buildCampaignPayload, estimateReachAction]);
 
+    const clearSelectedCampaign = useCallback(() => {
+        if (typeof selectCampaign === 'function') {
+            selectCampaign('').catch(() => {});
+        }
+    }, [selectCampaign]);
+
+    const handleCloseCampaignDetail = useCallback(() => {
+        setPanelMode('list');
+        setLocalEstimate(null);
+        setMaxRecipientsTouched(false);
+        clearSelectedCampaign();
+    }, [clearSelectedCampaign]);
+
+    const handleRequestCancelCampaignEdit = useCallback(async () => {
+        if (isCampaignFormDirty) {
+            const ok = await confirm({
+                title: 'Descartar cambios',
+                message: 'Hay cambios sin guardar en la campana. Si continuas, se perderan.',
+                confirmText: 'Descartar',
+                cancelText: 'Seguir editando',
+                tone: 'danger'
+            });
+            if (!ok) return;
+        }
+
+        setLocalEstimate(null);
+        setMaxRecipientsTouched(false);
+        if (panelMode === 'edit' && selectedCampaign) {
+            setForm(mapCampaignToForm(selectedCampaign, labelOptions));
+            setPanelMode('detail');
+            return;
+        }
+        setForm({ ...EMPTY_FORM, moduleId: moduleOptions[0]?.moduleId || '' });
+        setPanelMode('list');
+        clearSelectedCampaign();
+    }, [
+        confirm,
+        isCampaignFormDirty,
+        labelOptions,
+        moduleOptions,
+        panelMode,
+        clearSelectedCampaign,
+        selectedCampaign
+    ]);
+
+    const handleRequestCloseCampaignPanel = useCallback(async () => {
+        if (showColumnsMenu) {
+            setShowColumnsMenu(false);
+            return;
+        }
+        if (panelMode === 'create' || panelMode === 'edit') {
+            await handleRequestCancelCampaignEdit();
+            return;
+        }
+        if (selectedCampaignId) {
+            handleCloseCampaignDetail();
+        }
+    }, [
+        handleCloseCampaignDetail,
+        handleRequestCancelCampaignEdit,
+        panelMode,
+        selectedCampaignId,
+        showColumnsMenu
+    ]);
+
+    useEffect(() => {
+        if (!isCampaignsSection) return undefined;
+        const onPanelEscape = (event) => {
+            const hasOpenState = Boolean(
+                showColumnsMenu
+                || panelMode === 'create'
+                || panelMode === 'edit'
+                || selectedCampaignId
+            );
+            if (!hasOpenState) return;
+            event.preventDefault();
+            void handleRequestCloseCampaignPanel();
+        };
+        window.addEventListener('saas-panel-escape', onPanelEscape);
+        return () => window.removeEventListener('saas-panel-escape', onPanelEscape);
+    }, [
+        handleRequestCloseCampaignPanel,
+        isCampaignsSection,
+        panelMode,
+        selectedCampaignId,
+        showColumnsMenu
+    ]);
+
     if (!isCampaignsSection) return null;
 
     const selectedMeta = statusMeta(selectedCampaign?.status);
@@ -459,7 +593,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                         label: 'Nueva',
                         onClick: () => {
                             setPanelMode('create');
-                            setSelectedCampaignId?.('');
+                            clearSelectedCampaign();
                             setMaxRecipientsTouched(false);
                             setLocalEstimate(null);
                             setForm({ ...EMPTY_FORM, moduleId: moduleOptions[0]?.moduleId || '' });
@@ -583,7 +717,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 }
                                 notify({ type: 'info', message: 'Campana iniciada.' });
                             }, 'No se pudo iniciar campana.')} className={canStartWithGuardrails ? '' : 'saas-campaigns-button-danger'}>Guardar e iniciar</button>
-                            <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { setPanelMode(selectedCampaignId ? 'detail' : 'list'); setLocalEstimate(null); }}>Cancelar</button>
+                            <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
                         </>
                     )}
                 >
@@ -778,7 +912,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 {['draft', 'scheduled'].includes(toLower(selectedCampaign?.status)) && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => startCampaign?.(selectedCampaignId), 'No se pudo iniciar campana.')}>Iniciar</button>}
                                 {!['cancelled', 'completed'].includes(toLower(selectedCampaign?.status)) && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => { const ok = await confirm({ title: 'Cancelar campana', message: 'Esta accion detendra el procesamiento pendiente.', confirmText: 'Cancelar campana', cancelText: 'Volver', tone: 'danger' }); if (!ok) return; await cancelCampaign?.(selectedCampaignId, 'cancelled_by_user'); }, 'No se pudo cancelar campana.')}>Cancelar</button>}
                                 <button type="button" disabled={loading} onClick={() => runSafe(async () => { await loadCampaigns?.(); await loadTracking(selectedCampaignId); }, 'No se pudo recargar tracking.')}>Recargar</button>
-                                <button type="button" disabled={loading} onClick={() => { setPanelMode('list'); setSelectedCampaignId?.(''); }}>Cerrar</button>
+                                <button type="button" className="saas-btn-close" disabled={loading} onClick={() => { void handleRequestCloseCampaignPanel(); }}>Cerrar</button>
                             </>
                         )}
                     >

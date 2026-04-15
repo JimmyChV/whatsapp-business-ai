@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import { fetchTenantLabels } from '../services/labels.service';
 import {
@@ -23,6 +23,13 @@ const DEFAULT_FILTERS = Object.freeze({
     limit: 50,
     offset: 0
 });
+
+const campaignsCacheByRequestJson = new WeakMap();
+const campaignsFallbackCache = {
+    items: [],
+    total: 0,
+    loaded: false
+};
 
 function toText(value = '') {
     return String(value || '').trim();
@@ -72,6 +79,16 @@ function patchCampaignArray(items = [], patch = null) {
     return found ? sortCampaigns(next) : sortCampaigns([patch, ...next]);
 }
 
+function resolveCampaignsCache(requestJson) {
+    if (typeof requestJson !== 'function') return campaignsFallbackCache;
+    let cacheEntry = campaignsCacheByRequestJson.get(requestJson);
+    if (!cacheEntry) {
+        cacheEntry = { items: [], total: 0, loaded: false };
+        campaignsCacheByRequestJson.set(requestJson, cacheEntry);
+    }
+    return cacheEntry;
+}
+
 export default function useSaasCampaignsController({
     requestJson = null,
     socket = null,
@@ -79,10 +96,13 @@ export default function useSaasCampaignsController({
     initialFilters = {}
 } = {}) {
     const { notify } = useUiFeedback();
+    const cacheRef = useRef(resolveCampaignsCache(requestJson));
     const [filters, setFilters] = useState(() => normalizeFilters({ ...DEFAULT_FILTERS, ...initialFilters }));
-    const [campaigns, setCampaigns] = useState([]);
+    const filtersRef = useRef(filters);
+    const [campaigns, setCampaigns] = useState(() => cacheRef.current.items);
     const [selectedCampaign, setSelectedCampaign] = useState(null);
-    const [total, setTotal] = useState(0);
+    const [total, setTotal] = useState(() => cacheRef.current.total);
+    const [hasLoadedCampaigns, setHasLoadedCampaigns] = useState(() => Boolean(cacheRef.current.loaded));
     const [recipients, setRecipients] = useState([]);
     const [events, setEvents] = useState([]);
     const [availableLabels, setAvailableLabels] = useState([]);
@@ -94,6 +114,25 @@ export default function useSaasCampaignsController({
     const [error, setError] = useState('');
 
     const selectedCampaignId = toText(selectedCampaign?.campaignId || '');
+
+    useEffect(() => {
+        filtersRef.current = filters;
+    }, [filters]);
+
+    useEffect(() => {
+        cacheRef.current = resolveCampaignsCache(requestJson);
+        setCampaigns(cacheRef.current.items);
+        setTotal(cacheRef.current.total);
+        setHasLoadedCampaigns(Boolean(cacheRef.current.loaded));
+    }, [requestJson]);
+
+    const writeCache = useCallback((nextItems, nextTotal, loaded = true) => {
+        cacheRef.current.items = Array.isArray(nextItems) ? nextItems : [];
+        cacheRef.current.total = Number.isFinite(Number(nextTotal))
+            ? Math.max(0, Number(nextTotal))
+            : cacheRef.current.items.length;
+        cacheRef.current.loaded = Boolean(loaded);
+    }, []);
 
     const patchFilters = useCallback((patch) => {
         setFilters((prev) => {
@@ -108,32 +147,39 @@ export default function useSaasCampaignsController({
 
     const patchCampaignState = useCallback((patch = null) => {
         if (!patch || typeof patch !== 'object') return;
-        setCampaigns((prev) => patchCampaignArray(prev, patch));
+        setCampaigns((prev) => {
+            const next = patchCampaignArray(prev, patch);
+            writeCache(next, Math.max(Number(cacheRef.current.total) || 0, next.length));
+            return next;
+        });
         setSelectedCampaign((prev) => {
             const prevId = toText(prev?.campaignId || '');
             const patchId = toText(patch?.campaignId || '');
             if (!patchId || prevId !== patchId) return prev;
             return { ...prev, ...patch };
         });
-    }, []);
+    }, [writeCache]);
 
     const loadCampaigns = useCallback(async (overrideFilters = null) => {
         if (typeof requestJson !== 'function') return { items: [], total: 0, limit: 0, offset: 0 };
 
-        setLoading(true);
+        setLoading(!cacheRef.current.loaded && cacheRef.current.items.length === 0);
         setError('');
         try {
             const nextFilters = normalizeFilters({
-                ...filters,
+                ...(filtersRef.current || DEFAULT_FILTERS),
                 ...(overrideFilters && typeof overrideFilters === 'object' ? overrideFilters : {})
             });
             const response = await listCampaignsApi(requestJson, nextFilters);
             const nextItems = Array.isArray(response?.items) ? response.items : [];
             const nextTotal = Number.isFinite(Number(response?.total)) ? Math.max(0, Number(response.total)) : nextItems.length;
-            setCampaigns(sortCampaigns(nextItems));
+            const sortedItems = sortCampaigns(nextItems);
+            writeCache(sortedItems, nextTotal, true);
+            setCampaigns(sortedItems);
             setTotal(nextTotal);
+            setHasLoadedCampaigns(true);
             if (selectedCampaignId) {
-                const matched = nextItems.find((item) => toText(item?.campaignId || '') === selectedCampaignId);
+                const matched = sortedItems.find((item) => toText(item?.campaignId || '') === selectedCampaignId);
                 if (matched) setSelectedCampaign(matched);
             }
             return response;
@@ -144,7 +190,7 @@ export default function useSaasCampaignsController({
         } finally {
             setLoading(false);
         }
-    }, [filters, requestJson, selectedCampaignId]);
+    }, [requestJson, selectedCampaignId, writeCache]);
 
     const loadAvailableLabels = useCallback(async (overrideTenantId = '') => {
         if (typeof requestJson !== 'function') return { items: [] };
@@ -231,7 +277,11 @@ export default function useSaasCampaignsController({
             const campaign = response?.campaign && typeof response.campaign === 'object' ? response.campaign : null;
             if (campaign) {
                 patchCampaignState(campaign);
-                setTotal((prev) => Math.max(0, Number(prev) || 0) + 1);
+                setTotal((prev) => {
+                    const nextTotal = Math.max(0, Number(prev) || 0) + 1;
+                    writeCache(cacheRef.current.items, nextTotal);
+                    return nextTotal;
+                });
                 setSelectedCampaign(campaign);
             }
             return response;
@@ -242,7 +292,7 @@ export default function useSaasCampaignsController({
         } finally {
             setLoading(false);
         }
-    }, [patchCampaignState, requestJson]);
+    }, [patchCampaignState, requestJson, writeCache]);
 
     const updateCampaign = useCallback(async ({ campaignId, patch = {} } = {}) => {
         if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
@@ -509,6 +559,7 @@ export default function useSaasCampaignsController({
         error,
         clearError,
         statusCounts,
+        hasLoadedCampaigns,
         loadCampaigns,
         loadAvailableLabels,
         estimateReach,

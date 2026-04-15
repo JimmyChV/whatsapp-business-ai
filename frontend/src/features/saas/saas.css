@@ -4422,7 +4422,7 @@
 }
 
 .saas-admin-shell #saas_clientes .saas-td-layout--split .saas-td-layout__content {
-  grid-template-columns: minmax(0, 2.35fr) minmax(520px, 1.65fr) !important;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) !important;
 }
 
 .saas-admin-shell #saas_clientes .saas-customers-right-shell {
@@ -4507,7 +4507,7 @@
 
 /* Customers hard-final: right pane must always scroll and stay reachable */
 .saas-admin-shell #saas_clientes .saas-td-layout--split .saas-td-layout__content {
-  grid-template-columns: minmax(0, 2.1fr) minmax(620px, 1.9fr) !important;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) !important;
   min-height: 0 !important;
   height: 100% !important;
   align-items: stretch !important;
@@ -4614,7 +4614,7 @@
 .saas-admin-shell #saas_clientes .saas-td-layout--split .saas-td-layout__content {
   height: 100% !important;
   align-items: stretch !important;
-  grid-template-columns: minmax(0, 1.9fr) minmax(700px, 2.1fr) !important;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) !important;
 }
 
 .saas-admin-shell #saas_clientes .saas-customers-pane .saas-data-table-wrap {
@@ -4896,7 +4896,7 @@
 }
 
 #saas_campaigns .saas-td-layout--split .saas-td-layout__content {
-  grid-template-columns: minmax(0, 2fr) minmax(640px, 3fr) !important;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) !important;
 }
 
 #saas_campaigns .saas-campaigns-pane {
