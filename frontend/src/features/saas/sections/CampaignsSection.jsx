@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
-import { SaasTableDetailLayout } from '../components/layout';
+import {
+    SaasDataTable,
+    SaasTableDetailLayout,
+    SaasViewHeader,
+    useSaasColumnPrefs
+} from '../components/layout';
 
 const STATUS_META = {
     draft: { label: 'Borrador', className: 'saas-campaigns-status--draft' },
@@ -63,6 +68,17 @@ const COMMERCIAL_STATUS_OPTIONS = [
     { key: 'vendido', label: 'Vendido' },
     { key: 'perdido', label: 'Perdido' }
 ];
+
+const CAMPAIGN_TABLE_COLUMNS = [
+    { key: 'campaignName', label: 'Nombre', width: '240px', minWidth: '220px', maxWidth: '320px', type: 'text' },
+    { key: 'category', label: 'Categoria', width: '140px', minWidth: '124px', maxWidth: '180px', type: 'option' },
+    { key: 'language', label: 'Idioma', width: '120px', minWidth: '108px', maxWidth: '144px', type: 'option' },
+    { key: 'status', label: 'Estado', width: '132px', minWidth: '120px', maxWidth: '168px', type: 'option' },
+    { key: 'moduleId', label: 'Modulo', width: '168px', minWidth: '144px', maxWidth: '220px', type: 'option' },
+    { key: 'updatedAt', label: 'Actualizado', width: '168px', minWidth: '146px', maxWidth: '220px', type: 'date' }
+];
+
+const CAMPAIGN_DEFAULT_COLUMN_KEYS = ['campaignName', 'category', 'language', 'status', 'moduleId', 'updatedAt'];
 
 function statusMeta(status = '') {
     const key = toLower(status);
@@ -162,6 +178,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [moduleFilter, setModuleFilter] = useState('');
+    const [showColumnsMenu, setShowColumnsMenu] = useState(false);
     const [maxRecipientsTouched, setMaxRecipientsTouched] = useState(false);
     const [localEstimate, setLocalEstimate] = useState(null);
 
@@ -200,6 +217,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const estimateReachAction = estimateReachFromContext || estimateReachFromController;
 
     const labelOptions = useMemo(() => buildLabelOptions(availableLabels), [availableLabels]);
+    const columnPrefs = useSaasColumnPrefs('campaigns', CAMPAIGN_DEFAULT_COLUMN_KEYS);
 
     const moduleOptions = useMemo(() => (Array.isArray(waModules) ? waModules : [])
         .map((item) => ({
@@ -225,6 +243,38 @@ export default React.memo(function CampaignsSection(props = {}) {
             && (!moduleFilter || toText(item?.moduleId) === toText(moduleFilter))
             && (!term || `${toLower(item?.campaignName)} ${toLower(item?.templateName)} ${toLower(item?.moduleId)}`.includes(term)));
     }, [campaigns, moduleFilter, search, statusFilter]);
+
+    const campaignTableColumns = useMemo(() => {
+        const visible = new Set(columnPrefs.visibleColumnKeys);
+        return CAMPAIGN_TABLE_COLUMNS.map((column) => ({
+            ...column,
+            hidden: !visible.has(column.key),
+            options: column.key === 'status'
+                ? Object.keys(STATUS_META).map((key) => ({ value: key, label: STATUS_META[key].label }))
+                : (column.key === 'moduleId'
+                    ? moduleOptions.map((item) => ({ value: item.moduleId, label: item.label }))
+                    : undefined),
+            render: column.key === 'status'
+                ? (value) => {
+                    const meta = statusMeta(value);
+                    return <span className={`saas-campaigns-status ${meta.className}`}>{meta.label}</span>;
+                }
+                : (column.key === 'updatedAt'
+                    ? (value) => formatDateTime(value)
+                    : undefined)
+        }));
+    }, [columnPrefs.visibleColumnKeys, moduleOptions]);
+
+    const campaignTableRows = useMemo(() => filteredCampaigns.map((campaign) => ({
+        id: toText(campaign?.campaignId),
+        campaignId: toText(campaign?.campaignId),
+        campaignName: toText(campaign?.campaignName) || 'Campana sin nombre',
+        category: toText(campaign?.templateCategory || campaign?.category || '-'),
+        language: toUpper(campaign?.templateLanguage || campaign?.language || '-'),
+        status: toLower(campaign?.status || ''),
+        moduleId: toText(campaign?.moduleId || '-') || '-',
+        updatedAt: toText(campaign?.updatedAt || campaign?.createdAt || '')
+    })), [filteredCampaigns]);
 
     const templatesByModule = useMemo(() => {
         if (!form.moduleId) return approvedTemplates;
@@ -382,40 +432,101 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const listPane = (
         <div className="saas-campaigns-pane">
-            <div className="saas-admin-pane-header">
-                <div><h3>Campanas</h3><small>Builder + lifecycle + tracking</small></div>
-                <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                    <button type="button" disabled={loading || tenantScopeLocked} onClick={() => loadCampaigns?.().catch(() => {})}>Recargar</button>
-                    <button type="button" disabled={loading || tenantScopeLocked} onClick={() => {
-                        setPanelMode('create');
-                        setSelectedCampaignId?.('');
-                        setMaxRecipientsTouched(false);
-                        setLocalEstimate(null);
-                        setForm({ ...EMPTY_FORM, moduleId: moduleOptions[0]?.moduleId || '' });
-                    }}>Nueva</button>
-                </div>
-            </div>
-            {tenantScopeLocked ? <div className="saas-admin-empty-state"><p>Selecciona una empresa para gestionar campanas.</p></div> : (
-                <>
-                    <div className="saas-campaigns-list-filters">
-                        <input placeholder="Buscar campana" value={search} onChange={(e) => setSearch(e.target.value)} />
-                        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="">Todos</option>{Object.keys(STATUS_META).map((key) => <option key={key} value={key}>{STATUS_META[key].label}</option>)}</select>
-                        <select value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}><option value="">Todos los modulos</option>{moduleOptions.map((item) => <option key={item.moduleId} value={item.moduleId}>{item.label}</option>)}</select>
-                    </div>
-                    <div className="saas-admin-list saas-admin-list--compact">
-                        {filteredCampaigns.length === 0 ? <div className="saas-admin-empty-inline">No hay campanas para estos filtros.</div> : filteredCampaigns.map((campaign) => {
-                            const meta = statusMeta(campaign?.status);
-                            const isActive = toText(campaign?.campaignId) === selectedCampaignId && panelMode !== 'create';
+            <SaasViewHeader
+                title="Campanas"
+                count={filteredCampaigns.length}
+                searchValue={search}
+                onSearchChange={setSearch}
+                searchPlaceholder="Buscar campana por nombre, template o modulo"
+                actions={[
+                    {
+                        key: 'reload',
+                        label: 'Recargar',
+                        onClick: () => loadCampaigns?.().catch(() => {}),
+                        disabled: loading || tenantScopeLocked
+                    },
+                    {
+                        key: 'columns',
+                        label: 'Columnas',
+                        variant: 'secondary',
+                        onClick: () => setShowColumnsMenu((prev) => !prev),
+                        disabled: tenantScopeLocked
+                    },
+                    {
+                        key: 'create',
+                        label: 'Nueva',
+                        onClick: () => {
+                            setPanelMode('create');
+                            setSelectedCampaignId?.('');
+                            setMaxRecipientsTouched(false);
+                            setLocalEstimate(null);
+                            setForm({ ...EMPTY_FORM, moduleId: moduleOptions[0]?.moduleId || '' });
+                        },
+                        disabled: loading || tenantScopeLocked
+                    }
+                ]}
+                filters={{
+                    columns: [
+                        { key: 'status', label: 'Estado', type: 'option', options: Object.keys(STATUS_META).map((key) => ({ value: key, label: STATUS_META[key].label })) },
+                        { key: 'moduleId', label: 'Modulo', type: 'option', options: moduleOptions.map((item) => ({ value: item.moduleId, label: item.label })) }
+                    ],
+                    value: {
+                        columnKey: statusFilter ? 'status' : (moduleFilter ? 'moduleId' : ''),
+                        operator: 'equals',
+                        value: statusFilter || moduleFilter || ''
+                    },
+                    onChange: (next) => {
+                        const columnKey = toText(next?.columnKey);
+                        const value = toText(next?.value);
+                        if (columnKey === 'status') {
+                            setStatusFilter(value);
+                            setModuleFilter('');
+                            return;
+                        }
+                        if (columnKey === 'moduleId') {
+                            setModuleFilter(value);
+                            setStatusFilter('');
+                            return;
+                        }
+                        setStatusFilter('');
+                        setModuleFilter('');
+                    },
+                    onClear: () => {
+                        setStatusFilter('');
+                        setModuleFilter('');
+                    }
+                }}
+                extra={showColumnsMenu ? (
+                    <div className="saas-campaigns-columns-menu">
+                        {CAMPAIGN_TABLE_COLUMNS.map((column) => {
+                            const checked = columnPrefs.visibleColumnKeys.includes(column.key);
                             return (
-                                <button key={toText(campaign?.campaignId)} type="button" className={`saas-admin-list-item--button saas-campaigns-list-item ${isActive ? 'active' : ''}`} onClick={() => runSafe(async () => { await selectCampaign?.(campaign.campaignId, { loadDetail: true }); await loadTracking(campaign.campaignId); setPanelMode('detail'); }, 'No se pudo abrir campana.')}>
-                                    <div className="saas-campaigns-list-item__head"><strong>{toText(campaign?.campaignName) || 'Campana sin nombre'}</strong><span className={`saas-campaigns-status ${meta.className}`}>{meta.label}</span></div>
-                                    <small>{toText(campaign?.templateName) || 'Sin template'} | {toText(campaign?.moduleId) || '-'}</small>
-                                    <div className="saas-campaigns-progress"><div className="saas-campaigns-progress__track"><div className="saas-campaigns-progress__fill" style={{ width: `${progress(campaign)}%` }} /></div><span>{progress(campaign)}%</span></div>
-                                </button>
+                                <label key={column.key} className="saas-campaigns-columns-menu__item">
+                                    <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => columnPrefs.toggleColumn(column.key)}
+                                    />
+                                    <span>{column.label}</span>
+                                </label>
                             );
                         })}
                     </div>
-                </>
+                ) : null}
+            />
+            {tenantScopeLocked ? <div className="saas-admin-empty-state"><p>Selecciona una empresa para gestionar campanas.</p></div> : (
+                <SaasDataTable
+                    columns={campaignTableColumns}
+                    rows={campaignTableRows}
+                    selectedId={panelMode === 'create' ? '' : selectedCampaignId}
+                    loading={loading}
+                    emptyText="No hay campanas para estos filtros."
+                    onSelect={(row) => runSafe(async () => {
+                        await selectCampaign?.(row?.campaignId, { loadDetail: true });
+                        await loadTracking(row?.campaignId);
+                        setPanelMode('detail');
+                    }, 'No se pudo abrir campana.')}
+                />
             )}
         </div>
     );
