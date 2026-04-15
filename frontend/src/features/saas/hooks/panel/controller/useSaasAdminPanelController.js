@@ -711,6 +711,8 @@ export default function useSaasAdminPanelController({
         sectionSyncEffects,
         formSyncEffects,
         crossNavigation,
+        userRole,
+        isSuperAdmin,
         requestJson,
         settingsTenantId: tenantController.tenantState.settingsTenantId,
         selectedQuickReplyLibrary: quickRepliesController.quickRepliesDerived.selectedQuickReplyLibrary,

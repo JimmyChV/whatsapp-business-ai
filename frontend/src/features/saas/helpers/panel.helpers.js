@@ -159,19 +159,19 @@ export const MODULE_KEYS = [
 ];
 export const ADMIN_NAV_ITEMS = [
     { id: 'saas_resumen', label: 'Resumen' },
-    { id: 'saas_planes', label: 'Planes' },
-    { id: 'saas_empresas', label: 'Empresas' },
+    { id: 'saas_modulos', label: 'Modulos' },
     { id: 'saas_usuarios', label: 'Usuarios' },
-    { id: 'saas_roles', label: 'Roles' },
-    { id: 'saas_clientes', label: 'Clientes' },
-    { id: 'saas_operacion', label: 'Operacion' },
-    { id: 'saas_campaigns', label: 'Campanas' },
-    { id: 'saas_templates', label: 'Templates Meta' },
-    { id: 'saas_ia', label: 'IA' },
+    { id: 'saas_catalogos', label: 'Catalogos' },
     { id: 'saas_etiquetas', label: 'Etiquetas' },
     { id: 'saas_quick_replies', label: 'Respuestas rapidas' },
-    { id: 'saas_modulos', label: 'Modulos' },
-    { id: 'saas_catalogos', label: 'Catalogos' },
+    { id: 'saas_ia', label: 'IA' },
+    { id: 'saas_operacion', label: 'Operacion' },
+    { id: 'saas_clientes', label: 'Clientes' },
+    { id: 'saas_templates', label: 'Templates Meta' },
+    { id: 'saas_campaigns', label: 'Campanas' },
+    { id: 'saas_empresas', label: 'Empresas' },
+    { id: 'saas_roles', label: 'Roles' },
+    { id: 'saas_planes', label: 'Planes' },
     { id: 'saas_config', label: 'Configuracion' }
 ];
 export const ADMIN_IMAGE_MAX_BYTES = Math.max(200 * 1024, Number(import.meta.env.VITE_ADMIN_ASSET_MAX_BYTES || 2 * 1024 * 1024));

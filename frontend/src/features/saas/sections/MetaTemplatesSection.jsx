@@ -545,6 +545,41 @@ function buildInitialForm(moduleId = '') {
     return { ...EMPTY_CREATE_FORM, moduleId: toText(moduleId) };
 }
 
+function serializeTemplateBuilderState(form = {}, variableExamples = {}) {
+    const source = form && typeof form === 'object' ? form : {};
+    const examplesSource = variableExamples && typeof variableExamples === 'object' ? variableExamples : {};
+    const normalizedButtons = normalizeButtonRows(source.buttons).map((button) => ({
+        type: toLower(button?.type || 'quick_reply'),
+        text: toText(button?.text),
+        value: toText(button?.value)
+    }));
+    const normalizedExamples = Object.keys(examplesSource)
+        .sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' }))
+        .reduce((acc, key) => {
+            const normalizedKey = normalizeTemplateToken(key);
+            const value = toText(examplesSource[key]);
+            if (!normalizedKey || !value) return acc;
+            acc[normalizedKey] = value;
+            return acc;
+        }, {});
+
+    return JSON.stringify({
+        moduleId: toText(source.moduleId),
+        name: toText(source.name),
+        category: toLower(source.category || 'marketing'),
+        language: toLower(source.language || 'es'),
+        headerType: toLower(source.headerType || 'none'),
+        headerText: toText(source.headerText),
+        headerMediaName: toText(source?.headerMedia?.name),
+        headerMediaType: toText(source?.headerMedia?.type),
+        headerMediaSize: Number(source?.headerMedia?.size || 0),
+        bodyText: toText(source.bodyText),
+        footerText: toText(source.footerText),
+        buttons: normalizedButtons,
+        variableExamples: normalizedExamples
+    });
+}
+
 function MetaTemplatesSection(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const {
@@ -1160,6 +1195,79 @@ function MetaTemplatesSection(props = {}) {
         previewText.header
     ]);
 
+    const templateBuilderBaseline = useMemo(() => {
+        const initialModuleId = toText(createForm.moduleId) || moduleOptions[0]?.moduleId || '';
+        return serializeTemplateBuilderState(buildInitialForm(initialModuleId), {});
+    }, [createForm.moduleId, moduleOptions]);
+
+    const templateBuilderDraft = useMemo(
+        () => serializeTemplateBuilderState(createForm, variableExamplesByToken),
+        [createForm, variableExamplesByToken]
+    );
+
+    const isTemplateBuilderDirty = useMemo(() => {
+        if (panelMode !== 'create') return false;
+        return templateBuilderDraft !== templateBuilderBaseline;
+    }, [panelMode, templateBuilderBaseline, templateBuilderDraft]);
+
+    const handleCloseTemplateDetail = useCallback(() => {
+        setPanelMode('view');
+        setSelectedTemplateId('');
+    }, []);
+
+    const handleRequestCloseTemplateBuilder = useCallback(async () => {
+        if (isTemplateBuilderDirty) {
+            const ok = await confirm({
+                title: 'Descartar cambios',
+                message: 'Hay cambios sin guardar en el template. Si continuas, se perderan.',
+                confirmText: 'Descartar',
+                cancelText: 'Seguir editando',
+                tone: 'danger'
+            });
+            if (!ok) return;
+        }
+        setPanelMode('view');
+        setCreateForm(buildInitialForm(createForm.moduleId || moduleOptions[0]?.moduleId || ''));
+    }, [confirm, createForm.moduleId, isTemplateBuilderDirty, moduleOptions]);
+
+    const handleRequestCloseTemplatesPanel = useCallback(async () => {
+        if (showColumnsPanel) {
+            setShowColumnsPanel(false);
+            return;
+        }
+        if (panelMode === 'create') {
+            await handleRequestCloseTemplateBuilder();
+            return;
+        }
+        if (selectedTemplateId) {
+            handleCloseTemplateDetail();
+        }
+    }, [
+        handleCloseTemplateDetail,
+        handleRequestCloseTemplateBuilder,
+        panelMode,
+        selectedTemplateId,
+        showColumnsPanel
+    ]);
+
+    useEffect(() => {
+        if (!isMetaTemplatesSection) return undefined;
+        const onPanelEscape = (event) => {
+            const hasOpenState = Boolean(showColumnsPanel || panelMode === 'create' || selectedTemplateId);
+            if (!hasOpenState) return;
+            event.preventDefault();
+            void handleRequestCloseTemplatesPanel();
+        };
+        window.addEventListener('saas-panel-escape', onPanelEscape);
+        return () => window.removeEventListener('saas-panel-escape', onPanelEscape);
+    }, [
+        handleRequestCloseTemplatesPanel,
+        isMetaTemplatesSection,
+        panelMode,
+        selectedTemplateId,
+        showColumnsPanel
+    ]);
+
     const headerElement = useMemo(() => (
         <SaasViewHeader
             title="Templates Meta"
@@ -1387,9 +1495,10 @@ function MetaTemplatesSection(props = {}) {
                                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
                                     <button
                                         type="button"
+                                        className="saas-btn-cancel"
                                         disabled={templatesBusy || !canWrite}
                                         onClick={() => {
-                                            setPanelMode('view');
+                                            void handleRequestCloseTemplateBuilder();
                                         }}
                                     >
                                         Cancelar
@@ -1677,10 +1786,10 @@ function MetaTemplatesSection(props = {}) {
                                         </button>
                                         <button
                                             type="button"
+                                            className="saas-btn-cancel"
                                             disabled={templatesBusy}
                                             onClick={() => {
-                                                setPanelMode('view');
-                                                setCreateForm(buildInitialForm(createForm.moduleId || moduleOptions[0]?.moduleId || ''));
+                                                void handleRequestCloseTemplateBuilder();
                                             }}
                                         >
                                             Cancelar
@@ -1879,11 +1988,9 @@ function MetaTemplatesSection(props = {}) {
                                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
                                     <button
                                         type="button"
+                                        className="saas-btn-close"
                                         disabled={templatesBusy}
-                                        onClick={() => {
-                                            setPanelMode('view');
-                                            setSelectedTemplateId('');
-                                        }}
+                                        onClick={handleCloseTemplateDetail}
                                     >
                                         Cerrar
                                     </button>

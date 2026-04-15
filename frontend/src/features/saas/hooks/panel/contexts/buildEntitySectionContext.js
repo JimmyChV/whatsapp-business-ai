@@ -76,6 +76,7 @@ export default function buildEntitySectionContext(c) {
         cancelUserEdit: c.cancelUserEdit,
         isCustomersSection: c.isCustomersSection,
         filteredCustomers: c.filteredCustomers,
+        customers: c.customers,
         openCustomerCreate: c.openCustomerCreate,
         customerSearch: c.customerSearch,
         setCustomerSearch: c.setCustomerSearch,
@@ -100,6 +101,9 @@ export default function buildEntitySectionContext(c) {
         customerImportModuleId: c.customerImportModuleId,
         setCustomerImportModuleId: c.setCustomerImportModuleId,
         customerCsvText: c.customerCsvText,
-        setCustomerCsvText: c.setCustomerCsvText
+        setCustomerCsvText: c.setCustomerCsvText,
+        operationsSnapshot: c.operationsSnapshot,
+        campaignsController: c.campaignsController,
+        metaTemplatesController: c.metaTemplatesController
     };
 }

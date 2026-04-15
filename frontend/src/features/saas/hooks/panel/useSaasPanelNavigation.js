@@ -1,10 +1,16 @@
 import { useCallback, useMemo } from 'react';
 
+const GLOBAL_SECTION_IDS = new Set(['saas_resumen', 'saas_empresas', 'saas_roles', 'saas_planes']);
+const SELLER_VISIBLE_SECTION_IDS = new Set(['saas_clientes']);
+
 export default function useSaasPanelNavigation({
     navItems = [],
     currentSection = '',
     activeSection = '',
     initialSection = 'saas_resumen',
+    userRole = 'seller',
+    isSuperAdmin = false,
+    settingsTenantId = '',
     canManageTenants = false,
     canManageUsers = false,
     canViewCustomers = false,
@@ -17,6 +23,34 @@ export default function useSaasPanelNavigation({
     canViewSuperAdminSections = false,
     canViewTenantSettings = false
 } = {}) {
+    const normalizedRole = String(userRole || 'seller').trim().toLowerCase() || 'seller';
+    const hasTenantScope = Boolean(String(settingsTenantId || '').trim());
+    const isSuperAdminOutsideTenant = Boolean((isSuperAdmin || normalizedRole === 'superadmin') && !hasTenantScope);
+    const isSuperAdminInsideTenant = Boolean((isSuperAdmin || normalizedRole === 'superadmin') && hasTenantScope);
+
+    const isSectionVisibleByRole = useCallback((sectionId) => {
+        const cleanId = String(sectionId || '').trim();
+        if (!cleanId) return false;
+
+        if (normalizedRole === 'seller') {
+            return SELLER_VISIBLE_SECTION_IDS.has(cleanId);
+        }
+
+        if (isSuperAdminOutsideTenant) {
+            return GLOBAL_SECTION_IDS.has(cleanId);
+        }
+
+        if (isSuperAdminInsideTenant) {
+            return true;
+        }
+
+        if (GLOBAL_SECTION_IDS.has(cleanId) && cleanId !== 'saas_resumen') {
+            return false;
+        }
+
+        return true;
+    }, [isSuperAdminInsideTenant, isSuperAdminOutsideTenant, normalizedRole]);
+
     const isSectionEnabled = useCallback((sectionId) => {
         const cleanId = String(sectionId || '').trim();
         if (cleanId === 'saas_empresas') return canManageTenants;
@@ -49,13 +83,24 @@ export default function useSaasPanelNavigation({
     ]);
 
     const adminNavItems = useMemo(() => {
-        return navItems
-            .filter((item) => canViewSuperAdminSections || !['saas_planes', 'saas_roles'].includes(String(item?.id || '').trim()))
+        const visibleItems = navItems
+            .filter((item) => isSectionVisibleByRole(item?.id))
             .map((item) => ({
                 ...item,
+                group: GLOBAL_SECTION_IDS.has(String(item?.id || '').trim()) ? 'global' : 'tenant',
                 enabled: isSectionEnabled(item.id)
             }));
-    }, [canViewSuperAdminSections, isSectionEnabled, navItems]);
+
+        const summaryItem = visibleItems.find((item) => item.id === 'saas_resumen') || null;
+        const globalItems = visibleItems.filter((item) => item.id !== 'saas_resumen' && item.group === 'global');
+        const tenantItems = visibleItems.filter((item) => item.group === 'tenant');
+
+        return [
+            ...(summaryItem ? [{ ...summaryItem, group: 'summary' }] : []),
+            ...globalItems,
+            ...tenantItems
+        ];
+    }, [isSectionEnabled, isSectionVisibleByRole, navItems]);
 
     const selectedSectionId = useMemo(() => {
         const preferred = String(currentSection || activeSection || initialSection || 'saas_resumen').trim();

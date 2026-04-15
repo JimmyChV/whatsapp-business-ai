@@ -417,6 +417,47 @@ function buildAddressLocationLabel(address = {}) {
     return String(source.locationLabel || '').trim() || '-';
 }
 
+function serializeCustomerFormForDirty(form = {}) {
+    const source = form && typeof form === 'object' ? form : {};
+    return JSON.stringify({
+        contactName: String(source.contactName || '').trim(),
+        phoneE164: String(source.phoneE164 || '').trim(),
+        phoneAlt: String(source.phoneAlt || '').trim(),
+        email: String(source.email || '').trim(),
+        tagsText: String(source.tagsText || '').trim(),
+        isActive: source.isActive !== false,
+        treatmentId: String(source.treatmentId || source.treatment_id || '').trim(),
+        firstName: String(source.firstName || source.first_name || source.profileFirstNames || '').trim(),
+        lastNamePaternal: String(source.lastNamePaternal || source.last_name_paternal || source.profileLastNamePaternal || '').trim(),
+        lastNameMaternal: String(source.lastNameMaternal || source.last_name_maternal || source.profileLastNameMaternal || '').trim(),
+        documentTypeId: String(source.documentTypeId || source.document_type_id || '').trim(),
+        documentNumber: String(source.documentNumber || source.document_number || source.profileDocumentNumber || '').trim(),
+        customerTypeId: String(source.customerTypeId || source.customer_type_id || '').trim(),
+        acquisitionSourceId: String(source.acquisitionSourceId || source.acquisition_source_id || '').trim(),
+        notes: String(source.notes || source.profileNotes || '').trim(),
+        preferredLanguage: String(source.preferredLanguage || source.preferred_language || 'es').trim().toLowerCase() || 'es'
+    });
+}
+
+function serializeAddressFormForDirty(form = {}) {
+    const source = form && typeof form === 'object' ? form : {};
+    return JSON.stringify({
+        addressType: String(source.addressType || 'other').trim() || 'other',
+        street: String(source.street || '').trim(),
+        reference: String(source.reference || '').trim(),
+        mapsUrl: String(source.mapsUrl || '').trim(),
+        departmentId: normalizeGeoNumericId(source.departmentId || ''),
+        provinceId: normalizeGeoNumericId(source.provinceId || ''),
+        districtId: normalizeGeoDistrictId(source.districtId || ''),
+        departmentName: String(source.departmentName || '').trim(),
+        provinceName: String(source.provinceName || '').trim(),
+        districtName: String(source.districtName || '').trim(),
+        latitude: String(source.latitude || '').trim(),
+        longitude: String(source.longitude || '').trim(),
+        isPrimary: Boolean(source.isPrimary)
+    });
+}
+
 function buildProfileAddressesFromCustomer(customer = null) {
     const profile = customer?.profile && typeof customer.profile === 'object' ? customer.profile : {};
     const items = [];
@@ -643,7 +684,7 @@ function resolveUpdatedAtTimestamp(item = null) {
 }
 
 function CustomersSection(props = {}) {
-    const { notify } = useUiFeedback();
+    const { confirm, notify } = useUiFeedback();
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const {
         isCustomersSection,
@@ -923,6 +964,78 @@ function CustomersSection(props = {}) {
         if (selectedCustomer && customerPanelMode !== 'create') return normalizePreferredLanguage(selectedCustomer);
         return 'es';
     }, [customerForm?.preferredLanguage, customerForm?.preferred_language, customerPanelMode, selectedCustomer]);
+
+    const customerFormBaseline = useMemo(() => {
+        if (customerPanelMode === 'create') {
+            return serializeCustomerFormForDirty({
+                contactName: '',
+                phoneE164: '',
+                phoneAlt: '',
+                email: '',
+                tagsText: '',
+                isActive: true,
+                treatmentId: '',
+                firstName: '',
+                lastNamePaternal: '',
+                lastNameMaternal: '',
+                documentTypeId: '',
+                documentNumber: '',
+                customerTypeId: '',
+                acquisitionSourceId: '',
+                notes: '',
+                preferredLanguage: 'es'
+            });
+        }
+        if (selectedCustomer) {
+            return serializeCustomerFormForDirty({
+                ...normalizeCustomerFormFromItem(selectedCustomer),
+                preferredLanguage: normalizePreferredLanguage(selectedCustomer)
+            });
+        }
+        return '';
+    }, [customerPanelMode, selectedCustomer]);
+
+    const customerFormDraft = useMemo(() => {
+        return serializeCustomerFormForDirty({
+            ...customerForm,
+            firstName: firstNameValue,
+            lastNamePaternal: lastNamePaternalValue,
+            lastNameMaternal: lastNameMaternalValue,
+            documentNumber: documentNumberValue,
+            notes: notesValue,
+            preferredLanguage: formPreferredLanguageValue
+        });
+    }, [
+        customerForm,
+        documentNumberValue,
+        firstNameValue,
+        formPreferredLanguageValue,
+        lastNameMaternalValue,
+        lastNamePaternalValue,
+        notesValue
+    ]);
+
+    const isCustomerFormDirty = useMemo(() => {
+        if (customerPanelMode !== 'create' && customerPanelMode !== 'edit') return false;
+        return customerFormDraft !== customerFormBaseline;
+    }, [customerFormBaseline, customerFormDraft, customerPanelMode]);
+
+    const addressFormBaseline = useMemo(() => {
+        if (addressEditorMode === 'edit' && selectedAddress) {
+            return serializeAddressFormForDirty(buildAddressFormFromRecord(selectedAddress));
+        }
+        return serializeAddressFormForDirty(EMPTY_ADDRESS_FORM);
+    }, [addressEditorMode, selectedAddress]);
+
+    const addressFormDraft = useMemo(
+        () => serializeAddressFormForDirty(addressForm),
+        [addressForm]
+    );
+
+    const isAddressFormDirty = useMemo(() => {
+        if (addressPanelMode !== 'address-edit') return false;
+        return addressFormDraft !== addressFormBaseline;
+    }, [addressFormBaseline, addressFormDraft, addressPanelMode]);
 
     useEffect(() => {
         if (customerPanelMode !== 'create') return;
@@ -1306,7 +1419,105 @@ function CustomersSection(props = {}) {
     const handleCloseDetail = useCallback(() => {
         setSelectedCustomerId('');
         setCustomerPanelMode('view');
-    }, [setCustomerPanelMode, setSelectedCustomerId]);
+        setAddressPanelMode('customer');
+        setAddressEditorOpen(false);
+    }, [setAddressEditorOpen, setAddressPanelMode, setCustomerPanelMode, setSelectedCustomerId]);
+
+    const handleRequestCancelCustomerEdit = useCallback(async () => {
+        if (isCustomerFormDirty) {
+            const ok = await confirm({
+                title: 'Descartar cambios',
+                message: 'Hay cambios sin guardar en el cliente. Si continuas, se perderan.',
+                confirmText: 'Descartar',
+                cancelText: 'Seguir editando',
+                tone: 'danger'
+            });
+            if (!ok) return;
+        }
+        cancelCustomerEdit?.();
+    }, [cancelCustomerEdit, confirm, isCustomerFormDirty]);
+
+    const handleRequestCancelAddressEdit = useCallback(async () => {
+        if (isAddressFormDirty) {
+            const ok = await confirm({
+                title: 'Descartar cambios',
+                message: 'Hay cambios sin guardar en la direccion. Si continuas, se perderan.',
+                confirmText: 'Descartar',
+                cancelText: 'Seguir editando',
+                tone: 'danger'
+            });
+            if (!ok) return;
+        }
+        const hasSelectedAddress = String(selectedAddressId || '').trim();
+        setAddressEditorMode('create');
+        setAddressEditorOpen(false);
+        setAddressForm(EMPTY_ADDRESS_FORM);
+        setAddressPanelMode(hasSelectedAddress ? 'address-detail' : 'customer');
+        setAddressesError('');
+    }, [confirm, isAddressFormDirty, selectedAddressId]);
+
+    const handleRequestCloseCustomersPanel = useCallback(async () => {
+        if (showColumnsMenu) {
+            setShowColumnsMenu(false);
+            return;
+        }
+        if (addressPanelMode === 'address-edit') {
+            await handleRequestCancelAddressEdit();
+            return;
+        }
+        if (customerPanelMode === 'create' || customerPanelMode === 'edit') {
+            await handleRequestCancelCustomerEdit();
+            return;
+        }
+        if (addressPanelMode === 'address-detail') {
+            setAddressPanelMode('customer');
+            setAddressEditorOpen(false);
+            setAddressEditorMode('create');
+            setAddressForm(EMPTY_ADDRESS_FORM);
+            setAddressesError('');
+            return;
+        }
+        if (selectedCustomer || selectedCustomerId) {
+            handleCloseDetail();
+        }
+    }, [
+        addressPanelMode,
+        customerPanelMode,
+        handleCloseDetail,
+        handleRequestCancelAddressEdit,
+        handleRequestCancelCustomerEdit,
+        selectedCustomer,
+        selectedCustomerId,
+        showColumnsMenu
+    ]);
+
+    useEffect(() => {
+        if (!isCustomersSection) return undefined;
+        const onPanelEscape = (event) => {
+            const hasOpenState = Boolean(
+                showColumnsMenu
+                || addressPanelMode === 'address-edit'
+                || addressPanelMode === 'address-detail'
+                || customerPanelMode === 'create'
+                || customerPanelMode === 'edit'
+                || selectedCustomer
+                || selectedCustomerId
+            );
+            if (!hasOpenState) return;
+            event.preventDefault();
+            void handleRequestCloseCustomersPanel();
+        };
+        window.addEventListener('saas-panel-escape', onPanelEscape);
+        return () => window.removeEventListener('saas-panel-escape', onPanelEscape);
+    }, [
+        addressPanelMode,
+        customerPanelMode,
+        handleRequestCloseCustomersPanel,
+        isCustomersSection,
+        selectedCustomer,
+        selectedCustomerId,
+        showColumnsMenu
+    ]);
 
     const handleSoftDeleteCustomer = useCallback(() => {
         const customerId = resolveCustomerId(selectedCustomer);
@@ -1789,12 +2000,6 @@ function CustomersSection(props = {}) {
         setAddressesError('');
     }, []);
 
-    const handleCancelAddressEdit = useCallback(() => {
-        const hasSelectedAddress = String(selectedAddressId || '').trim();
-        resetAddressEditor();
-        setAddressPanelMode(hasSelectedAddress ? 'address-detail' : 'customer');
-    }, [resetAddressEditor, selectedAddressId]);
-
     const handleSaveAddress = useCallback(async () => {
         const customerId = selectedCustomerIdResolved;
         if (!customerId) return;
@@ -2254,7 +2459,7 @@ function CustomersSection(props = {}) {
                                     Mostrar todo
                                 </button>
                                 <button type="button" onClick={columnPrefs.resetColumns}>Restablecer</button>
-                                <button type="button" onClick={() => setShowColumnsMenu(false)}>Cerrar</button>
+                                <button type="button" className="saas-btn-close" onClick={() => setShowColumnsMenu(false)}>Cerrar</button>
                             </div>
                         </div>
                     ) : null}
@@ -2315,8 +2520,8 @@ function CustomersSection(props = {}) {
                             >
                                 {addressEditorMode === 'edit' ? 'Actualizar direccion' : 'Guardar direccion'}
                             </button>
-                            <button type="button" disabled={busy || addressBusy} onClick={handleCancelAddressEdit}>Cancelar</button>
-                            <button type="button" disabled={busy || addressBusy} onClick={handleBackToCustomerDetail}>Volver al cliente</button>
+                            <button type="button" className="saas-btn-cancel" disabled={busy || addressBusy} onClick={() => { void handleRequestCancelAddressEdit(); }}>Cancelar</button>
+                            <button type="button" className="saas-btn-close" disabled={busy || addressBusy} onClick={() => { void handleRequestCancelAddressEdit(); }}>Volver al cliente</button>
                         </div>
                     )}
                 >
@@ -2334,7 +2539,7 @@ function CustomersSection(props = {}) {
                         <div className="saas-customers-detail-actions">
                             <button type="button" disabled={editClickBusy} onClick={handleOpenCustomerEdit}>Editar</button>
                             <button type="button" disabled={busy} onClick={handleSoftDeleteCustomer}>Eliminar</button>
-                            <button type="button" disabled={busy} onClick={handleCloseDetail}>Cerrar</button>
+                            <button type="button" className="saas-btn-close" disabled={busy} onClick={() => { void handleRequestCloseCustomersPanel(); }}>Cerrar</button>
                         </div>
                     )}
                 >
@@ -2413,8 +2618,8 @@ function CustomersSection(props = {}) {
                             >
                                 {customerPanelMode === 'create' ? 'Guardar cliente' : 'Actualizar cliente'}
                             </button>
-                            <button type="button" disabled={busy} onClick={cancelCustomerEdit}>Cancelar</button>
-                            <button type="button" disabled={busy} onClick={handleCloseDetail}>Cerrar</button>
+                            <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void handleRequestCancelCustomerEdit(); }}>Cancelar</button>
+                            <button type="button" className="saas-btn-close" disabled={busy} onClick={() => { void handleRequestCloseCustomersPanel(); }}>Cerrar</button>
                         </div>
                     )}
                 >
