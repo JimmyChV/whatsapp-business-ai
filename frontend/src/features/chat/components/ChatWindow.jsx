@@ -478,8 +478,11 @@ const ChatWindow = ({
                         preview={inputProps?.selectedSendTemplatePreview}
                         previewLoading={Boolean(inputProps?.selectedSendTemplatePreviewLoading)}
                         previewError={inputProps?.selectedSendTemplatePreviewError}
+                        confirmDisabled={!inputProps?.selectedSendTemplate || !inputProps?.selectedSendTemplatePreview || inputProps?.selectedSendTemplatePreviewLoading}
+                        confirmBusy={Boolean(inputProps?.sendTemplateSubmitting)}
                         onClose={inputProps?.onCloseSendTemplate}
                         onSelectTemplate={inputProps?.onSelectTemplatePreview}
+                        onConfirm={inputProps?.onConfirmSendTemplate}
                     />
                 </>
             ) : (

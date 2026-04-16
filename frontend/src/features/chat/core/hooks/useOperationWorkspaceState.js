@@ -66,6 +66,7 @@ export default function useOperationWorkspaceState({
   const [selectedSendTemplatePreview, setSelectedSendTemplatePreview] = useState(null);
   const [selectedSendTemplatePreviewLoading, setSelectedSendTemplatePreviewLoading] = useState(false);
   const [selectedSendTemplatePreviewError, setSelectedSendTemplatePreviewError] = useState('');
+  const [sendTemplateSubmitting, setSendTemplateSubmitting] = useState(false);
   const [waModules, setWaModules] = useState([]);
   const [selectedWaModule, setSelectedWaModule] = useState(null);
   const [selectedCatalogModuleId, setSelectedCatalogModuleId] = useState('');
@@ -196,6 +197,8 @@ export default function useOperationWorkspaceState({
     setSelectedSendTemplatePreviewLoading,
     selectedSendTemplatePreviewError,
     setSelectedSendTemplatePreviewError,
+    sendTemplateSubmitting,
+    setSendTemplateSubmitting,
     waModules,
     setWaModules,
     selectedWaModule,

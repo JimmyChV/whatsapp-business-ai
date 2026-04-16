@@ -39,7 +39,8 @@ export default function useChatMessageActions({
   setSelectedSendTemplate,
   setSelectedSendTemplatePreview,
   setSelectedSendTemplatePreviewLoading,
-  setSelectedSendTemplatePreviewError
+  setSelectedSendTemplatePreviewError,
+  setSendTemplateSubmitting
 } = {}) {
   const { notify } = useUiFeedback();
   const handleExitActiveChat = useCallback(() => {
@@ -62,6 +63,7 @@ export default function useChatMessageActions({
     setSelectedSendTemplatePreview(null);
     setSelectedSendTemplatePreviewLoading(false);
     setSelectedSendTemplatePreviewError('');
+    setSendTemplateSubmitting(false);
     setInputText('');
     removeAttachment();
   }, [
@@ -84,6 +86,7 @@ export default function useChatMessageActions({
     setSelectedSendTemplatePreview,
     setSelectedSendTemplatePreviewLoading,
     setSelectedSendTemplatePreviewError,
+    setSendTemplateSubmitting,
     setInputText,
     removeAttachment
   ]);
@@ -95,13 +98,15 @@ export default function useChatMessageActions({
     setSelectedSendTemplatePreview(null);
     setSelectedSendTemplatePreviewLoading(false);
     setSelectedSendTemplatePreviewError('');
+    setSendTemplateSubmitting(false);
   }, [
     setSendTemplateOpen,
     setSendTemplateOptionsError,
     setSelectedSendTemplate,
     setSelectedSendTemplatePreview,
     setSelectedSendTemplatePreviewLoading,
-    setSelectedSendTemplatePreviewError
+    setSelectedSendTemplatePreviewError,
+    setSendTemplateSubmitting
   ]);
 
   const handleOpenSendTemplate = useCallback(async () => {
@@ -193,6 +198,38 @@ export default function useChatMessageActions({
     setSelectedSendTemplatePreview,
     setSelectedSendTemplatePreviewError,
     setSelectedSendTemplatePreviewLoading
+  ]);
+
+  const handleConfirmSendTemplate = useCallback(() => {
+    const activeId = String(activeChatIdRef.current || activeChatId || '').trim();
+    const template = selectedSendTemplate && typeof selectedSendTemplate === 'object' ? selectedSendTemplate : null;
+    if (!activeId || !template || !socket || typeof socket.emit !== 'function') return;
+
+    const activeChatForSend = chatsRef.current.find((chat) => String(chat?.id || '') === String(activeChatId || activeId));
+    const activeChatPhone = normalizeDigits(activeChatForSend?.phone || '');
+    const toPhone = activeChatPhone || null;
+
+    setSendTemplateSubmitting(true);
+    socket.emit('send_template_message', {
+      to: activeId,
+      toPhone,
+      chatId: activeId,
+      customerId: String(clientContact?.customerId || '').trim() || null,
+      moduleId: String(activeChatScopeModuleId || '').trim() || null,
+      templateId: String(template?.templateId || '').trim() || null,
+      templateName: String(template?.templateName || '').trim(),
+      templateLanguage: String(template?.templateLanguage || 'es').trim().toLowerCase() || 'es'
+    });
+  }, [
+    activeChatId,
+    activeChatIdRef,
+    activeChatScopeModuleId,
+    chatsRef,
+    clientContact?.customerId,
+    normalizeDigits,
+    selectedSendTemplate,
+    setSendTemplateSubmitting,
+    socket
   ]);
 
   const handleSendMessage = useCallback((event) => {
@@ -306,6 +343,7 @@ export default function useChatMessageActions({
     handleSendMessage,
     handleOpenSendTemplate,
     handleCloseSendTemplate,
-    handleSelectTemplatePreview
+    handleSelectTemplatePreview,
+    handleConfirmSendTemplate
   };
 }

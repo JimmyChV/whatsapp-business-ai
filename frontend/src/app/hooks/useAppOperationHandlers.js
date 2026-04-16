@@ -126,6 +126,8 @@ export default function useAppOperationHandlers({
     setSelectedSendTemplatePreviewLoading,
     selectedSendTemplatePreviewError,
     setSelectedSendTemplatePreviewError,
+    sendTemplateSubmitting,
+    setSendTemplateSubmitting,
     waModules,
     setWaModules,
     selectedWaModule,
@@ -297,7 +299,8 @@ export default function useAppOperationHandlers({
     handleSendMessage,
     handleOpenSendTemplate,
     handleCloseSendTemplate,
-    handleSelectTemplatePreview
+    handleSelectTemplatePreview,
+    handleConfirmSendTemplate
   } = useChatMessageActions({
     socket,
     activeChatId,
@@ -334,7 +337,8 @@ export default function useAppOperationHandlers({
     setSelectedSendTemplate,
     setSelectedSendTemplatePreview,
     setSelectedSendTemplatePreviewLoading,
-    setSelectedSendTemplatePreviewError
+    setSelectedSendTemplatePreviewError,
+    setSendTemplateSubmitting
   });
 
   useGlobalEscapeToCloseChat({
@@ -490,6 +494,7 @@ export default function useAppOperationHandlers({
     handleOpenSendTemplate,
     handleCloseSendTemplate,
     handleSelectTemplatePreview,
+    handleConfirmSendTemplate,
     requestAiSuggestion,
     handleRefreshChats,
     handleStartNewChat,
@@ -541,6 +546,7 @@ export default function useAppOperationHandlers({
     selectedSendTemplatePreview,
     selectedSendTemplatePreviewLoading,
     selectedSendTemplatePreviewError,
+    sendTemplateSubmitting,
     resetWorkspaceState
   };
 

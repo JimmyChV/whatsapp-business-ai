@@ -67,6 +67,7 @@ export default function OperationPage({
   handleOpenSendTemplate,
   handleCloseSendTemplate,
   handleSelectTemplatePreview,
+  handleConfirmSendTemplate,
   sendTemplateOpen,
   sendTemplateOptions,
   sendTemplateOptionsLoading,
@@ -75,6 +76,7 @@ export default function OperationPage({
   selectedSendTemplatePreview,
   selectedSendTemplatePreviewLoading,
   selectedSendTemplatePreviewError,
+  sendTemplateSubmitting,
   chatAssignmentState,
   chatCommercialStatusState,
   handleSendQuickReply,
@@ -210,6 +212,7 @@ export default function OperationPage({
               onOpenSendTemplate={handleOpenSendTemplate}
               onCloseSendTemplate={handleCloseSendTemplate}
               onSelectTemplatePreview={handleSelectTemplatePreview}
+              onConfirmSendTemplate={handleConfirmSendTemplate}
               sendTemplateOpen={sendTemplateOpen}
               sendTemplateOptions={sendTemplateOptions}
               sendTemplateOptionsLoading={sendTemplateOptionsLoading}
@@ -218,6 +221,7 @@ export default function OperationPage({
               selectedSendTemplatePreview={selectedSendTemplatePreview}
               selectedSendTemplatePreviewLoading={selectedSendTemplatePreviewLoading}
               selectedSendTemplatePreviewError={selectedSendTemplatePreviewError}
+              sendTemplateSubmitting={sendTemplateSubmitting}
               onSendQuickReply={handleSendQuickReply}
               quickReplyDraft={quickReplyDraft}
               onClearQuickReplyDraft={() => setQuickReplyDraft(null)}

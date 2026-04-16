@@ -112,6 +112,11 @@ export default function useAppSocketChatController({
     setLabelDefinitions: chatRuntimeBlock.setLabelDefinitions,
     businessData: chatRuntimeBlock.businessData,
     setQuickReplies: chatRuntimeBlock.setQuickReplies,
+    setSendTemplateSubmitting: chatRuntimeBlock.setSendTemplateSubmitting,
+    setSendTemplateOpen: chatRuntimeBlock.setSendTemplateOpen,
+    setSelectedSendTemplate: chatRuntimeBlock.setSelectedSendTemplate,
+    setSelectedSendTemplatePreview: chatRuntimeBlock.setSelectedSendTemplatePreview,
+    setSelectedSendTemplatePreviewError: chatRuntimeBlock.setSelectedSendTemplatePreviewError,
 
     setMessages: chatRuntimeBlock.setMessages,
     setEditingMessage: chatRuntimeBlock.setEditingMessage,
