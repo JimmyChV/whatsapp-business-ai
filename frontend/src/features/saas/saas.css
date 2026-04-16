@@ -2722,6 +2722,74 @@
   font-size: 0.8rem;
 }
 
+.saas-campaigns-audience-summary {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.saas-campaigns-audience-summary strong {
+  color: #e8f7ff;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.saas-campaigns-audience-summary span {
+  color: #98bbcf;
+  font-size: 0.72rem;
+}
+
+.saas-campaigns-audience-table-wrap {
+  border: 1px solid rgba(123, 170, 196, 0.2);
+  border-radius: 12px;
+  background: rgba(6, 18, 26, 0.74);
+  max-height: 320px;
+  overflow: auto;
+}
+
+.saas-campaigns-audience-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+
+.saas-campaigns-audience-table th,
+.saas-campaigns-audience-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(123, 170, 196, 0.16);
+  text-align: left;
+  vertical-align: top;
+  color: #d7ebf8;
+}
+
+.saas-campaigns-audience-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(7, 20, 29, 0.96);
+  color: #9ec1d6;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.saas-campaigns-audience-table td.is-center,
+.saas-campaigns-audience-table th.is-center {
+  text-align: center;
+}
+
+.saas-campaigns-audience-table tbody tr.is-excluded {
+  background: rgba(168, 85, 0, 0.12);
+}
+
+.saas-campaigns-audience-table input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  accent-color: #00c7a0;
+  cursor: pointer;
+}
+
 .saas-campaigns-tracking {
   display: grid;
   gap: 12px;

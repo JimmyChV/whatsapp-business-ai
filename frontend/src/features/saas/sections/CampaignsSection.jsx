@@ -203,6 +203,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [showColumnsMenu, setShowColumnsMenu] = useState(false);
     const [maxRecipientsTouched, setMaxRecipientsTouched] = useState(false);
     const [localEstimate, setLocalEstimate] = useState(null);
+    const [excludedCustomerIds, setExcludedCustomerIds] = useState([]);
 
     const {
         campaigns = [],
@@ -321,6 +322,30 @@ export default React.memo(function CampaignsSection(props = {}) {
         eligible: Math.max(0, toNumber(reachEstimate?.eligible)),
         excluded: Math.max(0, toNumber(reachEstimate?.excluded))
     }), [reachEstimate]);
+    const estimatedAudienceItems = useMemo(() => (
+        (Array.isArray(reachEstimate?.items) ? reachEstimate.items : [])
+            .map((item) => ({
+                customerId: toText(item?.customerId),
+                contactName: toText(item?.contactName) || 'Sin nombre',
+                phone: toText(item?.phone) || '-',
+                commercialStatus: toLower(item?.commercialStatus || 'unknown') || 'unknown',
+                tags: Array.isArray(item?.tags)
+                    ? item.tags.map((entry) => toText(entry)).filter(Boolean)
+                    : [],
+                preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
+                marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
+            }))
+            .filter((item) => item.customerId)
+    ), [reachEstimate]);
+    const excludedCustomerIdSet = useMemo(() => (
+        new Set((Array.isArray(excludedCustomerIds) ? excludedCustomerIds : []).map((entry) => toText(entry)).filter(Boolean))
+    ), [excludedCustomerIds]);
+    const exclusionSummary = useMemo(() => {
+        const eligible = estimatedAudienceItems.length;
+        const excluded = estimatedAudienceItems.filter((item) => excludedCustomerIdSet.has(item.customerId)).length;
+        const finalRecipients = Math.max(0, eligible - excluded);
+        return { eligible, excluded, finalRecipients };
+    }, [estimatedAudienceItems, excludedCustomerIdSet]);
     const formBaseline = useMemo(() => {
         if (panelMode === 'edit' && selectedCampaign) {
             return serializeCampaignForm(mapCampaignToForm(selectedCampaign, labelOptions));
@@ -413,6 +438,26 @@ export default React.memo(function CampaignsSection(props = {}) {
         setForm((prev) => ({ ...prev, maxRecipients: String(eligible) }));
     }, [estimateNumbers.eligible, maxRecipientsTouched, panelMode]);
 
+    useEffect(() => {
+        if (estimatedAudienceItems.length === 0) {
+            setExcludedCustomerIds([]);
+            return;
+        }
+        const validIds = new Set(estimatedAudienceItems.map((item) => item.customerId));
+        setExcludedCustomerIds((prev) => prev.filter((customerId) => validIds.has(toText(customerId))));
+    }, [estimatedAudienceItems]);
+
+    const toggleAudienceExclusion = useCallback((customerId = '') => {
+        const cleanCustomerId = toText(customerId);
+        if (!cleanCustomerId) return;
+        setExcludedCustomerIds((prev) => {
+            const current = new Set((Array.isArray(prev) ? prev : []).map((entry) => toText(entry)).filter(Boolean));
+            if (current.has(cleanCustomerId)) current.delete(cleanCustomerId);
+            else current.add(cleanCustomerId);
+            return Array.from(current);
+        });
+    }, []);
+
     const toggleCommercialStatus = useCallback((statusKey = '') => {
         const cleanKey = toLower(statusKey);
         if (!cleanKey) return;
@@ -468,6 +513,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             : null;
         if (estimate) {
             setLocalEstimate(estimate);
+            setExcludedCustomerIds([]);
         }
     }, [buildCampaignPayload, estimateReachAction]);
 
@@ -481,6 +527,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         setPanelMode('list');
         setLocalEstimate(null);
         setMaxRecipientsTouched(false);
+        setExcludedCustomerIds([]);
         clearSelectedCampaign();
     }, [clearSelectedCampaign]);
 
@@ -498,6 +545,7 @@ export default React.memo(function CampaignsSection(props = {}) {
 
         setLocalEstimate(null);
         setMaxRecipientsTouched(false);
+        setExcludedCustomerIds([]);
         if (panelMode === 'edit' && selectedCampaign) {
             setForm(mapCampaignToForm(selectedCampaign, labelOptions));
             setPanelMode('detail');
@@ -893,6 +941,50 @@ export default React.memo(function CampaignsSection(props = {}) {
                                         <div><span>Idioma</span><strong>{toText(form.templateLanguage).toUpperCase() || '-'}</strong></div>
                                         <div><span>Programacion</span><strong>{form.scheduledAt ? formatDateTime(toIsoDateTimeLocal(form.scheduledAt)) : 'Inmediata'}</strong></div>
                                         <div><span>Etiquetas</span><strong>{selectedLabels.length > 0 ? selectedLabels.map((entry) => entry.name).join(', ') : 'Sin filtro'}</strong></div>
+                                    </div>
+                                </div>
+                                <div className="saas-admin-related-block">
+                                    <div className="saas-campaigns-audience-summary">
+                                        <strong>{`${exclusionSummary.eligible} elegibles - ${exclusionSummary.excluded} excluidos = ${exclusionSummary.finalRecipients} destinatarios finales`}</strong>
+                                        <span>{reachEstimate ? 'Lista generada con la estimacion actual.' : 'Haz clic en "Estimar alcance" para ver los clientes elegibles.'}</span>
+                                    </div>
+                                    <div className="saas-campaigns-audience-table-wrap">
+                                        {estimatedAudienceItems.length === 0 ? (
+                                            <div className="saas-admin-empty-inline">No hay clientes elegibles para mostrar.</div>
+                                        ) : (
+                                            <table className="saas-campaigns-audience-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Excluir</th>
+                                                        <th>Nombre</th>
+                                                        <th>Telefono</th>
+                                                        <th>Estado comercial</th>
+                                                        <th>Etiquetas</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {estimatedAudienceItems.map((item) => {
+                                                        const isExcluded = excludedCustomerIdSet.has(item.customerId);
+                                                        return (
+                                                            <tr key={item.customerId} className={isExcluded ? 'is-excluded' : ''}>
+                                                                <td className="is-center">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={isExcluded}
+                                                                        onChange={() => toggleAudienceExclusion(item.customerId)}
+                                                                        aria-label={`Excluir ${item.contactName}`}
+                                                                    />
+                                                                </td>
+                                                                <td>{item.contactName}</td>
+                                                                <td>{item.phone}</td>
+                                                                <td>{item.commercialStatus || '-'}</td>
+                                                                <td>{item.tags.length > 0 ? item.tags.join(', ') : '-'}</td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        )}
                                     </div>
                                 </div>
                             </aside>
