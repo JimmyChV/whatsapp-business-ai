@@ -21,6 +21,7 @@ const conversationOpsService = require('../../operations/services/conversation-o
 const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
 const campaignsService = require('../../operations/services/campaigns.service');
 const metaTemplatesService = require('../../operations/services/meta-templates.service');
+const templateVariablesService = require('../../operations/services/template-variables.service');
 const customerConsentService = require('../../operations/services/customer-consent.service');
 const chatOriginService = require('../../operations/services/chat-origin.service');
 const templateWebhookEventsService = require('../../operations/services/template-webhook-events.service');
@@ -120,6 +121,7 @@ const { createSocketChatHistoryMediaService } = require('./socket-chat-history-m
 const { createSocketChatStateLabelsService } = require('./socket-chat-state-labels.service');
 const { createSocketQuickRepliesService } = require('./socket-quick-replies.service');
 const { createSocketMessageDeliveryService } = require('./socket-message-delivery.service');
+const { createSocketTemplateMessagesService } = require('./socket-template-messages.service');
 const { createSocketCatalogDeliveryService } = require('./socket-catalog-delivery.service');
 const { createSocketQuoteDeliveryService } = require('./socket-quote-delivery.service');
 const { createMessageDeliveryConsentPolicyService } = require('./message-delivery-consent-policy.service');
@@ -348,6 +350,15 @@ class SocketManager {
             sanitizeAgentMeta,
             rememberOutgoingAgentMeta,
             buildModuleAttributionMeta
+        });
+        this.templateMessagesService = createSocketTemplateMessagesService({
+            waClient,
+            metaTemplatesService: this.metaTemplatesService,
+            templateVariablesService: deps?.templateVariablesService || templateVariablesService,
+            getSerializedMessageId,
+            buildSocketAgentMeta,
+            sanitizeAgentMeta,
+            rememberOutgoingAgentMeta
         });
         this.catalogDeliveryService = createSocketCatalogDeliveryService({
             waClient,
@@ -1408,6 +1419,16 @@ class SocketManager {
                 resolveScopedSendTarget: (...args) => messageDeliveryRuntime.resolveScopedSendTarget(...args),
                 emitRealtimeOutgoingMessage: (...args) => messageDeliveryRuntime.emitRealtimeOutgoingMessage(...args),
                 emitCommercialStatusUpdated: (...args) => this.emitCommercialStatusUpdated(...args),
+                recordConversationEvent
+            });
+            this.templateMessagesService.registerTemplateMessageHandlers({
+                socket,
+                tenantId,
+                authContext,
+                guardRateLimit,
+                transportOrchestrator,
+                resolveScopedSendTarget: (...args) => messageDeliveryRuntime.resolveScopedSendTarget(...args),
+                emitRealtimeOutgoingMessage: (...args) => messageDeliveryRuntime.emitRealtimeOutgoingMessage(...args),
                 recordConversationEvent
             });
 
