@@ -58,6 +58,15 @@ export default function useOperationWorkspaceState({
   const [labelDefinitions, setLabelDefinitions] = useState([]);
   const [quickReplies, setQuickReplies] = useState([]);
   const [quickReplyDraft, setQuickReplyDraft] = useState(null);
+  const [sendTemplateOpen, setSendTemplateOpen] = useState(false);
+  const [sendTemplateOptions, setSendTemplateOptions] = useState([]);
+  const [sendTemplateOptionsLoading, setSendTemplateOptionsLoading] = useState(false);
+  const [sendTemplateOptionsError, setSendTemplateOptionsError] = useState('');
+  const [selectedSendTemplate, setSelectedSendTemplate] = useState(null);
+  const [selectedSendTemplatePreview, setSelectedSendTemplatePreview] = useState(null);
+  const [selectedSendTemplatePreviewLoading, setSelectedSendTemplatePreviewLoading] = useState(false);
+  const [selectedSendTemplatePreviewError, setSelectedSendTemplatePreviewError] = useState('');
+  const [sendTemplateSubmitting, setSendTemplateSubmitting] = useState(false);
   const [waModules, setWaModules] = useState([]);
   const [selectedWaModule, setSelectedWaModule] = useState(null);
   const [selectedCatalogModuleId, setSelectedCatalogModuleId] = useState('');
@@ -172,6 +181,24 @@ export default function useOperationWorkspaceState({
     setQuickReplies,
     quickReplyDraft,
     setQuickReplyDraft,
+    sendTemplateOpen,
+    setSendTemplateOpen,
+    sendTemplateOptions,
+    setSendTemplateOptions,
+    sendTemplateOptionsLoading,
+    setSendTemplateOptionsLoading,
+    sendTemplateOptionsError,
+    setSendTemplateOptionsError,
+    selectedSendTemplate,
+    setSelectedSendTemplate,
+    selectedSendTemplatePreview,
+    setSelectedSendTemplatePreview,
+    selectedSendTemplatePreviewLoading,
+    setSelectedSendTemplatePreviewLoading,
+    selectedSendTemplatePreviewError,
+    setSelectedSendTemplatePreviewError,
+    sendTemplateSubmitting,
+    setSendTemplateSubmitting,
     waModules,
     setWaModules,
     selectedWaModule,

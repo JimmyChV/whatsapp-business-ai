@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin } from 'lucide-react';
+import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -38,6 +38,7 @@ const ChatInput = ({
     editingMessage, onCancelEditMessage,
     replyingMessage, onCancelReplyMessage,
     onOpenMapPicker,
+    onOpenSendTemplate,
     buildApiHeaders
 }) => {
     const [showEmoji, setShowEmoji] = useState(false);
@@ -609,6 +610,15 @@ const ChatInput = ({
                     style={{ opacity: editingMessage?.id ? 0.45 : 1, cursor: editingMessage?.id ? 'not-allowed' : 'pointer' }}
                 >
                     <MapPin size={24} />
+                </button>
+                <button
+                    className="btn-icon ui-icon-btn"
+                    onClick={() => onOpenSendTemplate && onOpenSendTemplate()}
+                    title="Enviar template"
+                    disabled={Boolean(editingMessage?.id)}
+                    style={{ opacity: editingMessage?.id ? 0.45 : 1, cursor: editingMessage?.id ? 'not-allowed' : 'pointer' }}
+                >
+                    <LayoutTemplate size={23} />
                 </button>
             </div>
 

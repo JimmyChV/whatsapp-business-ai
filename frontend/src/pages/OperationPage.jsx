@@ -64,6 +64,19 @@ export default function OperationPage({
   handleForwardMessage,
   handleDeleteMessage,
   quickReplies,
+  handleOpenSendTemplate,
+  handleCloseSendTemplate,
+  handleSelectTemplatePreview,
+  handleConfirmSendTemplate,
+  sendTemplateOpen,
+  sendTemplateOptions,
+  sendTemplateOptionsLoading,
+  sendTemplateOptionsError,
+  selectedSendTemplate,
+  selectedSendTemplatePreview,
+  selectedSendTemplatePreviewLoading,
+  selectedSendTemplatePreviewError,
+  sendTemplateSubmitting,
   chatAssignmentState,
   chatCommercialStatusState,
   handleSendQuickReply,
@@ -196,6 +209,19 @@ export default function OperationPage({
               onDeleteMessage={waCapabilities.messageDelete ? handleDeleteMessage : null}
               forwardChatOptions={forwardChatOptions}
               quickReplies={quickReplies}
+              onOpenSendTemplate={handleOpenSendTemplate}
+              onCloseSendTemplate={handleCloseSendTemplate}
+              onSelectTemplatePreview={handleSelectTemplatePreview}
+              onConfirmSendTemplate={handleConfirmSendTemplate}
+              sendTemplateOpen={sendTemplateOpen}
+              sendTemplateOptions={sendTemplateOptions}
+              sendTemplateOptionsLoading={sendTemplateOptionsLoading}
+              sendTemplateOptionsError={sendTemplateOptionsError}
+              selectedSendTemplate={selectedSendTemplate}
+              selectedSendTemplatePreview={selectedSendTemplatePreview}
+              selectedSendTemplatePreviewLoading={selectedSendTemplatePreviewLoading}
+              selectedSendTemplatePreviewError={selectedSendTemplatePreviewError}
+              sendTemplateSubmitting={sendTemplateSubmitting}
               onSendQuickReply={handleSendQuickReply}
               quickReplyDraft={quickReplyDraft}
               onClearQuickReplyDraft={() => setQuickReplyDraft(null)}

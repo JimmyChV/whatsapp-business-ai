@@ -16,7 +16,7 @@ function toPositiveInt(value, fallback = 0) {
     return integer;
 }
 
-export async function createMetaTemplate(requestJson, { moduleId, templatePayload = {}, useCase = 'both' } = {}) {
+export async function createMetaTemplate(requestJson, { moduleId, templatePayload = {}, useCase = 'both', variableMapJson = {} } = {}) {
     assertRequestJson(requestJson);
 
     const cleanModuleId = toCleanText(moduleId);
@@ -30,7 +30,10 @@ export async function createMetaTemplate(requestJson, { moduleId, templatePayloa
         body: {
             moduleId: cleanModuleId,
             templatePayload,
-            useCase: toCleanText(useCase).toLowerCase() || 'both'
+            useCase: toCleanText(useCase).toLowerCase() || 'both',
+            variableMapJson: variableMapJson && typeof variableMapJson === 'object' && !Array.isArray(variableMapJson)
+                ? variableMapJson
+                : {}
         }
     });
 }

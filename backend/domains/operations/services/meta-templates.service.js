@@ -136,6 +136,7 @@ async function ensurePostgresSchema() {
                 quality_score TEXT NOT NULL DEFAULT 'unknown',
                 rejection_reason TEXT NULL,
                 components_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+                variable_map_json JSONB NOT NULL DEFAULT '{}'::jsonb,
                 raw_meta_json JSONB NOT NULL DEFAULT '{}'::jsonb,
                 last_synced_at TIMESTAMPTZ NULL,
                 last_status_event_at TIMESTAMPTZ NULL,
@@ -202,6 +203,9 @@ function normalizeStoredRecord(input = {}) {
         componentsJson: Array.isArray(source.componentsJson || source.components_json)
             ? (source.componentsJson || source.components_json)
             : [],
+        variableMapJson: isPlainObject(source.variableMapJson || source.variable_map_json)
+            ? (source.variableMapJson || source.variable_map_json)
+            : {},
         rawMetaJson: isPlainObject(source.rawMetaJson || source.raw_meta_json)
             ? (source.rawMetaJson || source.raw_meta_json)
             : {},
@@ -231,6 +235,7 @@ function sanitizeTemplatePublic(input = {}) {
         qualityScore: record.qualityScore,
         rejectionReason: record.rejectionReason,
         componentsJson: Array.isArray(record.componentsJson) ? record.componentsJson : [],
+        variableMapJson: isPlainObject(record.variableMapJson) ? record.variableMapJson : {},
         rawMetaJson: isPlainObject(record.rawMetaJson) ? record.rawMetaJson : {},
         lastSyncedAt: record.lastSyncedAt,
         lastStatusEventAt: record.lastStatusEventAt,
@@ -357,6 +362,7 @@ async function upsertTemplateRecord(tenantId = DEFAULT_TENANT_ID, input = {}) {
         source.qualityScore,
         source.rejectionReason,
         JSON.stringify(source.componentsJson || []),
+        JSON.stringify(source.variableMapJson || {}),
         JSON.stringify(source.rawMetaJson || {}),
         source.lastSyncedAt,
         source.lastStatusEventAt,
@@ -368,13 +374,13 @@ async function upsertTemplateRecord(tenantId = DEFAULT_TENANT_ID, input = {}) {
         `INSERT INTO tenant_meta_templates (
             template_id, tenant_id, scope_module_id, module_id, waba_id, phone_number_id,
             meta_template_id, template_name, template_language, use_case, category, status, quality_score,
-            rejection_reason, components_json, raw_meta_json, last_synced_at, last_status_event_at,
+            rejection_reason, components_json, variable_map_json, raw_meta_json, last_synced_at, last_status_event_at,
             created_at, updated_at, deleted_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6,
             $7, $8, $9, $10, $11, $12, $13,
-            $14, $15::jsonb, $16::jsonb, $17::timestamptz, $18::timestamptz,
-            $19::timestamptz, $20::timestamptz, $21::timestamptz
+            $14, $15::jsonb, $16::jsonb, $17::jsonb, $18::timestamptz, $19::timestamptz,
+            $20::timestamptz, $21::timestamptz, $22::timestamptz
         )
         ON CONFLICT (tenant_id, scope_module_id, template_name, template_language) WHERE deleted_at IS NULL
         DO UPDATE SET
@@ -388,6 +394,11 @@ async function upsertTemplateRecord(tenantId = DEFAULT_TENANT_ID, input = {}) {
             quality_score = EXCLUDED.quality_score,
             rejection_reason = EXCLUDED.rejection_reason,
             components_json = COALESCE(EXCLUDED.components_json, tenant_meta_templates.components_json),
+            variable_map_json = CASE
+                WHEN EXCLUDED.variable_map_json IS NULL OR EXCLUDED.variable_map_json = '{}'::jsonb
+                    THEN tenant_meta_templates.variable_map_json
+                ELSE EXCLUDED.variable_map_json
+            END,
             raw_meta_json = COALESCE(tenant_meta_templates.raw_meta_json, '{}'::jsonb) || COALESCE(EXCLUDED.raw_meta_json, '{}'::jsonb),
             last_synced_at = COALESCE(EXCLUDED.last_synced_at, tenant_meta_templates.last_synced_at),
             last_status_event_at = COALESCE(EXCLUDED.last_status_event_at, tenant_meta_templates.last_status_event_at),
@@ -396,7 +407,7 @@ async function upsertTemplateRecord(tenantId = DEFAULT_TENANT_ID, input = {}) {
         RETURNING
             template_id, tenant_id, scope_module_id, module_id, waba_id, phone_number_id,
             meta_template_id, template_name, template_language, use_case, category, status, quality_score,
-            rejection_reason, components_json, raw_meta_json, last_synced_at, last_status_event_at,
+            rejection_reason, components_json, variable_map_json, raw_meta_json, last_synced_at, last_status_event_at,
             created_at, updated_at, deleted_at`,
         params
     );
@@ -422,7 +433,7 @@ async function getTemplateById(tenantId = DEFAULT_TENANT_ID, templateId = '') {
             `SELECT
                 template_id, tenant_id, scope_module_id, module_id, waba_id, phone_number_id,
                 meta_template_id, template_name, template_language, use_case, category, status, quality_score,
-                rejection_reason, components_json, raw_meta_json, last_synced_at, last_status_event_at,
+                rejection_reason, components_json, variable_map_json, raw_meta_json, last_synced_at, last_status_event_at,
                 created_at, updated_at, deleted_at
              FROM tenant_meta_templates
              WHERE tenant_id = $1
@@ -438,7 +449,7 @@ async function getTemplateById(tenantId = DEFAULT_TENANT_ID, templateId = '') {
     }
 }
 
-async function createTemplate(tenantId = DEFAULT_TENANT_ID, { moduleId = '', templatePayload = {}, useCase = 'both' } = {}) {
+async function createTemplate(tenantId = DEFAULT_TENANT_ID, { moduleId = '', templatePayload = {}, useCase = 'both', variableMapJson = {} } = {}) {
     const runtime = await resolveCloudModuleRuntime(tenantId, moduleId);
     if (!isPlainObject(templatePayload)) {
         throw new Error('templatePayload requerido.');
@@ -476,6 +487,7 @@ async function createTemplate(tenantId = DEFAULT_TENANT_ID, { moduleId = '', tem
         qualityScore: normalizedMeta.qualityScore,
         rejectionReason: normalizedMeta.rejectionReason,
         componentsJson: normalizedMeta.componentsJson,
+        variableMapJson: isPlainObject(variableMapJson) ? variableMapJson : {},
         rawMetaJson: normalizedMeta.rawMetaJson,
         lastSyncedAt: nowIso(),
         createdAt: nowIso(),
@@ -540,7 +552,7 @@ async function listTemplates(tenantId = DEFAULT_TENANT_ID, {
             `SELECT
                 template_id, tenant_id, scope_module_id, module_id, waba_id, phone_number_id,
                 meta_template_id, template_name, template_language, use_case, category, status, quality_score,
-                rejection_reason, components_json, raw_meta_json, last_synced_at, last_status_event_at,
+                rejection_reason, components_json, variable_map_json, raw_meta_json, last_synced_at, last_status_event_at,
                 created_at, updated_at, deleted_at
              FROM tenant_meta_templates
              WHERE ${whereSql}
@@ -563,7 +575,7 @@ async function listTemplates(tenantId = DEFAULT_TENANT_ID, {
     }
 }
 
-async function getTemplateComponents(tenantId = DEFAULT_TENANT_ID, {
+async function getTemplateRecord(tenantId = DEFAULT_TENANT_ID, {
     templateName = '',
     moduleId = '',
     templateLanguage = ''
@@ -573,7 +585,7 @@ async function getTemplateComponents(tenantId = DEFAULT_TENANT_ID, {
     const cleanModuleId = toText(moduleId);
     const cleanScope = normalizeScopeModuleId(cleanModuleId);
     const cleanLanguage = normalizeLanguage(templateLanguage || '');
-    if (!cleanTemplateName) return [];
+    if (!cleanTemplateName) return null;
 
     const matchesTemplate = (entry = {}) => toLower(entry.templateName) === toLower(cleanTemplateName);
     const matchesModule = (entry = {}) => !cleanModuleId
@@ -590,13 +602,13 @@ async function getTemplateComponents(tenantId = DEFAULT_TENANT_ID, {
 
     if (getStorageDriver() !== 'postgres') {
         const store = normalizeStore(await readTenantJsonFile(STORE_FILE, { tenantId: cleanTenantId, defaultValue: {} }));
-        const found = store.items
+        return store.items
             .filter((entry) => !entry.deletedAt)
             .filter(matchesTemplate)
             .filter(matchesModule)
             .filter(matchesLanguage)
-            .sort(sortByPriority)[0] || null;
-        return Array.isArray(found?.componentsJson) ? found.componentsJson : [];
+            .sort(sortByPriority)
+            .map((entry) => sanitizeTemplatePublic(entry))[0] || null;
     }
 
     try {
@@ -616,7 +628,11 @@ async function getTemplateComponents(tenantId = DEFAULT_TENANT_ID, {
             where.push(`template_language = $${params.length}`);
         }
         const result = await queryPostgres(
-            `SELECT components_json, status, updated_at
+            `SELECT
+                template_id, tenant_id, scope_module_id, module_id, waba_id, phone_number_id,
+                meta_template_id, template_name, template_language, use_case, category, status, quality_score,
+                rejection_reason, components_json, variable_map_json, raw_meta_json, last_synced_at, last_status_event_at,
+                created_at, updated_at, deleted_at
                FROM tenant_meta_templates
               WHERE ${where.join(' AND ')}
               ORDER BY CASE WHEN status = 'approved' THEN 0 ELSE 1 END ASC, updated_at DESC
@@ -624,11 +640,20 @@ async function getTemplateComponents(tenantId = DEFAULT_TENANT_ID, {
             params
         );
         const row = Array.isArray(result?.rows) ? result.rows[0] : null;
-        return Array.isArray(row?.components_json) ? row.components_json : [];
+        return row ? sanitizeTemplatePublic(row) : null;
     } catch (error) {
-        if (missingRelation(error)) return [];
+        if (missingRelation(error)) return null;
         throw error;
     }
+}
+
+async function getTemplateComponents(tenantId = DEFAULT_TENANT_ID, {
+    templateName = '',
+    moduleId = '',
+    templateLanguage = ''
+} = {}) {
+    const found = await getTemplateRecord(tenantId, { templateName, moduleId, templateLanguage });
+    return Array.isArray(found?.componentsJson) ? found.componentsJson : [];
 }
 
 async function deleteTemplate(tenantId = DEFAULT_TENANT_ID, { templateId = '', moduleId = '' } = {}) {
@@ -806,7 +831,7 @@ async function applyTemplateWebhookStatusUpdate(tenantId = DEFAULT_TENANT_ID, {
              RETURNING
                 template_id, tenant_id, scope_module_id, module_id, waba_id, phone_number_id,
                 meta_template_id, template_name, template_language, use_case, category, status, quality_score,
-                rejection_reason, components_json, raw_meta_json, last_synced_at, last_status_event_at,
+                rejection_reason, components_json, variable_map_json, raw_meta_json, last_synced_at, last_status_event_at,
                 created_at, updated_at, deleted_at`,
             params
         );
@@ -821,6 +846,7 @@ async function applyTemplateWebhookStatusUpdate(tenantId = DEFAULT_TENANT_ID, {
 module.exports = {
     createTemplate,
     listTemplates,
+    getTemplateRecord,
     getTemplateComponents,
     deleteTemplate,
     syncTemplatesFromMeta,

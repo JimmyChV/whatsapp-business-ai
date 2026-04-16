@@ -9,7 +9,12 @@ export default function useSocketMessageLifecycleEvents({
     setEditingMessage,
     setChats,
     normalizeChatScopedId,
-    chatIdsReferSameScope
+    chatIdsReferSameScope,
+    setSendTemplateSubmitting,
+    setSendTemplateOpen,
+    setSelectedSendTemplate,
+    setSelectedSendTemplatePreview,
+    setSelectedSendTemplatePreviewError
 }) {
     const { notify } = useUiFeedback();
     useEffect(() => {
@@ -96,6 +101,27 @@ export default function useSocketMessageLifecycleEvents({
             }));
         });
 
+        socket.on('template_message_sent', ({ chatId, baseChatId, scopeModuleId, templateName }) => {
+            const active = String(activeChatIdRef.current || '');
+            const relatedChatId = normalizeChatScopedId(chatId || baseChatId || '', scopeModuleId || '');
+            if (relatedChatId && active && !chatIdsReferSameScope(relatedChatId, active)) return;
+
+            setSendTemplateSubmitting?.(false);
+            setSendTemplateOpen?.(false);
+            setSelectedSendTemplate?.(null);
+            setSelectedSendTemplatePreview?.(null);
+            setSelectedSendTemplatePreviewError?.('');
+            notify({ type: 'info', message: `Template enviado: ${String(templateName || 'template')}` });
+        });
+
+        socket.on('template_message_error', (msg) => {
+            setSendTemplateSubmitting?.(false);
+            if (typeof msg === 'string' && msg.trim()) {
+                setSelectedSendTemplatePreviewError?.(msg);
+                notify({ type: 'error', message: msg });
+            }
+        });
+
         return () => {
             [
                 'message_edited',
@@ -105,7 +131,9 @@ export default function useSocketMessageLifecycleEvents({
                 'message_deleted',
                 'delete_message_error',
                 'message_editability',
-                'message_ack'
+                'message_ack',
+                'template_message_sent',
+                'template_message_error'
             ].forEach((eventName) => socket.off(eventName));
         };
     }, []);

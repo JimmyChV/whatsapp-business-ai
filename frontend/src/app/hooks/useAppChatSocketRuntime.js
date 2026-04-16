@@ -118,6 +118,11 @@ export default function useAppChatSocketRuntime({
   setLabelDefinitions,
   businessData,
   setQuickReplies,
+  setSendTemplateSubmitting,
+  setSendTemplateOpen,
+  setSelectedSendTemplate,
+  setSelectedSendTemplatePreview,
+  setSelectedSendTemplatePreviewError,
 
   setMessages,
   setEditingMessage,
@@ -277,7 +282,12 @@ export default function useAppChatSocketRuntime({
     setEditingMessage,
     setChats,
     normalizeChatScopedId,
-    chatIdsReferSameScope
+    chatIdsReferSameScope,
+    setSendTemplateSubmitting,
+    setSendTemplateOpen,
+    setSelectedSendTemplate,
+    setSelectedSendTemplatePreview,
+    setSelectedSendTemplatePreviewError
   });
 
   useSocketAiAndSessionEvents({

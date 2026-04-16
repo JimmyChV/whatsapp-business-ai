@@ -1,5 +1,7 @@
 import { useCallback } from 'react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
+import { buildTemplateResolvedPreview } from '../helpers/templateMessages.helpers';
+import { getTemplateVariablesPreview, listApprovedIndividualTemplates } from '../services/templateMessages.service';
 
 export default function useChatMessageActions({
   socket,
@@ -15,6 +17,9 @@ export default function useChatMessageActions({
   requestAiSuggestion,
   normalizeDigits,
   normalizeQuickReplyDraft,
+  buildApiHeaders,
+  activeChatScopeModuleId,
+  clientContact,
   prevMessagesMetaRef,
   suppressSmoothScrollUntilRef,
   setActiveChatId,
@@ -26,7 +31,17 @@ export default function useChatMessageActions({
   setPendingOrderCartLoad,
   setQuickReplyDraft,
   setInputText,
-  removeAttachment
+  removeAttachment,
+  setSendTemplateOpen,
+  setSendTemplateOptions,
+  setSendTemplateOptionsLoading,
+  setSendTemplateOptionsError,
+  selectedSendTemplate,
+  setSelectedSendTemplate,
+  setSelectedSendTemplatePreview,
+  setSelectedSendTemplatePreviewLoading,
+  setSelectedSendTemplatePreviewError,
+  setSendTemplateSubmitting
 } = {}) {
   const { notify } = useUiFeedback();
   const handleExitActiveChat = useCallback(() => {
@@ -41,6 +56,15 @@ export default function useChatMessageActions({
     setClientContact(null);
     setPendingOrderCartLoad(null);
     setQuickReplyDraft(null);
+    setSendTemplateOpen(false);
+    setSendTemplateOptions([]);
+    setSendTemplateOptionsLoading(false);
+    setSendTemplateOptionsError('');
+    setSelectedSendTemplate(null);
+    setSelectedSendTemplatePreview(null);
+    setSelectedSendTemplatePreviewLoading(false);
+    setSelectedSendTemplatePreviewError('');
+    setSendTemplateSubmitting(false);
     setInputText('');
     removeAttachment();
   }, [
@@ -55,8 +79,158 @@ export default function useChatMessageActions({
     setClientContact,
     setPendingOrderCartLoad,
     setQuickReplyDraft,
+    setSendTemplateOpen,
+    setSendTemplateOptions,
+    setSendTemplateOptionsLoading,
+    setSendTemplateOptionsError,
+    setSelectedSendTemplate,
+    setSelectedSendTemplatePreview,
+    setSelectedSendTemplatePreviewLoading,
+    setSelectedSendTemplatePreviewError,
+    setSendTemplateSubmitting,
     setInputText,
     removeAttachment
+  ]);
+
+  const handleCloseSendTemplate = useCallback(() => {
+    setSendTemplateOpen(false);
+    setSendTemplateOptionsError('');
+    setSelectedSendTemplate(null);
+    setSelectedSendTemplatePreview(null);
+    setSelectedSendTemplatePreviewLoading(false);
+    setSelectedSendTemplatePreviewError('');
+    setSendTemplateSubmitting(false);
+  }, [
+    setSendTemplateOpen,
+    setSendTemplateOptionsError,
+    setSelectedSendTemplate,
+    setSelectedSendTemplatePreview,
+    setSelectedSendTemplatePreviewLoading,
+    setSelectedSendTemplatePreviewError,
+    setSendTemplateSubmitting
+  ]);
+
+  const handleOpenSendTemplate = useCallback(async () => {
+    const activeId = String(activeChatIdRef.current || activeChatId || '').trim();
+    if (!activeId) return;
+
+    setEditingMessage(null);
+    setReplyingMessage(null);
+    setQuickReplyDraft(null);
+    removeAttachment();
+    setSendTemplateOpen(true);
+    setSendTemplateOptionsLoading(true);
+    setSendTemplateOptionsError('');
+    setSelectedSendTemplate(null);
+    setSelectedSendTemplatePreview(null);
+    setSelectedSendTemplatePreviewError('');
+
+    try {
+      const templates = await listApprovedIndividualTemplates(buildApiHeaders, {
+        moduleId: String(activeChatScopeModuleId || '').trim().toLowerCase()
+      });
+      setSendTemplateOptions(templates);
+      if (!Array.isArray(templates) || templates.length === 0) {
+        notify({ type: 'info', message: 'No hay templates individuales aprobados para este chat.' });
+      }
+    } catch (error) {
+      const message = String(error?.message || 'No se pudieron cargar templates.');
+      setSendTemplateOptions([]);
+      setSendTemplateOptionsError(message);
+      notify({ type: 'error', message });
+    } finally {
+      setSendTemplateOptionsLoading(false);
+    }
+  }, [
+    activeChatId,
+    activeChatIdRef,
+    activeChatScopeModuleId,
+    buildApiHeaders,
+    notify,
+    removeAttachment,
+    setEditingMessage,
+    setReplyingMessage,
+    setQuickReplyDraft,
+    setSendTemplateOpen,
+    setSendTemplateOptions,
+    setSendTemplateOptionsError,
+    setSendTemplateOptionsLoading,
+    setSelectedSendTemplate,
+    setSelectedSendTemplatePreview,
+    setSelectedSendTemplatePreviewError
+  ]);
+
+  const handleSelectTemplatePreview = useCallback(async (template = null) => {
+    const entry = template && typeof template === 'object' ? template : null;
+    if (!entry) return;
+
+    const activeId = String(activeChatIdRef.current || activeChatId || '').trim();
+    const customerId = String(clientContact?.customerId || '').trim();
+
+    setSelectedSendTemplate(entry);
+    setSelectedSendTemplatePreview(null);
+    setSelectedSendTemplatePreviewLoading(true);
+    setSelectedSendTemplatePreviewError('');
+
+    try {
+      const previewPayload = await getTemplateVariablesPreview(buildApiHeaders, {
+        chatId: activeId,
+        customerId
+      });
+      const resolvedPreview = buildTemplateResolvedPreview(entry, previewPayload);
+      setSelectedSendTemplatePreview({
+        ...resolvedPreview,
+        payload: previewPayload
+      });
+    } catch (error) {
+      const message = String(error?.message || 'No se pudo resolver la preview del template.');
+      setSelectedSendTemplatePreviewError(message);
+      notify({ type: 'error', message });
+    } finally {
+      setSelectedSendTemplatePreviewLoading(false);
+    }
+  }, [
+    activeChatId,
+    activeChatIdRef,
+    buildApiHeaders,
+    clientContact?.customerId,
+    notify,
+    setSelectedSendTemplate,
+    setSelectedSendTemplatePreview,
+    setSelectedSendTemplatePreviewError,
+    setSelectedSendTemplatePreviewLoading
+  ]);
+
+  const handleConfirmSendTemplate = useCallback(() => {
+    const activeId = String(activeChatIdRef.current || activeChatId || '').trim();
+    const template = selectedSendTemplate && typeof selectedSendTemplate === 'object' ? selectedSendTemplate : null;
+    if (!activeId || !template || !socket || typeof socket.emit !== 'function') return;
+
+    const activeChatForSend = chatsRef.current.find((chat) => String(chat?.id || '') === String(activeChatId || activeId));
+    const activeChatPhone = normalizeDigits(activeChatForSend?.phone || '');
+    const toPhone = activeChatPhone || null;
+
+    setSendTemplateSubmitting(true);
+    socket.emit('send_template_message', {
+      to: activeId,
+      toPhone,
+      chatId: activeId,
+      customerId: String(clientContact?.customerId || '').trim() || null,
+      moduleId: String(activeChatScopeModuleId || '').trim() || null,
+      templateId: String(template?.templateId || '').trim() || null,
+      templateName: String(template?.templateName || '').trim(),
+      templateLanguage: String(template?.templateLanguage || 'es').trim().toLowerCase() || 'es'
+    });
+  }, [
+    activeChatId,
+    activeChatIdRef,
+    activeChatScopeModuleId,
+    chatsRef,
+    clientContact?.customerId,
+    normalizeDigits,
+    selectedSendTemplate,
+    setSendTemplateSubmitting,
+    socket
   ]);
 
   const handleSendMessage = useCallback((event) => {
@@ -167,6 +341,10 @@ export default function useChatMessageActions({
 
   return {
     handleExitActiveChat,
-    handleSendMessage
+    handleSendMessage,
+    handleOpenSendTemplate,
+    handleCloseSendTemplate,
+    handleSelectTemplatePreview,
+    handleConfirmSendTemplate
   };
 }
