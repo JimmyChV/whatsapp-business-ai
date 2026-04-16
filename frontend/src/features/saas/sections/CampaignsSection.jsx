@@ -759,12 +759,12 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 const response = panelMode === 'edit' ? await updateCampaign?.({ campaignId: selectedCampaignId, patch: payload }) : await createCampaign?.(payload);
                                 const campaign = response?.campaign || null;
                                 if (!campaign) return;
-                                notify({ type: 'info', message: panelMode === 'edit' ? 'Campana actualizada.' : 'Campana creada.' });
-                                await loadCampaigns?.();
-                                await selectCampaign?.(campaign.campaignId, { loadDetail: true });
                                 await loadTracking(campaign.campaignId);
+                                await loadCampaigns?.();
+                                await selectCampaign?.(campaign.campaignId, { loadDetail: false });
                                 setPanelMode('detail');
                                 setLocalEstimate(null);
+                                notify({ type: 'info', message: panelMode === 'edit' ? 'Campana actualizada.' : 'Campana creada.' });
                             }, 'No se pudo guardar campana.')}>Guardar borrador</button>
                             <button type="button" disabled={loading || estimating || !canWrite} onClick={() => runSafe(async () => {
                                 await runEstimate();
