@@ -4,6 +4,7 @@ import MessageBubble from './message-bubble/MessageBubble';
 import moment from 'moment';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import ChatInput from './ChatInput';
+import SendTemplateModal from './SendTemplateModal';
 import AssignmentBadge from './assignment/AssignmentBadge';
 import CommercialStatusBadge from './commercial/CommercialStatusBadge';
 import CommercialStatusActions from './commercial/CommercialStatusActions';
@@ -460,13 +461,27 @@ const ChatWindow = ({
 
             {/* Input Area */}
             {canWriteByAssignment ? (
-                <ChatInput
-                    {...inputProps}
-                    replyingMessage={inputProps?.replyingMessage}
-                    onCancelReplyMessage={inputProps?.onCancelReplyMessage}
-                    onOpenMapPicker={() => openMapModal({ query: '' })}
-                    buildApiHeaders={buildApiHeaders}
-                />
+                <>
+                    <ChatInput
+                        {...inputProps}
+                        replyingMessage={inputProps?.replyingMessage}
+                        onCancelReplyMessage={inputProps?.onCancelReplyMessage}
+                        onOpenMapPicker={() => openMapModal({ query: '' })}
+                        buildApiHeaders={buildApiHeaders}
+                    />
+                    <SendTemplateModal
+                        isOpen={Boolean(inputProps?.sendTemplateOpen)}
+                        templates={inputProps?.sendTemplateOptions}
+                        templatesLoading={Boolean(inputProps?.sendTemplateOptionsLoading)}
+                        templatesError={inputProps?.sendTemplateOptionsError}
+                        selectedTemplate={inputProps?.selectedSendTemplate}
+                        preview={inputProps?.selectedSendTemplatePreview}
+                        previewLoading={Boolean(inputProps?.selectedSendTemplatePreviewLoading)}
+                        previewError={inputProps?.selectedSendTemplatePreviewError}
+                        onClose={inputProps?.onCloseSendTemplate}
+                        onSelectTemplate={inputProps?.onSelectTemplatePreview}
+                    />
+                </>
             ) : (
                 <div className="chat-assignment-lock">
                     <div className="chat-assignment-lock-meta">

@@ -110,6 +110,22 @@ export default function useAppOperationHandlers({
     setQuickReplies,
     quickReplyDraft,
     setQuickReplyDraft,
+    sendTemplateOpen,
+    setSendTemplateOpen,
+    sendTemplateOptions,
+    setSendTemplateOptions,
+    sendTemplateOptionsLoading,
+    setSendTemplateOptionsLoading,
+    sendTemplateOptionsError,
+    setSendTemplateOptionsError,
+    selectedSendTemplate,
+    setSelectedSendTemplate,
+    selectedSendTemplatePreview,
+    setSelectedSendTemplatePreview,
+    selectedSendTemplatePreviewLoading,
+    setSelectedSendTemplatePreviewLoading,
+    selectedSendTemplatePreviewError,
+    setSelectedSendTemplatePreviewError,
     waModules,
     setWaModules,
     selectedWaModule,
@@ -278,7 +294,10 @@ export default function useAppOperationHandlers({
 
   const {
     handleExitActiveChat,
-    handleSendMessage
+    handleSendMessage,
+    handleOpenSendTemplate,
+    handleCloseSendTemplate,
+    handleSelectTemplatePreview
   } = useChatMessageActions({
     socket,
     activeChatId,
@@ -293,6 +312,9 @@ export default function useAppOperationHandlers({
     requestAiSuggestion,
     normalizeDigits,
     normalizeQuickReplyDraft,
+    buildApiHeaders,
+    activeChatScopeModuleId: chatDerivedState.activeChatDetails?.scopeModuleId || selectedWaModuleRef?.current?.moduleId || '',
+    clientContact,
     prevMessagesMetaRef,
     suppressSmoothScrollUntilRef,
     setActiveChatId,
@@ -304,7 +326,15 @@ export default function useAppOperationHandlers({
     setPendingOrderCartLoad,
     setQuickReplyDraft,
     setInputText,
-    removeAttachment
+    removeAttachment,
+    setSendTemplateOpen,
+    setSendTemplateOptions,
+    setSendTemplateOptionsLoading,
+    setSendTemplateOptionsError,
+    setSelectedSendTemplate,
+    setSelectedSendTemplatePreview,
+    setSelectedSendTemplatePreviewLoading,
+    setSelectedSendTemplatePreviewError
   });
 
   useGlobalEscapeToCloseChat({
@@ -457,6 +487,9 @@ export default function useAppOperationHandlers({
     handleForwardMessage,
     handleDeleteMessage,
     handleSendQuickReply,
+    handleOpenSendTemplate,
+    handleCloseSendTemplate,
+    handleSelectTemplatePreview,
     requestAiSuggestion,
     handleRefreshChats,
     handleStartNewChat,
@@ -500,6 +533,14 @@ export default function useAppOperationHandlers({
     activeTransport: chatDerivedState.activeTransport,
     cloudConfigured: chatDerivedState.cloudConfigured,
     selectedModeLabel: chatDerivedState.selectedModeLabel,
+    sendTemplateOpen,
+    sendTemplateOptions,
+    sendTemplateOptionsLoading,
+    sendTemplateOptionsError,
+    selectedSendTemplate,
+    selectedSendTemplatePreview,
+    selectedSendTemplatePreviewLoading,
+    selectedSendTemplatePreviewError,
     resetWorkspaceState
   };
 
