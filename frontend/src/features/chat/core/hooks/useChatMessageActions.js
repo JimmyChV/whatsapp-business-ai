@@ -36,6 +36,7 @@ export default function useChatMessageActions({
   setSendTemplateOptions,
   setSendTemplateOptionsLoading,
   setSendTemplateOptionsError,
+  selectedSendTemplate,
   setSelectedSendTemplate,
   setSelectedSendTemplatePreview,
   setSelectedSendTemplatePreviewLoading,
