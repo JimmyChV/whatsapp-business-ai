@@ -30,4 +30,13 @@ export { readWaLaunchParams } from './helpers/waLaunchParams';
 export { normalizeQuickRepliesSocketPayload } from './helpers/quickRepliesSocket.helpers';
 export { resolveScopedCatalogSelection } from './helpers/catalogScope.helpers';
 export { requestAiSuggestionForChat } from './helpers/aiSuggestion.helpers';
+export {
+  parseTemplatePlaceholderIndexes,
+  buildTemplatePreviewValueMap,
+  buildTemplateResolvedPreview
+} from './helpers/templateMessages.helpers';
+export {
+  listApprovedIndividualTemplates,
+  getTemplateVariablesPreview
+} from './services/templateMessages.service';
 export * from './helpers/appChat.helpers';
