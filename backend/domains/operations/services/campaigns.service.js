@@ -1145,6 +1145,19 @@ function computeRecipientEligibility(candidates = [], existingRecipients = []) {
     return { total, eligible, excluded, eligibleCustomers };
 }
 
+function sanitizeEligibleCustomer(customer = {}) {
+    const source = normalizeObject(customer);
+    return {
+        customerId: toText(source.customerId || '') || null,
+        contactName: toText(source.contactName || '') || null,
+        phone: toText(source.phone || '') || null,
+        commercialStatus: toLower(source.commercialStatus || source.commercial_status || 'unknown') || 'unknown',
+        tags: ensureArray(source.tags).map((entry) => toText(entry)).filter(Boolean),
+        preferredLanguage: toLower(source.preferredLanguage || source.preferred_language || 'es') || 'es',
+        marketingOptInStatus: toLower(source.marketingOptInStatus || source.marketing_opt_in_status || 'unknown') || 'unknown'
+    };
+}
+
 async function estimateCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
     const source = normalizeObject(options);
@@ -1187,7 +1200,8 @@ async function estimateCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         filters,
         total: eligibility.total,
         eligible: eligibility.eligible,
-        excluded: eligibility.excluded
+        excluded: eligibility.excluded,
+        items: ensureArray(eligibility.eligibleCustomers).map(sanitizeEligibleCustomer)
     };
 }
 
