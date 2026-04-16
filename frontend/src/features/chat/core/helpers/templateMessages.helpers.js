@@ -6,6 +6,10 @@ function toLower(value = '') {
     return toText(value).toLowerCase();
 }
 
+function normalizeTemplateToken(value = '') {
+    return toLower(value).replace(/[{}]/g, '').trim();
+}
+
 function normalizeComponentType(value = '') {
     return toText(value).toUpperCase() || 'BODY';
 }
@@ -28,14 +32,15 @@ export function buildTemplatePreviewValueMap(previewPayload = {}) {
             const placeholderIndex = Number(variable?.placeholderIndex);
             const previewValue = toText(variable?.previewValue);
             const resolved = previewValue || '';
-            if (key) acc.byKey.set(key, resolved);
+            const entry = {
+                key,
+                value: resolved,
+                label: toText(variable?.label || key),
+                resolved: Boolean(resolved)
+            };
+            if (key) acc.byKey.set(key, entry);
             if (Number.isFinite(placeholderIndex) && placeholderIndex > 0) {
-                acc.byIndex.set(placeholderIndex, {
-                    key,
-                    value: resolved,
-                    label: toText(variable?.label || key),
-                    resolved: Boolean(resolved)
-                });
+                acc.byIndex.set(placeholderIndex, entry);
             }
             return acc;
         }, {
@@ -44,25 +49,58 @@ export function buildTemplatePreviewValueMap(previewPayload = {}) {
         });
 }
 
+function resolveTemplatePreviewValue({
+    placeholderIndex = 0,
+    componentMap = {},
+    valueMap = { byKey: new Map(), byIndex: new Map() }
+} = {}) {
+    const originalToken = normalizeTemplateToken(componentMap?.sequentialToOriginal?.[placeholderIndex] || '');
+    if (originalToken) {
+        const fromKey = valueMap.byKey.get(originalToken);
+        if (fromKey && typeof fromKey === 'object') {
+            return {
+                key: originalToken,
+                value: toText(fromKey.value),
+                label: toText(fromKey.label || originalToken),
+                resolved: Boolean(toText(fromKey.value))
+            };
+        }
+    }
+
+    return valueMap.byIndex.get(placeholderIndex) || {
+        key: '',
+        value: '',
+        label: `Variable ${placeholderIndex}`,
+        resolved: false
+    };
+}
+
 export function buildTemplateResolvedPreview(template = {}, previewPayload = {}) {
     const templateComponents = Array.isArray(template?.componentsJson) ? template.componentsJson : [];
+    const variableMapJson = template?.variableMapJson && typeof template.variableMapJson === 'object'
+        ? template.variableMapJson
+        : {};
     const valueMap = buildTemplatePreviewValueMap(previewPayload);
     const resolvedComponents = templateComponents.map((component = {}) => {
         const type = normalizeComponentType(component?.type || 'BODY');
         const text = toText(component?.text);
         const placeholderIndexes = parseTemplatePlaceholderIndexes(text);
+        const componentMap = variableMapJson?.[toLower(type)] || {};
         const resolvedText = text.replace(/\{\{\s*(\d+)\s*\}\}/g, (_, rawIndex) => {
             const nextIndex = Number(rawIndex);
             if (!Number.isFinite(nextIndex) || nextIndex <= 0) return '';
-            return valueMap.byIndex.get(nextIndex)?.value || '';
+            return resolveTemplatePreviewValue({
+                placeholderIndex: nextIndex,
+                componentMap,
+                valueMap
+            })?.value || '';
         });
         const parameters = placeholderIndexes.map((placeholderIndex) => ({
             placeholderIndex,
-            ...(valueMap.byIndex.get(placeholderIndex) || {
-                key: '',
-                value: '',
-                label: `Variable ${placeholderIndex}`,
-                resolved: false
+            ...resolveTemplatePreviewValue({
+                placeholderIndex,
+                componentMap,
+                valueMap
             })
         }));
         return {
