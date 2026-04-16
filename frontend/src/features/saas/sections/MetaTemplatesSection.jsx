@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
+import { filterTemplateVariableCategoriesForUseCase, normalizeTemplateUseCase } from '../helpers/templateUseCase.helpers';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -1045,7 +1046,7 @@ function MetaTemplatesSection(props = {}) {
 
     const filteredVarCategories = useMemo(() => {
         const query = toLower(variableSearchQuery);
-        return templateVarCategories
+        return filterTemplateVariableCategoriesForUseCase(templateVarCategories, createForm.useCase)
             .map((category) => {
                 const variables = Array.isArray(category?.variables) ? category.variables : [];
                 if (!query) return { ...category, variables };
@@ -1056,7 +1057,7 @@ function MetaTemplatesSection(props = {}) {
                 return { ...category, variables: filtered };
             })
             .filter((category) => (Array.isArray(category?.variables) ? category.variables.length > 0 : false));
-    }, [templateVarCategories, variableSearchQuery]);
+    }, [templateVarCategories, createForm.useCase, variableSearchQuery]);
 
     const previewValuesByToken = useMemo(() => {
         const values = {};
@@ -1566,7 +1567,7 @@ function MetaTemplatesSection(props = {}) {
                                                 value={createForm.useCase}
                                                 onChange={(event) => setCreateForm((prev) => ({
                                                     ...prev,
-                                                    useCase: toLower(event.target.value) || 'both'
+                                                    useCase: normalizeTemplateUseCase(event.target.value)
                                                 }))}
                                                 disabled={templatesBusy || !canWrite}
                                             >
@@ -2050,7 +2051,7 @@ function MetaTemplatesSection(props = {}) {
                                 <div className="saas-admin-detail-grid">
                                     <div className="saas-admin-detail-field"><span>Estado</span><strong>{resolveStatusMeta(selectedTemplate?.status).label}</strong></div>
                                     <div className="saas-admin-detail-field"><span>Modulo</span><strong>{toText(selectedTemplate?.moduleId) || '-'}</strong></div>
-                                    <div className="saas-admin-detail-field"><span>Uso</span><strong>{USE_CASE_OPTIONS.find((option) => option.value === toLower(selectedTemplate?.useCase || 'both'))?.label || 'Campana e individual'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Uso</span><strong>{USE_CASE_OPTIONS.find((option) => option.value === normalizeTemplateUseCase(selectedTemplate?.useCase || 'both'))?.label || 'Campana e individual'}</strong></div>
                                     <div className="saas-admin-detail-field"><span>Idioma</span><strong>{toText(selectedTemplate?.templateLanguage).toUpperCase() || '-'}</strong></div>
                                     <div className="saas-admin-detail-field"><span>Categoria</span><strong>{toText(selectedTemplate?.category) || '-'}</strong></div>
                                     <div className="saas-admin-detail-field"><span>Quality</span><strong>{(() => {
