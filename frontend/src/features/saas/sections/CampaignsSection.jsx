@@ -637,6 +637,14 @@ export default React.memo(function CampaignsSection(props = {}) {
         showColumnsMenu
     ]);
 
+    const handleSelectCampaignRow = useCallback((row = null) => runSafe(async () => {
+        const campaignId = toText(row?.campaignId || '');
+        if (!campaignId) return;
+        await selectCampaign?.(campaignId, { loadDetail: true });
+        await loadTracking(campaignId);
+        setPanelMode('detail');
+    }, 'No se pudo abrir campana.'), [loadTracking, runSafe, selectCampaign]);
+
     useEffect(() => {
         if (!isCampaignsSection) return undefined;
         const onPanelEscape = (event) => {
@@ -761,11 +769,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                     selectedId={panelMode === 'create' ? '' : selectedCampaignId}
                     loading={loading}
                     emptyText="No hay campanas para estos filtros."
-                    onSelect={(row) => runSafe(async () => {
-                        await selectCampaign?.(row?.campaignId, { loadDetail: true });
-                        await loadTracking(row?.campaignId);
-                        setPanelMode('detail');
-                    }, 'No se pudo abrir campana.')}
+                    onSelect={handleSelectCampaignRow}
                 />
             )}
         </div>
