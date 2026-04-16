@@ -13,6 +13,7 @@ const waCloudClient = require('../../channels/services/whatsapp-cloud-client.ser
 const STORE_FILE = 'meta_templates.json';
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
+const VALID_USE_CASES = new Set(['campaign', 'individual', 'both']);
 const DEFAULT_LIST_FIELDS = [
     'id',
     'name',
@@ -81,6 +82,11 @@ function normalizeCategory(value = '') {
     return category || 'marketing';
 }
 
+function normalizeUseCase(value = '') {
+    const useCase = toLower(value || 'both') || 'both';
+    return VALID_USE_CASES.has(useCase) ? useCase : 'both';
+}
+
 function normalizeLimit(value = DEFAULT_LIMIT) {
     const parsed = Number(value || DEFAULT_LIMIT);
     if (!Number.isFinite(parsed)) return DEFAULT_LIMIT;
@@ -124,6 +130,7 @@ async function ensurePostgresSchema() {
                 meta_template_id TEXT NULL,
                 template_name TEXT NOT NULL,
                 template_language TEXT NOT NULL DEFAULT 'es',
+                use_case TEXT NOT NULL DEFAULT 'both' CHECK (use_case IN ('campaign', 'individual', 'both')),
                 category TEXT NOT NULL DEFAULT 'marketing',
                 status TEXT NOT NULL DEFAULT 'pending',
                 quality_score TEXT NOT NULL DEFAULT 'unknown',
@@ -187,6 +194,7 @@ function normalizeStoredRecord(input = {}) {
         metaTemplateId: toText(source.metaTemplateId || source.meta_template_id) || null,
         templateName: toText(source.templateName || source.template_name),
         templateLanguage: normalizeLanguage(source.templateLanguage || source.template_language),
+        useCase: normalizeUseCase(source.useCase || source.use_case || 'both'),
         category: normalizeCategory(source.category),
         status: normalizeStatus(source.status),
         qualityScore: normalizeQuality(source.qualityScore || source.quality_score),
@@ -217,6 +225,7 @@ function sanitizeTemplatePublic(input = {}) {
         metaTemplateId: record.metaTemplateId,
         templateName: record.templateName,
         templateLanguage: record.templateLanguage,
+        useCase: record.useCase,
         category: record.category,
         status: record.status,
         qualityScore: record.qualityScore,
@@ -247,6 +256,7 @@ function normalizeTemplateFromMeta(metaTemplate = {}) {
         metaTemplateId: toText(source.id) || null,
         templateName: toText(source.name),
         templateLanguage: normalizeLanguage(source.language || source.locale || 'es'),
+        useCase: normalizeUseCase(source.useCase || source.use_case || 'both'),
         category: normalizeCategory(source.category || 'marketing'),
         status: normalizeStatus(source.status || 'pending'),
         qualityScore: normalizeQuality(
@@ -341,6 +351,7 @@ async function upsertTemplateRecord(tenantId = DEFAULT_TENANT_ID, input = {}) {
         source.metaTemplateId,
         source.templateName,
         source.templateLanguage,
+        source.useCase,
         source.category,
         source.status,
         source.qualityScore,
@@ -356,14 +367,14 @@ async function upsertTemplateRecord(tenantId = DEFAULT_TENANT_ID, input = {}) {
     const result = await queryPostgres(
         `INSERT INTO tenant_meta_templates (
             template_id, tenant_id, scope_module_id, module_id, waba_id, phone_number_id,
-            meta_template_id, template_name, template_language, category, status, quality_score,
+            meta_template_id, template_name, template_language, use_case, category, status, quality_score,
             rejection_reason, components_json, raw_meta_json, last_synced_at, last_status_event_at,
             created_at, updated_at, deleted_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6,
-            $7, $8, $9, $10, $11, $12,
-            $13, $14::jsonb, $15::jsonb, $16::timestamptz, $17::timestamptz,
-            $18::timestamptz, $19::timestamptz, $20::timestamptz
+            $7, $8, $9, $10, $11, $12, $13,
+            $14, $15::jsonb, $16::jsonb, $17::timestamptz, $18::timestamptz,
+            $19::timestamptz, $20::timestamptz, $21::timestamptz
         )
         ON CONFLICT (tenant_id, scope_module_id, template_name, template_language) WHERE deleted_at IS NULL
         DO UPDATE SET
@@ -371,6 +382,7 @@ async function upsertTemplateRecord(tenantId = DEFAULT_TENANT_ID, input = {}) {
             waba_id = EXCLUDED.waba_id,
             phone_number_id = EXCLUDED.phone_number_id,
             meta_template_id = COALESCE(EXCLUDED.meta_template_id, tenant_meta_templates.meta_template_id),
+            use_case = EXCLUDED.use_case,
             category = EXCLUDED.category,
             status = EXCLUDED.status,
             quality_score = EXCLUDED.quality_score,
@@ -383,7 +395,7 @@ async function upsertTemplateRecord(tenantId = DEFAULT_TENANT_ID, input = {}) {
             deleted_at = EXCLUDED.deleted_at
         RETURNING
             template_id, tenant_id, scope_module_id, module_id, waba_id, phone_number_id,
-            meta_template_id, template_name, template_language, category, status, quality_score,
+            meta_template_id, template_name, template_language, use_case, category, status, quality_score,
             rejection_reason, components_json, raw_meta_json, last_synced_at, last_status_event_at,
             created_at, updated_at, deleted_at`,
         params
@@ -409,7 +421,7 @@ async function getTemplateById(tenantId = DEFAULT_TENANT_ID, templateId = '') {
         const result = await queryPostgres(
             `SELECT
                 template_id, tenant_id, scope_module_id, module_id, waba_id, phone_number_id,
-                meta_template_id, template_name, template_language, category, status, quality_score,
+                meta_template_id, template_name, template_language, use_case, category, status, quality_score,
                 rejection_reason, components_json, raw_meta_json, last_synced_at, last_status_event_at,
                 created_at, updated_at, deleted_at
              FROM tenant_meta_templates
@@ -426,11 +438,12 @@ async function getTemplateById(tenantId = DEFAULT_TENANT_ID, templateId = '') {
     }
 }
 
-async function createTemplate(tenantId = DEFAULT_TENANT_ID, { moduleId = '', templatePayload = {} } = {}) {
+async function createTemplate(tenantId = DEFAULT_TENANT_ID, { moduleId = '', templatePayload = {}, useCase = 'both' } = {}) {
     const runtime = await resolveCloudModuleRuntime(tenantId, moduleId);
     if (!isPlainObject(templatePayload)) {
         throw new Error('templatePayload requerido.');
     }
+    const normalizedUseCase = normalizeUseCase(useCase);
     const graphCreated = await waCloudClient.createMessageTemplate(
         runtime.wabaId,
         templatePayload,
@@ -457,6 +470,7 @@ async function createTemplate(tenantId = DEFAULT_TENANT_ID, { moduleId = '', tem
         metaTemplateId: normalizedMeta.metaTemplateId,
         templateName: normalizedMeta.templateName,
         templateLanguage: normalizedMeta.templateLanguage,
+        useCase: normalizedUseCase,
         category: normalizedMeta.category,
         status: normalizedMeta.status || 'pending',
         qualityScore: normalizedMeta.qualityScore,
@@ -525,7 +539,7 @@ async function listTemplates(tenantId = DEFAULT_TENANT_ID, {
         const rowsResult = await queryPostgres(
             `SELECT
                 template_id, tenant_id, scope_module_id, module_id, waba_id, phone_number_id,
-                meta_template_id, template_name, template_language, category, status, quality_score,
+                meta_template_id, template_name, template_language, use_case, category, status, quality_score,
                 rejection_reason, components_json, raw_meta_json, last_synced_at, last_status_event_at,
                 created_at, updated_at, deleted_at
              FROM tenant_meta_templates
@@ -664,6 +678,7 @@ async function upsertTemplateFromMeta(tenantId = DEFAULT_TENANT_ID, { moduleId =
         metaTemplateId: normalizedMeta.metaTemplateId,
         templateName: normalizedMeta.templateName,
         templateLanguage: normalizedMeta.templateLanguage,
+        useCase: normalizedMeta.useCase,
         category: normalizedMeta.category,
         status: normalizedMeta.status || 'pending',
         qualityScore: normalizedMeta.qualityScore,
@@ -790,7 +805,7 @@ async function applyTemplateWebhookStatusUpdate(tenantId = DEFAULT_TENANT_ID, {
              WHERE ${where.join(' AND ')}
              RETURNING
                 template_id, tenant_id, scope_module_id, module_id, waba_id, phone_number_id,
-                meta_template_id, template_name, template_language, category, status, quality_score,
+                meta_template_id, template_name, template_language, use_case, category, status, quality_score,
                 rejection_reason, components_json, raw_meta_json, last_synced_at, last_status_event_at,
                 created_at, updated_at, deleted_at`,
             params
