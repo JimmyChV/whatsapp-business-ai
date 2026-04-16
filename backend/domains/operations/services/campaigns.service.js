@@ -892,22 +892,32 @@ async function createCampaign(tenantId = DEFAULT_TENANT_ID, payload = {}) {
     if (!campaign.templateName) throw new Error('templateName requerido para crear campana.');
 
     const persisted = await persistCampaignRecord(cleanTenantId, campaign);
+    const shouldSeedOnSave = Object.prototype.hasOwnProperty.call(source, 'audienceSelectionJson')
+        || Object.prototype.hasOwnProperty.call(source, 'audienceSelection');
+    const seededCampaign = shouldSeedOnSave
+        ? await seedRecipientsFromFilters(cleanTenantId, {
+            campaignId: persisted.campaignId,
+            filters: persisted.audienceFiltersJson,
+            audienceSelectionJson: persisted.audienceSelectionJson,
+            actorUserId: source.actorUserId || null
+        }).then((result) => result?.campaign || persisted)
+        : persisted;
     await recordCampaignEvent(cleanTenantId, {
-        campaignId: persisted.campaignId,
-        moduleId: persisted.moduleId,
+        campaignId: seededCampaign.campaignId,
+        moduleId: seededCampaign.moduleId,
         eventType: 'campaign_created',
-        actorType: persisted.createdBy ? 'user' : 'system',
-        actorId: persisted.createdBy,
+        actorType: seededCampaign.createdBy ? 'user' : 'system',
+        actorId: seededCampaign.createdBy,
         severity: 'info',
-        message: `Campana creada: ${persisted.campaignName}`,
+        message: `Campana creada: ${seededCampaign.campaignName}`,
         payloadJson: {
-            status: persisted.status,
-            templateName: persisted.templateName,
-            templateLanguage: persisted.templateLanguage
+            status: seededCampaign.status,
+            templateName: seededCampaign.templateName,
+            templateLanguage: seededCampaign.templateLanguage
         }
     });
 
-    return persisted;
+    return seededCampaign;
 }
 
 async function updateCampaign(tenantId = DEFAULT_TENANT_ID, { campaignId = '', patch = {} } = {}) {
@@ -940,17 +950,27 @@ async function updateCampaign(tenantId = DEFAULT_TENANT_ID, { campaignId = '', p
     });
 
     const persisted = await persistCampaignRecord(cleanTenantId, next);
+    const shouldSeedOnSave = Object.prototype.hasOwnProperty.call(sourcePatch, 'audienceSelectionJson')
+        || Object.prototype.hasOwnProperty.call(sourcePatch, 'audienceSelection');
+    const seededCampaign = shouldSeedOnSave
+        ? await seedRecipientsFromFilters(cleanTenantId, {
+            campaignId: persisted.campaignId,
+            filters: persisted.audienceFiltersJson,
+            audienceSelectionJson: persisted.audienceSelectionJson,
+            actorUserId: sourcePatch.actorUserId || null
+        }).then((result) => result?.campaign || persisted)
+        : persisted;
     await recordCampaignEvent(cleanTenantId, {
-        campaignId: persisted.campaignId,
-        moduleId: persisted.moduleId,
+        campaignId: seededCampaign.campaignId,
+        moduleId: seededCampaign.moduleId,
         eventType: 'campaign_updated',
         actorType: sourcePatch.actorUserId ? 'user' : 'system',
         actorId: sourcePatch.actorUserId || sourcePatch.updatedBy || null,
         severity: 'info',
         message: 'Campana actualizada',
-        payloadJson: { previous: existing, next: persisted }
+        payloadJson: { previous: existing, next: seededCampaign }
     });
-    return persisted;
+    return seededCampaign;
 }
 
 function normalizeStringArray(input = []) {

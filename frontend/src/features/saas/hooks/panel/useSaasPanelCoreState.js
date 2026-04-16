@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function useSaasPanelCoreState({
     activeSection = '',
@@ -96,6 +96,12 @@ export default function useSaasPanelCoreState({
     const [loadingPlans, setLoadingPlans] = useState(false);
     const [error, setError] = useState('');
     const [currentSection, setCurrentSection] = useState(String(activeSection || initialSection || 'saas_resumen'));
+
+    useEffect(() => {
+        if (!error) return undefined;
+        const timer = setTimeout(() => setError(''), 5000);
+        return () => clearTimeout(timer);
+    }, [error]);
 
     return {
         overview,
