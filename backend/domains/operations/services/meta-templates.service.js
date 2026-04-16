@@ -549,6 +549,74 @@ async function listTemplates(tenantId = DEFAULT_TENANT_ID, {
     }
 }
 
+async function getTemplateComponents(tenantId = DEFAULT_TENANT_ID, {
+    templateName = '',
+    moduleId = '',
+    templateLanguage = ''
+} = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const cleanTemplateName = toText(templateName);
+    const cleanModuleId = toText(moduleId);
+    const cleanScope = normalizeScopeModuleId(cleanModuleId);
+    const cleanLanguage = normalizeLanguage(templateLanguage || '');
+    if (!cleanTemplateName) return [];
+
+    const matchesTemplate = (entry = {}) => toLower(entry.templateName) === toLower(cleanTemplateName);
+    const matchesModule = (entry = {}) => !cleanModuleId
+        || toText(entry.moduleId) === cleanModuleId
+        || normalizeScopeModuleId(entry.scopeModuleId) === cleanScope;
+    const matchesLanguage = (entry = {}) => !toText(templateLanguage)
+        || normalizeLanguage(entry.templateLanguage || '') === cleanLanguage;
+    const sortByPriority = (left = {}, right = {}) => {
+        const leftApproved = normalizeStatus(left.status) === 'approved' ? 1 : 0;
+        const rightApproved = normalizeStatus(right.status) === 'approved' ? 1 : 0;
+        if (rightApproved !== leftApproved) return rightApproved - leftApproved;
+        return String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''));
+    };
+
+    if (getStorageDriver() !== 'postgres') {
+        const store = normalizeStore(await readTenantJsonFile(STORE_FILE, { tenantId: cleanTenantId, defaultValue: {} }));
+        const found = store.items
+            .filter((entry) => !entry.deletedAt)
+            .filter(matchesTemplate)
+            .filter(matchesModule)
+            .filter(matchesLanguage)
+            .sort(sortByPriority)[0] || null;
+        return Array.isArray(found?.componentsJson) ? found.componentsJson : [];
+    }
+
+    try {
+        await ensurePostgresSchema();
+        const params = [cleanTenantId, cleanTemplateName.toLowerCase()];
+        const where = [
+            'tenant_id = $1',
+            'deleted_at IS NULL',
+            'LOWER(template_name) = $2'
+        ];
+        if (cleanScope) {
+            params.push(cleanScope);
+            where.push(`(scope_module_id = $${params.length} OR LOWER(module_id) = $${params.length})`);
+        }
+        if (toText(templateLanguage)) {
+            params.push(cleanLanguage);
+            where.push(`template_language = $${params.length}`);
+        }
+        const result = await queryPostgres(
+            `SELECT components_json, status, updated_at
+               FROM tenant_meta_templates
+              WHERE ${where.join(' AND ')}
+              ORDER BY CASE WHEN status = 'approved' THEN 0 ELSE 1 END ASC, updated_at DESC
+              LIMIT 1`,
+            params
+        );
+        const row = Array.isArray(result?.rows) ? result.rows[0] : null;
+        return Array.isArray(row?.components_json) ? row.components_json : [];
+    } catch (error) {
+        if (missingRelation(error)) return [];
+        throw error;
+    }
+}
+
 async function deleteTemplate(tenantId = DEFAULT_TENANT_ID, { templateId = '', moduleId = '' } = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
     const cleanTemplateId = toText(templateId);
@@ -738,6 +806,7 @@ async function applyTemplateWebhookStatusUpdate(tenantId = DEFAULT_TENANT_ID, {
 module.exports = {
     createTemplate,
     listTemplates,
+    getTemplateComponents,
     deleteTemplate,
     syncTemplatesFromMeta,
     upsertTemplateFromMeta,

@@ -8,6 +8,8 @@ const {
     queryPostgres
 } = require('../../../config/persistence-runtime');
 const campaignQueueService = require('./campaign-queue.service');
+const metaTemplatesService = require('./meta-templates.service');
+const templateVariablesService = require('./template-variables.service');
 
 const STORE_FILE = 'campaigns.json';
 const DEFAULT_LIMIT = 50;
@@ -163,6 +165,90 @@ function randomId(prefix = 'id') {
 
 function ensureArray(input = []) {
     return Array.isArray(input) ? input : [];
+}
+
+function cloneJson(value) {
+    return JSON.parse(JSON.stringify(value ?? null));
+}
+
+function normalizeTemplateComponentType(value = '') {
+    return toUpper(value || 'BODY') || 'BODY';
+}
+
+function toUpper(value = '') {
+    return toText(value).toUpperCase();
+}
+
+function flattenTemplateVariableCatalog(catalog = {}) {
+    return ensureArray(catalog?.categories).flatMap((category) => ensureArray(category?.variables));
+}
+
+function parsePlaceholderIndexesFromText(text = '') {
+    const matches = String(text || '').matchAll(/\{\{\s*(\d+)\s*\}\}/g);
+    const indexes = new Set();
+    for (const match of matches) {
+        const next = Number(match?.[1]);
+        if (Number.isFinite(next) && next > 0) indexes.add(Math.floor(next));
+    }
+    return Array.from(indexes).sort((left, right) => left - right);
+}
+
+function resolveTemplateVariableValue(variableKey = '', customer = {}) {
+    const source = normalizeObject(customer);
+    switch (toLower(variableKey)) {
+    case 'nombre_cliente':
+        return toText(source.contactName || '') || 'Cliente';
+    case 'telefono_cliente':
+        return toText(source.phone || '');
+    case 'email_cliente':
+        return toText(source.email || '');
+    case 'idioma_preferido_cliente':
+        return toLower(source.preferredLanguage || 'es') || 'es';
+    case 'tags_cliente_csv':
+        return ensureArray(source.tags).map((entry) => toText(entry)).filter(Boolean).join(', ');
+    case 'customer_id':
+        return toText(source.customerId || '');
+    default:
+        return '';
+    }
+}
+
+async function buildTemplateComponentsForRecipient(tenantId = DEFAULT_TENANT_ID, campaign = {}, customer = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const cleanTemplateName = toText(campaign?.templateName || '');
+    const cleanModuleId = toText(campaign?.moduleId || '');
+    if (!cleanTemplateName || !cleanModuleId) return [];
+
+    const templateComponents = await metaTemplatesService.getTemplateComponents(cleanTenantId, {
+        templateName: cleanTemplateName,
+        moduleId: cleanModuleId,
+        templateLanguage: toLower(campaign?.templateLanguage || 'es') || 'es'
+    });
+    if (!Array.isArray(templateComponents) || templateComponents.length === 0) return [];
+
+    const catalog = await templateVariablesService.getCatalog(cleanTenantId);
+    const variableByIndex = new Map(
+        flattenTemplateVariableCatalog(catalog)
+            .map((entry) => [Number(entry?.placeholderIndex), entry])
+            .filter(([index]) => Number.isFinite(index) && index > 0)
+    );
+
+    return templateComponents
+        .filter((component) => normalizeTemplateComponentType(component?.type) === 'BODY')
+        .map((component) => {
+            const placeholderIndexes = parsePlaceholderIndexesFromText(component?.text || '');
+            return {
+                type: normalizeTemplateComponentType(component?.type || 'BODY'),
+                parameters: placeholderIndexes.map((placeholderIndex) => {
+                    const variable = variableByIndex.get(placeholderIndex) || null;
+                    return {
+                        type: 'text',
+                        text: resolveTemplateVariableValue(variable?.key || '', customer)
+                    };
+                })
+            };
+        })
+        .filter((component) => Array.isArray(component.parameters) && component.parameters.length > 0);
 }
 
 function normalizeCampaignRecord(input = {}) {
@@ -1527,6 +1613,7 @@ async function seedRecipientsFromFilters(tenantId = DEFAULT_TENANT_ID, options =
     const insertedRecipients = [];
     for (const customer of eligibility.eligibleCustomers) {
         const phone = toText(customer.phone);
+        const resolvedTemplateComponents = await buildTemplateComponentsForRecipient(cleanTenantId, campaign, customer);
 
         const recipient = await persistRecipientRecord(cleanTenantId, {
             tenantId: cleanTenantId,
@@ -1538,16 +1625,7 @@ async function seedRecipientsFromFilters(tenantId = DEFAULT_TENANT_ID, options =
             status: 'pending',
             idempotencyKey: normalizeIdempotencyKey(campaign.campaignId, campaign.moduleId, phone),
             variablesJson: {
-                campaignId: campaign.campaignId,
-                customerId: customer.customerId || null,
-                languageCode: campaign.templateLanguage,
-                preview: campaign.variablesPreviewJson || {},
-                customer: {
-                    customerId: customer.customerId || null,
-                    contactName: customer.contactName || null,
-                    phone,
-                    preferredLanguage: customer.preferredLanguage || null
-                }
+                components: cloneJson(resolvedTemplateComponents)
             },
             attemptCount: 0,
             maxAttempts,
