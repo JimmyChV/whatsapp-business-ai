@@ -852,6 +852,7 @@ function MetaTemplatesSection(props = {}) {
                 moduleId,
                 templatePayload,
                 useCase: toLower(createForm.useCase || 'both') || 'both',
+                variableMapJson: variableIndexMap,
                 reload: false
             });
             notify({ type: 'info', message: 'Template creado correctamente.' });

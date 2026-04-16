@@ -12,6 +12,7 @@ function createSocketTemplateMessagesService({
     const toUpper = (value = '') => toText(value).toUpperCase();
     const ensureArray = (value = []) => (Array.isArray(value) ? value : []);
     const normalizeTemplateComponentType = (value = '') => toUpper(value || 'BODY') || 'BODY';
+    const normalizeTemplateToken = (value = '') => toLower(value).replace(/[{}]/g, '').trim();
 
     const parsePlaceholderIndexesFromText = (text = '') => {
         const matches = String(text || '').matchAll(/\{\{\s*(\d+)\s*\}\}/g);
@@ -23,20 +24,41 @@ function createSocketTemplateMessagesService({
         return Array.from(indexes).sort((left, right) => left - right);
     };
 
-    const buildTemplatePreviewByIndex = (previewPayload = {}) => ensureArray(previewPayload?.categories)
+    const buildTemplatePreviewMaps = (previewPayload = {}) => ensureArray(previewPayload?.categories)
         .flatMap((category) => ensureArray(category?.variables))
         .reduce((acc, variable = {}) => {
             const placeholderIndex = Number(variable?.placeholderIndex);
-            if (!Number.isFinite(placeholderIndex) || placeholderIndex <= 0) return acc;
-            acc.set(placeholderIndex, {
-                key: toLower(variable?.key),
+            const normalizedKey = normalizeTemplateToken(variable?.key);
+            const nextEntry = {
+                key: normalizedKey,
                 value: toText(variable?.previewValue),
                 label: toText(variable?.label || variable?.key)
-            });
+            };
+            if (normalizedKey) {
+                acc.byKey.set(normalizedKey, nextEntry);
+            }
+            if (!Number.isFinite(placeholderIndex) || placeholderIndex <= 0) return acc;
+            acc.byIndex.set(placeholderIndex, nextEntry);
             return acc;
-        }, new Map());
+        }, {
+            byKey: new Map(),
+            byIndex: new Map()
+        });
 
-    const buildTemplateButtonComponents = (buttons = [], previewByIndex = new Map()) => ensureArray(buttons)
+    const resolveTemplatePlaceholderValue = ({
+        placeholderIndex = 0,
+        componentMap = {},
+        previewMaps = { byKey: new Map(), byIndex: new Map() }
+    } = {}) => {
+        const originalToken = normalizeTemplateToken(componentMap?.sequentialToOriginal?.[placeholderIndex] || '');
+        if (originalToken) {
+            const fromKey = previewMaps.byKey.get(originalToken);
+            if (fromKey && typeof fromKey.value === 'string') return fromKey.value;
+        }
+        return previewMaps.byIndex.get(placeholderIndex)?.value || '';
+    };
+
+    const buildTemplateButtonComponents = (buttons = [], previewMaps = { byKey: new Map(), byIndex: new Map() }) => ensureArray(buttons)
         .map((button = {}, index) => {
             if (toUpper(button?.type) !== 'URL') return null;
             const placeholderIndexes = parsePlaceholderIndexesFromText(button?.url || '');
@@ -47,46 +69,64 @@ function createSocketTemplateMessagesService({
                 index: String(index),
                 parameters: placeholderIndexes.map((placeholderIndex) => ({
                     type: 'text',
-                    text: previewByIndex.get(placeholderIndex)?.value || ''
+                    text: previewMaps.byIndex.get(placeholderIndex)?.value || ''
                 }))
             };
         })
         .filter((component) => component && Array.isArray(component.parameters) && component.parameters.length > 0);
 
-    const buildTemplateSendComponents = (templateComponents = [], previewPayload = {}) => {
-        const previewByIndex = buildTemplatePreviewByIndex(previewPayload);
+    const buildTemplateSendComponents = (template = {}, previewPayload = {}) => {
+        const templateComponents = ensureArray(template?.componentsJson);
+        const variableMapJson = template?.variableMapJson && typeof template.variableMapJson === 'object'
+            ? template.variableMapJson
+            : {};
+        const previewMaps = buildTemplatePreviewMaps(previewPayload);
         return ensureArray(templateComponents)
             .flatMap((component = {}) => {
                 const type = normalizeTemplateComponentType(component?.type || 'BODY');
                 if (type === 'BUTTONS') {
-                    return buildTemplateButtonComponents(component?.buttons, previewByIndex);
+                    return buildTemplateButtonComponents(component?.buttons, previewMaps);
                 }
                 if (type !== 'HEADER' && type !== 'BODY') return [];
                 const placeholderIndexes = parsePlaceholderIndexesFromText(component?.text || '');
                 if (placeholderIndexes.length === 0) return [];
+                const componentMap = variableMapJson?.[toLower(type)] || {};
                 return [{
                     type,
                     parameters: placeholderIndexes.map((placeholderIndex) => ({
                         type: 'text',
-                        text: previewByIndex.get(placeholderIndex)?.value || ''
+                        text: resolveTemplatePlaceholderValue({
+                            placeholderIndex,
+                            componentMap,
+                            previewMaps
+                        })
                     }))
                 }];
             })
             .filter((component) => Array.isArray(component.parameters) && component.parameters.length > 0);
     };
 
-    const buildTemplatePreviewText = (templateComponents = [], previewPayload = {}, templateName = '') => {
-        const previewByIndex = buildTemplatePreviewByIndex(previewPayload);
+    const buildTemplatePreviewText = (template = {}, previewPayload = {}, templateName = '') => {
+        const templateComponents = ensureArray(template?.componentsJson);
+        const variableMapJson = template?.variableMapJson && typeof template.variableMapJson === 'object'
+            ? template.variableMapJson
+            : {};
+        const previewMaps = buildTemplatePreviewMaps(previewPayload);
         const rendered = ensureArray(templateComponents)
             .map((component = {}) => {
                 const type = normalizeTemplateComponentType(component?.type || 'BODY');
                 if (type !== 'HEADER' && type !== 'BODY' && type !== 'FOOTER') return '';
                 const sourceText = toText(component?.text);
                 if (!sourceText) return '';
+                const componentMap = variableMapJson?.[toLower(type)] || {};
                 return sourceText.replace(/\{\{\s*(\d+)\s*\}\}/g, (_, rawIndex) => {
                     const nextIndex = Number(rawIndex);
                     if (!Number.isFinite(nextIndex) || nextIndex <= 0) return '';
-                    return previewByIndex.get(nextIndex)?.value || '';
+                    return resolveTemplatePlaceholderValue({
+                        placeholderIndex: nextIndex,
+                        componentMap,
+                        previewMaps
+                    });
                 }).trim();
             })
             .filter(Boolean);
@@ -126,13 +166,13 @@ function createSocketTemplateMessagesService({
                 const moduleContext = target.moduleContext || socket?.data?.waModule || null;
                 const moduleId = toText(moduleContext?.moduleId || target.scopeModuleId || payload?.moduleId || '');
                 const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
-                const templateComponents = await metaTemplatesService.getTemplateComponents(tenantId, {
+                const template = await metaTemplatesService.getTemplateRecord(tenantId, {
                     templateName,
                     moduleId,
                     templateLanguage
                 });
 
-                if (!Array.isArray(templateComponents) || templateComponents.length === 0) {
+                if (!Array.isArray(template?.componentsJson) || template.componentsJson.length === 0) {
                     socket.emit('template_message_error', 'No se encontraron componentes del template para este modulo.');
                     return;
                 }
@@ -141,8 +181,8 @@ function createSocketTemplateMessagesService({
                     chatId: target.scopedChatId || target.targetChatId,
                     customerId
                 });
-                const components = buildTemplateSendComponents(templateComponents, previewPayload);
-                const previewText = buildTemplatePreviewText(templateComponents, previewPayload, templateName);
+                const components = buildTemplateSendComponents(template, previewPayload);
+                const previewText = buildTemplatePreviewText(template, previewPayload, templateName);
 
                 const providerResponse = await waClient.sendTemplateMessage(target.targetChatId, {
                     templateName,

@@ -1303,10 +1303,11 @@ function registerOperationsHttpRoutes({
             const moduleId = String(req.body?.moduleId || '').trim();
             const templatePayload = isPlainObject(req.body?.templatePayload) ? req.body.templatePayload : null;
             const useCase = toLower(req.body?.useCase || 'both') || 'both';
+            const variableMapJson = isPlainObject(req.body?.variableMapJson) ? req.body.variableMapJson : {};
             if (!moduleId) return res.status(400).json({ ok: false, error: 'moduleId requerido.' });
             if (!templatePayload) return res.status(400).json({ ok: false, error: 'templatePayload requerido.' });
 
-            const result = await createMetaTemplate(tenantId, { moduleId, templatePayload, useCase });
+            const result = await createMetaTemplate(tenantId, { moduleId, templatePayload, useCase, variableMapJson });
 
             await auditLogService.writeAuditLog(tenantId, {
                 userId: resolveActorUserId(req),
