@@ -31,6 +31,12 @@ const LANGUAGE_OPTIONS = [
     { value: 'pt', label: 'Português' }
 ];
 
+const USE_CASE_OPTIONS = [
+    { value: 'both', label: 'Campana e individual' },
+    { value: 'campaign', label: 'Solo campanas' },
+    { value: 'individual', label: 'Solo individual' }
+];
+
 const HEADER_TYPE_OPTIONS = [
     { value: 'none', label: 'Sin header' },
     { value: 'text', label: 'Texto' },
@@ -60,6 +66,7 @@ const TEMPLATE_DEFAULT_COLUMN_KEYS = [
 const EMPTY_CREATE_FORM = {
     moduleId: '',
     name: '',
+    useCase: 'both',
     category: 'marketing',
     language: 'es',
     headerType: 'none',
@@ -566,6 +573,7 @@ function serializeTemplateBuilderState(form = {}, variableExamples = {}) {
     return JSON.stringify({
         moduleId: toText(source.moduleId),
         name: toText(source.name),
+        useCase: toLower(source.useCase || 'both'),
         category: toLower(source.category || 'marketing'),
         language: toLower(source.language || 'es'),
         headerType: toLower(source.headerType || 'none'),
@@ -842,6 +850,7 @@ function MetaTemplatesSection(props = {}) {
             await createTemplate({
                 moduleId,
                 templatePayload,
+                useCase: toLower(createForm.useCase || 'both') || 'both',
                 reload: false
             });
             notify({ type: 'info', message: 'Template creado correctamente.' });
@@ -1551,6 +1560,24 @@ function MetaTemplatesSection(props = {}) {
 
                                     <div className="saas-meta-template-field-grid saas-meta-template-field-grid--2">
                                         <div className="saas-meta-template-field">
+                                            <label htmlFor="meta_template_use_case">Uso</label>
+                                            <select
+                                                id="meta_template_use_case"
+                                                value={createForm.useCase}
+                                                onChange={(event) => setCreateForm((prev) => ({
+                                                    ...prev,
+                                                    useCase: toLower(event.target.value) || 'both'
+                                                }))}
+                                                disabled={templatesBusy || !canWrite}
+                                            >
+                                                {USE_CASE_OPTIONS.map((option) => (
+                                                    <option key={`meta_template_use_case_${option.value}`} value={option.value}>
+                                                        {option.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="saas-meta-template-field">
                                             <label htmlFor="meta_template_category">Categoria</label>
                                             <select
                                                 id="meta_template_category"
@@ -2023,6 +2050,7 @@ function MetaTemplatesSection(props = {}) {
                                 <div className="saas-admin-detail-grid">
                                     <div className="saas-admin-detail-field"><span>Estado</span><strong>{resolveStatusMeta(selectedTemplate?.status).label}</strong></div>
                                     <div className="saas-admin-detail-field"><span>Modulo</span><strong>{toText(selectedTemplate?.moduleId) || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Uso</span><strong>{USE_CASE_OPTIONS.find((option) => option.value === toLower(selectedTemplate?.useCase || 'both'))?.label || 'Campana e individual'}</strong></div>
                                     <div className="saas-admin-detail-field"><span>Idioma</span><strong>{toText(selectedTemplate?.templateLanguage).toUpperCase() || '-'}</strong></div>
                                     <div className="saas-admin-detail-field"><span>Categoria</span><strong>{toText(selectedTemplate?.category) || '-'}</strong></div>
                                     <div className="saas-admin-detail-field"><span>Quality</span><strong>{(() => {

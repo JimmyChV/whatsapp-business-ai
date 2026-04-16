@@ -146,13 +146,13 @@ export default function useSaasMetaTemplatesController({
         }
     }, [requestJson, writeCache]);
 
-    const createTemplate = useCallback(async ({ moduleId, templatePayload, reload = true } = {}) => {
+    const createTemplate = useCallback(async ({ moduleId, templatePayload, useCase = 'both', reload = true } = {}) => {
         if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
 
         setLoadingCreate(true);
         setCreateError('');
         try {
-            const response = await createMetaTemplate(requestJson, { moduleId, templatePayload });
+            const response = await createMetaTemplate(requestJson, { moduleId, templatePayload, useCase });
             const createdTemplate = response?.template && typeof response.template === 'object'
                 ? response.template
                 : null;
