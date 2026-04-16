@@ -1302,10 +1302,11 @@ function registerOperationsHttpRoutes({
 
             const moduleId = String(req.body?.moduleId || '').trim();
             const templatePayload = isPlainObject(req.body?.templatePayload) ? req.body.templatePayload : null;
+            const useCase = toLower(req.body?.useCase || 'both') || 'both';
             if (!moduleId) return res.status(400).json({ ok: false, error: 'moduleId requerido.' });
             if (!templatePayload) return res.status(400).json({ ok: false, error: 'templatePayload requerido.' });
 
-            const result = await createMetaTemplate(tenantId, { moduleId, templatePayload });
+            const result = await createMetaTemplate(tenantId, { moduleId, templatePayload, useCase });
 
             await auditLogService.writeAuditLog(tenantId, {
                 userId: resolveActorUserId(req),
@@ -1319,6 +1320,7 @@ function registerOperationsHttpRoutes({
                     moduleId,
                     templateName: result?.template?.templateName || null,
                     templateLanguage: result?.template?.templateLanguage || null,
+                    useCase: result?.template?.useCase || useCase,
                     status: result?.template?.status || null
                 }
             });
