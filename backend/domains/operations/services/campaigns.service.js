@@ -234,11 +234,15 @@ async function buildTemplateComponentsForRecipient(tenantId = DEFAULT_TENANT_ID,
     );
 
     return templateComponents
-        .filter((component) => normalizeTemplateComponentType(component?.type) === 'BODY')
+        .filter((component) => {
+            const type = normalizeTemplateComponentType(component?.type);
+            return type === 'BODY' || type === 'HEADER';
+        })
         .map((component) => {
+            const type = normalizeTemplateComponentType(component?.type || 'BODY');
             const placeholderIndexes = parsePlaceholderIndexesFromText(component?.text || '');
             return {
-                type: normalizeTemplateComponentType(component?.type || 'BODY'),
+                type,
                 parameters: placeholderIndexes.map((placeholderIndex) => {
                     const variable = variableByIndex.get(placeholderIndex) || null;
                     return {
