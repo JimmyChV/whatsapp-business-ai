@@ -1366,18 +1366,15 @@
 .saas-admin-flow-card .saas-admin-kpi strong {
   font-size: 1.55rem;
 }
-.saas-summary-dashboard {
-  display: grid;
-  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
-  gap: 18px;
-  align-items: stretch;
-}
-.saas-summary-dashboard__sidebar,
-.saas-summary-dashboard__main {
-  min-width: 0;
+.saas-summary-shell {
   display: grid;
   gap: 16px;
-  align-content: start;
+}
+.saas-summary-top {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
 }
 .saas-summary-card {
   border: 1px solid rgba(123, 170, 196, 0.24);
@@ -1442,8 +1439,10 @@
   gap: 10px;
   margin-top: 14px;
 }
+.saas-summary-profile__stat--span {
+  grid-column: 1 / -1;
+}
 .saas-summary-profile__stat,
-.saas-summary-profile__tenant,
 .saas-summary-context-card,
 .saas-summary-kpi {
   border: 1px solid rgba(124, 200, 255, 0.18);
@@ -1453,11 +1452,7 @@
   display: grid;
   gap: 4px;
 }
-.saas-summary-profile__tenant {
-  margin-top: 10px;
-}
 .saas-summary-profile__stat small,
-.saas-summary-profile__tenant small,
 .saas-summary-context-card small,
 .saas-summary-kpi small {
   color: #89a8bb;
@@ -1466,7 +1461,6 @@
   letter-spacing: 0.05em;
 }
 .saas-summary-profile__stat strong,
-.saas-summary-profile__tenant strong,
 .saas-summary-context-card strong {
   color: #f0f8ff;
   font-size: 0.95rem;
@@ -1480,11 +1474,13 @@
   margin-top: 12px;
 }
 .saas-summary-actions {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 .saas-summary-actions button {
-  width: 100%;
+  width: auto;
+  min-width: 180px;
   min-height: 42px;
 }
 .saas-summary-kpis {
@@ -1493,12 +1489,12 @@
   gap: 12px;
 }
 .saas-summary-kpi {
-  min-height: 96px;
+  min-height: 90px;
   align-content: center;
 }
 .saas-summary-kpi strong {
   color: #f5fbff;
-  font-size: 1.7rem;
+  font-size: 1.45rem;
   line-height: 1;
 }
 .saas-summary-context-grid {
@@ -1506,8 +1502,10 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
-.saas-summary-card--context {
-  min-height: 220px;
+.saas-summary-card--context,
+.saas-summary-card--profile,
+.saas-summary-card--actions {
+  min-height: 100%;
 }
 .saas-admin-optional-access-grid {
   display: grid;
@@ -1567,7 +1565,7 @@
     grid-template-columns: 1fr;
   }
 
-  .saas-summary-dashboard {
+  .saas-summary-top {
     grid-template-columns: 1fr;
   }
 
@@ -1604,6 +1602,11 @@
   .saas-summary-context-grid,
   .saas-summary-profile__stats {
     grid-template-columns: 1fr;
+  }
+
+  .saas-summary-actions button {
+    width: 100%;
+    min-width: 0;
   }
 }
 .saas-admin-catalog-products-block {
@@ -2381,6 +2384,14 @@
   min-height: calc(100vh - 285px);
 }
 
+.saas-campaigns-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  gap: 10px;
+}
+
 .saas-campaigns-layout--builder {
   grid-template-columns: minmax(300px, 30%) minmax(0, 70%);
 }
@@ -2388,6 +2399,25 @@
 .saas-campaigns-list-pane,
 .saas-campaigns-detail-pane {
   gap: 12px;
+}
+
+.saas-campaigns-columns-menu {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 14px;
+  padding: 14px;
+  border: 1px solid rgba(68, 190, 181, 0.18);
+  border-radius: 18px;
+  background: rgba(7, 18, 28, 0.96);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.26);
+}
+
+.saas-campaigns-columns-menu__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #d9f7f5;
 }
 
 .saas-campaigns-list-filters {
@@ -2504,6 +2534,15 @@
   align-items: start;
 }
 
+.saas-campaigns-builder--full {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.saas-campaigns-builder--full > * {
+  min-width: 0;
+  width: 100%;
+}
+
 .saas-campaigns-builder__form {
   display: grid;
   gap: 12px;
@@ -2516,6 +2555,8 @@
 .saas-campaigns-builder__summary {
   display: grid;
   gap: 12px;
+  align-content: start;
+  width: 100%;
 }
 
 .saas-campaigns-chip-group {
@@ -2814,7 +2855,7 @@
 }
 
 .saas-td-layout--split .saas-td-layout__content {
-    grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr);
+    grid-template-columns: minmax(0, 2fr) minmax(380px, 3fr);
     align-items: stretch;
 }
 
@@ -4393,7 +4434,7 @@
 }
 
 .saas-admin-shell #saas_clientes .saas-td-layout--split .saas-td-layout__content {
-  grid-template-columns: minmax(0, 2.35fr) minmax(520px, 1.65fr) !important;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) !important;
 }
 
 .saas-admin-shell #saas_clientes .saas-customers-right-shell {
@@ -4478,7 +4519,7 @@
 
 /* Customers hard-final: right pane must always scroll and stay reachable */
 .saas-admin-shell #saas_clientes .saas-td-layout--split .saas-td-layout__content {
-  grid-template-columns: minmax(0, 2.1fr) minmax(620px, 1.9fr) !important;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) !important;
   min-height: 0 !important;
   height: 100% !important;
   align-items: stretch !important;
@@ -4585,7 +4626,7 @@
 .saas-admin-shell #saas_clientes .saas-td-layout--split .saas-td-layout__content {
   height: 100% !important;
   align-items: stretch !important;
-  grid-template-columns: minmax(0, 1.9fr) minmax(700px, 2.1fr) !important;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) !important;
 }
 
 .saas-admin-shell #saas_clientes .saas-customers-pane .saas-data-table-wrap {
@@ -4724,7 +4765,7 @@
 
 /* Selection/create: 60/40 split */
 #saas_templates .saas-td-layout--split .saas-td-layout__content {
-  grid-template-columns: minmax(0, 1.85fr) minmax(700px, 2.15fr) !important;
+  grid-template-columns: minmax(0, 2fr) minmax(720px, 3fr) !important;
 }
 
 #saas_templates .saas-meta-templates-pane {
@@ -4832,6 +4873,241 @@
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
+}
+
+/* Campaigns final layout contract */
+#saas_campaigns.saas-admin-card,
+#saas_campaigns .saas-td-layout,
+#saas_campaigns .saas-td-layout__content,
+#saas_campaigns .saas-td-layout__left,
+#saas_campaigns .saas-td-layout__right,
+#saas_campaigns .saas-campaigns-pane,
+#saas_campaigns .saas-campaigns-right-shell {
+  min-height: 0 !important;
+}
+
+#saas_campaigns.saas-admin-card {
+  display: flex;
+  flex-direction: column;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+#saas_campaigns .saas-td-layout {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+#saas_campaigns .saas-td-layout__content {
+  height: 100% !important;
+  min-height: 0 !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-items: stretch !important;
+  overflow: hidden !important;
+}
+
+#saas_campaigns .saas-td-layout--split .saas-td-layout__content {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) !important;
+}
+
+#saas_campaigns .saas-view-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+#saas_campaigns .saas-view-header__extra {
+  position: relative;
+  height: 0;
+  min-height: 0;
+  overflow: visible;
+}
+
+#saas_campaigns .saas-campaigns-columns-menu {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  width: min(920px, calc(100vw - 360px));
+  max-height: 240px;
+  overflow: auto;
+  z-index: 55;
+}
+
+#saas_campaigns .saas-campaigns-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+#saas_campaigns .saas-campaigns-pane .saas-data-table-wrap {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+}
+
+#saas_campaigns .saas-campaigns-pane .saas-data-table {
+  width: max-content !important;
+  min-width: 100% !important;
+}
+
+#saas_campaigns .saas-campaigns-pane .saas-data-table th,
+#saas_campaigns .saas-campaigns-pane .saas-data-table td {
+  white-space: nowrap;
+}
+
+#saas_campaigns .saas-campaigns-right-shell,
+#saas_campaigns .saas-td-layout__right {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+#saas_campaigns .saas-campaigns-detail-panel {
+  flex: 1 1 auto !important;
+  width: 100%;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  overflow: hidden !important;
+}
+
+#saas_campaigns .saas-campaigns-detail-panel__body {
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-bottom: 16px;
+  scrollbar-gutter: stable both-edges;
+}
+
+#saas_campaigns .saas-campaigns-detail-panel__body > .saas-detail-panel__section {
+  flex: 0 0 auto !important;
+}
+
+#saas_campaigns .saas-campaigns-table-wrap,
+#saas_campaigns .saas-campaigns-events-list {
+  max-height: min(320px, 36vh);
+}
+
+#saas_campaigns .saas-campaigns-table {
+  width: max-content;
+  min-width: 100%;
+}
+
+#saas_campaigns .saas-campaigns-table th,
+#saas_campaigns .saas-campaigns-table td {
+  white-space: nowrap;
+}
+
+@media (max-width: 1360px) {
+  #saas_campaigns .saas-td-layout--split .saas-td-layout__content {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.8fr) !important;
+  }
+}
+
+@media (max-width: 1120px) {
+  #saas_campaigns .saas-campaigns-columns-menu {
+    width: min(100%, calc(100vw - 72px));
+    left: 0;
+    right: auto;
+  }
+}
+
+.saas-campaign-builder-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3600;
+  background: rgba(5, 10, 14, 0.76);
+  backdrop-filter: blur(3px);
+  padding: 3vh 3vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.saas-campaign-builder-modal-shell {
+  width: min(1600px, 94vw);
+  height: min(92vh, 1100px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.saas-campaign-builder-modal-panel {
+  height: 100% !important;
+  min-height: 0 !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  overflow: hidden !important;
+}
+
+.saas-campaign-builder-modal-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 18px;
+  scrollbar-gutter: stable both-edges;
+}
+
+.saas-campaign-builder-modal-panel .saas-campaigns-builder {
+  align-items: start !important;
+}
+
+.saas-admin-shell #saas_campaigns .saas-campaigns-detail-panel__body,
+.saas-admin-shell .saas-campaign-builder-modal-panel__body,
+.saas-admin-shell #saas_campaigns .saas-campaigns-table-wrap,
+.saas-admin-shell #saas_campaigns .saas-campaigns-events-list,
+.saas-admin-shell #saas_campaigns .saas-campaigns-pane .saas-data-table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96, 150, 178, 0.95) rgba(10, 24, 34, 0.75);
+}
+
+.saas-admin-shell #saas_campaigns .saas-campaigns-detail-panel__body::-webkit-scrollbar,
+.saas-admin-shell .saas-campaign-builder-modal-panel__body::-webkit-scrollbar,
+.saas-admin-shell #saas_campaigns .saas-campaigns-table-wrap::-webkit-scrollbar,
+.saas-admin-shell #saas_campaigns .saas-campaigns-events-list::-webkit-scrollbar,
+.saas-admin-shell #saas_campaigns .saas-campaigns-pane .saas-data-table-wrap::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.saas-admin-shell #saas_campaigns .saas-campaigns-detail-panel__body::-webkit-scrollbar-track,
+.saas-admin-shell .saas-campaign-builder-modal-panel__body::-webkit-scrollbar-track,
+.saas-admin-shell #saas_campaigns .saas-campaigns-table-wrap::-webkit-scrollbar-track,
+.saas-admin-shell #saas_campaigns .saas-campaigns-events-list::-webkit-scrollbar-track,
+.saas-admin-shell #saas_campaigns .saas-campaigns-pane .saas-data-table-wrap::-webkit-scrollbar-track {
+  background: rgba(10, 24, 34, 0.82);
+  border-radius: 999px;
+}
+
+.saas-admin-shell #saas_campaigns .saas-campaigns-detail-panel__body::-webkit-scrollbar-thumb,
+.saas-admin-shell .saas-campaign-builder-modal-panel__body::-webkit-scrollbar-thumb,
+.saas-admin-shell #saas_campaigns .saas-campaigns-table-wrap::-webkit-scrollbar-thumb,
+.saas-admin-shell #saas_campaigns .saas-campaigns-events-list::-webkit-scrollbar-thumb,
+.saas-admin-shell #saas_campaigns .saas-campaigns-pane .saas-data-table-wrap::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(118, 170, 197, 0.96), rgba(78, 134, 162, 0.92));
+  border-radius: 999px;
+  border: 2px solid rgba(10, 24, 34, 0.82);
+}
+
+.saas-admin-shell #saas_campaigns .saas-campaigns-detail-panel__body::-webkit-scrollbar-thumb:hover,
+.saas-admin-shell .saas-campaign-builder-modal-panel__body::-webkit-scrollbar-thumb:hover,
+.saas-admin-shell #saas_campaigns .saas-campaigns-table-wrap::-webkit-scrollbar-thumb:hover,
+.saas-admin-shell #saas_campaigns .saas-campaigns-events-list::-webkit-scrollbar-thumb:hover,
+.saas-admin-shell #saas_campaigns .saas-campaigns-pane .saas-data-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(141, 194, 222, 0.98), rgba(92, 151, 180, 0.96));
 }
 
 #saas_templates .saas-meta-templates-detail-panel .saas-detail-panel__header {

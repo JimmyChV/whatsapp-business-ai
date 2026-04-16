@@ -102,6 +102,10 @@ function normalizeScopeModuleId(value = '') {
     return toLower(value);
 }
 
+function normalizeModuleId(value = '') {
+    return toText(value).toUpperCase();
+}
+
 function normalizeCampaignStatus(value = '', fallback = 'draft') {
     const status = toLower(value || fallback);
     if (CAMPAIGN_STATUSES.has(status)) return status;
@@ -171,7 +175,7 @@ function normalizeCampaignRecord(input = {}) {
         campaignId: toText(source.campaignId || source.campaign_id) || randomId('camp'),
         tenantId: normalizeTenant(source.tenantId || source.tenant_id),
         scopeModuleId: normalizeScopeModuleId(source.scopeModuleId || source.scope_module_id || source.moduleId || source.module_id || ''),
-        moduleId: toText(source.moduleId || source.module_id),
+        moduleId: normalizeModuleId(source.moduleId || source.module_id),
         templateId: toNullableText(source.templateId || source.template_id),
         templateName: toText(source.templateName || source.template_name),
         templateLanguage: toLower(source.templateLanguage || source.template_language || 'es') || 'es',
@@ -848,7 +852,7 @@ async function createCampaign(tenantId = DEFAULT_TENANT_ID, payload = {}) {
         campaignId: source.campaignId || randomId('camp'),
         tenantId: cleanTenantId,
         scopeModuleId: source.scopeModuleId || source.moduleId || '',
-        moduleId: source.moduleId,
+        moduleId: normalizeModuleId(source.moduleId),
         templateId: source.templateId || null,
         templateName: source.templateName,
         templateLanguage: source.templateLanguage || 'es',
@@ -1002,7 +1006,7 @@ function customerMatchesFilters(customer = {}, filters = {}) {
 
 async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {}, filters = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
-    const moduleFilter = toText(filters.moduleId || campaign.moduleId || '');
+    const moduleFilter = normalizeModuleId(filters.moduleId || campaign.moduleId || '');
     const maxRecipients = toInt(filters.maxRecipients, DEFAULT_RECIPIENT_LIMIT, { min: 1, max: 10000 });
 
     if (getStorageDriver() !== 'postgres') {
@@ -1019,7 +1023,7 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
         }));
         return all
             .filter((item) => item.phone)
-            .filter((item) => !moduleFilter || toText(item.moduleId) === moduleFilter)
+            .filter((item) => !moduleFilter || normalizeModuleId(item.moduleId) === moduleFilter)
             .filter((item) => customerMatchesFilters(item, filters))
             .slice(0, maxRecipients);
     }
@@ -1044,7 +1048,7 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                    ON c.tenant_id = cmc.tenant_id
                   AND c.customer_id = cmc.customer_id
                  WHERE cmc.tenant_id = $1
-                   AND cmc.module_id = $2
+                   AND LOWER(cmc.module_id) = LOWER($2)
                    AND COALESCE(c.phone_e164, '') <> ''
                    AND c.is_active = TRUE
                  ORDER BY COALESCE(cmc.updated_at, c.updated_at) DESC
@@ -1082,7 +1086,7 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
     ];
     if (moduleFilter) {
         params.push(moduleFilter);
-        where.push(`module_id = $${params.length}`);
+        where.push(`LOWER(module_id) = LOWER($${params.length})`);
     }
 
     const rowsResult = await queryPostgres(
@@ -1159,7 +1163,7 @@ async function estimateCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
             tenantId: cleanTenantId,
             campaignId: null,
             scopeModuleId: normalizeScopeModuleId(source.scopeModuleId || ''),
-            moduleId: toText(source.moduleId || ''),
+            moduleId: normalizeModuleId(source.moduleId || ''),
             templateName: toText(source.templateName || ''),
             templateLanguage: toLower(source.templateLanguage || 'es') || 'es'
         };
@@ -1676,6 +1680,7 @@ async function startCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const startedAt = workingCampaign.startedAt || nowIso();
     const updated = await persistCampaignRecord(cleanTenantId, {
         ...workingCampaign,
+        moduleId: normalizeModuleId(options.moduleId || workingCampaign.moduleId),
         status: 'running',
         startedAt,
         updatedBy: options.actorUserId || workingCampaign.updatedBy,
