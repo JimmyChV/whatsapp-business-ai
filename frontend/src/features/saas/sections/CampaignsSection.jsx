@@ -406,6 +406,11 @@ export default React.memo(function CampaignsSection(props = {}) {
         const selected = new Set((Array.isArray(form.selectedLabelIds) ? form.selectedLabelIds : []).map((entry) => toUpper(entry)));
         return labelOptions.filter((entry) => selected.has(toUpper(entry.labelId)));
     }, [form.selectedLabelIds, labelOptions]);
+    const selectedStatusKey = toLower(selectedCampaign?.status);
+    const showsEstimatedAudienceInDetail = panelMode === 'detail' && ['draft', 'scheduled'].includes(selectedStatusKey);
+    const detailAudienceTitle = showsEstimatedAudienceInDetail
+        ? `Audiencia estimada (${estimateNumbers.eligible || estimatedAudienceItems.length})`
+        : `Destinatarios (${recipients.length})`;
 
     const runSafe = useCallback(async (action, fallbackMessage) => {
         try {
@@ -539,6 +544,30 @@ export default React.memo(function CampaignsSection(props = {}) {
             setExcludedCustomerIds([]);
         }
     }, [buildCampaignPayload, estimateReachAction]);
+
+    const runDetailEstimate = useCallback(async () => {
+        if (typeof estimateReachAction !== 'function') return;
+        if (!selectedCampaign) throw new Error('No hay campana seleccionada.');
+        const detailForm = mapCampaignToForm(selectedCampaign, labelOptions);
+        const audienceFiltersJson = buildAudienceFiltersFromForm(detailForm, labelOptions);
+        const payload = {
+            scopeModuleId: toLower(detailForm.moduleId),
+            moduleId: toText(detailForm.moduleId),
+            templateName: toText(detailForm.templateName),
+            templateLanguage: toLower(detailForm.templateLanguage || 'es'),
+            filters: audienceFiltersJson
+        };
+        if (!payload.moduleId) throw new Error('La campana no tiene modulo configurado.');
+        if (!payload.templateName) throw new Error('La campana no tiene template configurado.');
+        const response = await estimateReachAction(payload);
+        const estimate = response?.estimate && typeof response.estimate === 'object'
+            ? response.estimate
+            : null;
+        if (estimate) {
+            setLocalEstimate(estimate);
+            setExcludedCustomerIds(getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds);
+        }
+    }, [estimateReachAction, labelOptions, selectedCampaign]);
 
     const clearSelectedCampaign = useCallback(() => {
         if (typeof selectCampaign === 'function') {
@@ -1054,10 +1083,57 @@ export default React.memo(function CampaignsSection(props = {}) {
                             </div>
                             <div className="saas-campaigns-progress saas-campaigns-progress--detail"><div className="saas-campaigns-progress__track"><div className="saas-campaigns-progress__fill" style={{ width: `${selectedProgress}%` }} /></div><span>{selectedProgress}%</span></div>
                         </SaasDetailPanelSection>
-                        <SaasDetailPanelSection title={`Destinatarios (${recipients.length})`}>
-                            <section className="saas-admin-related-block saas-campaigns-table-block">
-                                <div className="saas-campaigns-table-wrap"><table className="saas-campaigns-table"><thead><tr><th>Telefono</th><th>Cliente</th><th>Estado</th><th>Intentos</th><th>Actualizado</th><th>Error</th></tr></thead><tbody>{recipients.length === 0 ? <tr><td colSpan={6}>Sin destinatarios.</td></tr> : recipients.map((r) => { const m = statusMeta(r?.status); return <tr key={`${toText(r?.recipientId)}_${toText(r?.phone)}`}><td>{toText(r?.phone) || '-'}</td><td>{toText(r?.customerId) || '-'}</td><td><span className={`saas-campaigns-status ${m.className}`}>{m.label}</span></td><td>{toNumber(r?.attemptCount)} / {toNumber(r?.maxAttempts)}</td><td>{formatDateTime(r?.updatedAt)}</td><td>{toText(r?.lastError || r?.skipReason) || '-'}</td></tr>; })}</tbody></table></div>
-                            </section>
+                        <SaasDetailPanelSection title={detailAudienceTitle}>
+                            {showsEstimatedAudienceInDetail ? (
+                                <section className="saas-admin-related-block saas-campaigns-table-block">
+                                    <div className="saas-campaigns-audience-summary">
+                                        <strong>{`${exclusionSummary.eligible} elegibles - ${exclusionSummary.excluded} excluidos = ${exclusionSummary.finalRecipients} destinatarios finales`}</strong>
+                                        <span>{reachEstimate ? 'Vista previa generada con la estimacion actual.' : 'Calcula la audiencia para ver los clientes elegibles de esta campana.'}</span>
+                                    </div>
+                                    <div className="saas-campaigns-actions-row">
+                                        <button
+                                            type="button"
+                                            disabled={loading || estimating || !canWrite}
+                                            onClick={() => runSafe(async () => {
+                                                await runDetailEstimate();
+                                                notify({ type: 'info', message: 'Audiencia estimada actualizada.' });
+                                            }, 'No se pudo calcular la audiencia.')}
+                                        >
+                                            Calcular audiencia
+                                        </button>
+                                    </div>
+                                    <div className="saas-campaigns-audience-table-wrap">
+                                        {estimatedAudienceItems.length === 0 ? (
+                                            <div className="saas-admin-empty-inline">No hay audiencia estimada disponible.</div>
+                                        ) : (
+                                            <table className="saas-campaigns-audience-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Nombre</th>
+                                                        <th>Telefono</th>
+                                                        <th>Estado comercial</th>
+                                                        <th>Etiquetas</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {estimatedAudienceItems.map((item) => (
+                                                        <tr key={item.customerId}>
+                                                            <td>{item.contactName}</td>
+                                                            <td>{item.phone}</td>
+                                                            <td>{item.commercialStatus || '-'}</td>
+                                                            <td>{item.tags.length > 0 ? item.tags.join(', ') : '-'}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        )}
+                                    </div>
+                                </section>
+                            ) : (
+                                <section className="saas-admin-related-block saas-campaigns-table-block">
+                                    <div className="saas-campaigns-table-wrap"><table className="saas-campaigns-table"><thead><tr><th>Telefono</th><th>Cliente</th><th>Estado</th><th>Intentos</th><th>Actualizado</th><th>Error</th></tr></thead><tbody>{recipients.length === 0 ? <tr><td colSpan={6}>Sin destinatarios.</td></tr> : recipients.map((r) => { const m = statusMeta(r?.status); return <tr key={`${toText(r?.recipientId)}_${toText(r?.phone)}`}><td>{toText(r?.phone) || '-'}</td><td>{toText(r?.customerId) || '-'}</td><td><span className={`saas-campaigns-status ${m.className}`}>{m.label}</span></td><td>{toNumber(r?.attemptCount)} / {toNumber(r?.maxAttempts)}</td><td>{formatDateTime(r?.updatedAt)}</td><td>{toText(r?.lastError || r?.skipReason) || '-'}</td></tr>; })}</tbody></table></div>
+                                </section>
+                            )}
                         </SaasDetailPanelSection>
                         <SaasDetailPanelSection title={`Eventos (${events.length})`}>
                             <section className="saas-admin-related-block saas-campaigns-events-block"><div className="saas-campaigns-events-list">{events.length === 0 ? <div className="saas-admin-empty-inline">Sin eventos.</div> : events.map((ev) => <article key={toText(ev?.eventId)} className="saas-campaigns-event-item"><header><strong>{toText(ev?.eventType) || 'event'}</strong><span>{formatDateTime(ev?.createdAt)}</span></header><p>{toText(ev?.message || ev?.reason) || '-'}</p><small>{`Actor: ${toText(ev?.actorType) || 'system'} | Severidad: ${toText(ev?.severity) || '-'}`}</small></article>)}</div></section>
