@@ -158,6 +158,21 @@ function buildAudienceFiltersFromForm(form = {}, labelOptions = []) {
     };
 }
 
+function getAudienceSelectionFromCampaign(campaign = {}) {
+    const selection = campaign?.audienceSelectionJson && typeof campaign.audienceSelectionJson === 'object'
+        ? campaign.audienceSelectionJson
+        : {};
+    return {
+        excludedCustomerIds: Array.from(
+            new Set(
+                (Array.isArray(selection.excludedCustomerIds) ? selection.excludedCustomerIds : [])
+                    .map((entry) => toText(entry))
+                    .filter(Boolean)
+            )
+        )
+    };
+}
+
 function serializeCampaignForm(form = {}) {
     const source = form && typeof form === 'object' ? form : {};
     return JSON.stringify({
@@ -203,6 +218,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [showColumnsMenu, setShowColumnsMenu] = useState(false);
     const [maxRecipientsTouched, setMaxRecipientsTouched] = useState(false);
     const [localEstimate, setLocalEstimate] = useState(null);
+    const [excludedCustomerIds, setExcludedCustomerIds] = useState([]);
 
     const {
         campaigns = [],
@@ -321,6 +337,30 @@ export default React.memo(function CampaignsSection(props = {}) {
         eligible: Math.max(0, toNumber(reachEstimate?.eligible)),
         excluded: Math.max(0, toNumber(reachEstimate?.excluded))
     }), [reachEstimate]);
+    const estimatedAudienceItems = useMemo(() => (
+        (Array.isArray(reachEstimate?.items) ? reachEstimate.items : [])
+            .map((item) => ({
+                customerId: toText(item?.customerId),
+                contactName: toText(item?.contactName) || 'Sin nombre',
+                phone: toText(item?.phone) || '-',
+                commercialStatus: toLower(item?.commercialStatus || 'unknown') || 'unknown',
+                tags: Array.isArray(item?.tags)
+                    ? item.tags.map((entry) => toText(entry)).filter(Boolean)
+                    : [],
+                preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
+                marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
+            }))
+            .filter((item) => item.customerId)
+    ), [reachEstimate]);
+    const excludedCustomerIdSet = useMemo(() => (
+        new Set((Array.isArray(excludedCustomerIds) ? excludedCustomerIds : []).map((entry) => toText(entry)).filter(Boolean))
+    ), [excludedCustomerIds]);
+    const exclusionSummary = useMemo(() => {
+        const eligible = estimatedAudienceItems.length;
+        const excluded = estimatedAudienceItems.filter((item) => excludedCustomerIdSet.has(item.customerId)).length;
+        const finalRecipients = Math.max(0, eligible - excluded);
+        return { eligible, excluded, finalRecipients };
+    }, [estimatedAudienceItems, excludedCustomerIdSet]);
     const formBaseline = useMemo(() => {
         if (panelMode === 'edit' && selectedCampaign) {
             return serializeCampaignForm(mapCampaignToForm(selectedCampaign, labelOptions));
@@ -366,6 +406,11 @@ export default React.memo(function CampaignsSection(props = {}) {
         const selected = new Set((Array.isArray(form.selectedLabelIds) ? form.selectedLabelIds : []).map((entry) => toUpper(entry)));
         return labelOptions.filter((entry) => selected.has(toUpper(entry.labelId)));
     }, [form.selectedLabelIds, labelOptions]);
+    const selectedStatusKey = toLower(selectedCampaign?.status);
+    const showsEstimatedAudienceInDetail = panelMode === 'detail' && ['draft', 'scheduled'].includes(selectedStatusKey);
+    const detailAudienceTitle = showsEstimatedAudienceInDetail
+        ? `Audiencia estimada (${estimateNumbers.eligible || estimatedAudienceItems.length})`
+        : `Destinatarios (${recipients.length})`;
 
     const runSafe = useCallback(async (action, fallbackMessage) => {
         try {
@@ -413,6 +458,29 @@ export default React.memo(function CampaignsSection(props = {}) {
         setForm((prev) => ({ ...prev, maxRecipients: String(eligible) }));
     }, [estimateNumbers.eligible, maxRecipientsTouched, panelMode]);
 
+    useEffect(() => {
+        if (estimatedAudienceItems.length === 0) return;
+        const validIds = new Set(estimatedAudienceItems.map((item) => item.customerId));
+        setExcludedCustomerIds((prev) => prev.filter((customerId) => validIds.has(toText(customerId))));
+    }, [estimatedAudienceItems]);
+
+    useEffect(() => {
+        if (panelMode !== 'edit' && panelMode !== 'detail') return;
+        if (!selectedCampaign) return;
+        setExcludedCustomerIds(getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds);
+    }, [panelMode, selectedCampaign]);
+
+    const toggleAudienceExclusion = useCallback((customerId = '') => {
+        const cleanCustomerId = toText(customerId);
+        if (!cleanCustomerId) return;
+        setExcludedCustomerIds((prev) => {
+            const current = new Set((Array.isArray(prev) ? prev : []).map((entry) => toText(entry)).filter(Boolean));
+            if (current.has(cleanCustomerId)) current.delete(cleanCustomerId);
+            else current.add(cleanCustomerId);
+            return Array.from(current);
+        });
+    }, []);
+
     const toggleCommercialStatus = useCallback((statusKey = '') => {
         const cleanKey = toLower(statusKey);
         if (!cleanKey) return;
@@ -447,9 +515,14 @@ export default React.memo(function CampaignsSection(props = {}) {
             campaignDescription: toText(form.campaignDescription) || null,
             scheduledAt: toIsoDateTimeLocal(form.scheduledAt),
             audienceFiltersJson,
+            audienceSelectionJson: {
+                excludedCustomerIds: Array.from(
+                    new Set((Array.isArray(excludedCustomerIds) ? excludedCustomerIds : []).map((entry) => toText(entry)).filter(Boolean))
+                )
+            },
             variablesPreviewJson: {}
         };
-    }, [form, labelOptions]);
+    }, [excludedCustomerIds, form, labelOptions]);
 
     const runEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
@@ -468,8 +541,33 @@ export default React.memo(function CampaignsSection(props = {}) {
             : null;
         if (estimate) {
             setLocalEstimate(estimate);
+            setExcludedCustomerIds([]);
         }
     }, [buildCampaignPayload, estimateReachAction]);
+
+    const runDetailEstimate = useCallback(async () => {
+        if (typeof estimateReachAction !== 'function') return;
+        if (!selectedCampaign) throw new Error('No hay campana seleccionada.');
+        const detailForm = mapCampaignToForm(selectedCampaign, labelOptions);
+        const audienceFiltersJson = buildAudienceFiltersFromForm(detailForm, labelOptions);
+        const payload = {
+            scopeModuleId: toLower(detailForm.moduleId),
+            moduleId: toText(detailForm.moduleId),
+            templateName: toText(detailForm.templateName),
+            templateLanguage: toLower(detailForm.templateLanguage || 'es'),
+            filters: audienceFiltersJson
+        };
+        if (!payload.moduleId) throw new Error('La campana no tiene modulo configurado.');
+        if (!payload.templateName) throw new Error('La campana no tiene template configurado.');
+        const response = await estimateReachAction(payload);
+        const estimate = response?.estimate && typeof response.estimate === 'object'
+            ? response.estimate
+            : null;
+        if (estimate) {
+            setLocalEstimate(estimate);
+            setExcludedCustomerIds(getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds);
+        }
+    }, [estimateReachAction, labelOptions, selectedCampaign]);
 
     const clearSelectedCampaign = useCallback(() => {
         if (typeof selectCampaign === 'function') {
@@ -481,6 +579,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         setPanelMode('list');
         setLocalEstimate(null);
         setMaxRecipientsTouched(false);
+        setExcludedCustomerIds([]);
         clearSelectedCampaign();
     }, [clearSelectedCampaign]);
 
@@ -498,8 +597,10 @@ export default React.memo(function CampaignsSection(props = {}) {
 
         setLocalEstimate(null);
         setMaxRecipientsTouched(false);
+        setExcludedCustomerIds([]);
         if (panelMode === 'edit' && selectedCampaign) {
             setForm(mapCampaignToForm(selectedCampaign, labelOptions));
+            setExcludedCustomerIds(getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds);
             setPanelMode('detail');
             return;
         }
@@ -535,6 +636,14 @@ export default React.memo(function CampaignsSection(props = {}) {
         selectedCampaignId,
         showColumnsMenu
     ]);
+
+    const handleSelectCampaignRow = useCallback((row = null) => runSafe(async () => {
+        const campaignId = toText(row?.campaignId || '');
+        if (!campaignId) return;
+        await selectCampaign?.(campaignId, { loadDetail: true });
+        await loadTracking(campaignId);
+        setPanelMode('detail');
+    }, 'No se pudo abrir campana.'), [loadTracking, runSafe, selectCampaign]);
 
     useEffect(() => {
         if (!isCampaignsSection) return undefined;
@@ -660,11 +769,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                     selectedId={panelMode === 'create' ? '' : selectedCampaignId}
                     loading={loading}
                     emptyText="No hay campanas para estos filtros."
-                    onSelect={(row) => runSafe(async () => {
-                        await selectCampaign?.(row?.campaignId, { loadDetail: true });
-                        await loadTracking(row?.campaignId);
-                        setPanelMode('detail');
-                    }, 'No se pudo abrir campana.')}
+                    onSelect={handleSelectCampaignRow}
                 />
             )}
         </div>
@@ -687,12 +792,12 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 const response = panelMode === 'edit' ? await updateCampaign?.({ campaignId: selectedCampaignId, patch: payload }) : await createCampaign?.(payload);
                                 const campaign = response?.campaign || null;
                                 if (!campaign) return;
-                                notify({ type: 'info', message: panelMode === 'edit' ? 'Campana actualizada.' : 'Campana creada.' });
-                                await loadCampaigns?.();
-                                await selectCampaign?.(campaign.campaignId, { loadDetail: true });
                                 await loadTracking(campaign.campaignId);
+                                await loadCampaigns?.();
+                                await selectCampaign?.(campaign.campaignId, { loadDetail: false });
                                 setPanelMode('detail');
                                 setLocalEstimate(null);
+                                notify({ type: 'info', message: panelMode === 'edit' ? 'Campana actualizada.' : 'Campana creada.' });
                             }, 'No se pudo guardar campana.')}>Guardar borrador</button>
                             <button type="button" disabled={loading || estimating || !canWrite} onClick={() => runSafe(async () => {
                                 await runEstimate();
@@ -895,6 +1000,50 @@ export default React.memo(function CampaignsSection(props = {}) {
                                         <div><span>Etiquetas</span><strong>{selectedLabels.length > 0 ? selectedLabels.map((entry) => entry.name).join(', ') : 'Sin filtro'}</strong></div>
                                     </div>
                                 </div>
+                                <div className="saas-admin-related-block">
+                                    <div className="saas-campaigns-audience-summary">
+                                        <strong>{`${exclusionSummary.eligible} elegibles - ${exclusionSummary.excluded} excluidos = ${exclusionSummary.finalRecipients} destinatarios finales`}</strong>
+                                        <span>{reachEstimate ? 'Lista generada con la estimacion actual.' : 'Haz clic en "Estimar alcance" para ver los clientes elegibles.'}</span>
+                                    </div>
+                                    <div className="saas-campaigns-audience-table-wrap">
+                                        {estimatedAudienceItems.length === 0 ? (
+                                            <div className="saas-admin-empty-inline">No hay clientes elegibles para mostrar.</div>
+                                        ) : (
+                                            <table className="saas-campaigns-audience-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Excluir</th>
+                                                        <th>Nombre</th>
+                                                        <th>Telefono</th>
+                                                        <th>Estado comercial</th>
+                                                        <th>Etiquetas</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {estimatedAudienceItems.map((item) => {
+                                                        const isExcluded = excludedCustomerIdSet.has(item.customerId);
+                                                        return (
+                                                            <tr key={item.customerId} className={isExcluded ? 'is-excluded' : ''}>
+                                                                <td className="is-center">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={isExcluded}
+                                                                        onChange={() => toggleAudienceExclusion(item.customerId)}
+                                                                        aria-label={`Excluir ${item.contactName}`}
+                                                                    />
+                                                                </td>
+                                                                <td>{item.contactName}</td>
+                                                                <td>{item.phone}</td>
+                                                                <td>{item.commercialStatus || '-'}</td>
+                                                                <td>{item.tags.length > 0 ? item.tags.join(', ') : '-'}</td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        )}
+                                    </div>
+                                </div>
                             </aside>
                         </div>
                     </SaasDetailPanelSection>
@@ -938,10 +1087,57 @@ export default React.memo(function CampaignsSection(props = {}) {
                             </div>
                             <div className="saas-campaigns-progress saas-campaigns-progress--detail"><div className="saas-campaigns-progress__track"><div className="saas-campaigns-progress__fill" style={{ width: `${selectedProgress}%` }} /></div><span>{selectedProgress}%</span></div>
                         </SaasDetailPanelSection>
-                        <SaasDetailPanelSection title={`Destinatarios (${recipients.length})`}>
-                            <section className="saas-admin-related-block saas-campaigns-table-block">
-                                <div className="saas-campaigns-table-wrap"><table className="saas-campaigns-table"><thead><tr><th>Telefono</th><th>Cliente</th><th>Estado</th><th>Intentos</th><th>Actualizado</th><th>Error</th></tr></thead><tbody>{recipients.length === 0 ? <tr><td colSpan={6}>Sin destinatarios.</td></tr> : recipients.map((r) => { const m = statusMeta(r?.status); return <tr key={`${toText(r?.recipientId)}_${toText(r?.phone)}`}><td>{toText(r?.phone) || '-'}</td><td>{toText(r?.customerId) || '-'}</td><td><span className={`saas-campaigns-status ${m.className}`}>{m.label}</span></td><td>{toNumber(r?.attemptCount)} / {toNumber(r?.maxAttempts)}</td><td>{formatDateTime(r?.updatedAt)}</td><td>{toText(r?.lastError || r?.skipReason) || '-'}</td></tr>; })}</tbody></table></div>
-                            </section>
+                        <SaasDetailPanelSection title={detailAudienceTitle}>
+                            {showsEstimatedAudienceInDetail ? (
+                                <section className="saas-admin-related-block saas-campaigns-table-block">
+                                    <div className="saas-campaigns-audience-summary">
+                                        <strong>{`${exclusionSummary.eligible} elegibles - ${exclusionSummary.excluded} excluidos = ${exclusionSummary.finalRecipients} destinatarios finales`}</strong>
+                                        <span>{reachEstimate ? 'Vista previa generada con la estimacion actual.' : 'Calcula la audiencia para ver los clientes elegibles de esta campana.'}</span>
+                                    </div>
+                                    <div className="saas-campaigns-actions-row">
+                                        <button
+                                            type="button"
+                                            disabled={loading || estimating || !canWrite}
+                                            onClick={() => runSafe(async () => {
+                                                await runDetailEstimate();
+                                                notify({ type: 'info', message: 'Audiencia estimada actualizada.' });
+                                            }, 'No se pudo calcular la audiencia.')}
+                                        >
+                                            Calcular audiencia
+                                        </button>
+                                    </div>
+                                    <div className="saas-campaigns-audience-table-wrap">
+                                        {estimatedAudienceItems.length === 0 ? (
+                                            <div className="saas-admin-empty-inline">No hay audiencia estimada disponible.</div>
+                                        ) : (
+                                            <table className="saas-campaigns-audience-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Nombre</th>
+                                                        <th>Telefono</th>
+                                                        <th>Estado comercial</th>
+                                                        <th>Etiquetas</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {estimatedAudienceItems.map((item) => (
+                                                        <tr key={item.customerId}>
+                                                            <td>{item.contactName}</td>
+                                                            <td>{item.phone}</td>
+                                                            <td>{item.commercialStatus || '-'}</td>
+                                                            <td>{item.tags.length > 0 ? item.tags.join(', ') : '-'}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        )}
+                                    </div>
+                                </section>
+                            ) : (
+                                <section className="saas-admin-related-block saas-campaigns-table-block">
+                                    <div className="saas-campaigns-table-wrap"><table className="saas-campaigns-table"><thead><tr><th>Telefono</th><th>Cliente</th><th>Estado</th><th>Intentos</th><th>Actualizado</th><th>Error</th></tr></thead><tbody>{recipients.length === 0 ? <tr><td colSpan={6}>Sin destinatarios.</td></tr> : recipients.map((r) => { const m = statusMeta(r?.status); return <tr key={`${toText(r?.recipientId)}_${toText(r?.phone)}`}><td>{toText(r?.phone) || '-'}</td><td>{toText(r?.customerId) || '-'}</td><td><span className={`saas-campaigns-status ${m.className}`}>{m.label}</span></td><td>{toNumber(r?.attemptCount)} / {toNumber(r?.maxAttempts)}</td><td>{formatDateTime(r?.updatedAt)}</td><td>{toText(r?.lastError || r?.skipReason) || '-'}</td></tr>; })}</tbody></table></div>
+                                </section>
+                            )}
                         </SaasDetailPanelSection>
                         <SaasDetailPanelSection title={`Eventos (${events.length})`}>
                             <section className="saas-admin-related-block saas-campaigns-events-block"><div className="saas-campaigns-events-list">{events.length === 0 ? <div className="saas-admin-empty-inline">Sin eventos.</div> : events.map((ev) => <article key={toText(ev?.eventId)} className="saas-campaigns-event-item"><header><strong>{toText(ev?.eventType) || 'event'}</strong><span>{formatDateTime(ev?.createdAt)}</span></header><p>{toText(ev?.message || ev?.reason) || '-'}</p><small>{`Actor: ${toText(ev?.actorType) || 'system'} | Severidad: ${toText(ev?.severity) || '-'}`}</small></article>)}</div></section>
