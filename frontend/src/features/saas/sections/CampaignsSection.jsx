@@ -158,6 +158,21 @@ function buildAudienceFiltersFromForm(form = {}, labelOptions = []) {
     };
 }
 
+function getAudienceSelectionFromCampaign(campaign = {}) {
+    const selection = campaign?.audienceSelectionJson && typeof campaign.audienceSelectionJson === 'object'
+        ? campaign.audienceSelectionJson
+        : {};
+    return {
+        excludedCustomerIds: Array.from(
+            new Set(
+                (Array.isArray(selection.excludedCustomerIds) ? selection.excludedCustomerIds : [])
+                    .map((entry) => toText(entry))
+                    .filter(Boolean)
+            )
+        )
+    };
+}
+
 function serializeCampaignForm(form = {}) {
     const source = form && typeof form === 'object' ? form : {};
     return JSON.stringify({
@@ -439,13 +454,16 @@ export default React.memo(function CampaignsSection(props = {}) {
     }, [estimateNumbers.eligible, maxRecipientsTouched, panelMode]);
 
     useEffect(() => {
-        if (estimatedAudienceItems.length === 0) {
-            setExcludedCustomerIds([]);
-            return;
-        }
+        if (estimatedAudienceItems.length === 0) return;
         const validIds = new Set(estimatedAudienceItems.map((item) => item.customerId));
         setExcludedCustomerIds((prev) => prev.filter((customerId) => validIds.has(toText(customerId))));
     }, [estimatedAudienceItems]);
+
+    useEffect(() => {
+        if (panelMode !== 'edit' && panelMode !== 'detail') return;
+        if (!selectedCampaign) return;
+        setExcludedCustomerIds(getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds);
+    }, [panelMode, selectedCampaign]);
 
     const toggleAudienceExclusion = useCallback((customerId = '') => {
         const cleanCustomerId = toText(customerId);
@@ -492,9 +510,14 @@ export default React.memo(function CampaignsSection(props = {}) {
             campaignDescription: toText(form.campaignDescription) || null,
             scheduledAt: toIsoDateTimeLocal(form.scheduledAt),
             audienceFiltersJson,
+            audienceSelectionJson: {
+                excludedCustomerIds: Array.from(
+                    new Set((Array.isArray(excludedCustomerIds) ? excludedCustomerIds : []).map((entry) => toText(entry)).filter(Boolean))
+                )
+            },
             variablesPreviewJson: {}
         };
-    }, [form, labelOptions]);
+    }, [excludedCustomerIds, form, labelOptions]);
 
     const runEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
@@ -548,6 +571,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         setExcludedCustomerIds([]);
         if (panelMode === 'edit' && selectedCampaign) {
             setForm(mapCampaignToForm(selectedCampaign, labelOptions));
+            setExcludedCustomerIds(getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds);
             setPanelMode('detail');
             return;
         }

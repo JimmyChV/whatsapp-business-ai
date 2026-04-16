@@ -183,6 +183,7 @@ function normalizeCampaignRecord(input = {}) {
         campaignDescription: toNullableText(source.campaignDescription || source.campaign_description),
         status,
         audienceFiltersJson: normalizeObject(source.audienceFiltersJson || source.audience_filters_json),
+        audienceSelectionJson: normalizeObject(source.audienceSelectionJson || source.audience_selection_json),
         variablesPreviewJson: normalizeObject(source.variablesPreviewJson || source.variables_preview_json),
         totalRecipients: toInt(source.totalRecipients ?? source.total_recipients, 0, { min: 0 }),
         pendingRecipients: toInt(source.pendingRecipients ?? source.pending_recipients, 0, { min: 0 }),
@@ -301,6 +302,7 @@ async function ensurePostgresSchema() {
                 status TEXT NOT NULL DEFAULT 'draft'
                     CHECK (status IN ('draft', 'scheduled', 'running', 'paused', 'completed', 'cancelled', 'failed')),
                 audience_filters_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                audience_selection_json JSONB NOT NULL DEFAULT '{}'::jsonb,
                 variables_preview_json JSONB NOT NULL DEFAULT '{}'::jsonb,
                 total_recipients INTEGER NOT NULL DEFAULT 0,
                 pending_recipients INTEGER NOT NULL DEFAULT 0,
@@ -318,6 +320,11 @@ async function ensurePostgresSchema() {
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 PRIMARY KEY (tenant_id, campaign_id)
             )
+        `);
+
+        await queryPostgres(`
+            ALTER TABLE tenant_campaigns
+            ADD COLUMN IF NOT EXISTS audience_selection_json JSONB NOT NULL DEFAULT '{}'::jsonb
         `);
 
         await queryPostgres(`
@@ -396,6 +403,7 @@ function mapCampaignRow(row = {}) {
         campaignDescription: row.campaign_description,
         status: row.status,
         audienceFiltersJson: row.audience_filters_json,
+        audienceSelectionJson: row.audience_selection_json,
         variablesPreviewJson: row.variables_preview_json,
         totalRecipients: row.total_recipients,
         pendingRecipients: row.pending_recipients,
@@ -488,14 +496,14 @@ async function persistCampaignRecord(tenantId = DEFAULT_TENANT_ID, record = {}) 
     const result = await queryPostgres(
         `INSERT INTO tenant_campaigns (
             campaign_id, tenant_id, scope_module_id, module_id, template_id, template_name, template_language,
-            campaign_name, campaign_description, status, audience_filters_json, variables_preview_json,
+            campaign_name, campaign_description, status, audience_filters_json, audience_selection_json, variables_preview_json,
             total_recipients, pending_recipients, claimed_recipients, sent_recipients, failed_recipients, skipped_recipients,
             scheduled_at, started_at, completed_at, cancelled_at, created_by, updated_by, created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7,
-            $8, $9, $10, $11::jsonb, $12::jsonb,
-            $13, $14, $15, $16, $17, $18,
-            $19::timestamptz, $20::timestamptz, $21::timestamptz, $22::timestamptz, $23, $24, $25::timestamptz, $26::timestamptz
+            $8, $9, $10, $11::jsonb, $12::jsonb, $13::jsonb,
+            $14, $15, $16, $17, $18, $19,
+            $20::timestamptz, $21::timestamptz, $22::timestamptz, $23::timestamptz, $24, $25, $26::timestamptz, $27::timestamptz
         )
         ON CONFLICT (tenant_id, campaign_id)
         DO UPDATE SET
@@ -508,6 +516,7 @@ async function persistCampaignRecord(tenantId = DEFAULT_TENANT_ID, record = {}) 
             campaign_description = EXCLUDED.campaign_description,
             status = EXCLUDED.status,
             audience_filters_json = EXCLUDED.audience_filters_json,
+            audience_selection_json = EXCLUDED.audience_selection_json,
             variables_preview_json = EXCLUDED.variables_preview_json,
             total_recipients = EXCLUDED.total_recipients,
             pending_recipients = EXCLUDED.pending_recipients,
@@ -534,6 +543,7 @@ async function persistCampaignRecord(tenantId = DEFAULT_TENANT_ID, record = {}) 
             normalized.campaignDescription,
             normalized.status,
             JSON.stringify(normalized.audienceFiltersJson || {}),
+            JSON.stringify(normalized.audienceSelectionJson || {}),
             JSON.stringify(normalized.variablesPreviewJson || {}),
             normalized.totalRecipients,
             normalized.pendingRecipients,
@@ -860,6 +870,7 @@ async function createCampaign(tenantId = DEFAULT_TENANT_ID, payload = {}) {
         campaignDescription: source.campaignDescription || source.description || null,
         status: source.status || (toIso(source.scheduledAt) ? 'scheduled' : 'draft'),
         audienceFiltersJson: source.audienceFiltersJson || source.audienceFilters || {},
+        audienceSelectionJson: source.audienceSelectionJson || source.audienceSelection || {},
         variablesPreviewJson: source.variablesPreviewJson || source.variablesPreview || {},
         totalRecipients: 0,
         pendingRecipients: 0,
@@ -918,6 +929,7 @@ async function updateCampaign(tenantId = DEFAULT_TENANT_ID, { campaignId = '', p
         campaignDescription: sourcePatch.campaignDescription !== undefined ? sourcePatch.campaignDescription : existing.campaignDescription,
         status: sourcePatch.status !== undefined ? sourcePatch.status : existing.status,
         audienceFiltersJson: sourcePatch.audienceFiltersJson !== undefined ? sourcePatch.audienceFiltersJson : existing.audienceFiltersJson,
+        audienceSelectionJson: sourcePatch.audienceSelectionJson !== undefined ? sourcePatch.audienceSelectionJson : existing.audienceSelectionJson,
         variablesPreviewJson: sourcePatch.variablesPreviewJson !== undefined ? sourcePatch.variablesPreviewJson : existing.variablesPreviewJson,
         scheduledAt: sourcePatch.scheduledAt !== undefined ? sourcePatch.scheduledAt : existing.scheduledAt,
         startedAt: sourcePatch.startedAt !== undefined ? sourcePatch.startedAt : existing.startedAt,
@@ -1470,6 +1482,12 @@ async function seedRecipientsFromFilters(tenantId = DEFAULT_TENANT_ID, options =
     if (!campaign) throw new Error('Campana no encontrada.');
 
     const filters = normalizeObject(options.filters || campaign.audienceFiltersJson);
+    const audienceSelection = normalizeObject(options.audienceSelectionJson || campaign.audienceSelectionJson);
+    const excludedCustomerIds = new Set(
+        ensureArray(audienceSelection.excludedCustomerIds)
+            .map((entry) => toText(entry))
+            .filter(Boolean)
+    );
     const enqueueQueue = options.enqueueQueue === true;
     const candidates = await loadCandidateCustomers(cleanTenantId, campaign, filters);
     const maxAttempts = toInt(options.maxAttempts, 3, { min: 1, max: 10 });
@@ -1478,7 +1496,13 @@ async function seedRecipientsFromFilters(tenantId = DEFAULT_TENANT_ID, options =
         limit: MAX_LIMIT,
         offset: 0
     });
-    const eligibility = computeRecipientEligibility(candidates, existingRecipients.items);
+    const filteredCandidates = excludedCustomerIds.size > 0
+        ? candidates.filter((customer) => {
+            const customerId = toText(customer?.customerId);
+            return !customerId || !excludedCustomerIds.has(customerId);
+        })
+        : candidates;
+    const eligibility = computeRecipientEligibility(filteredCandidates, existingRecipients.items);
 
     const insertedRecipients = [];
     for (const customer of eligibility.eligibleCustomers) {
