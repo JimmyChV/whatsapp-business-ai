@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
+import { isTemplateAllowedInCampaigns } from '../helpers/templateUseCase.helpers';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -268,6 +269,7 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const approvedTemplates = useMemo(() => (Array.isArray(templateItems) ? templateItems : [])
         .filter((entry) => toLower(entry?.status) === 'approved')
+        .filter((entry) => isTemplateAllowedInCampaigns(entry?.useCase))
         .map((entry) => ({
             templateId: toText(entry?.templateId || entry?.metaTemplateId || entry?.templateName),
             templateName: toText(entry?.templateName),
