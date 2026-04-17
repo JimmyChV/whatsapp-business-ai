@@ -15,7 +15,14 @@ import {
 export const ClientProfilePanel = ({ contact, chats = [], onClose, onQuickAiAction, panelRef }) => {
     if (!contact) return null;
 
-    const displayName = firstValue(contact.name, contact.pushname, contact.shortName, 'Contacto');
+    const erpCustomer = contact.erpCustomer && typeof contact.erpCustomer === 'object' ? contact.erpCustomer : null;
+    const erpFullName = [
+        String(erpCustomer?.firstName || erpCustomer?.first_name || '').trim(),
+        String(erpCustomer?.lastNamePaternal || erpCustomer?.last_name_paternal || '').trim(),
+        String(erpCustomer?.lastNameMaternal || erpCustomer?.last_name_maternal || '').trim()
+    ].filter(Boolean).join(' ');
+    const erpDisplayName = firstValue(erpFullName, erpCustomer?.contactName, '');    
+    const displayName = firstValue(erpDisplayName, contact.name, contact.pushname, contact.shortName, 'Contacto');
     const fallbackPhone = String(contact.id || '').replace('@c.us', '').replace('@g.us', '');
     const rawPhone = firstValue(contact.phone, contact.number, contact.user, fallbackPhone);
     const displayPhone = formatPhoneForDisplay(rawPhone);
@@ -105,6 +112,16 @@ export const ClientProfilePanel = ({ contact, chats = [], onClose, onQuickAiActi
         ['Descripcion', firstValue(contact.businessDetails?.description, '--')],
     ].filter(([, value]) => Boolean(String(value || '').trim()));
 
+    const erpRows = erpCustomer ? [
+        ['Codigo cliente', firstValue(erpCustomer?.customerId, '--')],
+        ['Nombre ERP', firstValue(erpDisplayName, '--')],
+        ['Telefono ERP', firstValue(erpCustomer?.phoneE164, '--')],
+        ['Correo', firstValue(erpCustomer?.email, '--')],
+        ['Idioma preferido', firstValue(erpCustomer?.preferredLanguage, '--')],
+        ['Etiquetas', Array.isArray(erpCustomer?.tags) && erpCustomer.tags.length > 0 ? erpCustomer.tags.join(', ') : '--']
+    ] : [];
+    const erpAddresses = Array.isArray(erpCustomer?.addresses) ? erpCustomer.addresses : [];
+
     const quickActions = [
         { label: 'Redactar saludo', prompt: 'Redacta un saludo personalizado y profesional para este cliente.' },
         { label: 'Crear propuesta de venta', prompt: 'Crea una propuesta de venta persuasiva para este cliente basada en la conversacion.' },
@@ -167,6 +184,45 @@ export const ClientProfilePanel = ({ contact, chats = [], onClose, onQuickAiActi
                         ))}
                     </div>
                 </div>
+
+                {erpCustomer && (
+                    <div className="client-profile-card client-profile-card--erp">
+                        <div className="client-profile-card-title">Datos del cliente</div>
+                        <div className="client-profile-grid">
+                            {erpRows.map(([label, value]) => (
+                                <React.Fragment key={label}>
+                                    <span className="client-profile-key">{label}</span>
+                                    <span className="client-profile-value">{value}</span>
+                                </React.Fragment>
+                            ))}
+                        </div>
+                        {erpAddresses.length > 0 && (
+                            <div className="client-profile-subsection">
+                                <div className="client-profile-subsection-title">Direcciones ERP</div>
+                                <div className="client-profile-address-list">
+                                    {erpAddresses.map((address, index) => {
+                                        const street = String(address?.street || '').trim();
+                                        const location = [
+                                            String(address?.districtName || '').trim(),
+                                            String(address?.provinceName || '').trim(),
+                                            String(address?.departmentName || '').trim()
+                                        ].filter(Boolean).join(' - ');
+                                        return (
+                                            <div key={String(address?.addressId || index)} className="client-profile-address-item">
+                                                <div className="client-profile-address-line">
+                                                    {street || 'Direccion sin detalle'}
+                                                </div>
+                                                <div className="client-profile-address-meta">
+                                                    {location || 'Ubicacion no registrada'}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 <div className="client-profile-card">
                     <div className="client-profile-card-title">Estado del chat</div>

@@ -680,15 +680,44 @@ export default function useSocketChatConversationEvents({
         socket.on('contact_info', (contact) => {
             const participantsList = normalizeParticipantList(contact?.participantsList);
             const participantsCount = Number(contact?.participants || contact?.chatState?.participantsCount || participantsList.length || 0) || 0;
+            const erpCustomer = contact?.erpCustomer && typeof contact.erpCustomer === 'object'
+                ? {
+                    ...contact.erpCustomer,
+                    contactName: sanitizeDisplayText(contact?.erpCustomer?.contactName || ''),
+                    firstName: sanitizeDisplayText(contact?.erpCustomer?.firstName || contact?.erpCustomer?.first_name || ''),
+                    lastNamePaternal: sanitizeDisplayText(contact?.erpCustomer?.lastNamePaternal || contact?.erpCustomer?.last_name_paternal || ''),
+                    lastNameMaternal: sanitizeDisplayText(contact?.erpCustomer?.lastNameMaternal || contact?.erpCustomer?.last_name_maternal || ''),
+                    email: sanitizeDisplayText(contact?.erpCustomer?.email || ''),
+                    preferredLanguage: sanitizeDisplayText(contact?.erpCustomer?.preferredLanguage || ''),
+                    tags: Array.isArray(contact?.erpCustomer?.tags)
+                        ? contact.erpCustomer.tags.map((entry) => sanitizeDisplayText(entry || '')).filter(Boolean)
+                        : [],
+                    addresses: Array.isArray(contact?.erpCustomer?.addresses)
+                        ? contact.erpCustomer.addresses.map((address = {}) => ({
+                            ...address,
+                            street: sanitizeDisplayText(address?.street || ''),
+                            districtName: sanitizeDisplayText(address?.districtName || ''),
+                            provinceName: sanitizeDisplayText(address?.provinceName || ''),
+                            departmentName: sanitizeDisplayText(address?.departmentName || '')
+                        }))
+                        : []
+                }
+                : null;
+            const erpDisplayName = [
+                String(erpCustomer?.firstName || '').trim(),
+                String(erpCustomer?.lastNamePaternal || '').trim(),
+                String(erpCustomer?.lastNameMaternal || '').trim()
+            ].filter(Boolean).join(' ') || sanitizeDisplayText(erpCustomer?.contactName || '');
             const normalizedContact = {
                 ...contact,
-                name: sanitizeDisplayText(contact?.name || ''),
+                name: sanitizeDisplayText(erpDisplayName || contact?.name || ''),
                 pushname: sanitizeDisplayText(contact?.pushname || ''),
                 shortName: sanitizeDisplayText(contact?.shortName || ''),
                 profilePicUrl: normalizeProfilePhotoUrl(contact?.profilePicUrl),
                 status: repairMojibake(contact?.status || ''),
                 participants: participantsCount,
                 participantsList,
+                erpCustomer,
                 chatState: {
                     ...(contact?.chatState || {}),
                     participantsCount
@@ -710,7 +739,7 @@ export default function useSocketChatConversationEvents({
                 const existing = prev.find((c) => chatIdsReferSameScope(String(c?.id || ''), contactId));
                 if (!existing) return prev;
 
-                const fallbackName = sanitizeDisplayText(contact?.name || contact?.pushname || contact?.shortName || existing?.name || '');
+                const fallbackName = sanitizeDisplayText(erpDisplayName || contact?.name || contact?.pushname || contact?.shortName || existing?.name || '');
                 const subtitleName = sanitizeDisplayText(contact?.pushname || contact?.shortName || contact?.name || '');
                 const nextChat = {
                     ...existing,
@@ -724,7 +753,9 @@ export default function useSocketChatConversationEvents({
                     status: normalizedContact.status || existing?.status || '',
                     profilePicUrl: normalizedContact.profilePicUrl || existing?.profilePicUrl || null,
                     participants: normalizedContact.participants || existing?.participants || 0,
-                    participantsList: normalizedContact.participantsList || existing?.participantsList || []
+                    participantsList: normalizedContact.participantsList || existing?.participantsList || [],
+                    customerId: erpCustomer?.customerId || existing?.customerId || null,
+                    erpCustomerName: erpDisplayName || existing?.erpCustomerName || null
                 };
 
                 if (!chatMatchesQuery(nextChat, chatSearchRef.current) || !chatMatchesFilters(nextChat, chatFiltersRef.current)) {
