@@ -162,6 +162,27 @@ function createSocketWaEventsBridgeService({
             const location = extractLocationInfo(msg);
             const referral = msg?.referral && typeof msg.referral === 'object' ? msg.referral : null;
             const hasReferral = Boolean(referral && Object.keys(referral).length > 0);
+            const quotedPreviewBody = String(
+                msg?.quotedMsg?.body
+                || msg?._data?.quotedMsg?.body
+                || msg?._data?.quotedMsg?.caption
+                || msg?._data?.quotedMsgObj?.body
+                || msg?._data?.quotedMsgObj?.caption
+                || ''
+            ).trim();
+            const quotedPreviewHasMedia = Boolean(
+                msg?.quotedMsg?.hasMedia
+                || msg?._data?.quotedMsg?.hasMedia
+                || msg?._data?.quotedMsgObj?.hasMedia
+            );
+            const quotedPreviewId = String(
+                msg?.quotedMsg?.id?._serialized
+                || msg?.quotedMsg?.id
+                || msg?._data?.quotedMsg?.id?._serialized
+                || msg?._data?.quotedMsg?.id
+                || msg?._data?.quotedStanzaID
+                || ''
+            ).trim();
             const inboundMessagePayload = {
                 id: messageId,
                 chatId: scopedChatId || relatedChatIdBase,
@@ -191,7 +212,15 @@ function createSocketWaEventsBridgeService({
                 referral: referral || null,
                 order,
                 location,
-                quotedMessage: null,
+                quotedMessage: quotedPreviewId
+                    ? {
+                        id: quotedPreviewId,
+                        body: quotedPreviewBody || (quotedPreviewHasMedia ? 'Adjunto' : 'Mensaje'),
+                        fromMe: false,
+                        hasMedia: quotedPreviewHasMedia,
+                        type: quotedPreviewHasMedia ? 'media' : 'chat'
+                    }
+                    : null,
                 sentViaModuleId: moduleAttributionMeta?.sentViaModuleId || null,
                 sentViaModuleName: moduleAttributionMeta?.sentViaModuleName || null,
                 sentViaModuleImageUrl: moduleAttributionMeta?.sentViaModuleImageUrl || null,

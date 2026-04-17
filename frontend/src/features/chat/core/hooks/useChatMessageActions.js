@@ -115,6 +115,7 @@ export default function useChatMessageActions({
     chatId,
     body = '',
     hasMedia = false,
+    type = 'chat',
     mimetype = null,
     filename = null,
     mediaData = null,
@@ -134,6 +135,7 @@ export default function useChatMessageActions({
       body: String(body || ''),
       timestamp,
       ack: 0,
+      type: String(type || (hasMedia ? 'media' : 'chat')).trim() || 'chat',
       status: 'sending',
       optimistic: true,
       hasMedia: Boolean(hasMedia),
@@ -174,6 +176,17 @@ export default function useChatMessageActions({
       type: String(replyingMessage?.type || 'chat')
     };
   }, [replyingMessage]);
+
+  const resolveOptimisticMediaType = useCallback((mimetype = '', fileName = '') => {
+    const safeMime = String(mimetype || '').trim().toLowerCase();
+    const safeFileName = String(fileName || '').trim().toLowerCase();
+    if (safeMime.startsWith('image/')) return 'image';
+    if (safeMime.startsWith('video/')) return 'video';
+    if (safeMime.startsWith('audio/')) return 'audio';
+    if (safeMime === 'application/pdf') return 'document';
+    if (safeMime || safeFileName) return 'document';
+    return 'media';
+  }, []);
 
   const handleExitActiveChat = useCallback(() => {
     activeChatIdRef.current = null;
@@ -454,6 +467,38 @@ export default function useChatMessageActions({
     if (draftQuickReply && !attachment) {
       const outboundText = String(text || draftQuickReply.text || '').trim();
       const draftMediaAssets = Array.isArray(draftQuickReply.mediaAssets) ? draftQuickReply.mediaAssets : [];
+      const primaryAsset = draftMediaAssets[0] || null;
+      const primaryMimeType = String(draftQuickReply.mediaMimeType || primaryAsset?.mimeType || '').trim().toLowerCase();
+      const primaryFileName = String(draftQuickReply.mediaFileName || primaryAsset?.fileName || '').trim();
+      if (draftMediaAssets.length > 0) {
+        insertOptimisticOutgoing({
+          chatId: activeChatId,
+          body: outboundText || primaryFileName || 'Adjunto',
+          hasMedia: true,
+          type: resolveOptimisticMediaType(primaryMimeType, primaryFileName),
+          mimetype: primaryMimeType || null,
+          filename: primaryFileName || null,
+          quotedMessage,
+          retryPayload: {
+            eventName: 'send_quick_reply',
+            payload: {
+              quickReplyId: draftQuickReply.id || undefined,
+              quickReply: {
+                id: draftQuickReply.id || undefined,
+                label: draftQuickReply.label || undefined,
+                text: outboundText,
+                mediaAssets: draftMediaAssets,
+                mediaUrl: String(draftQuickReply.mediaUrl || primaryAsset?.url || '').trim() || null,
+                mediaMimeType: primaryMimeType || null,
+                mediaFileName: primaryFileName || null
+              },
+              to: activeChatId,
+              toPhone,
+              quotedMessageId
+            }
+          }
+        });
+      }
       socket.emit('send_quick_reply', {
         quickReplyId: draftQuickReply.id || undefined,
         quickReply: {
@@ -487,8 +532,9 @@ export default function useChatMessageActions({
       };
       insertOptimisticOutgoing({
         chatId: activeChatId,
-        body: inputText,
+        body: String(inputText || '').trim() || String(attachment.filename || '').trim() || 'Adjunto',
         hasMedia: true,
+        type: resolveOptimisticMediaType(attachment.mimetype, attachment.filename),
         mimetype: attachment.mimetype,
         filename: attachment.filename,
         mediaData: attachment.data,
@@ -526,6 +572,7 @@ export default function useChatMessageActions({
     insertOptimisticOutgoing,
     normalizeDigits,
     normalizeQuickReplyDraft,
+    resolveOptimisticMediaType,
     quickReplyDraft,
     removeAttachment,
     replyingMessage,
