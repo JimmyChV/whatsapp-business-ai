@@ -609,6 +609,27 @@ function createSocketWaEventsBridgeService({
                 scheduleEditabilityRefresh(messageId, scopedChatId || baseChatId, [900, 2600]);
             }
         });
+
+        waClient.on('message_reaction', ({ messageId, emoji, senderId, chatId, timestamp }) => {
+            const cleanMessageId = String(messageId || '').trim();
+            const cleanEmoji = String(emoji || '').trim();
+            if (!cleanMessageId || !cleanEmoji) return;
+
+            const runtimeModuleContext = resolveHistoryModuleContext();
+            const scopeModuleId = normalizeScopedModuleId(runtimeModuleContext?.moduleId || '');
+            const baseChatId = String(chatId || '').trim();
+            const scopedChatId = buildScopedChatId(baseChatId, scopeModuleId || '');
+
+            emitToRuntimeContext('message_reaction', {
+                messageId: cleanMessageId,
+                emoji: cleanEmoji,
+                senderId: String(senderId || '').trim() || null,
+                chatId: scopedChatId || baseChatId || null,
+                baseChatId: baseChatId || null,
+                scopeModuleId: scopeModuleId || null,
+                timestamp: Number(timestamp || 0) || Math.floor(Date.now() / 1000)
+            });
+        });
     };
 
     return {

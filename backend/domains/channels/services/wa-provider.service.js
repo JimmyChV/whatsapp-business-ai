@@ -42,7 +42,7 @@ class WAProvider extends EventEmitter {
         this.unbindAdapterEvents();
         if (!adapter || typeof adapter.on !== 'function') return;
 
-        const events = ['qr', 'ready', 'authenticated', 'auth_failure', 'disconnected', 'message', 'message_sent', 'message_ack', 'message_edit'];
+        const events = ['qr', 'ready', 'authenticated', 'auth_failure', 'disconnected', 'message', 'message_sent', 'message_ack', 'message_edit', 'message_reaction'];
         events.forEach((eventName) => {
             const handler = (...args) => this.emit(eventName, ...args);
             adapter.on(eventName, handler);

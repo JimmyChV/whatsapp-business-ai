@@ -198,6 +198,16 @@ const MessageBubble = ({
             type: String(msg.quotedMessage?.type || 'chat')
         }
         : null;
+    const reactionSummary = Array.isArray(msg?.reactions)
+        ? Object.entries(
+            msg.reactions.reduce((acc, reaction) => {
+                const emoji = String(reaction?.emoji || '').trim();
+                if (!emoji) return acc;
+                acc[emoji] = (acc[emoji] || 0) + 1;
+                return acc;
+            }, {})
+        )
+        : [];
 
     const hasMenuActions = Boolean(canReplyMessage || canForwardMessage || canEditMessage);
     const forwardNeedle = normalizeSearchText(forwardSearch);
@@ -793,6 +803,36 @@ const MessageBubble = ({
                     {msg?.edited && <span className="message-edited-badge">editado</span>}
                     {renderStatus()}
                 </div>
+                {reactionSummary.length > 0 && (
+                    <div style={{
+                        marginTop: '6px',
+                        display: 'flex',
+                        gap: '6px',
+                        flexWrap: 'wrap',
+                        alignSelf: isOut ? 'flex-end' : 'flex-start'
+                    }}>
+                        {reactionSummary.map(([emoji, count]) => (
+                            <span
+                                key={emoji}
+                                style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    padding: '2px 8px',
+                                    borderRadius: '999px',
+                                    background: 'rgba(14, 27, 35, 0.82)',
+                                    border: '1px solid rgba(124,200,255,0.28)',
+                                    fontSize: '0.78rem',
+                                    color: '#dceaf1',
+                                    boxShadow: '0 6px 16px rgba(0,0,0,0.18)'
+                                }}
+                            >
+                                <span>{emoji}</span>
+                                {count > 1 && <span style={{ fontSize: '0.68rem', color: '#9fc3d4' }}>{count}</span>}
+                            </span>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );

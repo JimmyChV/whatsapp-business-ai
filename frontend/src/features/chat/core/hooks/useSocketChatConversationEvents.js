@@ -307,6 +307,7 @@ export default function useSocketChatConversationEvents({
                         editedAt: Number(m?.editedAt || 0) || null,
                         canEdit: Boolean(m?.canEdit),
                         quotedMessage: normalizeQuotedMessage(m?.quotedMessage),
+                        reactions: Array.isArray(m?.reactions) ? m.reactions : [],
                         sentViaModuleImageUrl: normalizeModuleImageUrl(m?.sentViaModuleImageUrl || '') || null
                     };
 
@@ -394,6 +395,39 @@ export default function useSocketChatConversationEvents({
                     fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(message?.fileSizeBytes)) ? Number(message.fileSizeBytes) : null),
                     quotedMessage: normalizeQuotedMessage(quotedMessage || message?.quotedMessage),
                     updatedAt: String(updatedAt || '').trim() || message?.updatedAt || null
+                };
+            }));
+        });
+
+        socket.on('message_reaction', ({ messageId, emoji, senderId, chatId, baseChatId, scopeModuleId, timestamp }) => {
+            const safeMessageId = String(messageId || '').trim();
+            const safeEmoji = String(emoji || '').trim();
+            if (!safeMessageId || !safeEmoji) return;
+
+            const incomingChatId = normalizeChatScopedId(chatId || baseChatId || '', scopeModuleId || '');
+            const active = String(activeChatIdRef.current || '');
+            if (incomingChatId && active && !chatIdsReferSameScope(incomingChatId, active)) return;
+
+            setMessages((prev) => prev.map((message) => {
+                if (String(message?.id || '').trim() !== safeMessageId) return message;
+
+                const existingReactions = Array.isArray(message?.reactions) ? message.reactions : [];
+                const safeSenderId = String(senderId || '').trim() || null;
+                const nextReaction = {
+                    emoji: safeEmoji,
+                    senderId: safeSenderId,
+                    timestamp: Number(timestamp || 0) || Math.floor(Date.now() / 1000)
+                };
+
+                const deduped = existingReactions.filter((reaction) => {
+                    const reactionSenderId = String(reaction?.senderId || '').trim() || null;
+                    if (!safeSenderId) return true;
+                    return reactionSenderId !== safeSenderId;
+                });
+
+                return {
+                    ...message,
+                    reactions: [...deduped, nextReaction]
                 };
             }));
         });
@@ -537,7 +571,8 @@ export default function useSocketChatConversationEvents({
                     filename: normalizeMessageFilename(msg?.filename),
                     fileSizeBytes: Number.isFinite(Number(msg?.fileSizeBytes)) ? Number(msg.fileSizeBytes) : null,
                     canEdit: Boolean(msg?.canEdit),
-                    quotedMessage: normalizeQuotedMessage(msg?.quotedMessage)
+                    quotedMessage: normalizeQuotedMessage(msg?.quotedMessage),
+                    reactions: Array.isArray(msg?.reactions) ? msg.reactions : []
                 };
 
                 const fallbackSessionName = normalizedIncoming?.fromMe
@@ -571,6 +606,9 @@ export default function useSocketChatConversationEvents({
                             sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || existing?.sentViaModuleImageUrl || '') || null,
                             sentViaTransport: String(normalizedIncoming?.sentViaTransport || existing?.sentViaTransport || '').trim() || null,
                             quotedMessage: normalizeQuotedMessage(normalizedIncoming?.quotedMessage || existing?.quotedMessage),
+                            reactions: Array.isArray(normalizedIncoming?.reactions) && normalizedIncoming.reactions.length > 0
+                                ? normalizedIncoming.reactions
+                                : (Array.isArray(existing?.reactions) ? existing.reactions : []),
                             order: incomingOrder
                                 ? {
                                     ...(existingOrder || {}),
@@ -658,6 +696,7 @@ export default function useSocketChatConversationEvents({
                 'chat_history',
                 'chat_media',
                 'message_updated',
+                'message_reaction',
                 'chat_opened',
                 'start_new_chat_error',
                 'chat_labels_updated',

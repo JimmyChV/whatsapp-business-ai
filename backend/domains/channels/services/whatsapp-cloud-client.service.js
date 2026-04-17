@@ -1173,7 +1173,21 @@ class WhatsAppCloudClient extends EventEmitter {
             });
         }
 
-        if (type === 'text') {
+        if (type === 'reaction') {
+            const reaction = msg?.reaction && typeof msg.reaction === 'object' ? msg.reaction : {};
+            const emoji = String(reaction?.emoji || '').trim();
+            const targetMessageId = String(reaction?.message_id || reaction?.messageId || '').trim();
+            if (emoji && targetMessageId) {
+                this.emit('message_reaction', {
+                    chatId,
+                    messageId: targetMessageId,
+                    emoji,
+                    senderId: chatId,
+                    timestamp: safeTimestamp(msg?.timestamp)
+                });
+            }
+            return null;
+        } else if (type === 'text') {
             base.type = 'chat';
             base.body = String(msg?.text?.body || '').trim();
         } else if (type === 'image') {
