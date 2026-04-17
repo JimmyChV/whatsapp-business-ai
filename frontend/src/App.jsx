@@ -169,6 +169,8 @@ function App() {
     chatSearchRef,
     chatFiltersRef,
     chatPagingRef,
+    messagesCacheRef,
+    pendingOutgoingByChatRef,
     shouldInstantScrollRef,
     prevMessagesMetaRef,
     suppressSmoothScrollUntilRef,
