@@ -175,7 +175,10 @@ function createCampaignDispatcherJob({
 
     async function ensureCloudTransportForModule(moduleContext = null) {
         if (!moduleContext) throw new Error('module_unavailable');
-        const cloudConfig = waModuleService.resolveModuleCloudConfig(moduleContext);
+        const cloudConfig = {
+            ...(waModuleService.resolveModuleCloudConfig(moduleContext) || {}),
+            tenantId: String(moduleContext?.tenantId || '').trim() || null
+        };
         waClient.setCloudRuntimeConfig(cloudConfig || {});
         const runtime = waClient.getRuntimeInfo?.() || {};
         if (String(runtime?.activeTransport || '').trim().toLowerCase() !== 'cloud') {

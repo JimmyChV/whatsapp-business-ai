@@ -63,12 +63,10 @@ function createSocketCatalogDeliveryService({
 
                 if (imageUrl) {
                     const maxCatalogImageBytes = Number(process.env.CATALOG_IMAGE_MAX_BYTES || 4 * 1024 * 1024);
-                    const media = await fetchCatalogProductImage(imageUrl, {
+                    const compatibleMedia = await fetchCatalogProductImage(imageUrl, {
+                        tenantId,
                         maxBytes: maxCatalogImageBytes,
                         timeoutMs: Number(process.env.CATALOG_IMAGE_TIMEOUT_MS || 7000)
-                    });
-                    const compatibleMedia = await ensureCloudApiCompatibleCatalogImage(media, {
-                        maxBytes: maxCatalogImageBytes
                     });
 
                     if (compatibleMedia) {
@@ -90,8 +88,8 @@ function createSocketCatalogDeliveryService({
                             mediaUrl: String(compatibleMedia?.publicUrl || compatibleMedia?.sourceUrl || imageUrl || '').trim() || null,
                             mediaPath: String(compatibleMedia?.relativePath || '').trim() || null
                         };
-                    } else if (media?.mimetype) {
-                        console.warn('[WA][SendCatalogProduct] media no compatible para Cloud API (' + String(media.mimetype) + '), se enviara solo texto.');
+                    } else {
+                        console.warn('[WA][SendCatalogProduct] no se pudo resolver media compatible; se enviara solo texto.');
                     }
                 }
 

@@ -157,6 +157,7 @@ function compactObject(input = {}) {
 function normalizeRuntimeCloudConfig(input = {}) {
     const source = input && typeof input === 'object' ? input : {};
     const normalized = {
+        tenantId: String(source.tenantId || source.tenant_id || '').trim() || null,
         appId: String(source.appId || source.app_id || '').trim() || null,
         appSecret: String(source.appSecret || source.app_secret || '').trim() || null,
         systemUserToken: String(source.systemUserToken || source.system_user_token || '').trim() || null,

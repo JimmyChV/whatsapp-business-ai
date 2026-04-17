@@ -27,8 +27,50 @@ function createMessageMediaAssetsHelpers(deps = {}) {
         getSharpImageProcessor,
         SAAS_UPLOADS_ROOT,
         QUICK_REPLY_MEDIA_MAX_BYTES,
-        QUICK_REPLY_MEDIA_TIMEOUT_MS
+        QUICK_REPLY_MEDIA_TIMEOUT_MS,
+        processedMediaCache
     } = deps;
+
+    function buildProcessedMediaCacheKey(tenantId = '', sourceKey = '', variant = 'raw') {
+        const safeTenantId = String(tenantId || '').trim();
+        const safeSourceKey = String(sourceKey || '').trim();
+        const safeVariant = String(variant || 'raw').trim().toLowerCase() || 'raw';
+        if (!safeTenantId || !safeSourceKey) return '';
+        return `${safeTenantId}:${safeVariant}:${safeSourceKey}`;
+    }
+
+    function cloneProcessedMediaEntry(entry = null) {
+        if (!entry || typeof entry !== 'object') return null;
+        return {
+            mediaData: String(entry.mediaData || ''),
+            mimetype: String(entry.mimetype || '').trim() || null,
+            extension: String(entry.extension || '').trim() || null,
+            filename: String(entry.filename || '').trim() || null,
+            sourceUrl: String(entry.sourceUrl || '').trim() || null,
+            publicUrl: String(entry.publicUrl || '').trim() || null,
+            relativePath: String(entry.relativePath || '').trim() || null,
+            fileSizeBytes: Number(entry.fileSizeBytes || 0) || null,
+            convertedFrom: String(entry.convertedFrom || '').trim() || null,
+            cachedAt: Number(entry.cachedAt || Date.now()) || Date.now()
+        };
+    }
+
+    function getProcessedMediaFromCache(tenantId = '', sourceKey = '', variant = 'raw') {
+        if (!(processedMediaCache instanceof Map)) return null;
+        const cacheKey = buildProcessedMediaCacheKey(tenantId, sourceKey, variant);
+        if (!cacheKey) return null;
+        return cloneProcessedMediaEntry(processedMediaCache.get(cacheKey));
+    }
+
+    function setProcessedMediaCacheEntry(tenantId = '', sourceKey = '', media = null, variant = 'raw') {
+        if (!(processedMediaCache instanceof Map)) return null;
+        const cacheKey = buildProcessedMediaCacheKey(tenantId, sourceKey, variant);
+        const normalized = cloneProcessedMediaEntry(media);
+        if (!cacheKey || !normalized?.mediaData) return null;
+        normalized.cachedAt = Date.now();
+        processedMediaCache.set(cacheKey, normalized);
+        return cloneProcessedMediaEntry(normalized);
+    }
 
     function slugifyFileName(value = 'producto') {
         const clean = String(value || '')
@@ -291,12 +333,15 @@ function createMessageMediaAssetsHelpers(deps = {}) {
         }
     }
 
-    async function fetchQuickReplyMedia(rawUrl = '', { maxBytes = QUICK_REPLY_MEDIA_MAX_BYTES, timeoutMs = QUICK_REPLY_MEDIA_TIMEOUT_MS, mimeHint = '', fileNameHint = '' } = {}) {
+    async function fetchQuickReplyMedia(rawUrl = '', { tenantId = 'default', maxBytes = QUICK_REPLY_MEDIA_MAX_BYTES, timeoutMs = QUICK_REPLY_MEDIA_TIMEOUT_MS, mimeHint = '', fileNameHint = '' } = {}) {
         const cleanUrl = String(rawUrl || '').trim();
         const cleanMimeHint = String(mimeHint || '').trim().toLowerCase();
         const safeMaxBytes = Math.max(256 * 1024, Number(maxBytes || QUICK_REPLY_MEDIA_MAX_BYTES || (50 * 1024 * 1024)));
         const safeTimeoutMs = Math.max(2000, Number(timeoutMs || QUICK_REPLY_MEDIA_TIMEOUT_MS || 15000));
         if (!cleanUrl) return null;
+
+        const cachedMedia = getProcessedMediaFromCache(tenantId, cleanUrl, 'raw');
+        if (cachedMedia) return cachedMedia;
 
         const dataUrlMatch = cleanUrl.match(/^data:([^;]+);base64,(.+)$/i);
         if (dataUrlMatch) {
@@ -309,7 +354,7 @@ function createMessageMediaAssetsHelpers(deps = {}) {
                     sourceUrl: '',
                     mimeType: mimetype
                 });
-                return {
+                const inlineMedia = {
                     mediaData: mediaBuffer.toString('base64'),
                     mimetype,
                     filename,
@@ -318,6 +363,7 @@ function createMessageMediaAssetsHelpers(deps = {}) {
                     publicUrl: null,
                     relativePath: null
                 };
+                return setProcessedMediaCacheEntry(tenantId, cleanUrl, inlineMedia, 'raw') || inlineMedia;
             } catch (e) {
                 return null;
             }
@@ -338,7 +384,7 @@ function createMessageMediaAssetsHelpers(deps = {}) {
                     sourceUrl: localReference.sourceUrl || localReference.publicUrl || '',
                     mimeType: guessedMime
                 });
-                return {
+                const localMedia = {
                     mediaData: mediaBuffer.toString('base64'),
                     mimetype: guessedMime,
                     filename,
@@ -347,6 +393,7 @@ function createMessageMediaAssetsHelpers(deps = {}) {
                     publicUrl: localReference.publicUrl || null,
                     relativePath: localReference.relativePath || null
                 };
+                return setProcessedMediaCacheEntry(tenantId, cleanUrl, localMedia, 'raw') || localMedia;
             } catch (e) {
                 return null;
             }
@@ -400,7 +447,7 @@ function createMessageMediaAssetsHelpers(deps = {}) {
             mimeType: mimetype
         });
 
-        return {
+        const fetchedMedia = {
             mediaData: mediaBuffer.toString('base64'),
             mimetype,
             filename,
@@ -409,11 +456,15 @@ function createMessageMediaAssetsHelpers(deps = {}) {
             publicUrl: parsed.toString(),
             relativePath: null
         };
+        return setProcessedMediaCacheEntry(tenantId, cleanUrl, fetchedMedia, 'raw') || fetchedMedia;
     }
 
-    async function fetchCatalogProductImageFromUrl(rawUrl, { maxBytes = 4 * 1024 * 1024, timeoutMs = 7000 } = {}) {
+    async function fetchCatalogProductImageFromUrl(rawUrl, { tenantId = 'default', maxBytes = 4 * 1024 * 1024, timeoutMs = 7000 } = {}) {
         const cleanUrl = String(rawUrl || '').trim();
         if (!cleanUrl || !/^https?:\/\//i.test(cleanUrl)) return null;
+
+        const cachedMedia = getProcessedMediaFromCache(tenantId, cleanUrl, 'raw');
+        if (cachedMedia) return cachedMedia;
 
         const localReference = resolveLocalUploadReference(cleanUrl);
         if (localReference) {
@@ -467,7 +518,7 @@ function createMessageMediaAssetsHelpers(deps = {}) {
         const imageBuffer = Buffer.from(await response.arrayBuffer());
         if (!imageBuffer.length || imageBuffer.length > maxBytes) return null;
 
-        return {
+        const fetchedImage = {
             mediaData: imageBuffer.toString('base64'),
             mimetype: contentType,
             extension: CATALOG_IMAGE_EXT_BY_MIME[contentType] || 'jpg',
@@ -476,9 +527,13 @@ function createMessageMediaAssetsHelpers(deps = {}) {
             relativePath: null,
             fileSizeBytes: Number(imageBuffer.length || 0) || null
         };
+        return setProcessedMediaCacheEntry(tenantId, cleanUrl, fetchedImage, 'raw') || fetchedImage;
     }
 
-    async function fetchCatalogProductImage(imageUrl, { maxBytes = 4 * 1024 * 1024, timeoutMs = 7000 } = {}) {
+    async function fetchCatalogProductImage(imageUrl, { tenantId = 'default', maxBytes = 4 * 1024 * 1024, timeoutMs = 7000 } = {}) {
+        const cachedMedia = getProcessedMediaFromCache(tenantId, imageUrl, 'raw');
+        if (cachedMedia) return cachedMedia;
+
         const inline = parseCatalogImageDataUrl(imageUrl, { maxBytes });
         if (inline) return inline;
 
@@ -493,10 +548,12 @@ function createMessageMediaAssetsHelpers(deps = {}) {
 
         let fallbackUnsupported = null;
         for (const candidate of candidates) {
+            const cachedCandidateMedia = getProcessedMediaFromCache(tenantId, candidate, 'raw');
+            if (cachedCandidateMedia) return cachedCandidateMedia;
             const localCandidate = resolveLocalUploadReference(candidate);
             const media = localCandidate
                 ? await fetchCatalogProductImageFromLocalUpload(localCandidate, { maxBytes })
-                : await fetchCatalogProductImageFromUrl(candidate, { maxBytes, timeoutMs });
+                : await fetchCatalogProductImageFromUrl(candidate, { tenantId, maxBytes, timeoutMs });
             if (!media) continue;
             const mediaMime = String(media?.mimetype || '').trim().toLowerCase();
             if (CLOUD_CATALOG_COMPATIBLE_MIME.has(mediaMime)) return media;
@@ -506,13 +563,16 @@ function createMessageMediaAssetsHelpers(deps = {}) {
         return fallbackUnsupported;
     }
 
-    async function ensureCloudApiCompatibleCatalogImage(media = null, { maxBytes = 4 * 1024 * 1024 } = {}) {
+    async function ensureCloudApiCompatibleCatalogImage(media = null, { tenantId = 'default', cacheKey = '', maxBytes = 4 * 1024 * 1024 } = {}) {
         if (!media || typeof media !== 'object') return null;
+        const sourceCacheKey = String(cacheKey || media?.sourceUrl || media?.publicUrl || '').trim();
+        const cachedMedia = getProcessedMediaFromCache(tenantId, sourceCacheKey, 'cloud-compatible');
+        if (cachedMedia) return cachedMedia;
         const mediaMime = String(media?.mimetype || '').trim().toLowerCase();
         if (!mediaMime.startsWith('image/')) return null;
 
         if (CLOUD_CATALOG_COMPATIBLE_MIME.has(mediaMime)) {
-            return {
+            const compatibleMedia = {
                 mediaData: String(media.mediaData || ''),
                 mimetype: mediaMime,
                 extension: CATALOG_IMAGE_EXT_BY_MIME[mediaMime] || 'jpg',
@@ -521,6 +581,7 @@ function createMessageMediaAssetsHelpers(deps = {}) {
                 relativePath: String(media?.relativePath || '').trim() || null,
                 fileSizeBytes: Number(media?.fileSizeBytes || 0) || null
             };
+            return setProcessedMediaCacheEntry(tenantId, sourceCacheKey, compatibleMedia, 'cloud-compatible') || compatibleMedia;
         }
 
         const sharp = getSharpImageProcessor();
@@ -538,7 +599,7 @@ function createMessageMediaAssetsHelpers(deps = {}) {
 
             if (!convertedBuffer.length || convertedBuffer.length > maxBytes) return null;
 
-            return {
+            const convertedMedia = {
                 mediaData: convertedBuffer.toString('base64'),
                 mimetype: 'image/jpeg',
                 extension: 'jpg',
@@ -548,9 +609,32 @@ function createMessageMediaAssetsHelpers(deps = {}) {
                 relativePath: String(media?.relativePath || '').trim() || null,
                 fileSizeBytes: Number(convertedBuffer.length || 0) || null
             };
+            return setProcessedMediaCacheEntry(tenantId, sourceCacheKey, convertedMedia, 'cloud-compatible') || convertedMedia;
         } catch (error) {
             return null;
         }
+    }
+
+    async function resolveQuickReplyMediaForSend(rawUrl = '', options = {}) {
+        return await fetchQuickReplyMedia(rawUrl, options);
+    }
+
+    async function resolveCatalogProductMediaForSend(imageUrl = '', {
+        tenantId = 'default',
+        maxBytes = 4 * 1024 * 1024,
+        timeoutMs = 7000
+    } = {}) {
+        const fetchedMedia = await fetchCatalogProductImage(imageUrl, {
+            tenantId,
+            maxBytes,
+            timeoutMs
+        });
+        if (!fetchedMedia) return null;
+        return await ensureCloudApiCompatibleCatalogImage(fetchedMedia, {
+            tenantId,
+            cacheKey: imageUrl,
+            maxBytes
+        });
     }
 
     return {
@@ -568,7 +652,12 @@ function createMessageMediaAssetsHelpers(deps = {}) {
         fetchQuickReplyMedia,
         fetchCatalogProductImageFromUrl,
         fetchCatalogProductImage,
-        ensureCloudApiCompatibleCatalogImage
+        ensureCloudApiCompatibleCatalogImage,
+        resolveQuickReplyMediaForSend,
+        resolveCatalogProductMediaForSend,
+        buildProcessedMediaCacheKey,
+        getProcessedMediaFromCache,
+        setProcessedMediaCacheEntry
     };
 }
 
