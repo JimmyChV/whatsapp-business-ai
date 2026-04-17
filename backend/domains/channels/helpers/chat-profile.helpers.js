@@ -1,11 +1,30 @@
 const { coerceHumanPhone, isLidIdentifier } = require('./chat-scope.helpers');
 
+function toText(value = '') {
+    return String(value ?? '').trim();
+}
+
+function buildErpCustomerDisplayName(customer = null) {
+    if (!customer || typeof customer !== 'object') return '';
+
+    const fullName = [
+        toText(customer.firstName || customer.first_name),
+        toText(customer.lastNamePaternal || customer.last_name_paternal),
+        toText(customer.lastNameMaternal || customer.last_name_maternal)
+    ].filter(Boolean).join(' ');
+    if (fullName) return fullName;
+
+    return toText(customer.contactName || customer.contact_name);
+}
+
 function resolveChatDisplayName(chat) {
     if (!chat) return 'Sin nombre';
 
     const contact = chat.contact || null;
     const chatId = String(chat?.id?._serialized || '');
+    const erpCustomer = chat?.erpCustomer && typeof chat.erpCustomer === 'object' ? chat.erpCustomer : null;
     const candidates = [
+        buildErpCustomerDisplayName(erpCustomer),
         String(chat.name || '').trim(),
         String(chat.formattedTitle || '').trim(),
         String(contact?.name || '').trim(),
@@ -229,6 +248,7 @@ function isInternalLikeName(value = '') {
 }
 
 module.exports = {
+    buildErpCustomerDisplayName,
     resolveChatDisplayName,
     buildProfilePicCandidates,
     resolveProfilePic,

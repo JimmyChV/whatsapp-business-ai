@@ -2,6 +2,7 @@ function createSocketChatListService({
     runtimeStore,
     waClient,
     tenantLabelService,
+    customerService,
     normalizeScopedModuleId,
     normalizePhoneDigits,
     normalizeFilterTokens,
@@ -344,10 +345,18 @@ function createSocketChatListService({
 
         const effectiveChat = { ...chat, contact };
         const phone = isGroup ? null : extractPhoneFromChat(effectiveChat);
+        const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
+        let erpCustomer = null;
+        if (!isGroup && phone && customerService && typeof customerService.getCustomerByPhone === 'function') {
+            try {
+                erpCustomer = await customerService.getCustomerByPhone(resolvedTenantId, phone);
+            } catch (_) {
+                erpCustomer = null;
+            }
+        }
         const subtitle = contact?.pushname || contact?.shortName || contact?.name || null;
         const normalizedScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
         const scopedSummaryId = buildScopedChatId(chatId, normalizedScopeModuleId);
-        const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
         let labels = [];
         try {
             labels = await tenantLabelService.listChatLabels({
@@ -372,7 +381,7 @@ function createSocketChatListService({
             id: scopedSummaryId || chatId,
             baseChatId: chatId,
             scopeModuleId: normalizedScopeModuleId || null,
-            name: resolveChatDisplayName(effectiveChat),
+            name: resolveChatDisplayName({ ...effectiveChat, erpCustomer }),
             phone,
             subtitle,
             unreadCount: chat.unreadCount,
@@ -383,6 +392,8 @@ function createSocketChatListService({
             labels,
             profilePicUrl,
             isMyContact: Boolean(contact?.isMyContact),
+            customerId: erpCustomer?.customerId || null,
+            erpCustomerName: erpCustomer ? resolveChatDisplayName({ ...effectiveChat, erpCustomer }) : null,
             archived: Boolean(chat?.archived),
             lastMessageModuleId: normalizedScopeModuleId || null,
             lastMessageModuleName: String(scopeModuleName || '').trim() || null,

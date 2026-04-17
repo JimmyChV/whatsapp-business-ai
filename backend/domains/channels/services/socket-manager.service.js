@@ -278,6 +278,7 @@ class SocketManager {
             runtimeStore: this.runtimeStore,
             waClient,
             tenantLabelService,
+            customerService,
             normalizeScopedModuleId,
             normalizePhoneDigits,
             normalizeFilterTokens,
@@ -391,6 +392,8 @@ class SocketManager {
         this.profileContactService = createSocketProfileContactService({
             waClient,
             tenantLabelService,
+            customerService,
+            customerAddressesService,
             resolveProfilePic,
             normalizeBusinessDetailsSnapshot,
             extractContactSnapshot,
