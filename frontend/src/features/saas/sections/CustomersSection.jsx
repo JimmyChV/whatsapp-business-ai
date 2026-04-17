@@ -13,6 +13,7 @@ import {
     SaasViewHeader,
     useSaasColumnPrefs
 } from '../components/layout';
+import { createCampaign as createCampaignApi, startCampaign as startCampaignApi } from '../services/campaigns.service';
 import { listMetaTemplates } from '../services/metaTemplates.service';
 
 const CUSTOMER_TABLE_COLUMNS = [
@@ -776,6 +777,7 @@ function CustomersSection(props = {}) {
     const [selectedCampaignTemplatePreview, setSelectedCampaignTemplatePreview] = useState(null);
     const [selectedCampaignTemplatePreviewLoading, setSelectedCampaignTemplatePreviewLoading] = useState(false);
     const [selectedCampaignTemplatePreviewError, setSelectedCampaignTemplatePreviewError] = useState('');
+    const [campaignTemplateSubmitting, setCampaignTemplateSubmitting] = useState(false);
     const syncedIndicatorTimeoutRef = useRef(null);
 
     const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
@@ -1779,6 +1781,7 @@ function CustomersSection(props = {}) {
         setSelectedCampaignTemplatePreview(null);
         setSelectedCampaignTemplatePreviewLoading(false);
         setSelectedCampaignTemplatePreviewError('');
+        setCampaignTemplateSubmitting(false);
     }, []);
 
     const handleSelectCampaignTemplate = useCallback(async (template = null) => {
@@ -1861,6 +1864,65 @@ function CustomersSection(props = {}) {
             setCampaignTemplateOptionsLoading(false);
         }
     }, [handleSelectCampaignTemplate, moduleNameById, notify, requestJson, selectedCustomerIdsForCampaign.length]);
+
+    const handleConfirmExpressCampaign = useCallback(async () => {
+        const template = selectedCampaignTemplate && typeof selectedCampaignTemplate === 'object' ? selectedCampaignTemplate : null;
+        if (!template) return;
+        if (selectedCustomerIdsForCampaign.length === 0) {
+            notify({ type: 'error', message: 'Selecciona al menos un cliente para la campaña express.' });
+            return;
+        }
+
+        const moduleId = String(template?.moduleId || '').trim();
+        if (!moduleId) {
+            notify({ type: 'error', message: 'El template seleccionado no tiene modulo asociado.' });
+            return;
+        }
+
+        const timestamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+        setCampaignTemplateSubmitting(true);
+        try {
+            const createdResponse = await createCampaignApi(requestJson, {
+                scopeModuleId: moduleId,
+                moduleId,
+                templateId: String(template?.templateId || '').trim() || null,
+                templateName: String(template?.templateName || '').trim(),
+                templateLanguage: String(template?.templateLanguage || 'es').trim().toLowerCase() || 'es',
+                campaignName: `Campana express · ${String(template?.templateName || 'template').trim() || 'template'} · ${timestamp}`,
+                campaignDescription: `Campana express creada desde Clientes para ${selectedCustomerIdsForCampaign.length} destinatario(s).`,
+                audienceFiltersJson: {
+                    customerIds: selectedCustomerIdsForCampaign
+                },
+                audienceSelectionJson: {
+                    excludedCustomerIds: []
+                },
+                variablesPreviewJson: selectedCampaignTemplatePreview?.payload || {}
+            });
+            const campaignId = String(createdResponse?.campaign?.campaignId || '').trim();
+            if (!campaignId) throw new Error('No se pudo obtener el campaignId de la campaña express.');
+
+            await startCampaignApi(requestJson, { campaignId });
+            notify({
+                type: 'info',
+                message: `Campana express iniciada para ${selectedCustomerIdsForCampaign.length} cliente(s).`
+            });
+            setSelectedCustomerIdsForCampaign([]);
+            resetCampaignTemplateFlow();
+        } catch (error) {
+            notify({
+                type: 'error',
+                message: String(error?.message || 'No se pudo lanzar la campaña express.')
+            });
+            setCampaignTemplateSubmitting(false);
+        }
+    }, [
+        notify,
+        requestJson,
+        resetCampaignTemplateFlow,
+        selectedCampaignTemplate,
+        selectedCampaignTemplatePreview?.payload,
+        selectedCustomerIdsForCampaign
+    ]);
 
     const updateCustomersState = useCallback((customerItem = null) => {
         if (typeof setCustomers !== 'function') return;
@@ -3199,8 +3261,12 @@ function CustomersSection(props = {}) {
                 preview={selectedCampaignTemplatePreview}
                 previewLoading={selectedCampaignTemplatePreviewLoading}
                 previewError={selectedCampaignTemplatePreviewError}
+                confirmLabel={`Lanzar campaña${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`}
+                confirmDisabled={!selectedCampaignTemplate || campaignTemplateSubmitting || selectedCustomerIdsForCampaign.length === 0}
+                confirmBusy={campaignTemplateSubmitting}
                 onClose={resetCampaignTemplateFlow}
                 onSelectTemplate={(template) => { void handleSelectCampaignTemplate(template); }}
+                onConfirm={() => { void handleConfirmExpressCampaign(); }}
             />
         </section>
     );
