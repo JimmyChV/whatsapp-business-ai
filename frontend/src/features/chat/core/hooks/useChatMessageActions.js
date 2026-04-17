@@ -233,6 +233,30 @@ export default function useChatMessageActions({
     socket
   ]);
 
+  const handleSendReaction = useCallback((messageId, emoji) => {
+    const activeId = String(activeChatIdRef.current || activeChatId || '').trim();
+    const targetMessageId = String(messageId || '').trim();
+    const safeEmoji = String(emoji || '').trim();
+    if (!activeId || !targetMessageId || !safeEmoji || !socket || typeof socket.emit !== 'function') return;
+
+    const activeChatForSend = chatsRef.current.find((chat) => String(chat?.id || '') === String(activeChatId || activeId));
+    const activeChatPhone = normalizeDigits(activeChatForSend?.phone || '');
+    const toPhone = activeChatPhone || null;
+
+    socket.emit('send_reaction', {
+      to: activeId,
+      toPhone,
+      messageId: targetMessageId,
+      emoji: safeEmoji
+    });
+  }, [
+    activeChatId,
+    activeChatIdRef,
+    chatsRef,
+    normalizeDigits,
+    socket
+  ]);
+
   const handleSendMessage = useCallback((event) => {
     event?.preventDefault();
     const text = inputText.trim();
@@ -342,6 +366,7 @@ export default function useChatMessageActions({
   return {
     handleExitActiveChat,
     handleSendMessage,
+    handleSendReaction,
     handleOpenSendTemplate,
     handleCloseSendTemplate,
     handleSelectTemplatePreview,

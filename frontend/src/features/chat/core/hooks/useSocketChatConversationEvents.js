@@ -307,6 +307,7 @@ export default function useSocketChatConversationEvents({
                         editedAt: Number(m?.editedAt || 0) || null,
                         canEdit: Boolean(m?.canEdit),
                         quotedMessage: normalizeQuotedMessage(m?.quotedMessage),
+                        reactions: Array.isArray(m?.reactions) ? m.reactions : [],
                         sentViaModuleImageUrl: normalizeModuleImageUrl(m?.sentViaModuleImageUrl || '') || null
                     };
 
@@ -362,6 +363,109 @@ export default function useSocketChatConversationEvents({
                     mimetype: mimetype || m.mimetype,
                     filename: shouldReplaceFilename ? nextFilename : currentFilename,
                     fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(m?.fileSizeBytes)) ? Number(m.fileSizeBytes) : null)
+                };
+            }));
+        });
+
+        socket.on('message_updated', ({ id, chatId, scopeModuleId, mediaUrl, mediaPath, mimetype, filename, fileSizeBytes, mediaData, hasMedia, updatedAt, quotedMessage }) => {
+            const messageId = String(id || '').trim();
+            if (!messageId) return;
+
+            const incomingChatId = normalizeChatScopedId(chatId || '', scopeModuleId || '');
+            const active = String(activeChatIdRef.current || '');
+            if (incomingChatId && active && !chatIdsReferSameScope(incomingChatId, active)) return;
+
+            const nextFilename = normalizeMessageFilename(filename);
+            const nextSize = Number.isFinite(Number(fileSizeBytes)) ? Number(fileSizeBytes) : null;
+
+            setMessages((prev) => prev.map((message) => {
+                if (String(message?.id || '').trim() !== messageId) return message;
+
+                const currentFilename = normalizeMessageFilename(message?.filename);
+                const shouldReplaceFilename = Boolean(nextFilename) && (!currentFilename || isGenericFilename(currentFilename) || isMachineLikeFilename(currentFilename));
+
+                return {
+                    ...message,
+                    hasMedia: hasMedia !== false,
+                    mediaUrl: String(mediaUrl || '').trim() || message?.mediaUrl || null,
+                    mediaPath: String(mediaPath || '').trim() || message?.mediaPath || null,
+                    mediaData: mediaData || message?.mediaData || null,
+                    mimetype: String(mimetype || '').trim() || message?.mimetype || null,
+                    filename: shouldReplaceFilename ? nextFilename : currentFilename,
+                    fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(message?.fileSizeBytes)) ? Number(message.fileSizeBytes) : null),
+                    quotedMessage: normalizeQuotedMessage(quotedMessage || message?.quotedMessage),
+                    updatedAt: String(updatedAt || '').trim() || message?.updatedAt || null
+                };
+            }));
+        });
+
+        socket.on('message_reaction', ({ messageId, emoji, senderId, chatId, baseChatId, scopeModuleId, timestamp }) => {
+            const safeMessageId = String(messageId || '').trim();
+            const safeEmoji = String(emoji || '').trim();
+            if (!safeMessageId || !safeEmoji) return;
+
+            const incomingChatId = normalizeChatScopedId(chatId || baseChatId || '', scopeModuleId || '');
+            const active = String(activeChatIdRef.current || '');
+            if (incomingChatId && active && !chatIdsReferSameScope(incomingChatId, active)) return;
+
+            setMessages((prev) => prev.map((message) => {
+                if (String(message?.id || '').trim() !== safeMessageId) return message;
+
+                const existingReactions = Array.isArray(message?.reactions) ? message.reactions : [];
+                const safeSenderId = String(senderId || '').trim() || null;
+                const nextReaction = {
+                    emoji: safeEmoji,
+                    senderId: safeSenderId,
+                    timestamp: Number(timestamp || 0) || Math.floor(Date.now() / 1000)
+                };
+
+                const deduped = existingReactions.filter((reaction) => {
+                    const reactionSenderId = String(reaction?.senderId || '').trim() || null;
+                    if (!safeSenderId) return true;
+                    return reactionSenderId !== safeSenderId;
+                });
+
+                return {
+                    ...message,
+                    reactions: [...deduped, nextReaction]
+                };
+            }));
+        });
+        socket.on('reaction_sent', ({ messageId, emoji, chatId, baseChatId, scopeModuleId, timestamp }) => {
+            const safeMessageId = String(messageId || '').trim();
+            const safeEmoji = String(emoji || '').trim();
+            if (!safeMessageId || !safeEmoji) return;
+
+            const incomingChatId = normalizeChatScopedId(chatId || baseChatId || '', scopeModuleId || '');
+            const active = String(activeChatIdRef.current || '');
+            if (incomingChatId && active && !chatIdsReferSameScope(incomingChatId, active)) return;
+
+            const sessionSenderIdentity = resolveSessionSenderIdentity();
+            const safeSenderId = String(
+                sessionSenderIdentity?.id
+                || sessionSenderIdentity?.email
+                || sessionSenderIdentity?.name
+                || 'self'
+            ).trim() || 'self';
+
+            setMessages((prev) => prev.map((message) => {
+                if (String(message?.id || '').trim() !== safeMessageId) return message;
+
+                const existingReactions = Array.isArray(message?.reactions) ? message.reactions : [];
+                const nextReaction = {
+                    emoji: safeEmoji,
+                    senderId: safeSenderId,
+                    timestamp: Number(timestamp || 0) || Math.floor(Date.now() / 1000)
+                };
+
+                const deduped = existingReactions.filter((reaction) => {
+                    const reactionSenderId = String(reaction?.senderId || '').trim() || null;
+                    return reactionSenderId !== safeSenderId;
+                });
+
+                return {
+                    ...message,
+                    reactions: [...deduped, nextReaction]
                 };
             }));
         });
@@ -505,7 +609,8 @@ export default function useSocketChatConversationEvents({
                     filename: normalizeMessageFilename(msg?.filename),
                     fileSizeBytes: Number.isFinite(Number(msg?.fileSizeBytes)) ? Number(msg.fileSizeBytes) : null,
                     canEdit: Boolean(msg?.canEdit),
-                    quotedMessage: normalizeQuotedMessage(msg?.quotedMessage)
+                    quotedMessage: normalizeQuotedMessage(msg?.quotedMessage),
+                    reactions: Array.isArray(msg?.reactions) ? msg.reactions : []
                 };
 
                 const fallbackSessionName = normalizedIncoming?.fromMe
@@ -539,6 +644,9 @@ export default function useSocketChatConversationEvents({
                             sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || existing?.sentViaModuleImageUrl || '') || null,
                             sentViaTransport: String(normalizedIncoming?.sentViaTransport || existing?.sentViaTransport || '').trim() || null,
                             quotedMessage: normalizeQuotedMessage(normalizedIncoming?.quotedMessage || existing?.quotedMessage),
+                            reactions: Array.isArray(normalizedIncoming?.reactions) && normalizedIncoming.reactions.length > 0
+                                ? normalizedIncoming.reactions
+                                : (Array.isArray(existing?.reactions) ? existing.reactions : []),
                             order: incomingOrder
                                 ? {
                                     ...(existingOrder || {}),
@@ -625,6 +733,9 @@ export default function useSocketChatConversationEvents({
                 'chat_updated',
                 'chat_history',
                 'chat_media',
+                'message_updated',
+                'message_reaction',
+                'reaction_sent',
                 'chat_opened',
                 'start_new_chat_error',
                 'chat_labels_updated',

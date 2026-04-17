@@ -842,6 +842,34 @@ class WhatsAppCloudClient extends EventEmitter {
         return response;
     }
 
+    async sendReaction(to, { messageId, emoji } = {}) {
+        if (!this.isReady) throw new Error('Cloud client not ready');
+        const waId = await this.resolveSendWaId(to);
+        const safeMessageId = String(messageId || '').trim();
+        const safeEmoji = String(emoji || '').trim();
+        if (!safeMessageId || !safeEmoji) {
+            throw new Error('messageId y emoji son requeridos para enviar reaccion.');
+        }
+
+        const payload = {
+            messaging_product: 'whatsapp',
+            to: waId,
+            type: 'reaction',
+            reaction: {
+                message_id: safeMessageId,
+                emoji: safeEmoji
+            }
+        };
+
+        return await this.graphJson(`/${this.phoneNumberId}/messages`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+    }
+
     async uploadMedia(mediaData, mimetype, filename = 'adjunto') {
         const safeMime = String(mimetype || 'application/octet-stream').trim() || 'application/octet-stream';
         const safeName = String(filename || 'adjunto').trim() || 'adjunto';
@@ -1173,7 +1201,21 @@ class WhatsAppCloudClient extends EventEmitter {
             });
         }
 
-        if (type === 'text') {
+        if (type === 'reaction') {
+            const reaction = msg?.reaction && typeof msg.reaction === 'object' ? msg.reaction : {};
+            const emoji = String(reaction?.emoji || '').trim();
+            const targetMessageId = String(reaction?.message_id || reaction?.messageId || '').trim();
+            if (emoji && targetMessageId) {
+                this.emit('message_reaction', {
+                    chatId,
+                    messageId: targetMessageId,
+                    emoji,
+                    senderId: chatId,
+                    timestamp: safeTimestamp(msg?.timestamp)
+                });
+            }
+            return null;
+        } else if (type === 'text') {
             base.type = 'chat';
             base.body = String(msg?.text?.body || '').trim();
         } else if (type === 'image') {
@@ -1192,11 +1234,13 @@ class WhatsAppCloudClient extends EventEmitter {
             base.filename = String(msg?.document?.filename || '').trim() || null;
             base.fileSizeBytes = Number.isFinite(Number(msg?.document?.file_size)) ? Number(msg.document.file_size) : null;
         } else if (type === 'video') {
-            base.type = 'video';
+            const videoMime = String(msg?.video?.mime_type || 'video/mp4').trim();
+            const isGifVideo = String(videoMime || '').toLowerCase().includes('gif');
+            base.type = isGifVideo ? 'image' : 'video';
             base.body = String(msg?.video?.caption || '').trim();
             base.hasMedia = true;
             base.mediaId = String(msg?.video?.id || '').trim() || null;
-            base.mimetype = String(msg?.video?.mime_type || 'video/mp4').trim();
+            base.mimetype = videoMime;
             base.fileSizeBytes = Number.isFinite(Number(msg?.video?.file_size)) ? Number(msg.video.file_size) : null;
         } else if (type === 'audio') {
             const isVoice = Boolean(msg?.audio?.voice);

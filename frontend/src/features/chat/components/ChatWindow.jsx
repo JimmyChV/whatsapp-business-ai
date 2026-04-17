@@ -36,6 +36,7 @@ const ChatWindow = ({
     onEditMessage,
     onReplyMessage,
     onForwardMessage,
+    onSendReaction,
     onDeleteMessage,
     forwardChatOptions = [],
 
@@ -129,6 +130,14 @@ const ChatWindow = ({
     const headerLabels = Array.isArray(activeChatDetails?.labels) ? activeChatDetails.labels : [];
     const visibleHeaderLabels = headerLabels.slice(0, 2);
     const hiddenHeaderLabelsCount = Math.max(0, headerLabels.length - visibleHeaderLabels.length);
+    const handleJumpToMessage = (targetMessageId) => {
+        const safeTargetMessageId = String(targetMessageId || '').trim();
+        if (!safeTargetMessageId) return;
+        const targetNode = messageRefs.current?.[safeTargetMessageId]
+            || document.querySelector(`[data-message-id="${safeTargetMessageId}"]`);
+        if (!targetNode || typeof targetNode.scrollIntoView !== 'function') return;
+        targetNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
 
     return (
         <div
@@ -344,7 +353,16 @@ const ChatWindow = ({
                                     {formatDayLabel(msg.timestamp)}
                                 </div>
                             )}
-                            <div ref={(el) => { if (el) messageRefs.current[messageKey] = el; }}>
+                            <div
+                                data-message-id={messageKey}
+                                ref={(el) => {
+                                    if (el) {
+                                        messageRefs.current[messageKey] = el;
+                                    } else {
+                                        delete messageRefs.current[messageKey];
+                                    }
+                                }}
+                            >
                                 <MessageBubble
                                     msg={msg}
                                     isHighlighted={isHighlighted}
@@ -358,6 +376,8 @@ const ChatWindow = ({
                                     onEditMessage={onEditMessage}
                                     onReplyMessage={onReplyMessage}
                                     onForwardMessage={onForwardMessage}
+                                    onSendReaction={onSendReaction}
+                                    onJumpToMessage={handleJumpToMessage}
                                     onDeleteMessage={onDeleteMessage}
                                     forwardChatOptions={forwardChatOptions}
                                     activeChatId={activeChatDetails?.id}

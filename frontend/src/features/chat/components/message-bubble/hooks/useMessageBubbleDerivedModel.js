@@ -101,11 +101,13 @@ export default function useMessageBubbleDerivedModel({
         const mediaImageSrc = mediaDataUrl || (mediaUrl || null);
         const mediaLooksImageByUrl = Boolean(mediaUrl && /\.(png|jpe?g|webp|gif|avif)(?:$|[?#])/i.test(mediaUrl));
         const isImageMedia = Boolean(String(safeMsg?.mimetype || '').trim().toLowerCase().startsWith('image/')) || mediaLooksImageByUrl;
+        const isVideoMedia = Boolean(String(safeMsg?.mimetype || '').trim().toLowerCase().startsWith('video/'));
         const hasBinaryAttachment = Boolean(
             safeMsg.hasMedia
             && safeMsg.mediaData
             && !safeMsg.mimetype?.startsWith('image/')
             && !safeMsg.mimetype?.startsWith('audio/')
+            && !safeMsg.mimetype?.startsWith('video/')
         );
         const attachmentMeta = hasBinaryAttachment ? buildAttachmentMeta(safeMsg) : null;
 
@@ -188,6 +190,7 @@ export default function useMessageBubbleDerivedModel({
             mediaUrl,
             mediaImageSrc,
             isImageMedia,
+            isVideoMedia,
             hasBinaryAttachment,
             attachmentMeta,
             locationData,

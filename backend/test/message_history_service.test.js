@@ -159,4 +159,58 @@ test('message_history_service respects disabled toggle', async () => {
     }
 });
 
+test('message_history_service persists reactions in metadata and returns them in history rows', async () => {
+    const prevDriver = process.env.SAAS_STORAGE_DRIVER;
+    const prevDir = process.env.SAAS_TENANT_DATA_DIR;
+    const prevHistoryEnabled = process.env.HISTORY_PERSISTENCE_ENABLED;
+
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'message-history-reactions-'));
+
+    try {
+        process.env.SAAS_STORAGE_DRIVER = 'file';
+        process.env.SAAS_TENANT_DATA_DIR = tempRoot;
+        process.env.HISTORY_PERSISTENCE_ENABLED = 'true';
+
+        const service = loadMessageHistoryServiceFresh();
+
+        await service.upsertMessage('tenant_rx', {
+            messageId: 'msg_rx_1',
+            chatId: '51933333333@c.us',
+            fromMe: true,
+            body: 'Mensaje con reaccion',
+            messageType: 'chat',
+            timestampUnix: 200,
+            ack: 1,
+            metadata: {},
+            chat: {
+                id: '51933333333@c.us',
+                displayName: 'Cliente Reaccion'
+            }
+        });
+
+        await service.updateMessageReactions('tenant_rx', {
+            messageId: 'msg_rx_1',
+            chatId: '51933333333@c.us',
+            reactions: [
+                { emoji: '👍', senderId: 'seller_1', timestamp: 201 }
+            ]
+        });
+
+        const rows = await service.listMessages('tenant_rx', {
+            chatId: '51933333333@c.us',
+            limit: 10
+        });
+
+        assert.equal(rows.length, 1);
+        assert.deepEqual(rows[0].metadata.reactions, [
+            { emoji: '👍', senderId: 'seller_1', timestamp: 201 }
+        ]);
+    } finally {
+        process.env.SAAS_STORAGE_DRIVER = prevDriver;
+        process.env.SAAS_TENANT_DATA_DIR = prevDir;
+        process.env.HISTORY_PERSISTENCE_ENABLED = prevHistoryEnabled;
+        await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+});
+
 

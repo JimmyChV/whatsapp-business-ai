@@ -42,7 +42,7 @@ class WAProvider extends EventEmitter {
         this.unbindAdapterEvents();
         if (!adapter || typeof adapter.on !== 'function') return;
 
-        const events = ['qr', 'ready', 'authenticated', 'auth_failure', 'disconnected', 'message', 'message_sent', 'message_ack', 'message_edit'];
+        const events = ['qr', 'ready', 'authenticated', 'auth_failure', 'disconnected', 'message', 'message_sent', 'message_ack', 'message_edit', 'message_reaction'];
         events.forEach((eventName) => {
             const handler = (...args) => this.emit(eventName, ...args);
             adapter.on(eventName, handler);
@@ -261,6 +261,13 @@ class WAProvider extends EventEmitter {
             throw new Error('Template send is not supported in this transport.');
         }
         return await this.activeAdapter.sendTemplateMessage(to, payload);
+    }
+
+    async sendReaction(to, payload = {}) {
+        if (!this.activeAdapter?.sendReaction) {
+            throw new Error('Reaction send is not supported in this transport.');
+        }
+        return await this.activeAdapter.sendReaction(to, payload);
     }
 
     async getMessageById(messageId) {

@@ -92,6 +92,22 @@ function normalizeMessageRecord(input = {}) {
     };
 }
 
+function normalizeReactionList(reactions = []) {
+    if (!Array.isArray(reactions)) return [];
+    return reactions
+        .map((reaction) => {
+            if (!reaction || typeof reaction !== 'object') return null;
+            const emoji = toSafeString(reaction.emoji);
+            if (!emoji) return null;
+            return {
+                emoji,
+                senderId: toSafeString(reaction.senderId),
+                timestamp: toSafeNumber(reaction.timestamp, null)
+            };
+        })
+        .filter(Boolean);
+}
+
 function missingRelation(error) {
     return String(error?.code || '').trim() === '42P01';
 }
@@ -577,6 +593,58 @@ async function updateMessageEdit(tenantId = DEFAULT_TENANT_ID, { messageId, chat
     return { ok: true, driver: 'file', messageId: safeId };
 }
 
+async function updateMessageReactions(tenantId = DEFAULT_TENANT_ID, {
+    messageId,
+    chatId,
+    reactions = []
+} = {}) {
+    if (!isHistoryEnabled()) return { ok: false, skipped: 'disabled' };
+
+    const cleanTenant = resolveTenantId(tenantId);
+    const safeId = toSafeString(messageId);
+    if (!safeId) return { ok: false, skipped: 'invalid_message_id' };
+    const normalizedReactions = normalizeReactionList(reactions);
+
+    if (getStorageDriver() === 'postgres') {
+        try {
+            await ensurePostgresMessageColumns();
+            await queryPostgres(
+                `UPDATE tenant_messages
+                    SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('reactions', $3::jsonb),
+                        updated_at = NOW()
+                  WHERE tenant_id = $1
+                    AND message_id = $2`,
+                [cleanTenant, safeId, JSON.stringify(normalizedReactions)]
+            );
+            return { ok: true, driver: 'postgres', messageId: safeId, reactions: normalizedReactions };
+        } catch (error) {
+            if (missingRelation(error)) return { ok: false, skipped: 'schema_missing' };
+            throw error;
+        }
+    }
+
+    const store = await loadStore(cleanTenant);
+    const existing = store.messages[safeId];
+    if (!existing) return { ok: false, skipped: 'not_found' };
+
+    store.messages[safeId] = {
+        ...existing,
+        metadata: {
+            ...(existing.metadata && typeof existing.metadata === 'object' ? existing.metadata : {}),
+            reactions: normalizedReactions
+        },
+        updatedAt: new Date().toISOString()
+    };
+    if (chatId && store.chats[chatId]) {
+        store.chats[chatId] = {
+            ...store.chats[chatId],
+            updatedAt: new Date().toISOString()
+        };
+    }
+    await saveStore(cleanTenant, store);
+    return { ok: true, driver: 'file', messageId: safeId, reactions: normalizedReactions };
+}
+
 async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0 } = {}) {
     if (!isHistoryEnabled()) return [];
     const cleanTenant = resolveTenantId(tenantId);
@@ -838,6 +906,7 @@ module.exports = {
     updateChatState,
     updateMessageAck,
     updateMessageEdit,
+    updateMessageReactions,
     listChats,
     listMessages
 };
