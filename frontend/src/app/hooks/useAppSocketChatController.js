@@ -49,6 +49,7 @@ export default function useAppSocketChatController({
     messagesEndRef: chatRuntimeBlock.messagesEndRef,
     prevMessagesMetaRef: chatRuntimeBlock.prevMessagesMetaRef,
     messagesCacheRef: chatRuntimeBlock.messagesCacheRef,
+    pendingOutgoingByChatRef: chatRuntimeBlock.pendingOutgoingByChatRef,
     shouldInstantScrollRef: chatRuntimeBlock.shouldInstantScrollRef,
     suppressSmoothScrollUntilRef: chatRuntimeBlock.suppressSmoothScrollUntilRef,
 

@@ -3,6 +3,7 @@ import { getMessagePreviewText as getMessagePreviewTextFallback } from '../helpe
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import {
     patchCachedMessages,
+    replaceMessageByClientTempId,
     upsertMessageById,
     writeCachedMessages
 } from '../helpers/messageCache.helpers';
@@ -42,6 +43,7 @@ export default function useSocketChatConversationEvents({
     handleChatSelect,
     activeChatIdRef,
     messagesCacheRef,
+    pendingOutgoingByChatRef,
     setActiveChatId,
     shouldInstantScrollRef,
     suppressSmoothScrollUntilRef,
@@ -68,6 +70,32 @@ export default function useSocketChatConversationEvents({
                 const next = typeof updater === 'function' ? updater(Array.isArray(prev) ? prev : []) : prev;
                 return Array.isArray(next) ? next : prev;
             });
+        };
+        const consumePendingOutgoing = (chatId, incomingMessage = {}) => {
+            const safeChatId = String(chatId || '').trim();
+            const pendingByChat = pendingOutgoingByChatRef?.current instanceof Map
+                ? pendingOutgoingByChatRef.current.get(safeChatId)
+                : null;
+            if (!(pendingByChat instanceof Map) || pendingByChat.size === 0) return null;
+
+            const incomingBody = String(incomingMessage?.body || '').trim();
+            const incomingHasMedia = Boolean(incomingMessage?.hasMedia);
+            for (const [clientTempId, entry] of pendingByChat.entries()) {
+                const retryPayload = entry?.retryPayload?.payload || {};
+                const retryBody = String(retryPayload?.body || '').trim();
+                const retryHasMedia = Boolean(retryPayload?.mediaData);
+                const sameBody = retryBody === incomingBody;
+                const sameMediaKind = retryHasMedia === incomingHasMedia;
+                if (!sameBody && !(incomingHasMedia && !incomingBody && retryHasMedia)) continue;
+                if (!sameMediaKind) continue;
+                if (entry?.timeoutId) clearTimeout(entry.timeoutId);
+                pendingByChat.delete(clientTempId);
+                if (pendingByChat.size === 0) {
+                    pendingOutgoingByChatRef.current.delete(safeChatId);
+                }
+                return clientTempId;
+            }
+            return null;
         };
 
         socket.on('chats', (payload) => {
@@ -714,16 +742,28 @@ export default function useSocketChatConversationEvents({
                 sentByRole: String(normalizedIncoming?.sentByRole || fallbackSessionRole).trim() || null,
                 sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || '') || null
             };
+            const matchedClientTempId = enrichedIncoming?.fromMe
+                ? consumePendingOutgoing(relatedChatId, enrichedIncoming)
+                : null;
+            const reconciledIncoming = {
+                ...enrichedIncoming,
+                clientTempId: matchedClientTempId || String(enrichedIncoming?.clientTempId || '').trim() || null,
+                optimistic: false,
+                status: Number(enrichedIncoming?.ack || 0) >= 2 ? 'delivered' : Number(enrichedIncoming?.ack || 0) >= 1 ? 'sent' : 'sending'
+            };
 
             patchCachedMessages(messagesCacheRef, relatedChatId, (prev) => {
-                const incomingId = String(enrichedIncoming?.id || '').trim();
+                const incomingId = String(reconciledIncoming?.id || '').trim();
                 if (!incomingId) return prev;
-                return upsertMessageById(prev, enrichedIncoming);
+                if (matchedClientTempId) {
+                    return replaceMessageByClientTempId(prev, matchedClientTempId, reconciledIncoming);
+                }
+                return upsertMessageById(prev, reconciledIncoming);
             });
 
             syncActiveMessages(relatedChatId, (prev) => {
                 const normalizedIncoming = {
-                    ...enrichedIncoming
+                    ...reconciledIncoming
                 };
 
                 const incomingId = String(normalizedIncoming?.id || '').trim();
@@ -769,7 +809,10 @@ export default function useSocketChatConversationEvents({
                     }
                 }
 
-                return [...prev, enrichedIncoming];
+                if (matchedClientTempId) {
+                    return replaceMessageByClientTempId(prev, matchedClientTempId, normalizedIncoming);
+                }
+                return [...prev, normalizedIncoming];
             });
         });
 
