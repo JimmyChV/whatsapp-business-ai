@@ -331,7 +331,7 @@ const MessageBubble = ({
                 <img
                     src={mediaImageSrc}
                     className="message-media"
-                    alt={isGifMedia ? 'GIF' : 'Media'}
+                    alt={isGifMedia ? 'gif' : 'Media'}
                     style={{
                         borderRadius: '8px',
                         marginBottom: '4px',
