@@ -28,6 +28,7 @@ const MessageBubble = ({
     onEditMessage,
     onReplyMessage,
     onForwardMessage,
+    onJumpToMessage,
     forwardChatOptions = [],
     activeChatId = null,
     canEditMessages = false,
@@ -237,6 +238,11 @@ const MessageBubble = ({
     const openMapPopup = (payload = {}) => {
         if (typeof onOpenMap !== 'function') return;
         onOpenMap(payload);
+    };
+    const handleJumpToQuotedMessage = () => {
+        const quotedMessageId = String(quotedMessage?.id || '').trim();
+        if (!quotedMessageId || typeof onJumpToMessage !== 'function') return;
+        onJumpToMessage(quotedMessageId);
     };
 
     return (
@@ -455,13 +461,28 @@ const MessageBubble = ({
                         background: 'rgba(0,0,0,0.16)',
                         borderRadius: '8px',
                         padding: '6px 8px',
-                        marginBottom: '6px'
+                        marginBottom: '6px',
+                        cursor: quotedMessage.id ? 'pointer' : 'default'
                     }}>
-                        <div style={{ fontSize: '0.68rem', fontWeight: 700, color: quotedMessage.fromMe ? '#9fe9ff' : '#72f3d3', marginBottom: '2px' }}>
+                        <div
+                            role={quotedMessage.id ? 'button' : undefined}
+                            tabIndex={quotedMessage.id ? 0 : undefined}
+                            onClick={handleJumpToQuotedMessage}
+                            onKeyDown={(event) => {
+                                if (!quotedMessage.id) return;
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault();
+                                    handleJumpToQuotedMessage();
+                                }
+                            }}
+                            style={{ outline: 'none' }}
+                        >
+                            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: quotedMessage.fromMe ? '#9fe9ff' : '#72f3d3', marginBottom: '2px' }}>
                             {quotedMessage.fromMe ? 'Tu mensaje' : 'Mensaje respondido'}
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: '#c8d8e0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {quotedMessage.body}
+                            </div>
+                            <div style={{ fontSize: '0.78rem', color: '#c8d8e0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {quotedMessage.body}
+                            </div>
                         </div>
                     </div>
                 )}
