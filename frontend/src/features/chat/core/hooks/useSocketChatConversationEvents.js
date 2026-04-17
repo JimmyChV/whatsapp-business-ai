@@ -366,6 +366,37 @@ export default function useSocketChatConversationEvents({
             }));
         });
 
+        socket.on('message_updated', ({ id, chatId, scopeModuleId, mediaUrl, mediaPath, mimetype, filename, fileSizeBytes, mediaData, hasMedia, updatedAt }) => {
+            const messageId = String(id || '').trim();
+            if (!messageId) return;
+
+            const incomingChatId = normalizeChatScopedId(chatId || '', scopeModuleId || '');
+            const active = String(activeChatIdRef.current || '');
+            if (incomingChatId && active && !chatIdsReferSameScope(incomingChatId, active)) return;
+
+            const nextFilename = normalizeMessageFilename(filename);
+            const nextSize = Number.isFinite(Number(fileSizeBytes)) ? Number(fileSizeBytes) : null;
+
+            setMessages((prev) => prev.map((message) => {
+                if (String(message?.id || '').trim() !== messageId) return message;
+
+                const currentFilename = normalizeMessageFilename(message?.filename);
+                const shouldReplaceFilename = Boolean(nextFilename) && (!currentFilename || isGenericFilename(currentFilename) || isMachineLikeFilename(currentFilename));
+
+                return {
+                    ...message,
+                    hasMedia: hasMedia !== false,
+                    mediaUrl: String(mediaUrl || '').trim() || message?.mediaUrl || null,
+                    mediaPath: String(mediaPath || '').trim() || message?.mediaPath || null,
+                    mediaData: mediaData || message?.mediaData || null,
+                    mimetype: String(mimetype || '').trim() || message?.mimetype || null,
+                    filename: shouldReplaceFilename ? nextFilename : currentFilename,
+                    fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(message?.fileSizeBytes)) ? Number(message.fileSizeBytes) : null),
+                    updatedAt: String(updatedAt || '').trim() || message?.updatedAt || null
+                };
+            }));
+        });
+
         socket.on('contact_info', (contact) => {
             const participantsList = normalizeParticipantList(contact?.participantsList);
             const participantsCount = Number(contact?.participants || contact?.chatState?.participantsCount || participantsList.length || 0) || 0;
@@ -625,6 +656,7 @@ export default function useSocketChatConversationEvents({
                 'chat_updated',
                 'chat_history',
                 'chat_media',
+                'message_updated',
                 'chat_opened',
                 'start_new_chat_error',
                 'chat_labels_updated',

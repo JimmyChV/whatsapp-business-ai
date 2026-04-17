@@ -204,14 +204,29 @@ function createSocketWaEventsBridgeService({
 
             setImmediate(async () => {
                 try {
-                    const media = await mediaManager.processMessageMedia(msg, {
+                    const processedMedia = await mediaManager.processMessageMedia(msg, {
                         tenantId: historyTenantId,
                         moduleId: scopeModuleId || '',
                         contactId: relatedChatIdBase,
                         timestampUnix: Number(msg?.timestamp || 0) || null
                     });
+                    if (processedMedia) {
+                        emitToRuntimeContext('message_updated', {
+                            id: messageId,
+                            chatId: relatedChatIdBase,
+                            scopeModuleId: cleanScopeModuleId,
+                            mediaUrl: processedMedia?.publicUrl || processedMedia?.url || null,
+                            mediaPath: processedMedia?.relativePath || null,
+                            mimetype: processedMedia?.mimetype || null,
+                            filename: processedMedia?.filename || null,
+                            fileSizeBytes: processedMedia?.fileSizeBytes || null,
+                            mediaData: processedMedia?.mediaData || processedMedia?.data || null,
+                            hasMedia: true,
+                            updatedAt: new Date().toISOString()
+                        });
+                    }
                     const senderMeta = await resolveMessageSenderMeta(msg);
-                    const fileMeta = extractMessageFileMeta(msg, media);
+                    const fileMeta = extractMessageFileMeta(msg, processedMedia);
                     const quotedMessage = await extractQuotedMessageInfo(msg);
 
                     await persistMessageHistory(historyTenantId, {
