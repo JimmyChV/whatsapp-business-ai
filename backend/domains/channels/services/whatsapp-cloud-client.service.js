@@ -842,6 +842,34 @@ class WhatsAppCloudClient extends EventEmitter {
         return response;
     }
 
+    async sendReaction(to, { messageId, emoji } = {}) {
+        if (!this.isReady) throw new Error('Cloud client not ready');
+        const waId = await this.resolveSendWaId(to);
+        const safeMessageId = String(messageId || '').trim();
+        const safeEmoji = String(emoji || '').trim();
+        if (!safeMessageId || !safeEmoji) {
+            throw new Error('messageId y emoji son requeridos para enviar reaccion.');
+        }
+
+        const payload = {
+            messaging_product: 'whatsapp',
+            to: waId,
+            type: 'reaction',
+            reaction: {
+                message_id: safeMessageId,
+                emoji: safeEmoji
+            }
+        };
+
+        return await this.graphJson(`/${this.phoneNumberId}/messages`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+    }
+
     async uploadMedia(mediaData, mimetype, filename = 'adjunto') {
         const safeMime = String(mimetype || 'application/octet-stream').trim() || 'application/octet-stream';
         const safeName = String(filename || 'adjunto').trim() || 'adjunto';

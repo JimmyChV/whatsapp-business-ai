@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import moment from 'moment';
-import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, Download } from 'lucide-react';
+import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, Download, SmilePlus } from 'lucide-react';
 import {
     renderWhatsAppFormattedText,
     formatOrderMoney,
@@ -28,6 +28,7 @@ const MessageBubble = ({
     onEditMessage,
     onReplyMessage,
     onForwardMessage,
+    onSendReaction,
     onJumpToMessage,
     forwardChatOptions = [],
     activeChatId = null,
@@ -99,7 +100,9 @@ const MessageBubble = ({
     const [showForwardPicker, setShowForwardPicker] = useState(false);
     const [forwardSearch, setForwardSearch] = useState('');
     const [showActionsMenu, setShowActionsMenu] = useState(false);
+    const [showReactionPicker, setShowReactionPicker] = useState(false);
     const bubbleRef = useRef(null);
+    const reactionOptions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
     const shouldHideBodyForOrder = isQuotePayload || (hasOrder && isLikelyBinaryBody(messageBodyText));
     const messageTextToRender = isCatalogItem
@@ -254,12 +257,21 @@ const MessageBubble = ({
         if (!quotedMessageId || typeof onJumpToMessage !== 'function') return;
         onJumpToMessage(quotedMessageId);
     };
+    const handleReactionSelect = (emoji) => {
+        const messageId = String(msg?.id || '').trim();
+        const safeEmoji = String(emoji || '').trim();
+        if (!messageId || !safeEmoji || typeof onSendReaction !== 'function') return;
+        onSendReaction(messageId, safeEmoji);
+        setShowReactionPicker(false);
+    };
 
     return (
         <div
             ref={bubbleRef}
             className={`message ${isOut ? 'out' : 'in'}${hasMenuActions ? ' has-menu-actions' : ''}`}
             style={isHighlighted ? { outline: `2px solid ${isCurrentHighlighted ? '#00a884' : 'rgba(0,168,132,0.35)'}`, borderRadius: '10px', padding: '2px' } : undefined}
+            onMouseEnter={() => setShowReactionPicker(true)}
+            onMouseLeave={() => setShowReactionPicker(false)}
         >
             {isCatalogItem && (
                 <div className="catalog-card">
@@ -460,6 +472,46 @@ const MessageBubble = ({
 
             
             <div className={`message-content ${canEditMessage ? 'can-edit' : ''}`} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                {showReactionPicker && typeof onSendReaction === 'function' && String(msg?.id || '').trim() && (
+                    <div style={{
+                        position: 'absolute',
+                        top: '-38px',
+                        right: isOut ? '0' : 'auto',
+                        left: isOut ? 'auto' : '0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '4px 6px',
+                        borderRadius: '999px',
+                        background: 'rgba(8, 18, 24, 0.96)',
+                        border: '1px solid rgba(124,200,255,0.24)',
+                        boxShadow: '0 10px 24px rgba(0,0,0,0.22)',
+                        zIndex: 3
+                    }}>
+                        <SmilePlus size={13} color="#8ed8ff" />
+                        {reactionOptions.map((emoji) => (
+                            <button
+                                key={emoji}
+                                type="button"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleReactionSelect(emoji);
+                                }}
+                                style={{
+                                    border: 'none',
+                                    background: 'transparent',
+                                    cursor: 'pointer',
+                                    fontSize: '1rem',
+                                    lineHeight: 1,
+                                    padding: '2px'
+                                }}
+                                title={`Reaccionar con ${emoji}`}
+                            >
+                                {emoji}
+                            </button>
+                        ))}
+                    </div>
+                )}
                 {showSenderName && messageSenderName && (
                     <div className="message-sender-name" title={messageSenderName} style={{ color: senderNameColor }}>
                         {messageSenderName}

@@ -263,6 +263,13 @@ class WAProvider extends EventEmitter {
         return await this.activeAdapter.sendTemplateMessage(to, payload);
     }
 
+    async sendReaction(to, payload = {}) {
+        if (!this.activeAdapter?.sendReaction) {
+            throw new Error('Reaction send is not supported in this transport.');
+        }
+        return await this.activeAdapter.sendReaction(to, payload);
+    }
+
     async getMessageById(messageId) {
         if (!this.activeAdapter?.getMessageById) return null;
         return await this.activeAdapter.getMessageById(messageId);

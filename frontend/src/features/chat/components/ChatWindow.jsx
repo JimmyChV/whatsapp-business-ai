@@ -36,6 +36,7 @@ const ChatWindow = ({
     onEditMessage,
     onReplyMessage,
     onForwardMessage,
+    onSendReaction,
     onDeleteMessage,
     forwardChatOptions = [],
 
@@ -375,6 +376,7 @@ const ChatWindow = ({
                                     onEditMessage={onEditMessage}
                                     onReplyMessage={onReplyMessage}
                                     onForwardMessage={onForwardMessage}
+                                    onSendReaction={onSendReaction}
                                     onJumpToMessage={handleJumpToMessage}
                                     onDeleteMessage={onDeleteMessage}
                                     forwardChatOptions={forwardChatOptions}

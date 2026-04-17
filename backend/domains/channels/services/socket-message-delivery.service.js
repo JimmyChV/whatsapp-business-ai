@@ -42,7 +42,55 @@ function createSocketMessageDeliveryService({
         };
     };
 
-    return {
+         socket.on('send_reaction', async ({ to, toPhone, messageId, emoji }) => {
+             if (!guardRateLimit(socket, 'send_reaction')) return;
+             if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar reacciones', errorEvent: 'error' })) return;
+             try {
+                 const targetMessageId = String(messageId || '').trim();
+                 const safeEmoji = String(emoji || '').trim();
+                 if (!targetMessageId || !safeEmoji) {
+                     socket.emit('error', 'Datos invalidos para enviar reaccion.');
+                     return;
+                 }
+
+                 const target = await resolveScopedSendTarget({
+                     rawChatId: to,
+                     rawPhone: toPhone,
+                     errorEvent: 'error',
+                     action: 'enviar reacciones'
+                 });
+                 if (!target?.ok) return;
+
+                 await waClient.sendReaction(target.targetChatId, {
+                     messageId: targetMessageId,
+                     emoji: safeEmoji
+                 });
+
+                 socket.emit('reaction_sent', {
+                     chatId: target.scopedChatId || target.targetChatId,
+                     baseChatId: target.targetChatId,
+                     scopeModuleId: target.scopeModuleId || null,
+                     messageId: targetMessageId,
+                     emoji: safeEmoji
+                 });
+
+                 await recordConversationEvent({
+                     chatId: target.targetChatId,
+                     scopeModuleId: target.scopeModuleId,
+                     eventType: 'chat.message.outgoing.reaction',
+                     eventSource: 'socket',
+                     payload: {
+                         messageId: targetMessageId,
+                         emoji: safeEmoji
+                     }
+                 });
+             } catch (e) {
+                 const detail = String(e?.message || e || 'Failed to send reaction.');
+                 console.warn('[WA][SendReaction] ' + detail);
+                 socket.emit('error', detail);
+             }
+         });
+                 return {
         registerMessageDeliveryHandlers
     };
 }
