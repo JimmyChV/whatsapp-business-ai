@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import { buildTemplateResolvedPreview } from '../helpers/templateMessages.helpers';
 import { getTemplateVariablesPreview, listApprovedIndividualTemplates } from '../services/templateMessages.service';
+import { patchCachedMessages } from '../helpers/messageCache.helpers';
 
 export default function useChatMessageActions({
   socket,
@@ -22,8 +23,11 @@ export default function useChatMessageActions({
   clientContact,
   prevMessagesMetaRef,
   suppressSmoothScrollUntilRef,
+  messagesCacheRef,
+  pendingOutgoingByChatRef,
   setActiveChatId,
   setMessages,
+  setChats,
   setEditingMessage,
   setReplyingMessage,
   setShowClientProfile,
@@ -44,6 +48,133 @@ export default function useChatMessageActions({
   setSendTemplateSubmitting
 } = {}) {
   const { notify } = useUiFeedback();
+
+  const markOptimisticMessageStatus = useCallback((chatId, clientTempId, patch = {}) => {
+    const safeChatId = String(chatId || '').trim();
+    const safeClientTempId = String(clientTempId || '').trim();
+    if (!safeChatId || !safeClientTempId) return;
+
+    const applyPatch = (prev) => (Array.isArray(prev) ? prev : []).map((message) => (
+      String(message?.clientTempId || '').trim() === safeClientTempId
+        ? { ...message, ...patch }
+        : message
+    ));
+
+    patchCachedMessages(messagesCacheRef, safeChatId, applyPatch);
+    if (String(activeChatIdRef.current || '').trim() === safeChatId) {
+      setMessages(applyPatch);
+    }
+  }, [activeChatIdRef, messagesCacheRef, setMessages]);
+
+  const rememberPendingOutgoing = useCallback((chatId, clientTempId, retryPayload = {}) => {
+    const safeChatId = String(chatId || '').trim();
+    const safeClientTempId = String(clientTempId || '').trim();
+    if (!safeChatId || !safeClientTempId) return;
+
+    const currentMap = pendingOutgoingByChatRef?.current instanceof Map
+      ? pendingOutgoingByChatRef.current
+      : null;
+    if (!currentMap) return;
+
+    const existing = currentMap.get(safeChatId);
+    const nextById = existing instanceof Map ? new Map(existing) : new Map();
+    const previousEntry = nextById.get(safeClientTempId);
+    if (previousEntry?.timeoutId) clearTimeout(previousEntry.timeoutId);
+
+    const timeoutId = setTimeout(() => {
+      markOptimisticMessageStatus(safeChatId, safeClientTempId, {
+        status: 'failed',
+        ack: -1,
+        errorMessage: 'No se recibio confirmacion de envio. Puedes reintentar.'
+      });
+      const activePending = pendingOutgoingByChatRef?.current?.get?.(safeChatId);
+      if (activePending instanceof Map) {
+        activePending.delete(safeClientTempId);
+        if (activePending.size === 0) pendingOutgoingByChatRef.current.delete(safeChatId);
+      }
+    }, 15000);
+
+    nextById.set(safeClientTempId, {
+      retryPayload,
+      timeoutId,
+      createdAt: Date.now()
+    });
+    currentMap.set(safeChatId, nextById);
+  }, [markOptimisticMessageStatus, pendingOutgoingByChatRef]);
+
+  const emitOutgoingRetryPayload = useCallback((payload = null) => {
+    const safePayload = payload && typeof payload === 'object' ? payload : null;
+    if (!safePayload || !socket || typeof socket.emit !== 'function') return false;
+    const eventName = String(safePayload.eventName || '').trim();
+    if (!eventName) return false;
+    socket.emit(eventName, safePayload.payload || {});
+    return true;
+  }, [socket]);
+
+  const insertOptimisticOutgoing = useCallback(({
+    chatId,
+    body = '',
+    hasMedia = false,
+    mimetype = null,
+    filename = null,
+    mediaData = null,
+    quotedMessage = null,
+    retryPayload = null
+  } = {}) => {
+    const safeChatId = String(chatId || '').trim();
+    if (!safeChatId) return null;
+
+    const clientTempId = `tmp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const timestamp = Math.floor(Date.now() / 1000);
+    const optimisticMessage = {
+      id: clientTempId,
+      clientTempId,
+      chatId: safeChatId,
+      fromMe: true,
+      body: String(body || ''),
+      timestamp,
+      ack: 0,
+      status: 'sending',
+      optimistic: true,
+      hasMedia: Boolean(hasMedia),
+      mimetype: mimetype || null,
+      filename: filename || null,
+      mediaData: mediaData || null,
+      canEdit: false,
+      quotedMessage: quotedMessage || null,
+      reactions: [],
+      retryPayload: retryPayload && typeof retryPayload === 'object' ? retryPayload : null
+    };
+
+    patchCachedMessages(messagesCacheRef, safeChatId, (prev) => [...(Array.isArray(prev) ? prev : []), optimisticMessage]);
+    if (String(activeChatIdRef.current || '').trim() === safeChatId) {
+      setMessages((prev) => [...(Array.isArray(prev) ? prev : []), optimisticMessage]);
+    }
+    setChats?.((prev) => prev.map((chat) => (
+      String(chat?.id || '').trim() === safeChatId
+        ? {
+          ...chat,
+          lastMessage: hasMedia ? (String(body || '').trim() || 'Adjunto') : String(body || '').trim(),
+          lastMessageFromMe: true,
+          timestamp
+        }
+        : chat
+    )));
+    rememberPendingOutgoing(safeChatId, clientTempId, retryPayload);
+    return optimisticMessage;
+  }, [activeChatIdRef, messagesCacheRef, rememberPendingOutgoing, setChats, setMessages]);
+
+  const buildQuotedMessagePayload = useCallback(() => {
+    if (!replyingMessage?.id) return null;
+    return {
+      id: replyingMessage.id,
+      body: String(replyingMessage?.body || '').trim(),
+      fromMe: Boolean(replyingMessage?.fromMe),
+      hasMedia: Boolean(replyingMessage?.hasMedia),
+      type: String(replyingMessage?.type || 'chat')
+    };
+  }, [replyingMessage]);
+
   const handleExitActiveChat = useCallback(() => {
     activeChatIdRef.current = null;
     setActiveChatId(null);
@@ -109,6 +240,23 @@ export default function useChatMessageActions({
     setSelectedSendTemplatePreviewError,
     setSendTemplateSubmitting
   ]);
+
+  const handleRetryMessage = useCallback((message = null) => {
+    const retryPayload = message?.retryPayload && typeof message.retryPayload === 'object'
+      ? message.retryPayload
+      : null;
+    const clientTempId = String(message?.clientTempId || message?.id || '').trim();
+    const chatId = String(message?.chatId || activeChatIdRef.current || '').trim();
+    if (!retryPayload || !clientTempId || !chatId) return;
+
+    markOptimisticMessageStatus(chatId, clientTempId, {
+      status: 'sending',
+      ack: 0,
+      errorMessage: ''
+    });
+    rememberPendingOutgoing(chatId, clientTempId, retryPayload);
+    emitOutgoingRetryPayload(retryPayload);
+  }, [activeChatIdRef, emitOutgoingRetryPayload, markOptimisticMessageStatus, rememberPendingOutgoing]);
 
   const handleOpenSendTemplate = useCallback(async () => {
     const activeId = String(activeChatIdRef.current || activeChatId || '').trim();
@@ -296,6 +444,7 @@ export default function useChatMessageActions({
     }
 
     const quotedMessageId = String(replyingMessage?.id || '').trim() || null;
+    const quotedMessage = buildQuotedMessagePayload();
 
     const activeChatForSend = chatsRef.current.find((chat) => String(chat?.id || '') === String(activeChatId || ''));
     const activeChatPhone = normalizeDigits(activeChatForSend?.phone || '');
@@ -327,7 +476,7 @@ export default function useChatMessageActions({
     }
 
     if (attachment) {
-      socket.emit('send_media_message', {
+      const sendPayload = {
         to: activeChatId,
         toPhone,
         body: inputText,
@@ -335,10 +484,34 @@ export default function useChatMessageActions({
         mimetype: attachment.mimetype,
         filename: attachment.filename,
         quotedMessageId
+      };
+      insertOptimisticOutgoing({
+        chatId: activeChatId,
+        body: inputText,
+        hasMedia: true,
+        mimetype: attachment.mimetype,
+        filename: attachment.filename,
+        mediaData: attachment.data,
+        quotedMessage,
+        retryPayload: {
+          eventName: 'send_media_message',
+          payload: sendPayload
+        }
       });
+      socket.emit('send_media_message', sendPayload);
       removeAttachment();
     } else {
-      socket.emit('send_message', { to: activeChatId, toPhone, body: inputText, quotedMessageId });
+      const sendPayload = { to: activeChatId, toPhone, body: inputText, quotedMessageId };
+      insertOptimisticOutgoing({
+        chatId: activeChatId,
+        body: inputText,
+        quotedMessage,
+        retryPayload: {
+          eventName: 'send_message',
+          payload: sendPayload
+        }
+      });
+      socket.emit('send_message', sendPayload);
     }
     setInputText('');
     setReplyingMessage(null);
@@ -346,9 +519,11 @@ export default function useChatMessageActions({
     activeChatId,
     activeChatIdRef,
     attachment,
+    buildQuotedMessagePayload,
     chatsRef,
     editingMessage,
     inputText,
+    insertOptimisticOutgoing,
     normalizeDigits,
     normalizeQuickReplyDraft,
     quickReplyDraft,
@@ -360,12 +535,14 @@ export default function useChatMessageActions({
     setQuickReplyDraft,
     setReplyingMessage,
     socket,
-    waCapabilities.messageEdit
+    waCapabilities.messageEdit,
+    notify
   ]);
 
   return {
     handleExitActiveChat,
     handleSendMessage,
+    handleRetryMessage,
     handleSendReaction,
     handleOpenSendTemplate,
     handleCloseSendTemplate,

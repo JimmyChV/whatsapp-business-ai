@@ -48,6 +48,7 @@ export default function OperationPage({
   setInputText,
   handleSendMessage,
   handleSendReaction,
+  handleRetryMessage,
   attachment,
   attachmentPreview,
   removeAttachment,
@@ -192,6 +193,7 @@ export default function OperationPage({
               setInputText={setInputText}
               onSendMessage={handleSendMessage}
               onSendReaction={handleSendReaction}
+              onRetryMessage={handleRetryMessage}
               onFileClick={() => fileInputRef.current?.click()}
               attachment={attachment}
               attachmentPreview={attachmentPreview}

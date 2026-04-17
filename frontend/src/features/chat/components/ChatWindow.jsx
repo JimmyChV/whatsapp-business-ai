@@ -37,6 +37,7 @@ const ChatWindow = ({
     onReplyMessage,
     onForwardMessage,
     onSendReaction,
+    onRetryMessage,
     onDeleteMessage,
     forwardChatOptions = [],
 
@@ -377,6 +378,7 @@ const ChatWindow = ({
                                     onReplyMessage={onReplyMessage}
                                     onForwardMessage={onForwardMessage}
                                     onSendReaction={onSendReaction}
+                                    onRetryMessage={onRetryMessage}
                                     onJumpToMessage={handleJumpToMessage}
                                     onDeleteMessage={onDeleteMessage}
                                     forwardChatOptions={forwardChatOptions}
