@@ -1,7 +1,10 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
+import SendTemplateModal from '../../chat/components/SendTemplateModal';
+import { buildTemplateResolvedPreview } from '../../chat/core/helpers/templateMessages.helpers';
 import { normalizeCustomerFormFromItem } from '../helpers';
+import { isTemplateAllowedInIndividual } from '../helpers/templateUseCase.helpers';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -10,6 +13,7 @@ import {
     SaasViewHeader,
     useSaasColumnPrefs
 } from '../components/layout';
+import { listMetaTemplates } from '../services/metaTemplates.service';
 
 const CUSTOMER_TABLE_COLUMNS = [
     { key: 'codigo', label: 'Codigo', width: '132px', minWidth: '120px', maxWidth: '152px', type: 'text' },
@@ -700,6 +704,7 @@ function CustomersSection(props = {}) {
         selectedCustomer: selectedCustomerContext,
         runAction,
         requestJson,
+        socket,
         tenantScopeId,
         loadCustomers,
         syncCustomersDelta,
@@ -753,6 +758,15 @@ function CustomersSection(props = {}) {
     const [selectedCustomerLive, setSelectedCustomerLive] = useState(selectedCustomerContext || null);
     const [customerOverridesById, setCustomerOverridesById] = useState({});
     const [showCustomerSynced, setShowCustomerSynced] = useState(false);
+    const [sendTemplateOpen, setSendTemplateOpen] = useState(false);
+    const [sendTemplateOptions, setSendTemplateOptions] = useState([]);
+    const [sendTemplateOptionsLoading, setSendTemplateOptionsLoading] = useState(false);
+    const [sendTemplateOptionsError, setSendTemplateOptionsError] = useState('');
+    const [selectedSendTemplate, setSelectedSendTemplate] = useState(null);
+    const [selectedSendTemplatePreview, setSelectedSendTemplatePreview] = useState(null);
+    const [selectedSendTemplatePreviewLoading, setSelectedSendTemplatePreviewLoading] = useState(false);
+    const [selectedSendTemplatePreviewError, setSelectedSendTemplatePreviewError] = useState('');
+    const [sendTemplateSubmitting, setSendTemplateSubmitting] = useState(false);
     const syncedIndicatorTimeoutRef = useRef(null);
 
     const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
@@ -807,6 +821,10 @@ function CustomersSection(props = {}) {
     );
 
     const selectedCustomerIdResolved = useMemo(() => resolveCustomerId(selectedCustomer), [selectedCustomer]);
+    const selectedCustomerPhone = useMemo(
+        () => String(selectedCustomer?.phoneE164 || selectedCustomer?.phone || '').trim(),
+        [selectedCustomer]
+    );
     const profileAddresses = useMemo(
         () => buildProfileAddressesFromCustomer(selectedCustomer),
         [selectedCustomer]
@@ -837,6 +855,14 @@ function CustomersSection(props = {}) {
         });
         return map;
     }, [waModules]);
+    const selectedCustomerPreferredModuleIds = useMemo(
+        () => Array.from(new Set(
+            (Array.isArray(moduleContexts) ? moduleContexts : [])
+                .map((item) => String(item?.moduleId || '').trim())
+                .filter(Boolean)
+        )),
+        [moduleContexts]
+    );
 
     const customerTypeOptions = useMemo(
         () => normalizeCatalogItems(customerCatalogs.customerTypes),
@@ -1531,6 +1557,133 @@ function CustomersSection(props = {}) {
         });
     }, [loadCustomers, requestJson, runAction, selectedCustomer, tenantScopeId]);
 
+    const resetSendTemplateFlow = useCallback(() => {
+        setSendTemplateOpen(false);
+        setSendTemplateOptions([]);
+        setSendTemplateOptionsLoading(false);
+        setSendTemplateOptionsError('');
+        setSelectedSendTemplate(null);
+        setSelectedSendTemplatePreview(null);
+        setSelectedSendTemplatePreviewLoading(false);
+        setSelectedSendTemplatePreviewError('');
+        setSendTemplateSubmitting(false);
+    }, []);
+
+    const handleSelectDirectTemplate = useCallback(async (template = null) => {
+        const entry = template && typeof template === 'object' ? template : null;
+        if (!entry) return;
+
+        setSelectedSendTemplate(entry);
+        setSelectedSendTemplatePreview(null);
+        setSelectedSendTemplatePreviewLoading(true);
+        setSelectedSendTemplatePreviewError('');
+
+        try {
+            const previewPayload = await requestJson(`/api/tenant/template-variables/preview?customerId=${encodeURIComponent(selectedCustomerIdResolved)}`, {
+                method: 'GET'
+            });
+            const resolvedPreview = buildTemplateResolvedPreview(entry, previewPayload);
+            setSelectedSendTemplatePreview({
+                ...resolvedPreview,
+                payload: previewPayload
+            });
+        } catch (error) {
+            const message = String(error?.message || 'No se pudo resolver la preview del template.');
+            setSelectedSendTemplatePreviewError(message);
+            notify({ type: 'error', message });
+        } finally {
+            setSelectedSendTemplatePreviewLoading(false);
+        }
+    }, [notify, requestJson, selectedCustomerIdResolved]);
+
+    const handleOpenDirectTemplateModal = useCallback(async () => {
+        if (!selectedCustomerIdResolved) {
+            notify({ type: 'error', message: 'Selecciona un cliente para iniciar la conversacion.' });
+            return;
+        }
+        if (!selectedCustomerPhone) {
+            notify({ type: 'error', message: 'El cliente no tiene telefono principal para enviar templates.' });
+            return;
+        }
+
+        setSendTemplateOpen(true);
+        setSendTemplateOptions([]);
+        setSendTemplateOptionsLoading(true);
+        setSendTemplateOptionsError('');
+        setSelectedSendTemplate(null);
+        setSelectedSendTemplatePreview(null);
+        setSelectedSendTemplatePreviewError('');
+
+        try {
+            const response = await listMetaTemplates(requestJson, {
+                status: 'approved',
+                limit: 200
+            });
+            const preferredModules = new Set(selectedCustomerPreferredModuleIds);
+            const items = (Array.isArray(response?.items) ? response.items : [])
+                .filter((item) => isTemplateAllowedInIndividual(item?.useCase))
+                .map((item) => ({
+                    ...item,
+                    templateId: String(item?.templateId || item?.metaTemplateId || item?.templateName || '').trim(),
+                    templateName: String(item?.templateName || '').trim(),
+                    templateLanguage: String(item?.templateLanguage || 'es').trim().toLowerCase() || 'es',
+                    moduleId: String(item?.moduleId || '').trim(),
+                    useCase: String(item?.useCase || 'both').trim().toLowerCase() || 'both'
+                }))
+                .filter((item) => item.templateId && item.templateName)
+                .sort((left, right) => {
+                    const leftPreferred = preferredModules.has(left.moduleId) ? 0 : 1;
+                    const rightPreferred = preferredModules.has(right.moduleId) ? 0 : 1;
+                    if (leftPreferred !== rightPreferred) return leftPreferred - rightPreferred;
+                    const moduleCompare = String(moduleNameById[left.moduleId] || left.moduleId || '').localeCompare(
+                        String(moduleNameById[right.moduleId] || right.moduleId || ''),
+                        'es',
+                        { sensitivity: 'base' }
+                    );
+                    if (moduleCompare !== 0) return moduleCompare;
+                    return String(left.templateName || '').localeCompare(String(right.templateName || ''), 'es', { sensitivity: 'base' });
+                });
+
+            setSendTemplateOptions(items);
+            if (items.length > 0) {
+                await handleSelectDirectTemplate(items[0]);
+            }
+        } catch (error) {
+            const message = String(error?.message || 'No se pudieron cargar templates para iniciar la conversacion.');
+            setSendTemplateOptionsError(message);
+            notify({ type: 'error', message });
+        } finally {
+            setSendTemplateOptionsLoading(false);
+        }
+    }, [
+        handleSelectDirectTemplate,
+        moduleNameById,
+        notify,
+        requestJson,
+        selectedCustomerIdResolved,
+        selectedCustomerPhone,
+        selectedCustomerPreferredModuleIds
+    ]);
+
+    const handleConfirmDirectTemplateSend = useCallback(() => {
+        const template = selectedSendTemplate && typeof selectedSendTemplate === 'object' ? selectedSendTemplate : null;
+        if (!template || !socket || typeof socket.emit !== 'function') return;
+        if (!selectedCustomerPhone) {
+            notify({ type: 'error', message: 'El cliente no tiene telefono valido para enviar el template.' });
+            return;
+        }
+
+        setSendTemplateSubmitting(true);
+        socket.emit('send_template_message', {
+            toPhone: selectedCustomerPhone,
+            customerId: selectedCustomerIdResolved || null,
+            moduleId: String(template?.moduleId || '').trim() || null,
+            templateId: String(template?.templateId || '').trim() || null,
+            templateName: String(template?.templateName || '').trim(),
+            templateLanguage: String(template?.templateLanguage || 'es').trim().toLowerCase() || 'es'
+        });
+    }, [notify, selectedCustomerIdResolved, selectedCustomerPhone, selectedSendTemplate, socket]);
+
     const updateCustomersState = useCallback((customerItem = null) => {
         if (typeof setCustomers !== 'function') return;
         const safeItem = customerItem && typeof customerItem === 'object' ? customerItem : null;
@@ -1875,6 +2028,30 @@ function CustomersSection(props = {}) {
         geoProvinceById,
         geoProvinceByName
     ]);
+
+    useEffect(() => {
+        if (!socket || typeof socket.on !== 'function' || typeof socket.off !== 'function') return undefined;
+
+        const handleTemplateMessageSent = () => {
+            setSendTemplateSubmitting(false);
+            resetSendTemplateFlow();
+        };
+
+        const handleTemplateMessageError = () => {
+            setSendTemplateSubmitting(false);
+        };
+
+        socket.on('template_message_sent', handleTemplateMessageSent);
+        socket.on('template_message_error', handleTemplateMessageError);
+        return () => {
+            socket.off('template_message_sent', handleTemplateMessageSent);
+            socket.off('template_message_error', handleTemplateMessageError);
+        };
+    }, [resetSendTemplateFlow, socket]);
+
+    useEffect(() => {
+        resetSendTemplateFlow();
+    }, [resetSendTemplateFlow, selectedCustomerIdResolved]);
 
     const handleAddressDepartmentChange = useCallback((nextDepartmentIdRaw = '') => {
         const departmentId = normalizeGeoNumericId(nextDepartmentIdRaw);
@@ -2537,6 +2714,9 @@ function CustomersSection(props = {}) {
                     bodyClassName="saas-customers-detail-panel__body"
                     actions={(
                         <div className="saas-customers-detail-actions">
+                            <button type="button" disabled={busy || !selectedCustomerPhone} onClick={() => { void handleOpenDirectTemplateModal(); }}>
+                                Iniciar conversacion
+                            </button>
                             <button type="button" disabled={editClickBusy} onClick={handleOpenCustomerEdit}>Editar</button>
                             <button type="button" disabled={busy} onClick={handleSoftDeleteCustomer}>Eliminar</button>
                             <button type="button" className="saas-btn-close" disabled={busy} onClick={() => { void handleRequestCloseCustomersPanel(); }}>Cerrar</button>
@@ -2789,6 +2969,21 @@ function CustomersSection(props = {}) {
                 header={headerElement}
                 left={leftPane}
                 right={rightPane}
+            />
+            <SendTemplateModal
+                isOpen={sendTemplateOpen}
+                templates={sendTemplateOptions}
+                templatesLoading={sendTemplateOptionsLoading}
+                templatesError={sendTemplateOptionsError}
+                selectedTemplate={selectedSendTemplate}
+                preview={selectedSendTemplatePreview}
+                previewLoading={selectedSendTemplatePreviewLoading}
+                previewError={selectedSendTemplatePreviewError}
+                confirmDisabled={!selectedSendTemplate || sendTemplateSubmitting || !selectedCustomerPhone}
+                confirmBusy={sendTemplateSubmitting}
+                onClose={resetSendTemplateFlow}
+                onSelectTemplate={(template) => { void handleSelectDirectTemplate(template); }}
+                onConfirm={handleConfirmDirectTemplateSend}
             />
         </section>
     );

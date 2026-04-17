@@ -131,6 +131,7 @@ export default function SaasPanelEntitySections(props = {}) {
         openCustomerEdit: context.openCustomerEdit,
         runAction: context.runAction,
         requestJson: context.requestJson,
+        socket: context.socket,
         tenantScopeId: context.tenantScopeId,
         loadCustomers: context.loadCustomers,
         syncCustomersDelta: context.syncCustomersDelta,
