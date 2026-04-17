@@ -300,6 +300,7 @@ export default function useAppOperationHandlers({
   const {
     handleExitActiveChat,
     handleSendMessage,
+    handleSendCatalogProduct,
     handleRetryMessage,
     handleSendReaction,
     handleOpenSendTemplate,
@@ -492,6 +493,7 @@ export default function useAppOperationHandlers({
   const handlersBlock = {
     handleChatSelect,
     handleSendMessage,
+    handleSendCatalogProduct,
     handleRetryMessage,
     handleSendReaction,
     handleExitActiveChat,

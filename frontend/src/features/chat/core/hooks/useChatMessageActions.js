@@ -49,6 +49,40 @@ export default function useChatMessageActions({
 } = {}) {
   const { notify } = useUiFeedback();
 
+  const buildCatalogProductCaptionPreview = useCallback((product = {}) => {
+    const title = String(product?.title || product?.name || 'Producto').trim() || 'Producto';
+    const parsePrice = (value, fallback = 0) => {
+      const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+      if (Number.isFinite(parsed)) return parsed;
+      return Number.isFinite(fallback) ? fallback : 0;
+    };
+
+    const finalPrice = parsePrice(product?.price, 0);
+    const regularPrice = parsePrice(product?.regularPrice ?? product?.regular_price, finalPrice);
+    const lines = [`*${title}*`];
+
+    if (regularPrice > 0 && finalPrice > 0 && finalPrice < regularPrice) {
+      const discountAmount = Math.max(regularPrice - finalPrice, 0);
+      lines.push(`Precio regular: S/ ${regularPrice.toFixed(2)}`);
+      lines.push(`*Descuento: S/ ${discountAmount.toFixed(2)}*`);
+      lines.push(`*PRECIO FINAL: S/ ${finalPrice.toFixed(2)}*`);
+    } else if (finalPrice > 0) {
+      lines.push(`*PRECIO FINAL: S/ ${finalPrice.toFixed(2)}*`);
+    } else {
+      lines.push('*PRECIO FINAL: CONSULTAR*');
+    }
+
+    const description = String(product?.description || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (description) {
+      lines.push('');
+      lines.push(`Detalle: ${description.length > 280 ? `${description.slice(0, 277)}...` : description}`);
+    }
+
+    return lines.join('\n');
+  }, []);
+
   const markOptimisticMessageStatus = useCallback((chatId, clientTempId, patch = {}) => {
     const safeChatId = String(chatId || '').trim();
     const safeClientTempId = String(clientTempId || '').trim();
@@ -119,6 +153,7 @@ export default function useChatMessageActions({
     mimetype = null,
     filename = null,
     mediaData = null,
+    mediaUrl = null,
     quotedMessage = null,
     retryPayload = null
   } = {}) => {
@@ -142,6 +177,7 @@ export default function useChatMessageActions({
       mimetype: mimetype || null,
       filename: filename || null,
       mediaData: mediaData || null,
+      mediaUrl: String(mediaUrl || '').trim() || null,
       canEdit: false,
       quotedMessage: quotedMessage || null,
       reactions: [],
@@ -418,6 +454,64 @@ export default function useChatMessageActions({
     socket
   ]);
 
+  const handleSendCatalogProduct = useCallback((product = null) => {
+    const activeId = String(activeChatIdRef.current || activeChatId || '').trim();
+    if (!activeId || !socket || typeof socket.emit !== 'function') return false;
+
+    const activeChatForSend = chatsRef.current.find((chat) => String(chat?.id || '') === String(activeChatId || activeId));
+    const activeChatPhone = normalizeDigits(activeChatForSend?.phone || '');
+    const toPhone = activeChatPhone || null;
+    const safeProduct = product && typeof product === 'object' ? product : {};
+    const productTitle = String(safeProduct?.title || safeProduct?.name || 'Producto').trim() || 'Producto';
+    const productDescription = String(safeProduct?.description || '').trim();
+    const productPrice = String(safeProduct?.price || '').trim();
+    const productUrl = String(
+      safeProduct?.url || safeProduct?.permalink || safeProduct?.productUrl || safeProduct?.link || ''
+    ).trim();
+    const imageUrl = String(safeProduct?.imageUrl || safeProduct?.image || '').trim();
+
+    const payload = {
+      to: activeId,
+      toPhone,
+      product: {
+        id: String(safeProduct?.id || safeProduct?.productId || '').trim() || null,
+        title: productTitle,
+        price: productPrice,
+        regularPrice: safeProduct?.regularPrice || safeProduct?.price || '',
+        salePrice: safeProduct?.salePrice || '',
+        discountPct: safeProduct?.discountPct || 0,
+        description: productDescription,
+        imageUrl,
+        url: productUrl
+      }
+    };
+
+    const optimisticBody = buildCatalogProductCaptionPreview(payload.product);
+
+    insertOptimisticOutgoing({
+      chatId: activeId,
+      body: optimisticBody || productTitle,
+      hasMedia: Boolean(imageUrl),
+      type: imageUrl ? 'image' : 'chat',
+      mediaUrl: imageUrl || null,
+      retryPayload: {
+        eventName: 'send_catalog_product',
+        payload
+      }
+    });
+
+    socket.emit('send_catalog_product', payload);
+    return true;
+  }, [
+    activeChatId,
+    activeChatIdRef,
+    buildCatalogProductCaptionPreview,
+    chatsRef,
+    insertOptimisticOutgoing,
+    normalizeDigits,
+    socket
+  ]);
+
   const handleSendMessage = useCallback((event) => {
     event?.preventDefault();
     const text = inputText.trim();
@@ -478,6 +572,7 @@ export default function useChatMessageActions({
           type: resolveOptimisticMediaType(primaryMimeType, primaryFileName),
           mimetype: primaryMimeType || null,
           filename: primaryFileName || null,
+          mediaUrl: String(draftQuickReply.mediaUrl || primaryAsset?.url || '').trim() || null,
           quotedMessage,
           retryPayload: {
             eventName: 'send_quick_reply',
@@ -589,6 +684,7 @@ export default function useChatMessageActions({
   return {
     handleExitActiveChat,
     handleSendMessage,
+    handleSendCatalogProduct,
     handleRetryMessage,
     handleSendReaction,
     handleOpenSendTemplate,

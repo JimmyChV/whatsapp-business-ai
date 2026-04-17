@@ -126,21 +126,6 @@ function createSocketCatalogDeliveryService({
                 const productId = String(product?.id || product?.productId || '').trim() || null;
                 const catalogId = String(product?.catalogId || '').trim() || null;
 
-                await recordConversationEvent({
-                    chatId: target.targetChatId,
-                    scopeModuleId: target.scopeModuleId,
-                    eventType: 'chat.message.outgoing.catalog_product',
-                    eventSource: 'socket',
-                    payload: {
-                        messageId: sentMessageId || null,
-                        productId,
-                        productTitle: String(product?.title || product?.name || '').trim() || null,
-                        withImage: sentWithImage,
-                        mediaUrl: String(catalogMediaPayload?.mediaUrl || '').trim() || null,
-                        catalogId
-                    }
-                });
-
                 socket.emit('catalog_product_sent', {
                     to: target.scopedChatId || target.targetChatId,
                     chatId: target.scopedChatId || target.targetChatId,
@@ -150,6 +135,27 @@ function createSocketCatalogDeliveryService({
                     withImage: sentWithImage,
                     productId,
                     catalogId
+                });
+
+                setImmediate(async () => {
+                    try {
+                        await recordConversationEvent({
+                            chatId: target.targetChatId,
+                            scopeModuleId: target.scopeModuleId,
+                            eventType: 'chat.message.outgoing.catalog_product',
+                            eventSource: 'socket',
+                            payload: {
+                                messageId: sentMessageId || null,
+                                productId,
+                                productTitle: String(product?.title || product?.name || '').trim() || null,
+                                withImage: sentWithImage,
+                                mediaUrl: String(catalogMediaPayload?.mediaUrl || '').trim() || null,
+                                catalogId
+                            }
+                        });
+                    } catch (recordError) {
+                        console.warn('[WA][SendCatalogProduct][recordConversationEvent] ' + String(recordError?.message || recordError));
+                    }
                 });
             } catch (e) {
                 const detail = String(e?.message || e || 'No se pudo enviar el producto del catalogo.');

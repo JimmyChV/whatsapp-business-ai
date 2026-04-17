@@ -44,6 +44,7 @@ export function buildOperationPageProps(input = {}) {
     inputText: input.inputText,
     setInputText: input.setInputText,
     handleSendMessage: input.handleSendMessage,
+    handleSendCatalogProduct: input.handleSendCatalogProduct,
     handleSendReaction: input.handleSendReaction,
     handleRetryMessage: input.handleRetryMessage,
     attachment: input.attachment,
