@@ -21,6 +21,7 @@ function createSocketWaEventsBridgeService({
     persistMessageHistory,
     persistMessageEdit,
     persistMessageAck,
+    persistMessageReaction,
     invalidateChatListCache,
     toChatSummary,
     emitMessageEditability,
@@ -627,6 +628,14 @@ function createSocketWaEventsBridgeService({
                 chatId: scopedChatId || baseChatId || null,
                 baseChatId: baseChatId || null,
                 scopeModuleId: scopeModuleId || null,
+                timestamp: Number(timestamp || 0) || Math.floor(Date.now() / 1000)
+            });
+
+            persistMessageReaction?.(resolveHistoryTenantId(), {
+                messageId: cleanMessageId,
+                chatId: baseChatId || null,
+                emoji: cleanEmoji,
+                senderId: String(senderId || '').trim() || null,
                 timestamp: Number(timestamp || 0) || Math.floor(Date.now() / 1000)
             });
         });

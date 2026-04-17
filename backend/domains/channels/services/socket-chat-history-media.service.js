@@ -63,7 +63,8 @@ function createSocketChatHistoryMediaService({
             canEdit: false,
             order: row?.orderPayload && typeof row.orderPayload === 'object' ? row.orderPayload : null,
             location: row?.locationPayload && typeof row.locationPayload === 'object' ? row.locationPayload : null,
-            quotedMessage: row?.quotedMessageId ? { id: String(row.quotedMessageId), body: '', fromMe: false } : null
+            quotedMessage: row?.quotedMessageId ? { id: String(row.quotedMessageId), body: '', fromMe: false } : null,
+            reactions: Array.isArray(metadata?.reactions) ? metadata.reactions : []
         };
     };
 
@@ -264,6 +265,7 @@ function createSocketChatHistoryMediaService({
                         order: extractOrderInfo(m) || (persistedEntry?.orderPayload && typeof persistedEntry.orderPayload === 'object' ? persistedEntry.orderPayload : null),
                         location: extractLocationInfo(m),
                         quotedMessage: await extractQuotedMessageInfo(m),
+                        reactions: Array.isArray(persistedMeta?.reactions) ? persistedMeta.reactions : [],
                         ...(agentMeta || {}),
                         sentViaModuleId: resolvedMessageModuleId,
                         sentViaModuleName: String(agentMeta?.sentViaModuleName || '').trim() || null,

@@ -843,6 +843,51 @@ class SocketManager {
         }
     }
 
+    async persistMessageReaction(tenantId, {
+        messageId,
+        chatId,
+        emoji,
+        senderId,
+        timestamp
+    } = {}) {
+        try {
+            const safeMessageId = String(messageId || '').trim();
+            const safeChatId = String(chatId || '').trim();
+            const safeEmoji = String(emoji || '').trim();
+            if (!safeMessageId || !safeChatId || !safeEmoji) return;
+
+            const rows = await messageHistoryService.listMessages(tenantId, {
+                chatId: safeChatId,
+                limit: 500
+            });
+            const existing = (Array.isArray(rows) ? rows : []).find((row) => String(row?.messageId || '').trim() === safeMessageId);
+            if (!existing) return;
+
+            const metadata = existing?.metadata && typeof existing.metadata === 'object' ? existing.metadata : {};
+            const existingReactions = Array.isArray(metadata?.reactions) ? metadata.reactions : [];
+            const safeSenderId = String(senderId || '').trim() || null;
+            const nextReaction = {
+                emoji: safeEmoji,
+                senderId: safeSenderId,
+                timestamp: Number(timestamp || 0) || Math.floor(Date.now() / 1000)
+            };
+
+            const deduped = existingReactions.filter((reaction) => {
+                const reactionSenderId = String(reaction?.senderId || '').trim() || null;
+                if (!safeSenderId) return true;
+                return reactionSenderId !== safeSenderId;
+            });
+
+            await messageHistoryService.updateMessageReactions(tenantId, {
+                messageId: safeMessageId,
+                chatId: safeChatId,
+                reactions: [...deduped, nextReaction]
+            });
+        } catch (error) {
+            console.warn('[History] persistMessageReaction failed:', String(error?.message || error));
+        }
+    }
+
     resolveHistoryTenantId() {
         try {
             const runtimeTarget = this.resolveRuntimeEventTarget();
@@ -1392,6 +1437,7 @@ class SocketManager {
                 getWaRuntime: this.getWaRuntime.bind(this),
                 emitToRuntimeContext: this.emitToRuntimeContext.bind(this),
                 persistMessageHistory: this.persistMessageHistory.bind(this),
+                persistMessageReaction: this.persistMessageReaction.bind(this),
                 invalidateChatListCache: this.invalidateChatListCache.bind(this),
                 toChatSummary: this.toChatSummary.bind(this),
                 emitMessageEditability: this.emitMessageEditability.bind(this),
@@ -1771,6 +1817,7 @@ class SocketManager {
             persistMessageHistory: this.persistMessageHistory.bind(this),
             persistMessageEdit: this.persistMessageEdit.bind(this),
             persistMessageAck: this.persistMessageAck.bind(this),
+            persistMessageReaction: this.persistMessageReaction.bind(this),
             invalidateChatListCache: this.invalidateChatListCache.bind(this),
             toChatSummary: this.toChatSummary.bind(this),
             emitMessageEditability: this.emitMessageEditability.bind(this),

@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
+import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const GLOBAL_SKIN_TONE_STORAGE_KEY = 'chat-emoji-skin-tone:global';
 
 const normalizeQuickReplyAssetPreviewUrl = (rawUrl = '') => {
     const value = String(rawUrl || '').trim();
@@ -46,6 +48,7 @@ const ChatInput = ({
     const [linkPreview, setLinkPreview] = useState(null);
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
     const [selectionState, setSelectionState] = useState(null);
+    const [preferredSkinTone, setPreferredSkinTone] = useState(SkinTones.NEUTRAL);
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
     const draftQuickReplyLabel = String(quickReplyDraft?.label || '').trim();
@@ -106,6 +109,15 @@ const ChatInput = ({
             inputRef.current.setSelectionRange(cursor, cursor);
             setSelectionState(null);
         });
+    };
+
+    const handleSkinToneChange = (skinTone) => {
+        const safeSkinTone = Object.values(SkinTones).includes(skinTone) ? skinTone : SkinTones.NEUTRAL;
+        setPreferredSkinTone(safeSkinTone);
+        if (typeof window === 'undefined') return;
+        try {
+            window.localStorage.setItem(GLOBAL_SKIN_TONE_STORAGE_KEY, safeSkinTone);
+        } catch (_) { }
     };
 
     const applyInlineFormat = (openToken, closeToken = openToken) => {
@@ -320,6 +332,21 @@ const ChatInput = ({
     }, [showEmoji]);
 
     useEffect(() => {
+        if (typeof window === 'undefined') {
+            setPreferredSkinTone(SkinTones.NEUTRAL);
+            return;
+        }
+        try {
+            const stored = String(window.localStorage.getItem(GLOBAL_SKIN_TONE_STORAGE_KEY) || '').trim();
+            if (Object.values(SkinTones).includes(stored)) {
+                setPreferredSkinTone(stored);
+                return;
+            }
+        } catch (_) { }
+        setPreferredSkinTone(SkinTones.NEUTRAL);
+    }, []);
+
+    useEffect(() => {
         const url = extractFirstUrl(inputText);
         if (!url) {
             setLinkPreview(null);
@@ -516,13 +543,19 @@ const ChatInput = ({
                 <div className="floating-panel emoji-panel">
                     <EmojiPicker
                         onEmojiClick={(emojiData) => insertEmoji(emojiData.emoji)}
+                        onSkinToneChange={handleSkinToneChange}
                         width="100%"
                         height={430}
                         lazyLoadEmojis
                         skinTonesDisabled={false}
                         searchDisabled={false}
+                        searchPlaceHolder="Buscar emoji o gesto"
+                        defaultSkinTone={preferredSkinTone}
+                        suggestedEmojisMode={SuggestionMode.FREQUENT}
+                        skinTonePickerLocation={SkinTonePickerLocation.SEARCH}
+                        emojiStyle={EmojiStyle.APPLE}
                         previewConfig={{ showPreview: false }}
-                        theme="dark"
+                        theme={Theme.DARK}
                     />
                 </div>
             )}

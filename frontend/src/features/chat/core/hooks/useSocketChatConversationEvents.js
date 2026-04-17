@@ -431,6 +431,44 @@ export default function useSocketChatConversationEvents({
                 };
             }));
         });
+        socket.on('reaction_sent', ({ messageId, emoji, chatId, baseChatId, scopeModuleId, timestamp }) => {
+            const safeMessageId = String(messageId || '').trim();
+            const safeEmoji = String(emoji || '').trim();
+            if (!safeMessageId || !safeEmoji) return;
+
+            const incomingChatId = normalizeChatScopedId(chatId || baseChatId || '', scopeModuleId || '');
+            const active = String(activeChatIdRef.current || '');
+            if (incomingChatId && active && !chatIdsReferSameScope(incomingChatId, active)) return;
+
+            const sessionSenderIdentity = resolveSessionSenderIdentity();
+            const safeSenderId = String(
+                sessionSenderIdentity?.id
+                || sessionSenderIdentity?.email
+                || sessionSenderIdentity?.name
+                || 'self'
+            ).trim() || 'self';
+
+            setMessages((prev) => prev.map((message) => {
+                if (String(message?.id || '').trim() !== safeMessageId) return message;
+
+                const existingReactions = Array.isArray(message?.reactions) ? message.reactions : [];
+                const nextReaction = {
+                    emoji: safeEmoji,
+                    senderId: safeSenderId,
+                    timestamp: Number(timestamp || 0) || Math.floor(Date.now() / 1000)
+                };
+
+                const deduped = existingReactions.filter((reaction) => {
+                    const reactionSenderId = String(reaction?.senderId || '').trim() || null;
+                    return reactionSenderId !== safeSenderId;
+                });
+
+                return {
+                    ...message,
+                    reactions: [...deduped, nextReaction]
+                };
+            }));
+        });
 
         socket.on('contact_info', (contact) => {
             const participantsList = normalizeParticipantList(contact?.participantsList);
@@ -697,6 +735,7 @@ export default function useSocketChatConversationEvents({
                 'chat_media',
                 'message_updated',
                 'message_reaction',
+                'reaction_sent',
                 'chat_opened',
                 'start_new_chat_error',
                 'chat_labels_updated',

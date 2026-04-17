@@ -15,6 +15,23 @@ import useMessageBubbleLinkPreview from './hooks/useMessageBubbleLinkPreview';
 import useMessageBubbleDerivedModel from './hooks/useMessageBubbleDerivedModel';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const GLOBAL_SKIN_TONE_STORAGE_KEY = 'chat-emoji-skin-tone:global';
+const REACTION_TONE_VARIANTS = {
+    '👍': {
+        '1f3fb': '👍🏻',
+        '1f3fc': '👍🏼',
+        '1f3fd': '👍🏽',
+        '1f3fe': '👍🏾',
+        '1f3ff': '👍🏿'
+    },
+    '🙏': {
+        '1f3fb': '🙏🏻',
+        '1f3fc': '🙏🏼',
+        '1f3fd': '🙏🏽',
+        '1f3fe': '🙏🏾',
+        '1f3ff': '🙏🏿'
+    }
+};
 
 const MessageBubble = ({
     msg,
@@ -102,8 +119,12 @@ const MessageBubble = ({
     const [forwardSearch, setForwardSearch] = useState('');
     const [showActionsMenu, setShowActionsMenu] = useState(false);
     const [showReactionPicker, setShowReactionPicker] = useState(false);
+    const [preferredSkinTone, setPreferredSkinTone] = useState('neutral');
     const bubbleRef = useRef(null);
-    const reactionOptions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+    const reactionOptions = ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emoji) => {
+        const variants = REACTION_TONE_VARIANTS[emoji];
+        return variants?.[preferredSkinTone] || emoji;
+    });
 
     const shouldHideBodyForOrder = isQuotePayload || (hasOrder && isLikelyBinaryBody(messageBodyText));
     const messageTextToRender = isCatalogItem
@@ -120,19 +141,21 @@ const MessageBubble = ({
     });
 
     useEffect(() => {
-        if (!showActionsMenu && !showForwardPicker) return;
+        if (!showActionsMenu && !showForwardPicker && !showReactionPicker) return;
 
         const handleOutsideClick = (event) => {
             if (!bubbleRef.current) return;
             if (bubbleRef.current.contains(event.target)) return;
             setShowActionsMenu(false);
             setShowForwardPicker(false);
+            setShowReactionPicker(false);
         };
 
         const handleEscape = (event) => {
             if (event.key === 'Escape') {
                 setShowActionsMenu(false);
                 setShowForwardPicker(false);
+                setShowReactionPicker(false);
             }
         };
 
@@ -142,7 +165,20 @@ const MessageBubble = ({
             document.removeEventListener('mousedown', handleOutsideClick);
             document.removeEventListener('keydown', handleEscape);
         };
-    }, [showActionsMenu, showForwardPicker]);
+    }, [showActionsMenu, showForwardPicker, showReactionPicker]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            setPreferredSkinTone('neutral');
+            return;
+        }
+        try {
+            const stored = String(window.localStorage.getItem(GLOBAL_SKIN_TONE_STORAGE_KEY) || '').trim();
+            setPreferredSkinTone(stored || 'neutral');
+        } catch (_) {
+            setPreferredSkinTone('neutral');
+        }
+    }, []);
 
     const hasLocationCoords = Number.isFinite(locationData?.latitude) && Number.isFinite(locationData?.longitude);
     const locationMapQuery = hasLocationCoords
@@ -214,6 +250,8 @@ const MessageBubble = ({
             }, {})
         )
         : [];
+    const hasReactionSummary = reactionSummary.length > 0;
+    const canSendReaction = typeof onSendReaction === 'function' && Boolean(String(msg?.id || '').trim());
 
     const hasMenuActions = Boolean(canReplyMessage || canForwardMessage || canEditMessage);
     const forwardNeedle = normalizeSearchText(forwardSearch);
@@ -271,10 +309,8 @@ const MessageBubble = ({
     return (
         <div
             ref={bubbleRef}
-            className={`message ${isOut ? 'out' : 'in'}${hasMenuActions ? ' has-menu-actions' : ''}`}
+            className={`message ${isOut ? 'out' : 'in'}${hasMenuActions ? ' has-menu-actions' : ''}${hasReactionSummary ? ' has-reactions' : ''}`}
             style={isHighlighted ? { outline: `2px solid ${isCurrentHighlighted ? '#00a884' : 'rgba(0,168,132,0.35)'}`, borderRadius: '10px', padding: '2px' } : undefined}
-            onMouseEnter={() => setShowReactionPicker(true)}
-            onMouseLeave={() => setShowReactionPicker(false)}
         >
             {isCatalogItem && (
                 <div className="catalog-card">
@@ -336,13 +372,15 @@ const MessageBubble = ({
 
             {hasBinaryAttachment && attachmentMeta && (
                 <div className={`message-file-card ${attachmentMeta.accentClass}`}>
-                    <div className="message-file-icon" aria-hidden="true">
-                        {renderAttachmentIcon(attachmentMeta.icon)}
+                    <div className="message-file-preview">
+                        <div className="message-file-preview-badge">{attachmentMeta.extensionBadge}</div>
+                        <div className="message-file-icon" aria-hidden="true">
+                            {renderAttachmentIcon(attachmentMeta.icon)}
+                        </div>
                     </div>
 
                     <div className="message-file-main">
                         <div className="message-file-topline">
-                            <span className="message-file-badge">{attachmentMeta.extensionBadge}</span>
                             <span className="message-file-kind">{attachmentMeta.kindLabel}</span>
                         </div>
                         <div className="message-file-name" title={attachmentMeta.filename}>
@@ -490,24 +528,9 @@ const MessageBubble = ({
             )}
 
             
-            <div className={`message-content ${canEditMessage ? 'can-edit' : ''}`} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
-                {showReactionPicker && typeof onSendReaction === 'function' && String(msg?.id || '').trim() && (
-                    <div style={{
-                        position: 'absolute',
-                        top: '-38px',
-                        right: isOut ? '0' : 'auto',
-                        left: isOut ? 'auto' : '0',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        padding: '4px 6px',
-                        borderRadius: '999px',
-                        background: 'rgba(8, 18, 24, 0.96)',
-                        border: '1px solid rgba(124,200,255,0.24)',
-                        boxShadow: '0 10px 24px rgba(0,0,0,0.22)',
-                        zIndex: 3
-                    }}>
-                        <SmilePlus size={13} color="#8ed8ff" />
+            <div className={`message-content ${canEditMessage ? 'can-edit' : ''}${hasReactionSummary ? ' has-reactions' : ''}`} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                {showReactionPicker && canSendReaction && (
+                    <div className={`message-reaction-picker ${isOut ? 'out' : 'in'}`}>
                         {reactionOptions.map((emoji) => (
                             <button
                                 key={emoji}
@@ -516,14 +539,7 @@ const MessageBubble = ({
                                     event.stopPropagation();
                                     handleReactionSelect(emoji);
                                 }}
-                                style={{
-                                    border: 'none',
-                                    background: 'transparent',
-                                    cursor: 'pointer',
-                                    fontSize: '1rem',
-                                    lineHeight: 1,
-                                    padding: '2px'
-                                }}
+                                className="message-reaction-option"
                                 title={`Reaccionar con ${emoji}`}
                             >
                                 {emoji}
@@ -728,25 +744,45 @@ const MessageBubble = ({
                         Buscar en mapa: "{selectedLocationText.slice(0, 60)}{selectedLocationText.length > 60 ? '...' : ''}"
                     </button>
                 )}
-                {hasMenuActions && (
+                {(hasMenuActions || canSendReaction) && (
                     <div className={`message-actions-anchor ${showActionsMenu ? 'open' : ''}`}>
-                        <button
-                            type="button"
-                            className={`message-actions-toggle ${showActionsMenu ? 'open' : ''}`}
-                            title="Opciones"
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                setShowActionsMenu((prev) => {
-                                    const next = !prev;
-                                    if (!next) setShowForwardPicker(false);
-                                    return next;
-                                });
-                            }}
-                        >
-                            <ChevronDown size={13} />
-                        </button>
+                        <div className={`message-actions-rail ${isOut ? 'out' : 'in'}`}>
+                            {canSendReaction && (
+                                <button
+                                    type="button"
+                                    className={`message-actions-toggle reaction ${showReactionPicker ? 'open' : ''}`}
+                                    title="Reaccionar"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        setShowActionsMenu(false);
+                                        setShowForwardPicker(false);
+                                        setShowReactionPicker((prev) => !prev);
+                                    }}
+                                >
+                                    <SmilePlus size={13} />
+                                </button>
+                            )}
+                            {hasMenuActions && (
+                                <button
+                                    type="button"
+                                    className={`message-actions-toggle ${showActionsMenu ? 'open' : ''}`}
+                                    title="Opciones"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        setShowReactionPicker(false);
+                                        setShowActionsMenu((prev) => {
+                                            const next = !prev;
+                                            if (!next) setShowForwardPicker(false);
+                                            return next;
+                                        });
+                                    }}
+                                >
+                                    <ChevronDown size={13} />
+                                </button>
+                            )}
+                        </div>
                         {showActionsMenu && (
-                            <div className="message-actions-menu" onClick={(event) => event.stopPropagation()}>
+                            <div className={`message-actions-menu ${isOut ? 'out' : 'in'}`} onClick={(event) => event.stopPropagation()}>
                                 {canReplyMessage && (
                                     <button type="button" className="message-actions-item" onClick={handleReplyClick}>
                                         <Reply size={13} /> Responder
@@ -874,32 +910,12 @@ const MessageBubble = ({
                     {msg?.edited && <span className="message-edited-badge">editado</span>}
                     {renderStatus()}
                 </div>
-                {reactionSummary.length > 0 && (
-                    <div style={{
-                        marginTop: '6px',
-                        display: 'flex',
-                        gap: '6px',
-                        flexWrap: 'wrap',
-                        alignSelf: isOut ? 'flex-end' : 'flex-start'
-                    }}>
+                {hasReactionSummary && (
+                    <div className={`message-reactions-stack ${isOut ? 'out' : 'in'}`}>
                         {reactionSummary.map(([emoji, count]) => (
-                            <span
-                                key={emoji}
-                                style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    padding: '2px 8px',
-                                    borderRadius: '999px',
-                                    background: 'rgba(14, 27, 35, 0.82)',
-                                    border: '1px solid rgba(124,200,255,0.28)',
-                                    fontSize: '0.78rem',
-                                    color: '#dceaf1',
-                                    boxShadow: '0 6px 16px rgba(0,0,0,0.18)'
-                                }}
-                            >
+                            <span key={emoji} className="message-reaction-chip">
                                 <span>{emoji}</span>
-                                {count > 1 && <span style={{ fontSize: '0.68rem', color: '#9fc3d4' }}>{count}</span>}
+                                {count > 1 && <span className="message-reaction-chip-count">{count}</span>}
                             </span>
                         ))}
                     </div>
