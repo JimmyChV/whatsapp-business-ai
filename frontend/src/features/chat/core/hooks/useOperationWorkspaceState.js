@@ -102,6 +102,8 @@ export default function useOperationWorkspaceState({
   const chatSearchRef = useRef('');
   const chatFiltersRef = useRef(normalizeChatFilters(DEFAULT_CHAT_FILTERS));
   const chatPagingRef = useRef({ offset: 0, hasMore: true, loading: false });
+  const messagesCacheRef = useRef(new Map());
+  const pendingOutgoingByChatRef = useRef(new Map());
   const shouldInstantScrollRef = useRef(false);
   const prevMessagesMetaRef = useRef({ count: 0, lastId: '' });
   const suppressSmoothScrollUntilRef = useRef(0);
@@ -225,6 +227,8 @@ export default function useOperationWorkspaceState({
     chatSearchRef,
     chatFiltersRef,
     chatPagingRef,
+    messagesCacheRef,
+    pendingOutgoingByChatRef,
     shouldInstantScrollRef,
     prevMessagesMetaRef,
     suppressSmoothScrollUntilRef,

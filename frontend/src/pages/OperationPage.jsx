@@ -47,7 +47,9 @@ export default function OperationPage({
   inputText,
   setInputText,
   handleSendMessage,
+  handleSendCatalogProduct,
   handleSendReaction,
+  handleRetryMessage,
   attachment,
   attachmentPreview,
   removeAttachment,
@@ -192,6 +194,7 @@ export default function OperationPage({
               setInputText={setInputText}
               onSendMessage={handleSendMessage}
               onSendReaction={handleSendReaction}
+              onRetryMessage={handleRetryMessage}
               onFileClick={() => fileInputRef.current?.click()}
               attachment={attachment}
               attachmentPreview={attachmentPreview}
@@ -317,6 +320,7 @@ export default function OperationPage({
             onLogout={handleLogoutWhatsapp}
             quickReplies={quickReplies}
             onSendQuickReply={handleSendQuickReply}
+            onSendCatalogProduct={handleSendCatalogProduct}
             pendingOrderCartLoad={pendingOrderCartLoad}
             waCapabilities={waCapabilities}
             openCompanyProfileToken={openCompanyProfileToken}

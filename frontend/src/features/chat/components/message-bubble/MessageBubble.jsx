@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import moment from 'moment';
-import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, Download, SmilePlus } from 'lucide-react';
+import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, Download, SmilePlus, Clock3, AlertCircle, RotateCcw } from 'lucide-react';
 import {
     renderWhatsAppFormattedText,
     formatOrderMoney,
@@ -46,6 +46,7 @@ const MessageBubble = ({
     onReplyMessage,
     onForwardMessage,
     onSendReaction,
+    onRetryMessage,
     onJumpToMessage,
     forwardChatOptions = [],
     activeChatId = null,
@@ -200,6 +201,21 @@ const MessageBubble = ({
 
     const renderStatus = () => {
         if (!isOut) return null;
+        const explicitStatus = String(msg?.status || '').trim().toLowerCase();
+        if (explicitStatus === 'sending') {
+            return (
+                <span className="message-ack pending" title="Estado: Enviando" aria-label="Estado: Enviando">
+                    <Clock3 size={14} />
+                </span>
+            );
+        }
+        if (explicitStatus === 'failed') {
+            return (
+                <span className="message-ack failed" title="Estado: Error" aria-label="Estado: Error">
+                    <AlertCircle size={14} />
+                </span>
+            );
+        }
         const ack = Number.isFinite(Number(msg.ack)) ? Number(msg.ack) : 0;
         const label = `Estado: ${getAckLabel(ack)}`;
         return (
@@ -742,6 +758,15 @@ const MessageBubble = ({
                         }}
                     >
                         Buscar en mapa: "{selectedLocationText.slice(0, 60)}{selectedLocationText.length > 60 ? '...' : ''}"
+                    </button>
+                )}
+                {isOut && String(msg?.status || '').trim().toLowerCase() === 'failed' && typeof onRetryMessage === 'function' && (
+                    <button
+                        type="button"
+                        className="message-retry-btn"
+                        onClick={() => onRetryMessage(msg)}
+                    >
+                        <RotateCcw size={12} /> Reintentar
                     </button>
                 )}
                 {(hasMenuActions || canSendReaction) && (

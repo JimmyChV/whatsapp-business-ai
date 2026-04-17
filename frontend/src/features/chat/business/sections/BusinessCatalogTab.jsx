@@ -12,7 +12,7 @@ import {
 } from '../helpers';
 import { BusinessCatalogProductCard, BusinessCatalogProductForm } from './catalog';
 
-const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, canWriteByAssignment = false }) => {
+const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onSendCatalogProduct = null, canWriteByAssignment = false }) => {
     const { confirm, notify } = useUiFeedback();
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
@@ -157,20 +157,27 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
             return;
         }
 
+        const payload = {
+            id: item.id || `catalog_${i}`,
+            title: item.title || `Producto ${i + 1}`,
+            price: item.price || '',
+            regularPrice: item.regularPrice || item.price || '',
+            salePrice: item.salePrice || '',
+            discountPct: item.discountPct || 0,
+            description: item.description || '',
+            imageUrl: item.imageUrl || '',
+            url: item.url || item.permalink || item.productUrl || item.link || ''
+        };
+
+        if (typeof onSendCatalogProduct === 'function') {
+            onSendCatalogProduct(payload);
+            return;
+        }
+
         socket.emit('send_catalog_product', {
             to: activeChatId,
             toPhone: String(activeChatPhone || '').trim() || null,
-            product: {
-                id: item.id || `catalog_${i}`,
-                title: item.title || `Producto ${i + 1}`,
-                price: item.price || '',
-                regularPrice: item.regularPrice || item.price || '',
-                salePrice: item.salePrice || '',
-                discountPct: item.discountPct || 0,
-                description: item.description || '',
-                imageUrl: item.imageUrl || '',
-                url: item.url || item.permalink || item.productUrl || item.link || ''
-            }
+            product: payload
         });
     };
 

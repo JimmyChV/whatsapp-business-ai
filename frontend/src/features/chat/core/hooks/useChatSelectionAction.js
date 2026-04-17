@@ -1,3 +1,5 @@
+import { getCachedMessages } from '../helpers/messageCache.helpers';
+
 export default function useChatSelectionAction({
   chatsRef,
   chatSearchRef,
@@ -18,6 +20,7 @@ export default function useChatSelectionAction({
   shouldInstantScrollRef,
   suppressSmoothScrollUntilRef,
   prevMessagesMetaRef,
+  messagesCacheRef,
   setMessages,
   setEditingMessage,
   setReplyingMessage,
@@ -102,13 +105,16 @@ export default function useChatSelectionAction({
     shouldInstantScrollRef.current = true;
     suppressSmoothScrollUntilRef.current = Date.now() + 2200;
     prevMessagesMetaRef.current = { count: 0, lastId: '' };
-    setMessages([]);
+    const cachedMessages = getCachedMessages(messagesCacheRef, resolvedChatId);
+    setMessages(Array.isArray(cachedMessages) ? cachedMessages : []);
     setEditingMessage(null);
     setReplyingMessage(null);
     setShowClientProfile(false);
     setClientContact(null);
     setQuickReplyDraft(null);
-    socket.emit('get_chat_history', resolvedChatId);
+    if (!Array.isArray(cachedMessages) || cachedMessages.length === 0) {
+      socket.emit('get_chat_history', resolvedChatId);
+    }
     socket.emit('mark_chat_read', resolvedChatId);
     socket.emit('get_contact_info', resolvedChatId);
     setChats((prev) => prev.map((c) => chatIdsReferSameScope(String(c?.id || ''), resolvedChatId) ? { ...c, unreadCount: 0 } : c));

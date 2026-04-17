@@ -1833,6 +1833,29 @@ body {
   color: rgba(233, 237, 239, 0.48);
 }
 
+.message-ack.failed {
+  color: #ff8b8b;
+}
+
+.message-retry-btn {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 120, 120, 0.34);
+  background: rgba(255, 120, 120, 0.12);
+  color: #ffd3d3;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.71rem;
+  cursor: pointer;
+}
+
+.message-retry-btn:hover {
+  background: rgba(255, 120, 120, 0.18);
+  border-color: rgba(255, 120, 120, 0.5);
+}
+
 .message-media {
   max-width: min(190px, 48vw);
   max-height: 145px;

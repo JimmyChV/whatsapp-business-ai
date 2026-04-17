@@ -1,6 +1,12 @@
 import { useEffect } from 'react';
 import { getMessagePreviewText as getMessagePreviewTextFallback } from '../helpers/appChat.helpers';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
+import {
+    patchCachedMessages,
+    replaceMessageByClientTempId,
+    upsertMessageById,
+    writeCachedMessages
+} from '../helpers/messageCache.helpers';
 
 export default function useSocketChatConversationEvents({
     socket,
@@ -36,6 +42,8 @@ export default function useSocketChatConversationEvents({
     waModulesRef,
     handleChatSelect,
     activeChatIdRef,
+    messagesCacheRef,
+    pendingOutgoingByChatRef,
     setActiveChatId,
     shouldInstantScrollRef,
     suppressSmoothScrollUntilRef,
@@ -55,6 +63,136 @@ export default function useSocketChatConversationEvents({
 }) {
     const { notify } = useUiFeedback();
     useEffect(() => {
+        const syncActiveMessages = (chatId, updater) => {
+            const activeChatId = String(activeChatIdRef.current || '').trim();
+            if (!chatId || !activeChatId || !chatIdsReferSameScope(chatId, activeChatId)) return;
+            setMessages((prev) => {
+                const next = typeof updater === 'function' ? updater(Array.isArray(prev) ? prev : []) : prev;
+                return Array.isArray(next) ? next : prev;
+            });
+        };
+        const buildRetryPayloadSignature = (retryPayload = {}) => {
+            const payload = retryPayload && typeof retryPayload === 'object' ? retryPayload : {};
+            const eventName = String(payload?.eventName || '').trim();
+            const data = payload?.payload && typeof payload.payload === 'object' ? payload.payload : {};
+            const product = data?.product && typeof data.product === 'object' ? data.product : {};
+            const quickReply = data?.quickReply && typeof data.quickReply === 'object' ? data.quickReply : {};
+            const parsePrice = (value, fallback = 0) => {
+                const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+                if (Number.isFinite(parsed)) return parsed;
+                return Number.isFinite(fallback) ? fallback : 0;
+            };
+            const buildCatalogCaption = (catalogProduct = {}) => {
+                const title = String(catalogProduct?.title || catalogProduct?.name || 'Producto').trim() || 'Producto';
+                const finalPrice = parsePrice(catalogProduct?.price, 0);
+                const regularPrice = parsePrice(catalogProduct?.regularPrice ?? catalogProduct?.regular_price, finalPrice);
+                const lines = [`*${title}*`];
+
+                if (regularPrice > 0 && finalPrice > 0 && finalPrice < regularPrice) {
+                    const discountAmount = Math.max(regularPrice - finalPrice, 0);
+                    lines.push(`Precio regular: S/ ${regularPrice.toFixed(2)}`);
+                    lines.push(`*Descuento: S/ ${discountAmount.toFixed(2)}*`);
+                    lines.push(`*PRECIO FINAL: S/ ${finalPrice.toFixed(2)}*`);
+                } else if (finalPrice > 0) {
+                    lines.push(`*PRECIO FINAL: S/ ${finalPrice.toFixed(2)}*`);
+                } else {
+                    lines.push('*PRECIO FINAL: CONSULTAR*');
+                }
+
+                const description = String(catalogProduct?.description || '').replace(/\s+/g, ' ').trim();
+                if (description) {
+                    lines.push('');
+                    lines.push(`Detalle: ${description.length > 280 ? `${description.slice(0, 277)}...` : description}`);
+                }
+                return lines.join('\n');
+            };
+            const normalizedBody = String(
+                eventName === 'send_catalog_product'
+                    ? buildCatalogCaption(product)
+                    : (data?.body || quickReply?.text || '')
+            ).trim();
+            const mediaUrl = String(
+                data?.mediaUrl
+                || product?.imageUrl
+                || product?.image
+                || quickReply?.mediaUrl
+                || quickReply?.mediaAssets?.[0]?.url
+                || ''
+            ).trim() || null;
+            const hasMedia = Boolean(
+                data?.mediaData
+                || data?.mediaUrl
+                || data?.mimetype
+                || data?.filename
+                || product?.imageUrl
+                || product?.image
+                || quickReply?.mediaUrl
+                || quickReply?.mediaMimeType
+                || quickReply?.mediaFileName
+                || (Array.isArray(quickReply?.mediaAssets) && quickReply.mediaAssets.length > 0)
+            );
+
+            return {
+                eventName,
+                body: normalizedBody,
+                hasMedia,
+                mediaUrl,
+                title: String(product?.title || product?.name || '').trim() || null
+            };
+        };
+        const normalizeComparableBody = (value = '') => String(value || '')
+            .replace(/\*/g, '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
+        const consumePendingOutgoing = (chatId, incomingMessage = {}) => {
+            const safeChatId = String(chatId || '').trim();
+            const pendingByChat = pendingOutgoingByChatRef?.current instanceof Map
+                ? pendingOutgoingByChatRef.current.get(safeChatId)
+                : null;
+            if (!(pendingByChat instanceof Map) || pendingByChat.size === 0) return null;
+
+            const incomingBody = String(incomingMessage?.body || '').trim();
+            const incomingHasMedia = Boolean(incomingMessage?.hasMedia);
+            const normalizedIncomingBody = normalizeComparableBody(incomingBody);
+            const incomingMediaUrl = String(incomingMessage?.mediaUrl || '').trim() || null;
+            for (const [clientTempId, entry] of pendingByChat.entries()) {
+                const retrySignature = buildRetryPayloadSignature(entry?.retryPayload);
+                const retryBody = String(retrySignature?.body || '').trim();
+                const normalizedRetryBody = normalizeComparableBody(retryBody);
+                const retryHasMedia = Boolean(retrySignature?.hasMedia);
+                const sameBody = normalizedRetryBody === normalizedIncomingBody;
+                const bodyContained = Boolean(
+                    normalizedRetryBody
+                    && normalizedIncomingBody
+                    && (
+                        normalizedIncomingBody.includes(normalizedRetryBody)
+                        || normalizedRetryBody.includes(normalizedIncomingBody)
+                    )
+                );
+                const sameMediaUrl = Boolean(
+                    retrySignature?.mediaUrl
+                    && incomingMediaUrl
+                    && retrySignature.mediaUrl === incomingMediaUrl
+                );
+                const sameCatalogTitle = Boolean(
+                    retrySignature?.eventName === 'send_catalog_product'
+                    && retrySignature?.title
+                    && normalizedIncomingBody.includes(normalizeComparableBody(retrySignature.title))
+                );
+                const sameMediaKind = retryHasMedia === incomingHasMedia;
+                if (!sameBody && !bodyContained && !sameMediaUrl && !sameCatalogTitle && !(incomingHasMedia && !incomingBody && retryHasMedia)) continue;
+                if (!sameMediaKind) continue;
+                if (entry?.timeoutId) clearTimeout(entry.timeoutId);
+                pendingByChat.delete(clientTempId);
+                if (pendingByChat.size === 0) {
+                    pendingOutgoingByChatRef.current.delete(safeChatId);
+                }
+                return clientTempId;
+            }
+            return null;
+        };
+
         socket.on('chats', (payload) => {
             const isLegacy = Array.isArray(payload);
             const page = isLegacy
@@ -344,6 +482,10 @@ export default function useSocketChatConversationEvents({
                 merged.sort((a, b) => Number(a?.timestamp || 0) - Number(b?.timestamp || 0));
                 return merged;
             });
+            const activeChatId = String(activeChatIdRef.current || '').trim();
+            if (activeChatId) {
+                writeCachedMessages(messagesCacheRef, activeChatId, normalizedMessages);
+            }
         });
 
         socket.on('chat_media', ({ chatId, messageId, mediaData, mimetype, filename, fileSizeBytes }) => {
@@ -353,7 +495,19 @@ export default function useSocketChatConversationEvents({
             if (!messageId || !mediaData) return;
             const nextFilename = normalizeMessageFilename(filename);
             const nextSize = Number.isFinite(Number(fileSizeBytes)) ? Number(fileSizeBytes) : null;
-            setMessages((prev) => prev.map((m) => {
+            syncActiveMessages(incoming, (prev) => prev.map((m) => {
+                if (m.id !== messageId) return m;
+                const currentFilename = normalizeMessageFilename(m?.filename);
+                const shouldReplaceFilename = Boolean(nextFilename) && (!currentFilename || isGenericFilename(currentFilename) || isMachineLikeFilename(currentFilename));
+                return {
+                    ...m,
+                    mediaData,
+                    mimetype: mimetype || m.mimetype,
+                    filename: shouldReplaceFilename ? nextFilename : currentFilename,
+                    fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(m?.fileSizeBytes)) ? Number(m.fileSizeBytes) : null)
+                };
+            }));
+            patchCachedMessages(messagesCacheRef, incoming, (prev) => prev.map((m) => {
                 if (m.id !== messageId) return m;
                 const currentFilename = normalizeMessageFilename(m?.filename);
                 const shouldReplaceFilename = Boolean(nextFilename) && (!currentFilename || isGenericFilename(currentFilename) || isMachineLikeFilename(currentFilename));
@@ -378,12 +532,29 @@ export default function useSocketChatConversationEvents({
             const nextFilename = normalizeMessageFilename(filename);
             const nextSize = Number.isFinite(Number(fileSizeBytes)) ? Number(fileSizeBytes) : null;
 
-            setMessages((prev) => prev.map((message) => {
+            syncActiveMessages(incomingChatId, (prev) => prev.map((message) => {
                 if (String(message?.id || '').trim() !== messageId) return message;
 
                 const currentFilename = normalizeMessageFilename(message?.filename);
                 const shouldReplaceFilename = Boolean(nextFilename) && (!currentFilename || isGenericFilename(currentFilename) || isMachineLikeFilename(currentFilename));
 
+                return {
+                    ...message,
+                    hasMedia: hasMedia !== false,
+                    mediaUrl: String(mediaUrl || '').trim() || message?.mediaUrl || null,
+                    mediaPath: String(mediaPath || '').trim() || message?.mediaPath || null,
+                    mediaData: mediaData || message?.mediaData || null,
+                    mimetype: String(mimetype || '').trim() || message?.mimetype || null,
+                    filename: shouldReplaceFilename ? nextFilename : currentFilename,
+                    fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(message?.fileSizeBytes)) ? Number(message.fileSizeBytes) : null),
+                    quotedMessage: normalizeQuotedMessage(quotedMessage || message?.quotedMessage),
+                    updatedAt: String(updatedAt || '').trim() || message?.updatedAt || null
+                };
+            }));
+            patchCachedMessages(messagesCacheRef, incomingChatId, (prev) => prev.map((message) => {
+                if (String(message?.id || '').trim() !== messageId) return message;
+                const currentFilename = normalizeMessageFilename(message?.filename);
+                const shouldReplaceFilename = Boolean(nextFilename) && (!currentFilename || isGenericFilename(currentFilename) || isMachineLikeFilename(currentFilename));
                 return {
                     ...message,
                     hasMedia: hasMedia !== false,
@@ -408,7 +579,7 @@ export default function useSocketChatConversationEvents({
             const active = String(activeChatIdRef.current || '');
             if (incomingChatId && active && !chatIdsReferSameScope(incomingChatId, active)) return;
 
-            setMessages((prev) => prev.map((message) => {
+            syncActiveMessages(incomingChatId, (prev) => prev.map((message) => {
                 if (String(message?.id || '').trim() !== safeMessageId) return message;
 
                 const existingReactions = Array.isArray(message?.reactions) ? message.reactions : [];
@@ -425,6 +596,25 @@ export default function useSocketChatConversationEvents({
                     return reactionSenderId !== safeSenderId;
                 });
 
+                return {
+                    ...message,
+                    reactions: [...deduped, nextReaction]
+                };
+            }));
+            patchCachedMessages(messagesCacheRef, incomingChatId, (prev) => prev.map((message) => {
+                if (String(message?.id || '').trim() !== safeMessageId) return message;
+                const existingReactions = Array.isArray(message?.reactions) ? message.reactions : [];
+                const safeSenderId = String(senderId || '').trim() || null;
+                const nextReaction = {
+                    emoji: safeEmoji,
+                    senderId: safeSenderId,
+                    timestamp: Number(timestamp || 0) || Math.floor(Date.now() / 1000)
+                };
+                const deduped = existingReactions.filter((reaction) => {
+                    const reactionSenderId = String(reaction?.senderId || '').trim() || null;
+                    if (!safeSenderId) return true;
+                    return reactionSenderId !== safeSenderId;
+                });
                 return {
                     ...message,
                     reactions: [...deduped, nextReaction]
@@ -448,7 +638,7 @@ export default function useSocketChatConversationEvents({
                 || 'self'
             ).trim() || 'self';
 
-            setMessages((prev) => prev.map((message) => {
+            syncActiveMessages(incomingChatId, (prev) => prev.map((message) => {
                 if (String(message?.id || '').trim() !== safeMessageId) return message;
 
                 const existingReactions = Array.isArray(message?.reactions) ? message.reactions : [];
@@ -463,6 +653,23 @@ export default function useSocketChatConversationEvents({
                     return reactionSenderId !== safeSenderId;
                 });
 
+                return {
+                    ...message,
+                    reactions: [...deduped, nextReaction]
+                };
+            }));
+            patchCachedMessages(messagesCacheRef, incomingChatId, (prev) => prev.map((message) => {
+                if (String(message?.id || '').trim() !== safeMessageId) return message;
+                const existingReactions = Array.isArray(message?.reactions) ? message.reactions : [];
+                const nextReaction = {
+                    emoji: safeEmoji,
+                    senderId: safeSenderId,
+                    timestamp: Number(timestamp || 0) || Math.floor(Date.now() / 1000)
+                };
+                const deduped = existingReactions.filter((reaction) => {
+                    const reactionSenderId = String(reaction?.senderId || '').trim() || null;
+                    return reactionSenderId !== safeSenderId;
+                });
                 return {
                     ...message,
                     reactions: [...deduped, nextReaction]
@@ -601,27 +808,58 @@ export default function useSocketChatConversationEvents({
             });
 
             const sessionSenderIdentity = resolveSessionSenderIdentity();
-            setMessages((prev) => {
-                const normalizedIncoming = {
-                    ...msg,
-                    body: repairMojibake(msg?.body || ''),
-                    location: normalizeMessageLocation(msg?.location),
-                    filename: normalizeMessageFilename(msg?.filename),
-                    fileSizeBytes: Number.isFinite(Number(msg?.fileSizeBytes)) ? Number(msg.fileSizeBytes) : null,
-                    canEdit: Boolean(msg?.canEdit),
-                    quotedMessage: normalizeQuotedMessage(msg?.quotedMessage),
-                    reactions: Array.isArray(msg?.reactions) ? msg.reactions : []
-                };
+            const normalizedIncoming = {
+                ...msg,
+                body: repairMojibake(msg?.body || ''),
+                location: normalizeMessageLocation(msg?.location),
+                filename: normalizeMessageFilename(msg?.filename),
+                fileSizeBytes: Number.isFinite(Number(msg?.fileSizeBytes)) ? Number(msg.fileSizeBytes) : null,
+                canEdit: Boolean(msg?.canEdit),
+                quotedMessage: normalizeQuotedMessage(msg?.quotedMessage),
+                reactions: Array.isArray(msg?.reactions) ? msg.reactions : []
+            };
 
-                const fallbackSessionName = normalizedIncoming?.fromMe
-                    ? String(sessionSenderIdentity?.name || '').trim()
-                    : '';
-                const fallbackSessionEmail = normalizedIncoming?.fromMe
-                    ? String(sessionSenderIdentity?.email || '').trim()
-                    : '';
-                const fallbackSessionRole = normalizedIncoming?.fromMe
-                    ? String(sessionSenderIdentity?.role || '').trim().toLowerCase()
-                    : '';
+            const fallbackSessionName = normalizedIncoming?.fromMe
+                ? String(sessionSenderIdentity?.name || '').trim()
+                : '';
+            const fallbackSessionEmail = normalizedIncoming?.fromMe
+                ? String(sessionSenderIdentity?.email || '').trim()
+                : '';
+            const fallbackSessionRole = normalizedIncoming?.fromMe
+                ? String(sessionSenderIdentity?.role || '').trim().toLowerCase()
+                : '';
+
+            const enrichedIncoming = {
+                ...normalizedIncoming,
+                sentByUserId: String(normalizedIncoming?.sentByUserId || (normalizedIncoming?.fromMe ? (sessionSenderIdentity?.id || '') : '')).trim() || null,
+                sentByName: String(normalizedIncoming?.sentByName || normalizedIncoming?.sentByEmail || fallbackSessionName).trim() || null,
+                sentByEmail: String(normalizedIncoming?.sentByEmail || fallbackSessionEmail).trim() || null,
+                sentByRole: String(normalizedIncoming?.sentByRole || fallbackSessionRole).trim() || null,
+                sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || '') || null
+            };
+            const matchedClientTempId = enrichedIncoming?.fromMe
+                ? consumePendingOutgoing(relatedChatId, enrichedIncoming)
+                : null;
+            const reconciledIncoming = {
+                ...enrichedIncoming,
+                clientTempId: matchedClientTempId || String(enrichedIncoming?.clientTempId || '').trim() || null,
+                optimistic: false,
+                status: Number(enrichedIncoming?.ack || 0) >= 2 ? 'delivered' : Number(enrichedIncoming?.ack || 0) >= 1 ? 'sent' : 'sending'
+            };
+
+            patchCachedMessages(messagesCacheRef, relatedChatId, (prev) => {
+                const incomingId = String(reconciledIncoming?.id || '').trim();
+                if (!incomingId) return prev;
+                if (matchedClientTempId) {
+                    return replaceMessageByClientTempId(prev, matchedClientTempId, reconciledIncoming);
+                }
+                return upsertMessageById(prev, reconciledIncoming);
+            });
+
+            syncActiveMessages(relatedChatId, (prev) => {
+                const normalizedIncoming = {
+                    ...reconciledIncoming
+                };
 
                 const incomingId = String(normalizedIncoming?.id || '').trim();
                 if (incomingId) {
@@ -666,20 +904,10 @@ export default function useSocketChatConversationEvents({
                     }
                 }
 
-                const activeId = String(activeChatIdRef.current || '');
-                const incomingChatId = String(normalizedIncoming?.chatId || (normalizedIncoming.fromMe ? normalizedIncoming.to : normalizedIncoming.from) || '').trim();
-                if (!chatIdsReferSameScope(incomingChatId, activeId)) return prev;
-
-                const enrichedIncoming = {
-                    ...normalizedIncoming,
-                    sentByUserId: String(normalizedIncoming?.sentByUserId || (normalizedIncoming?.fromMe ? (sessionSenderIdentity?.id || '') : '')).trim() || null,
-                    sentByName: String(normalizedIncoming?.sentByName || normalizedIncoming?.sentByEmail || fallbackSessionName).trim() || null,
-                    sentByEmail: String(normalizedIncoming?.sentByEmail || fallbackSessionEmail).trim() || null,
-                    sentByRole: String(normalizedIncoming?.sentByRole || fallbackSessionRole).trim() || null,
-                    sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || '') || null
-                };
-
-                return [...prev, enrichedIncoming];
+                if (matchedClientTempId) {
+                    return replaceMessageByClientTempId(prev, matchedClientTempId, normalizedIncoming);
+                }
+                return [...prev, normalizedIncoming];
             });
         });
 
@@ -692,7 +920,7 @@ export default function useSocketChatConversationEvents({
             const activeChatId = String(activeChatIdRef.current || '').trim();
             if (incomingChatId && activeChatId && !chatIdsReferSameScope(incomingChatId, activeChatId)) return;
 
-            setMessages((prev) => {
+            const updateQuoteMessage = (prev) => {
                 const safePrev = Array.isArray(prev) ? prev : [];
                 return safePrev.map((message) => {
                     if (String(message?.id || '').trim() !== messageId) return message;
@@ -716,7 +944,11 @@ export default function useSocketChatConversationEvents({
                         }
                     };
                 });
-            });
+            };
+            if (activeChatId && (!incomingChatId || chatIdsReferSameScope(incomingChatId, activeChatId))) {
+                setMessages(updateQuoteMessage);
+            }
+            patchCachedMessages(messagesCacheRef, incomingChatId || activeChatId, updateQuoteMessage);
         });
 
         socket.on('error', (msg) => {

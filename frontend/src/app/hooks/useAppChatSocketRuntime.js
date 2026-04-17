@@ -54,6 +54,8 @@ export default function useAppChatSocketRuntime({
   messages,
   messagesEndRef,
   prevMessagesMetaRef,
+  messagesCacheRef,
+  pendingOutgoingByChatRef,
   shouldInstantScrollRef,
   suppressSmoothScrollUntilRef,
 
@@ -277,6 +279,8 @@ export default function useAppChatSocketRuntime({
   useSocketMessageLifecycleEvents({
     socket,
     activeChatIdRef,
+    messagesCacheRef,
+    pendingOutgoingByChatRef,
     setMessages,
     repairMojibake,
     setEditingMessage,
@@ -340,6 +344,8 @@ export default function useAppChatSocketRuntime({
     waModulesRef,
     handleChatSelect,
     activeChatIdRef,
+    messagesCacheRef,
+    pendingOutgoingByChatRef,
     setActiveChatId,
     shouldInstantScrollRef,
     suppressSmoothScrollUntilRef,

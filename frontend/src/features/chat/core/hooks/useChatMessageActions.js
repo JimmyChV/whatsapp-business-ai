@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import { buildTemplateResolvedPreview } from '../helpers/templateMessages.helpers';
 import { getTemplateVariablesPreview, listApprovedIndividualTemplates } from '../services/templateMessages.service';
+import { patchCachedMessages } from '../helpers/messageCache.helpers';
 
 export default function useChatMessageActions({
   socket,
@@ -22,8 +23,11 @@ export default function useChatMessageActions({
   clientContact,
   prevMessagesMetaRef,
   suppressSmoothScrollUntilRef,
+  messagesCacheRef,
+  pendingOutgoingByChatRef,
   setActiveChatId,
   setMessages,
+  setChats,
   setEditingMessage,
   setReplyingMessage,
   setShowClientProfile,
@@ -44,6 +48,182 @@ export default function useChatMessageActions({
   setSendTemplateSubmitting
 } = {}) {
   const { notify } = useUiFeedback();
+
+  const buildCatalogProductCaptionPreview = useCallback((product = {}) => {
+    const title = String(product?.title || product?.name || 'Producto').trim() || 'Producto';
+    const parsePrice = (value, fallback = 0) => {
+      const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+      if (Number.isFinite(parsed)) return parsed;
+      return Number.isFinite(fallback) ? fallback : 0;
+    };
+
+    const finalPrice = parsePrice(product?.price, 0);
+    const regularPrice = parsePrice(product?.regularPrice ?? product?.regular_price, finalPrice);
+    const lines = [`*${title}*`];
+
+    if (regularPrice > 0 && finalPrice > 0 && finalPrice < regularPrice) {
+      const discountAmount = Math.max(regularPrice - finalPrice, 0);
+      lines.push(`Precio regular: S/ ${regularPrice.toFixed(2)}`);
+      lines.push(`*Descuento: S/ ${discountAmount.toFixed(2)}*`);
+      lines.push(`*PRECIO FINAL: S/ ${finalPrice.toFixed(2)}*`);
+    } else if (finalPrice > 0) {
+      lines.push(`*PRECIO FINAL: S/ ${finalPrice.toFixed(2)}*`);
+    } else {
+      lines.push('*PRECIO FINAL: CONSULTAR*');
+    }
+
+    const description = String(product?.description || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (description) {
+      lines.push('');
+      lines.push(`Detalle: ${description.length > 280 ? `${description.slice(0, 277)}...` : description}`);
+    }
+
+    return lines.join('\n');
+  }, []);
+
+  const markOptimisticMessageStatus = useCallback((chatId, clientTempId, patch = {}) => {
+    const safeChatId = String(chatId || '').trim();
+    const safeClientTempId = String(clientTempId || '').trim();
+    if (!safeChatId || !safeClientTempId) return;
+
+    const applyPatch = (prev) => (Array.isArray(prev) ? prev : []).map((message) => (
+      String(message?.clientTempId || '').trim() === safeClientTempId
+        ? { ...message, ...patch }
+        : message
+    ));
+
+    patchCachedMessages(messagesCacheRef, safeChatId, applyPatch);
+    if (String(activeChatIdRef.current || '').trim() === safeChatId) {
+      setMessages(applyPatch);
+    }
+  }, [activeChatIdRef, messagesCacheRef, setMessages]);
+
+  const rememberPendingOutgoing = useCallback((chatId, clientTempId, retryPayload = {}) => {
+    const safeChatId = String(chatId || '').trim();
+    const safeClientTempId = String(clientTempId || '').trim();
+    if (!safeChatId || !safeClientTempId) return;
+
+    const currentMap = pendingOutgoingByChatRef?.current instanceof Map
+      ? pendingOutgoingByChatRef.current
+      : null;
+    if (!currentMap) return;
+
+    const existing = currentMap.get(safeChatId);
+    const nextById = existing instanceof Map ? new Map(existing) : new Map();
+    const previousEntry = nextById.get(safeClientTempId);
+    if (previousEntry?.timeoutId) clearTimeout(previousEntry.timeoutId);
+
+    const timeoutId = setTimeout(() => {
+      markOptimisticMessageStatus(safeChatId, safeClientTempId, {
+        status: 'failed',
+        ack: -1,
+        errorMessage: 'No se recibio confirmacion de envio. Puedes reintentar.'
+      });
+      const activePending = pendingOutgoingByChatRef?.current?.get?.(safeChatId);
+      if (activePending instanceof Map) {
+        activePending.delete(safeClientTempId);
+        if (activePending.size === 0) pendingOutgoingByChatRef.current.delete(safeChatId);
+      }
+    }, 15000);
+
+    nextById.set(safeClientTempId, {
+      retryPayload,
+      timeoutId,
+      createdAt: Date.now()
+    });
+    currentMap.set(safeChatId, nextById);
+  }, [markOptimisticMessageStatus, pendingOutgoingByChatRef]);
+
+  const emitOutgoingRetryPayload = useCallback((payload = null) => {
+    const safePayload = payload && typeof payload === 'object' ? payload : null;
+    if (!safePayload || !socket || typeof socket.emit !== 'function') return false;
+    const eventName = String(safePayload.eventName || '').trim();
+    if (!eventName) return false;
+    socket.emit(eventName, safePayload.payload || {});
+    return true;
+  }, [socket]);
+
+  const insertOptimisticOutgoing = useCallback(({
+    chatId,
+    body = '',
+    hasMedia = false,
+    type = 'chat',
+    mimetype = null,
+    filename = null,
+    mediaData = null,
+    mediaUrl = null,
+    quotedMessage = null,
+    retryPayload = null
+  } = {}) => {
+    const safeChatId = String(chatId || '').trim();
+    if (!safeChatId) return null;
+
+    const clientTempId = `tmp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const timestamp = Math.floor(Date.now() / 1000);
+    const optimisticMessage = {
+      id: clientTempId,
+      clientTempId,
+      chatId: safeChatId,
+      fromMe: true,
+      body: String(body || ''),
+      timestamp,
+      ack: 0,
+      type: String(type || (hasMedia ? 'media' : 'chat')).trim() || 'chat',
+      status: 'sending',
+      optimistic: true,
+      hasMedia: Boolean(hasMedia),
+      mimetype: mimetype || null,
+      filename: filename || null,
+      mediaData: mediaData || null,
+      mediaUrl: String(mediaUrl || '').trim() || null,
+      canEdit: false,
+      quotedMessage: quotedMessage || null,
+      reactions: [],
+      retryPayload: retryPayload && typeof retryPayload === 'object' ? retryPayload : null
+    };
+
+    patchCachedMessages(messagesCacheRef, safeChatId, (prev) => [...(Array.isArray(prev) ? prev : []), optimisticMessage]);
+    if (String(activeChatIdRef.current || '').trim() === safeChatId) {
+      setMessages((prev) => [...(Array.isArray(prev) ? prev : []), optimisticMessage]);
+    }
+    setChats?.((prev) => prev.map((chat) => (
+      String(chat?.id || '').trim() === safeChatId
+        ? {
+          ...chat,
+          lastMessage: hasMedia ? (String(body || '').trim() || 'Adjunto') : String(body || '').trim(),
+          lastMessageFromMe: true,
+          timestamp
+        }
+        : chat
+    )));
+    rememberPendingOutgoing(safeChatId, clientTempId, retryPayload);
+    return optimisticMessage;
+  }, [activeChatIdRef, messagesCacheRef, rememberPendingOutgoing, setChats, setMessages]);
+
+  const buildQuotedMessagePayload = useCallback(() => {
+    if (!replyingMessage?.id) return null;
+    return {
+      id: replyingMessage.id,
+      body: String(replyingMessage?.body || '').trim(),
+      fromMe: Boolean(replyingMessage?.fromMe),
+      hasMedia: Boolean(replyingMessage?.hasMedia),
+      type: String(replyingMessage?.type || 'chat')
+    };
+  }, [replyingMessage]);
+
+  const resolveOptimisticMediaType = useCallback((mimetype = '', fileName = '') => {
+    const safeMime = String(mimetype || '').trim().toLowerCase();
+    const safeFileName = String(fileName || '').trim().toLowerCase();
+    if (safeMime.startsWith('image/')) return 'image';
+    if (safeMime.startsWith('video/')) return 'video';
+    if (safeMime.startsWith('audio/')) return 'audio';
+    if (safeMime === 'application/pdf') return 'document';
+    if (safeMime || safeFileName) return 'document';
+    return 'media';
+  }, []);
+
   const handleExitActiveChat = useCallback(() => {
     activeChatIdRef.current = null;
     setActiveChatId(null);
@@ -109,6 +289,23 @@ export default function useChatMessageActions({
     setSelectedSendTemplatePreviewError,
     setSendTemplateSubmitting
   ]);
+
+  const handleRetryMessage = useCallback((message = null) => {
+    const retryPayload = message?.retryPayload && typeof message.retryPayload === 'object'
+      ? message.retryPayload
+      : null;
+    const clientTempId = String(message?.clientTempId || message?.id || '').trim();
+    const chatId = String(message?.chatId || activeChatIdRef.current || '').trim();
+    if (!retryPayload || !clientTempId || !chatId) return;
+
+    markOptimisticMessageStatus(chatId, clientTempId, {
+      status: 'sending',
+      ack: 0,
+      errorMessage: ''
+    });
+    rememberPendingOutgoing(chatId, clientTempId, retryPayload);
+    emitOutgoingRetryPayload(retryPayload);
+  }, [activeChatIdRef, emitOutgoingRetryPayload, markOptimisticMessageStatus, rememberPendingOutgoing]);
 
   const handleOpenSendTemplate = useCallback(async () => {
     const activeId = String(activeChatIdRef.current || activeChatId || '').trim();
@@ -257,6 +454,64 @@ export default function useChatMessageActions({
     socket
   ]);
 
+  const handleSendCatalogProduct = useCallback((product = null) => {
+    const activeId = String(activeChatIdRef.current || activeChatId || '').trim();
+    if (!activeId || !socket || typeof socket.emit !== 'function') return false;
+
+    const activeChatForSend = chatsRef.current.find((chat) => String(chat?.id || '') === String(activeChatId || activeId));
+    const activeChatPhone = normalizeDigits(activeChatForSend?.phone || '');
+    const toPhone = activeChatPhone || null;
+    const safeProduct = product && typeof product === 'object' ? product : {};
+    const productTitle = String(safeProduct?.title || safeProduct?.name || 'Producto').trim() || 'Producto';
+    const productDescription = String(safeProduct?.description || '').trim();
+    const productPrice = String(safeProduct?.price || '').trim();
+    const productUrl = String(
+      safeProduct?.url || safeProduct?.permalink || safeProduct?.productUrl || safeProduct?.link || ''
+    ).trim();
+    const imageUrl = String(safeProduct?.imageUrl || safeProduct?.image || '').trim();
+
+    const payload = {
+      to: activeId,
+      toPhone,
+      product: {
+        id: String(safeProduct?.id || safeProduct?.productId || '').trim() || null,
+        title: productTitle,
+        price: productPrice,
+        regularPrice: safeProduct?.regularPrice || safeProduct?.price || '',
+        salePrice: safeProduct?.salePrice || '',
+        discountPct: safeProduct?.discountPct || 0,
+        description: productDescription,
+        imageUrl,
+        url: productUrl
+      }
+    };
+
+    const optimisticBody = buildCatalogProductCaptionPreview(payload.product);
+
+    insertOptimisticOutgoing({
+      chatId: activeId,
+      body: optimisticBody || productTitle,
+      hasMedia: Boolean(imageUrl),
+      type: imageUrl ? 'image' : 'chat',
+      mediaUrl: imageUrl || null,
+      retryPayload: {
+        eventName: 'send_catalog_product',
+        payload
+      }
+    });
+
+    socket.emit('send_catalog_product', payload);
+    return true;
+  }, [
+    activeChatId,
+    activeChatIdRef,
+    buildCatalogProductCaptionPreview,
+    chatsRef,
+    insertOptimisticOutgoing,
+    normalizeDigits,
+    socket
+  ]);
+
   const handleSendMessage = useCallback((event) => {
     event?.preventDefault();
     const text = inputText.trim();
@@ -296,6 +551,7 @@ export default function useChatMessageActions({
     }
 
     const quotedMessageId = String(replyingMessage?.id || '').trim() || null;
+    const quotedMessage = buildQuotedMessagePayload();
 
     const activeChatForSend = chatsRef.current.find((chat) => String(chat?.id || '') === String(activeChatId || ''));
     const activeChatPhone = normalizeDigits(activeChatForSend?.phone || '');
@@ -305,6 +561,39 @@ export default function useChatMessageActions({
     if (draftQuickReply && !attachment) {
       const outboundText = String(text || draftQuickReply.text || '').trim();
       const draftMediaAssets = Array.isArray(draftQuickReply.mediaAssets) ? draftQuickReply.mediaAssets : [];
+      const primaryAsset = draftMediaAssets[0] || null;
+      const primaryMimeType = String(draftQuickReply.mediaMimeType || primaryAsset?.mimeType || '').trim().toLowerCase();
+      const primaryFileName = String(draftQuickReply.mediaFileName || primaryAsset?.fileName || '').trim();
+      if (draftMediaAssets.length > 0) {
+        insertOptimisticOutgoing({
+          chatId: activeChatId,
+          body: outboundText || primaryFileName || 'Adjunto',
+          hasMedia: true,
+          type: resolveOptimisticMediaType(primaryMimeType, primaryFileName),
+          mimetype: primaryMimeType || null,
+          filename: primaryFileName || null,
+          mediaUrl: String(draftQuickReply.mediaUrl || primaryAsset?.url || '').trim() || null,
+          quotedMessage,
+          retryPayload: {
+            eventName: 'send_quick_reply',
+            payload: {
+              quickReplyId: draftQuickReply.id || undefined,
+              quickReply: {
+                id: draftQuickReply.id || undefined,
+                label: draftQuickReply.label || undefined,
+                text: outboundText,
+                mediaAssets: draftMediaAssets,
+                mediaUrl: String(draftQuickReply.mediaUrl || primaryAsset?.url || '').trim() || null,
+                mediaMimeType: primaryMimeType || null,
+                mediaFileName: primaryFileName || null
+              },
+              to: activeChatId,
+              toPhone,
+              quotedMessageId
+            }
+          }
+        });
+      }
       socket.emit('send_quick_reply', {
         quickReplyId: draftQuickReply.id || undefined,
         quickReply: {
@@ -327,7 +616,7 @@ export default function useChatMessageActions({
     }
 
     if (attachment) {
-      socket.emit('send_media_message', {
+      const sendPayload = {
         to: activeChatId,
         toPhone,
         body: inputText,
@@ -335,10 +624,35 @@ export default function useChatMessageActions({
         mimetype: attachment.mimetype,
         filename: attachment.filename,
         quotedMessageId
+      };
+      insertOptimisticOutgoing({
+        chatId: activeChatId,
+        body: String(inputText || '').trim() || String(attachment.filename || '').trim() || 'Adjunto',
+        hasMedia: true,
+        type: resolveOptimisticMediaType(attachment.mimetype, attachment.filename),
+        mimetype: attachment.mimetype,
+        filename: attachment.filename,
+        mediaData: attachment.data,
+        quotedMessage,
+        retryPayload: {
+          eventName: 'send_media_message',
+          payload: sendPayload
+        }
       });
+      socket.emit('send_media_message', sendPayload);
       removeAttachment();
     } else {
-      socket.emit('send_message', { to: activeChatId, toPhone, body: inputText, quotedMessageId });
+      const sendPayload = { to: activeChatId, toPhone, body: inputText, quotedMessageId };
+      insertOptimisticOutgoing({
+        chatId: activeChatId,
+        body: inputText,
+        quotedMessage,
+        retryPayload: {
+          eventName: 'send_message',
+          payload: sendPayload
+        }
+      });
+      socket.emit('send_message', sendPayload);
     }
     setInputText('');
     setReplyingMessage(null);
@@ -346,11 +660,14 @@ export default function useChatMessageActions({
     activeChatId,
     activeChatIdRef,
     attachment,
+    buildQuotedMessagePayload,
     chatsRef,
     editingMessage,
     inputText,
+    insertOptimisticOutgoing,
     normalizeDigits,
     normalizeQuickReplyDraft,
+    resolveOptimisticMediaType,
     quickReplyDraft,
     removeAttachment,
     replyingMessage,
@@ -360,12 +677,15 @@ export default function useChatMessageActions({
     setQuickReplyDraft,
     setReplyingMessage,
     socket,
-    waCapabilities.messageEdit
+    waCapabilities.messageEdit,
+    notify
   ]);
 
   return {
     handleExitActiveChat,
     handleSendMessage,
+    handleSendCatalogProduct,
+    handleRetryMessage,
     handleSendReaction,
     handleOpenSendTemplate,
     handleCloseSendTemplate,

@@ -1,9 +1,12 @@
 import { useEffect } from 'react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
+import { patchCachedMessages } from '../helpers/messageCache.helpers';
 
 export default function useSocketMessageLifecycleEvents({
     socket,
     activeChatIdRef,
+    messagesCacheRef,
+    pendingOutgoingByChatRef,
     setMessages,
     repairMojibake,
     setEditingMessage,
@@ -18,6 +21,26 @@ export default function useSocketMessageLifecycleEvents({
 }) {
     const { notify } = useUiFeedback();
     useEffect(() => {
+        const ackToStatus = (ackValue) => {
+            const ack = Number.isFinite(Number(ackValue)) ? Number(ackValue) : 0;
+            if (ack === -1) return 'failed';
+            if (ack >= 3) return 'read';
+            if (ack >= 2) return 'delivered';
+            if (ack >= 1) return 'sent';
+            return 'sending';
+        };
+        const clearPendingOutgoing = (chatId, clientTempId) => {
+            const safeChatId = String(chatId || '').trim();
+            const safeClientTempId = String(clientTempId || '').trim();
+            const pendingByChat = pendingOutgoingByChatRef?.current instanceof Map
+                ? pendingOutgoingByChatRef.current.get(safeChatId)
+                : null;
+            if (!(pendingByChat instanceof Map) || !safeClientTempId) return;
+            const entry = pendingByChat.get(safeClientTempId);
+            if (entry?.timeoutId) clearTimeout(entry.timeoutId);
+            pendingByChat.delete(safeClientTempId);
+            if (pendingByChat.size === 0) pendingOutgoingByChatRef.current.delete(safeChatId);
+        };
         socket.on('message_edited', ({ chatId, messageId, body, edited, editedAt, canEdit }) => {
             const targetChatId = String(chatId || '');
             const active = String(activeChatIdRef.current || '');
@@ -87,13 +110,35 @@ export default function useSocketMessageLifecycleEvents({
         });
 
         socket.on('message_ack', ({ id, ack, chatId, baseChatId, scopeModuleId, canEdit }) => {
-            setMessages((prev) => prev.map((m) => (
+            const ackChatId = normalizeChatScopedId(chatId || baseChatId || '', scopeModuleId || '');
+            let resolvedClientTempId = '';
+            setMessages((prev) => prev.map((m) => {
+                if (m.id !== id) return m;
+                resolvedClientTempId = String(m?.clientTempId || '').trim();
+                return {
+                    ...m,
+                    ack,
+                    status: ackToStatus(ack),
+                    canEdit: typeof canEdit === 'boolean' ? canEdit : m.canEdit
+                };
+            }));
+            const cachedMessages = patchCachedMessages(messagesCacheRef, ackChatId, (prev) => prev.map((m) => (
                 m.id === id
-                    ? { ...m, ack, canEdit: typeof canEdit === 'boolean' ? canEdit : m.canEdit }
+                    ? {
+                        ...m,
+                        ack,
+                        status: ackToStatus(ack),
+                        canEdit: typeof canEdit === 'boolean' ? canEdit : m.canEdit
+                    }
                     : m
             )));
-
-            const ackChatId = normalizeChatScopedId(chatId || baseChatId || '', scopeModuleId || '');
+            if (!resolvedClientTempId && Array.isArray(cachedMessages)) {
+                const matched = cachedMessages.find((message) => String(message?.id || '').trim() === String(id || '').trim());
+                resolvedClientTempId = String(matched?.clientTempId || '').trim();
+            }
+            if (resolvedClientTempId && ackChatId && ack >= 1) {
+                clearPendingOutgoing(ackChatId, resolvedClientTempId);
+            }
             setChats((prev) => prev.map((c) => {
                 const sameChat = ackChatId ? chatIdsReferSameScope(String(c?.id || ''), ackChatId) : false;
                 if (!sameChat || !c.lastMessageFromMe) return c;
