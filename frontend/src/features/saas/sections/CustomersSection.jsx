@@ -4,7 +4,7 @@ import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import SendTemplateModal from '../../chat/components/SendTemplateModal';
 import { buildTemplateResolvedPreview } from '../../chat/core/helpers/templateMessages.helpers';
 import { normalizeCustomerFormFromItem } from '../helpers';
-import { isTemplateAllowedInIndividual } from '../helpers/templateUseCase.helpers';
+import { isTemplateAllowedInCampaigns, isTemplateAllowedInIndividual } from '../helpers/templateUseCase.helpers';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -758,6 +758,7 @@ function CustomersSection(props = {}) {
     const [selectedCustomerLive, setSelectedCustomerLive] = useState(selectedCustomerContext || null);
     const [customerOverridesById, setCustomerOverridesById] = useState({});
     const [showCustomerSynced, setShowCustomerSynced] = useState(false);
+    const [selectedCustomerIdsForCampaign, setSelectedCustomerIdsForCampaign] = useState([]);
     const [sendTemplateOpen, setSendTemplateOpen] = useState(false);
     const [sendTemplateOptions, setSendTemplateOptions] = useState([]);
     const [sendTemplateOptionsLoading, setSendTemplateOptionsLoading] = useState(false);
@@ -767,6 +768,14 @@ function CustomersSection(props = {}) {
     const [selectedSendTemplatePreviewLoading, setSelectedSendTemplatePreviewLoading] = useState(false);
     const [selectedSendTemplatePreviewError, setSelectedSendTemplatePreviewError] = useState('');
     const [sendTemplateSubmitting, setSendTemplateSubmitting] = useState(false);
+    const [campaignTemplateModalOpen, setCampaignTemplateModalOpen] = useState(false);
+    const [campaignTemplateOptions, setCampaignTemplateOptions] = useState([]);
+    const [campaignTemplateOptionsLoading, setCampaignTemplateOptionsLoading] = useState(false);
+    const [campaignTemplateOptionsError, setCampaignTemplateOptionsError] = useState('');
+    const [selectedCampaignTemplate, setSelectedCampaignTemplate] = useState(null);
+    const [selectedCampaignTemplatePreview, setSelectedCampaignTemplatePreview] = useState(null);
+    const [selectedCampaignTemplatePreviewLoading, setSelectedCampaignTemplatePreviewLoading] = useState(false);
+    const [selectedCampaignTemplatePreviewError, setSelectedCampaignTemplatePreviewError] = useState('');
     const syncedIndicatorTimeoutRef = useRef(null);
 
     const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
@@ -1073,11 +1082,70 @@ function CustomersSection(props = {}) {
     }, [customerForm?.preferredLanguage, customerForm?.preferred_language, customerPanelMode, setCustomerForm]);
 
     const tableColumns = useMemo(
-        () => CUSTOMER_TABLE_COLUMNS.map((column) => ({
-            ...column,
-            hidden: !columnPrefs.isColumnVisible(column.key)
-        })),
-        [columnPrefs, columnPrefs.visibleColumnKeys]
+        () => ([
+            {
+                key: 'selectForCampaign',
+                label: (
+                    <span className="saas-customers-select-cell">
+                        <input
+                            type="checkbox"
+                            checked={allVisibleCustomersSelectedForCampaign}
+                            onChange={() => {
+                                setSelectedCustomerIdsForCampaign((prev) => {
+                                    const current = new Set((Array.isArray(prev) ? prev : []).map((item) => String(item || '').trim()).filter(Boolean));
+                                    if (visibleCustomerIdsForCampaign.length > 0 && visibleCustomerIdsForCampaign.every((customerId) => current.has(customerId))) {
+                                        visibleCustomerIdsForCampaign.forEach((customerId) => current.delete(customerId));
+                                    } else {
+                                        visibleCustomerIdsForCampaign.forEach((customerId) => current.add(customerId));
+                                    }
+                                    return Array.from(current);
+                                });
+                            }}
+                            onClick={(event) => event.stopPropagation()}
+                            aria-label="Seleccionar clientes visibles para campaña"
+                        />
+                    </span>
+                ),
+                width: '54px',
+                minWidth: '54px',
+                maxWidth: '54px',
+                align: 'center',
+                render: (_, row) => {
+                    const customerId = String(row?._raw?.customerId || row?.id || '').trim();
+                    const checked = selectedCustomerIdsForCampaignSet.has(customerId);
+                    return (
+                        <span className="saas-customers-select-cell">
+                            <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                    setSelectedCustomerIdsForCampaign((prev) => {
+                                        const current = Array.isArray(prev) ? prev : [];
+                                        if (current.includes(customerId)) {
+                                            return current.filter((item) => item !== customerId);
+                                        }
+                                        return [...current, customerId];
+                                    });
+                                }}
+                                onClick={(event) => event.stopPropagation()}
+                                aria-label={`Seleccionar ${String(row?.nombreCompleto || customerId || 'cliente')}`}
+                            />
+                        </span>
+                    );
+                }
+            },
+            ...CUSTOMER_TABLE_COLUMNS.map((column) => ({
+                ...column,
+                hidden: !columnPrefs.isColumnVisible(column.key)
+            }))
+        ]),
+        [
+            allVisibleCustomersSelectedForCampaign,
+            columnPrefs,
+            columnPrefs.visibleColumnKeys,
+            selectedCustomerIdsForCampaignSet,
+            visibleCustomerIdsForCampaign
+        ]
     );
 
     const filteredCustomersLive = useMemo(() => {
@@ -1266,6 +1334,24 @@ function CustomersSection(props = {}) {
     const visibleTableRows = useMemo(
         () => (Array.isArray(sortedAndFilteredRows) ? sortedAndFilteredRows : []),
         [sortedAndFilteredRows]
+    );
+    const visibleCustomerIdsForCampaign = useMemo(
+        () => visibleTableRows
+            .map((row) => String(row?._raw?.customerId || row?.id || '').trim())
+            .filter(Boolean),
+        [visibleTableRows]
+    );
+    const selectedCustomerIdsForCampaignSet = useMemo(
+        () => new Set((Array.isArray(selectedCustomerIdsForCampaign) ? selectedCustomerIdsForCampaign : []).map((item) => String(item || '').trim()).filter(Boolean)),
+        [selectedCustomerIdsForCampaign]
+    );
+    const allVisibleCustomersSelectedForCampaign = useMemo(
+        () => visibleCustomerIdsForCampaign.length > 0 && visibleCustomerIdsForCampaign.every((customerId) => selectedCustomerIdsForCampaignSet.has(customerId)),
+        [selectedCustomerIdsForCampaignSet, visibleCustomerIdsForCampaign]
+    );
+    const firstSelectedCustomerIdForCampaign = useMemo(
+        () => String(selectedCustomerIdsForCampaign[0] || '').trim(),
+        [selectedCustomerIdsForCampaign]
     );
 
     const handlePreferredLanguageChange = useCallback(async (nextLanguageRaw = '') => {
@@ -1684,6 +1770,98 @@ function CustomersSection(props = {}) {
         });
     }, [notify, selectedCustomerIdResolved, selectedCustomerPhone, selectedSendTemplate, socket]);
 
+    const resetCampaignTemplateFlow = useCallback(() => {
+        setCampaignTemplateModalOpen(false);
+        setCampaignTemplateOptions([]);
+        setCampaignTemplateOptionsLoading(false);
+        setCampaignTemplateOptionsError('');
+        setSelectedCampaignTemplate(null);
+        setSelectedCampaignTemplatePreview(null);
+        setSelectedCampaignTemplatePreviewLoading(false);
+        setSelectedCampaignTemplatePreviewError('');
+    }, []);
+
+    const handleSelectCampaignTemplate = useCallback(async (template = null) => {
+        const entry = template && typeof template === 'object' ? template : null;
+        if (!entry) return;
+
+        setSelectedCampaignTemplate(entry);
+        setSelectedCampaignTemplatePreview(null);
+        setSelectedCampaignTemplatePreviewLoading(true);
+        setSelectedCampaignTemplatePreviewError('');
+
+        try {
+            const suffix = firstSelectedCustomerIdForCampaign
+                ? `?customerId=${encodeURIComponent(firstSelectedCustomerIdForCampaign)}`
+                : '';
+            const previewPayload = await requestJson(`/api/tenant/template-variables/preview${suffix}`, { method: 'GET' });
+            const resolvedPreview = buildTemplateResolvedPreview(entry, previewPayload);
+            setSelectedCampaignTemplatePreview({
+                ...resolvedPreview,
+                payload: previewPayload
+            });
+        } catch (error) {
+            const message = String(error?.message || 'No se pudo resolver la preview del template de campaña.');
+            setSelectedCampaignTemplatePreviewError(message);
+            notify({ type: 'error', message });
+        } finally {
+            setSelectedCampaignTemplatePreviewLoading(false);
+        }
+    }, [firstSelectedCustomerIdForCampaign, notify, requestJson]);
+
+    const handleOpenCampaignTemplateModal = useCallback(async () => {
+        if (selectedCustomerIdsForCampaign.length === 0) {
+            notify({ type: 'error', message: 'Selecciona al menos un cliente para la campaña express.' });
+            return;
+        }
+
+        setCampaignTemplateModalOpen(true);
+        setCampaignTemplateOptions([]);
+        setCampaignTemplateOptionsLoading(true);
+        setCampaignTemplateOptionsError('');
+        setSelectedCampaignTemplate(null);
+        setSelectedCampaignTemplatePreview(null);
+        setSelectedCampaignTemplatePreviewError('');
+
+        try {
+            const response = await listMetaTemplates(requestJson, {
+                status: 'approved',
+                limit: 200
+            });
+            const items = (Array.isArray(response?.items) ? response.items : [])
+                .filter((item) => isTemplateAllowedInCampaigns(item?.useCase))
+                .map((item) => ({
+                    ...item,
+                    templateId: String(item?.templateId || item?.metaTemplateId || item?.templateName || '').trim(),
+                    templateName: String(item?.templateName || '').trim(),
+                    templateLanguage: String(item?.templateLanguage || 'es').trim().toLowerCase() || 'es',
+                    moduleId: String(item?.moduleId || '').trim(),
+                    useCase: String(item?.useCase || 'both').trim().toLowerCase() || 'both'
+                }))
+                .filter((item) => item.templateId && item.templateName)
+                .sort((left, right) => {
+                    const moduleCompare = String(moduleNameById[left.moduleId] || left.moduleId || '').localeCompare(
+                        String(moduleNameById[right.moduleId] || right.moduleId || ''),
+                        'es',
+                        { sensitivity: 'base' }
+                    );
+                    if (moduleCompare !== 0) return moduleCompare;
+                    return String(left.templateName || '').localeCompare(String(right.templateName || ''), 'es', { sensitivity: 'base' });
+                });
+
+            setCampaignTemplateOptions(items);
+            if (items.length > 0) {
+                await handleSelectCampaignTemplate(items[0]);
+            }
+        } catch (error) {
+            const message = String(error?.message || 'No se pudieron cargar templates para la campaña express.');
+            setCampaignTemplateOptionsError(message);
+            notify({ type: 'error', message });
+        } finally {
+            setCampaignTemplateOptionsLoading(false);
+        }
+    }, [handleSelectCampaignTemplate, moduleNameById, notify, requestJson, selectedCustomerIdsForCampaign.length]);
+
     const updateCustomersState = useCallback((customerItem = null) => {
         if (typeof setCustomers !== 'function') return;
         const safeItem = customerItem && typeof customerItem === 'object' ? customerItem : null;
@@ -2052,6 +2230,21 @@ function CustomersSection(props = {}) {
     useEffect(() => {
         resetSendTemplateFlow();
     }, [resetSendTemplateFlow, selectedCustomerIdResolved]);
+
+    useEffect(() => {
+        resetCampaignTemplateFlow();
+    }, [resetCampaignTemplateFlow, firstSelectedCustomerIdForCampaign]);
+
+    useEffect(() => {
+        const validIds = new Set(
+            (Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [])
+                .map((item) => resolveCustomerId(item))
+                .filter(Boolean)
+        );
+        setSelectedCustomerIdsForCampaign((prev) => (
+            (Array.isArray(prev) ? prev : []).filter((customerId) => validIds.has(String(customerId || '').trim()))
+        ));
+    }, [filteredCustomersLive]);
 
     const handleAddressDepartmentChange = useCallback((nextDepartmentIdRaw = '') => {
         const departmentId = normalizeGeoNumericId(nextDepartmentIdRaw);
@@ -2564,6 +2757,13 @@ function CustomersSection(props = {}) {
             disabled: busy || tenantScopeLocked
         },
         {
+            key: 'send-template',
+            label: `Enviar template${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
+            onClick: () => { void handleOpenCampaignTemplateModal(); },
+            variant: 'secondary',
+            disabled: busy || tenantScopeLocked || selectedCustomerIdsForCampaign.length === 0
+        },
+        {
             key: 'toggle-columns',
             label: 'Columnas',
             onClick: () => setShowColumnsMenu((prev) => !prev),
@@ -2605,6 +2805,11 @@ function CustomersSection(props = {}) {
             onSortChange={setSortConfig}
             extra={(
                 <div className="saas-customers-header-extra">
+                    {selectedCustomerIdsForCampaign.length > 0 ? (
+                        <div className="saas-customers-selection-pill">
+                            {selectedCustomerIdsForCampaign.length} cliente{selectedCustomerIdsForCampaign.length === 1 ? '' : 's'} listo{selectedCustomerIdsForCampaign.length === 1 ? '' : 's'} para campaña express
+                        </div>
+                    ) : null}
                     {(customersLoadingBatch || savingCustomer) ? (
                         <div className="saas-admin-inline-feedback">
                             {customersLoadingBatch ? `Cargando clientes... ${Math.max(0, Math.min(100, Number(customersLoadProgress) || 0))}%` : null}
@@ -2984,6 +3189,18 @@ function CustomersSection(props = {}) {
                 onClose={resetSendTemplateFlow}
                 onSelectTemplate={(template) => { void handleSelectDirectTemplate(template); }}
                 onConfirm={handleConfirmDirectTemplateSend}
+            />
+            <SendTemplateModal
+                isOpen={campaignTemplateModalOpen}
+                templates={campaignTemplateOptions}
+                templatesLoading={campaignTemplateOptionsLoading}
+                templatesError={campaignTemplateOptionsError}
+                selectedTemplate={selectedCampaignTemplate}
+                preview={selectedCampaignTemplatePreview}
+                previewLoading={selectedCampaignTemplatePreviewLoading}
+                previewError={selectedCampaignTemplatePreviewError}
+                onClose={resetCampaignTemplateFlow}
+                onSelectTemplate={(template) => { void handleSelectCampaignTemplate(template); }}
             />
         </section>
     );

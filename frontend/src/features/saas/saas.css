@@ -4717,6 +4717,33 @@
   text-overflow: ellipsis;
 }
 
+.saas-customers-select-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.saas-customers-select-cell input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: #11c8a5;
+}
+
+.saas-admin-shell #saas_clientes .saas-customers-selection-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 212, 170, 0.32);
+  background: rgba(0, 168, 132, 0.12);
+  color: #d9fff7;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
 .saas-admin-shell #saas_clientes .saas-customers-detail-panel {
   height: 100% !important;
   max-height: 100% !important;
