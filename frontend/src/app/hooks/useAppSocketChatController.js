@@ -48,6 +48,7 @@ export default function useAppSocketChatController({
     messages: chatRuntimeBlock.messages,
     messagesEndRef: chatRuntimeBlock.messagesEndRef,
     prevMessagesMetaRef: chatRuntimeBlock.prevMessagesMetaRef,
+    messagesCacheRef: chatRuntimeBlock.messagesCacheRef,
     shouldInstantScrollRef: chatRuntimeBlock.shouldInstantScrollRef,
     suppressSmoothScrollUntilRef: chatRuntimeBlock.suppressSmoothScrollUntilRef,
 

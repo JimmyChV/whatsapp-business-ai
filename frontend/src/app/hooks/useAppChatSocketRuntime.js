@@ -54,6 +54,7 @@ export default function useAppChatSocketRuntime({
   messages,
   messagesEndRef,
   prevMessagesMetaRef,
+  messagesCacheRef,
   shouldInstantScrollRef,
   suppressSmoothScrollUntilRef,
 
@@ -340,6 +341,7 @@ export default function useAppChatSocketRuntime({
     waModulesRef,
     handleChatSelect,
     activeChatIdRef,
+    messagesCacheRef,
     setActiveChatId,
     shouldInstantScrollRef,
     suppressSmoothScrollUntilRef,
