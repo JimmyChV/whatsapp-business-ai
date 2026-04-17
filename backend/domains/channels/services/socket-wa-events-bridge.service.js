@@ -136,7 +136,7 @@ function createSocketWaEventsBridgeService({
         waClient.on('auth_failure', (msg) => emitToRuntimeContext('auth_failure', msg));
         waClient.on('disconnected', (reason) => emitToRuntimeContext('disconnected', reason));
 
-        waClient.on('message', async (msg) => {
+        waClient.on('message', (msg) => {
             if (isStatusOrSystemMessage(msg)) return;
 
             const historyTenantId = resolveHistoryTenantId();
@@ -157,154 +157,11 @@ function createSocketWaEventsBridgeService({
             );
             const cleanScopeModuleId = String(scopeModuleId || '').trim().toLowerCase();
             const scopedChatId = buildScopedChatId(relatedChatIdBase, scopeModuleId || '');
-            const media = await mediaManager.processMessageMedia(msg, {
-                tenantId: historyTenantId,
-                moduleId: scopeModuleId || '',
-                contactId: relatedChatIdBase,
-                timestampUnix: Number(msg?.timestamp || 0) || null
-            });
-            const senderMeta = await resolveMessageSenderMeta(msg);
-            const fileMeta = extractMessageFileMeta(msg, media);
-            const quotedMessage = await extractQuotedMessageInfo(msg);
             const order = extractOrderInfo(msg);
             const location = extractLocationInfo(msg);
             const referral = msg?.referral && typeof msg.referral === 'object' ? msg.referral : null;
             const hasReferral = Boolean(referral && Object.keys(referral).length > 0);
-            await persistMessageHistory(historyTenantId, {
-                msg,
-                senderMeta,
-                fileMeta,
-                order,
-                location,
-                quotedMessage,
-                agentMeta,
-                moduleContext: effectiveModuleContext
-            });
-            if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && cleanScopeModuleId && customerModuleContextsService) {
-                try {
-                    const customerId = await resolveCustomerIdFromChat(historyTenantId, relatedChatIdBase, cleanScopeModuleId);
-                    if (customerId) {
-                        const existingContext = await customerModuleContextsService.getContext(historyTenantId, {
-                            customerId,
-                            moduleId: cleanScopeModuleId
-                        });
-                        await customerModuleContextsService.upsertContext(historyTenantId, {
-                            customerId,
-                            moduleId: cleanScopeModuleId,
-                            firstInteractionAt: existingContext?.firstInteractionAt || activityAtIso,
-                            lastInteractionAt: activityAtIso,
-                            metadata: {
-                                dualWriteSource: 'socket_wa_events_bridge.inbound',
-                                lastInboundMessageId: messageId
-                            }
-                        });
-                    }
-                } catch (_) {
-                    // silent: dual-write must not interrupt inbound flow
-                }
-            }
-
-            if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && chatOriginService && hasReferral) {
-                try {
-                    await chatOriginService.upsertChatOrigin(historyTenantId, {
-                        chatId: relatedChatIdBase,
-                        scopeModuleId: cleanScopeModuleId,
-                        originType: 'meta_ad',
-                        referralSourceUrl: String(referral?.sourceUrl || referral?.source_url || '').trim() || null,
-                        referralSourceType: String(referral?.sourceType || referral?.source_type || '').trim() || null,
-                        referralSourceId: String(referral?.sourceId || referral?.source_id || '').trim() || null,
-                        referralHeadline: String(referral?.headline || '').trim() || null,
-                        ctwaClid: String(referral?.ctwaClid || referral?.ctwa_clid || '').trim() || null,
-                        campaignId: null,
-                        rawReferral: referral,
-                        detectedAt: activityAtIso
-                    });
-                } catch (_) {
-                    // silent: inbound processing should not fail by origin attribution persistence issues
-                }
-            }
-
-            if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && chatCommercialStatusService) {
-                try {
-                    const inboundResult = await chatCommercialStatusService.markInboundCustomerFirstContact(historyTenantId, {
-                        chatId: relatedChatIdBase,
-                        scopeModuleId: cleanScopeModuleId,
-                        source: 'webhook',
-                        reason: 'first_inbound_customer_message',
-                        changedByUserId: null,
-                        at: activityAtIso,
-                        metadata: {
-                            trigger: 'incoming_message',
-                            messageId
-                        }
-                    });
-                    if (inboundResult?.changed) {
-                        emitCommercialStatusUpdated?.({
-                            tenantId: historyTenantId,
-                            chatId: relatedChatIdBase,
-                            scopeModuleId: cleanScopeModuleId,
-                            result: inboundResult,
-                            source: 'wa_events_bridge.inbound'
-                        });
-                    }
-                } catch (_) {
-                    // silent: inbound processing should not fail by commercial status lifecycle issues
-                }
-            }
-
-            if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase) {
-                try {
-                    const assignmentScopeModuleId = cleanScopeModuleId;
-
-                    const touchedAssignment = await conversationOpsService.touchChatAssignmentActivity(historyTenantId, {
-                        chatId: relatedChatIdBase,
-                        scopeModuleId: assignmentScopeModuleId,
-                        fromCustomer: true,
-                        at: activityAtIso
-                    });
-                    const currentAssignment = touchedAssignment || await conversationOpsService.getChatAssignment(historyTenantId, {
-                        chatId: relatedChatIdBase,
-                        scopeModuleId: assignmentScopeModuleId
-                    });
-
-                    if (currentAssignment?.status === 'en_espera') {
-                        const reactivationResult = await conversationOpsService.reactivateChatAssignmentOnCustomerReply(historyTenantId, {
-                            chatId: relatedChatIdBase,
-                            scopeModuleId: assignmentScopeModuleId,
-                            at: activityAtIso,
-                            metadata: {
-                                trigger: 'incoming_message'
-                            }
-                        });
-
-                        if (reactivationResult?.shouldAutoAssign) {
-                            await chatAssignmentRouterService.autoAssignChat(historyTenantId, {
-                                chatId: relatedChatIdBase,
-                                scopeModuleId: assignmentScopeModuleId,
-                                actorUserId: null,
-                                trigger: 'customer_reply_after_waiting',
-                                assignmentReason: 'customer_reply_after_waiting'
-                            });
-                        }
-                    } else {
-                        const hasAssignee = Boolean(String(currentAssignment?.assigneeUserId || '').trim());
-                        const isActive = String(currentAssignment?.status || '').trim().toLowerCase() === 'active';
-                        if (!hasAssignee || !isActive) {
-                            await chatAssignmentRouterService.autoAssignChat(historyTenantId, {
-                                chatId: relatedChatIdBase,
-                                scopeModuleId: assignmentScopeModuleId,
-                                actorUserId: null,
-                                trigger: 'incoming_message_unassigned',
-                                assignmentReason: 'incoming_message_unassigned'
-                            });
-                        }
-                    }
-                } catch (_) {
-                    // silent: inbound processing should not fail by assignment lifecycle issues
-                }
-            }
-
-            emitToRuntimeContext('message', {
+            const inboundMessagePayload = {
                 id: messageId,
                 chatId: scopedChatId || relatedChatIdBase,
                 baseChatId: relatedChatIdBase || null,
@@ -315,25 +172,25 @@ function createSocketWaEventsBridgeService({
                 timestamp: msg?.timestamp,
                 fromMe: msg?.fromMe,
                 hasMedia: msg?.hasMedia,
-                mediaData: media ? media.data : null,
-                mimetype: media ? media.mimetype : null,
-                filename: fileMeta.filename,
-                fileSizeBytes: fileMeta.fileSizeBytes,
-                mediaUrl: fileMeta.mediaUrl || null,
-                mediaPath: fileMeta.mediaPath || null,
+                mediaData: null,
+                mimetype: null,
+                filename: null,
+                fileSizeBytes: null,
+                mediaUrl: null,
+                mediaPath: null,
                 ack: msg?.ack,
                 type: msg?.type,
                 author: msg?.author || msg?._data?.author || null,
-                notifyName: senderMeta.notifyName,
-                senderPhone: senderMeta.senderPhone,
-                senderId: senderMeta.senderId,
-                senderPushname: senderMeta.senderPushname,
-                isGroupMessage: senderMeta.isGroupMessage,
+                notifyName: null,
+                senderPhone: null,
+                senderId: null,
+                senderPushname: null,
+                isGroupMessage: String(msg?.from || msg?.to || '').includes('@g.us'),
                 canEdit: false,
                 referral: referral || null,
                 order,
                 location,
-                quotedMessage,
+                quotedMessage: null,
                 sentViaModuleId: moduleAttributionMeta?.sentViaModuleId || null,
                 sentViaModuleName: moduleAttributionMeta?.sentViaModuleName || null,
                 sentViaModuleImageUrl: moduleAttributionMeta?.sentViaModuleImageUrl || null,
@@ -341,26 +198,179 @@ function createSocketWaEventsBridgeService({
                 sentViaPhoneNumber: moduleAttributionMeta?.sentViaPhoneNumber || null,
                 sentViaChannelType: moduleAttributionMeta?.sentViaChannelType || null,
                 ...(agentMeta || {})
-            });
+            };
 
-            try {
-                if (isVisibleChatId(relatedChatIdBase)) {
-                    invalidateChatListCache();
-                    const chat = await waClient.client.getChatById(relatedChatIdBase);
-                    const summary = await toChatSummary(chat, {
-                        includeHeavyMeta: false,
+            emitToRuntimeContext('message', inboundMessagePayload);
+
+            setImmediate(async () => {
+                try {
+                    const media = await mediaManager.processMessageMedia(msg, {
                         tenantId: historyTenantId,
-                        scopeModuleId: String(effectiveModuleContext?.moduleId || '').trim().toLowerCase() || '',
-                        scopeModuleName: String(effectiveModuleContext?.name || '').trim() || null,
-                        scopeModuleImageUrl: String(effectiveModuleContext?.imageUrl || effectiveModuleContext?.logoUrl || '').trim() || null,
-                        scopeChannelType: String(effectiveModuleContext?.channelType || '').trim().toLowerCase() || null,
-                        scopeTransport: String(effectiveModuleContext?.transportMode || '').trim().toLowerCase() || null
+                        moduleId: scopeModuleId || '',
+                        contactId: relatedChatIdBase,
+                        timestampUnix: Number(msg?.timestamp || 0) || null
                     });
-                    if (summary) emitToRuntimeContext('chat_updated', summary);
+                    const senderMeta = await resolveMessageSenderMeta(msg);
+                    const fileMeta = extractMessageFileMeta(msg, media);
+                    const quotedMessage = await extractQuotedMessageInfo(msg);
+
+                    await persistMessageHistory(historyTenantId, {
+                        msg,
+                        senderMeta,
+                        fileMeta,
+                        order,
+                        location,
+                        quotedMessage,
+                        agentMeta,
+                        moduleContext: effectiveModuleContext
+                    });
+
+                    if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && cleanScopeModuleId && customerModuleContextsService) {
+                        try {
+                            const customerId = await resolveCustomerIdFromChat(historyTenantId, relatedChatIdBase, cleanScopeModuleId);
+                            if (customerId) {
+                                const existingContext = await customerModuleContextsService.getContext(historyTenantId, {
+                                    customerId,
+                                    moduleId: cleanScopeModuleId
+                                });
+                                await customerModuleContextsService.upsertContext(historyTenantId, {
+                                    customerId,
+                                    moduleId: cleanScopeModuleId,
+                                    firstInteractionAt: existingContext?.firstInteractionAt || activityAtIso,
+                                    lastInteractionAt: activityAtIso,
+                                    metadata: {
+                                        dualWriteSource: 'socket_wa_events_bridge.inbound',
+                                        lastInboundMessageId: messageId
+                                    }
+                                });
+                            }
+                        } catch (_) {
+                            // silent: dual-write must not interrupt inbound flow
+                        }
+                    }
+
+                    if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && chatOriginService && hasReferral) {
+                        try {
+                            await chatOriginService.upsertChatOrigin(historyTenantId, {
+                                chatId: relatedChatIdBase,
+                                scopeModuleId: cleanScopeModuleId,
+                                originType: 'meta_ad',
+                                referralSourceUrl: String(referral?.sourceUrl || referral?.source_url || '').trim() || null,
+                                referralSourceType: String(referral?.sourceType || referral?.source_type || '').trim() || null,
+                                referralSourceId: String(referral?.sourceId || referral?.source_id || '').trim() || null,
+                                referralHeadline: String(referral?.headline || '').trim() || null,
+                                ctwaClid: String(referral?.ctwaClid || referral?.ctwa_clid || '').trim() || null,
+                                campaignId: null,
+                                rawReferral: referral,
+                                detectedAt: activityAtIso
+                            });
+                        } catch (_) {
+                            // silent: inbound processing should not fail by origin attribution persistence issues
+                        }
+                    }
+
+                    if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && chatCommercialStatusService) {
+                        try {
+                            const inboundResult = await chatCommercialStatusService.markInboundCustomerFirstContact(historyTenantId, {
+                                chatId: relatedChatIdBase,
+                                scopeModuleId: cleanScopeModuleId,
+                                source: 'webhook',
+                                reason: 'first_inbound_customer_message',
+                                changedByUserId: null,
+                                at: activityAtIso,
+                                metadata: {
+                                    trigger: 'incoming_message',
+                                    messageId
+                                }
+                            });
+                            if (inboundResult?.changed) {
+                                emitCommercialStatusUpdated?.({
+                                    tenantId: historyTenantId,
+                                    chatId: relatedChatIdBase,
+                                    scopeModuleId: cleanScopeModuleId,
+                                    result: inboundResult,
+                                    source: 'wa_events_bridge.inbound'
+                                });
+                            }
+                        } catch (_) {
+                            // silent: inbound processing should not fail by commercial status lifecycle issues
+                        }
+                    }
+
+                    if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase) {
+                        try {
+                            const assignmentScopeModuleId = cleanScopeModuleId;
+
+                            const touchedAssignment = await conversationOpsService.touchChatAssignmentActivity(historyTenantId, {
+                                chatId: relatedChatIdBase,
+                                scopeModuleId: assignmentScopeModuleId,
+                                fromCustomer: true,
+                                at: activityAtIso
+                            });
+                            const currentAssignment = touchedAssignment || await conversationOpsService.getChatAssignment(historyTenantId, {
+                                chatId: relatedChatIdBase,
+                                scopeModuleId: assignmentScopeModuleId
+                            });
+
+                            if (currentAssignment?.status === 'en_espera') {
+                                const reactivationResult = await conversationOpsService.reactivateChatAssignmentOnCustomerReply(historyTenantId, {
+                                    chatId: relatedChatIdBase,
+                                    scopeModuleId: assignmentScopeModuleId,
+                                    at: activityAtIso,
+                                    metadata: {
+                                        trigger: 'incoming_message'
+                                    }
+                                });
+
+                                if (reactivationResult?.shouldAutoAssign) {
+                                    await chatAssignmentRouterService.autoAssignChat(historyTenantId, {
+                                        chatId: relatedChatIdBase,
+                                        scopeModuleId: assignmentScopeModuleId,
+                                        actorUserId: null,
+                                        trigger: 'customer_reply_after_waiting',
+                                        assignmentReason: 'customer_reply_after_waiting'
+                                    });
+                                }
+                            } else {
+                                const hasAssignee = Boolean(String(currentAssignment?.assigneeUserId || '').trim());
+                                const isActive = String(currentAssignment?.status || '').trim().toLowerCase() === 'active';
+                                if (!hasAssignee || !isActive) {
+                                    await chatAssignmentRouterService.autoAssignChat(historyTenantId, {
+                                        chatId: relatedChatIdBase,
+                                        scopeModuleId: assignmentScopeModuleId,
+                                        actorUserId: null,
+                                        trigger: 'incoming_message_unassigned',
+                                        assignmentReason: 'incoming_message_unassigned'
+                                    });
+                                }
+                            }
+                        } catch (_) {
+                            // silent: inbound processing should not fail by assignment lifecycle issues
+                        }
+                    }
+
+                    try {
+                        if (isVisibleChatId(relatedChatIdBase)) {
+                            invalidateChatListCache();
+                            const chat = await waClient.client.getChatById(relatedChatIdBase);
+                            const summary = await toChatSummary(chat, {
+                                includeHeavyMeta: false,
+                                tenantId: historyTenantId,
+                                scopeModuleId: String(effectiveModuleContext?.moduleId || '').trim().toLowerCase() || '',
+                                scopeModuleName: String(effectiveModuleContext?.name || '').trim() || null,
+                                scopeModuleImageUrl: String(effectiveModuleContext?.imageUrl || effectiveModuleContext?.logoUrl || '').trim() || null,
+                                scopeChannelType: String(effectiveModuleContext?.channelType || '').trim().toLowerCase() || null,
+                                scopeTransport: String(effectiveModuleContext?.transportMode || '').trim().toLowerCase() || null
+                            });
+                            if (summary) emitToRuntimeContext('chat_updated', summary);
+                        }
+                    } catch (e) {
+                        // silent: message delivery should not fail by chat refresh issues
+                    }
+                } catch (backgroundError) {
+                    console.warn('[WA][InboundBridge] deferred processing warning:', String(backgroundError?.message || backgroundError));
                 }
-            } catch (e) {
-                // silent: message delivery should not fail by chat refresh issues
-            }
+            });
         });
 
         waClient.on('message_sent', async (msg) => {
