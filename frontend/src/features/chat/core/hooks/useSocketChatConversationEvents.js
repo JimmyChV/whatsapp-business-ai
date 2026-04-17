@@ -366,7 +366,7 @@ export default function useSocketChatConversationEvents({
             }));
         });
 
-        socket.on('message_updated', ({ id, chatId, scopeModuleId, mediaUrl, mediaPath, mimetype, filename, fileSizeBytes, mediaData, hasMedia, updatedAt }) => {
+        socket.on('message_updated', ({ id, chatId, scopeModuleId, mediaUrl, mediaPath, mimetype, filename, fileSizeBytes, mediaData, hasMedia, updatedAt, quotedMessage }) => {
             const messageId = String(id || '').trim();
             if (!messageId) return;
 
@@ -392,6 +392,7 @@ export default function useSocketChatConversationEvents({
                     mimetype: String(mimetype || '').trim() || message?.mimetype || null,
                     filename: shouldReplaceFilename ? nextFilename : currentFilename,
                     fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(message?.fileSizeBytes)) ? Number(message.fileSizeBytes) : null),
+                    quotedMessage: normalizeQuotedMessage(quotedMessage || message?.quotedMessage),
                     updatedAt: String(updatedAt || '').trim() || message?.updatedAt || null
                 };
             }));

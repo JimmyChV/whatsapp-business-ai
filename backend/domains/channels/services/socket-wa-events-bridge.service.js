@@ -228,6 +228,15 @@ function createSocketWaEventsBridgeService({
                     const senderMeta = await resolveMessageSenderMeta(msg);
                     const fileMeta = extractMessageFileMeta(msg, processedMedia);
                     const quotedMessage = await extractQuotedMessageInfo(msg);
+                    if (quotedMessage) {
+                        emitToRuntimeContext('message_updated', {
+                            id: messageId,
+                            chatId: relatedChatIdBase,
+                            scopeModuleId: cleanScopeModuleId,
+                            quotedMessage,
+                            updatedAt: new Date().toISOString()
+                        });
+                    }
 
                     await persistMessageHistory(historyTenantId, {
                         msg,
