@@ -614,6 +614,28 @@ function createMessageMediaAssetsHelpers(deps = {}) {
         }
     }
 
+    async function resolveQuickReplyMediaForSend(rawUrl = '', options = {}) {
+        return await fetchQuickReplyMedia(rawUrl, options);
+    }
+
+    async function resolveCatalogProductMediaForSend(imageUrl = '', {
+        tenantId = 'default',
+        maxBytes = 4 * 1024 * 1024,
+        timeoutMs = 7000
+    } = {}) {
+        const fetchedMedia = await fetchCatalogProductImage(imageUrl, {
+            tenantId,
+            maxBytes,
+            timeoutMs
+        });
+        if (!fetchedMedia) return null;
+        return await ensureCloudApiCompatibleCatalogImage(fetchedMedia, {
+            tenantId,
+            cacheKey: imageUrl,
+            maxBytes
+        });
+    }
+
     return {
         slugifyFileName,
         buildCatalogProductCaption,
@@ -630,6 +652,8 @@ function createMessageMediaAssetsHelpers(deps = {}) {
         fetchCatalogProductImageFromUrl,
         fetchCatalogProductImage,
         ensureCloudApiCompatibleCatalogImage,
+        resolveQuickReplyMediaForSend,
+        resolveCatalogProductMediaForSend,
         buildProcessedMediaCacheKey,
         getProcessedMediaFromCache,
         setProcessedMediaCacheEntry

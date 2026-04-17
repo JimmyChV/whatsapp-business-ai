@@ -180,7 +180,9 @@ const {
     fetchQuickReplyMedia,
     fetchCatalogProductImageFromUrl,
     fetchCatalogProductImage,
-    ensureCloudApiCompatibleCatalogImage
+    ensureCloudApiCompatibleCatalogImage,
+    resolveQuickReplyMediaForSend,
+    resolveCatalogProductMediaForSend
 } = createMessageMediaAssetsHelpers({
     fs,
     path,
@@ -329,7 +331,7 @@ class SocketManager {
         this.quickRepliesService = createSocketQuickRepliesService({
             waClient,
             listQuickReplies,
-            fetchQuickReplyMedia,
+            fetchQuickReplyMedia: resolveQuickReplyMediaForSend,
             normalizeScopedModuleId,
             pathModule: path,
             getSerializedMessageId,
@@ -364,7 +366,7 @@ class SocketManager {
         });
         this.catalogDeliveryService = createSocketCatalogDeliveryService({
             waClient,
-            fetchCatalogProductImage,
+            fetchCatalogProductImage: resolveCatalogProductMediaForSend,
             ensureCloudApiCompatibleCatalogImage,
             slugifyFileName,
             buildCatalogProductCaption,
