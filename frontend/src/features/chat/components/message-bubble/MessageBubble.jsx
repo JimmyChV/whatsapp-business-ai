@@ -71,6 +71,7 @@ const MessageBubble = ({
         mediaUrl,
         mediaImageSrc,
         isImageMedia,
+        isVideoMedia,
         hasBinaryAttachment,
         attachmentMeta,
         locationData,
@@ -176,6 +177,7 @@ const MessageBubble = ({
         ? `data:${msg.mimetype || 'application/octet-stream'};base64,${msg.mediaData}`
         : null;
     const isGifMedia = /gif/i.test(String(msg?.mimetype || '')) || /\.gif(?:$|[?#])/i.test(String(mediaUrl || ''));
+    const inlineVideoSrc = mediaDataUrl || (mediaUrl || null);
     const {
         canOpenAttachmentAsPdf,
         handleOpenAttachment,
@@ -304,6 +306,22 @@ const MessageBubble = ({
                         display: 'block'
                     }}
                     onClick={() => onOpenMedia && onOpenMedia({ src: mediaImageSrc, mimetype: msg.mimetype, messageId: msg.id })}
+                />
+            )}
+
+            {msg.hasMedia && inlineVideoSrc && isVideoMedia && !isGifMedia && (
+                <video
+                    src={inlineVideoSrc}
+                    controls
+                    preload="metadata"
+                    style={{
+                        borderRadius: '8px',
+                        marginBottom: '4px',
+                        maxWidth: 'min(320px, 56vw)',
+                        maxHeight: '260px',
+                        display: 'block',
+                        background: '#000'
+                    }}
                 />
             )}
 
