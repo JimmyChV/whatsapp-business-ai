@@ -175,6 +175,7 @@ const MessageBubble = ({
     const mediaDataUrl = msg.hasMedia && msg.mediaData
         ? `data:${msg.mimetype || 'application/octet-stream'};base64,${msg.mediaData}`
         : null;
+    const isGifMedia = /gif/i.test(String(msg?.mimetype || '')) || /\.gif(?:$|[?#])/i.test(String(mediaUrl || ''));
     const {
         canOpenAttachmentAsPdf,
         handleOpenAttachment,
@@ -288,11 +289,11 @@ const MessageBubble = ({
                 </div>
             )}
 
-            {msg.hasMedia && mediaImageSrc && isImageMedia && (
+            {msg.hasMedia && mediaImageSrc && (isImageMedia || isGifMedia) && (
                 <img
                     src={mediaImageSrc}
                     className="message-media"
-                    alt="Media"
+                    alt={isGifMedia ? 'GIF' : 'Media'}
                     style={{
                         borderRadius: '8px',
                         marginBottom: '4px',

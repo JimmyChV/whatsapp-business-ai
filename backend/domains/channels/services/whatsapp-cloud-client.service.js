@@ -1234,12 +1234,17 @@ class WhatsAppCloudClient extends EventEmitter {
             base.filename = String(msg?.document?.filename || '').trim() || null;
             base.fileSizeBytes = Number.isFinite(Number(msg?.document?.file_size)) ? Number(msg.document.file_size) : null;
         } else if (type === 'video') {
+            const videoMime = String(msg?.video?.mime_type || 'video/mp4').trim();
+            const isGifVideo = String(videoMime || '').toLowerCase().includes('gif');
             base.type = 'video';
             base.body = String(msg?.video?.caption || '').trim();
             base.hasMedia = true;
             base.mediaId = String(msg?.video?.id || '').trim() || null;
-            base.mimetype = String(msg?.video?.mime_type || 'video/mp4').trim();
+            base.mimetype = videoMime;
             base.fileSizeBytes = Number.isFinite(Number(msg?.video?.file_size)) ? Number(msg.video.file_size) : null;
+            if (isGifVideo) {
+                base.type = 'image';
+            }
         } else if (type === 'audio') {
             const isVoice = Boolean(msg?.audio?.voice);
             base.type = isVoice ? 'ptt' : 'audio';
