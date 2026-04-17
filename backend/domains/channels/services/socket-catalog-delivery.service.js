@@ -64,10 +64,13 @@ function createSocketCatalogDeliveryService({
                 if (imageUrl) {
                     const maxCatalogImageBytes = Number(process.env.CATALOG_IMAGE_MAX_BYTES || 4 * 1024 * 1024);
                     const media = await fetchCatalogProductImage(imageUrl, {
+                        tenantId,
                         maxBytes: maxCatalogImageBytes,
                         timeoutMs: Number(process.env.CATALOG_IMAGE_TIMEOUT_MS || 7000)
                     });
                     const compatibleMedia = await ensureCloudApiCompatibleCatalogImage(media, {
+                        tenantId,
+                        cacheKey: imageUrl,
                         maxBytes: maxCatalogImageBytes
                     });
 

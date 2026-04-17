@@ -146,6 +146,7 @@ function createSocketQuickRepliesService({
                         if (!mediaEntry?.url) continue;
 
                         const fetchedMedia = await fetchQuickReplyMedia(mediaEntry.url, {
+                            tenantId,
                             maxBytes: quickReplyMediaMaxBytes,
                             timeoutMs: quickReplyMediaTimeoutMs,
                             mimeHint: mediaEntry.mimeType || legacyMediaMimeType,

@@ -163,6 +163,7 @@ const DEFAULT_SAAS_UPLOADS_ROOT = path.resolve(__dirname, '../../../uploads');
 const SAAS_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || DEFAULT_SAAS_UPLOADS_ROOT).trim() || DEFAULT_SAAS_UPLOADS_ROOT);
 const guardRateLimit = createGuardRateLimit(eventRateLimiter);
 const getSharpImageProcessor = createLazySharpLoader();
+const processedMediaCache = new Map();
 
 const {
     slugifyFileName,
@@ -189,7 +190,8 @@ const {
     getSharpImageProcessor,
     SAAS_UPLOADS_ROOT,
     QUICK_REPLY_MEDIA_MAX_BYTES,
-    QUICK_REPLY_MEDIA_TIMEOUT_MS
+    QUICK_REPLY_MEDIA_TIMEOUT_MS,
+    processedMediaCache
 });
 const {
     isStatusOrSystemMessage,
