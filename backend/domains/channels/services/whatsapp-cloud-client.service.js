@@ -25,6 +25,7 @@ class WhatsAppCloudClient extends EventEmitter {
         this.messageById = new Map();
         this.outboundMessageToChat = new Map();
         this.runtimeConfig = {};
+        this.mediaIdCache = new Map();
 
         this.client = this.createClientFacade();
         this.refreshClientInfo();
@@ -65,6 +66,10 @@ class WhatsAppCloudClient extends EventEmitter {
 
     get selfChatId() {
         return `${this.selfDigits}@c.us`;
+    }
+
+    get runtimeTenantId() {
+        return String(this.runtimeConfig?.tenantId || 'default').trim() || 'default';
     }
 
     isConfigured() {
@@ -117,6 +122,7 @@ class WhatsAppCloudClient extends EventEmitter {
 
     getRuntimeConfigPublic() {
         return {
+            tenantId: String(this.runtimeConfig?.tenantId || '').trim() || null,
             appId: String(this.runtimeConfig?.appId || '').trim() || null,
             wabaId: String(this.runtimeConfig?.wabaId || '').trim() || null,
             phoneNumberId: String(this.runtimeConfig?.phoneNumberId || '').trim() || null,
@@ -889,46 +895,158 @@ class WhatsAppCloudClient extends EventEmitter {
         return String(payload?.id || '').trim() || null;
     }
 
-    async sendMedia(to, mediaData, mimetype, filename, caption, isPtt = false, quotedMessageId = null) {
-        if (!this.isReady) throw new Error('Cloud client not ready');
-        if (isPtt) throw new Error('PTT is not supported in cloud transport');
+    buildMediaIdCacheKey(contentHash = '') {
+        const safeHash = String(contentHash || '').trim().toLowerCase();
+        if (!safeHash) return '';
+        return `${this.runtimeTenantId}:${safeHash}`;
+    }
 
-        const waId = await this.resolveSendWaId(to);
+    buildMediaContentHash(mediaData = '') {
+        const cleanMediaData = String(mediaData || '').trim();
+        if (!cleanMediaData) return '';
+        try {
+            return crypto.createHash('sha256').update(cleanMediaData).digest('hex');
+        } catch (_) {
+            return '';
+        }
+    }
 
-        const mediaId = await this.uploadMedia(mediaData, mimetype, filename || 'adjunto');
-        if (!mediaId) throw new Error('Media upload failed');
+    getCachedMediaId(contentHash = '') {
+        const cacheKey = this.buildMediaIdCacheKey(contentHash);
+        if (!cacheKey) return null;
+        const existing = this.mediaIdCache.get(cacheKey);
+        if (!existing || typeof existing !== 'object') return null;
+        return {
+            mediaId: String(existing.mediaId || '').trim() || null,
+            mimetype: String(existing.mimetype || '').trim() || null,
+            filename: String(existing.filename || '').trim() || null,
+            createdAt: Number(existing.createdAt || 0) || null,
+            lastUsedAt: Number(existing.lastUsedAt || 0) || null
+        };
+    }
 
-        const mime = String(mimetype || '').toLowerCase();
-        let type = 'document';
-        if (mime.startsWith('image/')) type = 'image';
-        else if (mime.startsWith('video/')) type = 'video';
-        else if (mime.startsWith('audio/')) type = 'audio';
+    setCachedMediaId(contentHash = '', payload = {}) {
+        const cacheKey = this.buildMediaIdCacheKey(contentHash);
+        const mediaId = String(payload?.mediaId || '').trim();
+        if (!cacheKey || !mediaId) return null;
+        const nextEntry = {
+            mediaId,
+            mimetype: String(payload?.mimetype || '').trim() || null,
+            filename: String(payload?.filename || '').trim() || null,
+            createdAt: Number(payload?.createdAt || Date.now()) || Date.now(),
+            lastUsedAt: Number(payload?.lastUsedAt || Date.now()) || Date.now()
+        };
+        this.mediaIdCache.set(cacheKey, nextEntry);
+        return { ...nextEntry };
+    }
 
-        const mediaPayload = { id: mediaId };
-        if (type === 'document') {
+    deleteCachedMediaId(contentHash = '') {
+        const cacheKey = this.buildMediaIdCacheKey(contentHash);
+        if (!cacheKey) return false;
+        return this.mediaIdCache.delete(cacheKey);
+    }
+
+    isInvalidCachedMediaIdError(error = null) {
+        const message = String(error?.message || '').trim().toLowerCase();
+        const detail = String(error?.messageDetail || '').trim().toLowerCase();
+        const code = Number(error?.code || 0);
+        const subcode = Number(error?.error_subcode || 0);
+        if (code === 100 || subcode === 33) return true;
+        if (message.includes('media handle is invalid') || detail.includes('media handle is invalid')) return true;
+        if (message.includes('invalid media id') || detail.includes('invalid media id')) return true;
+        if (message.includes('no media found') || detail.includes('no media found')) return true;
+        return false;
+    }
+
+    async sendMediaMessageByMediaId(waId, type, mediaId, { filename = '', caption = '', quotedMessageId = null } = {}) {
+        const safeType = String(type || 'document').trim().toLowerCase() || 'document';
+        const safeMediaId = String(mediaId || '').trim();
+        if (!waId || !safeMediaId) throw new Error('mediaId is required');
+
+        const mediaPayload = { id: safeMediaId };
+        if (safeType === 'document') {
             mediaPayload.filename = String(filename || 'documento').trim() || 'documento';
         }
-        if ((type === 'image' || type === 'video' || type === 'document') && String(caption || '').trim()) {
+        if ((safeType === 'image' || safeType === 'video' || safeType === 'document') && String(caption || '').trim()) {
             mediaPayload.caption = String(caption || '');
         }
 
         const payload = {
             messaging_product: 'whatsapp',
             to: waId,
-            type,
-            [type]: mediaPayload
+            type: safeType,
+            [safeType]: mediaPayload
         };
 
         const quoted = String(quotedMessageId || '').trim();
         if (quoted) payload.context = { message_id: quoted };
 
-        const response = await this.graphJson(`/${this.phoneNumberId}/messages`, {
+        return await this.graphJson(`/${this.phoneNumberId}/messages`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(payload)
         });
+    }
+
+    async sendMedia(to, mediaData, mimetype, filename, caption, isPtt = false, quotedMessageId = null) {
+        if (!this.isReady) throw new Error('Cloud client not ready');
+        if (isPtt) throw new Error('PTT is not supported in cloud transport');
+
+        const waId = await this.resolveSendWaId(to);
+
+        const mime = String(mimetype || '').toLowerCase();
+        let type = 'document';
+        if (mime.startsWith('image/')) type = 'image';
+        else if (mime.startsWith('video/')) type = 'video';
+        else if (mime.startsWith('audio/')) type = 'audio';
+        const quoted = String(quotedMessageId || '').trim();
+        const contentHash = this.buildMediaContentHash(mediaData);
+        const cachedMedia = this.getCachedMediaId(contentHash);
+
+        let mediaId = String(cachedMedia?.mediaId || '').trim();
+        let response = null;
+
+        if (mediaId) {
+            try {
+                response = await this.sendMediaMessageByMediaId(waId, type, mediaId, {
+                    filename,
+                    caption,
+                    quotedMessageId: quoted
+                });
+                this.setCachedMediaId(contentHash, {
+                    mediaId,
+                    mimetype,
+                    filename,
+                    createdAt: cachedMedia?.createdAt || Date.now(),
+                    lastUsedAt: Date.now()
+                });
+            } catch (cachedSendError) {
+                if (!this.isInvalidCachedMediaIdError(cachedSendError)) throw cachedSendError;
+                this.deleteCachedMediaId(contentHash);
+                mediaId = '';
+            }
+        }
+
+        if (!response) {
+            mediaId = await this.uploadMedia(mediaData, mimetype, filename || 'adjunto');
+            if (!mediaId) throw new Error('Media upload failed');
+            response = await this.sendMediaMessageByMediaId(waId, type, mediaId, {
+                filename,
+                caption,
+                quotedMessageId: quoted
+            });
+            if (contentHash) {
+                this.setCachedMediaId(contentHash, {
+                    mediaId,
+                    mimetype,
+                    filename,
+                    createdAt: Date.now(),
+                    lastUsedAt: Date.now()
+                });
+            }
+        }
 
         const messageId = String(response?.messages?.[0]?.id || randomMessageId('cloud_out_media'));
         const chatId = `${waId}@c.us`;

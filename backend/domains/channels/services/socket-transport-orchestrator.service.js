@@ -48,7 +48,10 @@ function createSocketTransportOrchestrator({
             // fallback: usar modulo actual de contexto
         }
 
-        const runtimeCloudConfig = waModuleService.resolveModuleCloudConfig(moduleForRuntime);
+        const runtimeCloudConfig = {
+            ...(waModuleService.resolveModuleCloudConfig(moduleForRuntime) || {}),
+            tenantId
+        };
         waClient.setCloudRuntimeConfig(runtimeCloudConfig || {});
         return runtimeCloudConfig || null;
     };
