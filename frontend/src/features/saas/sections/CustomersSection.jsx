@@ -761,6 +761,12 @@ function CustomersSection(props = {}) {
     const [showCustomerSynced, setShowCustomerSynced] = useState(false);
     const [campaignSelectionMode, setCampaignSelectionMode] = useState(false);
     const [selectedCustomerIdsForCampaign, setSelectedCustomerIdsForCampaign] = useState([]);
+    const [outreachModuleId, setOutreachModuleId] = useState('');
+    const [outreachMode, setOutreachMode] = useState('eligible');
+    const [outreachEligibilityLoading, setOutreachEligibilityLoading] = useState(false);
+    const [outreachEligibilityError, setOutreachEligibilityError] = useState('');
+    const [outreachEligibleCustomerIds, setOutreachEligibleCustomerIds] = useState([]);
+    const [outreachNonEligibleCustomerIds, setOutreachNonEligibleCustomerIds] = useState([]);
     const [sendTemplateOpen, setSendTemplateOpen] = useState(false);
     const [sendTemplateOptions, setSendTemplateOptions] = useState([]);
     const [sendTemplateOptionsLoading, setSendTemplateOptionsLoading] = useState(false);
@@ -867,6 +873,15 @@ function CustomersSection(props = {}) {
         });
         return map;
     }, [waModules]);
+    const outreachModuleOptions = useMemo(
+        () => (Array.isArray(waModules) ? waModules : [])
+            .map((moduleItem = {}) => ({
+                moduleId: String(moduleItem.moduleId || moduleItem.module_id || '').trim(),
+                label: String(moduleItem.name || moduleItem.module_name || moduleItem.moduleId || '').trim()
+            }))
+            .filter((moduleItem) => moduleItem.moduleId),
+        [waModules]
+    );
     const selectedCustomerPreferredModuleIds = useMemo(
         () => Array.from(new Set(
             (Array.isArray(moduleContexts) ? moduleContexts : [])
@@ -1088,11 +1103,19 @@ function CustomersSection(props = {}) {
         () => new Set((Array.isArray(selectedCustomerIdsForCampaign) ? selectedCustomerIdsForCampaign : []).map((item) => String(item || '').trim()).filter(Boolean)),
         [selectedCustomerIdsForCampaign]
     );
+    const outreachEligibleCustomerIdsSet = useMemo(
+        () => new Set((Array.isArray(outreachEligibleCustomerIds) ? outreachEligibleCustomerIds : []).map((item) => String(item || '').trim()).filter(Boolean)),
+        [outreachEligibleCustomerIds]
+    );
+    const outreachNonEligibleCustomerIdsSet = useMemo(
+        () => new Set((Array.isArray(outreachNonEligibleCustomerIds) ? outreachNonEligibleCustomerIds : []).map((item) => String(item || '').trim()).filter(Boolean)),
+        [outreachNonEligibleCustomerIds]
+    );
     const campaignSelectableCustomerIds = useMemo(
-        () => (Array.isArray(filteredCustomers) ? filteredCustomers : [])
+        () => (Array.isArray(outreachFilteredCustomers) ? outreachFilteredCustomers : [])
             .map((item) => resolveCustomerId(item))
             .filter(Boolean),
-        [filteredCustomers]
+        [outreachFilteredCustomers]
     );
     const allCampaignSelectableCustomersSelected = useMemo(
         () => campaignSelectableCustomerIds.length > 0 && campaignSelectableCustomerIds.every((customerId) => selectedCustomerIdsForCampaignSet.has(customerId)),
@@ -1103,7 +1126,7 @@ function CustomersSection(props = {}) {
         () => ([
             {
                 key: 'selectForCampaign',
-                hidden: !campaignSelectionMode,
+                hidden: !campaignSelectionMode || !outreachModuleId,
                 label: (
                     <span className="saas-customers-select-cell">
                         <input
@@ -1177,6 +1200,21 @@ function CustomersSection(props = {}) {
             return override || item;
         });
     }, [filteredCustomers, getCustomerOverride]);
+    const outreachFilteredCustomers = useMemo(() => {
+        const source = Array.isArray(outreachFilteredCustomers) ? outreachFilteredCustomers : [];
+        if (!campaignSelectionMode || !outreachModuleId) return source;
+        if (outreachMode === 'assign') {
+            return source.filter((item) => outreachNonEligibleCustomerIdsSet.has(resolveCustomerId(item)));
+        }
+        return source.filter((item) => outreachEligibleCustomerIdsSet.has(resolveCustomerId(item)));
+    }, [
+        campaignSelectionMode,
+        filteredCustomersLive,
+        outreachEligibleCustomerIdsSet,
+        outreachMode,
+        outreachModuleId,
+        outreachNonEligibleCustomerIdsSet
+    ]);
 
     const tableRows = useMemo(() => {
         const source = Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [];
@@ -1208,7 +1246,7 @@ function CustomersSection(props = {}) {
                 _raw: customer
             };
         });
-    }, [customerLabelMaps, filteredCustomersLive, formatDateTimeLabel]);
+    }, [customerLabelMaps, formatDateTimeLabel, outreachFilteredCustomers]);
 
     const visibleColumns = useMemo(
         () => tableColumns.filter((column) => column && column.hidden !== true),
@@ -1799,6 +1837,54 @@ function CustomersSection(props = {}) {
         setCampaignTemplateSubmitting(false);
     }, []);
 
+    const loadOutreachEligibility = useCallback(async () => {
+        if (!campaignSelectionMode || !outreachModuleId) {
+            setOutreachEligibilityError('');
+            setOutreachEligibleCustomerIds([]);
+            setOutreachNonEligibleCustomerIds([]);
+            return;
+        }
+
+        const customerIds = (Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [])
+            .map((item) => resolveCustomerId(item))
+            .filter(Boolean);
+
+        if (customerIds.length === 0) {
+            setOutreachEligibilityError('');
+            setOutreachEligibleCustomerIds([]);
+            setOutreachNonEligibleCustomerIds([]);
+            return;
+        }
+
+        setOutreachEligibilityLoading(true);
+        setOutreachEligibilityError('');
+        try {
+            const response = await requestJson('/api/tenant/customers/outreach/eligibility', {
+                method: 'POST',
+                body: {
+                    moduleId: outreachModuleId,
+                    customerIds
+                }
+            });
+            setOutreachEligibleCustomerIds(
+                (Array.isArray(response?.eligibleItems) ? response.eligibleItems : [])
+                    .map((item) => String(item?.customerId || '').trim())
+                    .filter(Boolean)
+            );
+            setOutreachNonEligibleCustomerIds(
+                (Array.isArray(response?.nonEligibleItems) ? response.nonEligibleItems : [])
+                    .map((item) => String(item?.customerId || '').trim())
+                    .filter(Boolean)
+            );
+        } catch (error) {
+            setOutreachEligibilityError(String(error?.message || 'No se pudo cargar elegibilidad por modulo.'));
+            setOutreachEligibleCustomerIds([]);
+            setOutreachNonEligibleCustomerIds([]);
+        } finally {
+            setOutreachEligibilityLoading(false);
+        }
+    }, [campaignSelectionMode, filteredCustomersLive, outreachModuleId, requestJson]);
+
     const handleSelectCampaignTemplate = useCallback(async (template = null) => {
         const entry = template && typeof template === 'object' ? template : null;
         if (!entry) return;
@@ -2128,6 +2214,11 @@ function CustomersSection(props = {}) {
         const next = String(customerSearch || '');
         setSearchInput((prev) => (prev === next ? prev : next));
     }, [customerSearch]);
+
+    useEffect(() => {
+        if (!campaignSelectionMode) return;
+        void loadOutreachEligibility();
+    }, [campaignSelectionMode, loadOutreachEligibility]);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -2842,7 +2933,20 @@ function CustomersSection(props = {}) {
         {
             key: 'toggle-selection',
             label: campaignSelectionMode ? 'Cancelar seleccion' : 'Seleccionar clientes',
-            onClick: () => setCampaignSelectionMode((prev) => !prev),
+            onClick: () => {
+                setCampaignSelectionMode((prev) => {
+                    const next = !prev;
+                    if (!next) {
+                        setSelectedCustomerIdsForCampaign([]);
+                        setOutreachModuleId('');
+                        setOutreachMode('eligible');
+                        setOutreachEligibilityError('');
+                        setOutreachEligibleCustomerIds([]);
+                        setOutreachNonEligibleCustomerIds([]);
+                    }
+                    return next;
+                });
+            },
             variant: 'secondary',
             disabled: busy || tenantScopeLocked
         },
@@ -2851,7 +2955,14 @@ function CustomersSection(props = {}) {
             label: `Enviar campaña${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
             onClick: () => { void handleOpenCampaignTemplateModal(); },
             variant: 'secondary',
-            disabled: busy || tenantScopeLocked || !campaignSelectionMode || selectedCustomerIdsForCampaign.length === 0
+            disabled: busy || tenantScopeLocked || !campaignSelectionMode || !outreachModuleId || outreachMode !== 'eligible' || selectedCustomerIdsForCampaign.length === 0
+        },
+        {
+            key: 'assign-module',
+            label: `Asignar al modulo${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
+            onClick: () => {},
+            variant: 'secondary',
+            disabled: true
         },
         {
             key: 'toggle-columns',
@@ -2896,11 +3007,48 @@ function CustomersSection(props = {}) {
             extra={(
                 <div className="saas-customers-header-extra">
                     {campaignSelectionMode ? (
+                        <div className="saas-customers-outreach-toolbar">
+                            <label className="saas-customers-outreach-toolbar__field">
+                                <span>Modulo</span>
+                                <select value={outreachModuleId} onChange={(event) => {
+                                    setOutreachModuleId(String(event.target.value || '').trim());
+                                    setSelectedCustomerIdsForCampaign([]);
+                                }}>
+                                    <option value="">Selecciona modulo</option>
+                                    {outreachModuleOptions.map((moduleItem) => (
+                                        <option key={`customers_outreach_module_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
+                                            {moduleItem.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="saas-customers-outreach-toolbar__field">
+                                <span>Modo</span>
+                                <select value={outreachMode} onChange={(event) => {
+                                    setOutreachMode(String(event.target.value || 'eligible').trim() || 'eligible');
+                                    setSelectedCustomerIdsForCampaign([]);
+                                }} disabled={!outreachModuleId}>
+                                    <option value="eligible">Seleccionar elegibles</option>
+                                    <option value="assign">Asignar al modulo</option>
+                                </select>
+                            </label>
+                        </div>
+                    ) : null}
+                    {campaignSelectionMode ? (
                         <div className="saas-customers-selection-pill">
                             {selectedCustomerIdsForCampaign.length > 0
                                 ? `${selectedCustomerIdsForCampaign.length} cliente${selectedCustomerIdsForCampaign.length === 1 ? '' : 's'} seleccionado${selectedCustomerIdsForCampaign.length === 1 ? '' : 's'}`
-                                : 'Selecciona clientes para preparar la campaña'}
+                                : !outreachModuleId
+                                    ? 'Selecciona un modulo para preparar outreach.'
+                                    : outreachEligibilityLoading
+                                        ? 'Calculando elegibilidad por modulo...'
+                                        : outreachMode === 'assign'
+                                            ? `${outreachNonEligibleCustomerIds.length} cliente(s) fuera del modulo listos para asignacion`
+                                            : `${outreachEligibleCustomerIds.length} cliente(s) elegibles en el modulo`}
                         </div>
+                    ) : null}
+                    {campaignSelectionMode && outreachEligibilityError ? (
+                        <div className="saas-admin-inline-feedback error">{outreachEligibilityError}</div>
                     ) : null}
                     {(customersLoadingBatch || savingCustomer) ? (
                         <div className="saas-admin-inline-feedback">

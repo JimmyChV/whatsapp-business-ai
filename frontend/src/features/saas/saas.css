@@ -4833,6 +4833,28 @@
   color: #9cb1ba;
 }
 
+.saas-customers-outreach-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 10px;
+  width: min(720px, 100%);
+  align-self: flex-end;
+}
+
+.saas-customers-outreach-toolbar__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.saas-customers-outreach-toolbar__field span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9fc3d1;
+}
+
 .saas-admin-shell #saas_clientes .saas-customers-address-table-wrap {
   overflow-x: auto;
 }
