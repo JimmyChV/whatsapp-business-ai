@@ -14,6 +14,80 @@ function normalizeComponentType(value = '') {
     return toText(value).toUpperCase() || 'BODY';
 }
 
+function normalizeParameterText(parameter = {}) {
+    if (parameter && typeof parameter === 'object') {
+        if (parameter.text !== undefined && parameter.text !== null) return toText(parameter.text);
+        if (parameter.payload !== undefined && parameter.payload !== null) return toText(parameter.payload);
+    }
+    return toText(parameter);
+}
+
+export function isGenericTemplateFallbackText(text = '', templateName = '') {
+    const safeText = toLower(text);
+    const safeTemplateName = toLower(templateName);
+    if (!safeText) return true;
+    if (!safeTemplateName) return safeText === 'template' || safeText.startsWith('template:');
+    return safeText === `template: ${safeTemplateName}` || safeText === safeTemplateName;
+}
+
+export function mergeTemplateMessageContent(existingMessage = {}, incomingMessage = {}) {
+    const existing = existingMessage && typeof existingMessage === 'object' ? existingMessage : {};
+    const incoming = incomingMessage && typeof incomingMessage === 'object' ? incomingMessage : {};
+    const existingTemplate = buildRenderedTemplateMessage(existing);
+    const incomingTemplate = buildRenderedTemplateMessage(incoming);
+    const safeTemplateName = toText(incoming?.templateName || existing?.templateName || '');
+    const incomingPreviewText = toText(incoming?.templatePreviewText || incoming?.body || '');
+    const existingPreviewText = toText(existing?.templatePreviewText || existing?.body || '');
+    const incomingLooksGeneric = isGenericTemplateFallbackText(incomingPreviewText, safeTemplateName);
+    const existingHasRealContent = Boolean(
+        existingTemplate.headerText
+        || existingTemplate.bodyText
+        || existingTemplate.footerText
+        || (
+            existingTemplate.previewText
+            && !isGenericTemplateFallbackText(existingTemplate.previewText, safeTemplateName)
+        )
+    );
+    const incomingHasStructuredContent = Boolean(
+        incomingTemplate.headerText
+        || incomingTemplate.bodyText
+        || incomingTemplate.footerText
+        || (
+            incomingTemplate.previewText
+            && !isGenericTemplateFallbackText(incomingTemplate.previewText, safeTemplateName)
+        )
+    );
+
+    const merged = {
+        ...existing,
+        ...incoming
+    };
+
+    if (existingHasRealContent && !incomingHasStructuredContent) {
+        merged.templateComponents = Array.isArray(existing?.templateComponents) ? existing.templateComponents : [];
+        merged.templatePreviewText = existing?.templatePreviewText || existingPreviewText || null;
+        merged.body = existing?.body || existingPreviewText || merged.body;
+    } else if (Array.isArray(incoming?.templateComponents) && incoming.templateComponents.length > 0) {
+        merged.templateComponents = incoming.templateComponents;
+    } else if (!Array.isArray(merged.templateComponents)) {
+        merged.templateComponents = Array.isArray(existing?.templateComponents) ? existing.templateComponents : [];
+    }
+
+    if (!toText(merged.templateName) && safeTemplateName) {
+        merged.templateName = safeTemplateName;
+    }
+
+    if (!toText(merged.templatePreviewText) || (incomingLooksGeneric && existingHasRealContent)) {
+        merged.templatePreviewText = existing?.templatePreviewText || existingPreviewText || merged.templatePreviewText || null;
+    }
+
+    if (!toText(merged.body) || (incomingLooksGeneric && existingHasRealContent)) {
+        merged.body = existing?.body || existingPreviewText || merged.body;
+    }
+
+    return merged;
+}
+
 export function parseTemplatePlaceholderIndexes(text = '') {
     const matches = String(text || '').matchAll(/\{\{\s*(\d+)\s*\}\}/g);
     const indexes = new Set();
@@ -130,5 +204,48 @@ export function buildTemplateResolvedPreview(template = {}, previewPayload = {})
         footerText,
         previewText,
         valueMap
+    };
+}
+
+export function buildRenderedTemplateMessage(message = {}) {
+    const source = message && typeof message === 'object' ? message : {};
+    const isExplicitTemplateType = toLower(source?.type || '') === 'template';
+    const templateComponents = Array.isArray(source?.templateComponents) ? source.templateComponents : [];
+    const renderedComponents = templateComponents
+        .map((component = {}) => {
+            const type = normalizeComponentType(component?.type || 'BODY');
+            const parameters = Array.isArray(component?.parameters) ? component.parameters : [];
+            const explicitResolvedText = toText(component?.resolvedText || component?.text || '');
+            return {
+                type,
+                resolvedText: explicitResolvedText || parameters.map((parameter) => (
+                    normalizeParameterText(parameter?.text ?? parameter?.value ?? parameter)
+                )).filter(Boolean).join(' ')
+            };
+        })
+        .filter((component) => component.resolvedText);
+
+    const headerText = renderedComponents.find((component) => component.type === 'HEADER')?.resolvedText || '';
+    const bodyText = renderedComponents.find((component) => component.type === 'BODY')?.resolvedText || '';
+    const footerText = renderedComponents.find((component) => component.type === 'FOOTER')?.resolvedText || '';
+    const previewText = [headerText, bodyText, footerText].filter(Boolean).join('\n').trim()
+        || toText(source?.templatePreviewText || '')
+        || toText(source?.body || '')
+        || `Template: ${toText(source?.templateName || '') || 'sin nombre'}`;
+
+    return {
+        isTemplateMessage: Boolean(
+            isExplicitTemplateType
+            || toText(source?.templateName || '')
+            || toText(source?.templatePreviewText || '')
+            || renderedComponents.length > 0
+        ),
+        templateName: toText(source?.templateName || '') || null,
+        templateLanguage: toText(source?.templateLanguage || '') || null,
+        headerText,
+        bodyText,
+        footerText,
+        previewText,
+        components: renderedComponents
     };
 }

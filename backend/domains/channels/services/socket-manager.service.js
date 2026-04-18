@@ -14,6 +14,7 @@ const messageHistoryService = require('../../operations/services/message-history
 const waModuleService = require('../../tenant/services/wa-modules.service');
 const tenantCatalogService = require('../../tenant/services/tenant-catalog.service');
 const customerService = require('../../tenant/services/customers.service');
+const customerAddressesService = require('../../tenant/services/customer-addresses.service');
 const tenantLabelService = require('../../tenant/services/tenant-labels.service');
 const quotesService = require('../../tenant/services/quotes.service');
 const saasControlService = require('../../tenant/services/tenant-control.service');
@@ -278,6 +279,7 @@ class SocketManager {
             runtimeStore: this.runtimeStore,
             waClient,
             tenantLabelService,
+            customerService,
             normalizeScopedModuleId,
             normalizePhoneDigits,
             normalizeFilterTokens,
@@ -391,6 +393,8 @@ class SocketManager {
         this.profileContactService = createSocketProfileContactService({
             waClient,
             tenantLabelService,
+            customerService,
+            customerAddressesService,
             resolveProfilePic,
             normalizeBusinessDetailsSnapshot,
             extractContactSnapshot,
@@ -723,6 +727,9 @@ class SocketManager {
             const messageId = getSerializedMessageId(msg);
             const chatId = String(msg?.fromMe ? msg?.to : msg?.from || '').trim();
             if (!messageId || !chatId) return;
+            const rawData = msg?._data && typeof msg._data === 'object' ? msg._data : {};
+            const rawMetadata = rawData?.metadata && typeof rawData.metadata === 'object' ? rawData.metadata : {};
+            const templateComponents = Array.isArray(rawData?.templateComponents) ? rawData.templateComponents : [];
 
             const persistedAgentMeta = sanitizeAgentMeta(agentMeta);
             const historyModuleId = String(
@@ -761,6 +768,10 @@ class SocketManager {
                     notifyName: senderMeta?.notifyName || null,
                     senderPushname: senderMeta?.senderPushname || null,
                     isGroupMessage: Boolean(senderMeta?.isGroupMessage),
+                    templateName: String(rawData?.templateName || rawMetadata?.templateName || '').trim() || null,
+                    templateLanguage: String(rawData?.templateLanguage || rawMetadata?.templateLanguage || '').trim() || null,
+                    templatePreviewText: String(rawMetadata?.previewText || '').trim() || null,
+                    templateComponents,
                     media: {
                         url: fileMeta?.mediaUrl || null,
                         path: fileMeta?.mediaPath || null

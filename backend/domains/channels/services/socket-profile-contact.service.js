@@ -1,6 +1,8 @@
 function createSocketProfileContactService({
     waClient,
     tenantLabelService,
+    customerService,
+    customerAddressesService,
     resolveProfilePic,
     normalizeBusinessDetailsSnapshot,
     extractContactSnapshot,
@@ -133,6 +135,15 @@ function createSocketProfileContactService({
                     });
                 } catch (e) { }
 
+                let erpCustomer = null;
+                try {
+                    if (customerService && typeof customerService.getCustomerByPhoneWithAddresses === 'function') {
+                        erpCustomer = await customerService.getCustomerByPhoneWithAddresses(tenantId, contact?.number || '', {
+                            customerAddressesService
+                        });
+                    }
+                } catch (e) { }
+
                 const isGroupChat = safeContactId.includes('@g.us') || Boolean(contact?.isGroup) || Boolean(chat?.isGroup);
                 let groupParticipants = [];
                 if (isGroupChat) {
@@ -181,6 +192,7 @@ function createSocketProfileContactService({
                     participants: participantsCount,
                     participantsList: isGroupChat ? groupParticipants : [],
                     labels,
+                    erpCustomer,
                     chatState: hydratedChatSnapshot,
                     businessDetails,
                     contactSnapshot,

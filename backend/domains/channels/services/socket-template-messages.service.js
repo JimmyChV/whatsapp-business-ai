@@ -133,6 +133,47 @@ function createSocketTemplateMessagesService({
         return rendered.join('\n').trim() || `Template: ${toText(templateName) || 'sin nombre'}`;
     };
 
+    const buildTemplateRealtimeComponents = (template = {}, previewPayload = {}) => {
+        const templateComponents = ensureArray(template?.componentsJson);
+        const variableMapJson = template?.variableMapJson && typeof template.variableMapJson === 'object'
+            ? template.variableMapJson
+            : {};
+        const previewMaps = buildTemplatePreviewMaps(previewPayload);
+
+        return ensureArray(templateComponents)
+            .map((component = {}) => {
+                const type = normalizeTemplateComponentType(component?.type || 'BODY');
+                if (type !== 'HEADER' && type !== 'BODY' && type !== 'FOOTER') return null;
+                const sourceText = toText(component?.text);
+                if (!sourceText) return null;
+                const componentMap = variableMapJson?.[toLower(type)] || {};
+                const parameters = parsePlaceholderIndexesFromText(sourceText).map((placeholderIndex) => ({
+                    type: 'text',
+                    text: resolveTemplatePlaceholderValue({
+                        placeholderIndex,
+                        componentMap,
+                        previewMaps
+                    })
+                }));
+                const resolvedText = sourceText.replace(/\{\{\s*(\d+)\s*\}\}/g, (_, rawIndex) => {
+                    const nextIndex = Number(rawIndex);
+                    if (!Number.isFinite(nextIndex) || nextIndex <= 0) return '';
+                    return resolveTemplatePlaceholderValue({
+                        placeholderIndex: nextIndex,
+                        componentMap,
+                        previewMaps
+                    });
+                }).trim();
+                return {
+                    type,
+                    text: sourceText,
+                    resolvedText,
+                    parameters: parameters.filter((parameter) => toText(parameter?.text))
+                };
+            })
+            .filter(Boolean);
+    };
+
     const registerTemplateMessageHandlers = ({
         socket,
         tenantId = 'default',
@@ -182,6 +223,7 @@ function createSocketTemplateMessagesService({
                     customerId
                 });
                 const components = buildTemplateSendComponents(template, previewPayload);
+                const realtimeTemplateComponents = buildTemplateRealtimeComponents(template, previewPayload);
                 const previewText = buildTemplatePreviewText(template, previewPayload, templateName);
 
                 const providerResponse = await waClient.sendTemplateMessage(target.targetChatId, {
@@ -192,19 +234,39 @@ function createSocketTemplateMessagesService({
                         previewText,
                         templateName,
                         templateLanguage,
-                        templateId: toText(payload?.templateId || '')
+                        templateId: toText(payload?.templateId || ''),
+                        templateComponents: realtimeTemplateComponents
                     }
                 });
 
                 const sentMessageId = getSerializedMessageId(providerResponse);
+                const templateMetadata = {
+                    previewText,
+                    templateName,
+                    templateLanguage,
+                    templateId: toText(payload?.templateId || ''),
+                    clientTempId: toText(payload?.clientTempId || ''),
+                    templateComponents: realtimeTemplateComponents
+                };
                 const sentMessage = {
                     id: sentMessageId || ('local_template_' + Date.now().toString(36)),
+                    clientTempId: toText(payload?.clientTempId || '') || null,
                     to: target.targetChatId,
                     body: previewText,
                     timestamp: Math.floor(Date.now() / 1000),
                     ack: 1,
-                    type: 'chat',
-                    hasMedia: false
+                    type: 'template',
+                    hasMedia: false,
+                    templateName,
+                    templateLanguage,
+                    templatePreviewText: previewText,
+                    templateComponents: realtimeTemplateComponents,
+                    _data: {
+                        templateName,
+                        templateLanguage,
+                        templateComponents: realtimeTemplateComponents,
+                        metadata: templateMetadata
+                    }
                 };
 
                 if (sentMessageId && agentMeta) {
@@ -240,9 +302,13 @@ function createSocketTemplateMessagesService({
                     baseChatId: target.targetChatId,
                     scopeModuleId: target.scopeModuleId || null,
                     templateId: toText(payload?.templateId || '') || null,
+                    clientTempId: toText(payload?.clientTempId || '') || null,
                     templateName,
                     templateLanguage,
                     previewText,
+                    templateComponents: realtimeTemplateComponents,
+                    type: 'template',
+                    timestamp: Math.floor(Date.now() / 1000),
                     messageId: sentMessageId || null
                 });
             } catch (error) {

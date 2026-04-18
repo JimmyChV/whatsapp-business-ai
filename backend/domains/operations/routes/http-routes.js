@@ -259,6 +259,9 @@ function registerOperationsHttpRoutes({
     const getCustomerById = typeof customerApi.getCustomer === 'function'
         ? customerApi.getCustomer.bind(customerApi)
         : async () => null;
+    const listCustomersForOutreach = typeof customerApi.listCustomers === 'function'
+        ? customerApi.listCustomers.bind(customerApi)
+        : async () => ({ items: [], total: 0, limit: 0, offset: 0 });
     const updateCustomerById = typeof customerApi.updateCustomer === 'function'
         ? customerApi.updateCustomer.bind(customerApi)
         : async () => {
@@ -284,6 +287,14 @@ function registerOperationsHttpRoutes({
         ? customerModuleContextsApi.upsertContext.bind(customerModuleContextsApi)
         : async () => {
             throw new Error('Servicio de contextos por modulo no disponible.');
+        };
+    const listContextsByModule = typeof customerModuleContextsApi.listContextsByModule === 'function'
+        ? customerModuleContextsApi.listContextsByModule.bind(customerModuleContextsApi)
+        : async () => ({ items: [], total: 0, limit: 0, offset: 0 });
+    const assignCustomersToModule = typeof customerModuleContextsApi.assignCustomersToModule === 'function'
+        ? customerModuleContextsApi.assignCustomersToModule.bind(customerModuleContextsApi)
+        : async () => {
+            throw new Error('Servicio de asignacion masiva por modulo no disponible.');
         };
     const templateWebhookEventsApi = templateWebhookEventsService && typeof templateWebhookEventsService === 'object'
         ? templateWebhookEventsService
@@ -579,6 +590,105 @@ function registerOperationsHttpRoutes({
             });
         } catch (error) {
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar contextos por modulo del cliente.') });
+        }
+    });
+
+    app.post('/api/tenant/customers/outreach/eligibility', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const payload = isPlainObject(req.body) ? req.body : {};
+            const moduleId = toLower(payload.moduleId || '');
+            if (!moduleId) return res.status(400).json({ ok: false, error: 'moduleId requerido.' });
+
+            const requestedCustomerIds = Array.from(new Set(
+                (Array.isArray(payload.customerIds) ? payload.customerIds : [])
+                    .map((entry) => toText(entry))
+                    .filter(Boolean)
+            ));
+
+            const sourceCustomers = requestedCustomerIds.length > 0
+                ? (await Promise.all(requestedCustomerIds.map((customerId) => getCustomerById(tenantId, customerId)))).filter(Boolean)
+                : (await listCustomersForOutreach(tenantId, {
+                    query: toText(payload.query || ''),
+                    includeInactive: false,
+                    limit: 500,
+                    offset: 0
+                }))?.items || [];
+
+            const contextsResult = await listContextsByModule(tenantId, { moduleId, limit: 5000, offset: 0 });
+            const contextsByCustomerId = new Map(
+                (Array.isArray(contextsResult?.items) ? contextsResult.items : [])
+                    .map((item) => [toText(item?.customerId || ''), item])
+                    .filter(([customerId]) => customerId)
+            );
+
+            const items = (Array.isArray(sourceCustomers) ? sourceCustomers : []).map((customer) => {
+                const customerId = toText(customer?.customerId || '');
+                const moduleContext = contextsByCustomerId.get(customerId) || null;
+                return {
+                    customerId,
+                    contactName: toText(customer?.contactName || ''),
+                    phoneE164: toText(customer?.phoneE164 || ''),
+                    email: toText(customer?.email || ''),
+                    moduleContext,
+                    eligible: Boolean(moduleContext)
+                };
+            });
+
+            return res.json({
+                ok: true,
+                tenantId,
+                moduleId,
+                eligibleItems: items.filter((item) => item.eligible),
+                nonEligibleItems: items.filter((item) => !item.eligible),
+                totalEligible: items.filter((item) => item.eligible).length,
+                totalNonEligible: items.filter((item) => !item.eligible).length
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo evaluar elegibilidad de outreach.') });
+        }
+    });
+
+    app.post('/api/tenant/customers/outreach/assign-module', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsWriteAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const actorUserId = resolveActorUserId(req);
+            const payload = isPlainObject(req.body) ? req.body : {};
+            const moduleId = toLower(payload.moduleId || '');
+            const customerIds = Array.isArray(payload.customerIds) ? payload.customerIds : [];
+            if (!moduleId) return res.status(400).json({ ok: false, error: 'moduleId requerido.' });
+            if (customerIds.length === 0) return res.status(400).json({ ok: false, error: 'customerIds requeridos.' });
+
+            const result = await assignCustomersToModule(tenantId, {
+                customerIds,
+                moduleId,
+                assignmentUserId: actorUserId,
+                metadata: {
+                    actorUserId,
+                    source: 'customers_outreach'
+                }
+            });
+
+            return res.json({
+                ok: true,
+                tenantId,
+                moduleId,
+                ...result
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron asignar clientes al modulo.') });
         }
     });
 

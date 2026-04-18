@@ -1,7 +1,10 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
+import SendTemplateModal from '../../chat/components/SendTemplateModal';
+import { buildTemplateResolvedPreview } from '../../chat/core/helpers/templateMessages.helpers';
 import { normalizeCustomerFormFromItem } from '../helpers';
+import { isTemplateAllowedInCampaigns, isTemplateAllowedInIndividual, normalizeTemplateUseCase } from '../helpers/templateUseCase.helpers';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -10,6 +13,8 @@ import {
     SaasViewHeader,
     useSaasColumnPrefs
 } from '../components/layout';
+import { createCampaign as createCampaignApi, startCampaign as startCampaignApi } from '../services/campaigns.service';
+import { listMetaTemplates } from '../services/metaTemplates.service';
 
 const CUSTOMER_TABLE_COLUMNS = [
     { key: 'codigo', label: 'Codigo', width: '132px', minWidth: '120px', maxWidth: '152px', type: 'text' },
@@ -683,6 +688,104 @@ function resolveUpdatedAtTimestamp(item = null) {
     return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function normalizeModuleLookupId(value = '') {
+    return String(value || '').trim().toLowerCase();
+}
+
+function normalizePhoneLookupDigits(value = '') {
+    return String(value || '').replace(/\D+/g, '');
+}
+
+function extractCustomerModuleCandidates(customer = null) {
+    if (!customer || typeof customer !== 'object') return [];
+    const rawCandidates = [
+        customer.moduleId,
+        customer.module_id,
+        customer?.metadata?.moduleId,
+        customer?.metadata?.module_id,
+        customer?.profile?.moduleId,
+        customer?.profile?.module_id,
+        customer?.metadata?.moduleIds,
+        customer?.metadata?.module_ids,
+        customer?.metadata?.assignedModules,
+        customer?.metadata?.assigned_modules,
+        customer?.profile?.moduleIds,
+        customer?.profile?.module_ids
+    ];
+
+    return rawCandidates.flatMap((value) => {
+        if (Array.isArray(value)) return value;
+        if (value && typeof value === 'object') {
+            return [
+                value.moduleId,
+                value.module_id,
+                value.id
+            ];
+        }
+        return [value];
+    });
+}
+
+function customerBelongsToModule(customer = null, moduleId = '') {
+    if (!customer || typeof customer !== 'object') return false;
+    const target = normalizeModuleLookupId(moduleId);
+    if (!target) return false;
+
+    const candidates = extractCustomerModuleCandidates(customer);
+    return candidates.some((value) => normalizeModuleLookupId(value) === target);
+}
+
+function extractPhoneCandidatesFromChatEvent(payload = null) {
+    if (!payload || typeof payload !== 'object') return [];
+    const source = payload;
+    const rawValues = [
+        source.senderPhone,
+        source.phone,
+        source.phoneE164,
+        source.phone_e164,
+        source.notifyPhone,
+        source.from,
+        source.to,
+        source.chatId,
+        source.baseChatId,
+        source?.contact?.phone,
+        source?.contact?.phoneE164,
+        source?.contact?.phone_e164
+    ];
+
+    return rawValues
+        .map((value) => {
+            const clean = String(value || '').trim();
+            if (!clean) return '';
+            const base = clean.split('@')[0] || clean;
+            return normalizePhoneLookupDigits(base);
+        })
+        .filter(Boolean);
+}
+
+function customerMatchesAnyPhone(customer = null, phoneCandidates = []) {
+    if (!customer || typeof customer !== 'object') return false;
+    const targetSet = new Set((Array.isArray(phoneCandidates) ? phoneCandidates : []).filter(Boolean));
+    if (!targetSet.size) return false;
+
+    const customerPhones = [
+        customer.phone,
+        customer.phoneE164,
+        customer.phone_e164,
+        customer.mobilePhone,
+        customer.mobile_phone,
+        customer.whatsappPhone,
+        customer.whatsapp_phone,
+        customer?.profile?.phone,
+        customer?.profile?.phoneE164,
+        customer?.profile?.phone_e164
+    ]
+        .map((value) => normalizePhoneLookupDigits(value))
+        .filter(Boolean);
+
+    return customerPhones.some((value) => targetSet.has(value));
+}
+
 function CustomersSection(props = {}) {
     const { confirm, notify } = useUiFeedback();
     const context = props.context && typeof props.context === 'object' ? props.context : props;
@@ -700,6 +803,7 @@ function CustomersSection(props = {}) {
         selectedCustomer: selectedCustomerContext,
         runAction,
         requestJson,
+        socket,
         tenantScopeId,
         loadCustomers,
         syncCustomersDelta,
@@ -753,7 +857,35 @@ function CustomersSection(props = {}) {
     const [selectedCustomerLive, setSelectedCustomerLive] = useState(selectedCustomerContext || null);
     const [customerOverridesById, setCustomerOverridesById] = useState({});
     const [showCustomerSynced, setShowCustomerSynced] = useState(false);
+    const [campaignSelectionMode, setCampaignSelectionMode] = useState(false);
+    const [selectedCustomerIdsForCampaign, setSelectedCustomerIdsForCampaign] = useState([]);
+    const [outreachModuleId, setOutreachModuleId] = useState('');
+    const [outreachMode, setOutreachMode] = useState('eligible');
+    const [outreachEligibilityLoading, setOutreachEligibilityLoading] = useState(false);
+    const [outreachEligibilityError, setOutreachEligibilityError] = useState('');
+    const [outreachEligibleCustomerIds, setOutreachEligibleCustomerIds] = useState([]);
+    const [outreachNonEligibleCustomerIds, setOutreachNonEligibleCustomerIds] = useState([]);
+    const [sendTemplateOpen, setSendTemplateOpen] = useState(false);
+    const [sendTemplateOptions, setSendTemplateOptions] = useState([]);
+    const [sendTemplateOptionsLoading, setSendTemplateOptionsLoading] = useState(false);
+    const [sendTemplateOptionsError, setSendTemplateOptionsError] = useState('');
+    const [selectedSendTemplate, setSelectedSendTemplate] = useState(null);
+    const [selectedSendTemplatePreview, setSelectedSendTemplatePreview] = useState(null);
+    const [selectedSendTemplatePreviewLoading, setSelectedSendTemplatePreviewLoading] = useState(false);
+    const [selectedSendTemplatePreviewError, setSelectedSendTemplatePreviewError] = useState('');
+    const [sendTemplateSubmitting, setSendTemplateSubmitting] = useState(false);
+    const [campaignTemplateModalOpen, setCampaignTemplateModalOpen] = useState(false);
+    const [campaignTemplateOptions, setCampaignTemplateOptions] = useState([]);
+    const [campaignTemplateOptionsLoading, setCampaignTemplateOptionsLoading] = useState(false);
+    const [campaignTemplateOptionsError, setCampaignTemplateOptionsError] = useState('');
+    const [selectedCampaignTemplate, setSelectedCampaignTemplate] = useState(null);
+    const [selectedCampaignTemplatePreview, setSelectedCampaignTemplatePreview] = useState(null);
+    const [selectedCampaignTemplatePreviewLoading, setSelectedCampaignTemplatePreviewLoading] = useState(false);
+    const [selectedCampaignTemplatePreviewError, setSelectedCampaignTemplatePreviewError] = useState('');
+    const [campaignTemplateSubmitting, setCampaignTemplateSubmitting] = useState(false);
     const syncedIndicatorTimeoutRef = useRef(null);
+    const customersRealtimeSyncTimeoutRef = useRef(null);
+    const customersRealtimeSyncInFlightRef = useRef(false);
 
     const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
     const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys);
@@ -807,6 +939,10 @@ function CustomersSection(props = {}) {
     );
 
     const selectedCustomerIdResolved = useMemo(() => resolveCustomerId(selectedCustomer), [selectedCustomer]);
+    const selectedCustomerPhone = useMemo(
+        () => String(selectedCustomer?.phoneE164 || selectedCustomer?.phone || '').trim(),
+        [selectedCustomer]
+    );
     const profileAddresses = useMemo(
         () => buildProfileAddressesFromCustomer(selectedCustomer),
         [selectedCustomer]
@@ -831,12 +967,29 @@ function CustomersSection(props = {}) {
     const moduleNameById = useMemo(() => {
         const map = {};
         (Array.isArray(waModules) ? waModules : []).forEach((moduleItem = {}) => {
-            const moduleId = String(moduleItem.moduleId || moduleItem.module_id || '').trim();
+            const moduleId = String(moduleItem.moduleId || moduleItem.module_id || '').trim().toLowerCase();
             if (!moduleId) return;
             map[moduleId] = String(moduleItem.name || moduleItem.module_name || moduleId).trim() || moduleId;
         });
         return map;
     }, [waModules]);
+    const outreachModuleOptions = useMemo(
+        () => (Array.isArray(waModules) ? waModules : [])
+            .map((moduleItem = {}) => ({
+                moduleId: String(moduleItem.moduleId || moduleItem.module_id || '').trim().toLowerCase(),
+                label: String(moduleItem.name || moduleItem.module_name || moduleItem.moduleId || '').trim()
+            }))
+            .filter((moduleItem) => moduleItem.moduleId),
+        [waModules]
+    );
+    const selectedCustomerPreferredModuleIds = useMemo(
+        () => Array.from(new Set(
+            (Array.isArray(moduleContexts) ? moduleContexts : [])
+                .map((item) => String(item?.moduleId || '').trim())
+                .filter(Boolean)
+        )),
+        [moduleContexts]
+    );
 
     const customerTypeOptions = useMemo(
         () => normalizeCatalogItems(customerCatalogs.customerTypes),
@@ -1046,14 +1199,18 @@ function CustomersSection(props = {}) {
         }));
     }, [customerForm?.preferredLanguage, customerForm?.preferred_language, customerPanelMode, setCustomerForm]);
 
-    const tableColumns = useMemo(
-        () => CUSTOMER_TABLE_COLUMNS.map((column) => ({
-            ...column,
-            hidden: !columnPrefs.isColumnVisible(column.key)
-        })),
-        [columnPrefs, columnPrefs.visibleColumnKeys]
+    const selectedCustomerIdsForCampaignSet = useMemo(
+        () => new Set((Array.isArray(selectedCustomerIdsForCampaign) ? selectedCustomerIdsForCampaign : []).map((item) => String(item || '').trim()).filter(Boolean)),
+        [selectedCustomerIdsForCampaign]
     );
-
+    const outreachEligibleCustomerIdsSet = useMemo(
+        () => new Set((Array.isArray(outreachEligibleCustomerIds) ? outreachEligibleCustomerIds : []).map((item) => String(item || '').trim()).filter(Boolean)),
+        [outreachEligibleCustomerIds]
+    );
+    const outreachNonEligibleCustomerIdsSet = useMemo(
+        () => new Set((Array.isArray(outreachNonEligibleCustomerIds) ? outreachNonEligibleCustomerIds : []).map((item) => String(item || '').trim()).filter(Boolean)),
+        [outreachNonEligibleCustomerIds]
+    );
     const filteredCustomersLive = useMemo(() => {
         const source = Array.isArray(filteredCustomers) ? filteredCustomers : [];
         return source.map((item) => {
@@ -1063,9 +1220,116 @@ function CustomersSection(props = {}) {
             return override || item;
         });
     }, [filteredCustomers, getCustomerOverride]);
+    const outreachFilteredCustomers = useMemo(() => {
+        const source = Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [];
+        if (!campaignSelectionMode || !outreachModuleId) return source;
+        if (outreachMode === 'assign') {
+            return source.filter((item) => outreachNonEligibleCustomerIdsSet.has(resolveCustomerId(item)));
+        }
+        return source.filter((item) => outreachEligibleCustomerIdsSet.has(resolveCustomerId(item)));
+    }, [
+        campaignSelectionMode,
+        filteredCustomersLive,
+        outreachEligibleCustomerIdsSet,
+        outreachMode,
+        outreachModuleId,
+        outreachNonEligibleCustomerIdsSet
+    ]);
+    const campaignSelectableCustomerIds = useMemo(
+        () => {
+            const source = Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [];
+            const scoped = (!campaignSelectionMode || !outreachModuleId)
+                ? source
+                : (outreachMode === 'assign'
+                    ? source.filter((item) => outreachNonEligibleCustomerIdsSet.has(resolveCustomerId(item)))
+                    : source.filter((item) => outreachEligibleCustomerIdsSet.has(resolveCustomerId(item))));
+            return scoped.map((item) => resolveCustomerId(item)).filter(Boolean);
+        },
+        [
+            campaignSelectionMode,
+            filteredCustomersLive,
+            outreachEligibleCustomerIdsSet,
+            outreachMode,
+            outreachModuleId,
+            outreachNonEligibleCustomerIdsSet
+        ]
+    );
+    const allCampaignSelectableCustomersSelected = useMemo(
+        () => campaignSelectableCustomerIds.length > 0 && campaignSelectableCustomerIds.every((customerId) => selectedCustomerIdsForCampaignSet.has(customerId)),
+        [campaignSelectableCustomerIds, selectedCustomerIdsForCampaignSet]
+    );
+
+    const tableColumns = useMemo(
+        () => ([
+            {
+                key: 'selectForCampaign',
+                hidden: !campaignSelectionMode || !outreachModuleId,
+                label: (
+                    <span className="saas-customers-select-cell">
+                        <input
+                            type="checkbox"
+                            checked={allCampaignSelectableCustomersSelected}
+                            onChange={() => {
+                                setSelectedCustomerIdsForCampaign((prev) => {
+                                    const current = new Set((Array.isArray(prev) ? prev : []).map((item) => String(item || '').trim()).filter(Boolean));
+                                    if (campaignSelectableCustomerIds.length > 0 && campaignSelectableCustomerIds.every((customerId) => current.has(customerId))) {
+                                        campaignSelectableCustomerIds.forEach((customerId) => current.delete(customerId));
+                                    } else {
+                                        campaignSelectableCustomerIds.forEach((customerId) => current.add(customerId));
+                                    }
+                                    return Array.from(current);
+                                });
+                            }}
+                            onClick={(event) => event.stopPropagation()}
+                            aria-label="Seleccionar clientes visibles para campaña"
+                        />
+                    </span>
+                ),
+                width: '54px',
+                minWidth: '54px',
+                maxWidth: '54px',
+                align: 'center',
+                render: (_, row) => {
+                    const customerId = String(row?._raw?.customerId || row?.id || '').trim();
+                    const checked = selectedCustomerIdsForCampaignSet.has(customerId);
+                    return (
+                        <span className="saas-customers-select-cell">
+                            <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                    setSelectedCustomerIdsForCampaign((prev) => {
+                                        const current = Array.isArray(prev) ? prev : [];
+                                        if (current.includes(customerId)) {
+                                            return current.filter((item) => item !== customerId);
+                                        }
+                                        return [...current, customerId];
+                                    });
+                                }}
+                                onClick={(event) => event.stopPropagation()}
+                                aria-label={`Seleccionar ${String(row?.nombreCompleto || customerId || 'cliente')}`}
+                            />
+                        </span>
+                    );
+                }
+            },
+            ...CUSTOMER_TABLE_COLUMNS.map((column) => ({
+                ...column,
+                hidden: !columnPrefs.isColumnVisible(column.key)
+            }))
+        ]),
+        [
+            campaignSelectionMode,
+            allCampaignSelectableCustomersSelected,
+            campaignSelectableCustomerIds,
+            columnPrefs,
+            columnPrefs.visibleColumnKeys,
+            selectedCustomerIdsForCampaignSet
+        ]
+    );
 
     const tableRows = useMemo(() => {
-        const source = Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [];
+        const source = Array.isArray(outreachFilteredCustomers) ? outreachFilteredCustomers : [];
         return source.map((customer = {}, index) => {
             const customerId = resolveCustomerId(customer);
             const safeId = customerId || String(customer.phoneE164 || customer.phone_e164 || customer.email || `customer-${index}`).trim();
@@ -1094,7 +1358,7 @@ function CustomersSection(props = {}) {
                 _raw: customer
             };
         });
-    }, [customerLabelMaps, filteredCustomersLive, formatDateTimeLabel]);
+    }, [customerLabelMaps, formatDateTimeLabel, outreachFilteredCustomers]);
 
     const visibleColumns = useMemo(
         () => tableColumns.filter((column) => column && column.hidden !== true),
@@ -1227,6 +1491,17 @@ function CustomersSection(props = {}) {
         return sortDirection === 'desc' ? sortedRows.reverse() : sortedRows;
     }, [filterColumnByKey, headerFilter, sortConfig, tableRows]);
 
+    const visibleCustomerIdsForCampaign = useMemo(
+        () => sortedAndFilteredRows
+            .map((row) => String(row?._raw?.customerId || row?.id || '').trim())
+            .filter(Boolean),
+        [sortedAndFilteredRows]
+    );
+    const allVisibleCustomersSelectedForCampaign = useMemo(
+        () => visibleCustomerIdsForCampaign.length > 0 && visibleCustomerIdsForCampaign.every((customerId) => selectedCustomerIdsForCampaignSet.has(customerId)),
+        [selectedCustomerIdsForCampaignSet, visibleCustomerIdsForCampaign]
+    );
+
     const tableSelectedId = useMemo(() => {
         if (customerPanelMode === 'create') return '';
         return String(selectedCustomerIdResolved || selectedCustomerId || '').trim();
@@ -1240,6 +1515,10 @@ function CustomersSection(props = {}) {
     const visibleTableRows = useMemo(
         () => (Array.isArray(sortedAndFilteredRows) ? sortedAndFilteredRows : []),
         [sortedAndFilteredRows]
+    );
+    const firstSelectedCustomerIdForCampaign = useMemo(
+        () => String(selectedCustomerIdsForCampaign[0] || '').trim(),
+        [selectedCustomerIdsForCampaign]
     );
 
     const handlePreferredLanguageChange = useCallback(async (nextLanguageRaw = '') => {
@@ -1531,6 +1810,408 @@ function CustomersSection(props = {}) {
         });
     }, [loadCustomers, requestJson, runAction, selectedCustomer, tenantScopeId]);
 
+    const resetSendTemplateFlow = useCallback(() => {
+        setSendTemplateOpen(false);
+        setSendTemplateOptions([]);
+        setSendTemplateOptionsLoading(false);
+        setSendTemplateOptionsError('');
+        setSelectedSendTemplate(null);
+        setSelectedSendTemplatePreview(null);
+        setSelectedSendTemplatePreviewLoading(false);
+        setSelectedSendTemplatePreviewError('');
+        setSendTemplateSubmitting(false);
+    }, []);
+
+    const handleSelectDirectTemplate = useCallback(async (template = null) => {
+        const entry = template && typeof template === 'object' ? template : null;
+        if (!entry) return;
+
+        setSelectedSendTemplate(entry);
+        setSelectedSendTemplatePreview(null);
+        setSelectedSendTemplatePreviewLoading(true);
+        setSelectedSendTemplatePreviewError('');
+
+        try {
+            const previewPayload = await requestJson(`/api/tenant/template-variables/preview?customerId=${encodeURIComponent(selectedCustomerIdResolved)}`, {
+                method: 'GET'
+            });
+            const resolvedPreview = buildTemplateResolvedPreview(entry, previewPayload);
+            setSelectedSendTemplatePreview({
+                ...resolvedPreview,
+                payload: previewPayload
+            });
+        } catch (error) {
+            const message = String(error?.message || 'No se pudo resolver la preview del template.');
+            setSelectedSendTemplatePreviewError(message);
+            notify({ type: 'error', message });
+        } finally {
+            setSelectedSendTemplatePreviewLoading(false);
+        }
+    }, [notify, requestJson, selectedCustomerIdResolved]);
+
+    const handleOpenDirectTemplateModal = useCallback(async () => {
+        if (!selectedCustomerIdResolved) {
+            notify({ type: 'error', message: 'Selecciona un cliente para iniciar la conversacion.' });
+            return;
+        }
+        if (!selectedCustomerPhone) {
+            notify({ type: 'error', message: 'El cliente no tiene telefono principal para enviar templates.' });
+            return;
+        }
+
+        setSendTemplateOpen(true);
+        setSendTemplateOptions([]);
+        setSendTemplateOptionsLoading(true);
+        setSendTemplateOptionsError('');
+        setSelectedSendTemplate(null);
+        setSelectedSendTemplatePreview(null);
+        setSelectedSendTemplatePreviewError('');
+
+        try {
+            const response = await listMetaTemplates(requestJson, {
+                status: 'approved',
+                limit: 200
+            });
+            const preferredModules = new Set(selectedCustomerPreferredModuleIds);
+            const items = (Array.isArray(response?.items) ? response.items : [])
+                .filter((item) => isTemplateAllowedInIndividual(item?.useCase))
+                .map((item) => ({
+                    ...item,
+                    templateId: String(item?.templateId || item?.metaTemplateId || item?.templateName || '').trim(),
+                    templateName: String(item?.templateName || '').trim(),
+                    templateLanguage: String(item?.templateLanguage || 'es').trim().toLowerCase() || 'es',
+                    moduleId: String(item?.moduleId || '').trim(),
+                    useCase: String(item?.useCase || 'both').trim().toLowerCase() || 'both'
+                }))
+                .filter((item) => item.templateId && item.templateName)
+                .sort((left, right) => {
+                    const leftPreferred = preferredModules.has(left.moduleId) ? 0 : 1;
+                    const rightPreferred = preferredModules.has(right.moduleId) ? 0 : 1;
+                    if (leftPreferred !== rightPreferred) return leftPreferred - rightPreferred;
+                    const moduleCompare = String(moduleNameById[left.moduleId] || left.moduleId || '').localeCompare(
+                        String(moduleNameById[right.moduleId] || right.moduleId || ''),
+                        'es',
+                        { sensitivity: 'base' }
+                    );
+                    if (moduleCompare !== 0) return moduleCompare;
+                    return String(left.templateName || '').localeCompare(String(right.templateName || ''), 'es', { sensitivity: 'base' });
+                });
+
+            setSendTemplateOptions(items);
+            if (items.length > 0) {
+                await handleSelectDirectTemplate(items[0]);
+            }
+        } catch (error) {
+            const message = String(error?.message || 'No se pudieron cargar templates para iniciar la conversacion.');
+            setSendTemplateOptionsError(message);
+            notify({ type: 'error', message });
+        } finally {
+            setSendTemplateOptionsLoading(false);
+        }
+    }, [
+        handleSelectDirectTemplate,
+        moduleNameById,
+        notify,
+        requestJson,
+        selectedCustomerIdResolved,
+        selectedCustomerPhone,
+        selectedCustomerPreferredModuleIds
+    ]);
+
+    const handleConfirmDirectTemplateSend = useCallback(() => {
+        const template = selectedSendTemplate && typeof selectedSendTemplate === 'object' ? selectedSendTemplate : null;
+        if (!template || !socket || typeof socket.emit !== 'function') return;
+        if (!selectedCustomerPhone) {
+            notify({ type: 'error', message: 'El cliente no tiene telefono valido para enviar el template.' });
+            return;
+        }
+
+        setSendTemplateSubmitting(true);
+        socket.emit('send_template_message', {
+            toPhone: selectedCustomerPhone,
+            customerId: selectedCustomerIdResolved || null,
+            moduleId: String(template?.moduleId || '').trim() || null,
+            templateId: String(template?.templateId || '').trim() || null,
+            templateName: String(template?.templateName || '').trim(),
+            templateLanguage: String(template?.templateLanguage || 'es').trim().toLowerCase() || 'es'
+        });
+    }, [notify, selectedCustomerIdResolved, selectedCustomerPhone, selectedSendTemplate, socket]);
+
+    const resetCampaignTemplateFlow = useCallback(() => {
+        setCampaignTemplateModalOpen(false);
+        setCampaignTemplateOptions([]);
+        setCampaignTemplateOptionsLoading(false);
+        setCampaignTemplateOptionsError('');
+        setSelectedCampaignTemplate(null);
+        setSelectedCampaignTemplatePreview(null);
+        setSelectedCampaignTemplatePreviewLoading(false);
+        setSelectedCampaignTemplatePreviewError('');
+        setCampaignTemplateSubmitting(false);
+    }, []);
+
+    const refreshCustomersView = useCallback(async ({ forceFullReload = false, silent = false } = {}) => {
+        if (tenantScopeLocked) return;
+        const cleanTenantId = String(tenantScopeId || '').trim();
+        if (!cleanTenantId) return;
+        try {
+            if (forceFullReload || typeof syncCustomersDelta !== 'function') {
+                if (typeof loadCustomers === 'function') {
+                    await loadCustomers(cleanTenantId);
+                }
+            } else {
+                await syncCustomersDelta(cleanTenantId, {
+                    updatedSince: typeof maxCustomersUpdatedAt === 'function'
+                        ? maxCustomersUpdatedAt(cleanTenantId)
+                        : ''
+                });
+            }
+        } catch (error) {
+            if (!silent) {
+                notify({ type: 'error', message: String(error?.message || 'No se pudieron actualizar los clientes.') });
+            }
+            throw error;
+        }
+    }, [loadCustomers, maxCustomersUpdatedAt, notify, syncCustomersDelta, tenantScopeId, tenantScopeLocked]);
+
+    const scheduleRealtimeCustomersSync = useCallback((delayMs = 700) => {
+        if (!isCustomersSection || tenantScopeLocked) return;
+        if (customersRealtimeSyncTimeoutRef.current) {
+            clearTimeout(customersRealtimeSyncTimeoutRef.current);
+        }
+        customersRealtimeSyncTimeoutRef.current = setTimeout(async () => {
+            customersRealtimeSyncTimeoutRef.current = null;
+            if (customersRealtimeSyncInFlightRef.current) return;
+            customersRealtimeSyncInFlightRef.current = true;
+            try {
+                await refreshCustomersView({ forceFullReload: false, silent: true });
+            } catch {
+                // silent realtime refresh failure; manual refresh remains available
+            } finally {
+                customersRealtimeSyncInFlightRef.current = false;
+            }
+        }, Math.max(150, Number(delayMs) || 700));
+    }, [isCustomersSection, refreshCustomersView, tenantScopeLocked]);
+
+    const loadOutreachEligibility = useCallback(async () => {
+        if (!campaignSelectionMode || !outreachModuleId) {
+            setOutreachEligibilityError('');
+            setOutreachEligibleCustomerIds([]);
+            setOutreachNonEligibleCustomerIds([]);
+            return;
+        }
+
+        const customerIds = (Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [])
+            .map((item) => resolveCustomerId(item))
+            .filter(Boolean);
+
+        if (customerIds.length === 0) {
+            setOutreachEligibilityError('');
+            setOutreachEligibleCustomerIds([]);
+            setOutreachNonEligibleCustomerIds([]);
+            return;
+        }
+
+        setOutreachEligibilityLoading(true);
+        setOutreachEligibilityError('');
+        try {
+            const eligibleIds = [];
+            const nonEligibleIds = [];
+            (Array.isArray(filteredCustomersLive) ? filteredCustomersLive : []).forEach((customer) => {
+                const customerId = resolveCustomerId(customer);
+                if (!customerId) return;
+                if (customerBelongsToModule(customer, outreachModuleId)) eligibleIds.push(customerId);
+                else nonEligibleIds.push(customerId);
+            });
+            setOutreachEligibleCustomerIds(eligibleIds);
+            setOutreachNonEligibleCustomerIds(nonEligibleIds);
+        } catch (error) {
+            setOutreachEligibilityError(String(error?.message || 'No se pudo calcular elegibilidad por modulo.'));
+            setOutreachEligibleCustomerIds([]);
+            setOutreachNonEligibleCustomerIds([]);
+        } finally {
+            setOutreachEligibilityLoading(false);
+        }
+    }, [campaignSelectionMode, filteredCustomersLive, outreachModuleId]);
+
+    const exitCampaignSelectionMode = useCallback(() => {
+        setCampaignSelectionMode(false);
+        setSelectedCustomerIdsForCampaign([]);
+        setOutreachModuleId('');
+        setOutreachMode('eligible');
+        setOutreachEligibilityError('');
+        setOutreachEligibleCustomerIds([]);
+        setOutreachNonEligibleCustomerIds([]);
+    }, []);
+
+    const handleSelectCampaignTemplate = useCallback(async (template = null) => {
+        const entry = template && typeof template === 'object' ? template : null;
+        if (!entry) return;
+
+        setSelectedCampaignTemplate(entry);
+        setSelectedCampaignTemplatePreview(null);
+        setSelectedCampaignTemplatePreviewLoading(true);
+        setSelectedCampaignTemplatePreviewError('');
+
+        try {
+            const suffix = firstSelectedCustomerIdForCampaign
+                ? `?customerId=${encodeURIComponent(firstSelectedCustomerIdForCampaign)}`
+                : '';
+            const previewPayload = await requestJson(`/api/tenant/template-variables/preview${suffix}`, { method: 'GET' });
+            const resolvedPreview = buildTemplateResolvedPreview(entry, previewPayload);
+            setSelectedCampaignTemplatePreview({
+                ...resolvedPreview,
+                payload: previewPayload
+            });
+        } catch (error) {
+            const message = String(error?.message || 'No se pudo resolver la preview del template de campaña.');
+            setSelectedCampaignTemplatePreviewError(message);
+            notify({ type: 'error', message });
+        } finally {
+            setSelectedCampaignTemplatePreviewLoading(false);
+        }
+    }, [firstSelectedCustomerIdForCampaign, notify, requestJson]);
+
+    const handleOpenCampaignTemplateModal = useCallback(async () => {
+        if (selectedCustomerIdsForCampaign.length === 0) {
+            notify({ type: 'error', message: 'Selecciona al menos un cliente para la campaña express.' });
+            return;
+        }
+        if (!outreachModuleId) {
+            notify({ type: 'error', message: 'Selecciona un modulo antes de continuar.' });
+            return;
+        }
+
+        setCampaignTemplateModalOpen(true);
+        setCampaignTemplateOptions([]);
+        setCampaignTemplateOptionsLoading(true);
+        setCampaignTemplateOptionsError('');
+        setSelectedCampaignTemplate(null);
+        setSelectedCampaignTemplatePreview(null);
+        setSelectedCampaignTemplatePreviewError('');
+
+        try {
+            const response = await listMetaTemplates(requestJson, {
+                status: 'approved',
+                limit: 200
+            });
+            const items = (Array.isArray(response?.items) ? response.items : [])
+                .filter((item) => isTemplateAllowedInCampaigns(item?.useCase))
+                .map((item) => ({
+                    ...item,
+                    templateId: String(item?.templateId || item?.metaTemplateId || item?.templateName || '').trim(),
+                    templateName: String(item?.templateName || '').trim(),
+                    templateLanguage: String(item?.templateLanguage || 'es').trim().toLowerCase() || 'es',
+                    moduleId: String(item?.moduleId || '').trim().toLowerCase(),
+                    useCase: String(item?.useCase || 'both').trim().toLowerCase() || 'both'
+                }))
+                .filter((item) => {
+                    if (!item.templateId || !item.templateName) return false;
+                    if (String(item.moduleId || '').trim().toLowerCase() !== String(outreachModuleId || '').trim().toLowerCase()) return false;
+                    const useCase = normalizeTemplateUseCase(item.useCase || 'both');
+                    return outreachMode === 'assign'
+                        ? useCase === 'optin'
+                        : isTemplateAllowedInCampaigns(useCase);
+                })
+                .sort((left, right) => {
+                    const moduleCompare = String(moduleNameById[left.moduleId] || left.moduleId || '').localeCompare(
+                        String(moduleNameById[right.moduleId] || right.moduleId || ''),
+                        'es',
+                        { sensitivity: 'base' }
+                    );
+                    if (moduleCompare !== 0) return moduleCompare;
+                    return String(left.templateName || '').localeCompare(String(right.templateName || ''), 'es', { sensitivity: 'base' });
+                });
+
+            setCampaignTemplateOptions(items);
+            if (items.length > 0) {
+                await handleSelectCampaignTemplate(items[0]);
+            }
+        } catch (error) {
+            const message = String(error?.message || 'No se pudieron cargar templates para outreach.');
+            setCampaignTemplateOptionsError(message);
+            notify({ type: 'error', message });
+        } finally {
+            setCampaignTemplateOptionsLoading(false);
+        }
+    }, [handleSelectCampaignTemplate, moduleNameById, notify, outreachMode, outreachModuleId, requestJson, selectedCustomerIdsForCampaign.length]);
+
+    const handleConfirmExpressCampaign = useCallback(async () => {
+        const template = selectedCampaignTemplate && typeof selectedCampaignTemplate === 'object' ? selectedCampaignTemplate : null;
+        if (!template) return;
+        if (selectedCustomerIdsForCampaign.length === 0) {
+            notify({ type: 'error', message: 'Selecciona al menos un cliente para la campaña express.' });
+            return;
+        }
+
+        const moduleId = String(outreachModuleId || template?.moduleId || '').trim();
+        if (!moduleId) {
+            notify({ type: 'error', message: 'El template seleccionado no tiene modulo asociado.' });
+            return;
+        }
+
+        const timestamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+        setCampaignTemplateSubmitting(true);
+        try {
+            if (outreachMode === 'assign') {
+                await requestJson('/api/tenant/customers/outreach/assign-module', {
+                    method: 'POST',
+                    body: {
+                        moduleId,
+                        customerIds: selectedCustomerIdsForCampaign
+                    }
+                });
+            }
+
+            const createdResponse = await createCampaignApi(requestJson, {
+                scopeModuleId: moduleId,
+                moduleId,
+                templateId: String(template?.templateId || '').trim() || null,
+                templateName: String(template?.templateName || '').trim(),
+                templateLanguage: String(template?.templateLanguage || 'es').trim().toLowerCase() || 'es',
+                campaignName: `${outreachMode === 'assign' ? 'Opt-in masivo' : 'Campana express'} · ${String(template?.templateName || 'template').trim() || 'template'} · ${timestamp}`,
+                campaignDescription: outreachMode === 'assign'
+                    ? `Asignacion al modulo y envio opt-in desde Clientes para ${selectedCustomerIdsForCampaign.length} destinatario(s).`
+                    : `Campana express creada desde Clientes para ${selectedCustomerIdsForCampaign.length} destinatario(s).`,
+                audienceFiltersJson: {
+                    customerIds: selectedCustomerIdsForCampaign
+                },
+                audienceSelectionJson: {
+                    excludedCustomerIds: []
+                },
+                variablesPreviewJson: selectedCampaignTemplatePreview?.payload || {}
+            });
+            const campaignId = String(createdResponse?.campaign?.campaignId || '').trim();
+            if (!campaignId) throw new Error('No se pudo obtener el campaignId de la campaña express.');
+
+            await startCampaignApi(requestJson, { campaignId });
+            notify({
+                type: 'info',
+                message: outreachMode === 'assign'
+                    ? `Clientes asignados al modulo y envio opt-in iniciado para ${selectedCustomerIdsForCampaign.length} cliente(s).`
+                    : `Campana express iniciada para ${selectedCustomerIdsForCampaign.length} cliente(s).`
+            });
+            setSelectedCustomerIdsForCampaign([]);
+            resetCampaignTemplateFlow();
+            void loadOutreachEligibility();
+        } catch (error) {
+            notify({
+                type: 'error',
+                message: String(error?.message || 'No se pudo completar outreach desde clientes.')
+            });
+            setCampaignTemplateSubmitting(false);
+        }
+    }, [
+        loadOutreachEligibility,
+        notify,
+        outreachMode,
+        outreachModuleId,
+        requestJson,
+        resetCampaignTemplateFlow,
+        selectedCampaignTemplate,
+        selectedCampaignTemplatePreview?.payload,
+        selectedCustomerIdsForCampaign
+    ]);
+
     const updateCustomersState = useCallback((customerItem = null) => {
         if (typeof setCustomers !== 'function') return;
         const safeItem = customerItem && typeof customerItem === 'object' ? customerItem : null;
@@ -1558,6 +2239,59 @@ function CustomersSection(props = {}) {
         if (normalizeCatalogLookupKey(currentSelectedId) === normalizeCatalogLookupKey(safeItemId)) {
             setSelectedCustomerLive(safeItem);
         }
+    }, [patchCustomerInCache, selectedCustomerId, selectedCustomerIdResolved, setCustomers, tenantScopeId]);
+
+    const patchCustomerActivityFromEvent = useCallback((payload = null) => {
+        const phoneCandidates = extractPhoneCandidatesFromChatEvent(payload);
+        if (!phoneCandidates.length) return false;
+        const rawActivityAt = payload?.updatedAt ?? payload?.lastInteractionAt ?? payload?.timestamp ?? '';
+        const numericActivityAt = Number(rawActivityAt);
+        const parsedActivityAt = Number.isFinite(numericActivityAt) && numericActivityAt > 0
+            ? new Date(numericActivityAt * 1000)
+            : new Date(String(rawActivityAt || '').trim() || Date.now());
+        const activityIso = Number.isFinite(parsedActivityAt.getTime())
+            ? parsedActivityAt.toISOString()
+            : new Date().toISOString();
+
+        let matchedCustomer = null;
+        setCustomers((prev) => {
+            const source = Array.isArray(prev) ? prev : [];
+            let changed = false;
+            const next = source.map((customer) => {
+                if (!customerMatchesAnyPhone(customer, phoneCandidates)) return customer;
+                const nextCustomer = {
+                    ...customer,
+                    lastInteractionAt: activityIso,
+                    last_interaction_at: activityIso,
+                    updatedAt: activityIso,
+                    updated_at: activityIso
+                };
+                changed = true;
+                matchedCustomer = nextCustomer;
+                return nextCustomer;
+            });
+            return changed ? next : source;
+        });
+
+        const matchedCustomerId = resolveCustomerId(matchedCustomer);
+        if (!matchedCustomerId || !matchedCustomer) return false;
+
+        const normalizedId = normalizeCatalogLookupKey(matchedCustomerId);
+        if (normalizedId) {
+            setCustomerOverridesById((prev) => ({
+                ...(prev && typeof prev === 'object' ? prev : {}),
+                [normalizedId]: matchedCustomer
+            }));
+        }
+        if (tenantScopeId && typeof patchCustomerInCache === 'function') {
+            patchCustomerInCache(tenantScopeId, matchedCustomerId, matchedCustomer);
+        }
+
+        const currentSelectedId = String(selectedCustomerIdResolved || selectedCustomerId || '').trim();
+        if (!currentSelectedId || normalizeCatalogLookupKey(currentSelectedId) === normalizeCatalogLookupKey(matchedCustomerId)) {
+            setSelectedCustomerLive(matchedCustomer);
+        }
+        return true;
     }, [patchCustomerInCache, selectedCustomerId, selectedCustomerIdResolved, setCustomers, tenantScopeId]);
 
     const showSyncedIndicator = useCallback(() => {
@@ -1722,6 +2456,22 @@ function CustomersSection(props = {}) {
     }, [customerSearch]);
 
     useEffect(() => {
+        if (!campaignSelectionMode) return;
+        void loadOutreachEligibility();
+    }, [campaignSelectionMode, loadOutreachEligibility]);
+
+    useEffect(() => {
+        if (!isCustomersSection || !campaignSelectionMode) return undefined;
+        const handleKeyDown = (event) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            exitCampaignSelectionMode();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [campaignSelectionMode, exitCampaignSelectionMode, isCustomersSection]);
+
+    useEffect(() => {
         const timer = setTimeout(() => {
             const normalized = String(searchInput || '');
             if (normalized === String(customerSearch || '')) return;
@@ -1764,6 +2514,29 @@ function CustomersSection(props = {}) {
         tenantScopeId,
         tenantScopeLocked
     ]);
+
+    useEffect(() => {
+        if (!socket || typeof socket.on !== 'function' || typeof socket.off !== 'function') return undefined;
+        const handleRealtimeCustomerTouch = (payload = null) => {
+            patchCustomerActivityFromEvent(payload);
+            scheduleRealtimeCustomersSync(600);
+        };
+        socket.on('message', handleRealtimeCustomerTouch);
+        socket.on('chat_updated', handleRealtimeCustomerTouch);
+        socket.on('template_message_sent', handleRealtimeCustomerTouch);
+        return () => {
+            socket.off('message', handleRealtimeCustomerTouch);
+            socket.off('chat_updated', handleRealtimeCustomerTouch);
+            socket.off('template_message_sent', handleRealtimeCustomerTouch);
+        };
+    }, [patchCustomerActivityFromEvent, scheduleRealtimeCustomersSync, socket]);
+
+    useEffect(() => () => {
+        if (customersRealtimeSyncTimeoutRef.current) {
+            clearTimeout(customersRealtimeSyncTimeoutRef.current);
+            customersRealtimeSyncTimeoutRef.current = null;
+        }
+    }, []);
 
     useEffect(() => {
         if (!addressEditorOpen) return;
@@ -1875,6 +2648,51 @@ function CustomersSection(props = {}) {
         geoProvinceById,
         geoProvinceByName
     ]);
+
+    useEffect(() => {
+        if (!socket || typeof socket.on !== 'function' || typeof socket.off !== 'function') return undefined;
+
+        const handleTemplateMessageSent = () => {
+            setSendTemplateSubmitting(false);
+            resetSendTemplateFlow();
+        };
+
+        const handleTemplateMessageError = () => {
+            setSendTemplateSubmitting(false);
+        };
+
+        socket.on('template_message_sent', handleTemplateMessageSent);
+        socket.on('template_message_error', handleTemplateMessageError);
+        return () => {
+            socket.off('template_message_sent', handleTemplateMessageSent);
+            socket.off('template_message_error', handleTemplateMessageError);
+        };
+    }, [resetSendTemplateFlow, socket]);
+
+    useEffect(() => {
+        resetSendTemplateFlow();
+    }, [resetSendTemplateFlow, selectedCustomerIdResolved]);
+
+    useEffect(() => {
+        resetCampaignTemplateFlow();
+    }, [resetCampaignTemplateFlow, firstSelectedCustomerIdForCampaign]);
+
+    useEffect(() => {
+        const validIds = new Set(
+            (Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [])
+                .map((item) => resolveCustomerId(item))
+                .filter(Boolean)
+        );
+        setSelectedCustomerIdsForCampaign((prev) => (
+            (Array.isArray(prev) ? prev : []).filter((customerId) => validIds.has(String(customerId || '').trim()))
+        ));
+    }, [filteredCustomersLive]);
+
+    useEffect(() => {
+        if (campaignSelectionMode) return;
+        if (selectedCustomerIdsForCampaign.length === 0) return;
+        setSelectedCustomerIdsForCampaign([]);
+    }, [campaignSelectionMode, selectedCustomerIdsForCampaign.length]);
 
     const handleAddressDepartmentChange = useCallback((nextDepartmentIdRaw = '') => {
         const departmentId = normalizeGeoNumericId(nextDepartmentIdRaw);
@@ -2387,6 +3205,40 @@ function CustomersSection(props = {}) {
             disabled: busy || tenantScopeLocked
         },
         {
+            key: 'toggle-selection',
+            label: campaignSelectionMode ? 'Cancelar seleccion' : 'Seleccionar clientes',
+            onClick: () => {
+                if (campaignSelectionMode) {
+                    exitCampaignSelectionMode();
+                    return;
+                }
+                setCampaignSelectionMode(true);
+            },
+            variant: campaignSelectionMode ? 'danger' : 'secondary',
+            disabled: busy || tenantScopeLocked
+        },
+        {
+            key: 'send-template',
+            label: `Enviar campaña${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
+            onClick: () => { void handleOpenCampaignTemplateModal(); },
+            variant: 'secondary',
+            disabled: busy || tenantScopeLocked || !campaignSelectionMode || !outreachModuleId || outreachMode !== 'eligible' || selectedCustomerIdsForCampaign.length === 0
+        },
+        {
+            key: 'assign-module',
+            label: `Asignar al modulo${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
+            onClick: () => { void handleOpenCampaignTemplateModal(); },
+            variant: 'secondary',
+            disabled: busy || tenantScopeLocked || !campaignSelectionMode || !outreachModuleId || outreachMode !== 'assign' || selectedCustomerIdsForCampaign.length === 0
+        },
+        {
+            key: 'refresh-customers',
+            label: 'Actualizar',
+            onClick: () => { void refreshCustomersView({ forceFullReload: false, silent: false }); },
+            variant: 'secondary',
+            disabled: busy || tenantScopeLocked || customersLoadingBatch
+        },
+        {
             key: 'toggle-columns',
             label: 'Columnas',
             onClick: () => setShowColumnsMenu((prev) => !prev),
@@ -2428,6 +3280,52 @@ function CustomersSection(props = {}) {
             onSortChange={setSortConfig}
             extra={(
                 <div className="saas-customers-header-extra">
+                    {campaignSelectionMode ? (
+                        <div className="saas-customers-outreach-toolbar">
+                            <label className="saas-customers-outreach-toolbar__field">
+                                <span>Modulo</span>
+                                <select value={outreachModuleId} onChange={(event) => {
+                                    setOutreachModuleId(String(event.target.value || '').trim().toLowerCase());
+                                    setSelectedCustomerIdsForCampaign([]);
+                                }}>
+                                    <option value="">Selecciona modulo</option>
+                                    {outreachModuleOptions.map((moduleItem) => (
+                                        <option key={`customers_outreach_module_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
+                                            {moduleItem.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <small>Trabaja por ID de modulo normalizado para evitar cruces por mayusculas o nombre.</small>
+                            </label>
+                            <label className="saas-customers-outreach-toolbar__field">
+                                <span>Modo</span>
+                                <select value={outreachMode} onChange={(event) => {
+                                    setOutreachMode(String(event.target.value || 'eligible').trim() || 'eligible');
+                                    setSelectedCustomerIdsForCampaign([]);
+                                }} disabled={!outreachModuleId}>
+                                    <option value="eligible">Seleccionar elegibles</option>
+                                    <option value="assign">Asignar al modulo</option>
+                                </select>
+                                <small>{outreachMode === 'assign' ? 'Muestra clientes fuera del modulo para asignarlos y enviar opt-in.' : 'Muestra solo clientes que ya pertenecen al modulo elegido.'}</small>
+                            </label>
+                        </div>
+                    ) : null}
+                    {campaignSelectionMode ? (
+                        <div className="saas-customers-selection-pill">
+                            {selectedCustomerIdsForCampaign.length > 0
+                                ? `${selectedCustomerIdsForCampaign.length} cliente${selectedCustomerIdsForCampaign.length === 1 ? '' : 's'} seleccionado${selectedCustomerIdsForCampaign.length === 1 ? '' : 's'}`
+                                : !outreachModuleId
+                                    ? 'Selecciona un modulo para preparar outreach.'
+                                    : outreachEligibilityLoading
+                                        ? 'Calculando elegibilidad por modulo...'
+                                        : outreachMode === 'assign'
+                                            ? `${outreachNonEligibleCustomerIds.length} cliente(s) fuera del modulo listos para asignacion`
+                                            : `${outreachEligibleCustomerIds.length} cliente(s) elegibles en el modulo`}
+                        </div>
+                    ) : null}
+                    {campaignSelectionMode && outreachEligibilityError ? (
+                        <div className="saas-admin-inline-feedback error">{outreachEligibilityError}</div>
+                    ) : null}
                     {(customersLoadingBatch || savingCustomer) ? (
                         <div className="saas-admin-inline-feedback">
                             {customersLoadingBatch ? `Cargando clientes... ${Math.max(0, Math.min(100, Number(customersLoadProgress) || 0))}%` : null}
@@ -2537,6 +3435,9 @@ function CustomersSection(props = {}) {
                     bodyClassName="saas-customers-detail-panel__body"
                     actions={(
                         <div className="saas-customers-detail-actions">
+                            <button type="button" disabled={busy || !selectedCustomerPhone} onClick={() => { void handleOpenDirectTemplateModal(); }}>
+                                Iniciar conversacion
+                            </button>
                             <button type="button" disabled={editClickBusy} onClick={handleOpenCustomerEdit}>Editar</button>
                             <button type="button" disabled={busy} onClick={handleSoftDeleteCustomer}>Eliminar</button>
                             <button type="button" className="saas-btn-close" disabled={busy} onClick={() => { void handleRequestCloseCustomersPanel(); }}>Cerrar</button>
@@ -2789,6 +3690,37 @@ function CustomersSection(props = {}) {
                 header={headerElement}
                 left={leftPane}
                 right={rightPane}
+            />
+            <SendTemplateModal
+                isOpen={sendTemplateOpen}
+                templates={sendTemplateOptions}
+                templatesLoading={sendTemplateOptionsLoading}
+                templatesError={sendTemplateOptionsError}
+                selectedTemplate={selectedSendTemplate}
+                preview={selectedSendTemplatePreview}
+                previewLoading={selectedSendTemplatePreviewLoading}
+                previewError={selectedSendTemplatePreviewError}
+                confirmDisabled={!selectedSendTemplate || sendTemplateSubmitting || !selectedCustomerPhone}
+                confirmBusy={sendTemplateSubmitting}
+                onClose={resetSendTemplateFlow}
+                onSelectTemplate={(template) => { void handleSelectDirectTemplate(template); }}
+                onConfirm={handleConfirmDirectTemplateSend}
+            />
+            <SendTemplateModal
+                isOpen={campaignTemplateModalOpen}
+                templates={campaignTemplateOptions}
+                templatesLoading={campaignTemplateOptionsLoading}
+                templatesError={campaignTemplateOptionsError}
+                selectedTemplate={selectedCampaignTemplate}
+                preview={selectedCampaignTemplatePreview}
+                previewLoading={selectedCampaignTemplatePreviewLoading}
+                previewError={selectedCampaignTemplatePreviewError}
+                confirmLabel={`${outreachMode === 'assign' ? 'Asignar y enviar opt-in' : 'Lanzar campaña'}${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`}
+                confirmDisabled={!selectedCampaignTemplate || campaignTemplateSubmitting || selectedCustomerIdsForCampaign.length === 0}
+                confirmBusy={campaignTemplateSubmitting}
+                onClose={resetCampaignTemplateFlow}
+                onSelectTemplate={(template) => { void handleSelectCampaignTemplate(template); }}
+                onConfirm={() => { void handleConfirmExpressCampaign(); }}
             />
         </section>
     );

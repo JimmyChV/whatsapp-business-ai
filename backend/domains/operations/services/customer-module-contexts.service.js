@@ -10,7 +10,7 @@ const {
 const STORE_FILE = 'customer_module_contexts.json';
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
-const VALID_OPT_IN = new Set(['unknown', 'opted_in', 'opted_out']);
+const VALID_OPT_IN = new Set(['unknown', 'pending', 'opted_in', 'opted_out']);
 const VALID_COMMERCIAL = new Set(['unknown', 'nuevo', 'en_conversacion', 'cotizado', 'vendido', 'perdido']);
 
 let schemaReady = false;
@@ -31,7 +31,7 @@ function toIso(v = '') {
     const d = new Date(t); return Number.isFinite(d.getTime()) ? d.toISOString() : null;
 }
 function normalizeCustomerId(v = '') { return toText(v); }
-function normalizeModuleId(v = '') { return toText(v); }
+function normalizeModuleId(v = '') { return toLower(v); }
 function normalizeOptIn(v = '') { const n = toLower(v); return VALID_OPT_IN.has(n) ? n : 'unknown'; }
 function normalizeCommercial(v = '') { const n = toLower(v); return VALID_COMMERCIAL.has(n) ? n : 'unknown'; }
 function normalizeMetadata(v = {}) { return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; }
@@ -99,7 +99,7 @@ async function ensurePostgresSchema() {
                 customer_id TEXT NOT NULL,
                 module_id TEXT NOT NULL,
                 marketing_opt_in_status TEXT NOT NULL DEFAULT 'unknown'
-                    CHECK (marketing_opt_in_status IN ('unknown', 'opted_in', 'opted_out')),
+                    CHECK (marketing_opt_in_status IN ('unknown', 'pending', 'opted_in', 'opted_out')),
                 marketing_opt_in_updated_at TIMESTAMPTZ NULL,
                 marketing_opt_in_source TEXT NULL,
                 commercial_status TEXT NOT NULL DEFAULT 'unknown'
@@ -143,7 +143,7 @@ async function getContext(tenantId = DEFAULT_TENANT_ID, options = {}) {
             `SELECT customer_id, module_id, marketing_opt_in_status, marketing_opt_in_updated_at, marketing_opt_in_source,
                     commercial_status, labels, assignment_user_id, first_interaction_at, last_interaction_at, metadata, created_at, updated_at
                FROM tenant_customer_module_contexts
-              WHERE tenant_id = $1 AND customer_id = $2 AND module_id = $3
+              WHERE tenant_id = $1 AND customer_id = $2 AND LOWER(module_id) = LOWER($3)
               LIMIT 1`,
             [cleanTenantId, customerId, moduleId]
         );
@@ -282,7 +282,7 @@ async function listContextsByModule(tenantId = DEFAULT_TENANT_ID, options = {}) 
         await ensurePostgresSchema();
         const params = [cleanTenantId];
         const where = ['tenant_id = $1'];
-        if (moduleId) { params.push(moduleId); where.push(`module_id = $${params.length}`); }
+        if (moduleId) { params.push(moduleId); where.push(`LOWER(module_id) = LOWER($${params.length})`); }
         if (customerId) { params.push(customerId); where.push(`customer_id = $${params.length}`); }
         if (optIns.length > 0) { params.push(optIns); where.push(`marketing_opt_in_status = ANY($${params.length}::text[])`); }
         if (commercial.length > 0) { params.push(commercial); where.push(`commercial_status = ANY($${params.length}::text[])`); }
@@ -424,11 +424,56 @@ async function backfillFromExistingData(tenantId = DEFAULT_TENANT_ID) {
     }
 }
 
+async function assignCustomersToModule(tenantId = DEFAULT_TENANT_ID, {
+    customerIds = [],
+    moduleId = '',
+    assignmentUserId = null,
+    metadata = {}
+} = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const cleanModuleId = normalizeModuleId(moduleId || '');
+    if (!cleanModuleId) throw new Error('moduleId requerido para asignar clientes al modulo.');
+
+    const uniqueCustomerIds = Array.from(new Set(
+        (Array.isArray(customerIds) ? customerIds : [])
+            .map((entry) => normalizeCustomerId(entry))
+            .filter(Boolean)
+    ));
+    if (uniqueCustomerIds.length === 0) {
+        return { items: [], total: 0 };
+    }
+
+    const items = [];
+    for (const customerId of uniqueCustomerIds) {
+        const result = await upsertContext(cleanTenantId, {
+            customerId,
+            moduleId: cleanModuleId,
+            assignmentUserId: toNullable(assignmentUserId),
+            commercialStatus: 'nuevo',
+            marketingOptInStatus: 'pending',
+            marketingOptInUpdatedAt: nowIso(),
+            marketingOptInSource: 'customer_outreach_assignment',
+            metadata: {
+                source: 'customer_outreach_assignment',
+                ...normalizeMetadata(metadata)
+            }
+        });
+        if (result?.context) items.push(result.context);
+    }
+
+    return {
+        items,
+        total: items.length,
+        moduleId: cleanModuleId
+    };
+}
+
 module.exports = {
     getContext,
     upsertContext,
     listContextsByCustomer,
     listContextsByModule,
-    backfillFromExistingData
+    backfillFromExistingData,
+    assignCustomersToModule
 };
 

@@ -1,4 +1,6 @@
 const { getStorageDriver, queryPostgres } = require('../../../config/persistence-runtime');
+const metaTemplatesService = require('./meta-templates.service');
+const { buildRenderedTemplateFromRecord } = require('../../channels/services/template-message-content.helpers');
 
 function toBool(value, fallback = false) {
     const raw = String(value ?? '').trim().toLowerCase();
@@ -95,14 +97,16 @@ function createCampaignDispatcherJob({
     tenantService,
     waModuleService,
     waClient,
+    metaTemplatesService: injectedMetaTemplatesService,
     logger,
     opsTelemetry
 } = {}) {
+    const templateStore = injectedMetaTemplatesService || metaTemplatesService;
     const enabled = toBool(process.env.CAMPAIGN_DISPATCHER_ENABLED, true);
     const intervalMs = Math.max(5_000, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_INTERVAL_MS, 10_000)));
     const batchSize = Math.max(1, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_BATCH_SIZE, 50)));
     const workerId = toText(process.env.CAMPAIGN_DISPATCHER_WORKER_ID || 'campaign-dispatcher');
-    const perModuleRpm = Math.max(1, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_PER_MODULE_RPM, 20)));
+    const perModuleRpm = Math.max(1, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_PER_MODULE_RPM, 60)));
     const minIntervalPerModuleMs = Math.max(1, Math.ceil(60000 / perModuleRpm));
     const retryBaseSeconds = Math.max(1, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_RETRY_BASE_SECONDS, 30)));
     const retryMaxSeconds = Math.max(retryBaseSeconds, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_RETRY_MAX_SECONDS, 900)));
@@ -227,6 +231,27 @@ function createCampaignDispatcherJob({
         const variablesJson = job?.variablesJson && typeof job.variablesJson === 'object' ? job.variablesJson : {};
         const languageCode = resolveTemplateLanguage(job);
         const components = normalizeTemplateComponents(variablesJson);
+        let templateRecord = null;
+        let renderedTemplate = {
+            previewText: '',
+            templateComponents: []
+        };
+        try {
+            if (templateStore && typeof templateStore.getTemplateRecord === 'function') {
+                templateRecord = await templateStore.getTemplateRecord(tenantId, {
+                    templateName: toText(job?.templateName || ''),
+                    moduleId,
+                    templateLanguage: languageCode
+                });
+                renderedTemplate = buildRenderedTemplateFromRecord(
+                    templateRecord,
+                    components,
+                    toText(job?.templateName || '')
+                );
+            }
+        } catch (templateError) {
+            logger?.warn?.('[Ops][CampaignDispatcher] template enrichment failed tenant=' + tenantId + ': ' + String(templateError?.message || templateError));
+        }
 
         try {
             await waClient.sendTemplateMessage(job.phone, {
@@ -237,7 +262,10 @@ function createCampaignDispatcherJob({
                     campaignId: toText(job.campaignId || ''),
                     jobId: toText(job.jobId || ''),
                     tenantId,
-                    moduleId
+                    moduleId,
+                    previewText: toText(renderedTemplate?.previewText || '') || null,
+                    templatePreviewText: toText(renderedTemplate?.previewText || '') || null,
+                    templateComponents: Array.isArray(renderedTemplate?.templateComponents) ? renderedTemplate.templateComponents : []
                 }
             });
 

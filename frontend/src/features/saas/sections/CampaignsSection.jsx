@@ -228,8 +228,8 @@ export default React.memo(function CampaignsSection(props = {}) {
         recipients = [],
         events = [],
         loading = false,
+        loadingList = false,
         error = '',
-        hasLoadedCampaigns = false,
         loadCampaigns,
         selectCampaign,
         createCampaign,
@@ -436,16 +436,11 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     useEffect(() => {
         if (!isCampaignsSection || tenantScopeLocked || !settingsTenantId) return;
-        if (!hasLoadedCampaigns) {
-            loadCampaigns?.().catch(() => {});
-        }
         if (!Array.isArray(templateItems) || templateItems.length === 0) {
             loadTemplates?.({ status: 'approved', limit: 300, offset: 0 }).catch(() => {});
         }
     }, [
-        hasLoadedCampaigns,
         isCampaignsSection,
-        loadCampaigns,
         loadTemplates,
         settingsTenantId,
         templateItems,
@@ -689,7 +684,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                     key: 'reload',
                     label: 'Recargar',
                     onClick: () => loadCampaigns?.().catch(() => {}),
-                    disabled: loading || tenantScopeLocked
+                    disabled: loadingList || loading || tenantScopeLocked
                 },
                 {
                     key: 'columns',
@@ -769,7 +764,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                     columns={campaignTableColumns}
                     rows={campaignTableRows}
                     selectedId={panelMode === 'create' ? '' : selectedCampaignId}
-                    loading={loading}
+                    loading={loadingList}
                     emptyText="No hay campanas para estos filtros."
                     onSelect={handleSelectCampaignRow}
                 />
@@ -795,7 +790,6 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 const campaign = response?.campaign || null;
                                 if (!campaign) return;
                                 await loadTracking(campaign.campaignId);
-                                await loadCampaigns?.();
                                 await selectCampaign?.(campaign.campaignId, { loadDetail: false });
                                 setPanelMode('detail');
                                 setLocalEstimate(null);
@@ -814,7 +808,6 @@ export default React.memo(function CampaignsSection(props = {}) {
                                         const campaign = response?.campaign;
                                         if (!campaign) throw new Error('No se pudo crear campana.');
                                         await startCampaign?.(campaign.campaignId);
-                                        await loadCampaigns?.();
                                         await selectCampaign?.(campaign.campaignId, { loadDetail: true });
                                         await loadTracking(campaign.campaignId);
                                         setPanelMode('detail');
@@ -822,7 +815,6 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 } else {
                                     if (!canStartWithGuardrails) throw new Error('Debes cumplir las validaciones previas antes de iniciar la campana.');
                                     await startCampaign?.(selectedCampaignId);
-                                    await loadCampaigns?.();
                                     await loadTracking(selectedCampaignId);
                                 }
                                 notify({ type: 'info', message: 'Campana iniciada.' });

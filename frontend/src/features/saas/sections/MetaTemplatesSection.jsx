@@ -33,9 +33,10 @@ const LANGUAGE_OPTIONS = [
 ];
 
 const USE_CASE_OPTIONS = [
-    { value: 'both', label: 'Campana e individual' },
-    { value: 'campaign', label: 'Solo campanas' },
-    { value: 'individual', label: 'Solo individual' }
+    { value: 'both', label: 'Campana e individual', description: 'Disponible tanto para campanas como para envios individuales.' },
+    { value: 'campaign', label: 'Solo campanas', description: 'Visible solo en Campaigns y audiencias masivas.' },
+    { value: 'individual', label: 'Solo individual', description: 'Visible solo para envio individual desde el chat.' },
+    { value: 'optin', label: 'Opt-in / alta', description: 'Template para consentimiento o activacion comercial; usa solo variables del cliente.' }
 ];
 
 const HEADER_TYPE_OPTIONS = [
@@ -1578,6 +1579,10 @@ function MetaTemplatesSection(props = {}) {
                                                     </option>
                                                 ))}
                                             </select>
+                                            <small className="saas-admin-field-help">
+                                                {USE_CASE_OPTIONS.find((option) => option.value === normalizeTemplateUseCase(createForm.useCase))?.description
+                                                    || 'Define donde podra usarse este template.'}
+                                            </small>
                                         </div>
                                         <div className="saas-meta-template-field">
                                             <label htmlFor="meta_template_category">Categoria</label>

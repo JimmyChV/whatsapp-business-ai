@@ -345,6 +345,7 @@ export default function useAppOperationHandlers({
     setSendTemplateOptionsError,
     selectedSendTemplate,
     setSelectedSendTemplate,
+    selectedSendTemplatePreview,
     setSelectedSendTemplatePreview,
     setSelectedSendTemplatePreviewLoading,
     setSelectedSendTemplatePreviewError,

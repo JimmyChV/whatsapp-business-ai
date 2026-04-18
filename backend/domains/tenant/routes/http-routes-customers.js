@@ -177,6 +177,35 @@ function registerTenantCustomerHttpRoutes({
         }
     });
 
+    app.get('/api/tenant/customers/by-phone/:phoneE164', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const phoneE164 = String(req.params?.phoneE164 || '').trim();
+            if (!phoneE164) {
+                return res.status(400).json({ ok: false, error: 'phoneE164 invalido.' });
+            }
+
+            const item = await customerService.getCustomerByPhoneWithAddresses(tenantId, phoneE164, {
+                customerAddressesService
+            });
+
+            if (!item) {
+                return res.status(404).json({ ok: false, error: 'Cliente no encontrado para ese telefono.' });
+            }
+
+            return res.json({
+                ok: true,
+                tenantId,
+                phoneE164,
+                item
+            });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar el cliente por telefono.') });
+        }
+    });
+
     app.get('/api/tenant/customers/:customerId/identities', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;

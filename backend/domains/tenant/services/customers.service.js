@@ -500,6 +500,35 @@ async function getCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '') {
     return findCustomer(tenantId, { customerId: cleanCustomerId || rawCustomerId });
 }
 
+async function getCustomerByPhone(tenantId = DEFAULT_TENANT_ID, phoneE164 = '') {
+    const cleanPhone = normalizePhone(phoneE164 || '');
+    if (!cleanPhone) return null;
+    return findCustomer(tenantId, { phoneE164: cleanPhone });
+}
+
+async function getCustomerByPhoneWithAddresses(
+    tenantId = DEFAULT_TENANT_ID,
+    phoneE164 = '',
+    { customerAddressesService = null } = {}
+) {
+    const item = await getCustomerByPhone(tenantId, phoneE164);
+    if (!item) return null;
+
+    let addresses = [];
+    if (customerAddressesService && typeof customerAddressesService.listAddresses === 'function') {
+        try {
+            addresses = await customerAddressesService.listAddresses(tenantId, { customerId: item.customerId });
+        } catch (_) {
+            addresses = [];
+        }
+    }
+
+    return {
+        ...item,
+        addresses: Array.isArray(addresses) ? addresses : []
+    };
+}
+
 async function updateCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '', patch = {}) {
     const rawCustomerId = toText(customerId || '');
     const cleanCustomerId = normalizeCustomerIdCandidate(rawCustomerId);
@@ -946,6 +975,8 @@ async function upsertFromInteraction(tenantId = DEFAULT_TENANT_ID, payload = {})
 module.exports = {
     listCustomers,
     getCustomer,
+    getCustomerByPhone,
+    getCustomerByPhoneWithAddresses,
     upsertCustomer,
     updateCustomer,
     importCustomersCsv,
