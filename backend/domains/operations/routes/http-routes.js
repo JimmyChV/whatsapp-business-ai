@@ -603,7 +603,7 @@ function registerOperationsHttpRoutes({
             }
 
             const payload = isPlainObject(req.body) ? req.body : {};
-            const moduleId = toText(payload.moduleId || '');
+            const moduleId = toLower(payload.moduleId || '');
             if (!moduleId) return res.status(400).json({ ok: false, error: 'moduleId requerido.' });
 
             const requestedCustomerIds = Array.from(new Set(
@@ -666,7 +666,7 @@ function registerOperationsHttpRoutes({
 
             const actorUserId = resolveActorUserId(req);
             const payload = isPlainObject(req.body) ? req.body : {};
-            const moduleId = toText(payload.moduleId || '');
+            const moduleId = toLower(payload.moduleId || '');
             const customerIds = Array.isArray(payload.customerIds) ? payload.customerIds : [];
             if (!moduleId) return res.status(400).json({ ok: false, error: 'moduleId requerido.' });
             if (customerIds.length === 0) return res.status(400).json({ ok: false, error: 'customerIds requeridos.' });

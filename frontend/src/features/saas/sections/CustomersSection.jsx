@@ -688,6 +688,104 @@ function resolveUpdatedAtTimestamp(item = null) {
     return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function normalizeModuleLookupId(value = '') {
+    return String(value || '').trim().toLowerCase();
+}
+
+function normalizePhoneLookupDigits(value = '') {
+    return String(value || '').replace(/\D+/g, '');
+}
+
+function extractCustomerModuleCandidates(customer = null) {
+    if (!customer || typeof customer !== 'object') return [];
+    const rawCandidates = [
+        customer.moduleId,
+        customer.module_id,
+        customer?.metadata?.moduleId,
+        customer?.metadata?.module_id,
+        customer?.profile?.moduleId,
+        customer?.profile?.module_id,
+        customer?.metadata?.moduleIds,
+        customer?.metadata?.module_ids,
+        customer?.metadata?.assignedModules,
+        customer?.metadata?.assigned_modules,
+        customer?.profile?.moduleIds,
+        customer?.profile?.module_ids
+    ];
+
+    return rawCandidates.flatMap((value) => {
+        if (Array.isArray(value)) return value;
+        if (value && typeof value === 'object') {
+            return [
+                value.moduleId,
+                value.module_id,
+                value.id
+            ];
+        }
+        return [value];
+    });
+}
+
+function customerBelongsToModule(customer = null, moduleId = '') {
+    if (!customer || typeof customer !== 'object') return false;
+    const target = normalizeModuleLookupId(moduleId);
+    if (!target) return false;
+
+    const candidates = extractCustomerModuleCandidates(customer);
+    return candidates.some((value) => normalizeModuleLookupId(value) === target);
+}
+
+function extractPhoneCandidatesFromChatEvent(payload = null) {
+    if (!payload || typeof payload !== 'object') return [];
+    const source = payload;
+    const rawValues = [
+        source.senderPhone,
+        source.phone,
+        source.phoneE164,
+        source.phone_e164,
+        source.notifyPhone,
+        source.from,
+        source.to,
+        source.chatId,
+        source.baseChatId,
+        source?.contact?.phone,
+        source?.contact?.phoneE164,
+        source?.contact?.phone_e164
+    ];
+
+    return rawValues
+        .map((value) => {
+            const clean = String(value || '').trim();
+            if (!clean) return '';
+            const base = clean.split('@')[0] || clean;
+            return normalizePhoneLookupDigits(base);
+        })
+        .filter(Boolean);
+}
+
+function customerMatchesAnyPhone(customer = null, phoneCandidates = []) {
+    if (!customer || typeof customer !== 'object') return false;
+    const targetSet = new Set((Array.isArray(phoneCandidates) ? phoneCandidates : []).filter(Boolean));
+    if (!targetSet.size) return false;
+
+    const customerPhones = [
+        customer.phone,
+        customer.phoneE164,
+        customer.phone_e164,
+        customer.mobilePhone,
+        customer.mobile_phone,
+        customer.whatsappPhone,
+        customer.whatsapp_phone,
+        customer?.profile?.phone,
+        customer?.profile?.phoneE164,
+        customer?.profile?.phone_e164
+    ]
+        .map((value) => normalizePhoneLookupDigits(value))
+        .filter(Boolean);
+
+    return customerPhones.some((value) => targetSet.has(value));
+}
+
 function CustomersSection(props = {}) {
     const { confirm, notify } = useUiFeedback();
     const context = props.context && typeof props.context === 'object' ? props.context : props;
@@ -786,6 +884,8 @@ function CustomersSection(props = {}) {
     const [selectedCampaignTemplatePreviewError, setSelectedCampaignTemplatePreviewError] = useState('');
     const [campaignTemplateSubmitting, setCampaignTemplateSubmitting] = useState(false);
     const syncedIndicatorTimeoutRef = useRef(null);
+    const customersRealtimeSyncTimeoutRef = useRef(null);
+    const customersRealtimeSyncInFlightRef = useRef(false);
 
     const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
     const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys);
@@ -867,7 +967,7 @@ function CustomersSection(props = {}) {
     const moduleNameById = useMemo(() => {
         const map = {};
         (Array.isArray(waModules) ? waModules : []).forEach((moduleItem = {}) => {
-            const moduleId = String(moduleItem.moduleId || moduleItem.module_id || '').trim();
+            const moduleId = String(moduleItem.moduleId || moduleItem.module_id || '').trim().toLowerCase();
             if (!moduleId) return;
             map[moduleId] = String(moduleItem.name || moduleItem.module_name || moduleId).trim() || moduleId;
         });
@@ -876,7 +976,7 @@ function CustomersSection(props = {}) {
     const outreachModuleOptions = useMemo(
         () => (Array.isArray(waModules) ? waModules : [])
             .map((moduleItem = {}) => ({
-                moduleId: String(moduleItem.moduleId || moduleItem.module_id || '').trim(),
+                moduleId: String(moduleItem.moduleId || moduleItem.module_id || '').trim().toLowerCase(),
                 label: String(moduleItem.name || moduleItem.module_name || moduleItem.moduleId || '').trim()
             }))
             .filter((moduleItem) => moduleItem.moduleId),
@@ -1111,11 +1211,48 @@ function CustomersSection(props = {}) {
         () => new Set((Array.isArray(outreachNonEligibleCustomerIds) ? outreachNonEligibleCustomerIds : []).map((item) => String(item || '').trim()).filter(Boolean)),
         [outreachNonEligibleCustomerIds]
     );
+    const filteredCustomersLive = useMemo(() => {
+        const source = Array.isArray(filteredCustomers) ? filteredCustomers : [];
+        return source.map((item) => {
+            const itemId = resolveCustomerId(item);
+            if (!itemId) return item;
+            const override = getCustomerOverride(itemId);
+            return override || item;
+        });
+    }, [filteredCustomers, getCustomerOverride]);
+    const outreachFilteredCustomers = useMemo(() => {
+        const source = Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [];
+        if (!campaignSelectionMode || !outreachModuleId) return source;
+        if (outreachMode === 'assign') {
+            return source.filter((item) => outreachNonEligibleCustomerIdsSet.has(resolveCustomerId(item)));
+        }
+        return source.filter((item) => outreachEligibleCustomerIdsSet.has(resolveCustomerId(item)));
+    }, [
+        campaignSelectionMode,
+        filteredCustomersLive,
+        outreachEligibleCustomerIdsSet,
+        outreachMode,
+        outreachModuleId,
+        outreachNonEligibleCustomerIdsSet
+    ]);
     const campaignSelectableCustomerIds = useMemo(
-        () => (Array.isArray(outreachFilteredCustomers) ? outreachFilteredCustomers : [])
-            .map((item) => resolveCustomerId(item))
-            .filter(Boolean),
-        [outreachFilteredCustomers]
+        () => {
+            const source = Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [];
+            const scoped = (!campaignSelectionMode || !outreachModuleId)
+                ? source
+                : (outreachMode === 'assign'
+                    ? source.filter((item) => outreachNonEligibleCustomerIdsSet.has(resolveCustomerId(item)))
+                    : source.filter((item) => outreachEligibleCustomerIdsSet.has(resolveCustomerId(item))));
+            return scoped.map((item) => resolveCustomerId(item)).filter(Boolean);
+        },
+        [
+            campaignSelectionMode,
+            filteredCustomersLive,
+            outreachEligibleCustomerIdsSet,
+            outreachMode,
+            outreachModuleId,
+            outreachNonEligibleCustomerIdsSet
+        ]
     );
     const allCampaignSelectableCustomersSelected = useMemo(
         () => campaignSelectableCustomerIds.length > 0 && campaignSelectableCustomerIds.every((customerId) => selectedCustomerIdsForCampaignSet.has(customerId)),
@@ -1191,33 +1328,8 @@ function CustomersSection(props = {}) {
         ]
     );
 
-    const filteredCustomersLive = useMemo(() => {
-        const source = Array.isArray(filteredCustomers) ? filteredCustomers : [];
-        return source.map((item) => {
-            const itemId = resolveCustomerId(item);
-            if (!itemId) return item;
-            const override = getCustomerOverride(itemId);
-            return override || item;
-        });
-    }, [filteredCustomers, getCustomerOverride]);
-    const outreachFilteredCustomers = useMemo(() => {
-        const source = Array.isArray(outreachFilteredCustomers) ? outreachFilteredCustomers : [];
-        if (!campaignSelectionMode || !outreachModuleId) return source;
-        if (outreachMode === 'assign') {
-            return source.filter((item) => outreachNonEligibleCustomerIdsSet.has(resolveCustomerId(item)));
-        }
-        return source.filter((item) => outreachEligibleCustomerIdsSet.has(resolveCustomerId(item)));
-    }, [
-        campaignSelectionMode,
-        filteredCustomersLive,
-        outreachEligibleCustomerIdsSet,
-        outreachMode,
-        outreachModuleId,
-        outreachNonEligibleCustomerIdsSet
-    ]);
-
     const tableRows = useMemo(() => {
-        const source = Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [];
+        const source = Array.isArray(outreachFilteredCustomers) ? outreachFilteredCustomers : [];
         return source.map((customer = {}, index) => {
             const customerId = resolveCustomerId(customer);
             const safeId = customerId || String(customer.phoneE164 || customer.phone_e164 || customer.email || `customer-${index}`).trim();
@@ -1837,6 +1949,49 @@ function CustomersSection(props = {}) {
         setCampaignTemplateSubmitting(false);
     }, []);
 
+    const refreshCustomersView = useCallback(async ({ forceFullReload = false, silent = false } = {}) => {
+        if (tenantScopeLocked) return;
+        const cleanTenantId = String(tenantScopeId || '').trim();
+        if (!cleanTenantId) return;
+        try {
+            if (forceFullReload || typeof syncCustomersDelta !== 'function') {
+                if (typeof loadCustomers === 'function') {
+                    await loadCustomers(cleanTenantId);
+                }
+            } else {
+                await syncCustomersDelta(cleanTenantId, {
+                    updatedSince: typeof maxCustomersUpdatedAt === 'function'
+                        ? maxCustomersUpdatedAt(cleanTenantId)
+                        : ''
+                });
+            }
+        } catch (error) {
+            if (!silent) {
+                notify({ type: 'error', message: String(error?.message || 'No se pudieron actualizar los clientes.') });
+            }
+            throw error;
+        }
+    }, [loadCustomers, maxCustomersUpdatedAt, notify, syncCustomersDelta, tenantScopeId, tenantScopeLocked]);
+
+    const scheduleRealtimeCustomersSync = useCallback((delayMs = 700) => {
+        if (!isCustomersSection || tenantScopeLocked) return;
+        if (customersRealtimeSyncTimeoutRef.current) {
+            clearTimeout(customersRealtimeSyncTimeoutRef.current);
+        }
+        customersRealtimeSyncTimeoutRef.current = setTimeout(async () => {
+            customersRealtimeSyncTimeoutRef.current = null;
+            if (customersRealtimeSyncInFlightRef.current) return;
+            customersRealtimeSyncInFlightRef.current = true;
+            try {
+                await refreshCustomersView({ forceFullReload: false, silent: true });
+            } catch {
+                // silent realtime refresh failure; manual refresh remains available
+            } finally {
+                customersRealtimeSyncInFlightRef.current = false;
+            }
+        }, Math.max(150, Number(delayMs) || 700));
+    }, [isCustomersSection, refreshCustomersView, tenantScopeLocked]);
+
     const loadOutreachEligibility = useCallback(async () => {
         if (!campaignSelectionMode || !outreachModuleId) {
             setOutreachEligibilityError('');
@@ -1859,31 +2014,34 @@ function CustomersSection(props = {}) {
         setOutreachEligibilityLoading(true);
         setOutreachEligibilityError('');
         try {
-            const response = await requestJson('/api/tenant/customers/outreach/eligibility', {
-                method: 'POST',
-                body: {
-                    moduleId: outreachModuleId,
-                    customerIds
-                }
+            const eligibleIds = [];
+            const nonEligibleIds = [];
+            (Array.isArray(filteredCustomersLive) ? filteredCustomersLive : []).forEach((customer) => {
+                const customerId = resolveCustomerId(customer);
+                if (!customerId) return;
+                if (customerBelongsToModule(customer, outreachModuleId)) eligibleIds.push(customerId);
+                else nonEligibleIds.push(customerId);
             });
-            setOutreachEligibleCustomerIds(
-                (Array.isArray(response?.eligibleItems) ? response.eligibleItems : [])
-                    .map((item) => String(item?.customerId || '').trim())
-                    .filter(Boolean)
-            );
-            setOutreachNonEligibleCustomerIds(
-                (Array.isArray(response?.nonEligibleItems) ? response.nonEligibleItems : [])
-                    .map((item) => String(item?.customerId || '').trim())
-                    .filter(Boolean)
-            );
+            setOutreachEligibleCustomerIds(eligibleIds);
+            setOutreachNonEligibleCustomerIds(nonEligibleIds);
         } catch (error) {
-            setOutreachEligibilityError(String(error?.message || 'No se pudo cargar elegibilidad por modulo.'));
+            setOutreachEligibilityError(String(error?.message || 'No se pudo calcular elegibilidad por modulo.'));
             setOutreachEligibleCustomerIds([]);
             setOutreachNonEligibleCustomerIds([]);
         } finally {
             setOutreachEligibilityLoading(false);
         }
-    }, [campaignSelectionMode, filteredCustomersLive, outreachModuleId, requestJson]);
+    }, [campaignSelectionMode, filteredCustomersLive, outreachModuleId]);
+
+    const exitCampaignSelectionMode = useCallback(() => {
+        setCampaignSelectionMode(false);
+        setSelectedCustomerIdsForCampaign([]);
+        setOutreachModuleId('');
+        setOutreachMode('eligible');
+        setOutreachEligibilityError('');
+        setOutreachEligibleCustomerIds([]);
+        setOutreachNonEligibleCustomerIds([]);
+    }, []);
 
     const handleSelectCampaignTemplate = useCallback(async (template = null) => {
         const entry = template && typeof template === 'object' ? template : null;
@@ -1943,12 +2101,12 @@ function CustomersSection(props = {}) {
                     templateId: String(item?.templateId || item?.metaTemplateId || item?.templateName || '').trim(),
                     templateName: String(item?.templateName || '').trim(),
                     templateLanguage: String(item?.templateLanguage || 'es').trim().toLowerCase() || 'es',
-                    moduleId: String(item?.moduleId || '').trim(),
+                    moduleId: String(item?.moduleId || '').trim().toLowerCase(),
                     useCase: String(item?.useCase || 'both').trim().toLowerCase() || 'both'
                 }))
                 .filter((item) => {
                     if (!item.templateId || !item.templateName) return false;
-                    if (String(item.moduleId || '').trim() !== outreachModuleId) return false;
+                    if (String(item.moduleId || '').trim().toLowerCase() !== String(outreachModuleId || '').trim().toLowerCase()) return false;
                     const useCase = normalizeTemplateUseCase(item.useCase || 'both');
                     return outreachMode === 'assign'
                         ? useCase === 'optin'
@@ -2081,6 +2239,59 @@ function CustomersSection(props = {}) {
         if (normalizeCatalogLookupKey(currentSelectedId) === normalizeCatalogLookupKey(safeItemId)) {
             setSelectedCustomerLive(safeItem);
         }
+    }, [patchCustomerInCache, selectedCustomerId, selectedCustomerIdResolved, setCustomers, tenantScopeId]);
+
+    const patchCustomerActivityFromEvent = useCallback((payload = null) => {
+        const phoneCandidates = extractPhoneCandidatesFromChatEvent(payload);
+        if (!phoneCandidates.length) return false;
+        const rawActivityAt = payload?.updatedAt ?? payload?.lastInteractionAt ?? payload?.timestamp ?? '';
+        const numericActivityAt = Number(rawActivityAt);
+        const parsedActivityAt = Number.isFinite(numericActivityAt) && numericActivityAt > 0
+            ? new Date(numericActivityAt * 1000)
+            : new Date(String(rawActivityAt || '').trim() || Date.now());
+        const activityIso = Number.isFinite(parsedActivityAt.getTime())
+            ? parsedActivityAt.toISOString()
+            : new Date().toISOString();
+
+        let matchedCustomer = null;
+        setCustomers((prev) => {
+            const source = Array.isArray(prev) ? prev : [];
+            let changed = false;
+            const next = source.map((customer) => {
+                if (!customerMatchesAnyPhone(customer, phoneCandidates)) return customer;
+                const nextCustomer = {
+                    ...customer,
+                    lastInteractionAt: activityIso,
+                    last_interaction_at: activityIso,
+                    updatedAt: activityIso,
+                    updated_at: activityIso
+                };
+                changed = true;
+                matchedCustomer = nextCustomer;
+                return nextCustomer;
+            });
+            return changed ? next : source;
+        });
+
+        const matchedCustomerId = resolveCustomerId(matchedCustomer);
+        if (!matchedCustomerId || !matchedCustomer) return false;
+
+        const normalizedId = normalizeCatalogLookupKey(matchedCustomerId);
+        if (normalizedId) {
+            setCustomerOverridesById((prev) => ({
+                ...(prev && typeof prev === 'object' ? prev : {}),
+                [normalizedId]: matchedCustomer
+            }));
+        }
+        if (tenantScopeId && typeof patchCustomerInCache === 'function') {
+            patchCustomerInCache(tenantScopeId, matchedCustomerId, matchedCustomer);
+        }
+
+        const currentSelectedId = String(selectedCustomerIdResolved || selectedCustomerId || '').trim();
+        if (!currentSelectedId || normalizeCatalogLookupKey(currentSelectedId) === normalizeCatalogLookupKey(matchedCustomerId)) {
+            setSelectedCustomerLive(matchedCustomer);
+        }
+        return true;
     }, [patchCustomerInCache, selectedCustomerId, selectedCustomerIdResolved, setCustomers, tenantScopeId]);
 
     const showSyncedIndicator = useCallback(() => {
@@ -2250,6 +2461,17 @@ function CustomersSection(props = {}) {
     }, [campaignSelectionMode, loadOutreachEligibility]);
 
     useEffect(() => {
+        if (!isCustomersSection || !campaignSelectionMode) return undefined;
+        const handleKeyDown = (event) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            exitCampaignSelectionMode();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [campaignSelectionMode, exitCampaignSelectionMode, isCustomersSection]);
+
+    useEffect(() => {
         const timer = setTimeout(() => {
             const normalized = String(searchInput || '');
             if (normalized === String(customerSearch || '')) return;
@@ -2292,6 +2514,29 @@ function CustomersSection(props = {}) {
         tenantScopeId,
         tenantScopeLocked
     ]);
+
+    useEffect(() => {
+        if (!socket || typeof socket.on !== 'function' || typeof socket.off !== 'function') return undefined;
+        const handleRealtimeCustomerTouch = (payload = null) => {
+            patchCustomerActivityFromEvent(payload);
+            scheduleRealtimeCustomersSync(600);
+        };
+        socket.on('message', handleRealtimeCustomerTouch);
+        socket.on('chat_updated', handleRealtimeCustomerTouch);
+        socket.on('template_message_sent', handleRealtimeCustomerTouch);
+        return () => {
+            socket.off('message', handleRealtimeCustomerTouch);
+            socket.off('chat_updated', handleRealtimeCustomerTouch);
+            socket.off('template_message_sent', handleRealtimeCustomerTouch);
+        };
+    }, [patchCustomerActivityFromEvent, scheduleRealtimeCustomersSync, socket]);
+
+    useEffect(() => () => {
+        if (customersRealtimeSyncTimeoutRef.current) {
+            clearTimeout(customersRealtimeSyncTimeoutRef.current);
+            customersRealtimeSyncTimeoutRef.current = null;
+        }
+    }, []);
 
     useEffect(() => {
         if (!addressEditorOpen) return;
@@ -2963,20 +3208,13 @@ function CustomersSection(props = {}) {
             key: 'toggle-selection',
             label: campaignSelectionMode ? 'Cancelar seleccion' : 'Seleccionar clientes',
             onClick: () => {
-                setCampaignSelectionMode((prev) => {
-                    const next = !prev;
-                    if (!next) {
-                        setSelectedCustomerIdsForCampaign([]);
-                        setOutreachModuleId('');
-                        setOutreachMode('eligible');
-                        setOutreachEligibilityError('');
-                        setOutreachEligibleCustomerIds([]);
-                        setOutreachNonEligibleCustomerIds([]);
-                    }
-                    return next;
-                });
+                if (campaignSelectionMode) {
+                    exitCampaignSelectionMode();
+                    return;
+                }
+                setCampaignSelectionMode(true);
             },
-            variant: 'secondary',
+            variant: campaignSelectionMode ? 'danger' : 'secondary',
             disabled: busy || tenantScopeLocked
         },
         {
@@ -2992,6 +3230,13 @@ function CustomersSection(props = {}) {
             onClick: () => { void handleOpenCampaignTemplateModal(); },
             variant: 'secondary',
             disabled: busy || tenantScopeLocked || !campaignSelectionMode || !outreachModuleId || outreachMode !== 'assign' || selectedCustomerIdsForCampaign.length === 0
+        },
+        {
+            key: 'refresh-customers',
+            label: 'Actualizar',
+            onClick: () => { void refreshCustomersView({ forceFullReload: false, silent: false }); },
+            variant: 'secondary',
+            disabled: busy || tenantScopeLocked || customersLoadingBatch
         },
         {
             key: 'toggle-columns',
@@ -3040,7 +3285,7 @@ function CustomersSection(props = {}) {
                             <label className="saas-customers-outreach-toolbar__field">
                                 <span>Modulo</span>
                                 <select value={outreachModuleId} onChange={(event) => {
-                                    setOutreachModuleId(String(event.target.value || '').trim());
+                                    setOutreachModuleId(String(event.target.value || '').trim().toLowerCase());
                                     setSelectedCustomerIdsForCampaign([]);
                                 }}>
                                     <option value="">Selecciona modulo</option>
@@ -3050,6 +3295,7 @@ function CustomersSection(props = {}) {
                                         </option>
                                     ))}
                                 </select>
+                                <small>Trabaja por ID de modulo normalizado para evitar cruces por mayusculas o nombre.</small>
                             </label>
                             <label className="saas-customers-outreach-toolbar__field">
                                 <span>Modo</span>
@@ -3060,6 +3306,7 @@ function CustomersSection(props = {}) {
                                     <option value="eligible">Seleccionar elegibles</option>
                                     <option value="assign">Asignar al modulo</option>
                                 </select>
+                                <small>{outreachMode === 'assign' ? 'Muestra clientes fuera del modulo para asignarlos y enviar opt-in.' : 'Muestra solo clientes que ya pertenecen al modulo elegido.'}</small>
                             </label>
                         </div>
                     ) : null}

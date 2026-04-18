@@ -31,7 +31,7 @@ function toIso(v = '') {
     const d = new Date(t); return Number.isFinite(d.getTime()) ? d.toISOString() : null;
 }
 function normalizeCustomerId(v = '') { return toText(v); }
-function normalizeModuleId(v = '') { return toText(v); }
+function normalizeModuleId(v = '') { return toLower(v); }
 function normalizeOptIn(v = '') { const n = toLower(v); return VALID_OPT_IN.has(n) ? n : 'unknown'; }
 function normalizeCommercial(v = '') { const n = toLower(v); return VALID_COMMERCIAL.has(n) ? n : 'unknown'; }
 function normalizeMetadata(v = {}) { return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; }
@@ -143,7 +143,7 @@ async function getContext(tenantId = DEFAULT_TENANT_ID, options = {}) {
             `SELECT customer_id, module_id, marketing_opt_in_status, marketing_opt_in_updated_at, marketing_opt_in_source,
                     commercial_status, labels, assignment_user_id, first_interaction_at, last_interaction_at, metadata, created_at, updated_at
                FROM tenant_customer_module_contexts
-              WHERE tenant_id = $1 AND customer_id = $2 AND module_id = $3
+              WHERE tenant_id = $1 AND customer_id = $2 AND LOWER(module_id) = LOWER($3)
               LIMIT 1`,
             [cleanTenantId, customerId, moduleId]
         );
@@ -282,7 +282,7 @@ async function listContextsByModule(tenantId = DEFAULT_TENANT_ID, options = {}) 
         await ensurePostgresSchema();
         const params = [cleanTenantId];
         const where = ['tenant_id = $1'];
-        if (moduleId) { params.push(moduleId); where.push(`module_id = $${params.length}`); }
+        if (moduleId) { params.push(moduleId); where.push(`LOWER(module_id) = LOWER($${params.length})`); }
         if (customerId) { params.push(customerId); where.push(`customer_id = $${params.length}`); }
         if (optIns.length > 0) { params.push(optIns); where.push(`marketing_opt_in_status = ANY($${params.length}::text[])`); }
         if (commercial.length > 0) { params.push(commercial); where.push(`commercial_status = ANY($${params.length}::text[])`); }
