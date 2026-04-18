@@ -103,6 +103,18 @@ function isPlainObject(value) {
     return value && typeof value === 'object' && !Array.isArray(value);
 }
 
+function normalizeComponentsJson(input = {}) {
+    const directComponents = input?.componentsJson || input?.components_json;
+    if (Array.isArray(directComponents) && directComponents.length > 0) return directComponents;
+    const rawMeta = input?.rawMetaJson || input?.raw_meta_json;
+    if (isPlainObject(rawMeta) && Array.isArray(rawMeta.components) && rawMeta.components.length > 0) {
+        return rawMeta.components;
+    }
+    const sourceComponents = input?.components;
+    if (Array.isArray(sourceComponents) && sourceComponents.length > 0) return sourceComponents;
+    return [];
+}
+
 function buildTemplateId() {
     if (typeof crypto.randomUUID === 'function') {
         return `tmpl_${crypto.randomUUID().replace(/-/g, '')}`;
@@ -185,6 +197,9 @@ function normalizeStoredRecord(input = {}) {
     const source = isPlainObject(input) ? input : {};
     const createdAt = toIso(source.createdAt || source.created_at) || nowIso();
     const updatedAt = toIso(source.updatedAt || source.updated_at) || createdAt;
+    const rawMetaJson = isPlainObject(source.rawMetaJson || source.raw_meta_json)
+        ? (source.rawMetaJson || source.raw_meta_json)
+        : {};
     return {
         templateId: toText(source.templateId || source.template_id) || buildTemplateId(),
         tenantId: normalizeTenant(source.tenantId || source.tenant_id || DEFAULT_TENANT_ID),
@@ -200,15 +215,14 @@ function normalizeStoredRecord(input = {}) {
         status: normalizeStatus(source.status),
         qualityScore: normalizeQuality(source.qualityScore || source.quality_score),
         rejectionReason: toText(source.rejectionReason || source.rejection_reason) || null,
-        componentsJson: Array.isArray(source.componentsJson || source.components_json)
-            ? (source.componentsJson || source.components_json)
-            : [],
+        componentsJson: normalizeComponentsJson({
+            ...source,
+            rawMetaJson
+        }),
         variableMapJson: isPlainObject(source.variableMapJson || source.variable_map_json)
             ? (source.variableMapJson || source.variable_map_json)
             : {},
-        rawMetaJson: isPlainObject(source.rawMetaJson || source.raw_meta_json)
-            ? (source.rawMetaJson || source.raw_meta_json)
-            : {},
+        rawMetaJson,
         lastSyncedAt: toIso(source.lastSyncedAt || source.last_synced_at),
         lastStatusEventAt: toIso(source.lastStatusEventAt || source.last_status_event_at),
         createdAt,
@@ -276,9 +290,28 @@ function normalizeTemplateFromMeta(metaTemplate = {}) {
             || source.reason
             || ''
         ) || null,
-        componentsJson: Array.isArray(source.components) ? source.components : [],
+        componentsJson: normalizeComponentsJson(source),
         rawMetaJson: source
     };
+}
+
+function needsComponentsBackfill(record = {}) {
+    const componentsJson = Array.isArray(record?.componentsJson) ? record.componentsJson : [];
+    if (componentsJson.length > 0) return false;
+    const rawMetaJson = isPlainObject(record?.rawMetaJson) ? record.rawMetaJson : {};
+    return Array.isArray(rawMetaJson?.components) && rawMetaJson.components.length > 0;
+}
+
+async function healTemplateComponentsIfNeeded(tenantId = DEFAULT_TENANT_ID, record = null) {
+    const safeRecord = record && typeof record === 'object' ? sanitizeTemplatePublic(record) : null;
+    if (!safeRecord || !needsComponentsBackfill(safeRecord)) return safeRecord;
+
+    const healed = await upsertTemplateRecord(tenantId, {
+        ...safeRecord,
+        componentsJson: normalizeComponentsJson(safeRecord),
+        updatedAt: nowIso()
+    });
+    return sanitizeTemplatePublic(healed);
 }
 
 async function resolveCloudModuleRuntime(tenantId = DEFAULT_TENANT_ID, moduleId = '') {
@@ -424,7 +457,7 @@ async function getTemplateById(tenantId = DEFAULT_TENANT_ID, templateId = '') {
     if (getStorageDriver() !== 'postgres') {
         const store = normalizeStore(await readTenantJsonFile(STORE_FILE, { tenantId: cleanTenantId, defaultValue: {} }));
         const found = store.items.find((entry) => toText(entry.templateId) === cleanTemplateId) || null;
-        return found ? sanitizeTemplatePublic(found) : null;
+        return found ? await healTemplateComponentsIfNeeded(cleanTenantId, found) : null;
     }
 
     try {
@@ -442,7 +475,7 @@ async function getTemplateById(tenantId = DEFAULT_TENANT_ID, templateId = '') {
             [cleanTenantId, cleanTemplateId]
         );
         const row = Array.isArray(result?.rows) ? result.rows[0] : null;
-        return row ? sanitizeTemplatePublic(row) : null;
+        return row ? await healTemplateComponentsIfNeeded(cleanTenantId, row) : null;
     } catch (error) {
         if (missingRelation(error)) return null;
         throw error;
@@ -486,7 +519,9 @@ async function createTemplate(tenantId = DEFAULT_TENANT_ID, { moduleId = '', tem
         status: normalizedMeta.status || 'pending',
         qualityScore: normalizedMeta.qualityScore,
         rejectionReason: normalizedMeta.rejectionReason,
-        componentsJson: normalizedMeta.componentsJson,
+        componentsJson: normalizedMeta.componentsJson.length > 0
+            ? normalizedMeta.componentsJson
+            : normalizeComponentsJson(templatePayload),
         variableMapJson: isPlainObject(variableMapJson) ? variableMapJson : {},
         rawMetaJson: normalizedMeta.rawMetaJson,
         lastSyncedAt: nowIso(),
@@ -640,7 +675,7 @@ async function getTemplateRecord(tenantId = DEFAULT_TENANT_ID, {
             params
         );
         const row = Array.isArray(result?.rows) ? result.rows[0] : null;
-        return row ? sanitizeTemplatePublic(row) : null;
+        return row ? await healTemplateComponentsIfNeeded(cleanTenantId, row) : null;
     } catch (error) {
         if (missingRelation(error)) return null;
         throw error;

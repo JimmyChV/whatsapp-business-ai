@@ -7,6 +7,7 @@ import {
     upsertMessageById,
     writeCachedMessages
 } from '../helpers/messageCache.helpers';
+import { mergeTemplateMessageContent } from '../helpers/templateMessages.helpers';
 
 export default function useSocketChatConversationEvents({
     socket,
@@ -871,9 +872,11 @@ export default function useSocketChatConversationEvents({
             const matchedClientTempId = enrichedIncoming?.fromMe
                 ? consumePendingOutgoing(relatedChatId, enrichedIncoming)
                 : null;
+            const explicitClientTempId = String(enrichedIncoming?.clientTempId || '').trim();
+            const replacementClientTempId = matchedClientTempId || explicitClientTempId || null;
             const reconciledIncoming = {
                 ...enrichedIncoming,
-                clientTempId: matchedClientTempId || String(enrichedIncoming?.clientTempId || '').trim() || null,
+                clientTempId: replacementClientTempId,
                 optimistic: false,
                 status: Number(enrichedIncoming?.ack || 0) >= 2 ? 'delivered' : Number(enrichedIncoming?.ack || 0) >= 1 ? 'sent' : 'sending'
             };
@@ -881,10 +884,12 @@ export default function useSocketChatConversationEvents({
             patchCachedMessages(messagesCacheRef, relatedChatId, (prev) => {
                 const incomingId = String(reconciledIncoming?.id || '').trim();
                 if (!incomingId) return prev;
-                if (matchedClientTempId) {
-                    return replaceMessageByClientTempId(prev, matchedClientTempId, reconciledIncoming);
+                if (replacementClientTempId) {
+                    const existing = (Array.isArray(prev) ? prev : []).find((message) => String(message?.clientTempId || '').trim() === replacementClientTempId);
+                    return replaceMessageByClientTempId(prev, replacementClientTempId, mergeTemplateMessageContent(existing, reconciledIncoming));
                 }
-                return upsertMessageById(prev, reconciledIncoming);
+                const existing = (Array.isArray(prev) ? prev : []).find((message) => String(message?.id || '').trim() === incomingId);
+                return upsertMessageById(prev, mergeTemplateMessageContent(existing, reconciledIncoming));
             });
 
             syncActiveMessages(relatedChatId, (prev) => {
@@ -930,15 +935,16 @@ export default function useSocketChatConversationEvents({
                                 : existingOrder
                         };
                         const next = [...prev];
-                        next[existingIndex] = merged;
+                        next[existingIndex] = mergeTemplateMessageContent(existing, merged);
                         return next;
                     }
                 }
 
-                if (matchedClientTempId) {
-                    return replaceMessageByClientTempId(prev, matchedClientTempId, normalizedIncoming);
+                if (replacementClientTempId) {
+                    const existing = prev.find((message) => String(message?.clientTempId || '').trim() === replacementClientTempId);
+                    return replaceMessageByClientTempId(prev, replacementClientTempId, mergeTemplateMessageContent(existing, normalizedIncoming));
                 }
-                return [...prev, normalizedIncoming];
+                return [...prev, mergeTemplateMessageContent(null, normalizedIncoming)];
             });
         });
 

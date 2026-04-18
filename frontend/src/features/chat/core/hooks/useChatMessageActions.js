@@ -42,6 +42,7 @@ export default function useChatMessageActions({
   setSendTemplateOptionsError,
   selectedSendTemplate,
   setSelectedSendTemplate,
+  selectedSendTemplatePreview,
   setSelectedSendTemplatePreview,
   setSelectedSendTemplatePreviewLoading,
   setSelectedSendTemplatePreviewError,
@@ -155,7 +156,8 @@ export default function useChatMessageActions({
     mediaData = null,
     mediaUrl = null,
     quotedMessage = null,
-    retryPayload = null
+    retryPayload = null,
+    extraFields = null
   } = {}) => {
     const safeChatId = String(chatId || '').trim();
     if (!safeChatId) return null;
@@ -181,7 +183,8 @@ export default function useChatMessageActions({
       canEdit: false,
       quotedMessage: quotedMessage || null,
       reactions: [],
-      retryPayload: retryPayload && typeof retryPayload === 'object' ? retryPayload : null
+      retryPayload: retryPayload && typeof retryPayload === 'object' ? retryPayload : null,
+      ...(extraFields && typeof extraFields === 'object' ? extraFields : {})
     };
 
     patchCachedMessages(messagesCacheRef, safeChatId, (prev) => [...(Array.isArray(prev) ? prev : []), optimisticMessage]);
@@ -406,12 +409,53 @@ export default function useChatMessageActions({
     const activeChatForSend = chatsRef.current.find((chat) => String(chat?.id || '') === String(activeChatId || activeId));
     const activeChatPhone = normalizeDigits(activeChatForSend?.phone || '');
     const toPhone = activeChatPhone || null;
+    const preview = selectedSendTemplatePreview && typeof selectedSendTemplatePreview === 'object'
+      ? selectedSendTemplatePreview
+      : null;
+    const previewText = String(preview?.previewText || `Template: ${String(template?.templateName || '').trim() || 'template'}`).trim();
+    const optimisticTemplateComponents = Array.isArray(preview?.components)
+      ? preview.components.map((component = {}) => ({
+        type: String(component?.type || 'BODY').trim().toUpperCase() || 'BODY',
+        resolvedText: String(component?.resolvedText || component?.text || '').trim(),
+        parameters: (Array.isArray(component?.parameters) ? component.parameters : []).map((parameter = {}) => ({
+          type: 'text',
+          text: String(parameter?.value || parameter?.text || '').trim()
+        })).filter((parameter) => String(parameter?.text || '').trim())
+      }))
+      : [];
+
+    const optimisticMessage = insertOptimisticOutgoing({
+      chatId: activeId,
+      body: previewText,
+      hasMedia: false,
+      type: 'template',
+      retryPayload: {
+        eventName: 'send_template_message',
+        payload: {
+          to: activeId,
+          toPhone,
+          chatId: activeId,
+          customerId: String(clientContact?.customerId || '').trim() || null,
+          moduleId: String(activeChatScopeModuleId || '').trim() || null,
+          templateId: String(template?.templateId || '').trim() || null,
+          templateName: String(template?.templateName || '').trim(),
+          templateLanguage: String(template?.templateLanguage || 'es').trim().toLowerCase() || 'es'
+        }
+      },
+      extraFields: {
+        templateName: String(template?.templateName || '').trim() || null,
+        templateLanguage: String(template?.templateLanguage || 'es').trim().toLowerCase() || 'es',
+        templatePreviewText: previewText,
+        templateComponents: optimisticTemplateComponents
+      }
+    });
 
     setSendTemplateSubmitting(true);
     socket.emit('send_template_message', {
       to: activeId,
       toPhone,
       chatId: activeId,
+      clientTempId: String(optimisticMessage?.clientTempId || '').trim() || null,
       customerId: String(clientContact?.customerId || '').trim() || null,
       moduleId: String(activeChatScopeModuleId || '').trim() || null,
       templateId: String(template?.templateId || '').trim() || null,
@@ -424,8 +468,10 @@ export default function useChatMessageActions({
     activeChatScopeModuleId,
     chatsRef,
     clientContact?.customerId,
+    insertOptimisticOutgoing,
     normalizeDigits,
     selectedSendTemplate,
+    selectedSendTemplatePreview,
     setSendTemplateSubmitting,
     socket
   ]);

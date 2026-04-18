@@ -519,6 +519,7 @@ const campaignDispatcherJob = campaignDispatcherJobService.createCampaignDispatc
     tenantService,
     waModuleService,
     waClient,
+    metaTemplatesService,
     logger,
     opsTelemetry
 });

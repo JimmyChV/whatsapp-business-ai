@@ -21,6 +21,7 @@ function loadMetaTemplatesServiceFresh() {
     const originalGetModuleRuntime = waModuleService.getModuleRuntime;
     const originalResolveModuleCloudConfig = waModuleService.resolveModuleCloudConfig;
     const originalDeleteMessageTemplate = waCloudClient.deleteMessageTemplate;
+    const originalCreateMessageTemplate = waCloudClient.createMessageTemplate;
 
     waModuleService.getModuleRuntime = async (tenantId, moduleId) => ({
         moduleId: String(moduleId || '').trim().toLowerCase(),
@@ -37,6 +38,13 @@ function loadMetaTemplatesServiceFresh() {
         phoneNumberId: String(module?.metadata?.cloudConfig?.phoneNumberId || '').trim(),
         systemUserToken: String(module?.metadata?.cloudConfig?.systemUserToken || '').trim()
     });
+    waCloudClient.createMessageTemplate = async (_wabaId, templatePayload = {}) => ({
+        id: 'meta_created_tpl',
+        name: String(templatePayload?.name || '').trim(),
+        language: String(templatePayload?.language || 'es').trim(),
+        category: String(templatePayload?.category || 'MARKETING').trim(),
+        status: 'PENDING'
+    });
     waCloudClient.deleteMessageTemplate = async () => ({ success: true });
 
     const service = require('../domains/operations/services/meta-templates.service');
@@ -44,6 +52,7 @@ function loadMetaTemplatesServiceFresh() {
     const restore = () => {
         waModuleService.getModuleRuntime = originalGetModuleRuntime;
         waModuleService.resolveModuleCloudConfig = originalResolveModuleCloudConfig;
+        waCloudClient.createMessageTemplate = originalCreateMessageTemplate;
         waCloudClient.deleteMessageTemplate = originalDeleteMessageTemplate;
     };
 
@@ -181,6 +190,87 @@ test('meta_templates_service lifecycle covers upsert/webhook/list/delete with te
             tenantBList.items.some((item) => item.templateId === created.templateId),
             false,
             'tenant B must not access tenant A template'
+        );
+    } finally {
+        restoreDeps();
+        process.env.SAAS_STORAGE_DRIVER = prevDriver;
+        process.env.SAAS_TENANT_DATA_DIR = prevDataDir;
+        await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('meta_templates_service reconstructs components from raw_meta_json and persists templatePayload components on create', async () => {
+    const prevDriver = process.env.SAAS_STORAGE_DRIVER;
+    const prevDataDir = process.env.SAAS_TENANT_DATA_DIR;
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'meta-templates-heal-'));
+
+    let restoreDeps = () => { };
+
+    try {
+        process.env.SAAS_STORAGE_DRIVER = 'file';
+        process.env.SAAS_TENANT_DATA_DIR = tempRoot;
+
+        const { service, restore } = loadMetaTemplatesServiceFresh();
+        restoreDeps = restore;
+
+        const tenantId = 'tenant_templates_heal';
+        const moduleId = 'mod-heal-01';
+        const templatePayload = {
+            name: 'bienvenida_auto',
+            language: 'es',
+            category: 'MARKETING',
+            components: [
+                { type: 'HEADER', format: 'TEXT', text: 'Hola' },
+                { type: 'BODY', text: 'Bienvenido {{1}}' },
+                { type: 'FOOTER', text: 'Equipo Lavitat' }
+            ]
+        };
+
+        const created = await service.createTemplate(tenantId, {
+            moduleId,
+            templatePayload,
+            useCase: 'both',
+            variableMapJson: {}
+        });
+
+        assert.deepEqual(
+            created?.template?.componentsJson,
+            templatePayload.components,
+            'new templates should persist componentsJson from templatePayload even if Meta response omits components'
+        );
+
+        const repaired = await service.upsertTemplateFromMeta(tenantId, {
+            moduleId,
+            metaTemplate: {
+                id: 'meta_tpl_raw_only',
+                name: 'raw_only_template',
+                language: 'es',
+                category: 'UTILITY',
+                status: 'APPROVED',
+                raw_meta_json: {
+                    components: [
+                        { type: 'BODY', text: 'Hola desde raw meta' }
+                    ]
+                }
+            }
+        });
+
+        assert.deepEqual(
+            repaired?.componentsJson,
+            [{ type: 'BODY', text: 'Hola desde raw meta' }],
+            'upsertTemplateFromMeta should recover components from raw_meta_json'
+        );
+
+        const fetched = await service.getTemplateRecord(tenantId, {
+            templateName: 'raw_only_template',
+            moduleId,
+            templateLanguage: 'es'
+        });
+
+        assert.deepEqual(
+            fetched?.componentsJson,
+            [{ type: 'BODY', text: 'Hola desde raw meta' }],
+            'getTemplateRecord should return healed componentsJson for legacy templates'
         );
     } finally {
         restoreDeps();

@@ -793,6 +793,7 @@ class WhatsAppCloudClient extends EventEmitter {
         const waId = await this.resolveSendWaId(to);
         const safeTemplateName = String(templateName || '').trim();
         if (!safeTemplateName) throw new Error('templateName requerido para enviar template.');
+        const metadataObj = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {};
 
         const payload = {
             messaging_product: 'whatsapp',
@@ -820,7 +821,6 @@ class WhatsAppCloudClient extends EventEmitter {
 
         const messageId = String(response?.messages?.[0]?.id || randomMessageId('cloud_out_template'));
         const chatId = `${waId}@c.us`;
-        const metadataObj = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {};
         const templateBody = String(metadataObj?.previewText || `Template: ${safeTemplateName}`).trim();
         const message = this.upsertMessage({
             id: messageId,
@@ -829,14 +829,14 @@ class WhatsAppCloudClient extends EventEmitter {
             to: chatId,
             body: templateBody,
             fromMe: true,
-            type: 'chat',
+            type: 'template',
             ack: 1,
             timestamp: safeTimestamp(),
             hasMedia: false,
             rawData: compactObject({
                 templateName: safeTemplateName,
                 templateLanguage: payload.template?.language?.code || 'es',
-                templateComponents: Array.isArray(components) ? components : [],
+                templateComponents: Array.isArray(metadataObj?.templateComponents) ? metadataObj.templateComponents : (Array.isArray(components) ? components : []),
                 metadata: metadataObj
             })
         }, { incoming: false, emitEvent: 'message_sent' });

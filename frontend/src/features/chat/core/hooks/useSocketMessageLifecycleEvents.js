@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
-import { patchCachedMessages } from '../helpers/messageCache.helpers';
+import { patchCachedMessages, replaceMessageByClientTempId, upsertMessageById } from '../helpers/messageCache.helpers';
+import { mergeTemplateMessageContent } from '../helpers/templateMessages.helpers';
 
 export default function useSocketMessageLifecycleEvents({
     socket,
@@ -146,16 +147,86 @@ export default function useSocketMessageLifecycleEvents({
             }));
         });
 
-        socket.on('template_message_sent', ({ chatId, baseChatId, scopeModuleId, templateName }) => {
+        socket.on('template_message_sent', ({
+            chatId,
+            baseChatId,
+            scopeModuleId,
+            templateName,
+            templateLanguage,
+            previewText,
+            templateComponents,
+            clientTempId,
+            messageId,
+            timestamp
+        }) => {
             const active = String(activeChatIdRef.current || '');
             const relatedChatId = normalizeChatScopedId(chatId || baseChatId || '', scopeModuleId || '');
             if (relatedChatId && active && !chatIdsReferSameScope(relatedChatId, active)) return;
+
+            const safeClientTempId = String(clientTempId || '').trim();
+            const confirmedTemplateMessage = {
+                id: String(messageId || safeClientTempId || `template_${Date.now().toString(36)}`).trim(),
+                clientTempId: safeClientTempId || null,
+                chatId: relatedChatId || null,
+                baseChatId: String(baseChatId || '').trim() || null,
+                scopeModuleId: String(scopeModuleId || '').trim() || null,
+                fromMe: true,
+                body: String(previewText || `Template: ${String(templateName || 'template')}`).trim(),
+                timestamp: Number(timestamp || 0) || Math.floor(Date.now() / 1000),
+                ack: 1,
+                status: 'sent',
+                optimistic: false,
+                type: 'template',
+                hasMedia: false,
+                canEdit: false,
+                templateName: String(templateName || '').trim() || null,
+                templateLanguage: String(templateLanguage || '').trim() || null,
+                templatePreviewText: String(previewText || '').trim() || null,
+                templateComponents: Array.isArray(templateComponents) ? templateComponents : [],
+                reactions: []
+            };
+
+            if (relatedChatId && safeClientTempId) {
+                patchCachedMessages(messagesCacheRef, relatedChatId, (prev) => {
+                    const existing = (Array.isArray(prev) ? prev : []).find((message) => String(message?.clientTempId || '').trim() === safeClientTempId);
+                    return replaceMessageByClientTempId(prev, safeClientTempId, mergeTemplateMessageContent(existing, confirmedTemplateMessage));
+                });
+                if (active && chatIdsReferSameScope(relatedChatId, active)) {
+                    setMessages((prev) => {
+                        const existing = (Array.isArray(prev) ? prev : []).find((message) => String(message?.clientTempId || '').trim() === safeClientTempId);
+                        return replaceMessageByClientTempId(prev, safeClientTempId, mergeTemplateMessageContent(existing, confirmedTemplateMessage));
+                    });
+                }
+                clearPendingOutgoing(relatedChatId, safeClientTempId);
+            } else if (relatedChatId) {
+                patchCachedMessages(messagesCacheRef, relatedChatId, (prev) => {
+                    const existing = (Array.isArray(prev) ? prev : []).find((message) => String(message?.id || '').trim() === String(confirmedTemplateMessage?.id || '').trim());
+                    return upsertMessageById(prev, mergeTemplateMessageContent(existing, confirmedTemplateMessage));
+                });
+                if (active && chatIdsReferSameScope(relatedChatId, active)) {
+                    setMessages((prev) => {
+                        const existing = (Array.isArray(prev) ? prev : []).find((message) => String(message?.id || '').trim() === String(confirmedTemplateMessage?.id || '').trim());
+                        return upsertMessageById(prev, mergeTemplateMessageContent(existing, confirmedTemplateMessage));
+                    });
+                }
+            }
 
             setSendTemplateSubmitting?.(false);
             setSendTemplateOpen?.(false);
             setSelectedSendTemplate?.(null);
             setSelectedSendTemplatePreview?.(null);
             setSelectedSendTemplatePreviewError?.('');
+            if (relatedChatId) {
+                setChats((prev) => (Array.isArray(prev) ? prev : []).map((chat) => (
+                    chatIdsReferSameScope(String(chat?.id || ''), relatedChatId)
+                        ? {
+                            ...chat,
+                            lastMessage: String(previewText || `Template: ${String(templateName || 'template')}`).trim(),
+                            lastMessageFromMe: true
+                        }
+                        : chat
+                )));
+            }
             notify({ type: 'info', message: `Template enviado: ${String(templateName || 'template')}` });
         });
 
