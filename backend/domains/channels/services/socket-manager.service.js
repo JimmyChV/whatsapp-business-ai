@@ -14,6 +14,7 @@ const messageHistoryService = require('../../operations/services/message-history
 const waModuleService = require('../../tenant/services/wa-modules.service');
 const tenantCatalogService = require('../../tenant/services/tenant-catalog.service');
 const customerService = require('../../tenant/services/customers.service');
+const customerAddressesService = require('../../tenant/services/customer-addresses.service');
 const tenantLabelService = require('../../tenant/services/tenant-labels.service');
 const quotesService = require('../../tenant/services/quotes.service');
 const saasControlService = require('../../tenant/services/tenant-control.service');

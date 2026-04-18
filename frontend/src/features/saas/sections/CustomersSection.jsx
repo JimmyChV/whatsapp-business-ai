@@ -759,6 +759,7 @@ function CustomersSection(props = {}) {
     const [selectedCustomerLive, setSelectedCustomerLive] = useState(selectedCustomerContext || null);
     const [customerOverridesById, setCustomerOverridesById] = useState({});
     const [showCustomerSynced, setShowCustomerSynced] = useState(false);
+    const [campaignSelectionMode, setCampaignSelectionMode] = useState(false);
     const [selectedCustomerIdsForCampaign, setSelectedCustomerIdsForCampaign] = useState([]);
     const [sendTemplateOpen, setSendTemplateOpen] = useState(false);
     const [sendTemplateOptions, setSendTemplateOptions] = useState([]);
@@ -1083,22 +1084,38 @@ function CustomersSection(props = {}) {
         }));
     }, [customerForm?.preferredLanguage, customerForm?.preferred_language, customerPanelMode, setCustomerForm]);
 
+    const selectedCustomerIdsForCampaignSet = useMemo(
+        () => new Set((Array.isArray(selectedCustomerIdsForCampaign) ? selectedCustomerIdsForCampaign : []).map((item) => String(item || '').trim()).filter(Boolean)),
+        [selectedCustomerIdsForCampaign]
+    );
+    const campaignSelectableCustomerIds = useMemo(
+        () => (Array.isArray(filteredCustomers) ? filteredCustomers : [])
+            .map((item) => resolveCustomerId(item))
+            .filter(Boolean),
+        [filteredCustomers]
+    );
+    const allCampaignSelectableCustomersSelected = useMemo(
+        () => campaignSelectableCustomerIds.length > 0 && campaignSelectableCustomerIds.every((customerId) => selectedCustomerIdsForCampaignSet.has(customerId)),
+        [campaignSelectableCustomerIds, selectedCustomerIdsForCampaignSet]
+    );
+
     const tableColumns = useMemo(
         () => ([
             {
                 key: 'selectForCampaign',
+                hidden: !campaignSelectionMode,
                 label: (
                     <span className="saas-customers-select-cell">
                         <input
                             type="checkbox"
-                            checked={allVisibleCustomersSelectedForCampaign}
+                            checked={allCampaignSelectableCustomersSelected}
                             onChange={() => {
                                 setSelectedCustomerIdsForCampaign((prev) => {
                                     const current = new Set((Array.isArray(prev) ? prev : []).map((item) => String(item || '').trim()).filter(Boolean));
-                                    if (visibleCustomerIdsForCampaign.length > 0 && visibleCustomerIdsForCampaign.every((customerId) => current.has(customerId))) {
-                                        visibleCustomerIdsForCampaign.forEach((customerId) => current.delete(customerId));
+                                    if (campaignSelectableCustomerIds.length > 0 && campaignSelectableCustomerIds.every((customerId) => current.has(customerId))) {
+                                        campaignSelectableCustomerIds.forEach((customerId) => current.delete(customerId));
                                     } else {
-                                        visibleCustomerIdsForCampaign.forEach((customerId) => current.add(customerId));
+                                        campaignSelectableCustomerIds.forEach((customerId) => current.add(customerId));
                                     }
                                     return Array.from(current);
                                 });
@@ -1142,11 +1159,12 @@ function CustomersSection(props = {}) {
             }))
         ]),
         [
-            allVisibleCustomersSelectedForCampaign,
+            campaignSelectionMode,
+            allCampaignSelectableCustomersSelected,
+            campaignSelectableCustomerIds,
             columnPrefs,
             columnPrefs.visibleColumnKeys,
-            selectedCustomerIdsForCampaignSet,
-            visibleCustomerIdsForCampaign
+            selectedCustomerIdsForCampaignSet
         ]
     );
 
@@ -1323,6 +1341,17 @@ function CustomersSection(props = {}) {
         return sortDirection === 'desc' ? sortedRows.reverse() : sortedRows;
     }, [filterColumnByKey, headerFilter, sortConfig, tableRows]);
 
+    const visibleCustomerIdsForCampaign = useMemo(
+        () => sortedAndFilteredRows
+            .map((row) => String(row?._raw?.customerId || row?.id || '').trim())
+            .filter(Boolean),
+        [sortedAndFilteredRows]
+    );
+    const allVisibleCustomersSelectedForCampaign = useMemo(
+        () => visibleCustomerIdsForCampaign.length > 0 && visibleCustomerIdsForCampaign.every((customerId) => selectedCustomerIdsForCampaignSet.has(customerId)),
+        [selectedCustomerIdsForCampaignSet, visibleCustomerIdsForCampaign]
+    );
+
     const tableSelectedId = useMemo(() => {
         if (customerPanelMode === 'create') return '';
         return String(selectedCustomerIdResolved || selectedCustomerId || '').trim();
@@ -1336,20 +1365,6 @@ function CustomersSection(props = {}) {
     const visibleTableRows = useMemo(
         () => (Array.isArray(sortedAndFilteredRows) ? sortedAndFilteredRows : []),
         [sortedAndFilteredRows]
-    );
-    const visibleCustomerIdsForCampaign = useMemo(
-        () => visibleTableRows
-            .map((row) => String(row?._raw?.customerId || row?.id || '').trim())
-            .filter(Boolean),
-        [visibleTableRows]
-    );
-    const selectedCustomerIdsForCampaignSet = useMemo(
-        () => new Set((Array.isArray(selectedCustomerIdsForCampaign) ? selectedCustomerIdsForCampaign : []).map((item) => String(item || '').trim()).filter(Boolean)),
-        [selectedCustomerIdsForCampaign]
-    );
-    const allVisibleCustomersSelectedForCampaign = useMemo(
-        () => visibleCustomerIdsForCampaign.length > 0 && visibleCustomerIdsForCampaign.every((customerId) => selectedCustomerIdsForCampaignSet.has(customerId)),
-        [selectedCustomerIdsForCampaignSet, visibleCustomerIdsForCampaign]
     );
     const firstSelectedCustomerIdForCampaign = useMemo(
         () => String(selectedCustomerIdsForCampaign[0] || '').trim(),
@@ -2308,6 +2323,12 @@ function CustomersSection(props = {}) {
         ));
     }, [filteredCustomersLive]);
 
+    useEffect(() => {
+        if (campaignSelectionMode) return;
+        if (selectedCustomerIdsForCampaign.length === 0) return;
+        setSelectedCustomerIdsForCampaign([]);
+    }, [campaignSelectionMode, selectedCustomerIdsForCampaign.length]);
+
     const handleAddressDepartmentChange = useCallback((nextDepartmentIdRaw = '') => {
         const departmentId = normalizeGeoNumericId(nextDepartmentIdRaw);
         const department = geoDepartmentOptions.find((item) => item.id === departmentId) || null;
@@ -2819,11 +2840,18 @@ function CustomersSection(props = {}) {
             disabled: busy || tenantScopeLocked
         },
         {
+            key: 'toggle-selection',
+            label: campaignSelectionMode ? 'Cancelar seleccion' : 'Seleccionar clientes',
+            onClick: () => setCampaignSelectionMode((prev) => !prev),
+            variant: 'secondary',
+            disabled: busy || tenantScopeLocked
+        },
+        {
             key: 'send-template',
-            label: `Enviar template${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
+            label: `Enviar campaña${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
             onClick: () => { void handleOpenCampaignTemplateModal(); },
             variant: 'secondary',
-            disabled: busy || tenantScopeLocked || selectedCustomerIdsForCampaign.length === 0
+            disabled: busy || tenantScopeLocked || !campaignSelectionMode || selectedCustomerIdsForCampaign.length === 0
         },
         {
             key: 'toggle-columns',
@@ -2867,9 +2895,11 @@ function CustomersSection(props = {}) {
             onSortChange={setSortConfig}
             extra={(
                 <div className="saas-customers-header-extra">
-                    {selectedCustomerIdsForCampaign.length > 0 ? (
+                    {campaignSelectionMode ? (
                         <div className="saas-customers-selection-pill">
-                            {selectedCustomerIdsForCampaign.length} cliente{selectedCustomerIdsForCampaign.length === 1 ? '' : 's'} listo{selectedCustomerIdsForCampaign.length === 1 ? '' : 's'} para campaña express
+                            {selectedCustomerIdsForCampaign.length > 0
+                                ? `${selectedCustomerIdsForCampaign.length} cliente${selectedCustomerIdsForCampaign.length === 1 ? '' : 's'} seleccionado${selectedCustomerIdsForCampaign.length === 1 ? '' : 's'}`
+                                : 'Selecciona clientes para preparar la campaña'}
                         </div>
                     ) : null}
                     {(customersLoadingBatch || savingCustomer) ? (
