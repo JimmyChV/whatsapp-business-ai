@@ -4,7 +4,7 @@ import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import SendTemplateModal from '../../chat/components/SendTemplateModal';
 import { buildTemplateResolvedPreview } from '../../chat/core/helpers/templateMessages.helpers';
 import { normalizeCustomerFormFromItem } from '../helpers';
-import { isTemplateAllowedInCampaigns, isTemplateAllowedInIndividual } from '../helpers/templateUseCase.helpers';
+import { isTemplateAllowedInCampaigns, isTemplateAllowedInIndividual, normalizeTemplateUseCase } from '../helpers/templateUseCase.helpers';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -1918,6 +1918,10 @@ function CustomersSection(props = {}) {
             notify({ type: 'error', message: 'Selecciona al menos un cliente para la campaña express.' });
             return;
         }
+        if (!outreachModuleId) {
+            notify({ type: 'error', message: 'Selecciona un modulo antes de continuar.' });
+            return;
+        }
 
         setCampaignTemplateModalOpen(true);
         setCampaignTemplateOptions([]);
@@ -1942,7 +1946,14 @@ function CustomersSection(props = {}) {
                     moduleId: String(item?.moduleId || '').trim(),
                     useCase: String(item?.useCase || 'both').trim().toLowerCase() || 'both'
                 }))
-                .filter((item) => item.templateId && item.templateName)
+                .filter((item) => {
+                    if (!item.templateId || !item.templateName) return false;
+                    if (String(item.moduleId || '').trim() !== outreachModuleId) return false;
+                    const useCase = normalizeTemplateUseCase(item.useCase || 'both');
+                    return outreachMode === 'assign'
+                        ? useCase === 'optin'
+                        : isTemplateAllowedInCampaigns(useCase);
+                })
                 .sort((left, right) => {
                     const moduleCompare = String(moduleNameById[left.moduleId] || left.moduleId || '').localeCompare(
                         String(moduleNameById[right.moduleId] || right.moduleId || ''),
@@ -1958,13 +1969,13 @@ function CustomersSection(props = {}) {
                 await handleSelectCampaignTemplate(items[0]);
             }
         } catch (error) {
-            const message = String(error?.message || 'No se pudieron cargar templates para la campaña express.');
+            const message = String(error?.message || 'No se pudieron cargar templates para outreach.');
             setCampaignTemplateOptionsError(message);
             notify({ type: 'error', message });
         } finally {
             setCampaignTemplateOptionsLoading(false);
         }
-    }, [handleSelectCampaignTemplate, moduleNameById, notify, requestJson, selectedCustomerIdsForCampaign.length]);
+    }, [handleSelectCampaignTemplate, moduleNameById, notify, outreachMode, outreachModuleId, requestJson, selectedCustomerIdsForCampaign.length]);
 
     const handleConfirmExpressCampaign = useCallback(async () => {
         const template = selectedCampaignTemplate && typeof selectedCampaignTemplate === 'object' ? selectedCampaignTemplate : null;
@@ -1974,7 +1985,7 @@ function CustomersSection(props = {}) {
             return;
         }
 
-        const moduleId = String(template?.moduleId || '').trim();
+        const moduleId = String(outreachModuleId || template?.moduleId || '').trim();
         if (!moduleId) {
             notify({ type: 'error', message: 'El template seleccionado no tiene modulo asociado.' });
             return;
@@ -1983,14 +1994,26 @@ function CustomersSection(props = {}) {
         const timestamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
         setCampaignTemplateSubmitting(true);
         try {
+            if (outreachMode === 'assign') {
+                await requestJson('/api/tenant/customers/outreach/assign-module', {
+                    method: 'POST',
+                    body: {
+                        moduleId,
+                        customerIds: selectedCustomerIdsForCampaign
+                    }
+                });
+            }
+
             const createdResponse = await createCampaignApi(requestJson, {
                 scopeModuleId: moduleId,
                 moduleId,
                 templateId: String(template?.templateId || '').trim() || null,
                 templateName: String(template?.templateName || '').trim(),
                 templateLanguage: String(template?.templateLanguage || 'es').trim().toLowerCase() || 'es',
-                campaignName: `Campana express · ${String(template?.templateName || 'template').trim() || 'template'} · ${timestamp}`,
-                campaignDescription: `Campana express creada desde Clientes para ${selectedCustomerIdsForCampaign.length} destinatario(s).`,
+                campaignName: `${outreachMode === 'assign' ? 'Opt-in masivo' : 'Campana express'} · ${String(template?.templateName || 'template').trim() || 'template'} · ${timestamp}`,
+                campaignDescription: outreachMode === 'assign'
+                    ? `Asignacion al modulo y envio opt-in desde Clientes para ${selectedCustomerIdsForCampaign.length} destinatario(s).`
+                    : `Campana express creada desde Clientes para ${selectedCustomerIdsForCampaign.length} destinatario(s).`,
                 audienceFiltersJson: {
                     customerIds: selectedCustomerIdsForCampaign
                 },
@@ -2005,19 +2028,25 @@ function CustomersSection(props = {}) {
             await startCampaignApi(requestJson, { campaignId });
             notify({
                 type: 'info',
-                message: `Campana express iniciada para ${selectedCustomerIdsForCampaign.length} cliente(s).`
+                message: outreachMode === 'assign'
+                    ? `Clientes asignados al modulo y envio opt-in iniciado para ${selectedCustomerIdsForCampaign.length} cliente(s).`
+                    : `Campana express iniciada para ${selectedCustomerIdsForCampaign.length} cliente(s).`
             });
             setSelectedCustomerIdsForCampaign([]);
             resetCampaignTemplateFlow();
+            void loadOutreachEligibility();
         } catch (error) {
             notify({
                 type: 'error',
-                message: String(error?.message || 'No se pudo lanzar la campaña express.')
+                message: String(error?.message || 'No se pudo completar outreach desde clientes.')
             });
             setCampaignTemplateSubmitting(false);
         }
     }, [
+        loadOutreachEligibility,
         notify,
+        outreachMode,
+        outreachModuleId,
         requestJson,
         resetCampaignTemplateFlow,
         selectedCampaignTemplate,
@@ -2960,9 +2989,9 @@ function CustomersSection(props = {}) {
         {
             key: 'assign-module',
             label: `Asignar al modulo${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
-            onClick: () => {},
+            onClick: () => { void handleOpenCampaignTemplateModal(); },
             variant: 'secondary',
-            disabled: true
+            disabled: busy || tenantScopeLocked || !campaignSelectionMode || !outreachModuleId || outreachMode !== 'assign' || selectedCustomerIdsForCampaign.length === 0
         },
         {
             key: 'toggle-columns',
@@ -3439,7 +3468,7 @@ function CustomersSection(props = {}) {
                 preview={selectedCampaignTemplatePreview}
                 previewLoading={selectedCampaignTemplatePreviewLoading}
                 previewError={selectedCampaignTemplatePreviewError}
-                confirmLabel={`Lanzar campaña${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`}
+                confirmLabel={`${outreachMode === 'assign' ? 'Asignar y enviar opt-in' : 'Lanzar campaña'}${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`}
                 confirmDisabled={!selectedCampaignTemplate || campaignTemplateSubmitting || selectedCustomerIdsForCampaign.length === 0}
                 confirmBusy={campaignTemplateSubmitting}
                 onClose={resetCampaignTemplateFlow}
