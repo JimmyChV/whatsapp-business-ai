@@ -13,7 +13,7 @@ const waCloudClient = require('../../channels/services/whatsapp-cloud-client.ser
 const STORE_FILE = 'meta_templates.json';
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
-const VALID_USE_CASES = new Set(['campaign', 'individual', 'both']);
+const VALID_USE_CASES = new Set(['campaign', 'individual', 'both', 'optin']);
 const DEFAULT_LIST_FIELDS = [
     'id',
     'name',
@@ -130,7 +130,7 @@ async function ensurePostgresSchema() {
                 meta_template_id TEXT NULL,
                 template_name TEXT NOT NULL,
                 template_language TEXT NOT NULL DEFAULT 'es',
-                use_case TEXT NOT NULL DEFAULT 'both' CHECK (use_case IN ('campaign', 'individual', 'both')),
+                use_case TEXT NOT NULL DEFAULT 'both' CHECK (use_case IN ('campaign', 'individual', 'both', 'optin')),
                 category TEXT NOT NULL DEFAULT 'marketing',
                 status TEXT NOT NULL DEFAULT 'pending',
                 quality_score TEXT NOT NULL DEFAULT 'unknown',

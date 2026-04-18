@@ -9,7 +9,7 @@ function normalizeTemplateToken(raw = '') {
         .replace(/\s+/g, '_');
 }
 
-const VALID_TEMPLATE_USE_CASES = new Set(['campaign', 'individual', 'both']);
+const VALID_TEMPLATE_USE_CASES = new Set(['campaign', 'individual', 'both', 'optin']);
 
 export const CAMPAIGN_TEMPLATE_VARIABLE_KEYS = new Set([
     'nombre_cliente',
@@ -36,7 +36,8 @@ export function isTemplateAllowedInIndividual(useCase = '') {
 }
 
 export function filterTemplateVariableCategoriesForUseCase(categories = [], useCase = '') {
-    if (normalizeTemplateUseCase(useCase) !== 'campaign') {
+    const normalizedUseCase = normalizeTemplateUseCase(useCase);
+    if (normalizedUseCase !== 'campaign' && normalizedUseCase !== 'optin') {
         return Array.isArray(categories) ? categories : [];
     }
 
