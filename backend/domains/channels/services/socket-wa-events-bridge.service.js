@@ -3,7 +3,10 @@ const {
     queryPostgres,
     readTenantJsonFile
 } = require('../../../config/persistence-runtime');
-const { customerModuleContextsService: customerModuleContextsServiceFallback } = require('../../operations/services');
+const {
+    customerModuleContextsService: customerModuleContextsServiceFallback,
+    customerConsentService: customerConsentServiceFallback
+} = require('../../operations/services');
 
 function createSocketWaEventsBridgeService({
     waClient,
@@ -40,7 +43,8 @@ function createSocketWaEventsBridgeService({
     extractQuotedMessageInfo,
     extractOrderInfo,
     extractLocationInfo,
-    customerModuleContextsService = customerModuleContextsServiceFallback
+    customerModuleContextsService = customerModuleContextsServiceFallback,
+    customerConsentService = customerConsentServiceFallback
 } = {}) {
     const extractPhoneCandidatesFromChatId = (chatId = '') => {
         const clean = String(chatId || '').trim();
@@ -287,16 +291,41 @@ function createSocketWaEventsBridgeService({
                                     customerId,
                                     moduleId: cleanScopeModuleId
                                 });
+                                const shouldAutoOptIn = String(existingContext?.marketingOptInStatus || '').trim().toLowerCase() === 'pending';
                                 await customerModuleContextsService.upsertContext(historyTenantId, {
                                     customerId,
                                     moduleId: cleanScopeModuleId,
+                                    marketingOptInStatus: shouldAutoOptIn ? 'opted_in' : undefined,
+                                    marketingOptInUpdatedAt: shouldAutoOptIn ? activityAtIso : undefined,
+                                    marketingOptInSource: shouldAutoOptIn ? 'customer_reply_pending_optin' : undefined,
                                     firstInteractionAt: existingContext?.firstInteractionAt || activityAtIso,
                                     lastInteractionAt: activityAtIso,
                                     metadata: {
                                         dualWriteSource: 'socket_wa_events_bridge.inbound',
-                                        lastInboundMessageId: messageId
+                                        lastInboundMessageId: messageId,
+                                        ...(shouldAutoOptIn
+                                            ? {
+                                                optInAutoGrantedAt: activityAtIso,
+                                                optInAutoGrantedFromMessageId: messageId
+                                            }
+                                            : {})
                                     }
                                 });
+
+                                if (shouldAutoOptIn && customerConsentService && typeof customerConsentService.grantConsent === 'function') {
+                                    await customerConsentService.grantConsent(historyTenantId, {
+                                        customerId,
+                                        consentType: 'marketing',
+                                        source: 'customer_reply_pending_optin',
+                                        grantedAt: activityAtIso,
+                                        proofPayload: {
+                                            moduleId: cleanScopeModuleId,
+                                            chatId: relatedChatIdBase,
+                                            messageId,
+                                            syncedFrom: 'socket_wa_events_bridge.inbound'
+                                        }
+                                    });
+                                }
                             }
                         } catch (_) {
                             // silent: dual-write must not interrupt inbound flow
