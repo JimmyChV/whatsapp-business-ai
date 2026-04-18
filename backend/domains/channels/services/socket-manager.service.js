@@ -727,6 +727,9 @@ class SocketManager {
             const messageId = getSerializedMessageId(msg);
             const chatId = String(msg?.fromMe ? msg?.to : msg?.from || '').trim();
             if (!messageId || !chatId) return;
+            const rawData = msg?._data && typeof msg._data === 'object' ? msg._data : {};
+            const rawMetadata = rawData?.metadata && typeof rawData.metadata === 'object' ? rawData.metadata : {};
+            const templateComponents = Array.isArray(rawData?.templateComponents) ? rawData.templateComponents : [];
 
             const persistedAgentMeta = sanitizeAgentMeta(agentMeta);
             const historyModuleId = String(
@@ -765,6 +768,10 @@ class SocketManager {
                     notifyName: senderMeta?.notifyName || null,
                     senderPushname: senderMeta?.senderPushname || null,
                     isGroupMessage: Boolean(senderMeta?.isGroupMessage),
+                    templateName: String(rawData?.templateName || rawMetadata?.templateName || '').trim() || null,
+                    templateLanguage: String(rawData?.templateLanguage || rawMetadata?.templateLanguage || '').trim() || null,
+                    templatePreviewText: String(rawMetadata?.previewText || '').trim() || null,
+                    templateComponents,
                     media: {
                         url: fileMeta?.mediaUrl || null,
                         path: fileMeta?.mediaPath || null

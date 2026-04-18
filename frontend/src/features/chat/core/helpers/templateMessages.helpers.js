@@ -14,6 +14,14 @@ function normalizeComponentType(value = '') {
     return toText(value).toUpperCase() || 'BODY';
 }
 
+function normalizeParameterText(parameter = {}) {
+    if (parameter && typeof parameter === 'object') {
+        if (parameter.text !== undefined && parameter.text !== null) return toText(parameter.text);
+        if (parameter.payload !== undefined && parameter.payload !== null) return toText(parameter.payload);
+    }
+    return toText(parameter);
+}
+
 export function parseTemplatePlaceholderIndexes(text = '') {
     const matches = String(text || '').matchAll(/\{\{\s*(\d+)\s*\}\}/g);
     const indexes = new Set();
@@ -130,5 +138,43 @@ export function buildTemplateResolvedPreview(template = {}, previewPayload = {})
         footerText,
         previewText,
         valueMap
+    };
+}
+
+export function buildRenderedTemplateMessage(message = {}) {
+    const source = message && typeof message === 'object' ? message : {};
+    const templateComponents = Array.isArray(source?.templateComponents) ? source.templateComponents : [];
+    const renderedComponents = templateComponents
+        .map((component = {}) => {
+            const type = normalizeComponentType(component?.type || 'BODY');
+            const parameters = Array.isArray(component?.parameters) ? component.parameters : [];
+            return {
+                type,
+                resolvedText: parameters.map((parameter) => normalizeParameterText(parameter)).filter(Boolean).join(' ')
+            };
+        })
+        .filter((component) => component.resolvedText);
+
+    const headerText = renderedComponents.find((component) => component.type === 'HEADER')?.resolvedText || '';
+    const bodyText = renderedComponents.find((component) => component.type === 'BODY')?.resolvedText || '';
+    const footerText = renderedComponents.find((component) => component.type === 'FOOTER')?.resolvedText || '';
+    const previewText = [headerText, bodyText, footerText].filter(Boolean).join('\n').trim()
+        || toText(source?.templatePreviewText || '')
+        || toText(source?.body || '')
+        || `Template: ${toText(source?.templateName || '') || 'sin nombre'}`;
+
+    return {
+        isTemplateMessage: Boolean(
+            toText(source?.templateName || '')
+            || toText(source?.templatePreviewText || '')
+            || renderedComponents.length > 0
+        ),
+        templateName: toText(source?.templateName || '') || null,
+        templateLanguage: toText(source?.templateLanguage || '') || null,
+        headerText,
+        bodyText,
+        footerText,
+        previewText,
+        components: renderedComponents
     };
 }

@@ -13,6 +13,7 @@ import {
 import useMessageBubbleAttachmentActions from './hooks/useMessageBubbleAttachmentActions';
 import useMessageBubbleLinkPreview from './hooks/useMessageBubbleLinkPreview';
 import useMessageBubbleDerivedModel from './hooks/useMessageBubbleDerivedModel';
+import { buildRenderedTemplateMessage } from '../../core/helpers/templateMessages.helpers';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const GLOBAL_SKIN_TONE_STORAGE_KEY = 'chat-emoji-skin-tone:global';
@@ -229,6 +230,8 @@ const MessageBubble = ({
         ? `data:${msg.mimetype || 'application/octet-stream'};base64,${msg.mediaData}`
         : null;
     const isGifMedia = /gif/i.test(String(msg?.mimetype || '')) || /\.gif(?:$|[?#])/i.test(String(mediaUrl || ''));
+    const renderedTemplate = buildRenderedTemplateMessage(msg);
+    const shouldRenderTemplateBubble = renderedTemplate.isTemplateMessage && !msg.hasMedia && !isCatalogItem && !isOrderActionable;
     const inlineVideoSrc = mediaDataUrl || (mediaUrl || null);
     const {
         canOpenAttachmentAsPdf,
@@ -708,7 +711,30 @@ const MessageBubble = ({
                     </a>
                 )}
 
-                {String(messageTextToRender).trim() && (
+                {shouldRenderTemplateBubble && (
+                    <div className="message-template-preview">
+                        {renderedTemplate.templateName && (
+                            <div className="message-template-preview__label">
+                                Template: {renderedTemplate.templateName}
+                            </div>
+                        )}
+                        {renderedTemplate.headerText ? (
+                            <div className="message-template-preview__header">
+                                {renderWhatsAppFormattedText(renderedTemplate.headerText)}
+                            </div>
+                        ) : null}
+                        <div className="message-template-preview__body">
+                            {renderWhatsAppFormattedText(renderedTemplate.bodyText || renderedTemplate.previewText)}
+                        </div>
+                        {renderedTemplate.footerText ? (
+                            <div className="message-template-preview__footer">
+                                {renderWhatsAppFormattedText(renderedTemplate.footerText)}
+                            </div>
+                        ) : null}
+                    </div>
+                )}
+
+                {!shouldRenderTemplateBubble && String(messageTextToRender).trim() && (
                     <span
                         style={{ fontSize: '0.9rem', wordBreak: 'break-word', whiteSpace: 'normal' }}
                         onMouseUp={() => {

@@ -64,7 +64,11 @@ function createSocketChatHistoryMediaService({
             order: row?.orderPayload && typeof row.orderPayload === 'object' ? row.orderPayload : null,
             location: row?.locationPayload && typeof row.locationPayload === 'object' ? row.locationPayload : null,
             quotedMessage: row?.quotedMessageId ? { id: String(row.quotedMessageId), body: '', fromMe: false } : null,
-            reactions: Array.isArray(metadata?.reactions) ? metadata.reactions : []
+            reactions: Array.isArray(metadata?.reactions) ? metadata.reactions : [],
+            templateName: String(metadata?.templateName || '').trim() || null,
+            templateLanguage: String(metadata?.templateLanguage || '').trim() || null,
+            templatePreviewText: String(metadata?.templatePreviewText || '').trim() || null,
+            templateComponents: Array.isArray(metadata?.templateComponents) ? metadata.templateComponents : []
         };
     };
 
@@ -266,6 +270,10 @@ function createSocketChatHistoryMediaService({
                         location: extractLocationInfo(m),
                         quotedMessage: await extractQuotedMessageInfo(m),
                         reactions: Array.isArray(persistedMeta?.reactions) ? persistedMeta.reactions : [],
+                        templateName: String(persistedMeta?.templateName || '').trim() || null,
+                        templateLanguage: String(persistedMeta?.templateLanguage || '').trim() || null,
+                        templatePreviewText: String(persistedMeta?.templatePreviewText || '').trim() || null,
+                        templateComponents: Array.isArray(persistedMeta?.templateComponents) ? persistedMeta.templateComponents : [],
                         ...(agentMeta || {}),
                         sentViaModuleId: resolvedMessageModuleId,
                         sentViaModuleName: String(agentMeta?.sentViaModuleName || '').trim() || null,
