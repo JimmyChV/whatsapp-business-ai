@@ -10,7 +10,7 @@ const {
 const STORE_FILE = 'customer_module_contexts.json';
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
-const VALID_OPT_IN = new Set(['unknown', 'opted_in', 'opted_out']);
+const VALID_OPT_IN = new Set(['unknown', 'pending', 'opted_in', 'opted_out']);
 const VALID_COMMERCIAL = new Set(['unknown', 'nuevo', 'en_conversacion', 'cotizado', 'vendido', 'perdido']);
 
 let schemaReady = false;
@@ -99,7 +99,7 @@ async function ensurePostgresSchema() {
                 customer_id TEXT NOT NULL,
                 module_id TEXT NOT NULL,
                 marketing_opt_in_status TEXT NOT NULL DEFAULT 'unknown'
-                    CHECK (marketing_opt_in_status IN ('unknown', 'opted_in', 'opted_out')),
+                    CHECK (marketing_opt_in_status IN ('unknown', 'pending', 'opted_in', 'opted_out')),
                 marketing_opt_in_updated_at TIMESTAMPTZ NULL,
                 marketing_opt_in_source TEXT NULL,
                 commercial_status TEXT NOT NULL DEFAULT 'unknown'
@@ -424,11 +424,56 @@ async function backfillFromExistingData(tenantId = DEFAULT_TENANT_ID) {
     }
 }
 
+async function assignCustomersToModule(tenantId = DEFAULT_TENANT_ID, {
+    customerIds = [],
+    moduleId = '',
+    assignmentUserId = null,
+    metadata = {}
+} = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const cleanModuleId = normalizeModuleId(moduleId || '');
+    if (!cleanModuleId) throw new Error('moduleId requerido para asignar clientes al modulo.');
+
+    const uniqueCustomerIds = Array.from(new Set(
+        (Array.isArray(customerIds) ? customerIds : [])
+            .map((entry) => normalizeCustomerId(entry))
+            .filter(Boolean)
+    ));
+    if (uniqueCustomerIds.length === 0) {
+        return { items: [], total: 0 };
+    }
+
+    const items = [];
+    for (const customerId of uniqueCustomerIds) {
+        const result = await upsertContext(cleanTenantId, {
+            customerId,
+            moduleId: cleanModuleId,
+            assignmentUserId: toNullable(assignmentUserId),
+            commercialStatus: 'nuevo',
+            marketingOptInStatus: 'pending',
+            marketingOptInUpdatedAt: nowIso(),
+            marketingOptInSource: 'customer_outreach_assignment',
+            metadata: {
+                source: 'customer_outreach_assignment',
+                ...normalizeMetadata(metadata)
+            }
+        });
+        if (result?.context) items.push(result.context);
+    }
+
+    return {
+        items,
+        total: items.length,
+        moduleId: cleanModuleId
+    };
+}
+
 module.exports = {
     getContext,
     upsertContext,
     listContextsByCustomer,
     listContextsByModule,
-    backfillFromExistingData
+    backfillFromExistingData,
+    assignCustomersToModule
 };
 
