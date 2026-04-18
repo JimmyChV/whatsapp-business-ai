@@ -166,6 +166,19 @@ function createSocketWaEventsBridgeService({
             const location = extractLocationInfo(msg);
             const referral = msg?.referral && typeof msg.referral === 'object' ? msg.referral : null;
             const hasReferral = Boolean(referral && Object.keys(referral).length > 0);
+            const rawMessageData = msg?._data && typeof msg._data === 'object' ? msg._data : {};
+            const rawMessageMetadata = rawMessageData?.metadata && typeof rawMessageData.metadata === 'object'
+                ? rawMessageData.metadata
+                : {};
+            const templateName = String(rawMessageData?.templateName || rawMessageMetadata?.templateName || '').trim() || null;
+            const templateLanguage = String(rawMessageData?.templateLanguage || rawMessageMetadata?.templateLanguage || '').trim() || null;
+            const templatePreviewText = String(rawMessageMetadata?.previewText || rawMessageMetadata?.templatePreviewText || '').trim()
+                || String(msg?.body || '').trim()
+                || null;
+            const templateComponents = Array.isArray(rawMessageData?.templateComponents) ? rawMessageData.templateComponents : [];
+            const normalizedMessageType = (templateName || templatePreviewText || templateComponents.length > 0)
+                ? 'template'
+                : msg?.type;
             const quotedPreviewBody = String(
                 msg?.quotedMsg?.body
                 || msg?._data?.quotedMsg?.body
@@ -205,7 +218,7 @@ function createSocketWaEventsBridgeService({
                 mediaUrl: null,
                 mediaPath: null,
                 ack: msg?.ack,
-                type: msg?.type,
+                type: normalizedMessageType,
                 author: msg?.author || msg?._data?.author || null,
                 notifyName: null,
                 senderPhone: null,
@@ -225,6 +238,10 @@ function createSocketWaEventsBridgeService({
                         type: quotedPreviewHasMedia ? 'media' : 'chat'
                     }
                     : null,
+                templateName,
+                templateLanguage,
+                templatePreviewText,
+                templateComponents,
                 sentViaModuleId: moduleAttributionMeta?.sentViaModuleId || null,
                 sentViaModuleName: moduleAttributionMeta?.sentViaModuleName || null,
                 sentViaModuleImageUrl: moduleAttributionMeta?.sentViaModuleImageUrl || null,

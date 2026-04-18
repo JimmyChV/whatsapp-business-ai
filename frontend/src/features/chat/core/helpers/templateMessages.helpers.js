@@ -143,6 +143,7 @@ export function buildTemplateResolvedPreview(template = {}, previewPayload = {})
 
 export function buildRenderedTemplateMessage(message = {}) {
     const source = message && typeof message === 'object' ? message : {};
+    const isExplicitTemplateType = toLower(source?.type || '') === 'template';
     const templateComponents = Array.isArray(source?.templateComponents) ? source.templateComponents : [];
     const renderedComponents = templateComponents
         .map((component = {}) => {
@@ -165,7 +166,8 @@ export function buildRenderedTemplateMessage(message = {}) {
 
     return {
         isTemplateMessage: Boolean(
-            toText(source?.templateName || '')
+            isExplicitTemplateType
+            || toText(source?.templateName || '')
             || toText(source?.templatePreviewText || '')
             || renderedComponents.length > 0
         ),

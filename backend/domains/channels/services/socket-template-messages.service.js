@@ -197,14 +197,30 @@ function createSocketTemplateMessagesService({
                 });
 
                 const sentMessageId = getSerializedMessageId(providerResponse);
+                const templateMetadata = {
+                    previewText,
+                    templateName,
+                    templateLanguage,
+                    templateId: toText(payload?.templateId || '')
+                };
                 const sentMessage = {
                     id: sentMessageId || ('local_template_' + Date.now().toString(36)),
                     to: target.targetChatId,
                     body: previewText,
                     timestamp: Math.floor(Date.now() / 1000),
                     ack: 1,
-                    type: 'chat',
-                    hasMedia: false
+                    type: 'template',
+                    hasMedia: false,
+                    templateName,
+                    templateLanguage,
+                    templatePreviewText: previewText,
+                    templateComponents: components,
+                    _data: {
+                        templateName,
+                        templateLanguage,
+                        templateComponents: components,
+                        metadata: templateMetadata
+                    }
                 };
 
                 if (sentMessageId && agentMeta) {
