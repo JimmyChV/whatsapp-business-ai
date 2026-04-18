@@ -228,6 +228,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         recipients = [],
         events = [],
         loading = false,
+        loadingList = false,
         error = '',
         loadCampaigns,
         selectCampaign,
@@ -683,7 +684,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                     key: 'reload',
                     label: 'Recargar',
                     onClick: () => loadCampaigns?.().catch(() => {}),
-                    disabled: loading || tenantScopeLocked
+                    disabled: loadingList || loading || tenantScopeLocked
                 },
                 {
                     key: 'columns',
@@ -763,7 +764,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                     columns={campaignTableColumns}
                     rows={campaignTableRows}
                     selectedId={panelMode === 'create' ? '' : selectedCampaignId}
-                    loading={loading}
+                    loading={loadingList}
                     emptyText="No hay campanas para estos filtros."
                     onSelect={handleSelectCampaignRow}
                 />

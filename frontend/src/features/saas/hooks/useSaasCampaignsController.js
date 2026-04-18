@@ -108,7 +108,8 @@ export default function useSaasCampaignsController({
     const [events, setEvents] = useState([]);
     const [availableLabels, setAvailableLabels] = useState([]);
     const [reachEstimate, setReachEstimate] = useState(null);
-    const [loading, setLoading] = useState(false);
+    const [loadingList, setLoadingList] = useState(false);
+    const [loadingAction, setLoadingAction] = useState(false);
     const [loadingRecipients, setLoadingRecipients] = useState(false);
     const [loadingEvents, setLoadingEvents] = useState(false);
     const [estimating, setEstimating] = useState(false);
@@ -170,7 +171,7 @@ export default function useSaasCampaignsController({
     const loadCampaigns = useCallback(async (overrideFilters = null) => {
         if (typeof requestJson !== 'function') return { items: [], total: 0, limit: 0, offset: 0 };
 
-        setLoading(!cacheRef.current.loaded && cacheRef.current.items.length === 0);
+        setLoadingList(!cacheRef.current.loaded && cacheRef.current.items.length === 0);
         setError('');
         try {
             const nextFilters = normalizeFilters({
@@ -195,7 +196,7 @@ export default function useSaasCampaignsController({
             setError(message);
             throw err;
         } finally {
-            setLoading(false);
+            setLoadingList(false);
         }
     }, [requestJson, selectedCampaignId, writeCache]);
 
@@ -257,7 +258,7 @@ export default function useSaasCampaignsController({
             return fromList;
         }
 
-        setLoading(true);
+        setLoadingAction(true);
         setError('');
         try {
             const response = await getCampaignDetail(requestJson, { campaignId: cleanCampaignId });
@@ -272,13 +273,13 @@ export default function useSaasCampaignsController({
             setError(message);
             throw err;
         } finally {
-            setLoading(false);
+            setLoadingAction(false);
         }
     }, [patchCampaignState, requestJson]);
 
     const createCampaign = useCallback(async (payload = {}) => {
         if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
-        setLoading(true);
+        setLoadingAction(true);
         setError('');
         try {
             const response = await createCampaignApi(requestJson, payload);
@@ -298,13 +299,13 @@ export default function useSaasCampaignsController({
             setError(message);
             throw err;
         } finally {
-            setLoading(false);
+            setLoadingAction(false);
         }
     }, [patchCampaignState, requestJson, writeCache]);
 
     const updateCampaign = useCallback(async ({ campaignId, patch = {} } = {}) => {
         if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
-        setLoading(true);
+        setLoadingAction(true);
         setError('');
         try {
             const response = await updateCampaignApi(requestJson, { campaignId, patch });
@@ -316,7 +317,7 @@ export default function useSaasCampaignsController({
             setError(message);
             throw err;
         } finally {
-            setLoading(false);
+            setLoadingAction(false);
         }
     }, [patchCampaignState, requestJson]);
 
@@ -324,7 +325,7 @@ export default function useSaasCampaignsController({
         if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
         const cleanCampaignId = toText(campaignId || selectedCampaignId);
         if (!cleanCampaignId) throw new Error('campaignId requerido.');
-        setLoading(true);
+        setLoadingAction(true);
         setError('');
         try {
             const response = await startCampaignApi(requestJson, { campaignId: cleanCampaignId });
@@ -336,7 +337,7 @@ export default function useSaasCampaignsController({
             setError(message);
             throw err;
         } finally {
-            setLoading(false);
+            setLoadingAction(false);
         }
     }, [patchCampaignState, requestJson, selectedCampaignId]);
 
@@ -344,7 +345,7 @@ export default function useSaasCampaignsController({
         if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
         const cleanCampaignId = toText(campaignId || selectedCampaignId);
         if (!cleanCampaignId) throw new Error('campaignId requerido.');
-        setLoading(true);
+        setLoadingAction(true);
         setError('');
         try {
             const response = await pauseCampaignApi(requestJson, { campaignId: cleanCampaignId });
@@ -356,7 +357,7 @@ export default function useSaasCampaignsController({
             setError(message);
             throw err;
         } finally {
-            setLoading(false);
+            setLoadingAction(false);
         }
     }, [patchCampaignState, requestJson, selectedCampaignId]);
 
@@ -364,7 +365,7 @@ export default function useSaasCampaignsController({
         if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
         const cleanCampaignId = toText(campaignId || selectedCampaignId);
         if (!cleanCampaignId) throw new Error('campaignId requerido.');
-        setLoading(true);
+        setLoadingAction(true);
         setError('');
         try {
             const response = await resumeCampaignApi(requestJson, { campaignId: cleanCampaignId });
@@ -376,7 +377,7 @@ export default function useSaasCampaignsController({
             setError(message);
             throw err;
         } finally {
-            setLoading(false);
+            setLoadingAction(false);
         }
     }, [patchCampaignState, requestJson, selectedCampaignId]);
 
@@ -384,7 +385,7 @@ export default function useSaasCampaignsController({
         if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
         const cleanCampaignId = toText(campaignId || selectedCampaignId);
         if (!cleanCampaignId) throw new Error('campaignId requerido.');
-        setLoading(true);
+        setLoadingAction(true);
         setError('');
         try {
             const response = await cancelCampaignApi(requestJson, { campaignId: cleanCampaignId, reason });
@@ -396,7 +397,7 @@ export default function useSaasCampaignsController({
             setError(message);
             throw err;
         } finally {
-            setLoading(false);
+            setLoadingAction(false);
         }
     }, [patchCampaignState, requestJson, selectedCampaignId]);
 
@@ -560,7 +561,8 @@ export default function useSaasCampaignsController({
         events,
         availableLabels,
         reachEstimate,
-        loading,
+        loading: loadingAction,
+        loadingList,
         loadingRecipients,
         loadingEvents,
         estimating,
