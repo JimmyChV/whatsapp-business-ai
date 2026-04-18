@@ -106,7 +106,7 @@ function createCampaignDispatcherJob({
     const intervalMs = Math.max(5_000, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_INTERVAL_MS, 10_000)));
     const batchSize = Math.max(1, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_BATCH_SIZE, 50)));
     const workerId = toText(process.env.CAMPAIGN_DISPATCHER_WORKER_ID || 'campaign-dispatcher');
-    const perModuleRpm = Math.max(1, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_PER_MODULE_RPM, 20)));
+    const perModuleRpm = Math.max(1, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_PER_MODULE_RPM, 60)));
     const minIntervalPerModuleMs = Math.max(1, Math.ceil(60000 / perModuleRpm));
     const retryBaseSeconds = Math.max(1, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_RETRY_BASE_SECONDS, 30)));
     const retryMaxSeconds = Math.max(retryBaseSeconds, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_RETRY_MAX_SECONDS, 900)));
