@@ -97,6 +97,7 @@ export default function useSaasCampaignsController({
 } = {}) {
     const { notify } = useUiFeedback();
     const cacheRef = useRef(resolveCampaignsCache(requestJson));
+    const campaignsRef = useRef(cacheRef.current.items);
     const [filters, setFilters] = useState(() => normalizeFilters({ ...DEFAULT_FILTERS, ...initialFilters }));
     const filtersRef = useRef(filters);
     const [campaigns, setCampaigns] = useState(() => cacheRef.current.items);
@@ -120,14 +121,20 @@ export default function useSaasCampaignsController({
     }, [filters]);
 
     useEffect(() => {
+        campaignsRef.current = Array.isArray(campaigns) ? campaigns : [];
+    }, [campaigns]);
+
+    useEffect(() => {
         cacheRef.current = resolveCampaignsCache(requestJson);
         setCampaigns(cacheRef.current.items);
+        campaignsRef.current = Array.isArray(cacheRef.current.items) ? cacheRef.current.items : [];
         setTotal(cacheRef.current.total);
         setHasLoadedCampaigns(Boolean(cacheRef.current.loaded));
     }, [requestJson]);
 
     const writeCache = useCallback((nextItems, nextTotal, loaded = true) => {
         cacheRef.current.items = Array.isArray(nextItems) ? nextItems : [];
+        campaignsRef.current = cacheRef.current.items;
         cacheRef.current.total = Number.isFinite(Number(nextTotal))
             ? Math.max(0, Number(nextTotal))
             : cacheRef.current.items.length;
@@ -243,7 +250,8 @@ export default function useSaasCampaignsController({
             return null;
         }
 
-        const fromList = campaigns.find((item) => toText(item?.campaignId || '') === cleanCampaignId) || null;
+        const fromList = (Array.isArray(campaignsRef.current) ? campaignsRef.current : [])
+            .find((item) => toText(item?.campaignId || '') === cleanCampaignId) || null;
         if (!loadDetail || typeof requestJson !== 'function') {
             setSelectedCampaign(fromList);
             return fromList;
@@ -266,7 +274,7 @@ export default function useSaasCampaignsController({
         } finally {
             setLoading(false);
         }
-    }, [campaigns, patchCampaignState, requestJson]);
+    }, [patchCampaignState, requestJson]);
 
     const createCampaign = useCallback(async (payload = {}) => {
         if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
