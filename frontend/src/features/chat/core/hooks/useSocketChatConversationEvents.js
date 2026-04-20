@@ -522,7 +522,7 @@ export default function useSocketChatConversationEvents({
             }));
         });
 
-        socket.on('message_updated', ({ id, chatId, scopeModuleId, mediaUrl, mediaPath, mimetype, filename, fileSizeBytes, mediaData, hasMedia, updatedAt, quotedMessage }) => {
+        socket.on('message_updated', ({ id, chatId, scopeModuleId, mediaUrl, mediaPath, mimetype, filename, fileSizeBytes, mediaData, hasMedia, updatedAt, quotedMessage, deliveryError }) => {
             const messageId = String(id || '').trim();
             if (!messageId) return;
 
@@ -549,6 +549,12 @@ export default function useSocketChatConversationEvents({
                     filename: shouldReplaceFilename ? nextFilename : currentFilename,
                     fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(message?.fileSizeBytes)) ? Number(message.fileSizeBytes) : null),
                     quotedMessage: normalizeQuotedMessage(quotedMessage || message?.quotedMessage),
+                    deliveryError: deliveryError && typeof deliveryError === 'object'
+                        ? {
+                            code: Number.isFinite(Number(deliveryError?.code)) ? Number(deliveryError.code) : null,
+                            message: String(deliveryError?.message || '').trim() || message?.deliveryError?.message || 'Meta rechazo la entrega del mensaje.'
+                        }
+                        : (message?.deliveryError || null),
                     updatedAt: String(updatedAt || '').trim() || message?.updatedAt || null
                 };
             }));
@@ -566,6 +572,12 @@ export default function useSocketChatConversationEvents({
                     filename: shouldReplaceFilename ? nextFilename : currentFilename,
                     fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(message?.fileSizeBytes)) ? Number(message.fileSizeBytes) : null),
                     quotedMessage: normalizeQuotedMessage(quotedMessage || message?.quotedMessage),
+                    deliveryError: deliveryError && typeof deliveryError === 'object'
+                        ? {
+                            code: Number.isFinite(Number(deliveryError?.code)) ? Number(deliveryError.code) : null,
+                            message: String(deliveryError?.message || '').trim() || message?.deliveryError?.message || 'Meta rechazo la entrega del mensaje.'
+                        }
+                        : (message?.deliveryError || null),
                     updatedAt: String(updatedAt || '').trim() || message?.updatedAt || null
                 };
             }));
