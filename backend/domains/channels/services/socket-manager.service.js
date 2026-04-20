@@ -96,6 +96,7 @@ const {
 const { createMessageMediaAssetsHelpers } = require('../helpers/message-media-assets.helpers');
 const {
     resolveChatDisplayName,
+    resolveChatSubtitle,
     buildProfilePicCandidates,
     resolveProfilePic,
     truncateDisplayValue,
@@ -280,6 +281,7 @@ class SocketManager {
             waClient,
             tenantLabelService,
             customerService,
+            customerAddressesService,
             normalizeScopedModuleId,
             normalizePhoneDigits,
             normalizeFilterTokens,
@@ -287,6 +289,7 @@ class SocketManager {
             buildChatIdentityKeyFromSummary,
             pickPreferredSummary,
             resolveChatDisplayName,
+            resolveChatSubtitle,
             resolveLastMessagePreview,
             extractPhoneFromChat,
             isVisibleChatId,
