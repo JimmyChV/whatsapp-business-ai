@@ -111,7 +111,7 @@ function createCampaignDispatcherJob({
     const retryBaseSeconds = Math.max(1, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_RETRY_BASE_SECONDS, 30)));
     const retryMaxSeconds = Math.max(retryBaseSeconds, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_RETRY_MAX_SECONDS, 900)));
     const claimTtlSeconds = Math.max(30, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_CLAIM_TTL_SECONDS, 300)));
-    const transientCodes = parseCodeSet(process.env.CAMPAIGN_DISPATCHER_TRANSIENT_CODES, [2, 4, 131000, 131016, 131048]);
+    const transientCodes = parseCodeSet(process.env.CAMPAIGN_DISPATCHER_TRANSIENT_CODES, [2, 4, 130429, 131000, 131016, 131048]);
     const permanentCodes = parseCodeSet(process.env.CAMPAIGN_DISPATCHER_PERMANENT_CODES, [131026, 131047, 131051]);
     const storageDriver = String(getStorageDriver() || 'file').trim().toLowerCase();
 
@@ -167,6 +167,41 @@ function createCampaignDispatcherJob({
             await sleep(nextAllowed - now);
         }
         moduleNextAllowedAt.set(key, Date.now() + minIntervalPerModuleMs);
+    }
+
+    function pauseModuleForRateLimit(tenantId = '', moduleId = '', cooldownMs = 60_000) {
+        const key = `${tenantId}::${moduleId}`;
+        const now = Date.now();
+        const requestedUntil = now + Math.max(1, Number(cooldownMs) || 60_000);
+        const currentUntil = Number(moduleNextAllowedAt.get(key) || 0);
+        moduleNextAllowedAt.set(key, Math.max(currentUntil, requestedUntil));
+    }
+
+    async function recordRateLimitEvent(tenantId = '', job = {}, code = null) {
+        if (!campaignsService || typeof campaignsService.recordCampaignEvent !== 'function') return;
+        try {
+            await campaignsService.recordCampaignEvent(tenantId, {
+                campaignId: toText(job?.campaignId || ''),
+                recipientId: toText(job?.recipientId || ''),
+                customerId: toText(job?.recipientId || ''),
+                phone: toText(job?.phone || ''),
+                moduleId: toText(job?.moduleId || ''),
+                eventType: 'recipient_failed',
+                severity: 'warn',
+                actorType: 'worker',
+                actorId: workerId,
+                reason: 'meta_rate_limit',
+                message: 'Rate limit de Meta alcanzado, reintentando en 60s',
+                payloadJson: {
+                    code: Number.isFinite(Number(code)) ? Number(code) : null,
+                    jobId: toText(job?.jobId || ''),
+                    idempotencyKey: toText(job?.idempotencyKey || '')
+                }
+            });
+        } catch (error) {
+            opsTelemetry?.recordInternalError?.('campaign_dispatcher_rate_limit_event', error);
+            logger?.warn?.('[Ops][CampaignDispatcher] rate limit event failed tenant=' + tenantId + ': ' + String(error?.message || error));
+        }
     }
 
     async function resolveModuleContext(tenantId = '', moduleId = '') {
@@ -274,6 +309,10 @@ function createCampaignDispatcherJob({
             return { status: 'sent' };
         } catch (error) {
             const code = extractErrorCode(error);
+            if (Number(code) === 130429) {
+                pauseModuleForRateLimit(tenantId, moduleId || 'default', 60_000);
+                await recordRateLimitEvent(tenantId, job, code);
+            }
             if (isLikelyPermanentError(code, permanentCodes)) {
                 const skippedJob = await campaignQueueService.skipJob(tenantId, {
                     idempotencyKey,
@@ -284,7 +323,9 @@ function createCampaignDispatcherJob({
             }
 
             const isTransient = Number.isFinite(Number(code)) ? transientCodes.has(Number(code)) : false;
-            const retryDelaySeconds = buildRetryDelaySeconds(job?.attemptCount || 0, retryBaseSeconds, retryMaxSeconds);
+            const retryDelaySeconds = Number(code) === 130429
+                ? 60
+                : buildRetryDelaySeconds(job?.attemptCount || 0, retryBaseSeconds, retryMaxSeconds);
             const failedJob = await campaignQueueService.failJob(tenantId, {
                 idempotencyKey,
                 lastError: String(error?.message || (isTransient ? 'transient_dispatch_failed' : 'dispatch_failed')),
