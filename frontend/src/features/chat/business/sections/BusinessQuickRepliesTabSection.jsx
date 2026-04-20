@@ -8,11 +8,6 @@ export default function BusinessQuickRepliesTabSection({
 }) {
     return (
         <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {!canWriteByAssignment && (
-                <div style={{ border: '1px solid rgba(255, 182, 77, 0.35)', background: 'rgba(56, 41, 18, 0.72)', color: '#ffd28f', borderRadius: '8px', padding: '7px 10px', fontSize: '0.74rem', fontWeight: 600 }}>
-                    Toma este chat para responder
-                </div>
-            )}
             <div style={{ background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px' }}>
                 <input
                     type="text"

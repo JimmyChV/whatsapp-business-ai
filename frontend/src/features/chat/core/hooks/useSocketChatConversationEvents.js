@@ -797,6 +797,9 @@ export default function useSocketChatConversationEvents({
         socket.on('message', (msg) => {
             const relatedChatId = String(msg?.chatId || (msg.fromMe ? msg.to : msg.from) || '').trim();
             if (!isVisibleChatId(relatedChatId)) return;
+            const relatedWindowExpiresAt = !msg?.fromMe && Number(msg?.timestamp || 0) > 0
+                ? new Date((Number(msg.timestamp) * 1000) + (24 * 60 * 60 * 1000)).toISOString()
+                : null;
 
             if (!msg.fromMe && Notification.permission === 'granted') {
                 new Notification(msg.notifyName || 'Nuevo mensaje', {
@@ -853,6 +856,8 @@ export default function useSocketChatConversationEvents({
                     ack: msg.ack || 0,
                     isMyContact: existing?.isMyContact === true,
                     unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (chatIdsReferSameScope(canonicalId, String(activeChatIdRef.current || '')) ? 0 : (existing?.unreadCount || 0) + 1),
+                    windowOpen: msg.fromMe ? existing?.windowOpen : true,
+                    windowExpiresAt: msg.fromMe ? (existing?.windowExpiresAt || null) : relatedWindowExpiresAt,
                     lastMessageModuleId: String(msg?.sentViaModuleId || canonicalScopeModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null,
                     lastMessageModuleName: String(msg?.sentViaModuleName || existing?.lastMessageModuleName || '').trim() || null,
                     lastMessageModuleImageUrl: normalizeModuleImageUrl(msg?.sentViaModuleImageUrl || existing?.lastMessageModuleImageUrl || '') || null,
@@ -907,6 +912,17 @@ export default function useSocketChatConversationEvents({
                 optimistic: false,
                 status: Number(enrichedIncoming?.ack || 0) >= 2 ? 'delivered' : Number(enrichedIncoming?.ack || 0) >= 1 ? 'sent' : 'sending'
             };
+
+            if (!msg?.fromMe && chatIdsReferSameScope(relatedChatId, String(activeChatIdRef.current || ''))) {
+                setClientContact((prev) => {
+                    const safePrev = prev && typeof prev === 'object' ? prev : {};
+                    return {
+                        ...safePrev,
+                        windowOpen: true,
+                        windowExpiresAt: relatedWindowExpiresAt
+                    };
+                });
+            }
 
             patchCachedMessages(messagesCacheRef, relatedChatId, (prev) => {
                 const incomingId = String(reconciledIncoming?.id || '').trim();

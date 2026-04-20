@@ -22,11 +22,6 @@ export default function BusinessAiTabSection({
 }) {
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {!canWriteByAssignment && (
-                <div style={{ margin: '8px 10px 0', border: '1px solid rgba(255, 182, 77, 0.35)', background: 'rgba(56, 41, 18, 0.72)', color: '#ffd28f', borderRadius: '8px', padding: '7px 10px', fontSize: '0.74rem', fontWeight: 600 }}>
-                    Toma este chat para responder
-                </div>
-            )}
             <div className="ai-thread-pro" style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {aiMessages.map((msg, idx) => (
                     <div key={idx} className={`ai-row-pro ${msg.role === 'user' ? 'user' : 'assistant'}`} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>

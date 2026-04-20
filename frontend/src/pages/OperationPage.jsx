@@ -120,6 +120,16 @@ export default function OperationPage({
 }) {
   const [cartDraftsByChat, setCartDraftsByChat] = useState({});
   const activeChatDetails = chats.find((c) => c.id === activeChatId) || null;
+  const mergedActiveChatDetails = activeChatDetails || clientContact
+    ? {
+      ...(clientContact || {}),
+      ...(activeChatDetails || {}),
+      windowOpen: typeof activeChatDetails?.windowOpen === 'boolean'
+        ? activeChatDetails.windowOpen
+        : (typeof clientContact?.windowOpen === 'boolean' ? clientContact.windowOpen : true),
+      windowExpiresAt: activeChatDetails?.windowExpiresAt || clientContact?.windowExpiresAt || null
+    }
+    : null;
   const forwardChatOptions = chats
     .filter((chat) => chat?.id && String(chat.id) !== String(activeChatId || ''))
     .map((chat) => ({
@@ -181,7 +191,7 @@ export default function OperationPage({
         {activeChatId ? (
           <div className="conversation-pane-shell">
             <ChatWindow
-              activeChatDetails={{ ...activeChatDetails, ...clientContact }}
+              activeChatDetails={mergedActiveChatDetails}
               messages={messages}
               messagesEndRef={messagesEndRef}
               isDragOver={isDragOver}
@@ -314,7 +324,7 @@ export default function OperationPage({
             messages={messages}
             activeChatId={activeChatId}
             activeChatPhone={activeChatDetails?.phone || clientContact?.phone || ''}
-            activeChatDetails={activeChatDetails ? { ...activeChatDetails, ...clientContact } : clientContact || null}
+            activeChatDetails={mergedActiveChatDetails}
             socket={socket}
             myProfile={myProfile || businessData?.profile}
             onLogout={handleLogoutWhatsapp}
