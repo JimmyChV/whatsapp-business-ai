@@ -395,6 +395,7 @@ class SocketManager {
             tenantLabelService,
             customerService,
             customerAddressesService,
+            messageHistoryService,
             resolveProfilePic,
             normalizeBusinessDetailsSnapshot,
             extractContactSnapshot,

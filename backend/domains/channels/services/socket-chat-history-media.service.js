@@ -18,6 +18,21 @@ function createSocketChatHistoryMediaService({
     mergeAgentMeta,
     getSortedVisibleChats
 } = {}) {
+    const MESSAGE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+    const buildConversationWindowStateFromRows = (rows = []) => {
+        const lastInbound = (Array.isArray(rows) ? rows : []).find((message) => message?.fromMe === false);
+        const lastInboundTs = Number(lastInbound?.timestampUnix || 0) || 0;
+        if (!lastInboundTs) {
+            return { windowOpen: false, windowExpiresAt: null };
+        }
+        const windowExpiresAtMs = (lastInboundTs * 1000) + MESSAGE_WINDOW_MS;
+        return {
+            windowOpen: windowExpiresAtMs > Date.now(),
+            windowExpiresAt: new Date(windowExpiresAtMs).toISOString()
+        };
+    };
+
     const toHistoryMessagePayload = (row = {}, chatId = '') => {
         const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
         const senderId = String(row?.senderId || row?.authorId || '').trim() || null;
@@ -130,6 +145,7 @@ function createSocketChatHistoryMediaService({
             chatId: resolvedChatId || requestedChatId,
             requestedChatId,
             scopeModuleId: normalizedScopeModuleId || null,
+            ...buildConversationWindowStateFromRows(rows),
             messages,
             source: 'history_fallback'
         };
@@ -311,6 +327,8 @@ function createSocketChatHistoryMediaService({
                     requestedChatId: requestedRawChatId,
                     baseChatId: selectedBaseChatId,
                     scopeModuleId: scopeModuleId || null,
+                    windowOpen: Boolean(historyFallback?.windowOpen),
+                    windowExpiresAt: historyFallback?.windowExpiresAt || null,
                     messages: selectedMessages
                 });
 
@@ -362,6 +380,8 @@ function createSocketChatHistoryMediaService({
                         requestedChatId: String(chatId || ''),
                         baseChatId: String(resolveScopedChatTarget(String(chatId || ''), '').baseChatId || chatId || ''),
                         scopeModuleId: normalizeScopedModuleId(resolveScopedChatTarget(String(chatId || ''), '').moduleId || '') || null,
+                        windowOpen: false,
+                        windowExpiresAt: null,
                         messages: [],
                         source: 'history_fallback'
                     });

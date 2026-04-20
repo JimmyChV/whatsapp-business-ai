@@ -131,6 +131,7 @@ const ChatWindow = ({
     const headerLabels = Array.isArray(activeChatDetails?.labels) ? activeChatDetails.labels : [];
     const visibleHeaderLabels = headerLabels.slice(0, 2);
     const hiddenHeaderLabelsCount = Math.max(0, headerLabels.length - visibleHeaderLabels.length);
+    const conversationWindowOpen = activeChatDetails?.windowOpen !== false;
     const handleJumpToMessage = (targetMessageId) => {
         const safeTargetMessageId = String(targetMessageId || '').trim();
         if (!safeTargetMessageId) return;
@@ -484,12 +485,30 @@ const ChatWindow = ({
             {/* Input Area */}
             {canWriteByAssignment ? (
                 <>
+                    {!conversationWindowOpen && (
+                        <div className="chat-window-expired-banner">
+                            <div className="chat-window-expired-banner-copy">
+                                <span className="chat-window-expired-banner-title">Ventana de 24 horas cerrada</span>
+                                <span className="chat-window-expired-banner-text">
+                                    La ventana de conversación expiró. Solo puedes contactar con un template aprobado.
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                className="chat-window-expired-banner-action"
+                                onClick={() => inputProps?.onOpenSendTemplate?.()}
+                            >
+                                Enviar template
+                            </button>
+                        </div>
+                    )}
                     <ChatInput
                         {...inputProps}
                         replyingMessage={inputProps?.replyingMessage}
                         onCancelReplyMessage={inputProps?.onCancelReplyMessage}
                         onOpenMapPicker={() => openMapModal({ query: '' })}
                         buildApiHeaders={buildApiHeaders}
+                        windowOpen={conversationWindowOpen}
                     />
                     <SendTemplateModal
                         isOpen={Boolean(inputProps?.sendTemplateOpen)}

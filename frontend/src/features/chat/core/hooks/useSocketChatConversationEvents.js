@@ -487,6 +487,17 @@ export default function useSocketChatConversationEvents({
             if (activeChatId) {
                 writeCachedMessages(messagesCacheRef, activeChatId, normalizedMessages);
             }
+            const nextWindowOpen = Boolean(data?.windowOpen);
+            const nextWindowExpiresAt = String(data?.windowExpiresAt || '').trim() || null;
+            setChats((prev) => prev.map((chat) => (
+                chatIdsReferSameScope(String(chat?.id || ''), resolvedChatId)
+                    ? {
+                        ...chat,
+                        windowOpen: nextWindowOpen,
+                        windowExpiresAt: nextWindowExpiresAt
+                    }
+                    : chat
+            )));
         });
 
         socket.on('chat_media', ({ chatId, messageId, mediaData, mimetype, filename, fileSizeBytes }) => {
@@ -728,6 +739,8 @@ export default function useSocketChatConversationEvents({
                 shortName: sanitizeDisplayText(contact?.shortName || ''),
                 profilePicUrl: normalizeProfilePhotoUrl(contact?.profilePicUrl),
                 status: repairMojibake(contact?.status || ''),
+                windowOpen: Boolean(contact?.windowOpen),
+                windowExpiresAt: String(contact?.windowExpiresAt || '').trim() || null,
                 participants: participantsCount,
                 participantsList,
                 erpCustomer,
@@ -768,7 +781,9 @@ export default function useSocketChatConversationEvents({
                     participants: normalizedContact.participants || existing?.participants || 0,
                     participantsList: normalizedContact.participantsList || existing?.participantsList || [],
                     customerId: erpCustomer?.customerId || existing?.customerId || null,
-                    erpCustomerName: erpDisplayName || existing?.erpCustomerName || null
+                    erpCustomerName: erpDisplayName || existing?.erpCustomerName || null,
+                    windowOpen: typeof normalizedContact?.windowOpen === 'boolean' ? normalizedContact.windowOpen : existing?.windowOpen,
+                    windowExpiresAt: normalizedContact?.windowExpiresAt || existing?.windowExpiresAt || null
                 };
 
                 if (!chatMatchesQuery(nextChat, chatSearchRef.current) || !chatMatchesFilters(nextChat, chatFiltersRef.current)) {
