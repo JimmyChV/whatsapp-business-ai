@@ -31,8 +31,28 @@ function createSocketMessageDeliveryService({
         invalidateChatListCache,
         toChatSummary,
         emitMessageEditability,
-        recordConversationEvent
+        recordConversationEvent,
+        listMessages
     } = {}) => {
+        const MESSAGE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+        const hasOpenCustomerCareWindow = async (chatId = '') => {
+            const safeChatId = String(chatId || '').trim();
+            if (!safeChatId || typeof listMessages !== 'function') return false;
+            try {
+                const rows = await listMessages(tenantId, {
+                    chatId: safeChatId,
+                    limit: 100
+                });
+                const lastInbound = (Array.isArray(rows) ? rows : []).find((message) => message?.fromMe === false);
+                const lastInboundTs = Number(lastInbound?.timestampUnix || 0) || 0;
+                if (!lastInboundTs) return false;
+                return ((lastInboundTs * 1000) + MESSAGE_WINDOW_MS) > Date.now();
+            } catch (_) {
+                return false;
+            }
+        };
+
         const emitRealtimeOutgoingMessage = async ({
              sentMessage = null,
              fallbackChatId = '',
@@ -252,9 +272,14 @@ function createSocketMessageDeliveryService({
                  });
                  if (!target?.ok) return;
                    const moduleContext = target.moduleContext || socket?.data?.waModule || null;
-                 const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
-                 let sentMessage = null;
-                   if (quoted) {
+                const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
+                let sentMessage = null;
+                const hasOpenWindow = await hasOpenCustomerCareWindow(target.targetChatId);
+                if (!hasOpenWindow) {
+                    socket.emit('error', 'No puedes enviar mensajes libres a este contacto. La ventana de 24 horas ha expirado. Usa un template aprobado.');
+                    return;
+                }
+                  if (quoted) {
                      let quotedTargetChatId = target.targetChatId;
                      try {
                          const quotedMsg = await waClient.getMessageById(quoted);

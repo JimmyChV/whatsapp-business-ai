@@ -1456,7 +1456,8 @@ class SocketManager {
                 invalidateChatListCache: this.invalidateChatListCache.bind(this),
                 toChatSummary: this.toChatSummary.bind(this),
                 emitMessageEditability: this.emitMessageEditability.bind(this),
-                recordConversationEvent
+                recordConversationEvent,
+                listMessages: messageHistoryService.listMessages
             });
             this.catalogDeliveryService.registerCatalogDeliveryHandlers({
                 socket,
