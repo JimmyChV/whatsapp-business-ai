@@ -167,6 +167,25 @@ const guardRateLimit = createGuardRateLimit(eventRateLimiter);
 const getSharpImageProcessor = createLazySharpLoader();
 const processedMediaCache = new Map();
 
+function toTitleCaseChatLabel(value = '') {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+}
+
+function buildHistoryContactSnapshot(summary = {}) {
+    const waContactName = String(summary?.waContactName || summary?.subtitle || summary?.name || '').trim();
+    return {
+        pushname: waContactName || null,
+        name: waContactName || null,
+        shortName: waContactName || null
+    };
+}
+
 const {
     slugifyFileName,
     buildCatalogProductCaption,
@@ -966,13 +985,13 @@ class SocketManager {
         if (!chatId || !isVisibleChatId(chatId)) return null;
 
         const metadata = entry?.metadata && typeof entry.metadata === 'object' ? entry.metadata : {};
-        const subtitle = String(entry?.subtitle || metadata?.senderPushname || '').trim() || null;
+        const subtitle = toTitleCaseChatLabel(entry?.subtitle || metadata?.senderPushname || '') || null;
         const explicitPhone = coerceHumanPhone(entry?.phone || '');
         const idPhone = isLidIdentifier(chatId) ? null : coerceHumanPhone(chatId.split('@')[0] || '');
         const subtitlePhone = coerceHumanPhone(extractPhoneFromText(subtitle || '') || '');
         const phone = explicitPhone || subtitlePhone || idPhone || null;
 
-        const displayName = String(entry?.displayName || metadata?.notifyName || '').trim();
+        const displayName = toTitleCaseChatLabel(entry?.displayName || metadata?.notifyName || '');
         const fallbackName = displayName || subtitle || (phone ? `+${phone}` : 'Contacto');
 
         const labels = this.normalizeHistoryLabels(metadata?.labels || []);
@@ -986,6 +1005,15 @@ class SocketManager {
         const scopeModuleId = getSummaryModuleScopeId({ scopeModuleId: entry?.scopeModuleId, lastMessageModuleId, id: chatId }) || null;
         const scopedId = buildScopedChatId(chatId, scopeModuleId || '');
 
+        const resolvedLastMessage = String(
+            entry?.lastMessageBody
+            || metadata?.lastMessage
+            || metadata?.previewText
+            || metadata?.templatePreviewText
+            || metadata?.body
+            || ''
+        ).trim();
+
         return {
             id: scopedId || chatId,
             baseChatId: chatId,
@@ -993,9 +1021,10 @@ class SocketManager {
             name: fallbackName,
             phone,
             subtitle,
+            waContactName: subtitle || displayName || null,
             unreadCount: Number(entry?.unreadCount || 0) || 0,
             timestamp: Number(entry?.lastMessageAt || 0) || 0,
-            lastMessage: String(entry?.lastMessageBody || metadata?.lastMessage || '').trim(),
+            lastMessage: resolvedLastMessage,
             lastMessageFromMe: Boolean(entry?.lastMessageFromMe),
             ack: Number.isFinite(Number(entry?.lastMessageAck)) ? Number(entry.lastMessageAck) : 0,
             labels,
@@ -1059,6 +1088,46 @@ class SocketManager {
         }
 
         return true;
+    }
+
+    async enrichHistoryChatSummary(tenantId, summary = {}) {
+        const safeTenantId = String(tenantId || 'default').trim() || 'default';
+        const phone = coerceHumanPhone(summary?.phone || '');
+        const baseChatId = String(summary?.baseChatId || parseScopedChatId(summary?.id || '').chatId || '').trim();
+        const normalizedBaseChatId = baseChatId || String(summary?.id || '').trim();
+
+        let erpCustomer = null;
+        if (phone && customerService && typeof customerService.getCustomerByPhoneWithAddresses === 'function') {
+            try {
+                erpCustomer = await customerService.getCustomerByPhoneWithAddresses(safeTenantId, phone, {
+                    customerAddressesService
+                });
+            } catch (_) {
+                erpCustomer = null;
+            }
+        }
+
+        const contact = buildHistoryContactSnapshot(summary);
+        const displayName = resolveChatDisplayName({
+            id: { _serialized: normalizedBaseChatId },
+            name: summary?.name || '',
+            contact,
+            erpCustomer
+        });
+        const subtitle = resolveChatSubtitle({
+            id: { _serialized: normalizedBaseChatId },
+            name: displayName,
+            contact,
+            erpCustomer
+        }) || summary?.subtitle || null;
+
+        return {
+            ...summary,
+            name: displayName || summary?.name || null,
+            subtitle: subtitle || null,
+            erpCustomerName: erpCustomer ? displayName : (summary?.erpCustomerName || null),
+            customerId: erpCustomer?.customerId || summary?.customerId || null
+        };
     }
 
     async getHistoryChatsPage(tenantId, {
@@ -1171,7 +1240,11 @@ class SocketManager {
             }))
             .sort((a, b) => (Number(b?.timestamp || 0) - Number(a?.timestamp || 0)));
 
-        const pageItems = normalized.slice(safeOffset, safeOffset + safeLimit);
+        const pageItems = await Promise.all(
+            normalized
+                .slice(safeOffset, safeOffset + safeLimit)
+                .map((summary) => this.enrichHistoryChatSummary(tenantId, summary))
+        );
         const nextOffset = safeOffset + pageItems.length;
         const total = normalized.length;
         const hasMore = nextOffset < total;

@@ -100,6 +100,7 @@ const Sidebar = ({
         formatTime,
         renderStatus,
         getDisplayName,
+        getContactMeta,
         getContactHint,
         getChannelBadge,
         getChannelMarker,
@@ -546,6 +547,7 @@ const Sidebar = ({
                     filteredChats.map((chat) => {
                         const displayName = getDisplayName(chat);
                         const contactHint = getContactHint(chat, displayName);
+                        const contactMeta = getContactMeta(chat, displayName);
                         const moduleBadge = getChannelBadge(chat, waModules);
                         const channelMarker = getChannelMarker(moduleBadge?.channelType || '');
                         const chatAssignment = getAssignment(chat.id);
@@ -584,8 +586,17 @@ const Sidebar = ({
                                 <div className="chat-info chat-info-modern">
                                     <div className="chat-row-top">
                                         <div className="chat-name-stack">
-                                            <span className="chat-display-name">{displayName}</span>
-                                            {contactHint && <span className="chat-contact-hint">{contactHint}</span>}
+                                            <span className="chat-display-name" title={displayName}>{displayName}</span>
+                                            {contactMeta.location && (
+                                                <span className="chat-contact-hint" title={contactMeta.location}>
+                                                    <span className="chat-contact-location-chip">{contactMeta.location}</span>
+                                                </span>
+                                            )}
+                                            {!contactMeta.location && contactHint && (
+                                                <span className="chat-contact-hint" title={contactHint}>
+                                                    <span className="chat-contact-hint-text">{contactHint}</span>
+                                                </span>
+                                            )}
                                         </div>
                                         <span className={`chat-time ${chat.unreadCount > 0 ? 'chat-time-unread' : ''}`}>
                                             {formatTime(chat.timestamp)}
@@ -624,7 +635,7 @@ const Sidebar = ({
                                     <div className="chat-row-bottom">
                                         <p className="chat-last-message">
                                             {renderStatus(chat)}
-                                            <span>{lastMessage}</span>
+                                            <span title={lastMessage}>{lastMessage}</span>
                                         </p>
                                         {chat.unreadCount > 0 && <span className="unread-badge">{chat.unreadCount}</span>}
                                     </div>
