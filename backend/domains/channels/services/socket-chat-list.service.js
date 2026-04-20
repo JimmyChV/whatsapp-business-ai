@@ -3,6 +3,7 @@ function createSocketChatListService({
     waClient,
     tenantLabelService,
     customerService,
+    customerAddressesService,
     normalizeScopedModuleId,
     normalizePhoneDigits,
     normalizeFilterTokens,
@@ -10,6 +11,7 @@ function createSocketChatListService({
     buildChatIdentityKeyFromSummary,
     pickPreferredSummary,
     resolveChatDisplayName,
+    resolveChatSubtitle,
     resolveLastMessagePreview,
     extractPhoneFromChat,
     isVisibleChatId,
@@ -347,14 +349,16 @@ function createSocketChatListService({
         const phone = isGroup ? null : extractPhoneFromChat(effectiveChat);
         const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
         let erpCustomer = null;
-        if (!isGroup && phone && customerService && typeof customerService.getCustomerByPhone === 'function') {
+        if (!isGroup && phone && customerService && typeof customerService.getCustomerByPhoneWithAddresses === 'function') {
             try {
-                erpCustomer = await customerService.getCustomerByPhone(resolvedTenantId, phone);
+                erpCustomer = await customerService.getCustomerByPhoneWithAddresses(resolvedTenantId, phone, {
+                    customerAddressesService
+                });
             } catch (_) {
                 erpCustomer = null;
             }
         }
-        const subtitle = contact?.pushname || contact?.shortName || contact?.name || null;
+        const subtitle = resolveChatSubtitle({ ...effectiveChat, erpCustomer });
         const normalizedScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
         const scopedSummaryId = buildScopedChatId(chatId, normalizedScopeModuleId);
         let labels = [];

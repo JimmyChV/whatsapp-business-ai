@@ -52,18 +52,25 @@ const useChatWindowHeaderModel = ({
   const headerDisplayName = (!activeChat?.isGroup && cleanHeaderPushname && (isPhoneLikeHeaderValue(rawHeaderName) || !rawHeaderName))
     ? cleanHeaderPushname
     : (rawHeaderName || headerPhone || rawHeaderPushname || 'Sin nombre');
+  const rawHeaderSubtitle = String(activeChat?.subtitle || '').trim();
+  const headerSubtitleParts = rawHeaderSubtitle
+    .split('•')
+    .map((part) => String(part || '').trim())
+    .filter(Boolean);
+  const headerAlias = headerSubtitleParts.find((part) => !part.includes(' - ')) || '';
+  const headerLocation = headerSubtitleParts.find((part) => part.includes(' - ')) || '';
   const headerMetaItems = [];
   if (activeChat?.isGroup) {
     if (headerParticipantsCount > 0) {
       headerMetaItems.push(`${headerParticipantsCount} participantes`);
     }
   } else {
-    if (headerPhone && !sameHeaderIdentity(headerPhone, headerDisplayName)) {
-      headerMetaItems.push(headerPhone);
+    if (headerLocation) {
+      headerMetaItems.push(headerLocation);
     }
-    const cleanHeaderAlias = String(cleanHeaderPushname || '').trim();
+    const cleanHeaderAlias = String(headerAlias || cleanHeaderPushname || '').trim();
     if (cleanHeaderAlias && !sameHeaderIdentity(cleanHeaderAlias, headerDisplayName) && !sameHeaderIdentity(cleanHeaderAlias, headerPhone)) {
-      headerMetaItems.push(`Alias: ${cleanHeaderAlias}`);
+      headerMetaItems.push(cleanHeaderAlias);
     }
   }
   if (headerMetaItems.length === 0) {
@@ -159,6 +166,9 @@ const useChatWindowHeaderModel = ({
     rawHeaderPushname,
     cleanHeaderPushname,
     headerDisplayName,
+    rawHeaderSubtitle,
+    headerAlias,
+    headerLocation,
     headerMetaItems,
     headerModuleId,
     normalizedHeaderModuleId,

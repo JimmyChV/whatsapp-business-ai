@@ -4,17 +4,70 @@ function toText(value = '') {
     return String(value ?? '').trim();
 }
 
+function toTitleCase(value = '') {
+    return toText(value)
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+}
+
+function isBusinessCustomer(customer = null) {
+    if (!customer || typeof customer !== 'object') return false;
+    const documentType = toText(customer.documentType || customer.document_type).toUpperCase();
+    const customerType = toText(customer.customerType || customer.customer_type).toUpperCase();
+    const taxId = toText(customer.taxId || customer.tax_id || customer.documentNumber || customer.document_number);
+    return documentType === 'RUC' || customerType.includes('JURIDICA') || taxId.length === 11;
+}
+
+function getPrimaryCustomerAddress(customer = null) {
+    const addresses = Array.isArray(customer?.addresses) ? customer.addresses : [];
+    return addresses.find((entry) => entry?.isPrimary === true || entry?.is_primary === true) || addresses[0] || null;
+}
+
+function buildPrimaryLocationLabel(customer = null) {
+    const address = getPrimaryCustomerAddress(customer);
+    if (!address || typeof address !== 'object') return '';
+    const districtName = toTitleCase(address.districtName || address.district_name);
+    const provinceName = toTitleCase(address.provinceName || address.province_name);
+    return [districtName, provinceName].filter(Boolean).join(' - ');
+}
+
 function buildErpCustomerDisplayName(customer = null) {
     if (!customer || typeof customer !== 'object') return '';
 
-    const fullName = [
-        toText(customer.firstName || customer.first_name),
-        toText(customer.lastNamePaternal || customer.last_name_paternal),
-        toText(customer.lastNameMaternal || customer.last_name_maternal)
-    ].filter(Boolean).join(' ');
-    if (fullName) return fullName;
+    if (isBusinessCustomer(customer)) {
+        const businessName = toTitleCase(customer.lastNamePaternal || customer.last_name_paternal);
+        if (businessName) return businessName;
+    } else {
+        const fullName = [
+            toTitleCase(customer.firstName || customer.first_name),
+            toTitleCase(customer.lastNamePaternal || customer.last_name_paternal),
+            toTitleCase(customer.lastNameMaternal || customer.last_name_maternal)
+        ].filter(Boolean).join(' ');
+        if (fullName) return fullName;
+    }
 
-    return toText(customer.contactName || customer.contact_name);
+    return toTitleCase(customer.contactName || customer.contact_name);
+}
+
+function resolveChatSubtitle(chat) {
+    const contact = chat?.contact || null;
+    const erpCustomer = chat?.erpCustomer && typeof chat.erpCustomer === 'object' ? chat.erpCustomer : null;
+    const primaryName = toText(resolveChatDisplayName(chat));
+    const whatsappContactName = toTitleCase(contact?.pushname || contact?.name || contact?.shortName || '');
+    const locationLabel = buildPrimaryLocationLabel(erpCustomer);
+    const subtitleParts = [];
+
+    if (whatsappContactName && whatsappContactName.toLowerCase() !== primaryName.toLowerCase()) {
+        subtitleParts.push(whatsappContactName);
+    }
+    if (locationLabel) {
+        subtitleParts.push(locationLabel);
+    }
+
+    return subtitleParts.join(' • ') || whatsappContactName || locationLabel || null;
 }
 
 function resolveChatDisplayName(chat) {
@@ -25,11 +78,11 @@ function resolveChatDisplayName(chat) {
     const erpCustomer = chat?.erpCustomer && typeof chat.erpCustomer === 'object' ? chat.erpCustomer : null;
     const candidates = [
         buildErpCustomerDisplayName(erpCustomer),
-        String(chat.name || '').trim(),
-        String(chat.formattedTitle || '').trim(),
-        String(contact?.name || '').trim(),
-        String(contact?.pushname || '').trim(),
-        String(contact?.shortName || '').trim(),
+        toTitleCase(chat.name || ''),
+        toTitleCase(chat.formattedTitle || ''),
+        toTitleCase(contact?.name || ''),
+        toTitleCase(contact?.pushname || ''),
+        toTitleCase(contact?.shortName || ''),
     ].filter(Boolean);
 
     const bestHuman = candidates.find((name) => !name.includes('@') && !/^\d{14,}$/.test(name));
@@ -249,7 +302,9 @@ function isInternalLikeName(value = '') {
 
 module.exports = {
     buildErpCustomerDisplayName,
+    buildPrimaryLocationLabel,
     resolveChatDisplayName,
+    resolveChatSubtitle,
     buildProfilePicCandidates,
     resolveProfilePic,
     truncateDisplayValue,

@@ -1,6 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Sidebar, BusinessSidebar, ClientProfilePanel, ChatWindow, NewChatModal } from '../features/chat/components';
 import { sanitizeDisplayText } from '../features/chat/core';
+import {
+  CHAT_NOTIFICATION_OPEN_EVENT,
+  CHAT_NOTIFICATION_OPEN_REQUEST_KEY,
+  clearChatNotificationOpenRequest,
+  readChatNotificationOpenRequest
+} from '../features/chat/core/helpers/notificationWorkspace.helpers';
 
 export default function OperationPage({
   forceOperationLaunch,
@@ -119,7 +125,18 @@ export default function OperationPage({
   SaasPanelComponent,
 }) {
   const [cartDraftsByChat, setCartDraftsByChat] = useState({});
+  const originalDocumentTitleRef = useRef(typeof document !== 'undefined' ? document.title : 'WhatsApp Business Pro');
   const activeChatDetails = chats.find((c) => c.id === activeChatId) || null;
+  const mergedActiveChatDetails = activeChatDetails || clientContact
+    ? {
+      ...(clientContact || {}),
+      ...(activeChatDetails || {}),
+      windowOpen: typeof activeChatDetails?.windowOpen === 'boolean'
+        ? activeChatDetails.windowOpen
+        : (typeof clientContact?.windowOpen === 'boolean' ? clientContact.windowOpen : true),
+      windowExpiresAt: activeChatDetails?.windowExpiresAt || clientContact?.windowExpiresAt || null
+    }
+    : null;
   const forwardChatOptions = chats
     .filter((chat) => chat?.id && String(chat.id) !== String(activeChatId || ''))
     .map((chat) => ({
@@ -132,6 +149,54 @@ export default function OperationPage({
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
   const appContainerClassName = forceOperationLaunch ? 'app-container app-container--operation' : 'app-container';
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const totalToastCount = (Array.isArray(toasts) ? toasts : []).reduce((acc, toast) => {
+      return acc + Math.max(1, Number(toast?.count || 0));
+    }, 0);
+    const baseTitle = originalDocumentTitleRef.current || 'WhatsApp Business Pro';
+    document.title = totalToastCount > 0 ? `(${totalToastCount}) ${baseTitle}` : baseTitle;
+    return () => {
+      document.title = baseTitle;
+    };
+  }, [toasts]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handlePendingChatOpen = (request = null) => {
+      const pendingRequest = request && typeof request === 'object'
+        ? request
+        : readChatNotificationOpenRequest();
+      const targetTenantId = String(pendingRequest?.tenantId || '').trim();
+      const targetChatId = String(pendingRequest?.chatId || '').trim();
+      if (!targetTenantId || !targetChatId) return;
+      if (String(targetTenantId) !== String(tenantScopeId || '').trim()) return;
+
+      handleChatSelect?.(targetChatId, { clearSearch: true });
+      setToasts((prev) => (Array.isArray(prev) ? prev : []).filter((toast) => String(toast?.chatId || '') !== targetChatId));
+      clearChatNotificationOpenRequest();
+    };
+
+    const handleStorage = (event) => {
+      if (String(event?.key || '') !== CHAT_NOTIFICATION_OPEN_REQUEST_KEY) return;
+      handlePendingChatOpen();
+    };
+
+    const handleCustomOpenEvent = (event) => {
+      handlePendingChatOpen(event?.detail || null);
+    };
+
+    handlePendingChatOpen();
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener(CHAT_NOTIFICATION_OPEN_EVENT, handleCustomOpenEvent);
+
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener(CHAT_NOTIFICATION_OPEN_EVENT, handleCustomOpenEvent);
+    };
+  }, [handleChatSelect, setToasts, tenantScopeId]);
 
   return (
     <div className={appContainerClassName}>
@@ -181,7 +246,7 @@ export default function OperationPage({
         {activeChatId ? (
           <div className="conversation-pane-shell">
             <ChatWindow
-              activeChatDetails={{ ...activeChatDetails, ...clientContact }}
+              activeChatDetails={mergedActiveChatDetails}
               messages={messages}
               messagesEndRef={messagesEndRef}
               isDragOver={isDragOver}
@@ -295,12 +360,20 @@ export default function OperationPage({
                 key={toast.id}
                 className="in-app-toast"
                 onClick={() => {
-                  handleChatSelect(toast.chatId);
+                  handleChatSelect(toast.chatId, { clearSearch: true });
                   setToasts((prev) => prev.filter((t) => t.id !== toast.id));
                 }}
               >
-                <strong>{toast.title || 'Nuevo mensaje'}</strong>
-                <span>{toast.body}</span>
+                <div className="in-app-toast-head">
+                  <div className="in-app-toast-copy">
+                    <strong title={toast.title || 'Nuevo mensaje'}>{toast.title || 'Nuevo mensaje'}</strong>
+                    {toast.subtitle ? <small title={toast.subtitle}>{toast.subtitle}</small> : null}
+                  </div>
+                  {Number(toast.count || 0) > 1 ? (
+                    <span className="in-app-toast-count">{toast.count}</span>
+                  ) : null}
+                </div>
+                <span title={toast.body}>{toast.body}</span>
               </button>
             ))}
           </div>
@@ -314,7 +387,7 @@ export default function OperationPage({
             messages={messages}
             activeChatId={activeChatId}
             activeChatPhone={activeChatDetails?.phone || clientContact?.phone || ''}
-            activeChatDetails={activeChatDetails ? { ...activeChatDetails, ...clientContact } : clientContact || null}
+            activeChatDetails={mergedActiveChatDetails}
             socket={socket}
             myProfile={myProfile || businessData?.profile}
             onLogout={handleLogoutWhatsapp}

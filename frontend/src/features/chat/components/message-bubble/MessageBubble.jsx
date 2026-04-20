@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import moment from 'moment';
-import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, Download, SmilePlus, Clock3, AlertCircle, RotateCcw } from 'lucide-react';
+import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, Download, SmilePlus, Clock3, AlertCircle, RotateCcw, AlertTriangle } from 'lucide-react';
 import {
     renderWhatsAppFormattedText,
     formatOrderMoney,
@@ -203,6 +203,18 @@ const MessageBubble = ({
     const renderStatus = () => {
         if (!isOut) return null;
         const explicitStatus = String(msg?.status || '').trim().toLowerCase();
+        const deliveryErrorMessage = String(msg?.deliveryError?.message || '').trim();
+        const deliveryErrorCode = Number.isFinite(Number(msg?.deliveryError?.code)) ? Number(msg.deliveryError.code) : null;
+        if (deliveryErrorMessage) {
+            const label = deliveryErrorCode
+                ? `Error de entrega de Meta (${deliveryErrorCode}): ${deliveryErrorMessage}`
+                : `Error de entrega de Meta: ${deliveryErrorMessage}`;
+            return (
+                <span className="message-ack failed" title={label} aria-label={label}>
+                    <AlertTriangle size={14} />
+                </span>
+            );
+        }
         if (explicitStatus === 'sending') {
             return (
                 <span className="message-ack pending" title="Estado: Enviando" aria-label="Estado: Enviando">

@@ -41,7 +41,8 @@ const ChatInput = ({
     replyingMessage, onCancelReplyMessage,
     onOpenMapPicker,
     onOpenSendTemplate,
-    buildApiHeaders
+    buildApiHeaders,
+    windowOpen = true
 }) => {
     const [showEmoji, setShowEmoji] = useState(false);
     const [showCommands, setShowCommands] = useState(false);
@@ -66,6 +67,10 @@ const ChatInput = ({
         };
     });
     const hasDraftQuickReply = Boolean(quickReplyDraft && (draftQuickReplyText || draftQuickReplyAssets.length > 0 || draftQuickReplyLabel));
+    const isTemplateOnlyMode = windowOpen === false;
+    const isBlockedByEditState = Boolean(editingMessage?.id);
+    const disableFreeformComposer = isTemplateOnlyMode || isBlockedByEditState;
+    const canSendFreeform = !isTemplateOnlyMode && (Boolean(inputText.trim()) || Boolean(attachment) || Boolean(hasDraftQuickReply));
 
     const handleInputChange = (e) => {
         const val = e.target.value;
@@ -629,23 +634,29 @@ const ChatInput = ({
             )}
 
             <div className="chat-input-left-actions">
-                <button className={`btn-icon ui-icon-btn ${showEmoji ? 'active' : ''}`} onClick={() => setShowEmoji(v => !v)} title="Emojis">
+                <button
+                    className={`btn-icon ui-icon-btn ${showEmoji ? 'active' : ''}`}
+                    onClick={() => setShowEmoji(v => !v)}
+                    title="Emojis"
+                    disabled={isTemplateOnlyMode}
+                    style={{ opacity: isTemplateOnlyMode ? 0.45 : 1, cursor: isTemplateOnlyMode ? 'not-allowed' : 'pointer' }}
+                >
                     <Smile size={26} />
                 </button>
-                <button className="btn-icon ui-icon-btn" onClick={onFileClick} title="Adjuntar archivo" disabled={Boolean(editingMessage?.id)} style={{ opacity: editingMessage?.id ? 0.45 : 1, cursor: editingMessage?.id ? 'not-allowed' : 'pointer' }}>
+                <button className="btn-icon ui-icon-btn" onClick={onFileClick} title="Adjuntar archivo" disabled={disableFreeformComposer} style={{ opacity: disableFreeformComposer ? 0.45 : 1, cursor: disableFreeformComposer ? 'not-allowed' : 'pointer' }}>
                     <Paperclip size={26} />
                 </button>
                 <button
                     className="btn-icon ui-icon-btn"
                     onClick={() => onOpenMapPicker && onOpenMapPicker()}
                     title="Buscar o compartir ubicacion"
-                    disabled={Boolean(editingMessage?.id)}
-                    style={{ opacity: editingMessage?.id ? 0.45 : 1, cursor: editingMessage?.id ? 'not-allowed' : 'pointer' }}
+                    disabled={disableFreeformComposer}
+                    style={{ opacity: disableFreeformComposer ? 0.45 : 1, cursor: disableFreeformComposer ? 'not-allowed' : 'pointer' }}
                 >
                     <MapPin size={24} />
                 </button>
                 <button
-                    className="btn-icon ui-icon-btn"
+                    className={`btn-icon ui-icon-btn ${isTemplateOnlyMode ? 'active chat-input-template-primary' : ''}`}
                     onClick={() => onOpenSendTemplate && onOpenSendTemplate()}
                     title="Enviar template"
                     disabled={Boolean(editingMessage?.id)}
@@ -659,10 +670,19 @@ const ChatInput = ({
                 <textarea
                     ref={inputRef}
                     className="message-input"
-                    placeholder={editingMessage?.id ? 'Edita el mensaje y presiona Enter...' : (replyingMessage?.id ? 'Escribe tu respuesta y presiona Enter...' : 'Escribe un mensaje...')}
+                    placeholder={
+                        isTemplateOnlyMode
+                            ? 'Usa un template aprobado para contactar a este cliente...'
+                            : (editingMessage?.id ? 'Edita el mensaje y presiona Enter...' : (replyingMessage?.id ? 'Escribe tu respuesta y presiona Enter...' : 'Escribe un mensaje...'))
+                    }
                     value={inputText}
                     onChange={handleInputChange}
+                    disabled={isTemplateOnlyMode}
                     onKeyDown={(e) => {
+                        if (isTemplateOnlyMode && e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+                            e.preventDefault();
+                            return;
+                        }
                         if (editingMessage?.id && e.key === 'Escape') {
                             e.preventDefault();
                             e.stopPropagation();
@@ -687,6 +707,7 @@ const ChatInput = ({
                         }
                         if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
                             e.preventDefault();
+                            if (isTemplateOnlyMode) return;
                             onSendMessage();
                             return;
                         }
@@ -707,19 +728,23 @@ const ChatInput = ({
                     style={{ color: isAiLoading ? '#8a2be2' : '#8696a0', animation: isAiLoading ? 'spin 2s linear infinite' : 'none' }}
                     onClick={onRequestAiSuggestion}
                     title="Sugerencia IA (/ayudar)"
+                    disabled={isTemplateOnlyMode}
                 >
                     <Bot size={22} />
                 </button>
                 {/* Send button */}
                 <button
                     className="send-button send-button-modern"
-                    onClick={onSendMessage}
+                    onClick={() => {
+                        if (!canSendFreeform) return;
+                        onSendMessage();
+                    }}
 
                     title={editingMessage?.id ? 'Guardar edicion' : (replyingMessage?.id ? 'Enviar respuesta' : 'Enviar')}
-                    disabled={!inputText.trim() && !attachment && !hasDraftQuickReply}
+                    disabled={!canSendFreeform}
                     style={{
-                        opacity: (!inputText.trim() && !attachment && !hasDraftQuickReply) ? 0.55 : 1,
-                        cursor: (!inputText.trim() && !attachment && !hasDraftQuickReply) ? 'not-allowed' : 'pointer'
+                        opacity: canSendFreeform ? 1 : 0.55,
+                        cursor: canSendFreeform ? 'pointer' : 'not-allowed'
                     }}
                 >
                     <Send size={26} />

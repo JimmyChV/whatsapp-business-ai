@@ -361,7 +361,8 @@ export default function useAppChatSocketRuntime({
     normalizeParticipantList,
     setClientContact,
     isInternalIdentifier,
-    setToasts
+    setToasts,
+    tenantScopeId: activeTenantId
   });
 
   const chatAssignmentState = useChatAssignmentState({

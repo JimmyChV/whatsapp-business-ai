@@ -107,31 +107,50 @@ const useSidebarChatPresentationModel = () => {
   const getSubtitle = (chat) => {
     const statusText = sanitizeDisplayText(chat?.status || '');
     const subtitleText = sanitizeDisplayText(chat?.subtitle || '');
-    const phone = formatPhone(chat?.phone || chat?.id || '');
     const displayName = getDisplayName(chat);
 
     const candidates = [statusText, subtitleText]
       .filter((v) => isHumanSubtitle(v) && !isInternalIdentifier(v) && v !== displayName);
 
     if (candidates.length > 0) {
-      const primary = candidates[0];
-      if (phone && primary !== phone) return primary + ' - ' + phone;
-      return primary;
+      return candidates[0];
     }
 
-    if (phone && phone !== displayName) return phone;
     return '';
   };
 
-  const getContactHint = (chat, displayName = '') => {
-    const phone = formatPhone(chat?.phone || chat?.id || '');
-    if (phone && phone !== displayName) return phone;
+  const getContactMeta = (chat, displayName = '') => {
     const subtitle = getSubtitle(chat);
+    if (!subtitle || subtitle === displayName) {
+      return { subtitle: '', alias: '', location: '' };
+    }
+
+    const parts = String(subtitle)
+      .split('•')
+      .map((part) => sanitizeDisplayText(part))
+      .filter(Boolean);
+
+    if (parts.length <= 1) {
+      const onlyPart = parts[0] || '';
+      const looksLikeLocation = onlyPart.includes(' - ');
+      return {
+        subtitle,
+        alias: looksLikeLocation ? '' : onlyPart,
+        location: looksLikeLocation ? onlyPart : ''
+      };
+    }
+
+    return {
+      subtitle,
+      alias: parts[0] || '',
+      location: parts.slice(1).join(' • ')
+    };
+  };
+
+  const getContactHint = (chat, displayName = '') => {
+    const { subtitle } = getContactMeta(chat, displayName);
     if (!subtitle || subtitle === displayName) return '';
-    const normalized = subtitle.includes(' - ')
-      ? String(subtitle).split(' - ')[0].trim()
-      : subtitle;
-    return normalized !== displayName ? normalized : '';
+    return subtitle !== displayName ? subtitle : '';
   };
 
   const getChannelBadge = (chat, waModules = []) => {
@@ -194,6 +213,7 @@ const useSidebarChatPresentationModel = () => {
     renderStatus,
     getDisplayName,
     getSubtitle,
+    getContactMeta,
     getContactHint,
     getChannelBadge,
     getChannelMarker,

@@ -1,5 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { getMessagePreviewText as getMessagePreviewTextFallback } from '../helpers/appChat.helpers';
+import { openOrFocusWorkspaceTab } from '../helpers/workspaceTabs.helpers';
+import { queueChatNotificationOpenRequest } from '../helpers/notificationWorkspace.helpers';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import {
     patchCachedMessages,
@@ -8,6 +10,46 @@ import {
     writeCachedMessages
 } from '../helpers/messageCache.helpers';
 import { mergeTemplateMessageContent } from '../helpers/templateMessages.helpers';
+
+function toTitleCaseChatText(value = '') {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+}
+
+function isBusinessErpCustomer(customer = null) {
+    if (!customer || typeof customer !== 'object') return false;
+    const documentType = String(customer?.documentType || customer?.document_type || '').trim().toUpperCase();
+    const customerType = String(customer?.customerType || customer?.customer_type || '').trim().toUpperCase();
+    const documentNumber = String(customer?.taxId || customer?.tax_id || customer?.documentNumber || customer?.document_number || '').trim();
+    return documentType === 'RUC' || customerType.includes('JURIDICA') || documentNumber.length === 11;
+}
+
+function buildErpChatDisplayName(customer = null) {
+    if (!customer || typeof customer !== 'object') return '';
+    if (isBusinessErpCustomer(customer)) {
+        return toTitleCaseChatText(customer?.lastNamePaternal || customer?.last_name_paternal || '');
+    }
+    return [
+        toTitleCaseChatText(customer?.firstName || customer?.first_name || ''),
+        toTitleCaseChatText(customer?.lastNamePaternal || customer?.last_name_paternal || ''),
+        toTitleCaseChatText(customer?.lastNameMaternal || customer?.last_name_maternal || '')
+    ].filter(Boolean).join(' ')
+        || toTitleCaseChatText(customer?.contactName || customer?.contact_name || '');
+}
+
+function buildErpPrimaryLocation(customer = null) {
+    const addresses = Array.isArray(customer?.addresses) ? customer.addresses : [];
+    const primary = addresses.find((address) => address?.isPrimary === true || address?.is_primary === true) || addresses[0] || null;
+    if (!primary) return '';
+    const districtName = toTitleCaseChatText(primary?.districtName || primary?.district_name || '');
+    const provinceName = toTitleCaseChatText(primary?.provinceName || primary?.province_name || '');
+    return [districtName, provinceName].filter(Boolean).join(' - ');
+}
 
 export default function useSocketChatConversationEvents({
     socket,
@@ -60,10 +102,140 @@ export default function useSocketChatConversationEvents({
     normalizeParticipantList,
     setClientContact,
     isInternalIdentifier,
-    setToasts
+    setToasts,
+    tenantScopeId = ''
 }) {
     const { notify } = useUiFeedback();
+    const recentInboundNotificationsRef = useRef(new Map());
+    const windowFocusedRef = useRef(true);
+    const pageVisibleRef = useRef(true);
+    const desktopNotificationSummaryRef = useRef({
+        totalMessages: 0,
+        chats: new Map(),
+        latestChatId: '',
+        latestModuleId: '',
+        latestTitle: '',
+        latestPreview: ''
+    });
     useEffect(() => {
+        const syncWindowAttentionState = () => {
+            try {
+                pageVisibleRef.current = typeof document !== 'undefined'
+                    ? document.visibilityState !== 'hidden'
+                    : true;
+            } catch (_) {
+                pageVisibleRef.current = true;
+            }
+            try {
+                windowFocusedRef.current = typeof document !== 'undefined' && typeof document.hasFocus === 'function'
+                    ? Boolean(document.hasFocus())
+                    : true;
+            } catch (_) {
+                windowFocusedRef.current = true;
+            }
+        };
+
+        const handleWindowFocus = () => {
+            windowFocusedRef.current = true;
+            syncWindowAttentionState();
+            desktopNotificationSummaryRef.current = {
+                totalMessages: 0,
+                chats: new Map(),
+                latestChatId: '',
+                latestModuleId: '',
+                latestTitle: '',
+                latestPreview: ''
+            };
+        };
+        const handleWindowBlur = () => {
+            windowFocusedRef.current = false;
+            syncWindowAttentionState();
+        };
+        const handleVisibilityChange = () => {
+            syncWindowAttentionState();
+        };
+
+        syncWindowAttentionState();
+        if (typeof window !== 'undefined') {
+            window.addEventListener('focus', handleWindowFocus);
+            window.addEventListener('blur', handleWindowBlur);
+        }
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+        }
+
+        const pruneRecentNotifications = (now = Date.now()) => {
+            const cache = recentInboundNotificationsRef.current;
+            if (!(cache instanceof Map) || cache.size === 0) return;
+            for (const [key, timestamp] of cache.entries()) {
+                if (!key || !Number.isFinite(Number(timestamp)) || (now - Number(timestamp)) > 15000) {
+                    cache.delete(key);
+                }
+            }
+        };
+
+        const buildIncomingNotificationKey = (msg = {}, relatedChatId = '') => {
+            const explicitId = String(msg?.id || '').trim();
+            if (explicitId) return `id:${explicitId}`;
+            const from = String(msg?.from || '').trim();
+            const preview = getMessagePreviewText(msg);
+            const timestamp = Number(msg?.timestamp || 0) || 0;
+            return `sig:${String(relatedChatId || '').trim()}|${from}|${timestamp}|${preview}`;
+        };
+
+        const shouldNotifyIncomingMessage = (msg = {}, relatedChatId = '') => {
+            const key = buildIncomingNotificationKey(msg, relatedChatId);
+            if (!key) return true;
+            const now = Date.now();
+            pruneRecentNotifications(now);
+            const cache = recentInboundNotificationsRef.current;
+            const previousTimestamp = Number(cache.get(key) || 0);
+            if (previousTimestamp > 0 && (now - previousTimestamp) < 5000) {
+                return false;
+            }
+            cache.set(key, now);
+            return true;
+        };
+
+        const pushGroupedToast = ({
+            toastId = '',
+            chatId = '',
+            title = '',
+            subtitle = '',
+            body = ''
+        } = {}) => {
+            const safeToastId = String(toastId || '').trim();
+            const safeChatId = String(chatId || '').trim();
+            if (!safeToastId || !safeChatId) return;
+
+            const toastUpdatedAt = Date.now();
+            setToasts((prev) => {
+                const previousItems = Array.isArray(prev) ? prev : [];
+                const existingToast = previousItems.find((toast) => String(toast?.id || '') === safeToastId);
+                const nextToast = {
+                    id: safeToastId,
+                    chatId: safeChatId,
+                    title: sanitizeDisplayText(title || 'Nuevo mensaje'),
+                    subtitle: sanitizeDisplayText(subtitle || ''),
+                    body: String(body || '').trim(),
+                    count: Math.max(1, Number(existingToast?.count || 0) + 1),
+                    updatedAt: toastUpdatedAt
+                };
+                const nextItems = [
+                    nextToast,
+                    ...previousItems.filter((toast) => String(toast?.id || '') !== safeToastId)
+                ];
+                return nextItems.slice(0, 4);
+            });
+
+            setTimeout(() => {
+                setToasts((prev) => (Array.isArray(prev) ? prev : []).filter((toast) => !(
+                    String(toast?.id || '') === safeToastId
+                    && Number(toast?.updatedAt || 0) === toastUpdatedAt
+                )));
+            }, 6500);
+        };
+
         const syncActiveMessages = (chatId, updater) => {
             const activeChatId = String(activeChatIdRef.current || '').trim();
             if (!chatId || !activeChatId || !chatIdsReferSameScope(chatId, activeChatId)) return;
@@ -487,6 +659,17 @@ export default function useSocketChatConversationEvents({
             if (activeChatId) {
                 writeCachedMessages(messagesCacheRef, activeChatId, normalizedMessages);
             }
+            const nextWindowOpen = Boolean(data?.windowOpen);
+            const nextWindowExpiresAt = String(data?.windowExpiresAt || '').trim() || null;
+            setChats((prev) => prev.map((chat) => (
+                chatIdsReferSameScope(String(chat?.id || ''), resolvedChatId)
+                    ? {
+                        ...chat,
+                        windowOpen: nextWindowOpen,
+                        windowExpiresAt: nextWindowExpiresAt
+                    }
+                    : chat
+            )));
         });
 
         socket.on('chat_media', ({ chatId, messageId, mediaData, mimetype, filename, fileSizeBytes }) => {
@@ -522,7 +705,7 @@ export default function useSocketChatConversationEvents({
             }));
         });
 
-        socket.on('message_updated', ({ id, chatId, scopeModuleId, mediaUrl, mediaPath, mimetype, filename, fileSizeBytes, mediaData, hasMedia, updatedAt, quotedMessage }) => {
+        socket.on('message_updated', ({ id, chatId, scopeModuleId, mediaUrl, mediaPath, mimetype, filename, fileSizeBytes, mediaData, hasMedia, updatedAt, quotedMessage, deliveryError }) => {
             const messageId = String(id || '').trim();
             if (!messageId) return;
 
@@ -549,6 +732,12 @@ export default function useSocketChatConversationEvents({
                     filename: shouldReplaceFilename ? nextFilename : currentFilename,
                     fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(message?.fileSizeBytes)) ? Number(message.fileSizeBytes) : null),
                     quotedMessage: normalizeQuotedMessage(quotedMessage || message?.quotedMessage),
+                    deliveryError: deliveryError && typeof deliveryError === 'object'
+                        ? {
+                            code: Number.isFinite(Number(deliveryError?.code)) ? Number(deliveryError.code) : null,
+                            message: String(deliveryError?.message || '').trim() || message?.deliveryError?.message || 'Meta rechazo la entrega del mensaje.'
+                        }
+                        : (message?.deliveryError || null),
                     updatedAt: String(updatedAt || '').trim() || message?.updatedAt || null
                 };
             }));
@@ -566,6 +755,12 @@ export default function useSocketChatConversationEvents({
                     filename: shouldReplaceFilename ? nextFilename : currentFilename,
                     fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(message?.fileSizeBytes)) ? Number(message.fileSizeBytes) : null),
                     quotedMessage: normalizeQuotedMessage(quotedMessage || message?.quotedMessage),
+                    deliveryError: deliveryError && typeof deliveryError === 'object'
+                        ? {
+                            code: Number.isFinite(Number(deliveryError?.code)) ? Number(deliveryError.code) : null,
+                            message: String(deliveryError?.message || '').trim() || message?.deliveryError?.message || 'Meta rechazo la entrega del mensaje.'
+                        }
+                        : (message?.deliveryError || null),
                     updatedAt: String(updatedAt || '').trim() || message?.updatedAt || null
                 };
             }));
@@ -704,18 +899,26 @@ export default function useSocketChatConversationEvents({
                         : []
                 }
                 : null;
-            const erpDisplayName = [
-                String(erpCustomer?.firstName || '').trim(),
-                String(erpCustomer?.lastNamePaternal || '').trim(),
-                String(erpCustomer?.lastNameMaternal || '').trim()
-            ].filter(Boolean).join(' ') || sanitizeDisplayText(erpCustomer?.contactName || '');
+            const erpDisplayName = buildErpChatDisplayName(erpCustomer);
+            const erpLocation = buildErpPrimaryLocation(erpCustomer);
+            const whatsappContactName = toTitleCaseChatText(contact?.pushname || contact?.name || contact?.shortName || '');
+            const subtitleParts = [];
+            if (whatsappContactName && whatsappContactName.toLowerCase() !== erpDisplayName.toLowerCase()) {
+                subtitleParts.push(whatsappContactName);
+            }
+            if (erpLocation) {
+                subtitleParts.push(erpLocation);
+            }
+            const resolvedSubtitle = subtitleParts.join(' • ') || whatsappContactName || erpLocation || '';
             const normalizedContact = {
                 ...contact,
-                name: sanitizeDisplayText(erpDisplayName || contact?.name || ''),
-                pushname: sanitizeDisplayText(contact?.pushname || ''),
-                shortName: sanitizeDisplayText(contact?.shortName || ''),
+                name: sanitizeDisplayText(erpDisplayName || toTitleCaseChatText(contact?.name || contact?.pushname || '')),
+                pushname: sanitizeDisplayText(toTitleCaseChatText(contact?.pushname || '')),
+                shortName: sanitizeDisplayText(toTitleCaseChatText(contact?.shortName || '')),
                 profilePicUrl: normalizeProfilePhotoUrl(contact?.profilePicUrl),
                 status: repairMojibake(contact?.status || ''),
+                windowOpen: Boolean(contact?.windowOpen),
+                windowExpiresAt: String(contact?.windowExpiresAt || '').trim() || null,
                 participants: participantsCount,
                 participantsList,
                 erpCustomer,
@@ -732,7 +935,7 @@ export default function useSocketChatConversationEvents({
             const contactPhone = getBestChatPhone({
                 id: contactId,
                 phone: contact?.phone || '',
-                subtitle: String(contact?.pushname || '') + ' ' + String(contact?.shortName || '') + ' ' + String(contact?.name || ''),
+                subtitle: resolvedSubtitle,
                 status: contact?.status || ''
             });
 
@@ -740,8 +943,8 @@ export default function useSocketChatConversationEvents({
                 const existing = prev.find((c) => chatIdsReferSameScope(String(c?.id || ''), contactId));
                 if (!existing) return prev;
 
-                const fallbackName = sanitizeDisplayText(erpDisplayName || contact?.name || contact?.pushname || contact?.shortName || existing?.name || '');
-                const subtitleName = sanitizeDisplayText(contact?.pushname || contact?.shortName || contact?.name || '');
+                const fallbackName = sanitizeDisplayText(erpDisplayName || toTitleCaseChatText(contact?.name || contact?.pushname || contact?.shortName || existing?.name || ''));
+                const subtitleName = sanitizeDisplayText(resolvedSubtitle);
                 const nextChat = {
                     ...existing,
                     id: existing.id || contactId,
@@ -756,7 +959,9 @@ export default function useSocketChatConversationEvents({
                     participants: normalizedContact.participants || existing?.participants || 0,
                     participantsList: normalizedContact.participantsList || existing?.participantsList || [],
                     customerId: erpCustomer?.customerId || existing?.customerId || null,
-                    erpCustomerName: erpDisplayName || existing?.erpCustomerName || null
+                    erpCustomerName: erpDisplayName || existing?.erpCustomerName || null,
+                    windowOpen: typeof normalizedContact?.windowOpen === 'boolean' ? normalizedContact.windowOpen : existing?.windowOpen,
+                    windowExpiresAt: normalizedContact?.windowExpiresAt || existing?.windowExpiresAt || null
                 };
 
                 if (!chatMatchesQuery(nextChat, chatSearchRef.current) || !chatMatchesFilters(nextChat, chatFiltersRef.current)) {
@@ -770,26 +975,130 @@ export default function useSocketChatConversationEvents({
         socket.on('message', (msg) => {
             const relatedChatId = String(msg?.chatId || (msg.fromMe ? msg.to : msg.from) || '').trim();
             if (!isVisibleChatId(relatedChatId)) return;
+            const relatedWindowExpiresAt = !msg?.fromMe && Number(msg?.timestamp || 0) > 0
+                ? new Date((Number(msg.timestamp) * 1000) + (24 * 60 * 60 * 1000)).toISOString()
+                : null;
+            const shouldRaiseIncomingNotification = !msg?.fromMe
+                ? shouldNotifyIncomingMessage(msg, relatedChatId)
+                : false;
 
-            if (!msg.fromMe && Notification.permission === 'granted') {
-                new Notification(msg.notifyName || 'Nuevo mensaje', {
-                    body: getMessagePreviewText(msg),
-                    icon: '/favicon.ico'
-                });
-            }
+            const isAttentionOutsideApp = !pageVisibleRef.current || !windowFocusedRef.current;
+            const incomingPreview = getMessagePreviewText(msg);
+            const existingChat = (Array.isArray(chatsRef.current) ? chatsRef.current : []).find((chat) => (
+                chatIdsReferSameScope(String(chat?.id || ''), relatedChatId)
+            )) || null;
+            const toastId = String(relatedChatId || msg?.from || msg?.id || Date.now()).trim();
+            const toastTitle = sanitizeDisplayText(
+                existingChat?.name
+                || msg?.notifyName
+                || msg?.senderPushname
+                || msg?.from
+                || 'Nuevo mensaje'
+            );
+            const toastSubtitle = sanitizeDisplayText(existingChat?.subtitle || '');
+            const notificationModuleId = String(
+                existingChat?.scopeModuleId
+                || existingChat?.lastMessageModuleId
+                || msg?.scopeModuleId
+                || msg?.sentViaModuleId
+                || ''
+            ).trim().toLowerCase();
 
-            if (!msg.fromMe && !chatIdsReferSameScope(relatedChatId, String(activeChatIdRef.current || ''))) {
-                const toastId = String(msg.id || Date.now());
-                setToasts((prev) => [...prev, {
-                    id: toastId,
+            if (
+                !msg.fromMe
+                && shouldRaiseIncomingNotification
+                && isAttentionOutsideApp
+            ) {
+                const canUseDesktopNotifications = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+                const desktopSummary = desktopNotificationSummaryRef.current || {
+                    totalMessages: 0,
+                    chats: new Map(),
+                    latestChatId: '',
+                    latestModuleId: '',
+                    latestTitle: '',
+                    latestPreview: ''
+                };
+                const chatCounts = desktopSummary.chats instanceof Map ? desktopSummary.chats : new Map();
+                chatCounts.set(toastId, Math.max(1, Number(chatCounts.get(toastId) || 0) + 1));
+                desktopSummary.chats = chatCounts;
+                desktopSummary.totalMessages = Math.max(1, Number(desktopSummary.totalMessages || 0) + 1);
+                desktopSummary.latestChatId = relatedChatId;
+                desktopSummary.latestModuleId = notificationModuleId;
+                desktopSummary.latestTitle = toastTitle || 'Nuevo mensaje';
+                desktopSummary.latestPreview = incomingPreview;
+                desktopNotificationSummaryRef.current = desktopSummary;
+
+                if (canUseDesktopNotifications) {
+                    const distinctChats = chatCounts.size;
+                    const totalMessages = Math.max(1, Number(desktopSummary.totalMessages || 0));
+                    const notificationTitle = distinctChats > 1
+                        ? `${distinctChats} chats nuevos`
+                        : (toastTitle || 'Nuevo mensaje');
+                    const notificationBody = distinctChats > 1
+                        ? `${totalMessages} mensajes nuevos. Ultimo: ${desktopSummary.latestTitle}: ${incomingPreview}`
+                        : incomingPreview;
+                    const desktopNotification = new Notification(notificationTitle, {
+                        body: notificationBody,
+                        icon: '/favicon.ico',
+                        tag: `lavitat_desktop_${String(tenantScopeId || 'default').trim().toLowerCase() || 'default'}`,
+                        renotify: true
+                    });
+
+                    desktopNotification.onclick = () => {
+                        const targetTenantId = String(tenantScopeId || '').trim();
+                        const targetChatId = String(desktopSummary.latestChatId || relatedChatId || '').trim();
+                        const targetModuleId = String(desktopSummary.latestModuleId || notificationModuleId || '').trim().toLowerCase();
+                        if (targetTenantId && targetChatId) {
+                            queueChatNotificationOpenRequest({
+                                tenantId: targetTenantId,
+                                chatId: targetChatId,
+                                moduleId: targetModuleId,
+                                source: 'desktop_notification'
+                            });
+                            openOrFocusWorkspaceTab({
+                                mode: 'operation',
+                                tenantId: targetTenantId,
+                                moduleId: targetModuleId,
+                                source: 'notification'
+                            });
+                        }
+                        try {
+                            window.focus?.();
+                        } catch (_) { }
+                        if (chatIdsReferSameScope(String(activeChatIdRef.current || ''), targetChatId)) {
+                            handleChatSelect?.(targetChatId, { clearSearch: true });
+                        }
+                        desktopNotificationSummaryRef.current = {
+                            totalMessages: 0,
+                            chats: new Map(),
+                            latestChatId: '',
+                            latestModuleId: '',
+                            latestTitle: '',
+                            latestPreview: ''
+                        };
+                        desktopNotification.close?.();
+                    };
+                }
+
+                pushGroupedToast({
+                    toastId,
                     chatId: relatedChatId,
-                    title: sanitizeDisplayText(msg.notifyName || msg.from || 'Nuevo mensaje'),
-                    body: getMessagePreviewText(msg)
-                }].slice(-3));
-
-                setTimeout(() => {
-                    setToasts((prev) => prev.filter((t) => t.id !== toastId));
-                }, 5000);
+                    title: toastTitle,
+                    subtitle: toastSubtitle,
+                    body: incomingPreview
+                });
+            } else if (
+                !msg.fromMe
+                && shouldRaiseIncomingNotification
+                && !chatIdsReferSameScope(relatedChatId, String(activeChatIdRef.current || ''))
+            ) {
+                pushGroupedToast({
+                    toastId,
+                    chatId: relatedChatId,
+                    title: toastTitle,
+                    subtitle: toastSubtitle,
+                    body: incomingPreview
+                });
             }
 
             setChats((prev) => {
@@ -826,6 +1135,8 @@ export default function useSocketChatConversationEvents({
                     ack: msg.ack || 0,
                     isMyContact: existing?.isMyContact === true,
                     unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (chatIdsReferSameScope(canonicalId, String(activeChatIdRef.current || '')) ? 0 : (existing?.unreadCount || 0) + 1),
+                    windowOpen: msg.fromMe ? existing?.windowOpen : true,
+                    windowExpiresAt: msg.fromMe ? (existing?.windowExpiresAt || null) : relatedWindowExpiresAt,
                     lastMessageModuleId: String(msg?.sentViaModuleId || canonicalScopeModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null,
                     lastMessageModuleName: String(msg?.sentViaModuleName || existing?.lastMessageModuleName || '').trim() || null,
                     lastMessageModuleImageUrl: normalizeModuleImageUrl(msg?.sentViaModuleImageUrl || existing?.lastMessageModuleImageUrl || '') || null,
@@ -880,6 +1191,17 @@ export default function useSocketChatConversationEvents({
                 optimistic: false,
                 status: Number(enrichedIncoming?.ack || 0) >= 2 ? 'delivered' : Number(enrichedIncoming?.ack || 0) >= 1 ? 'sent' : 'sending'
             };
+
+            if (!msg?.fromMe && chatIdsReferSameScope(relatedChatId, String(activeChatIdRef.current || ''))) {
+                setClientContact((prev) => {
+                    const safePrev = prev && typeof prev === 'object' ? prev : {};
+                    return {
+                        ...safePrev,
+                        windowOpen: true,
+                        windowExpiresAt: relatedWindowExpiresAt
+                    };
+                });
+            }
 
             patchCachedMessages(messagesCacheRef, relatedChatId, (prev) => {
                 const incomingId = String(reconciledIncoming?.id || '').trim();
@@ -993,6 +1315,13 @@ export default function useSocketChatConversationEvents({
         });
 
         return () => {
+            if (typeof window !== 'undefined') {
+                window.removeEventListener('focus', handleWindowFocus);
+                window.removeEventListener('blur', handleWindowBlur);
+            }
+            if (typeof document !== 'undefined') {
+                document.removeEventListener('visibilitychange', handleVisibilityChange);
+            }
             [
                 'tenant_context',
                 'wa_module_context',

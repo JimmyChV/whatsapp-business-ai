@@ -652,13 +652,23 @@ function createSocketWaEventsBridgeService({
             } catch (e) { }
         });
 
-        waClient.on('message_ack', async ({ message, ack }) => {
+        waClient.on('message_ack', async ({ message, ack, errors }) => {
             const messageId = getSerializedMessageId(message);
             const baseChatId = String(message?.to || message?.from || '').trim();
             const isFromMe = Boolean(message?.fromMe);
             const runtimeModuleContext = resolveHistoryModuleContext();
             const scopeModuleId = normalizeScopedModuleId(runtimeModuleContext?.moduleId || '');
             const scopedChatId = buildScopedChatId(baseChatId, scopeModuleId || '');
+            const normalizedErrors = Array.isArray(errors) ? errors : [];
+            const primaryError = normalizedErrors[0] && typeof normalizedErrors[0] === 'object'
+                ? normalizedErrors[0]
+                : null;
+            const deliveryError = primaryError
+                ? {
+                    code: Number.isFinite(Number(primaryError?.code)) ? Number(primaryError.code) : null,
+                    message: String(primaryError?.message || primaryError?.details || '').trim() || 'Meta rechazo la entrega del mensaje.'
+                }
+                : null;
             await persistMessageAck(resolveHistoryTenantId(), {
                 messageId,
                 chatId: baseChatId,
@@ -680,6 +690,17 @@ function createSocketWaEventsBridgeService({
                 ack: ack,
                 canEdit
             });
+
+            if (messageId && deliveryError) {
+                emitToRuntimeContext('message_updated', {
+                    id: messageId,
+                    chatId: scopedChatId || baseChatId,
+                    baseChatId: baseChatId || null,
+                    scopeModuleId: scopeModuleId || null,
+                    deliveryError,
+                    updatedAt: new Date().toISOString()
+                });
+            }
 
             if (isFromMe && messageId) {
                 scheduleEditabilityRefresh(messageId, scopedChatId || baseChatId, [900, 2600]);

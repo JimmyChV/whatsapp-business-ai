@@ -102,6 +102,8 @@ const ChatWindow = ({
         resolveGroupSenderName,
         formatDayLabel,
         headerDisplayName,
+        headerAlias,
+        headerLocation,
         showHeaderModule,
         headerModuleName,
         headerModuleChannel,
@@ -131,6 +133,7 @@ const ChatWindow = ({
     const headerLabels = Array.isArray(activeChatDetails?.labels) ? activeChatDetails.labels : [];
     const visibleHeaderLabels = headerLabels.slice(0, 2);
     const hiddenHeaderLabelsCount = Math.max(0, headerLabels.length - visibleHeaderLabels.length);
+    const conversationWindowOpen = activeChatDetails?.windowOpen !== false;
     const handleJumpToMessage = (targetMessageId) => {
         const safeTargetMessageId = String(targetMessageId || '').trim();
         if (!safeTargetMessageId) return;
@@ -172,40 +175,31 @@ const ChatWindow = ({
                 </div>
                 <div className="chat-header-meta">
                     <div className="chat-header-title-row chat-header-title-row--clean">
-                        <h3 className="chat-header-name">{headerDisplayName}</h3>
-                        <CommercialStatusBadge
-                            commercialStatus={activeChatCommercialStatus}
-                            compact
-                        />
-                        <AssignmentBadge
-                            assignment={activeChatAssignment}
-                            isAssignedToMe={isAssignedToMe}
-                            compact
-                        />
-                        <CommercialStatusActions
-                            chatId={activeChatScopedId}
-                            commercialStatus={activeChatCommercialStatus}
-                            chatCommercialStatusState={chatCommercialStatusState}
-                            currentUserRole={currentUserRole}
-                        />
+                        <h3 className="chat-header-name" title={headerDisplayName}>{headerDisplayName}</h3>
+                        <div className="chat-header-title-tools">
+                            <div className="chat-header-badges">
+                                <CommercialStatusBadge
+                                    commercialStatus={activeChatCommercialStatus}
+                                    compact
+                                />
+                                <AssignmentBadge
+                                    assignment={activeChatAssignment}
+                                    isAssignedToMe={isAssignedToMe}
+                                    compact
+                                />
+                            </div>
+                            <CommercialStatusActions
+                                chatId={activeChatScopedId}
+                                commercialStatus={activeChatCommercialStatus}
+                                chatCommercialStatusState={chatCommercialStatusState}
+                                currentUserRole={currentUserRole}
+                            />
+                        </div>
                     </div>
                     <div className="chat-header-subline chat-header-subline--summary">
-                        {showHeaderModule && (
-                            <span className="chat-header-module-mini" title={headerModuleName || 'Modulo'}>
-                                {headerModuleImageUrl
-                                    ? <img src={headerModuleImageUrl} alt={headerModuleName || 'Modulo'} className="chat-header-module-avatar" />
-                                    : <span className="chat-header-module-dot" aria-hidden="true" />}
-                                <span className="chat-header-module-name">{headerModuleName || 'MODULO'}</span>
-                                {headerModuleChannel && (
-                                    <span className="chat-header-module-channel" title={headerModuleChannel}>
-                                        <ChannelBrandIcon
-                                            channelType={headerModuleChannelType}
-                                            className="chat-header-module-channel-icon"
-                                            size={10}
-                                            title={headerModuleChannel}
-                                        />
-                                    </span>
-                                )}
+                        {headerLocation && (
+                            <span className="chat-header-location-chip" title={headerLocation}>
+                                {headerLocation}
                             </span>
                         )}
                         {activeChatDetails?.isBusiness && <span className="chat-header-secondary-pill">Business</span>}
@@ -222,6 +216,27 @@ const ChatWindow = ({
                         {hiddenHeaderLabelsCount > 0 && (
                             <span className="chat-header-label-more" title={`${hiddenHeaderLabelsCount} etiqueta(s) adicionales`}>
                                 +{hiddenHeaderLabelsCount}
+                            </span>
+                        )}
+                        {showHeaderModule && (
+                            <span className="chat-header-module-inline" title={headerModuleName || 'Modulo'}>
+                                <span className="chat-header-module-inline-label">Modulo</span>
+                                <span className="chat-header-module-mini">
+                                    {headerModuleImageUrl
+                                        ? <img src={headerModuleImageUrl} alt={headerModuleName || 'Modulo'} className="chat-header-module-avatar" />
+                                        : <span className="chat-header-module-dot" aria-hidden="true" />}
+                                    <span className="chat-header-module-name">{headerModuleName || 'MODULO'}</span>
+                                    {headerModuleChannel && (
+                                        <span className="chat-header-module-channel" title={headerModuleChannel}>
+                                            <ChannelBrandIcon
+                                                channelType={headerModuleChannelType}
+                                                className="chat-header-module-channel-icon"
+                                                size={10}
+                                                title={headerModuleChannel}
+                                            />
+                                        </span>
+                                    )}
+                                </span>
                             </span>
                         )}
                     </div>
@@ -484,12 +499,30 @@ const ChatWindow = ({
             {/* Input Area */}
             {canWriteByAssignment ? (
                 <>
+                    {!conversationWindowOpen && (
+                        <div className="chat-window-expired-banner">
+                            <div className="chat-window-expired-banner-copy">
+                                <span className="chat-window-expired-banner-title">Ventana de 24 horas cerrada</span>
+                                <span className="chat-window-expired-banner-text">
+                                    La ventana de conversación expiró. Solo puedes contactar con un template aprobado.
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                className="chat-window-expired-banner-action"
+                                onClick={() => inputProps?.onOpenSendTemplate?.()}
+                            >
+                                Enviar template
+                            </button>
+                        </div>
+                    )}
                     <ChatInput
                         {...inputProps}
                         replyingMessage={inputProps?.replyingMessage}
                         onCancelReplyMessage={inputProps?.onCancelReplyMessage}
                         onOpenMapPicker={() => openMapModal({ query: '' })}
                         buildApiHeaders={buildApiHeaders}
+                        windowOpen={conversationWindowOpen}
                     />
                     <SendTemplateModal
                         isOpen={Boolean(inputProps?.sendTemplateOpen)}

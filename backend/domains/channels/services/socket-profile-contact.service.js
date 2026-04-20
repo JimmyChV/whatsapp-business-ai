@@ -3,6 +3,7 @@ function createSocketProfileContactService({
     tenantLabelService,
     customerService,
     customerAddressesService,
+    messageHistoryService,
     resolveProfilePic,
     normalizeBusinessDetailsSnapshot,
     extractContactSnapshot,
@@ -15,6 +16,30 @@ function createSocketProfileContactService({
     buildScopedChatId,
     snapshotSerializable
 } = {}) {
+    const MESSAGE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+    const buildConversationWindowState = async (tenantId = 'default', chatId = '') => {
+        const safeChatId = String(chatId || '').trim();
+        if (!safeChatId || !messageHistoryService || typeof messageHistoryService.listMessages !== 'function') {
+            return { windowOpen: false, windowExpiresAt: null };
+        }
+        try {
+            const rows = await messageHistoryService.listMessages(tenantId, { chatId: safeChatId, limit: 100 });
+            const lastInbound = (Array.isArray(rows) ? rows : []).find((message) => message?.fromMe === false);
+            const lastInboundTs = Number(lastInbound?.timestampUnix || 0) || 0;
+            if (!lastInboundTs) {
+                return { windowOpen: false, windowExpiresAt: null };
+            }
+            const windowExpiresAtMs = (lastInboundTs * 1000) + MESSAGE_WINDOW_MS;
+            return {
+                windowOpen: windowExpiresAtMs > Date.now(),
+                windowExpiresAt: new Date(windowExpiresAtMs).toISOString()
+            };
+        } catch (_) {
+            return { windowOpen: false, windowExpiresAt: null };
+        }
+    };
+
     const registerProfileContactHandlers = ({
         socket,
         tenantId = 'default',
@@ -163,6 +188,7 @@ function createSocketProfileContactService({
                 const hydratedChatSnapshot = chatSnapshot
                     ? { ...chatSnapshot, participantsCount }
                     : null;
+                const conversationWindow = await buildConversationWindowState(tenantId, safeContactId);
 
                 socket.emit('contact_info', {
                     id: scopedContactTarget.scopedChatId || buildScopedChatId(safeContactId, scopedContactTarget.moduleId || ''),
@@ -191,6 +217,8 @@ function createSocketProfileContactService({
                     isPSA: Boolean(contact?.isPSA),
                     participants: participantsCount,
                     participantsList: isGroupChat ? groupParticipants : [],
+                    windowOpen: Boolean(conversationWindow?.windowOpen),
+                    windowExpiresAt: conversationWindow?.windowExpiresAt || null,
                     labels,
                     erpCustomer,
                     chatState: hydratedChatSnapshot,

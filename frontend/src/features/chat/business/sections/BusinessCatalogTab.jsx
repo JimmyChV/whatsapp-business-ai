@@ -248,12 +248,13 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                             <label style={{ fontSize: '0.68rem', color: '#9eb2bf', letterSpacing: '0.02em', textTransform: 'uppercase' }}>Modulo</label>
                             <select
                                 value={activeCatalogModuleId}
+                                disabled={!canWriteByAssignment}
                                 onChange={(event) => {
                                     const nextModuleId = String(event.target.value || '').trim();
                                     if (!nextModuleId || typeof onSelectCatalogModule !== 'function') return;
                                     onSelectCatalogModule(nextModuleId);
                                 }}
-                                style={{ width: '100%', background: '#101a21', border: '1px solid rgba(0,168,132,0.35)', color: '#e9f2f7', borderRadius: '10px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none' }}
+                                style={{ width: '100%', background: '#101a21', border: '1px solid rgba(0,168,132,0.35)', color: '#e9f2f7', borderRadius: '10px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.72, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed' }}
                             >
                                 {moduleOptions.map((module) => (
                                     <option key={'catalog_module_' + module.moduleId} value={module.moduleId}>{module.name}</option>
@@ -265,12 +266,13 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                             <label style={{ fontSize: '0.68rem', color: '#9eb2bf', letterSpacing: '0.02em', textTransform: 'uppercase' }}>Catalogo</label>
                             <select
                                 value={activeCatalogId}
+                                disabled={!canWriteByAssignment}
                                 onChange={(event) => {
                                     const nextCatalogId = String(event.target.value || '').trim().toUpperCase();
                                     if (typeof onSelectCatalog !== 'function') return;
                                     onSelectCatalog(nextCatalogId);
                                 }}
-                                style={{ width: '100%', background: '#101a21', border: '1px solid rgba(0,168,132,0.35)', color: '#e9f2f7', borderRadius: '10px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none' }}
+                                style={{ width: '100%', background: '#101a21', border: '1px solid rgba(0,168,132,0.35)', color: '#e9f2f7', borderRadius: '10px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.72, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed' }}
                             >
                                 {catalogOptions.length === 0 && <option value="">Sin catalogos</option>}
                                 {catalogOptions.map((entry) => (
@@ -296,9 +298,10 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                             <input
                                 type="text"
                                 value={catalogSearch}
+                                disabled={!canWriteByAssignment}
                                 onChange={e => setCatalogSearch(e.target.value)}
                                 placeholder="Buscar producto o SKU"
-                                style={{ width: '100%', minWidth: 0, background: 'transparent', border: 'none', color: '#e9f2f7', borderRadius: '10px', padding: '8px 0', fontSize: '0.78rem', outline: 'none' }}
+                                style={{ width: '100%', minWidth: 0, background: 'transparent', border: 'none', color: '#e9f2f7', borderRadius: '10px', padding: '8px 0', fontSize: '0.78rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.72, cursor: canWriteByAssignment ? 'text' : 'not-allowed' }}
                             />
                             {catalogSearch.trim() && (
                                 <button
@@ -315,6 +318,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                             type="button"
                             onClick={() => setShowCatalogFilters(prev => !prev)}
                             title="Filtros"
+                            disabled={!canWriteByAssignment}
                             style={{
                                 height: '36px',
                                 minWidth: '40px',
@@ -322,11 +326,12 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                 border: hasCatalogFilters || showCatalogFilters ? '1px solid rgba(0,168,132,0.6)' : '1px solid rgba(134,150,160,0.3)',
                                 background: hasCatalogFilters || showCatalogFilters ? 'rgba(0,168,132,0.18)' : '#111b21',
                                 color: hasCatalogFilters || showCatalogFilters ? '#baf6e8' : '#9eb2bf',
-                                cursor: 'pointer',
+                                cursor: canWriteByAssignment ? 'pointer' : 'not-allowed',
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                position: 'relative'
+                                position: 'relative',
+                                opacity: canWriteByAssignment ? 1 : 0.72
                             }}
                         >
                             <SlidersHorizontal size={15} />
@@ -342,8 +347,9 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><SlidersHorizontal size={12} /> Categoria</span>
                                 <select
                                     value={catalogCategoryFilter}
+                                    disabled={!canWriteByAssignment}
                                     onChange={e => setCatalogCategoryFilter(e.target.value)}
-                                    style={{ width: '100%', background: '#101a21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '8px', padding: '6px 8px', fontSize: '0.75rem', outline: 'none' }}
+                                    style={{ width: '100%', background: '#101a21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '8px', padding: '6px 8px', fontSize: '0.75rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.72, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed' }}
                                 >
                                     <option value="all">Todas</option>
                                     {categoryOptions.map((category) => (
@@ -356,8 +362,9 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>Vista</span>
                                 <select
                                     value={catalogTypeFilter}
+                                    disabled={!canWriteByAssignment}
                                     onChange={e => setCatalogTypeFilter(e.target.value)}
-                                    style={{ width: '100%', background: '#101a21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '8px', padding: '6px 8px', fontSize: '0.75rem', outline: 'none' }}
+                                    style={{ width: '100%', background: '#101a21', border: '1px solid var(--border-color)', color: '#e9f2f7', borderRadius: '8px', padding: '6px 8px', fontSize: '0.75rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.72, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed' }}
                                 >
                                     <option value="all">Todos</option>
                                     <option value="discount">Con descuento</option>
