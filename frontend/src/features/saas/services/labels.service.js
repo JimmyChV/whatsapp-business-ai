@@ -24,3 +24,45 @@ export async function deactivateTenantLabel(requestJson, tenantId, labelId) {
         method: 'POST'
     });
 }
+
+export async function fetchGlobalLabels(requestJson, { includeInactive = true } = {}) {
+    const query = includeInactive ? '?includeInactive=true' : '';
+    return requestJson(`/api/ops/global-labels${query}`);
+}
+
+export async function saveGlobalLabel(requestJson, payload = {}) {
+    const id = String(payload?.id || '').trim();
+    return requestJson(id ? `/api/ops/global-labels/${encodeURIComponent(id)}` : '/api/ops/global-labels', {
+        method: id ? 'PUT' : 'POST',
+        body: payload
+    });
+}
+
+export async function deleteGlobalLabel(requestJson, id = '') {
+    return requestJson(`/api/ops/global-labels/${encodeURIComponent(String(id || '').trim())}`, {
+        method: 'DELETE'
+    });
+}
+
+export async function fetchTenantZoneRules(requestJson, { includeInactive = true } = {}) {
+    const query = includeInactive ? '?includeInactive=true' : '';
+    return requestJson(`/api/tenant/zone-rules${query}`);
+}
+
+export async function saveTenantZoneRule(requestJson, payload = {}) {
+    const ruleId = String(payload?.ruleId || payload?.rule_id || '').trim();
+    return requestJson(ruleId ? `/api/tenant/zone-rules/${encodeURIComponent(ruleId)}` : '/api/tenant/zone-rules', {
+        method: ruleId ? 'PUT' : 'POST',
+        body: payload
+    });
+}
+
+export async function deleteTenantZoneRule(requestJson, ruleId = '') {
+    return requestJson(`/api/tenant/zone-rules/${encodeURIComponent(String(ruleId || '').trim())}`, {
+        method: 'DELETE'
+    });
+}
+
+export async function recalculateTenantZones(requestJson) {
+    return requestJson('/api/tenant/zone-rules/recalculate', { method: 'POST' });
+}

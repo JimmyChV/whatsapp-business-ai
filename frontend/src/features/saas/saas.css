@@ -5482,3 +5482,78 @@
 .saas-admin-shell .saas-meta-template-var-list::-webkit-scrollbar-thumb:hover {
   background: var(--saas-scrollbar-thumb-hover);
 }
+/* Labels system */
+.saas-labels-header {
+    margin-bottom: 12px;
+}
+
+.saas-labels-current-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 0 12px;
+    border: 1px solid rgba(0, 168, 132, 0.45);
+    border-radius: 999px;
+    color: #b7f7e5;
+    background: rgba(0, 168, 132, 0.12);
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.saas-labels-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+    gap: 14px;
+    min-height: 0;
+}
+
+.saas-labels-list-card,
+.saas-labels-editor-card {
+    min-height: 0;
+    border: 1px solid rgba(125, 174, 195, 0.26);
+    border-radius: 18px;
+    background: rgba(6, 20, 28, 0.72);
+    padding: 14px;
+}
+
+.saas-labels-list-card {
+    overflow: hidden;
+}
+
+.saas-labels-list-card .saas-admin-list {
+    max-height: 56vh;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.saas-label-color-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 8px;
+    border-radius: 999px;
+    background: var(--label-color, #00A884);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06);
+}
+
+.saas-labels-textarea {
+    width: 100%;
+    min-height: 74px;
+    margin-bottom: 10px;
+    resize: vertical;
+}
+
+.saas-labels-operational {
+    margin-top: 0;
+}
+
+.saas-admin-tabs--secondary {
+    margin-top: 10px;
+}
+
+@media (max-width: 1100px) {
+    .saas-labels-grid {
+        grid-template-columns: 1fr;
+    }
+}

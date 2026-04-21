@@ -56,6 +56,7 @@ export default function buildOpsAndAutomationSectionContext(c) {
         loadTenantLabels: c.loadTenantLabels,
         setError: c.setError,
         canManageLabels: c.canManageLabels,
+        isSuperAdmin: c.isSuperAdmin,
         openTenantLabelCreate: c.openTenantLabelCreate,
         labelSearch: c.labelSearch,
         setLabelSearch: c.setLabelSearch,
