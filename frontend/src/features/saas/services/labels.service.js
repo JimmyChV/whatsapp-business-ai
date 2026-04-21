@@ -49,6 +49,13 @@ export async function fetchTenantZoneRules(requestJson, { includeInactive = true
     return requestJson(`/api/tenant/zone-rules${query}`);
 }
 
+export async function fetchTenantCustomerLabels(requestJson, { source = '' } = {}) {
+    const params = new URLSearchParams();
+    if (String(source || '').trim()) params.set('source', String(source || '').trim());
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return requestJson(`/api/tenant/customer-labels${query}`);
+}
+
 export async function saveTenantZoneRule(requestJson, payload = {}) {
     const ruleId = String(payload?.ruleId || payload?.rule_id || '').trim();
     return requestJson(ruleId ? `/api/tenant/zone-rules/${encodeURIComponent(ruleId)}` : '/api/tenant/zone-rules', {

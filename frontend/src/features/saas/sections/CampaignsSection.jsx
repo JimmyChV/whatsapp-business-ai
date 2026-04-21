@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import { isTemplateAllowedInCampaigns } from '../helpers/templateUseCase.helpers';
+import { fetchTenantZoneRules } from '../services/labels.service';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -30,6 +31,7 @@ const EMPTY_FORM = {
     scheduledAt: '',
     commercialStatuses: [],
     selectedLabelIds: [],
+    selectedZoneRuleIds: [],
     languageFilter: '',
     searchText: '',
     maxRecipients: ''
@@ -112,7 +114,18 @@ function buildLabelOptions(items = []) {
         .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
 }
 
-function mapCampaignToForm(campaign = {}, labelOptions = []) {
+function buildZoneOptions(items = []) {
+    return (Array.isArray(items) ? items : [])
+        .map((item) => ({
+            ruleId: toUpper(item?.ruleId || item?.rule_id || item?.id || ''),
+            name: toText(item?.name || item?.label || ''),
+            isActive: item?.isActive !== false
+        }))
+        .filter((item) => item.ruleId && item.name && item.isActive)
+        .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+}
+
+function mapCampaignToForm(campaign = {}, labelOptions = [], zoneOptions = []) {
     const filters = campaign?.audienceFiltersJson && typeof campaign.audienceFiltersJson === 'object' ? campaign.audienceFiltersJson : {};
     const labelsByName = new Map(labelOptions.map((entry) => [toLower(entry.name), entry.labelId]));
     const labelsById = new Set(labelOptions.map((entry) => toUpper(entry.labelId)));
@@ -125,6 +138,10 @@ function mapCampaignToForm(campaign = {}, labelOptions = []) {
             return labelsByName.get(toLower(raw)) || '';
         })
         .filter(Boolean);
+    const zoneIds = new Set(zoneOptions.map((entry) => toUpper(entry.ruleId)));
+    const selectedZoneRuleIds = (Array.isArray(filters?.zoneLabelIds) ? filters.zoneLabelIds : (filters?.zoneLabelId ? [filters.zoneLabelId] : []))
+        .map((entry) => toUpper(entry))
+        .filter((entry) => entry && zoneIds.has(entry));
     return {
         campaignName: toText(campaign?.campaignName),
         campaignDescription: toText(campaign?.campaignDescription),
@@ -135,25 +152,31 @@ function mapCampaignToForm(campaign = {}, labelOptions = []) {
         scheduledAt: toDateTimeLocal(campaign?.scheduledAt),
         commercialStatuses: normalizeCommercialStatuses(filters?.commercialStatuses || (filters?.commercialStatus ? [filters.commercialStatus] : [])),
         selectedLabelIds: Array.from(new Set(selectedLabelIds)),
+        selectedZoneRuleIds: Array.from(new Set(selectedZoneRuleIds)),
         languageFilter: toLower(filters?.preferredLanguage || ''),
         searchText: toText(filters?.search),
         maxRecipients: filters?.maxRecipients ? String(filters.maxRecipients) : ''
     };
 }
 
-function buildAudienceFiltersFromForm(form = {}, labelOptions = []) {
+function buildAudienceFiltersFromForm(form = {}, labelOptions = [], zoneOptions = []) {
     const labelsById = new Map(labelOptions.map((entry) => [toUpper(entry.labelId), entry]));
+    const zoneIds = new Set(zoneOptions.map((entry) => toUpper(entry.ruleId)));
     const tagAny = (Array.isArray(form?.selectedLabelIds) ? form.selectedLabelIds : [])
         .map((labelId) => labelsById.get(toUpper(labelId)))
         .filter(Boolean)
         .map((entry) => toLower(entry.name))
         .filter(Boolean);
+    const zoneLabelIds = (Array.isArray(form?.selectedZoneRuleIds) ? form.selectedZoneRuleIds : [])
+        .map((entry) => toUpper(entry))
+        .filter((entry) => entry && zoneIds.has(entry));
     const maxRecipients = Math.max(0, Math.floor(toNumber(form?.maxRecipients)));
     return {
         commercialStatuses: normalizeCommercialStatuses(form?.commercialStatuses || []),
         preferredLanguage: toLower(form?.languageFilter || ''),
         marketingStatus: ['opted_in'],
         tagAny,
+        zoneLabelIds,
         search: toText(form?.searchText || ''),
         maxRecipients: maxRecipients > 0 ? maxRecipients : undefined
     };
@@ -188,6 +211,9 @@ function serializeCampaignForm(form = {}) {
         selectedLabelIds: Array.from(
             new Set((Array.isArray(source.selectedLabelIds) ? source.selectedLabelIds : []).map((entry) => toUpper(entry)))
         ).sort(),
+        selectedZoneRuleIds: Array.from(
+            new Set((Array.isArray(source.selectedZoneRuleIds) ? source.selectedZoneRuleIds : []).map((entry) => toUpper(entry)))
+        ).sort(),
         languageFilter: toLower(source.languageFilter || ''),
         searchText: toText(source.searchText),
         maxRecipients: toText(source.maxRecipients)
@@ -208,6 +234,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         reachEstimate: reachEstimateFromContext = null,
         estimating: estimatingFromContext = false,
         estimateReach: estimateReachFromContext = null,
+        requestJson = null,
         setError = null
     } = context;
 
@@ -220,6 +247,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [maxRecipientsTouched, setMaxRecipientsTouched] = useState(false);
     const [localEstimate, setLocalEstimate] = useState(null);
     const [excludedCustomerIds, setExcludedCustomerIds] = useState([]);
+    const [zoneRules, setZoneRules] = useState([]);
 
     const {
         campaigns = [],
@@ -257,6 +285,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const estimateReachAction = estimateReachFromContext || estimateReachFromController;
 
     const labelOptions = useMemo(() => buildLabelOptions(availableLabels), [availableLabels]);
+    const zoneOptions = useMemo(() => buildZoneOptions(zoneRules), [zoneRules]);
     const columnPrefs = useSaasColumnPrefs('campaigns', CAMPAIGN_DEFAULT_COLUMN_KEYS);
 
     const moduleOptions = useMemo(() => (Array.isArray(waModules) ? waModules : [])
@@ -365,13 +394,13 @@ export default React.memo(function CampaignsSection(props = {}) {
     }, [estimatedAudienceItems, excludedCustomerIdSet]);
     const formBaseline = useMemo(() => {
         if (panelMode === 'edit' && selectedCampaign) {
-            return serializeCampaignForm(mapCampaignToForm(selectedCampaign, labelOptions));
+            return serializeCampaignForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions));
         }
         if (panelMode === 'create') {
             return serializeCampaignForm({ ...EMPTY_FORM, moduleId: moduleOptions[0]?.moduleId || '' });
         }
         return serializeCampaignForm(EMPTY_FORM);
-    }, [labelOptions, moduleOptions, panelMode, selectedCampaign]);
+    }, [labelOptions, moduleOptions, panelMode, selectedCampaign, zoneOptions]);
     const formDraft = useMemo(() => serializeCampaignForm(form), [form]);
     const isCampaignFormDirty = useMemo(() => (
         (panelMode === 'create' || panelMode === 'edit') && formDraft !== formBaseline
@@ -408,6 +437,10 @@ export default React.memo(function CampaignsSection(props = {}) {
         const selected = new Set((Array.isArray(form.selectedLabelIds) ? form.selectedLabelIds : []).map((entry) => toUpper(entry)));
         return labelOptions.filter((entry) => selected.has(toUpper(entry.labelId)));
     }, [form.selectedLabelIds, labelOptions]);
+    const selectedZones = useMemo(() => {
+        const selected = new Set((Array.isArray(form.selectedZoneRuleIds) ? form.selectedZoneRuleIds : []).map((entry) => toUpper(entry)));
+        return zoneOptions.filter((entry) => selected.has(toUpper(entry.ruleId)));
+    }, [form.selectedZoneRuleIds, zoneOptions]);
     const selectedStatusKey = toLower(selectedCampaign?.status);
     const showsEstimatedAudienceInDetail = panelMode === 'detail' && ['draft', 'scheduled'].includes(selectedStatusKey);
     const detailAudienceTitle = showsEstimatedAudienceInDetail
@@ -446,6 +479,21 @@ export default React.memo(function CampaignsSection(props = {}) {
         templateItems,
         tenantScopeLocked
     ]);
+
+    useEffect(() => {
+        if (!isCampaignsSection || tenantScopeLocked || typeof requestJson !== 'function') return;
+        let cancelled = false;
+        void fetchTenantZoneRules(requestJson, { includeInactive: false })
+            .then((payload) => {
+                if (!cancelled) setZoneRules(Array.isArray(payload?.items) ? payload.items : []);
+            })
+            .catch(() => {
+                if (!cancelled) setZoneRules([]);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [isCampaignsSection, requestJson, tenantScopeLocked]);
 
     useEffect(() => {
         if (panelMode !== 'create' && panelMode !== 'edit') return;
@@ -500,8 +548,19 @@ export default React.memo(function CampaignsSection(props = {}) {
         });
     }, []);
 
+    const toggleZone = useCallback((ruleId = '') => {
+        const cleanRuleId = toUpper(ruleId);
+        if (!cleanRuleId) return;
+        setForm((prev) => {
+            const current = new Set((Array.isArray(prev.selectedZoneRuleIds) ? prev.selectedZoneRuleIds : []).map((entry) => toUpper(entry)));
+            if (current.has(cleanRuleId)) current.delete(cleanRuleId);
+            else current.add(cleanRuleId);
+            return { ...prev, selectedZoneRuleIds: Array.from(current) };
+        });
+    }, []);
+
     const buildCampaignPayload = useCallback(() => {
-        const audienceFiltersJson = buildAudienceFiltersFromForm(form, labelOptions);
+        const audienceFiltersJson = buildAudienceFiltersFromForm(form, labelOptions, zoneOptions);
         return {
             moduleId: toText(form.moduleId),
             scopeModuleId: toLower(form.moduleId),
@@ -519,7 +578,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             },
             variablesPreviewJson: {}
         };
-    }, [excludedCustomerIds, form, labelOptions]);
+    }, [excludedCustomerIds, form, labelOptions, zoneOptions]);
 
     const runEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
@@ -545,8 +604,8 @@ export default React.memo(function CampaignsSection(props = {}) {
     const runDetailEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
         if (!selectedCampaign) throw new Error('No hay campana seleccionada.');
-        const detailForm = mapCampaignToForm(selectedCampaign, labelOptions);
-        const audienceFiltersJson = buildAudienceFiltersFromForm(detailForm, labelOptions);
+        const detailForm = mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions);
+        const audienceFiltersJson = buildAudienceFiltersFromForm(detailForm, labelOptions, zoneOptions);
         const payload = {
             scopeModuleId: toLower(detailForm.moduleId),
             moduleId: toText(detailForm.moduleId),
@@ -564,7 +623,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             setLocalEstimate(estimate);
             setExcludedCustomerIds(getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds);
         }
-    }, [estimateReachAction, labelOptions, selectedCampaign]);
+    }, [estimateReachAction, labelOptions, selectedCampaign, zoneOptions]);
 
     const clearSelectedCampaign = useCallback(() => {
         if (typeof selectCampaign === 'function') {
@@ -596,7 +655,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         setMaxRecipientsTouched(false);
         setExcludedCustomerIds([]);
         if (panelMode === 'edit' && selectedCampaign) {
-            setForm(mapCampaignToForm(selectedCampaign, labelOptions));
+            setForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions));
             setExcludedCustomerIds(getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds);
             setPanelMode('detail');
             return;
@@ -611,7 +670,8 @@ export default React.memo(function CampaignsSection(props = {}) {
         moduleOptions,
         panelMode,
         clearSelectedCampaign,
-        selectedCampaign
+        selectedCampaign,
+        zoneOptions
     ]);
 
     const handleRequestCloseCampaignPanel = useCallback(async () => {
@@ -920,11 +980,29 @@ export default React.memo(function CampaignsSection(props = {}) {
                                         </div>
                                     </div>
                                     <div className="saas-admin-field">
-                                        <label>Busqueda</label>
-                                        <input value={form.searchText} onChange={(e) => setForm((p) => ({ ...p, searchText: e.target.value }))} placeholder="nombre o telefono" />
+                                        <label>Zonas (multiseleccion)</label>
+                                        <div className="saas-campaigns-chip-group">
+                                            {zoneOptions.length === 0 ? <small className="saas-admin-empty-inline">No hay zonas activas.</small> : zoneOptions.map((entry) => {
+                                                const active = selectedZones.some((item) => item.ruleId === entry.ruleId);
+                                                return (
+                                                    <button
+                                                        key={entry.ruleId}
+                                                        type="button"
+                                                        className={`saas-campaigns-chip ${active ? 'active' : ''}`}
+                                                        onClick={() => toggleZone(entry.ruleId)}
+                                                    >
+                                                        {entry.name}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="saas-admin-form-row">
+                                    <div className="saas-admin-field">
+                                        <label>Busqueda</label>
+                                        <input value={form.searchText} onChange={(e) => setForm((p) => ({ ...p, searchText: e.target.value }))} placeholder="nombre o telefono" />
+                                    </div>
                                     <div className="saas-admin-field">
                                         <label>Opt-in marketing</label>
                                         <div className="saas-campaigns-fixed-info">Campanas de marketing usan solo clientes con opt-in: <strong>opted_in</strong>.</div>
@@ -992,6 +1070,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                         <div><span>Idioma</span><strong>{toText(form.templateLanguage).toUpperCase() || '-'}</strong></div>
                                         <div><span>Programacion</span><strong>{form.scheduledAt ? formatDateTime(toIsoDateTimeLocal(form.scheduledAt)) : 'Inmediata'}</strong></div>
                                         <div><span>Etiquetas</span><strong>{selectedLabels.length > 0 ? selectedLabels.map((entry) => entry.name).join(', ') : 'Sin filtro'}</strong></div>
+                                        <div><span>Zonas</span><strong>{selectedZones.length > 0 ? selectedZones.map((entry) => entry.name).join(', ') : 'Sin filtro'}</strong></div>
                                     </div>
                                 </div>
                                 <div className="saas-admin-related-block">
@@ -1052,7 +1131,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                         bodyClassName="saas-campaigns-detail-panel__body"
                         actions={(
                             <>
-                                {toLower(selectedCampaign?.status) === 'draft' && <button type="button" disabled={loading || !canWrite} onClick={() => { setForm(mapCampaignToForm(selectedCampaign, labelOptions)); setPanelMode('edit'); setMaxRecipientsTouched(false); setLocalEstimate(null); }}>Editar</button>}
+                                {toLower(selectedCampaign?.status) === 'draft' && <button type="button" disabled={loading || !canWrite} onClick={() => { setForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions)); setPanelMode('edit'); setMaxRecipientsTouched(false); setLocalEstimate(null); }}>Editar</button>}
                                 {toLower(selectedCampaign?.status) === 'running' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => pauseCampaign?.(selectedCampaignId), 'No se pudo pausar campana.')}>Pausar</button>}
                                 {toLower(selectedCampaign?.status) === 'paused' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => resumeCampaign?.(selectedCampaignId), 'No se pudo reanudar campana.')}>Reanudar</button>}
                                 {['draft', 'scheduled'].includes(toLower(selectedCampaign?.status)) && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => startCampaign?.(selectedCampaignId), 'No se pudo iniciar campana.')}>Iniciar</button>}

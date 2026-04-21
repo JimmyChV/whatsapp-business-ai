@@ -14,6 +14,7 @@ import {
     useSaasColumnPrefs
 } from '../components/layout';
 import { createCampaign as createCampaignApi, startCampaign as startCampaignApi } from '../services/campaigns.service';
+import { fetchTenantCustomerLabels, fetchTenantZoneRules } from '../services/labels.service';
 import { listMetaTemplates } from '../services/metaTemplates.service';
 
 const CUSTOMER_TABLE_COLUMNS = [
@@ -31,6 +32,7 @@ const CUSTOMER_TABLE_COLUMNS = [
     { key: 'idioma', label: 'Idioma', width: '118px', minWidth: '100px', maxWidth: '150px', type: 'option' },
     { key: 'fuenteAdquisicion', label: 'Fuente', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
     { key: 'tratamiento', label: 'Tratamiento', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
+    { key: 'zona', label: 'Zona', width: '154px', minWidth: '130px', maxWidth: '210px', type: 'option' },
     { key: 'etiquetas', label: 'Etiquetas', width: '220px', minWidth: '180px', maxWidth: '300px', type: 'text' },
     { key: 'ultimaInteraccion', label: 'Ultima interaccion', width: '166px', minWidth: '144px', maxWidth: '220px', type: 'date' },
     { key: 'actualizado', label: 'Actualizado', width: '166px', minWidth: '144px', maxWidth: '220px', type: 'date' },
@@ -883,6 +885,8 @@ function CustomersSection(props = {}) {
     const [selectedCampaignTemplatePreviewLoading, setSelectedCampaignTemplatePreviewLoading] = useState(false);
     const [selectedCampaignTemplatePreviewError, setSelectedCampaignTemplatePreviewError] = useState('');
     const [campaignTemplateSubmitting, setCampaignTemplateSubmitting] = useState(false);
+    const [zoneRules, setZoneRules] = useState([]);
+    const [customerZoneLabels, setCustomerZoneLabels] = useState([]);
     const syncedIndicatorTimeoutRef = useRef(null);
     const customersRealtimeSyncTimeoutRef = useRef(null);
     const customersRealtimeSyncInFlightRef = useRef(false);
@@ -1071,6 +1075,38 @@ function CustomersSection(props = {}) {
         });
         return map;
     }, [geoDistrictOptionsAll]);
+
+    const zoneOptions = useMemo(() => (
+        (Array.isArray(zoneRules) ? zoneRules : [])
+            .filter((item) => item?.isActive !== false)
+            .map((item) => ({
+                value: String(item?.ruleId || item?.rule_id || '').trim().toUpperCase(),
+                label: String(item?.name || '').trim()
+            }))
+            .filter((item) => item.value && item.label)
+            .sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }))
+    ), [zoneRules]);
+
+    const zoneNameById = useMemo(() => {
+        const map = new Map();
+        zoneOptions.forEach((item) => map.set(item.value, item.label));
+        return map;
+    }, [zoneOptions]);
+
+    const zoneByCustomerId = useMemo(() => {
+        const map = new Map();
+        (Array.isArray(customerZoneLabels) ? customerZoneLabels : []).forEach((assignment = {}) => {
+            const source = String(assignment.source || '').trim().toLowerCase();
+            if (source && source !== 'zone') return;
+            const customerId = String(assignment.customerId || assignment.customer_id || '').trim();
+            const labelId = String(assignment.labelId || assignment.label_id || '').trim().toUpperCase();
+            if (!customerId || !labelId) return;
+            const label = zoneNameById.get(labelId);
+            if (!label) return;
+            map.set(customerId, { labelId, label });
+        });
+        return map;
+    }, [customerZoneLabels, zoneNameById]);
     const addressProvinceOptions = useMemo(() => {
         const departmentId = normalizeGeoNumericId(addressForm.departmentId || '');
         if (!departmentId) return [];
@@ -1335,6 +1371,7 @@ function CustomersSection(props = {}) {
             const safeId = customerId || String(customer.phoneE164 || customer.phone_e164 || customer.email || `customer-${index}`).trim();
             const nameParts = buildNamePartsFromCustomer(customer);
             const tags = Array.isArray(customer?.tags) ? customer.tags : [];
+            const zone = zoneByCustomerId.get(customerId);
             return {
                 id: safeId,
                 codigo: customerId || '-',
@@ -1351,6 +1388,7 @@ function CustomersSection(props = {}) {
                 idioma: buildLanguageLabel(customer),
                 fuenteAdquisicion: buildAcquisitionSourceLabel(customer, customerLabelMaps),
                 tratamiento: buildTreatmentLabel(customer, customerLabelMaps),
+                zona: zone?.label || '-',
                 etiquetas: tags.length ? tags.join(', ') : '-',
                 ultimaInteraccion: formatDateTimeLabel(customer.lastInteractionAt || customer.last_interaction_at || ''),
                 actualizado: formatDateTimeLabel(customer.updatedAt || customer.updated_at || ''),
@@ -1358,7 +1396,7 @@ function CustomersSection(props = {}) {
                 _raw: customer
             };
         });
-    }, [customerLabelMaps, formatDateTimeLabel, outreachFilteredCustomers]);
+    }, [customerLabelMaps, formatDateTimeLabel, outreachFilteredCustomers, zoneByCustomerId]);
 
     const visibleColumns = useMemo(
         () => tableColumns.filter((column) => column && column.hidden !== true),
@@ -1370,6 +1408,7 @@ function CustomersSection(props = {}) {
             if (column.key === 'tipoDocumento') return { ...column, options: documentTypeOptions };
             if (column.key === 'fuenteAdquisicion') return { ...column, options: sourceOptions };
             if (column.key === 'tratamiento') return { ...column, options: treatmentOptions };
+            if (column.key === 'zona') return { ...column, options: zoneOptions };
             if (column.key === 'idioma') return {
                 ...column,
                 options: [
@@ -1387,7 +1426,7 @@ function CustomersSection(props = {}) {
             };
             return { ...column };
         })
-    ), [customerTypeOptions, documentTypeOptions, sourceOptions, treatmentOptions]);
+    ), [customerTypeOptions, documentTypeOptions, sourceOptions, treatmentOptions, zoneOptions]);
     const filterColumnByKey = useMemo(
         () => filterColumns.reduce((acc, column) => {
             acc[String(column.key || '').trim()] = column;
@@ -2449,6 +2488,30 @@ function CustomersSection(props = {}) {
         if (!isCustomersSection) return;
         loadCustomerCatalogs();
     }, [isCustomersSection, loadCustomerCatalogs]);
+
+    useEffect(() => {
+        if (!isCustomersSection || tenantScopeLocked || !tenantScopeId || typeof requestJson !== 'function') return;
+        let cancelled = false;
+        void (async () => {
+            try {
+                const [rulesPayload, labelsPayload] = await Promise.all([
+                    fetchTenantZoneRules(requestJson, { includeInactive: false }),
+                    fetchTenantCustomerLabels(requestJson, { source: 'zone' })
+                ]);
+                if (cancelled) return;
+                setZoneRules(Array.isArray(rulesPayload?.items) ? rulesPayload.items : []);
+                setCustomerZoneLabels(Array.isArray(labelsPayload?.items) ? labelsPayload.items : []);
+            } catch {
+                if (!cancelled) {
+                    setZoneRules([]);
+                    setCustomerZoneLabels([]);
+                }
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [isCustomersSection, requestJson, tenantScopeId, tenantScopeLocked]);
 
     useEffect(() => {
         const next = String(customerSearch || '');
