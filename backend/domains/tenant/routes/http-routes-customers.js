@@ -13,11 +13,20 @@ function registerTenantCustomerHttpRoutes({
     customerService,
     customerAddressesService,
     customerCatalogsService,
+    tenantZoneRulesService,
     waModuleService,
     isTenantAllowedForUser,
     hasPermission
 }) {
     if (!app) throw new Error('registerTenantCustomerHttpRoutes requiere app.');
+
+    function hasLabelsReadAccess(req) {
+        return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_LABELS_READ);
+    }
+
+    function hasLabelsManageAccess(req) {
+        return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_LABELS_MANAGE);
+    }
 
     app.get('/api/admin/saas/tenants/:tenantId/customers', async (req, res) => {
         const tenantId = String(req.params?.tenantId || '').trim();
@@ -174,6 +183,85 @@ function registerTenantCustomerHttpRoutes({
             return res.json({ ok: true, tenantId, ...result });
         } catch (error) {
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar clientes.') });
+        }
+    });
+
+    app.get('/api/tenant/zone-rules', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasLabelsReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() === 'true';
+            const items = await tenantZoneRulesService.listZoneRules(tenantId, { includeInactive });
+            return res.json({ ok: true, tenantId, items });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar zonas.') });
+        }
+    });
+
+    app.post('/api/tenant/zone-rules', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasLabelsManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const payload = req.body && typeof req.body === 'object' ? req.body : {};
+            const item = await tenantZoneRulesService.saveZoneRule(tenantId, payload);
+            return res.status(201).json({ ok: true, tenantId, item });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar zona.') });
+        }
+    });
+
+    app.put('/api/tenant/zone-rules/:ruleId', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasLabelsManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const ruleId = String(req.params?.ruleId || '').trim();
+            const payload = req.body && typeof req.body === 'object' ? req.body : {};
+            const item = await tenantZoneRulesService.saveZoneRule(tenantId, { ...payload, ruleId });
+            return res.json({ ok: true, tenantId, item });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar zona.') });
+        }
+    });
+
+    app.delete('/api/tenant/zone-rules/:ruleId', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasLabelsManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const ruleId = String(req.params?.ruleId || '').trim();
+            const result = await tenantZoneRulesService.deleteZoneRule(tenantId, ruleId);
+            return res.json({ ok: true, tenantId, ...result });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar zona.') });
+        }
+    });
+
+    app.post('/api/tenant/zone-rules/recalculate', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasLabelsManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const result = await tenantZoneRulesService.recalculateZonesForTenant(tenantId);
+            return res.json({ ok: true, tenantId, ...result });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo recalcular zonas.') });
+        }
+    });
+
+    app.get('/api/tenant/customer-labels', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasLabelsReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const customerId = String(req.query?.customerId || '').trim();
+            const source = String(req.query?.source || '').trim().toLowerCase();
+            const items = await tenantZoneRulesService.listCustomerLabels(tenantId, { customerId, source });
+            return res.json({ ok: true, tenantId, items });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar etiquetas de clientes.') });
         }
     });
 
