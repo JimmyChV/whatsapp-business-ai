@@ -5,6 +5,7 @@ import {
     SaasDataTable,
     SaasDetailPanel,
     SaasDetailPanelSection,
+    SaasEntityPage,
     SaasTableDetailLayout,
     SaasViewHeader,
     useSaasColumnPrefs
@@ -1405,20 +1406,22 @@ function MetaTemplatesSection(props = {}) {
     }
 
     return (
-        <section id="saas_templates" className="saas-admin-card saas-admin-card--full saas-entity-page" data-saas-section-key="meta_templates">
-            <SaasTableDetailLayout
-                selectedId={
-                    tenantScopeLocked
-                        ? ''
-                        : (
-                            panelMode === 'create'
-                                ? '__create__'
-                                : (selectedTemplate ? (toText(selectedTemplate?.templateId) || toText(selectedTemplate?.id)) : '')
-                        )
-                }
-                className="saas-meta-templates-td-layout"
-                header={headerElement}
-                left={(
+        <SaasEntityPage
+            id="saas_templates"
+            sectionKey="meta_templates"
+            selectedId={
+                tenantScopeLocked
+                    ? ''
+                    : (
+                        panelMode === 'create'
+                            ? '__create__'
+                            : (selectedTemplate ? (toText(selectedTemplate?.templateId) || toText(selectedTemplate?.id)) : '')
+                    )
+            }
+            className="saas-entity-page--meta-templates"
+            layoutClassName="saas-meta-templates-td-layout"
+            header={headerElement}
+            left={(
                     <aside className="saas-admin-master-pane saas-meta-templates-pane">
                     {tenantScopeLocked && (
                         <div className="saas-admin-empty-state">
@@ -2117,8 +2120,7 @@ function MetaTemplatesSection(props = {}) {
                     )}
                 </div>
                 )}
-            />
-        </section>
+        />
     );
 }
 
