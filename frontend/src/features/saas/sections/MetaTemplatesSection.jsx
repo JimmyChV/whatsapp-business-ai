@@ -1484,7 +1484,7 @@ function MetaTemplatesSection(props = {}) {
                 </aside>
                 )}
                 right={(
-                <div className="saas-meta-templates-right-shell">
+                <div className="saas-entity-slot-right saas-meta-templates-right-shell">
                     {hasErrors && (
                         <div className="saas-admin-empty-state">
                             <h4>Se detectaron errores</h4>

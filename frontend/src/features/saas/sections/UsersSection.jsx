@@ -507,6 +507,7 @@ function UsersSection(props = {}) {
                 renderForm={renderForm}
                 mode={isEditing ? 'form' : 'detail'}
                 dirty={isEditing}
+                className="saas-entity-page--users"
                 requestJson={requestJson}
                 loading={busy && rows.length === 0}
                 emptyText={tenantScopeLocked ? 'Selecciona una empresa para habilitar usuarios.' : 'No hay usuarios registrados.'}

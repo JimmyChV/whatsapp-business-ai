@@ -839,7 +839,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     );
 
     const rightPane = (
-        <div className="saas-campaigns-right-shell">
+        <div className="saas-entity-slot-right saas-campaigns-right-shell">
             {tenantScopeLocked && <div className="saas-admin-empty-state saas-admin-empty-state--detail"><h4>Sin empresa activa</h4><p>Selecciona una empresa para continuar.</p></div>}
             {!tenantScopeLocked && (panelMode === 'create' || panelMode === 'edit') && (
                 <SaasDetailPanel
