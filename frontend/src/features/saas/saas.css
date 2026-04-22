@@ -825,6 +825,85 @@
   border-top: 1px solid rgba(123, 170, 196, 0.16);
 }
 
+.saas-admin-master-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(123, 170, 196, 0.14);
+  background: rgba(4, 17, 25, 0.62);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.saas-admin-master-toolbar input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.saas-admin-master-toolbar button,
+.saas-admin-form-row > button {
+  white-space: nowrap;
+}
+
+.saas-admin-list-table-head {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(123, 170, 196, 0.18);
+  background: rgba(3, 32, 41, 0.78);
+  color: #8fc4d9;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  position: sticky;
+  top: 51px;
+  z-index: 2;
+}
+
+.saas-admin-list-table-head--modules,
+.saas-admin-list-item--modules,
+.saas-admin-list-table-head--catalogs,
+.saas-admin-list-item--catalogs,
+.saas-admin-list-table-head--quick-libraries,
+.saas-admin-list-item--quick-libraries,
+.saas-admin-list-table-head--quick-items,
+.saas-admin-list-item--quick-items,
+.saas-admin-list-table-head--assistants,
+.saas-admin-list-item--assistants,
+.saas-admin-list-table-head--users,
+.saas-admin-list-item--users {
+  grid-template-columns: minmax(160px, 1.3fr) minmax(110px, 0.9fr) minmax(120px, 0.8fr);
+}
+
+.saas-admin-list-item--table {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 12px 14px;
+}
+
+.saas-admin-list-item--table > strong,
+.saas-admin-list-item--table > span,
+.saas-admin-list-item--table > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.saas-admin-list-item--table > span {
+  color: #d8eef7;
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
 .saas-admin-master-detail--td-pattern .saas-admin-list-actions--row button.danger,
 .saas-admin-master-detail--td-pattern .saas-admin-form-row--actions button.danger,
 .saas-admin-master-detail--td-pattern .saas-btn-cancel,

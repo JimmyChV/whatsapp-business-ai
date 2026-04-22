@@ -29,6 +29,20 @@ function AiAssistantsSection(props = {}) {
     setAiAssistantPanelMode,
     EMPTY_AI_ASSISTANT_FORM
     } = context;
+    const [assistantSearch, setAssistantSearch] = React.useState('');
+    const filteredAiAssistants = React.useMemo(() => {
+        const query = assistantSearch.trim().toLowerCase();
+        if (!query) return tenantAiAssistantItems;
+        return tenantAiAssistantItems.filter((assistant) => [
+            assistant?.name,
+            assistant?.assistantId,
+            assistant?.model,
+            assistant?.provider,
+            assistant?.isActive ? 'activo' : 'inactivo',
+            assistant?.isDefault ? 'principal' : ''
+        ].some((value) => String(value || '').toLowerCase().includes(query)));
+    }, [assistantSearch, tenantAiAssistantItems]);
+
     React.useEffect(() => {
         if (!isAiSection) return undefined;
         const handleEscape = (event) => {
@@ -81,6 +95,20 @@ function AiAssistantsSection(props = {}) {
                                 </div>
 
                                 <div className="saas-admin-list saas-admin-list--compact">
+                                    <div className="saas-admin-master-toolbar">
+                                        <input
+                                            value={assistantSearch}
+                                            onChange={(event) => setAssistantSearch(event.target.value)}
+                                            placeholder="Buscar asistente por nombre, codigo, modelo o estado"
+                                            disabled={loadingAiAssistants}
+                                        />
+                                        <button type="button">Columnas</button>
+                                    </div>
+                                    <div className="saas-admin-list-table-head saas-admin-list-table-head--assistants">
+                                        <span>Asistente</span>
+                                        <span>Modelo</span>
+                                        <span>Estado</span>
+                                    </div>
                                     {!settingsTenantId && (
                                         <div className="saas-admin-empty-state">
                                             <h4>Sin empresa seleccionada</h4>
@@ -95,15 +123,19 @@ function AiAssistantsSection(props = {}) {
                                         </div>
                                     )}
 
-                                    {settingsTenantId && tenantAiAssistantItems.map((assistant) => (
+                                    {settingsTenantId && tenantAiAssistantItems.length > 0 && filteredAiAssistants.length === 0 && (
+                                        <div className="saas-admin-empty-inline">No hay asistentes para esta busqueda.</div>
+                                    )}
+
+                                    {settingsTenantId && filteredAiAssistants.map((assistant) => (
                                         <button
                                             key={`assistant_${assistant.assistantId}`}
                                             type="button"
-                                            className={`saas-admin-list-item saas-admin-list-item--button ${selectedAiAssistantId === assistant.assistantId && aiAssistantPanelMode !== 'create' ? 'active' : ''}`.trim()}
+                                            className={`saas-admin-list-item saas-admin-list-item--button saas-admin-list-item--table saas-admin-list-item--assistants ${selectedAiAssistantId === assistant.assistantId && aiAssistantPanelMode !== 'create' ? 'active' : ''}`.trim()}
                                             onClick={() => openAiAssistantView(assistant.assistantId)}
                                         >
                                             <strong>{assistant.name || assistant.assistantId}</strong>
-                                            <small>{assistant.assistantId} | {assistant.model}</small>
+                                            <span>{assistant.model || '-'}</span>
                                             <small>{assistant.isActive ? 'Activo' : 'Inactivo'}{assistant.isDefault ? ' | Principal' : ''}</small>
                                         </button>
                                     ))}
@@ -145,11 +177,14 @@ function AiAssistantsSection(props = {}) {
                                                     type="button"
                                                     disabled={busy || !canManageAi}
                                                     onClick={() => toggleAiAssistantActive(selectedAiAssistant)}
-                                                >
-                                                    {selectedAiAssistant.isActive ? 'Desactivar' : 'Activar'}
-                                                </button>
+                                                    >
+                                                        {selectedAiAssistant.isActive ? 'Desactivar' : 'Activar'}
+                                                    </button>
+                                                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { setSelectedAiAssistantId(''); setAiAssistantPanelMode('view'); setAiAssistantForm({ ...EMPTY_AI_ASSISTANT_FORM }); }}>
+                                                        Cerrar
+                                                    </button>
+                                                </div>
                                             </div>
-                                        </div>
 
                                         <div className="saas-admin-detail-grid">
                                             <div className="saas-admin-detail-field"><span>Proveedor</span><strong>{selectedAiAssistant.provider}</strong></div>
@@ -187,6 +222,11 @@ function AiAssistantsSection(props = {}) {
                                             <div>
                                                 <h3>{aiAssistantPanelMode === 'create' ? 'Nuevo asistente IA' : 'Editar asistente IA'}</h3>
                                                 <small>{aiAssistantPanelMode === 'create' ? 'Define contexto y parametros de inferencia.' : 'Actualiza los campos necesarios y guarda.'}</small>
+                                            </div>
+                                            <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelAiAssistantEdit}>
+                                                    Cerrar
+                                                </button>
                                             </div>
                                         </div>
 

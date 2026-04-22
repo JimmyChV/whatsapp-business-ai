@@ -52,6 +52,19 @@ function UsersSection(props = {}) {
     activeTenantId,
     packId = ''
     } = context;
+    const [userSearch, setUserSearch] = React.useState('');
+    const filteredUsers = React.useMemo(() => {
+        const query = userSearch.trim().toLowerCase();
+        if (!query) return scopedUsers;
+        return scopedUsers.filter((user) => [
+            toUserDisplayName(user),
+            user?.email,
+            user?.roleLabel,
+            user?.role,
+            user?.active === false ? 'inactivo' : 'activo'
+        ].some((value) => String(value || '').toLowerCase().includes(query)));
+    }, [scopedUsers, toUserDisplayName, userSearch]);
+
     React.useEffect(() => {
         if (selectedSectionId !== 'saas_usuarios') return undefined;
         const handleEscape = (event) => {
@@ -77,7 +90,7 @@ function UsersSection(props = {}) {
                             <aside className="saas-admin-master-pane">
                                 <div className="saas-admin-pane-header">
                                     <div>
-                                        <h3>Usuarios ({scopedUsers.length})</h3>
+                                        <h3>Usuarios ({filteredUsers.length})</h3>
                                         <small>Listado minimo. El detalle se administra en el panel derecho.</small>
                                     </div>
                                     {canManageUsers && (
@@ -85,6 +98,19 @@ function UsersSection(props = {}) {
                                     )}
                                 </div>
                                 <div className="saas-admin-list saas-admin-list--compact">
+                                    <div className="saas-admin-master-toolbar">
+                                        <input
+                                            value={userSearch}
+                                            onChange={(event) => setUserSearch(event.target.value)}
+                                            placeholder="Buscar usuario por nombre, correo, rol o estado"
+                                        />
+                                        <button type="button">Columnas</button>
+                                    </div>
+                                    <div className="saas-admin-list-table-head saas-admin-list-table-head--users">
+                                        <span>Usuario</span>
+                                        <span>Correo</span>
+                                        <span>Rol / estado</span>
+                                    </div>
                                     {scopedUsers.length === 0 && (
                                         <div className="saas-admin-empty-state">
                                             <p>{tenantScopeLocked ? 'Selecciona una empresa para habilitar usuarios.' : 'No hay usuarios registrados.'}</p>
@@ -93,18 +119,21 @@ function UsersSection(props = {}) {
                                             )}
                                         </div>
                                     )}
-                                    {scopedUsers.map((user) => {
+                                    {scopedUsers.length > 0 && filteredUsers.length === 0 && (
+                                        <div className="saas-admin-empty-inline">No hay usuarios para esta busqueda.</div>
+                                    )}
+                                    {filteredUsers.map((user) => {
                                         const userMemberships = sanitizeMemberships(user?.memberships || []);
                                         return (
                                             <button
                                                 key={user.id}
                                                 type="button"
-                                                className={`saas-admin-list-item saas-admin-list-item--button ${selectedUserId === user.id && userPanelMode !== 'create' ? 'active' : ''}`.trim()}
+                                                className={`saas-admin-list-item saas-admin-list-item--button saas-admin-list-item--table saas-admin-list-item--users ${selectedUserId === user.id && userPanelMode !== 'create' ? 'active' : ''}`.trim()}
                                                 onClick={() => openUserView(user.id)}
                                             >
                                                 <strong>{toUserDisplayName(user)}</strong>
-                                                <small>{user.email || '-'} | {user.active === false ? 'inactivo' : 'activo'}</small>
-                                                <small>Membresias: {userMemberships.length}</small>
+                                                <span>{user.email || '-'}</span>
+                                                <small>{user.roleLabel || user.role || '-'} | {user.active === false ? 'inactivo' : 'activo'} | {userMemberships.length} memb.</small>
                                             </button>
                                         );
                                     })}
@@ -141,6 +170,13 @@ function UsersSection(props = {}) {
                                                     No puedes editar este usuario porque tiene el mismo nivel o uno superior al tuyo.
                                                 </div>
                                             )}
+                                            {userPanelMode === 'view' && selectedUser && !canManageUsers && (
+                                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { setSelectedUserId(''); setUserPanelMode('view'); }}>
+                                                        Cerrar
+                                                    </button>
+                                                </div>
+                                            )}
                                             {userPanelMode === 'view' && selectedUser && canManageUsers && (
                                                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
                                                     <button type="button" disabled={busy || !canEditSelectedUser} onClick={openUserEdit}>Editar</button>
@@ -159,6 +195,14 @@ function UsersSection(props = {}) {
                                                     >
                                                         {selectedUser.active === false ? 'Activar' : 'Desactivar'}
                                                     </button>
+                                                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { setSelectedUserId(''); setUserPanelMode('view'); }}>
+                                                        Cerrar
+                                                    </button>
+                                                </div>
+                                            )}
+                                            {userPanelMode !== 'view' && (
+                                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelUserEdit}>Cerrar</button>
                                                 </div>
                                             )}
                                         </div>

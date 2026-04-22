@@ -97,6 +97,9 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
                             </button>
                         </>
                     )}
+                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={clearConfigSelection}>
+                        Cerrar
+                    </button>
                 </div>
             </div>
 

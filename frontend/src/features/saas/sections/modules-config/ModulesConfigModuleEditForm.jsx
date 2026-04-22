@@ -381,6 +381,7 @@ export default function ModulesConfigModuleEditForm({
                 </button>
                 <button
                     type="button"
+                    className="saas-btn-cancel"
                     disabled={busy}
                     onClick={() => {
                         if (moduleInDetail?.moduleId) {
