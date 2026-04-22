@@ -4,3 +4,4 @@ export { default as SaasDetailPanel, SaasDetailPanelSection } from './SaasDetail
 export { default as SaasViewHeader } from './SaasViewHeader';
 export { default as useSaasColumnPrefs } from './useSaasColumnPrefs';
 export { default as useSaasViewPreferences } from './useSaasViewPreferences';
+export { SaasEntityPage } from '../entity';
