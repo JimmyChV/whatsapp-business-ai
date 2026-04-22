@@ -3521,6 +3521,20 @@
   flex: 1 1 auto;
   min-height: 0;
   align-self: stretch;
+  display: block;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.saas-entity-page .saas-data-table {
+  width: 100%;
+  align-self: flex-start;
+}
+
+.saas-entity-page .saas-data-table tbody,
+.saas-entity-page .saas-data-table tbody tr,
+.saas-entity-page .saas-data-table tbody td {
+  vertical-align: top;
 }
 
 .saas-entity-page .saas-view-header,
