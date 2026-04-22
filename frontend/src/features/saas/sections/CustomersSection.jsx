@@ -1300,6 +1300,8 @@ function CustomersSection(props = {}) {
         () => ([
             ...(campaignSelectionMode ? [{
                 key: 'selectForCampaign',
+                configurable: false,
+                sortable: false,
                 label: (
                     <span className="saas-customers-select-cell">
                         <input

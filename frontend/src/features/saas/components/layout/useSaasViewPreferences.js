@@ -5,6 +5,7 @@ const STORAGE_PREFIX = 'saas.viewPrefs';
 
 const normalizeKeys = (columns = []) => (
     columns
+        .filter((column) => (typeof column === 'string' ? true : column?.configurable !== false))
         .map((column) => (typeof column === 'string' ? column : column?.key))
         .map((key) => String(key || '').trim())
         .filter(Boolean)

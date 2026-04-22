@@ -12,15 +12,42 @@ const EMPTY_ARRAY = [];
 function normalizeColumns(columns = [], visibleColumnKeys = [], columnOrder = []) {
     const safeColumns = Array.isArray(columns) ? columns.filter((column) => column && column.key) : [];
     const order = Array.isArray(columnOrder) ? columnOrder : [];
-    const ordered = [
-        ...order.map((key) => safeColumns.find((column) => column.key === key)).filter(Boolean),
-        ...safeColumns.filter((column) => !order.includes(column.key))
+    const configurableColumns = safeColumns.filter((column) => column.configurable !== false);
+    const fixedColumns = safeColumns.filter((column) => column.configurable === false);
+    const orderedConfigurable = [
+        ...order.map((key) => configurableColumns.find((column) => column.key === key)).filter(Boolean),
+        ...configurableColumns.filter((column) => !order.includes(column.key))
     ];
     const visible = new Set(Array.isArray(visibleColumnKeys) ? visibleColumnKeys : []);
-    return ordered.map((column) => ({
+    return [
+        ...fixedColumns,
+        ...orderedConfigurable
+    ].map((column) => ({
         ...column,
-        hidden: visible.size > 0 ? !visible.has(column.key) : column.hidden
+        hidden: column.configurable === false
+            ? column.hidden
+            : (visible.size > 0 ? !visible.has(column.key) : column.hidden)
     }));
+}
+
+function getColumnTextLabel(column = {}) {
+    const rawLabel = column.menuLabel ?? column.sortLabel ?? column.label ?? column.key;
+    if (typeof rawLabel === 'string' || typeof rawLabel === 'number') return String(rawLabel);
+    return String(column.key || '');
+}
+
+function getConfigurableColumns(columns = []) {
+    return (Array.isArray(columns) ? columns : [])
+        .filter((column) => column && column.key && column.configurable !== false);
+}
+
+function getSortableColumns(columns = []) {
+    return getConfigurableColumns(columns)
+        .filter((column) => column.sortable !== false)
+        .map((column) => ({
+            ...column,
+            label: getColumnTextLabel(column)
+        }));
 }
 
 function defaultRowText(row = {}, columns = []) {
@@ -84,6 +111,7 @@ function ColumnMenu({
     className = ''
 }) {
     const [open, setOpen] = useState(false);
+    const menuColumns = useMemo(() => getConfigurableColumns(columns), [columns]);
     const visible = new Set(preferences?.visibleColumnKeys || []);
     return (
         <div className={['saas-entity-columns', className].filter(Boolean).join(' ')}>
@@ -92,18 +120,18 @@ function ColumnMenu({
             </button>
             {open ? (
                 <div className="saas-entity-columns__menu">
-                    {columns.map((column) => (
+                    {menuColumns.map((column) => (
                         <label key={column.key} className="saas-entity-columns__item">
                             <input
                                 type="checkbox"
                                 checked={visible.has(column.key)}
                                 onChange={() => preferences?.toggleColumn?.(column.key)}
                             />
-                            <span>{column.label || column.key}</span>
+                            <span>{getColumnTextLabel(column)}</span>
                         </label>
                     ))}
                     <div className="saas-entity-columns__actions">
-                        <button type="button" onClick={() => preferences?.setVisibleColumnKeys?.(columns.map((column) => column.key))}>
+                        <button type="button" onClick={() => preferences?.setVisibleColumnKeys?.(menuColumns.map((column) => column.key))}>
                             Todas
                         </button>
                         <button type="button" onClick={preferences?.resetColumns}>
@@ -179,6 +207,7 @@ export default function SaasEntityPage({
         () => normalizeColumns(columns, preferences.visibleColumnKeys, preferences.columnOrder),
         [columns, preferences.columnOrder, preferences.visibleColumnKeys]
     );
+    const sortableColumns = useMemo(() => getSortableColumns(columns), [columns]);
     const visibleRows = useMemo(
         () => applySort(applyStructuredFilter(applySearch(rows, columns, search), activeFilter), preferences.sort),
         [activeFilter, columns, preferences.sort, rows, search]
@@ -269,17 +298,13 @@ export default function SaasEntityPage({
                         actions={actions}
                         filters={filterConfig}
                         sortConfig={{
-                            columns,
+                            columns: sortableColumns,
                             columnKey: preferences.sort?.columnKey || '',
                             direction: preferences.sort?.direction || 'asc'
                         }}
                         onSortChange={preferences.setSort}
-                        extra={(
-                            <>
-                                <ColumnMenu columns={columns} preferences={preferences} />
-                                {extra}
-                            </>
-                        )}
+                        actionsExtra={<ColumnMenu columns={columns} preferences={preferences} />}
+                        extra={extra}
                     />
                 )}
                 left={(

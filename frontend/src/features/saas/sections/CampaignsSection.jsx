@@ -695,13 +695,18 @@ export default React.memo(function CampaignsSection(props = {}) {
         showColumnsMenu
     ]);
 
-    const handleSelectCampaignRow = useCallback((row = null) => runSafe(async () => {
+    const handleSelectCampaignRow = useCallback((row = null) => {
         const campaignId = toText(row?.campaignId || '');
         if (!campaignId) return;
-        await selectCampaign?.(campaignId, { loadDetail: true });
-        await loadTracking(campaignId);
+        selectCampaign?.(campaignId, { loadDetail: false }).catch(() => {});
         setPanelMode('detail');
-    }, 'No se pudo abrir campana.'), [loadTracking, runSafe, selectCampaign]);
+        void runSafe(async () => {
+            await Promise.all([
+                selectCampaign?.(campaignId, { loadDetail: true }),
+                loadTracking(campaignId)
+            ]);
+        }, 'No se pudo abrir campana.');
+    }, [loadTracking, runSafe, selectCampaign]);
 
     useEffect(() => {
         if (!isCampaignsSection) return undefined;

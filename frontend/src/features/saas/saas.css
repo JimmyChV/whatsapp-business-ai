@@ -3229,6 +3229,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+  overflow: visible;
 }
 
 .saas-view-header__action-btn {
@@ -3539,6 +3540,7 @@
 
 .saas-entity-page .saas-view-header,
 .saas-entity-page .saas-view-header__controls,
+.saas-entity-page .saas-view-header__actions,
 .saas-entity-page .saas-view-header__sort {
   overflow: visible;
 }
