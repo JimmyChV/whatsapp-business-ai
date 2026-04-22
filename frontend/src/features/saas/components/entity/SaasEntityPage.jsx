@@ -48,6 +48,36 @@ function applySort(rows = [], sort = {}) {
     });
 }
 
+function normalizeEntityFilters(filters = null) {
+    if (!Array.isArray(filters)) return [];
+    return filters
+        .filter((filter) => filter && filter.key)
+        .map((filter) => ({
+            ...filter,
+            type: filter.type === 'select' ? 'option' : (filter.type || 'text')
+        }));
+}
+
+function matchesFilterValue(rowValue, filterValue = {}) {
+    const operator = String(filterValue.operator || 'contains').trim();
+    const expected = String(filterValue.value ?? '').trim().toLowerCase();
+    const actual = String(rowValue ?? '').trim().toLowerCase();
+    if (operator === 'is_empty') return !actual;
+    if (operator === 'not_empty') return Boolean(actual);
+    if (!expected) return true;
+    if (operator === 'equals') return actual === expected;
+    if (operator === 'not_equals') return actual !== expected;
+    if (operator === 'starts_with') return actual.startsWith(expected);
+    if (operator === 'ends_with') return actual.endsWith(expected);
+    return actual.includes(expected);
+}
+
+function applyStructuredFilter(rows = [], filterValue = {}) {
+    const columnKey = String(filterValue?.columnKey || '').trim();
+    if (!columnKey) return rows;
+    return rows.filter((row) => matchesFilterValue(row?.[columnKey], filterValue));
+}
+
 function ColumnMenu({
     columns = EMPTY_ARRAY,
     preferences,
@@ -106,6 +136,7 @@ export default function SaasEntityPage({
     searchPlaceholder = 'Buscar...',
     actions = EMPTY_ARRAY,
     filters = null,
+    onFilterChange = null,
     extra = null,
     className = '',
     detailTitle = '',
@@ -113,13 +144,36 @@ export default function SaasEntityPage({
 }) {
     const preferences = useSaasViewPreferences(sectionKey || id || title, columns, { requestJson });
     const [search, setSearch] = useState('');
+    const [activeFilter, setActiveFilter] = useState({ columnKey: '', operator: 'contains', value: '' });
+    const filterColumns = useMemo(() => normalizeEntityFilters(filters), [filters]);
+    const filterConfig = useMemo(() => {
+        if (filterColumns.length === 0) return null;
+        return {
+            columns: filterColumns,
+            value: activeFilter,
+            onChange: (nextFilter) => {
+                const normalized = {
+                    columnKey: String(nextFilter?.columnKey || '').trim(),
+                    operator: String(nextFilter?.operator || 'contains').trim(),
+                    value: nextFilter?.value ?? ''
+                };
+                setActiveFilter(normalized);
+                if (typeof onFilterChange === 'function') onFilterChange(normalized);
+            },
+            onClear: () => {
+                const cleared = { columnKey: '', operator: 'contains', value: '' };
+                setActiveFilter(cleared);
+                if (typeof onFilterChange === 'function') onFilterChange(cleared);
+            }
+        };
+    }, [activeFilter, filterColumns, onFilterChange]);
     const effectiveColumns = useMemo(
         () => normalizeColumns(columns, preferences.visibleColumnKeys, preferences.columnOrder),
         [columns, preferences.columnOrder, preferences.visibleColumnKeys]
     );
     const visibleRows = useMemo(
-        () => applySort(applySearch(rows, columns, search), preferences.sort),
-        [columns, preferences.sort, rows, search]
+        () => applySort(applyStructuredFilter(applySearch(rows, columns, search), activeFilter), preferences.sort),
+        [activeFilter, columns, preferences.sort, rows, search]
     );
     const hasSelection = Boolean(selectedId);
     const close = () => {
@@ -168,7 +222,7 @@ export default function SaasEntityPage({
                         onSearchChange={setSearch}
                         searchPlaceholder={searchPlaceholder}
                         actions={actions}
-                        filters={filters}
+                        filters={filterConfig}
                         sortConfig={{
                             columns,
                             columnKey: preferences.sort?.columnKey || '',
