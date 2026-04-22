@@ -90,7 +90,11 @@ export default function QuickRepliesSection(props = {}) {
     ]);
 
     return (
-                    <section id="saas_quick_replies" className="saas-admin-card saas-admin-card--full">
+                    <section
+                        id="saas_quick_replies"
+                        className="saas-admin-card saas-admin-card--full saas-entity-page saas-entity-page--legacy"
+                        data-saas-section-key="quick_replies"
+                    >
                         <div className="saas-admin-master-detail saas-admin-master-detail--td-pattern">
                             <aside className="saas-admin-master-pane">
                                 <div className="saas-admin-pane-header">

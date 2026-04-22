@@ -72,7 +72,11 @@ function AiAssistantsSection(props = {}) {
     }
 
     return (
-                    <section id="saas_ia" className="saas-admin-card saas-admin-card--full">
+                    <section
+                        id="saas_ia"
+                        className="saas-admin-card saas-admin-card--full saas-entity-page saas-entity-page--legacy"
+                        data-saas-section-key="ai_assistants"
+                    >
                         <div className="saas-admin-master-detail saas-admin-master-detail--td-pattern">
                             <aside className="saas-admin-master-pane">
                                 <div className="saas-admin-pane-header">
