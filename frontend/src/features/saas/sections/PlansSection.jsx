@@ -1,4 +1,5 @@
 import React from 'react';
+import { SaasEntityPage } from '../components/layout';
 
 function PlansSection(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
@@ -29,9 +30,13 @@ function PlansSection(props = {}) {
     }
 
     return (
-                    <section id="saas_planes" className="saas-admin-card saas-admin-card--full saas-entity-page saas-entity-page--legacy" data-saas-section-key="plans">
-                        <div className="saas-admin-master-detail">
-                            <aside className="saas-admin-master-pane">
+                    <SaasEntityPage
+                        id="saas_planes"
+                        sectionKey="plans"
+                        selectedId={selectedPlan?.id || selectedPlanId || ''}
+                        className="saas-entity-page--legacy"
+                        layoutClassName="saas-admin-master-detail"
+                        left={<aside className="saas-admin-master-pane">
                                 <div className="saas-admin-pane-header">
                                     <h3>Planes SaaS</h3>
                                     <small>Control global de limites por plan.</small>
@@ -55,9 +60,9 @@ function PlansSection(props = {}) {
                                         </button>
                                     ))}
                                 </div>
-                            </aside>
+                            </aside>}
 
-                            <div className="saas-admin-detail-pane">
+                        right={<div className="saas-admin-detail-pane">
                                 {!selectedPlan && (
                                     <div className="saas-admin-empty-state saas-admin-empty-state--detail">
                                         <h4>Selecciona un plan</h4>
@@ -186,9 +191,8 @@ function PlansSection(props = {}) {
                                         </div>
                                     </>
                                 )}
-                            </div>
-                        </div>
-                    </section>
+                            </div>}
+                    />
     );
 }
 

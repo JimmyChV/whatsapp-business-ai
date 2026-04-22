@@ -1,5 +1,6 @@
 ﻿import React from 'react';
 import ImageDropInput from '../components/panel/ImageDropInput';
+import { SaasEntityPage } from '../components/layout';
 
 function CompaniesSection(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
@@ -40,9 +41,13 @@ function CompaniesSection(props = {}) {
     }
 
     return (
-                    <section id="saas_empresas" className="saas-admin-card saas-admin-card--full saas-entity-page saas-entity-page--legacy" data-saas-section-key="companies">
-                        <div className="saas-admin-master-detail">
-                            <aside className="saas-admin-master-pane">
+                    <SaasEntityPage
+                        id="saas_empresas"
+                        sectionKey="companies"
+                        selectedId={tenantPanelMode === 'create' ? '__create_tenant' : selectedTenant?.id || selectedTenantId || ''}
+                        className="saas-entity-page--legacy"
+                        layoutClassName="saas-admin-master-detail"
+                        left={<aside className="saas-admin-master-pane">
                                 <div className="saas-admin-pane-header">
                                     <div>
                                         <h3>Empresas ({tenantOptions.length})</h3>
@@ -78,9 +83,9 @@ function CompaniesSection(props = {}) {
                                         );
                                     })}
                                 </div>
-                            </aside>
+                            </aside>}
 
-                            <div className="saas-admin-detail-pane">
+                        right={<div className="saas-admin-detail-pane">
                                 {!selectedTenant && tenantPanelMode !== 'create' && (
                                     <div className="saas-admin-empty-state saas-admin-empty-state--detail">
                                         <h4>Selecciona una empresa</h4>
@@ -280,9 +285,8 @@ function CompaniesSection(props = {}) {
                                         )}
                                     </>
                                 )}
-                            </div>
-                        </div>
-                    </section>
+                            </div>}
+                    />
     );
 }
 

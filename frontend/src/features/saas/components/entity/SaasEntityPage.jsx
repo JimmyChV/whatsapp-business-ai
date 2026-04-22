@@ -141,6 +141,7 @@ export default function SaasEntityPage({
     left = null,
     right: rightSlot = null,
     layoutClassName = '',
+    dataSectionKey = '',
     extra = null,
     className = '',
     detailTitle = '',
@@ -198,7 +199,11 @@ export default function SaasEntityPage({
 
     if (header || left || rightSlot) {
         return (
-            <section id={id || undefined} className={['saas-admin-card saas-admin-card--full saas-entity-page', className].filter(Boolean).join(' ')}>
+            <section
+                id={id || undefined}
+                className={['saas-admin-card saas-admin-card--full saas-entity-page', className].filter(Boolean).join(' ')}
+                data-saas-section-key={dataSectionKey || sectionKey || undefined}
+            >
                 <SaasTableDetailLayout
                     selectedId={selectedId}
                     className={layoutClassName || 'saas-entity-layout'}
@@ -230,7 +235,11 @@ export default function SaasEntityPage({
     ) : null;
 
     return (
-        <section id={id || undefined} className={['saas-admin-card saas-admin-card--full saas-entity-page', className].filter(Boolean).join(' ')}>
+        <section
+            id={id || undefined}
+            className={['saas-admin-card saas-admin-card--full saas-entity-page', className].filter(Boolean).join(' ')}
+            data-saas-section-key={dataSectionKey || sectionKey || undefined}
+        >
             <SaasTableDetailLayout
                 selectedId={selectedId}
                 className="saas-entity-layout"
