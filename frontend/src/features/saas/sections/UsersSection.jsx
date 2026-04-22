@@ -493,38 +493,40 @@ function UsersSection(props = {}) {
     if (selectedSectionId !== 'saas_usuarios') return null;
 
     return (
-        <SaasEntityPage
-            id="saas_usuarios"
-            sectionKey="saas_usuarios"
-            title="Usuarios"
-            rows={rows}
-            columns={columns}
-            selectedId={selectedEntityId}
-            onSelect={(row) => openUserView?.(row?.id)}
-            onClose={close}
-            renderDetail={renderDetail}
-            renderForm={renderForm}
-            mode={isEditing ? 'form' : 'detail'}
-            dirty={isEditing}
-            requestJson={requestJson}
-            loading={busy && rows.length === 0}
-            emptyText={tenantScopeLocked ? 'Selecciona una empresa para habilitar usuarios.' : 'No hay usuarios registrados.'}
-            searchPlaceholder="Buscar usuario por nombre, correo, rol o estado"
-            filters={filters}
-            actions={[
-                canManageUsers
-                    ? { label: 'Agregar usuario', onClick: openUserCreate, disabled: busy || tenantScopeLocked }
-                    : null
-            ].filter(Boolean)}
-            detailTitle={userPanelMode === 'create'
-                ? 'Nuevo usuario'
-                : userPanelMode === 'edit'
-                    ? `Editando: ${toUserDisplayName(selectedUser || {})}`
-                    : toUserDisplayName(selectedUser || {})}
-            detailSubtitle={userPanelMode === 'view'
-                ? 'Campos bloqueados. Usa Editar para modificar.'
-                : 'ID y correo bloqueados durante edicion para mantener consistencia.'}
-        />
+        <div className="saas-admin-grid">
+            <SaasEntityPage
+                id="saas_usuarios"
+                sectionKey="saas_usuarios"
+                title="Usuarios"
+                rows={rows}
+                columns={columns}
+                selectedId={selectedEntityId}
+                onSelect={(row) => openUserView?.(row?.id)}
+                onClose={close}
+                renderDetail={renderDetail}
+                renderForm={renderForm}
+                mode={isEditing ? 'form' : 'detail'}
+                dirty={isEditing}
+                requestJson={requestJson}
+                loading={busy && rows.length === 0}
+                emptyText={tenantScopeLocked ? 'Selecciona una empresa para habilitar usuarios.' : 'No hay usuarios registrados.'}
+                searchPlaceholder="Buscar usuario por nombre, correo, rol o estado"
+                filters={filters}
+                actions={[
+                    canManageUsers
+                        ? { label: 'Agregar usuario', onClick: openUserCreate, disabled: busy || tenantScopeLocked }
+                        : null
+                ].filter(Boolean)}
+                detailTitle={userPanelMode === 'create'
+                    ? 'Nuevo usuario'
+                    : userPanelMode === 'edit'
+                        ? `Editando: ${toUserDisplayName(selectedUser || {})}`
+                        : toUserDisplayName(selectedUser || {})}
+                detailSubtitle={userPanelMode === 'view'
+                    ? 'Campos bloqueados. Usa Editar para modificar.'
+                    : 'ID y correo bloqueados durante edicion para mantener consistencia.'}
+            />
+        </div>
     );
 }
 

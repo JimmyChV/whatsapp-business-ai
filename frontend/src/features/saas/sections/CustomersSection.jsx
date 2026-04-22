@@ -3812,6 +3812,7 @@ function CustomersSection(props = {}) {
     );
 
     return (
+        <div className="saas-admin-grid">
         <SaasEntityPage
             id="saas_clientes"
             sectionKey="customers"
@@ -3853,6 +3854,7 @@ function CustomersSection(props = {}) {
                 onConfirm={() => { void handleConfirmExpressCampaign(); }}
             />
         </SaasEntityPage>
+        </div>
     );
 }
 
