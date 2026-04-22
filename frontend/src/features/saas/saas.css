@@ -720,7 +720,7 @@
 }
 
 .saas-admin-master-detail--td-pattern {
-  grid-template-columns: minmax(0, 60%) minmax(360px, 40%);
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
   min-height: calc(100vh - var(--saas-header-height, 74px) - 112px);
   height: calc(100vh - var(--saas-header-height, 74px) - 112px);
   max-height: calc(100vh - var(--saas-header-height, 74px) - 112px);
@@ -840,8 +840,23 @@
 .saas-admin-master-toolbar input {
   width: 100%;
   min-width: 0;
-  height: 34px;
-  border-radius: 10px;
+  height: 38px;
+  border: 1px solid rgba(64, 131, 150, 0.72);
+  border-radius: 12px;
+  background: rgba(6, 17, 24, 0.92);
+  color: #f2fbff;
+  font-weight: 650;
+  box-shadow: inset 0 1px 0 rgba(128, 196, 219, 0.05);
+}
+
+.saas-admin-master-toolbar input::placeholder {
+  color: rgba(171, 194, 207, 0.66);
+}
+
+.saas-admin-master-toolbar input:focus {
+  outline: none;
+  border-color: rgba(0, 199, 167, 0.92);
+  box-shadow: 0 0 0 3px rgba(0, 199, 167, 0.14);
 }
 
 .saas-admin-master-toolbar button,
@@ -949,6 +964,38 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.saas-admin-master-detail--td-pattern .saas-admin-list-item--table {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.3fr) minmax(110px, 0.9fr) minmax(120px, 0.8fr);
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 12px 14px;
+}
+
+.saas-admin-master-detail--td-pattern .saas-admin-list-item--table > strong,
+.saas-admin-master-detail--td-pattern .saas-admin-list-item--table > span,
+.saas-admin-master-detail--td-pattern .saas-admin-list-item--table > small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saas-admin-master-detail--td-pattern .saas-admin-list-item--table > span {
+  color: #d8eef7;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.saas-admin-master-detail--td-pattern .saas-admin-list-item--table > small {
+  text-align: left;
+}
+
+.saas-admin-master-detail--td-pattern .saas-admin-list-item--table.active {
+  background: linear-gradient(170deg, rgba(2, 57, 50, 0.92), rgba(5, 40, 38, 0.82));
 }
 .saas-admin-list-item--button:hover {
   border-color: rgba(0, 199, 160, 0.45);
