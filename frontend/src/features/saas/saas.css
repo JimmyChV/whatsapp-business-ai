@@ -3495,6 +3495,8 @@
 
 .saas-entity-page .saas-td-layout__content {
     height: 100%;
+    align-items: stretch;
+    justify-items: stretch;
 }
 
 .saas-entity-page .saas-td-layout--split .saas-td-layout__content {
@@ -3509,12 +3511,15 @@
 .saas-entity-page .saas-td-layout__right {
     display: flex;
     flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
     overflow: hidden;
 }
 
 .saas-entity-page .saas-data-table-wrap {
     flex: 1 1 auto;
     min-height: 0;
+    align-self: stretch;
 }
 
 .saas-entity-page--legacy .saas-admin-master-detail--td-pattern {
@@ -3573,7 +3578,7 @@
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
-    z-index: 20;
+    z-index: 200;
     width: min(560px, 82vw);
     max-height: 54vh;
     overflow: auto;
