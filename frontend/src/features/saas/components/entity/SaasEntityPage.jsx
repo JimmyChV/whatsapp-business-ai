@@ -146,6 +146,7 @@ export default function SaasEntityPage({
     className = '',
     detailTitle = '',
     detailSubtitle = '',
+    hideCloseButton = false,
     children = null
 }) {
     const preferences = useSaasViewPreferences(sectionKey || id || title, columns, { requestJson });
@@ -234,7 +235,7 @@ export default function SaasEntityPage({
             subtitle={detailSubtitle}
             className="saas-entity-detail-panel"
             bodyClassName="saas-entity-detail-panel__body"
-            actions={(
+            actions={hideCloseButton ? null : (
                 <button type="button" className="saas-btn-cancel" onClick={close}>
                     Cerrar
                 </button>
