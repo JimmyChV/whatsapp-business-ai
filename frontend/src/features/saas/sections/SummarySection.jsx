@@ -65,7 +65,7 @@ function SummarySection(props = {}) {
     const activeChatsToday = Number(operationsSnapshot?.activeAssignments || 0);
 
     return (
-        <section id="saas_resumen" className="saas-admin-card saas-admin-card--full saas-admin-flow-card">
+        <section id="saas_resumen" className="saas-admin-card saas-admin-card--full saas-admin-flow-card saas-entity-page saas-entity-page--summary" data-saas-section-key="summary">
             <div className="saas-summary-shell">
                 <div className="saas-summary-top">
                     <section className="saas-summary-card saas-summary-card--profile" aria-label="Resumen del usuario actual">

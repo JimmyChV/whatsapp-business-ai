@@ -33,7 +33,7 @@ function OperationsSection(props = {}) {
     formatDateTimeLabel
     } = context;
     return (
-        <section id="saas_operacion" className="saas-admin-card saas-admin-card--full">
+        <section id="saas_operacion" className="saas-admin-card saas-admin-card--full saas-entity-page saas-entity-page--legacy" data-saas-section-key="operations">
             <div className="saas-admin-master-detail">
                 <aside className="saas-admin-master-pane">
                     <div className="saas-admin-pane-header">

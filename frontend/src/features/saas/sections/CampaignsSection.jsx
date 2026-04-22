@@ -1223,7 +1223,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     );
 
     return (
-        <section id="saas_campaigns" className="saas-admin-card saas-admin-card--full">
+        <section id="saas_campaigns" className="saas-admin-card saas-admin-card--full saas-entity-page" data-saas-section-key="campaigns">
             <SaasTableDetailLayout
                 selectedId={layoutSelectedId}
                 className={`saas-campaigns-td-layout ${panelMode === 'create' || panelMode === 'edit' ? 'saas-campaigns-td-layout--builder' : ''}`}

@@ -1405,7 +1405,7 @@ function MetaTemplatesSection(props = {}) {
     }
 
     return (
-        <section id="saas_templates" className="saas-admin-card saas-admin-card--full">
+        <section id="saas_templates" className="saas-admin-card saas-admin-card--full saas-entity-page" data-saas-section-key="meta_templates">
             <SaasTableDetailLayout
                 selectedId={
                     tenantScopeLocked

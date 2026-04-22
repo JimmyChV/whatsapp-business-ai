@@ -3746,7 +3746,7 @@ function CustomersSection(props = {}) {
     ) : null;
 
     return (
-        <section id="saas_clientes" className="saas-admin-card saas-admin-card--full">
+        <section id="saas_clientes" className="saas-admin-card saas-admin-card--full saas-entity-page" data-saas-section-key="customers">
             <SaasTableDetailLayout
                 selectedId={layoutSelectedId}
                 className="saas-customers-td-layout"

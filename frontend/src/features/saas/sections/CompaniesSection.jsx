@@ -40,7 +40,7 @@ function CompaniesSection(props = {}) {
     }
 
     return (
-                    <section id="saas_empresas" className="saas-admin-card saas-admin-card--full">
+                    <section id="saas_empresas" className="saas-admin-card saas-admin-card--full saas-entity-page saas-entity-page--legacy" data-saas-section-key="companies">
                         <div className="saas-admin-master-detail">
                             <aside className="saas-admin-master-pane">
                                 <div className="saas-admin-pane-header">
