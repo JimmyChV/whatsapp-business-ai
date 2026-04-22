@@ -168,6 +168,8 @@ export default function useSaasPanelActionContexts(input = {}) {
                 loadTenantAiAssistants: aiAssistantsAdminActions.loadTenantAiAssistants,
                 loadTenantIntegrations: c.loadTenantIntegrations,
                 loadCustomers: c.loadCustomers,
+                loadMetaTemplates: c.loadMetaTemplates,
+                loadCampaigns: c.loadCampaigns,
                 loadQuickReplyData: quickReplyAdminActions.loadQuickReplyData,
                 loadTenantLabels: tenantLabelsAdminActions.loadTenantLabels,
                 loadTenantAssignmentRules: c.loadTenantAssignmentRules,
