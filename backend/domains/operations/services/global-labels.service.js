@@ -8,6 +8,54 @@ const {
 
 const STORE_FILE = 'global_labels.json';
 const DEFAULT_COLOR = '#00A884';
+const DEFAULT_GLOBAL_LABELS = Object.freeze([
+    {
+        id: 'NUEVO',
+        name: 'Nuevo',
+        color: '#7D8D95',
+        description: 'Etiqueta comercial predeterminada para clientes nuevos.',
+        commercialStatusKey: 'nuevo',
+        sortOrder: 1,
+        isActive: true
+    },
+    {
+        id: 'EN_CONVERSACION',
+        name: 'En conversacion',
+        color: '#34B7F1',
+        description: 'Etiqueta comercial predeterminada para conversaciones activas.',
+        commercialStatusKey: 'en_conversacion',
+        sortOrder: 2,
+        isActive: true
+    },
+    {
+        id: 'COTIZADO',
+        name: 'Cotizado',
+        color: '#FFB02E',
+        description: 'Etiqueta comercial predeterminada para clientes cotizados.',
+        commercialStatusKey: 'cotizado',
+        sortOrder: 3,
+        isActive: true
+    },
+    {
+        id: 'VENDIDO',
+        name: 'Vendido',
+        color: '#00A884',
+        description: 'Etiqueta comercial predeterminada para ventas cerradas.',
+        commercialStatusKey: 'vendido',
+        sortOrder: 4,
+        isActive: true
+    },
+    {
+        id: 'PERDIDO',
+        name: 'Perdido',
+        color: '#FF5C5C',
+        description: 'Etiqueta comercial predeterminada para oportunidades perdidas.',
+        commercialStatusKey: 'perdido',
+        sortOrder: 5,
+        isActive: true
+    }
+]);
+const DEFAULT_GLOBAL_LABEL_IDS = new Set(DEFAULT_GLOBAL_LABELS.map((entry) => entry.id));
 
 let schemaPromise = null;
 
@@ -54,6 +102,10 @@ function sanitizeLabel(source = {}) {
     };
 }
 
+function isDefaultGlobalLabelId(id = '') {
+    return DEFAULT_GLOBAL_LABEL_IDS.has(normalizeId(id));
+}
+
 function missingRelation(error) {
     return String(error?.code || '').trim() === '42P01';
 }
@@ -62,10 +114,6 @@ async function seedFromExistingTenantLabelsIfEmpty() {
     if (getStorageDriver() !== 'postgres') return;
 
     try {
-        const { rows: countRows } = await queryPostgres('SELECT COUNT(*)::int AS total FROM global_labels');
-        const total = Number(countRows?.[0]?.total || 0);
-        if (total > 0) return;
-
         await queryPostgres(`
             INSERT INTO global_labels (
                 id,
@@ -98,6 +146,45 @@ async function seedFromExistingTenantLabelsIfEmpty() {
         if (missingRelation(error)) return;
         throw error;
     }
+}
+
+async function ensureDefaultGlobalLabels() {
+    if (getStorageDriver() !== 'postgres') {
+        const store = await readStore();
+        let changed = false;
+        const existingIds = new Set(store.items.map((item) => normalizeId(item.id)).filter(Boolean));
+        DEFAULT_GLOBAL_LABELS.forEach((defaultLabel) => {
+            if (existingIds.has(defaultLabel.id)) return;
+            store.items.push({
+                ...defaultLabel,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            });
+            changed = true;
+        });
+        if (changed) await writeStore(store);
+        return;
+    }
+
+    await queryPostgres(
+        `INSERT INTO global_labels (
+            id, name, color, description, commercial_status_key, sort_order, is_active, created_at, updated_at
+        ) VALUES
+            ($1, $2, $3, $4, $5, $6, TRUE, NOW(), NOW()),
+            ($7, $8, $9, $10, $11, $12, TRUE, NOW(), NOW()),
+            ($13, $14, $15, $16, $17, $18, TRUE, NOW(), NOW()),
+            ($19, $20, $21, $22, $23, $24, TRUE, NOW(), NOW()),
+            ($25, $26, $27, $28, $29, $30, TRUE, NOW(), NOW())
+        ON CONFLICT (id) DO NOTHING`,
+        DEFAULT_GLOBAL_LABELS.flatMap((entry) => [
+            entry.id,
+            entry.name,
+            entry.color,
+            entry.description,
+            entry.commercialStatusKey,
+            entry.sortOrder
+        ])
+    );
 }
 
 async function ensurePostgresSchema() {
@@ -143,6 +230,7 @@ async function writeStore(store = { items: [] }) {
 async function listLabels(options = {}) {
     const includeInactive = options?.includeInactive === true;
     if (getStorageDriver() !== 'postgres') {
+        await ensureDefaultGlobalLabels();
         const store = await readStore();
         return store.items
             .filter((item) => includeInactive || item.isActive !== false)
@@ -151,6 +239,7 @@ async function listLabels(options = {}) {
 
     try {
         await ensurePostgresSchema();
+        await ensureDefaultGlobalLabels();
         await seedFromExistingTenantLabelsIfEmpty();
         const where = includeInactive ? '' : 'WHERE is_active = TRUE';
         const { rows } = await queryPostgres(
@@ -170,14 +259,19 @@ async function saveLabel(payload = {}) {
     const clean = sanitizeLabel(payload);
     const id = clean.id || createId();
     if (!clean.name) throw new Error('Nombre de etiqueta requerido.');
+    const isDefault = isDefaultGlobalLabelId(id);
+    const defaultLabel = isDefault ? DEFAULT_GLOBAL_LABELS.find((entry) => entry.id === id) : null;
 
     if (getStorageDriver() !== 'postgres') {
+        await ensureDefaultGlobalLabels();
         const store = await readStore();
         const index = store.items.findIndex((item) => item.id === id);
         const previous = index >= 0 ? store.items[index] : null;
         const next = {
             ...clean,
             id,
+            commercialStatusKey: isDefault ? defaultLabel?.commercialStatusKey : clean.commercialStatusKey,
+            isActive: isDefault ? true : clean.isActive,
             createdAt: previous?.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
@@ -188,6 +282,7 @@ async function saveLabel(payload = {}) {
     }
 
     await ensurePostgresSchema();
+    await ensureDefaultGlobalLabels();
     await queryPostgres(
         `INSERT INTO global_labels (
             id, name, color, description, commercial_status_key, sort_order, is_active, created_at, updated_at
@@ -197,11 +292,25 @@ async function saveLabel(payload = {}) {
             name = EXCLUDED.name,
             color = EXCLUDED.color,
             description = EXCLUDED.description,
-            commercial_status_key = EXCLUDED.commercial_status_key,
+            commercial_status_key = CASE
+                WHEN global_labels.id IN ('NUEVO', 'EN_CONVERSACION', 'COTIZADO', 'VENDIDO', 'PERDIDO') THEN global_labels.commercial_status_key
+                ELSE EXCLUDED.commercial_status_key
+            END,
             sort_order = EXCLUDED.sort_order,
-            is_active = EXCLUDED.is_active,
+            is_active = CASE
+                WHEN global_labels.id IN ('NUEVO', 'EN_CONVERSACION', 'COTIZADO', 'VENDIDO', 'PERDIDO') THEN TRUE
+                ELSE EXCLUDED.is_active
+            END,
             updated_at = NOW()`,
-        [id, clean.name, clean.color, clean.description || null, clean.commercialStatusKey || null, clean.sortOrder, clean.isActive !== false]
+        [
+            id,
+            clean.name,
+            clean.color,
+            clean.description || null,
+            isDefault ? defaultLabel?.commercialStatusKey : clean.commercialStatusKey || null,
+            clean.sortOrder,
+            isDefault ? true : clean.isActive !== false
+        ]
     );
     const items = await listLabels({ includeInactive: true });
     return items.find((item) => item.id === id) || null;
@@ -210,6 +319,9 @@ async function saveLabel(payload = {}) {
 async function deleteLabel(id = '') {
     const cleanId = normalizeId(id);
     if (!cleanId) throw new Error('id invalido.');
+    if (isDefaultGlobalLabelId(cleanId)) {
+        throw new Error('Las etiquetas globales predeterminadas no se pueden eliminar.');
+    }
 
     if (getStorageDriver() !== 'postgres') {
         const store = await readStore();
