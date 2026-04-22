@@ -3517,6 +3517,27 @@
     min-height: 0;
 }
 
+.saas-entity-page--legacy .saas-admin-master-detail--td-pattern {
+    grid-template-columns: minmax(320px, 2fr) minmax(0, 3fr);
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    max-height: 100%;
+}
+
+.saas-entity-page--legacy .saas-admin-master-pane,
+.saas-entity-page--legacy .saas-admin-detail-pane {
+    min-height: 0;
+}
+
+.saas-entity-page--legacy .saas-admin-master-toolbar {
+    border-radius: 12px 12px 0 0;
+}
+
+.saas-entity-page--legacy .saas-admin-list-table-head {
+    background: rgba(3, 32, 41, 0.86);
+}
+
 .saas-entity-detail-panel {
     flex: 1 1 auto;
     min-height: 0;

@@ -68,7 +68,11 @@ function ModulesConfigSection(props = {}) {
     }
 
     return (
-        <section id={isModulesSection ? 'saas_modulos' : 'saas_config'} className="saas-admin-card saas-admin-card--full">
+        <section
+            id={isModulesSection ? 'saas_modulos' : 'saas_config'}
+            className="saas-admin-card saas-admin-card--full saas-entity-page saas-entity-page--legacy"
+            data-saas-section-key={isModulesSection ? 'modules' : 'configuration'}
+        >
             <div className="saas-admin-master-detail saas-admin-master-detail--td-pattern">
                 <ModulesConfigMasterPane
                     isModulesSection={isModulesSection}
