@@ -1305,12 +1305,6 @@ function MetaTemplatesSection(props = {}) {
                     disabled: templatesBusy || !settingsTenantId
                 },
                 {
-                    key: 'columns',
-                    label: showColumnsPanel ? 'Ocultar columnas' : 'Columnas',
-                    onClick: () => setShowColumnsPanel((prev) => !prev),
-                    disabled: tenantScopeLocked
-                },
-                {
                     key: 'create',
                     label: 'Crear template',
                     onClick: () => openCreateTemplatePanel().catch((error) => {
@@ -1321,6 +1315,40 @@ function MetaTemplatesSection(props = {}) {
                     disabled: templatesBusy || !canWrite
                 }
             ]}
+            actionsExtra={!tenantScopeLocked ? (
+                <div className="saas-entity-columns">
+                    <button type="button" onClick={() => setShowColumnsPanel((prev) => !prev)}>
+                        Columnas
+                    </button>
+                    {showColumnsPanel ? (
+                        <div className="saas-entity-columns__menu">
+                            {TEMPLATE_TABLE_COLUMNS.map((column) => {
+                                const isChecked = (Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : []).includes(column.key);
+                                return (
+                                    <label key={`meta-template-col-${column.key}`} className="saas-entity-columns__item">
+                                        <input
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={(event) => {
+                                                const current = Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : [];
+                                                const next = event.target.checked
+                                                    ? [...current, column.key]
+                                                    : current.filter((entry) => entry !== column.key);
+                                                setVisibleTableColumnKeys(next.length > 0 ? next : TEMPLATE_DEFAULT_COLUMN_KEYS);
+                                            }}
+                                        />
+                                        <span>{column.label}</span>
+                                    </label>
+                                );
+                            })}
+                            <div className="saas-entity-columns__actions">
+                                <button type="button" onClick={resetVisibleTableColumnKeys}>Restablecer</button>
+                                <button type="button" onClick={() => setShowColumnsPanel(false)}>Cerrar</button>
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
             extra={!tenantScopeLocked ? (
                 <div className="saas-admin-form-row">
                     <select
@@ -1389,8 +1417,10 @@ function MetaTemplatesSection(props = {}) {
         notify,
         openCreateTemplatePanel,
         reloadTemplates,
+        resetVisibleTableColumnKeys,
         setError,
         setFilters,
+        setVisibleTableColumnKeys,
         settingsTenantId,
         showColumnsPanel,
         statusOptions,
@@ -1398,7 +1428,8 @@ function MetaTemplatesSection(props = {}) {
         templatesBusy,
         tenantScopeLocked,
         filteredItems.length,
-        updateFilter
+        updateFilter,
+        visibleTableColumnKeys
     ]);
 
     if (!isMetaTemplatesSection) {
@@ -1432,36 +1463,6 @@ function MetaTemplatesSection(props = {}) {
 
                     {!tenantScopeLocked && (
                         <>
-                            {showColumnsPanel ? (
-                                <div className="saas-customers-columns-panel">
-                                    <div className="saas-customers-columns-header">
-                                        <strong>Columnas</strong>
-                                        <button type="button" onClick={resetVisibleTableColumnKeys}>Restaurar</button>
-                                    </div>
-                                    <div className="saas-customers-columns-grid">
-                                        {TEMPLATE_TABLE_COLUMNS.map((column) => {
-                                            const isChecked = (Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : []).includes(column.key);
-                                            return (
-                                                <label key={`meta-template-col-${column.key}`} className="saas-customers-columns-item">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={isChecked}
-                                                        onChange={(event) => {
-                                                            const current = Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : [];
-                                                            const next = event.target.checked
-                                                                ? [...current, column.key]
-                                                                : current.filter((entry) => entry !== column.key);
-                                                            setVisibleTableColumnKeys(next.length > 0 ? next : TEMPLATE_DEFAULT_COLUMN_KEYS);
-                                                        }}
-                                                    />
-                                                    <span>{column.label}</span>
-                                                </label>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ) : null}
-
                             <SaasDataTable
                                 columns={tableColumns}
                                 rows={tableRows}

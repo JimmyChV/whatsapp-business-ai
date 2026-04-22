@@ -6,6 +6,7 @@ import {
     SaasViewHeader,
     useSaasViewPreferences
 } from '../layout';
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 
 const EMPTY_ARRAY = [];
 
@@ -178,6 +179,7 @@ export default function SaasEntityPage({
     detailShell = true,
     children = null
 }) {
+    const { confirm } = useUiFeedback();
     const preferences = useSaasViewPreferences(sectionKey || id || title, columns, { requestJson });
     const [search, setSearch] = useState('');
     const [activeFilter, setActiveFilter] = useState({ columnKey: '', operator: 'contains', value: '' });
@@ -213,8 +215,17 @@ export default function SaasEntityPage({
         [activeFilter, columns, preferences.sort, rows, search]
     );
     const hasSelection = Boolean(selectedId);
-    const close = () => {
-        if (dirty && typeof window !== 'undefined' && !window.confirm(confirmCloseMessage)) return;
+    const close = async () => {
+        if (dirty) {
+            const ok = await confirm({
+                title: 'Cambios sin guardar',
+                message: confirmCloseMessage,
+                confirmText: 'Cerrar de todos modos',
+                cancelText: 'Volver',
+                tone: 'warn'
+            });
+            if (!ok) return;
+        }
         onClose?.();
     };
 
@@ -222,7 +233,7 @@ export default function SaasEntityPage({
         const handleKeyDown = (event) => {
             if (event.key !== 'Escape') return;
             if (!hasSelection) return;
-            close();
+            void close();
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
@@ -270,7 +281,7 @@ export default function SaasEntityPage({
             className="saas-entity-detail-panel"
             bodyClassName="saas-entity-detail-panel__body"
             actions={hideCloseButton ? null : (
-                <button type="button" className="saas-btn-cancel" onClick={close}>
+                <button type="button" className="saas-btn-cancel" onClick={() => { void close(); }}>
                     Cerrar
                 </button>
             )}
