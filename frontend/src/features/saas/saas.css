@@ -718,6 +718,121 @@
   overflow-y: auto;
   overflow-x: hidden;
 }
+
+.saas-admin-master-detail--td-pattern {
+  grid-template-columns: minmax(0, 60%) minmax(360px, 40%);
+  min-height: calc(100vh - var(--saas-header-height, 74px) - 112px);
+  height: calc(100vh - var(--saas-header-height, 74px) - 112px);
+  max-height: calc(100vh - var(--saas-header-height, 74px) - 112px);
+  overflow: hidden;
+}
+
+.saas-admin-master-detail--td-pattern:has(.saas-admin-detail-pane > .saas-admin-empty-state--detail:only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.saas-admin-master-detail--td-pattern:has(.saas-admin-detail-pane > .saas-admin-empty-state--detail:only-child) > .saas-admin-detail-pane {
+  display: none;
+}
+
+.saas-admin-master-detail--td-pattern > .saas-admin-master-pane,
+.saas-admin-master-detail--td-pattern > .saas-admin-detail-pane {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.saas-admin-master-detail--td-pattern > .saas-admin-detail-pane {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+.saas-admin-master-detail--td-pattern .saas-admin-list--compact {
+  max-height: none;
+}
+
+.saas-admin-master-detail--td-pattern .saas-admin-master-pane > .saas-admin-list--compact,
+.saas-admin-master-detail--td-pattern .saas-admin-master-pane > .saas-admin-list,
+.saas-admin-master-detail--td-pattern .saas-admin-detail-pane .saas-admin-list--compact,
+.saas-admin-master-detail--td-pattern .saas-admin-catalog-products-list,
+.saas-admin-master-detail--td-pattern .saas-admin-catalog-product-detail {
+  scrollbar-width: thin;
+  scrollbar-color: var(--saas-scrollbar-thumb) var(--saas-scrollbar-track);
+}
+
+.saas-admin-master-detail--td-pattern > .saas-admin-detail-pane,
+.saas-admin-master-detail--td-pattern .saas-admin-master-pane > .saas-admin-list--compact,
+.saas-admin-master-detail--td-pattern .saas-admin-master-pane > .saas-admin-list,
+.saas-admin-master-detail--td-pattern .saas-admin-detail-pane .saas-admin-list--compact,
+.saas-admin-master-detail--td-pattern .saas-admin-catalog-products-list,
+.saas-admin-master-detail--td-pattern .saas-admin-catalog-product-detail {
+  scrollbar-width: thin;
+  scrollbar-color: var(--saas-scrollbar-thumb) var(--saas-scrollbar-track);
+}
+
+.saas-admin-master-detail--td-pattern > .saas-admin-detail-pane::-webkit-scrollbar,
+.saas-admin-master-detail--td-pattern .saas-admin-master-pane > .saas-admin-list--compact::-webkit-scrollbar,
+.saas-admin-master-detail--td-pattern .saas-admin-master-pane > .saas-admin-list::-webkit-scrollbar,
+.saas-admin-master-detail--td-pattern .saas-admin-detail-pane .saas-admin-list--compact::-webkit-scrollbar,
+.saas-admin-master-detail--td-pattern .saas-admin-catalog-products-list::-webkit-scrollbar,
+.saas-admin-master-detail--td-pattern .saas-admin-catalog-product-detail::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.saas-admin-master-detail--td-pattern > .saas-admin-detail-pane::-webkit-scrollbar-track,
+.saas-admin-master-detail--td-pattern .saas-admin-master-pane > .saas-admin-list--compact::-webkit-scrollbar-track,
+.saas-admin-master-detail--td-pattern .saas-admin-master-pane > .saas-admin-list::-webkit-scrollbar-track,
+.saas-admin-master-detail--td-pattern .saas-admin-detail-pane .saas-admin-list--compact::-webkit-scrollbar-track,
+.saas-admin-master-detail--td-pattern .saas-admin-catalog-products-list::-webkit-scrollbar-track,
+.saas-admin-master-detail--td-pattern .saas-admin-catalog-product-detail::-webkit-scrollbar-track {
+  background: var(--saas-scrollbar-track);
+  border-radius: 999px;
+}
+
+.saas-admin-master-detail--td-pattern > .saas-admin-detail-pane::-webkit-scrollbar-thumb,
+.saas-admin-master-detail--td-pattern .saas-admin-master-pane > .saas-admin-list--compact::-webkit-scrollbar-thumb,
+.saas-admin-master-detail--td-pattern .saas-admin-master-pane > .saas-admin-list::-webkit-scrollbar-thumb,
+.saas-admin-master-detail--td-pattern .saas-admin-detail-pane .saas-admin-list--compact::-webkit-scrollbar-thumb,
+.saas-admin-master-detail--td-pattern .saas-admin-catalog-products-list::-webkit-scrollbar-thumb,
+.saas-admin-master-detail--td-pattern .saas-admin-catalog-product-detail::-webkit-scrollbar-thumb {
+  background: var(--saas-scrollbar-thumb);
+  border: 2px solid var(--saas-scrollbar-track);
+  border-radius: 999px;
+}
+
+.saas-admin-master-detail--td-pattern > .saas-admin-detail-pane::-webkit-scrollbar-thumb:hover,
+.saas-admin-master-detail--td-pattern .saas-admin-master-pane > .saas-admin-list--compact::-webkit-scrollbar-thumb:hover,
+.saas-admin-master-detail--td-pattern .saas-admin-master-pane > .saas-admin-list::-webkit-scrollbar-thumb:hover,
+.saas-admin-master-detail--td-pattern .saas-admin-detail-pane .saas-admin-list--compact::-webkit-scrollbar-thumb:hover,
+.saas-admin-master-detail--td-pattern .saas-admin-catalog-products-list::-webkit-scrollbar-thumb:hover,
+.saas-admin-master-detail--td-pattern .saas-admin-catalog-product-detail::-webkit-scrollbar-thumb:hover {
+  background: var(--saas-scrollbar-thumb-hover);
+}
+
+.saas-admin-master-detail--td-pattern .saas-admin-list-item--button {
+  min-height: 58px;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  background: rgba(4, 17, 25, 0.48);
+}
+
+.saas-admin-master-detail--td-pattern .saas-admin-list-item--button:first-of-type {
+  border-top: 1px solid rgba(123, 170, 196, 0.16);
+}
+
+.saas-admin-master-detail--td-pattern .saas-admin-list-actions--row button.danger,
+.saas-admin-master-detail--td-pattern .saas-admin-form-row--actions button.danger,
+.saas-admin-master-detail--td-pattern .saas-btn-cancel,
+.saas-admin-master-detail--td-pattern button[aria-label="Cerrar"] {
+  border-color: rgba(248, 113, 113, 0.58);
+  background: rgba(127, 29, 29, 0.42);
+  color: #ffe4e6;
+}
 .saas-admin-pane-header {
   display: flex;
   align-items: center;

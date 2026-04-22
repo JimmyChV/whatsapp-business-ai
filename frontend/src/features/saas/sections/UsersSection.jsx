@@ -52,13 +52,28 @@ function UsersSection(props = {}) {
     activeTenantId,
     packId = ''
     } = context;
+    React.useEffect(() => {
+        if (selectedSectionId !== 'saas_usuarios') return undefined;
+        const handleEscape = (event) => {
+            if (event.key !== 'Escape') return;
+            if (userPanelMode === 'create' || userPanelMode === 'edit') {
+                cancelUserEdit?.();
+                return;
+            }
+            setSelectedUserId?.('');
+            setUserPanelMode?.('view');
+        };
+        window.addEventListener('keydown', handleEscape);
+        return () => window.removeEventListener('keydown', handleEscape);
+    }, [cancelUserEdit, selectedSectionId, setSelectedUserId, setUserPanelMode, userPanelMode]);
+
     if (selectedSectionId !== 'saas_usuarios') {
         return null;
     }
 
     return (
                     <section id="saas_usuarios" className="saas-admin-card saas-admin-card--full">
-                        <div className="saas-admin-master-detail">
+                        <div className="saas-admin-master-detail saas-admin-master-detail--td-pattern">
                             <aside className="saas-admin-master-pane">
                                 <div className="saas-admin-pane-header">
                                     <div>
@@ -442,7 +457,7 @@ function UsersSection(props = {}) {
                                                     >
                                                         {userPanelMode === 'create' ? 'Guardar usuario' : 'Actualizar usuario'}
                                                     </button>
-                                                    <button type="button" disabled={busy} onClick={cancelUserEdit}>Cancelar</button>
+                                                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelUserEdit}>Cancelar</button>
                                                 </div>
                                             </>
                                         )}

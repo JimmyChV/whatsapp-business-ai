@@ -29,13 +29,37 @@ function AiAssistantsSection(props = {}) {
     setAiAssistantPanelMode,
     EMPTY_AI_ASSISTANT_FORM
     } = context;
+    React.useEffect(() => {
+        if (!isAiSection) return undefined;
+        const handleEscape = (event) => {
+            if (event.key !== 'Escape') return;
+            if (aiAssistantPanelMode === 'create' || aiAssistantPanelMode === 'edit') {
+                cancelAiAssistantEdit?.();
+                return;
+            }
+            setSelectedAiAssistantId?.('');
+            setAiAssistantPanelMode?.('view');
+            setAiAssistantForm?.({ ...EMPTY_AI_ASSISTANT_FORM });
+        };
+        window.addEventListener('keydown', handleEscape);
+        return () => window.removeEventListener('keydown', handleEscape);
+    }, [
+        EMPTY_AI_ASSISTANT_FORM,
+        aiAssistantPanelMode,
+        cancelAiAssistantEdit,
+        isAiSection,
+        setAiAssistantForm,
+        setAiAssistantPanelMode,
+        setSelectedAiAssistantId
+    ]);
+
     if (!isAiSection) {
         return null;
     }
 
     return (
                     <section id="saas_ia" className="saas-admin-card saas-admin-card--full">
-                        <div className="saas-admin-master-detail">
+                        <div className="saas-admin-master-detail saas-admin-master-detail--td-pattern">
                             <aside className="saas-admin-master-pane">
                                 <div className="saas-admin-pane-header">
                                     <div>
@@ -296,7 +320,7 @@ function AiAssistantsSection(props = {}) {
                                             >
                                                 {aiAssistantPanelMode === 'create' ? 'Guardar asistente' : 'Actualizar asistente'}
                                             </button>
-                                            <button type="button" disabled={busy} onClick={cancelAiAssistantEdit}>Cancelar</button>
+                                            <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelAiAssistantEdit}>Cancelar</button>
                                         </div>
                                     </>
                                 )}

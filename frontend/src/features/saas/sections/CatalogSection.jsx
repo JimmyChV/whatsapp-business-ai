@@ -47,13 +47,51 @@ function CatalogSection(props = {}) {
     setSelectedCatalogId,
     tenantCatalogForm
     } = context;
+    React.useEffect(() => {
+        if (!isCatalogSection) return undefined;
+        const handleEscape = (event) => {
+            if (event.key !== 'Escape') return;
+            if (catalogProductPanelMode === 'create' || catalogProductPanelMode === 'edit') {
+                cancelCatalogProductEdit?.();
+                return;
+            }
+            if (catalogPanelMode === 'create') {
+                setCatalogPanelMode?.('view');
+                setTenantCatalogForm?.(EMPTY_TENANT_CATALOG_FORM);
+                return;
+            }
+            if (catalogPanelMode === 'edit') {
+                cancelCatalogEdit?.();
+                return;
+            }
+            setSelectedCatalogProductId?.('');
+            setSelectedCatalogId?.('');
+            setCatalogProductPanelMode?.('view');
+            setCatalogPanelMode?.('view');
+        };
+        window.addEventListener('keydown', handleEscape);
+        return () => window.removeEventListener('keydown', handleEscape);
+    }, [
+        EMPTY_TENANT_CATALOG_FORM,
+        cancelCatalogEdit,
+        cancelCatalogProductEdit,
+        catalogPanelMode,
+        catalogProductPanelMode,
+        isCatalogSection,
+        setCatalogPanelMode,
+        setCatalogProductPanelMode,
+        setSelectedCatalogId,
+        setSelectedCatalogProductId,
+        setTenantCatalogForm
+    ]);
+
     if (!isCatalogSection) {
         return null;
     }
 
     return (
                     <section id="saas_catalogos" className="saas-admin-card saas-admin-card--full">
-                        <div className="saas-admin-master-detail">
+                        <div className="saas-admin-master-detail saas-admin-master-detail--td-pattern">
                             <aside className="saas-admin-master-pane">
                                 <div className="saas-admin-pane-header">
                                     <div>
@@ -481,7 +519,7 @@ function CatalogSection(props = {}) {
                                                                     >
                                                                         {catalogProductPanelMode === 'create' ? 'Guardar producto' : 'Actualizar producto'}
                                                                     </button>
-                                                                    <button type="button" disabled={busy} onClick={cancelCatalogProductEdit}>Cancelar</button>
+                                                                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelCatalogProductEdit}>Cancelar</button>
                                                                 </div>
                                                             </>
                                                         )}
@@ -628,6 +666,7 @@ function CatalogSection(props = {}) {
                                             </button>
                                             <button
                                                 type="button"
+                                                className="saas-btn-cancel"
                                                 disabled={busy}
                                                 onClick={() => {
                                                     if (catalogPanelMode === 'create') {
