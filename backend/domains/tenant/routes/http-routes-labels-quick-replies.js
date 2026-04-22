@@ -2,6 +2,7 @@
     app,
     accessPolicyService,
     tenantLabelService,
+    saasUserUiPreferencesService,
     quickReplyLibrariesService,
     isTenantAllowedForUser,
     hasAnyPermission,
@@ -10,6 +11,45 @@
     sanitizeQuickReplyItemPayload
 }) {
     if (!app) throw new Error('registerTenantLabelsQuickRepliesHttpRoutes requiere app.');
+
+    function resolveTenantId(req) {
+        return String(req?.tenantContext?.id || req?.query?.tenantId || req?.body?.tenantId || 'default').trim() || 'default';
+    }
+
+    function resolveUserId(req) {
+        return String(req?.authContext?.user?.userId || req?.authContext?.user?.id || req?.authContext?.user?.email || '').trim() || 'anonymous';
+    }
+
+    app.get('/api/tenant/ui-preferences/:sectionKey', async (req, res) => {
+        try {
+            const sectionKey = String(req.params?.sectionKey || '').trim();
+            if (!sectionKey) return res.status(400).json({ ok: false, error: 'sectionKey requerido.' });
+            const item = await saasUserUiPreferencesService.getPreference({
+                tenantId: resolveTenantId(req),
+                userId: resolveUserId(req),
+                sectionKey
+            });
+            return res.json({ ok: true, item });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar preferencias.') });
+        }
+    });
+
+    app.put('/api/tenant/ui-preferences/:sectionKey', async (req, res) => {
+        try {
+            const sectionKey = String(req.params?.sectionKey || '').trim();
+            if (!sectionKey) return res.status(400).json({ ok: false, error: 'sectionKey requerido.' });
+            const item = await saasUserUiPreferencesService.savePreference({
+                tenantId: resolveTenantId(req),
+                userId: resolveUserId(req),
+                sectionKey,
+                preferencesJson: req.body?.preferencesJson || req.body?.preferences || {}
+            });
+            return res.json({ ok: true, item });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron guardar preferencias.') });
+        }
+    });
 
     app.get('/api/admin/saas/tenants/:tenantId/labels', async (req, res) => {
         const tenantId = String(req.params?.tenantId || '').trim();
