@@ -233,6 +233,7 @@ async function listLabels(options = {}) {
         await ensureDefaultGlobalLabels();
         const store = await readStore();
         return store.items
+            .filter((item) => Boolean(toText(item.commercialStatusKey)))
             .filter((item) => includeInactive || item.isActive !== false)
             .sort((a, b) => (a.sortOrder - b.sortOrder) || String(a.name).localeCompare(String(b.name), 'es'));
     }
@@ -240,8 +241,9 @@ async function listLabels(options = {}) {
     try {
         await ensurePostgresSchema();
         await ensureDefaultGlobalLabels();
-        await seedFromExistingTenantLabelsIfEmpty();
-        const where = includeInactive ? '' : 'WHERE is_active = TRUE';
+        const where = includeInactive
+            ? "WHERE COALESCE(BTRIM(commercial_status_key), '') <> ''"
+            : "WHERE COALESCE(BTRIM(commercial_status_key), '') <> '' AND is_active = TRUE";
         const { rows } = await queryPostgres(
             `SELECT id, name, color, description, commercial_status_key, sort_order, is_active, created_at, updated_at
                FROM global_labels
