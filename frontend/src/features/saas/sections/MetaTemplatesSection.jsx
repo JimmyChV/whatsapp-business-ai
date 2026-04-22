@@ -627,7 +627,10 @@ function MetaTemplatesSection(props = {}) {
         visibleKeys: visibleTableColumnKeys,
         setVisibleKeys: setVisibleTableColumnKeys,
         resetVisibleKeys: resetVisibleTableColumnKeys
-    } = useSaasColumnPrefs('meta_templates', TEMPLATE_DEFAULT_COLUMN_KEYS, { requestJson });
+    } = useSaasColumnPrefs('meta_templates', TEMPLATE_DEFAULT_COLUMN_KEYS, {
+        requestJson,
+        availableColumns: TEMPLATE_TABLE_COLUMNS
+    });
     const lastVariableIndexMapRef = useRef({
         header: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },
         body: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },

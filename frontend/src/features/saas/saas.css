@@ -6477,14 +6477,16 @@
     height: 100% !important;
     max-height: 100% !important;
     margin-top: 0 !important;
-    overflow: auto !important;
+    overflow-x: auto !important;
+    overflow-y: auto !important;
     align-items: flex-start !important;
     justify-content: flex-start !important;
+    scrollbar-gutter: stable both-edges;
 }
 
 .saas-admin-shell .saas-entity-page .saas-data-table {
     width: 100% !important;
-    min-width: 640px;
+    min-width: 980px !important;
     margin: 0 !important;
     vertical-align: top !important;
 }
@@ -6495,6 +6497,7 @@
 .saas-admin-shell .saas-entity-page .saas-data-table th,
 .saas-admin-shell .saas-entity-page .saas-data-table td {
     vertical-align: top !important;
+    white-space: nowrap !important;
 }
 
 .saas-admin-shell .saas-entity-page .saas-detail-panel,
@@ -6681,4 +6684,56 @@
     height: 100% !important;
     max-height: 100% !important;
     overflow: hidden !important;
+}
+
+/* Unified data-table scroll contract.
+   Keep this at the end so legacy section-specific table rules cannot remove
+   horizontal scroll when a table is rendered inside a narrow split pane. */
+.saas-admin-shell .saas-entity-page .saas-data-table-wrap {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell .saas-entity-page .saas-data-table {
+    width: 100% !important;
+    min-width: 980px !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-data-table th,
+.saas-admin-shell .saas-entity-page .saas-data-table td {
+    white-space: nowrap !important;
+}
+
+.saas-admin-shell :is(
+    #saas_clientes,
+    #saas_templates,
+    #saas_campaigns,
+    #saas_modulos,
+    #saas_usuarios,
+    #saas_catalogos,
+    #saas_quick_replies,
+    #saas_ia,
+    #saas_etiquetas
+) .saas-data-table-wrap,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split > .saas-td-layout__content > .saas-td-layout__left > .saas-data-table-wrap {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    max-width: 100% !important;
+    scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell :is(
+    #saas_clientes,
+    #saas_templates,
+    #saas_campaigns,
+    #saas_modulos,
+    #saas_usuarios,
+    #saas_catalogos,
+    #saas_quick_replies,
+    #saas_ia,
+    #saas_etiquetas
+) .saas-data-table {
+    width: 100% !important;
+    min-width: 980px !important;
 }

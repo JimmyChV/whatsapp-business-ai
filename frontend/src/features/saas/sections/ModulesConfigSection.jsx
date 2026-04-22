@@ -74,10 +74,10 @@ function ModulesConfigSection(props = {}) {
     }, [MODULE_KEYS, isGeneralConfigSection, tenantSettings, waModules]);
 
     const columns = React.useMemo(() => [
-        { key: 'name', label: isGeneralConfigSection ? 'Configuracion' : 'Modulo', width: '32%', sortable: true },
-        { key: 'phone', label: 'Telefono', width: '24%', sortable: true },
-        { key: 'type', label: 'Tipo', width: '20%', sortable: true },
-        { key: 'status', label: 'Estado', width: '18%', sortable: true }
+        { key: 'name', label: isGeneralConfigSection ? 'Configuracion' : 'Modulo', width: '32%', minWidth: '240px', sortable: true },
+        { key: 'phone', label: 'Telefono', width: '24%', minWidth: '180px', sortable: true },
+        { key: 'type', label: 'Tipo', width: '20%', minWidth: '160px', sortable: true },
+        { key: 'status', label: 'Estado', width: '18%', minWidth: '120px', sortable: true }
     ], [isGeneralConfigSection]);
 
     const filters = React.useMemo(() => [
@@ -190,6 +190,39 @@ function ModulesConfigSection(props = {}) {
         waModuleForm,
         waModulePanelMode
     ]);
+    const detailActions = React.useMemo(() => {
+        if (!isModulesSection || waModulePanelMode !== 'view' || !selectedConfigModule) return null;
+        return (
+            <>
+                <button
+                    type="button"
+                    disabled={busy || !selectedConfigModule.isActive}
+                    onClick={() => handleOpenOperation()}
+                >
+                    Ir a operacion
+                </button>
+                <button type="button" disabled={busy || !canEditModules} onClick={openConfigModuleEdit}>
+                    Editar
+                </button>
+                <button
+                    type="button"
+                    disabled={busy || !canEditModules}
+                    onClick={() => toggleWaModuleActive(selectedConfigModule)}
+                >
+                    {selectedConfigModule.isActive ? 'Desactivar' : 'Activar'}
+                </button>
+            </>
+        );
+    }, [
+        busy,
+        canEditModules,
+        handleOpenOperation,
+        isModulesSection,
+        openConfigModuleEdit,
+        selectedConfigModule,
+        toggleWaModuleActive,
+        waModulePanelMode
+    ]);
 
     if (!(isGeneralConfigSection || isModulesSection)) {
         return null;
@@ -231,6 +264,7 @@ function ModulesConfigSection(props = {}) {
             detailSubtitle={settingsTenantId
                 ? `Empresa: ${toTenantDisplayName?.(tenantOptions?.find((tenant) => tenant.id === settingsTenantId) || {}) || settingsTenantId}`
                 : 'Selecciona una empresa para continuar.'}
+            detailActions={detailActions}
         />
     );
 }

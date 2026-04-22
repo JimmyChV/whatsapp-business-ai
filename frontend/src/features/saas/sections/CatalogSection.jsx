@@ -326,21 +326,6 @@ function CatalogSection(props = {}) {
         }
         return (
             <>
-                <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                    <button type="button" disabled={busy || !canEditCatalog} onClick={openCatalogEdit}>Editar</button>
-                    <button type="button" disabled={busy || !canEditCatalog || selectedTenantCatalog.isDefault === true} onClick={() => runAction?.('Catalogo marcado como principal', async () => {
-                        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs/${encodeURIComponent(selectedTenantCatalog.catalogId)}`, {
-                            method: 'PUT',
-                            body: { isDefault: true }
-                        });
-                        await loadTenantCatalogs(settingsTenantId);
-                    })}>Marcar principal</button>
-                    <button type="button" disabled={busy || !canEditCatalog || selectedTenantCatalog.isActive === false} onClick={() => runAction?.('Catalogo desactivado', async () => {
-                        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs/${encodeURIComponent(selectedTenantCatalog.catalogId)}`, { method: 'DELETE' });
-                        await loadTenantCatalogs(settingsTenantId);
-                        close();
-                    })}>Desactivar</button>
-                </div>
                 <div className="saas-admin-detail-grid">
                     <div className="saas-admin-detail-field"><span>ID catalogo</span><strong>{selectedTenantCatalog.catalogId}</strong></div>
                     <div className="saas-admin-detail-field"><span>Nombre</span><strong>{selectedTenantCatalog.name || '-'}</strong></div>
@@ -446,6 +431,38 @@ function CatalogSection(props = {}) {
         buildCatalogProductFormFromItem
     ]);
 
+    const detailActions = React.useMemo(() => {
+        if (!selectedTenantCatalog || isCatalogEditing) return null;
+        return (
+            <>
+                <button type="button" disabled={busy || !canEditCatalog} onClick={openCatalogEdit}>Editar</button>
+                <button type="button" disabled={busy || !canEditCatalog || selectedTenantCatalog.isDefault === true} onClick={() => runAction?.('Catalogo marcado como principal', async () => {
+                    await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs/${encodeURIComponent(selectedTenantCatalog.catalogId)}`, {
+                        method: 'PUT',
+                        body: { isDefault: true }
+                    });
+                    await loadTenantCatalogs(settingsTenantId);
+                })}>Marcar principal</button>
+                <button type="button" disabled={busy || !canEditCatalog || selectedTenantCatalog.isActive === false} onClick={() => runAction?.('Catalogo desactivado', async () => {
+                    await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs/${encodeURIComponent(selectedTenantCatalog.catalogId)}`, { method: 'DELETE' });
+                    await loadTenantCatalogs(settingsTenantId);
+                    close();
+                })}>Desactivar</button>
+            </>
+        );
+    }, [
+        busy,
+        canEditCatalog,
+        close,
+        isCatalogEditing,
+        loadTenantCatalogs,
+        openCatalogEdit,
+        requestJson,
+        runAction,
+        selectedTenantCatalog,
+        settingsTenantId
+    ]);
+
     if (!isCatalogSection) return null;
 
     return (
@@ -473,6 +490,7 @@ function CatalogSection(props = {}) {
             ]}
             detailTitle={catalogPanelMode === 'create' ? 'Nuevo catalogo' : (selectedTenantCatalog?.name || 'Detalle de catalogo')}
             detailSubtitle={catalogPanelMode === 'create' ? 'Deja ID vacio para generarlo automaticamente.' : (selectedTenantCatalog?.catalogId || '')}
+            detailActions={detailActions}
         />
     );
 }

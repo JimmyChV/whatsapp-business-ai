@@ -75,11 +75,11 @@ function UsersSection(props = {}) {
     }), [sanitizeMemberships, scopedUsers, toUserDisplayName]);
 
     const columns = React.useMemo(() => [
-        { key: 'name', label: 'Usuario', width: '24%', sortable: true },
-        { key: 'email', label: 'Correo', width: '28%', sortable: true },
-        { key: 'role', label: 'Rol', width: '18%', sortable: true },
-        { key: 'status', label: 'Estado', width: '14%', sortable: true },
-        { key: 'memberships', label: 'Empresas', width: '12%', sortable: true }
+        { key: 'name', label: 'Usuario', width: '24%', minWidth: '220px', sortable: true },
+        { key: 'email', label: 'Correo', width: '28%', minWidth: '260px', sortable: true },
+        { key: 'role', label: 'Rol', width: '18%', minWidth: '150px', sortable: true },
+        { key: 'status', label: 'Estado', width: '14%', minWidth: '120px', sortable: true },
+        { key: 'memberships', label: 'Empresas', width: '12%', minWidth: '120px', sortable: true }
     ], []);
 
     const filters = React.useMemo(() => [
@@ -177,33 +177,11 @@ function UsersSection(props = {}) {
         const memberships = sanitizeMemberships(selectedUser.memberships || []);
         return (
             <>
-                <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                    {userPanelMode === 'view' && canManageUsers ? (
-                        <>
-                            <button type="button" disabled={busy || !canEditSelectedUser} onClick={openUserEdit}>Editar</button>
-                            <button
-                                type="button"
-                                disabled={busy || !canToggleSelectedUserStatus}
-                                onClick={() => runAction?.('Estado de usuario actualizado', async () => {
-                                    await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, {
-                                        method: 'PUT',
-                                        body: {
-                                            active: selectedUser.active === false,
-                                            avatarUrl: selectedUser.avatarUrl || null
-                                        }
-                                    });
-                                })}
-                            >
-                                {selectedUser.active === false ? 'Activar' : 'Desactivar'}
-                            </button>
-                        </>
-                    ) : null}
-                    {userPanelMode === 'view' && selectedUser && !canEditSelectedUser ? (
-                        <div className="saas-admin-empty-inline">
-                            No puedes editar este usuario porque tiene el mismo nivel o uno superior al tuyo.
-                        </div>
-                    ) : null}
-                </div>
+                {userPanelMode === 'view' && selectedUser && !canEditSelectedUser ? (
+                    <div className="saas-admin-empty-inline">
+                        No puedes editar este usuario porque tiene el mismo nivel o uno superior al tuyo.
+                    </div>
+                ) : null}
 
                 <div className="saas-admin-hero">
                     <div className="saas-admin-hero-media">
@@ -279,6 +257,42 @@ function UsersSection(props = {}) {
         tenantOptions,
         toTenantDisplayName,
         toUserDisplayName,
+        userPanelMode
+    ]);
+
+    const detailActions = React.useMemo(() => {
+        if (userPanelMode !== 'view' || !selectedUser || !canManageUsers) return null;
+        return (
+            <>
+                <button type="button" disabled={busy || !canEditSelectedUser} onClick={openUserEdit}>
+                    Editar
+                </button>
+                <button
+                    type="button"
+                    disabled={busy || !canToggleSelectedUserStatus}
+                    onClick={() => runAction?.('Estado de usuario actualizado', async () => {
+                        await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, {
+                            method: 'PUT',
+                            body: {
+                                active: selectedUser.active === false,
+                                avatarUrl: selectedUser.avatarUrl || null
+                            }
+                        });
+                    })}
+                >
+                    {selectedUser.active === false ? 'Activar' : 'Desactivar'}
+                </button>
+            </>
+        );
+    }, [
+        busy,
+        canEditSelectedUser,
+        canManageUsers,
+        canToggleSelectedUserStatus,
+        openUserEdit,
+        requestJson,
+        runAction,
+        selectedUser,
         userPanelMode
     ]);
 
@@ -526,6 +540,7 @@ function UsersSection(props = {}) {
                 detailSubtitle={userPanelMode === 'view'
                     ? 'Campos bloqueados. Usa Editar para modificar.'
                     : 'ID y correo bloqueados durante edicion para mantener consistencia.'}
+                detailActions={detailActions}
             />
         </div>
     );

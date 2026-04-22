@@ -175,6 +175,7 @@ export default function SaasEntityPage({
     className = '',
     detailTitle = '',
     detailSubtitle = '',
+    detailActions = null,
     hideCloseButton = false,
     detailShell = true,
     children = null
@@ -273,6 +274,15 @@ export default function SaasEntityPage({
     const rightContent = mode === 'form' && typeof renderForm === 'function'
         ? renderForm({ close })
         : (typeof renderDetail === 'function' ? renderDetail({ close }) : null);
+    const resolvedDetailActions = typeof detailActions === 'function' ? detailActions({ close }) : detailActions;
+    const detailPanelActions = hideCloseButton ? resolvedDetailActions : (
+        <>
+            {resolvedDetailActions}
+            <button type="button" className="saas-btn-cancel" onClick={() => { void close(); }}>
+                Cerrar
+            </button>
+        </>
+    );
 
     const right = hasSelection ? (detailShell ? (
         <SaasDetailPanel
@@ -280,11 +290,7 @@ export default function SaasEntityPage({
             subtitle={detailSubtitle}
             className="saas-entity-detail-panel"
             bodyClassName="saas-entity-detail-panel__body"
-            actions={hideCloseButton ? null : (
-                <button type="button" className="saas-btn-cancel" onClick={() => { void close(); }}>
-                    Cerrar
-                </button>
-            )}
+            actions={detailPanelActions}
         >
             {rightContent}
         </SaasDetailPanel>

@@ -893,7 +893,10 @@ function CustomersSection(props = {}) {
     const customersRealtimeSyncInFlightRef = useRef(false);
 
     const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
-    const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys, { requestJson });
+    const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys, {
+        requestJson,
+        availableColumns: CUSTOMER_TABLE_COLUMNS
+    });
 
     useEffect(() => {
         setSelectedCustomerLive((prev) => {
@@ -3327,7 +3330,35 @@ function CustomersSection(props = {}) {
             onSearchChange={setSearchInput}
             searchPlaceholder="Buscar por codigo, nombre, telefono, email o documento"
             searchDisabled={busy || tenantScopeLocked}
-            actions={headerActions}
+            actions={headerActions.filter((action) => action.key !== 'toggle-columns')}
+            actionsExtra={(
+                <div className="saas-entity-columns">
+                    <button type="button" onClick={() => setShowColumnsMenu((prev) => !prev)} disabled={busy || tenantScopeLocked}>
+                        Columnas
+                    </button>
+                    {showColumnsMenu ? (
+                        <div className="saas-entity-columns__menu">
+                            {CUSTOMER_TABLE_COLUMNS.map((column) => (
+                                <label key={column.key} className="saas-entity-columns__item">
+                                    <input
+                                        type="checkbox"
+                                        checked={columnPrefs.isColumnVisible(column.key)}
+                                        onChange={() => columnPrefs.toggleColumn(column.key)}
+                                    />
+                                    <span>{column.label}</span>
+                                </label>
+                            ))}
+                            <div className="saas-entity-columns__actions">
+                                <button type="button" onClick={() => columnPrefs.setVisibleColumnKeys(CUSTOMER_TABLE_COLUMNS.map((column) => column.key))}>
+                                    Mostrar todo
+                                </button>
+                                <button type="button" onClick={columnPrefs.resetColumns}>Restablecer</button>
+                                <button type="button" onClick={() => setShowColumnsMenu(false)}>Cerrar</button>
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+            )}
             filters={{
                 columns: headerFilterColumns,
                 value: headerFilter,
@@ -3402,28 +3433,6 @@ function CustomersSection(props = {}) {
                         <div className={`saas-customers-sync-indicator${savingCustomer ? ' is-saving' : ' is-synced'}`}>
                             <span className="saas-customers-sync-indicator__dot" />
                             <span>{savingCustomer ? 'Guardando...' : 'Sincronizado'}</span>
-                        </div>
-                    ) : null}
-                    {showColumnsMenu ? (
-                        <div className="saas-customers-columns-menu">
-                            {CUSTOMER_TABLE_COLUMNS.map((column) => (
-                                <label key={column.key} className="saas-customers-columns-menu__item">
-                                    <input
-                                        type="checkbox"
-                                        checked={columnPrefs.isColumnVisible(column.key)}
-                                        onChange={() => columnPrefs.toggleColumn(column.key)}
-                                    />
-                                    <span>{column.label}</span>
-                                    <small>{column.width || 'auto'}</small>
-                                </label>
-                            ))}
-                            <div className="saas-customers-columns-menu__actions">
-                                <button type="button" onClick={() => columnPrefs.setVisibleColumnKeys(CUSTOMER_TABLE_COLUMNS.map((column) => column.key))}>
-                                    Mostrar todo
-                                </button>
-                                <button type="button" onClick={columnPrefs.resetColumns}>Restablecer</button>
-                                <button type="button" className="saas-btn-close" onClick={() => setShowColumnsMenu(false)}>Cerrar</button>
-                            </div>
                         </div>
                     ) : null}
                 </div>

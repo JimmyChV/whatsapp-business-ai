@@ -108,19 +108,6 @@ function AiAssistantsSection(props = {}) {
         }
         return (
             <>
-                <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                    <button type="button" disabled={busy || !canManageAi} onClick={openAiAssistantEdit}>Editar</button>
-                    <button
-                        type="button"
-                        disabled={busy || !canManageAi || selectedAiAssistant.isDefault || selectedAiAssistant.isActive === false}
-                        onClick={() => markAiAssistantAsDefault?.(selectedAiAssistant.assistantId)}
-                    >
-                        Marcar principal
-                    </button>
-                    <button type="button" disabled={busy || !canManageAi} onClick={() => toggleAiAssistantActive?.(selectedAiAssistant)}>
-                        {selectedAiAssistant.isActive ? 'Desactivar' : 'Activar'}
-                    </button>
-                </div>
                 <div className="saas-admin-detail-grid">
                     <div className="saas-admin-detail-field"><span>Proveedor</span><strong>{selectedAiAssistant.provider}</strong></div>
                     <div className="saas-admin-detail-field"><span>Modelo</span><strong>{selectedAiAssistant.model}</strong></div>
@@ -152,6 +139,33 @@ function AiAssistantsSection(props = {}) {
         openAiAssistantEdit,
         selectedAiAssistant,
         settingsTenantId,
+        toggleAiAssistantActive
+    ]);
+
+    const detailActions = React.useMemo(() => {
+        if (!selectedAiAssistant || isEditing) return null;
+        return (
+            <>
+                <button type="button" disabled={busy || !canManageAi} onClick={openAiAssistantEdit}>Editar</button>
+                <button
+                    type="button"
+                    disabled={busy || !canManageAi || selectedAiAssistant.isDefault || selectedAiAssistant.isActive === false}
+                    onClick={() => markAiAssistantAsDefault?.(selectedAiAssistant.assistantId)}
+                >
+                    Marcar principal
+                </button>
+                <button type="button" disabled={busy || !canManageAi} onClick={() => toggleAiAssistantActive?.(selectedAiAssistant)}>
+                    {selectedAiAssistant.isActive ? 'Desactivar' : 'Activar'}
+                </button>
+            </>
+        );
+    }, [
+        busy,
+        canManageAi,
+        isEditing,
+        markAiAssistantAsDefault,
+        openAiAssistantEdit,
+        selectedAiAssistant,
         toggleAiAssistantActive
     ]);
 
@@ -249,6 +263,7 @@ function AiAssistantsSection(props = {}) {
             ]}
             detailTitle={aiAssistantPanelMode === 'create' ? 'Nuevo asistente IA' : (selectedAiAssistant?.name || 'Detalle IA')}
             detailSubtitle={aiAssistantPanelMode === 'create' ? 'Define contexto y parametros de inferencia.' : (selectedAiAssistant?.assistantId || '')}
+            detailActions={detailActions}
         />
     );
 }

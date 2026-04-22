@@ -293,11 +293,6 @@ export default function QuickRepliesSection(props = {}) {
         }
         return (
             <>
-                <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                    <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyLibraryEdit}>Editar biblioteca</button>
-                    <button type="button" disabled={busy || !canManageQuickReplies} onClick={() => runAction?.('Biblioteca desactivada', async () => deactivateQuickReplyLibrary?.(selectedQuickReplyLibrary?.libraryId))}>Desactivar</button>
-                    <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyItemCreate}>Nueva respuesta</button>
-                </div>
                 <div className="saas-admin-detail-grid">
                     <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedQuickReplyLibrary.libraryId}</strong></div>
                     <div className="saas-admin-detail-field"><span>Nombre</span><strong>{selectedQuickReplyLibrary.name || '-'}</strong></div>
@@ -391,6 +386,27 @@ export default function QuickRepliesSection(props = {}) {
         visibleQuickReplyItemsForSelectedLibrary
     ]);
 
+    const detailActions = React.useMemo(() => {
+        if (!selectedQuickReplyLibrary || isLibraryEditing || isItemEditing) return null;
+        return (
+            <>
+                <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyLibraryEdit}>Editar biblioteca</button>
+                <button type="button" disabled={busy || !canManageQuickReplies} onClick={() => runAction?.('Biblioteca desactivada', async () => deactivateQuickReplyLibrary?.(selectedQuickReplyLibrary?.libraryId))}>Desactivar</button>
+                <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyItemCreate}>Nueva respuesta</button>
+            </>
+        );
+    }, [
+        busy,
+        canManageQuickReplies,
+        deactivateQuickReplyLibrary,
+        isItemEditing,
+        isLibraryEditing,
+        openQuickReplyItemCreate,
+        openQuickReplyLibraryEdit,
+        runAction,
+        selectedQuickReplyLibrary
+    ]);
+
     return (
         <SaasEntityPage
             id="saas_quick_replies"
@@ -444,6 +460,7 @@ export default function QuickRepliesSection(props = {}) {
             ]}
             detailTitle={quickReplyLibraryPanelMode === 'create' ? 'Nueva biblioteca' : (selectedQuickReplyLibrary?.name || 'Biblioteca de respuestas')}
             detailSubtitle={quickReplyLibraryPanelMode === 'create' ? 'Define tipo, alcance y modulos asignados.' : (selectedQuickReplyLibrary?.libraryId || '')}
+            detailActions={detailActions}
         />
     );
 }

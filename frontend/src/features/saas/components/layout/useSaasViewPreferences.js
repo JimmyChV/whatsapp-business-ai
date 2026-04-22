@@ -11,17 +11,18 @@ const normalizeKeys = (columns = []) => (
         .filter(Boolean)
 );
 
-const normalizePrefs = (value = {}, defaultKeys = []) => {
+const normalizePrefs = (value = {}, defaultKeys = [], availableKeys = defaultKeys) => {
     const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const allowedKeys = Array.isArray(availableKeys) && availableKeys.length ? availableKeys : defaultKeys;
     const visible = Array.isArray(source.visibleColumnKeys)
-        ? source.visibleColumnKeys.map((key) => String(key || '').trim()).filter((key) => defaultKeys.includes(key))
+        ? source.visibleColumnKeys.map((key) => String(key || '').trim()).filter((key) => allowedKeys.includes(key))
         : [];
     const order = Array.isArray(source.columnOrder)
-        ? source.columnOrder.map((key) => String(key || '').trim()).filter((key) => defaultKeys.includes(key))
+        ? source.columnOrder.map((key) => String(key || '').trim()).filter((key) => allowedKeys.includes(key))
         : [];
     return {
         visibleColumnKeys: visible.length ? visible : defaultKeys,
-        columnOrder: [...order, ...defaultKeys.filter((key) => !order.includes(key))],
+        columnOrder: [...order, ...allowedKeys.filter((key) => !order.includes(key))],
         sort: {
             columnKey: String(source?.sort?.columnKey || source?.sortColumnKey || '').trim(),
             direction: String(source?.sort?.direction || source?.sortDirection || 'asc').trim().toLowerCase() === 'desc' ? 'desc' : 'asc'
@@ -29,11 +30,11 @@ const normalizePrefs = (value = {}, defaultKeys = []) => {
     };
 };
 
-const readLocal = (storageKey, fallback) => {
+const readLocal = (storageKey, fallback, availableKeys) => {
     if (typeof window === 'undefined') return fallback;
     try {
         const raw = window.localStorage.getItem(storageKey);
-        return raw ? normalizePrefs(JSON.parse(raw), fallback.visibleColumnKeys || []) : fallback;
+        return raw ? normalizePrefs(JSON.parse(raw), fallback.visibleColumnKeys || [], availableKeys) : fallback;
     } catch {
         return fallback;
     }
@@ -51,20 +52,26 @@ const writeLocal = (storageKey, prefs) => {
 export default function useSaasViewPreferences(sectionKey, defaultColumns = [], options = {}) {
     const requestJson = typeof options?.requestJson === 'function' ? options.requestJson : null;
     const defaultKeys = useMemo(() => normalizeKeys(defaultColumns), [defaultColumns]);
+    const availableKeys = useMemo(
+        () => normalizeKeys(options?.availableColumns || options?.allColumns || defaultColumns),
+        [defaultColumns, options?.allColumns, options?.availableColumns]
+    );
     const storageKey = useMemo(() => `${STORAGE_PREFIX}.${String(sectionKey || 'default').trim()}`, [sectionKey]);
-    const fallbackPrefs = useMemo(() => normalizePrefs({}, defaultKeys), [defaultKeys]);
-    const [preferences, setPreferences] = useState(() => readLocal(storageKey, fallbackPrefs));
+    const fallbackPrefs = useMemo(() => normalizePrefs({}, defaultKeys, availableKeys), [availableKeys, defaultKeys]);
+    const [preferences, setPreferences] = useState(() => readLocal(storageKey, fallbackPrefs, availableKeys));
     const loadedRef = useRef(false);
+    const userTouchedRef = useRef(false);
 
     useEffect(() => {
-        setPreferences((prev) => normalizePrefs(prev, defaultKeys));
-    }, [defaultKeys]);
+        setPreferences((prev) => normalizePrefs(prev, defaultKeys, availableKeys));
+    }, [availableKeys, defaultKeys]);
 
     useEffect(() => {
         let cancelled = false;
         loadedRef.current = false;
+        userTouchedRef.current = false;
         const load = async () => {
-            const localPrefs = readLocal(storageKey, fallbackPrefs);
+            const localPrefs = readLocal(storageKey, fallbackPrefs, availableKeys);
             if (!cancelled) setPreferences(localPrefs);
             if (!requestJson) {
                 loadedRef.current = true;
@@ -72,8 +79,8 @@ export default function useSaasViewPreferences(sectionKey, defaultColumns = [], 
             }
             try {
                 const remote = await fetchSaasUiPreference(requestJson, sectionKey);
-                const remotePrefs = normalizePrefs(remote?.preferencesJson || {}, defaultKeys);
-                if (!cancelled) {
+                const remotePrefs = normalizePrefs(remote?.preferencesJson || {}, defaultKeys, availableKeys);
+                if (!cancelled && !userTouchedRef.current) {
                     setPreferences(remotePrefs);
                     writeLocal(storageKey, remotePrefs);
                 }
@@ -85,7 +92,7 @@ export default function useSaasViewPreferences(sectionKey, defaultColumns = [], 
         };
         load();
         return () => { cancelled = true; };
-    }, [defaultKeys, fallbackPrefs, requestJson, sectionKey, storageKey]);
+    }, [availableKeys, defaultKeys, fallbackPrefs, requestJson, sectionKey, storageKey]);
 
     useEffect(() => {
         writeLocal(storageKey, preferences);
@@ -97,11 +104,12 @@ export default function useSaasViewPreferences(sectionKey, defaultColumns = [], 
     }, [preferences, requestJson, sectionKey, storageKey]);
 
     const setVisibleColumnKeys = useCallback((nextValue) => {
+        userTouchedRef.current = true;
         setPreferences((prev) => {
             const next = typeof nextValue === 'function' ? nextValue(prev.visibleColumnKeys) : nextValue;
-            return normalizePrefs({ ...prev, visibleColumnKeys: next }, defaultKeys);
+            return normalizePrefs({ ...prev, visibleColumnKeys: next }, defaultKeys, availableKeys);
         });
-    }, [defaultKeys]);
+    }, [availableKeys, defaultKeys]);
 
     const toggleColumn = useCallback((columnKey) => {
         const normalized = String(columnKey || '').trim();
@@ -117,14 +125,17 @@ export default function useSaasViewPreferences(sectionKey, defaultColumns = [], 
     }, [setVisibleColumnKeys]);
 
     const setSort = useCallback((sort) => {
-        setPreferences((prev) => normalizePrefs({ ...prev, sort }, defaultKeys));
-    }, [defaultKeys]);
+        userTouchedRef.current = true;
+        setPreferences((prev) => normalizePrefs({ ...prev, sort }, defaultKeys, availableKeys));
+    }, [availableKeys, defaultKeys]);
 
     const setColumnOrder = useCallback((columnOrder) => {
-        setPreferences((prev) => normalizePrefs({ ...prev, columnOrder }, defaultKeys));
-    }, [defaultKeys]);
+        userTouchedRef.current = true;
+        setPreferences((prev) => normalizePrefs({ ...prev, columnOrder }, defaultKeys, availableKeys));
+    }, [availableKeys, defaultKeys]);
 
     const reset = useCallback(() => {
+        userTouchedRef.current = true;
         setPreferences(fallbackPrefs);
     }, [fallbackPrefs]);
 

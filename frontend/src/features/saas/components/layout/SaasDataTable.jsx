@@ -80,15 +80,27 @@ const SaasDataTable = ({
 
     const hasRows = renderedRows.length > 0;
     const colSpan = Math.max(visibleColumns.length, 1);
+    const tableMinWidth = visibleColumns.reduce((total, column) => {
+        const raw = column?.minWidth;
+        if (typeof raw === 'number' && Number.isFinite(raw)) return total + raw;
+        const match = typeof raw === 'string' ? raw.match(/^(\d+(?:\.\d+)?)px$/i) : null;
+        return total + (match ? Number(match[1]) : 160);
+    }, 0);
+    const resolvedTableMinWidth = Math.max(980, Math.ceil(tableMinWidth));
 
     return (
         <div
             className="saas-data-table-wrap"
             {...containerPropsSafe}
+            style={{
+                ...(containerPropsSafe.style || {}),
+                overflowX: 'auto',
+                overflowY: 'auto'
+            }}
             ref={wrapperRef}
             onScroll={handleScroll}
         >
-            <table className="saas-data-table">
+            <table className="saas-data-table" style={{ minWidth: `${resolvedTableMinWidth}px`, width: '100%' }}>
                 <thead>
                     <tr>
                         {visibleColumns.map((column) => (
