@@ -13,6 +13,7 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
     const isCampaignsSection = context?.isCampaignsSection === true;
     const isMetaTemplatesSection = context?.isMetaTemplatesSection === true;
     const isLabelsSection = context?.isLabelsSection === true;
+    const isGlobalLabelsSection = context?.isGlobalLabelsSection === true;
     const isQuickRepliesSection = context?.isQuickRepliesSection === true;
     const operationsContext = {
         tenantScopeLocked: context.tenantScopeLocked,
@@ -90,6 +91,12 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
         busy: context.busy,
         loadingLabels: context.loadingLabels,
         settingsTenantId: context.settingsTenantId,
+        isSuperAdmin: context.isSuperAdmin,
+        userRole: context.userRole,
+        currentUser: context.currentUser,
+        normalizedRole: context.normalizedRole,
+        actorRoleForPolicy: context.actorRoleForPolicy,
+        canViewSuperAdminSections: context.canViewSuperAdminSections,
         loadTenantLabels: context.loadTenantLabels,
         setError: context.setError,
         canManageLabels: context.canManageLabels,
@@ -189,7 +196,11 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
             <AiAssistantsSection context={aiAssistantsContext} />
 
             {isLabelsSection && (
-                <TenantLabelsSection context={tenantLabelsContext} />
+                <TenantLabelsSection context={{ ...tenantLabelsContext, labelsScope: 'tenant' }} />
+            )}
+
+            {isGlobalLabelsSection && (
+                <TenantLabelsSection context={{ ...tenantLabelsContext, labelsScope: 'global' }} />
             )}
 
             {isQuickRepliesSection && (

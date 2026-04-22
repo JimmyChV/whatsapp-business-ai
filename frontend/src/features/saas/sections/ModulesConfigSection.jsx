@@ -53,13 +53,23 @@ function ModulesConfigSection(props = {}) {
     saveWaModule,
     handleFormImageUpload
     } = context;
+    React.useEffect(() => {
+        if (!(isGeneralConfigSection || isModulesSection)) return undefined;
+        const handleEscape = (event) => {
+            if (event.key !== 'Escape') return;
+            clearConfigSelection?.();
+        };
+        window.addEventListener('keydown', handleEscape);
+        return () => window.removeEventListener('keydown', handleEscape);
+    }, [clearConfigSelection, isGeneralConfigSection, isModulesSection]);
+
     if (!(isGeneralConfigSection || isModulesSection)) {
         return null;
     }
 
     return (
         <section id={isModulesSection ? 'saas_modulos' : 'saas_config'} className="saas-admin-card saas-admin-card--full">
-            <div className="saas-admin-master-detail">
+            <div className="saas-admin-master-detail saas-admin-master-detail--td-pattern">
                 <ModulesConfigMasterPane
                     isModulesSection={isModulesSection}
                     isGeneralConfigSection={isGeneralConfigSection}

@@ -168,6 +168,7 @@ function registerOperationsHttpRoutes({
     assignmentRulesService,
     chatAssignmentRouterService,
     operationsKpiService,
+    globalLabelsService,
     normalizeScopeModuleId,
     hasConversationEventsReadAccess,
     hasChatAssignmentsReadAccess,
@@ -178,6 +179,60 @@ function registerOperationsHttpRoutes({
     emitCommercialStatusUpdated
 }) {
     if (!app) throw new Error('registerOperationsHttpRoutes requiere app.');
+    function requireSuperAdmin(req, res) {
+        if (!ensureAuthenticated(req, res, authService)) return false;
+        if (!req?.authContext?.user?.isSuperAdmin) {
+            res.status(403).json({ ok: false, error: 'Solo superadmin puede gestionar etiquetas globales.' });
+            return false;
+        }
+        return true;
+    }
+
+    app.get('/api/ops/global-labels', async (req, res) => {
+        try {
+            if (!requireSuperAdmin(req, res)) return;
+            const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() === 'true';
+            const items = await globalLabelsService.listLabels({ includeInactive });
+            return res.json({ ok: true, items });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar etiquetas globales.') });
+        }
+    });
+
+    app.post('/api/ops/global-labels', async (req, res) => {
+        try {
+            if (!requireSuperAdmin(req, res)) return;
+            const payload = req.body && typeof req.body === 'object' ? req.body : {};
+            const item = await globalLabelsService.saveLabel(payload);
+            return res.status(201).json({ ok: true, item });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar etiqueta global.') });
+        }
+    });
+
+    app.put('/api/ops/global-labels/:id', async (req, res) => {
+        try {
+            if (!requireSuperAdmin(req, res)) return;
+            const id = String(req.params?.id || '').trim();
+            const payload = req.body && typeof req.body === 'object' ? req.body : {};
+            const item = await globalLabelsService.saveLabel({ ...payload, id });
+            return res.json({ ok: true, item });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar etiqueta global.') });
+        }
+    });
+
+    app.delete('/api/ops/global-labels/:id', async (req, res) => {
+        try {
+            if (!requireSuperAdmin(req, res)) return;
+            const id = String(req.params?.id || '').trim();
+            const result = await globalLabelsService.deleteLabel(id);
+            return res.json({ ok: true, ...result });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar etiqueta global.') });
+        }
+    });
+
     const assignmentPolicy = chatAssignmentPolicyService && typeof chatAssignmentPolicyService === 'object'
         ? chatAssignmentPolicyService
         : {};

@@ -9,6 +9,7 @@ module.exports = {
     tenantCatalogService: tenantDomainServices.tenantCatalogService,
     catalogManagerService: tenantDomainServices.catalogManagerService,
     tenantLabelService: tenantDomainServices.tenantLabelService,
+    tenantZoneRulesService: tenantDomainServices.tenantZoneRulesService,
     waModuleService: tenantDomainServices.waModuleService,
     customerService: tenantDomainServices.customerService,
     customerAddressesService: tenantDomainServices.customerAddressesService,

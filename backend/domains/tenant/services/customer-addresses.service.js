@@ -265,6 +265,19 @@ function normalizeAddress(input = {}, previous = null) {
     };
 }
 
+async function autoAssignZoneIfPrimary(tenantId = DEFAULT_TENANT_ID, address = null) {
+    const item = address && typeof address === 'object' ? address : null;
+    if (!item || item.isPrimary !== true) return;
+    try {
+        const zoneRulesService = require('./tenant-zone-rules.service');
+        if (typeof zoneRulesService.applyZoneForAddress === 'function') {
+            await zoneRulesService.applyZoneForAddress(tenantId, item);
+        }
+    } catch (error) {
+        console.warn('[customers] zone auto assignment skipped:', String(error?.message || error));
+    }
+}
+
 function mapPostgresRow(row = {}) {
     return normalizeAddress({
         addressId: row.address_id,
@@ -480,7 +493,9 @@ async function upsertAddress(tenantId = DEFAULT_TENANT_ID, payload = {}) {
                 ]
             );
 
-            return result?.rows?.[0] ? mapPostgresRow(result.rows[0]) : normalized;
+            const saved = result?.rows?.[0] ? mapPostgresRow(result.rows[0]) : normalized;
+            await autoAssignZoneIfPrimary(cleanTenantId, saved);
+            return saved;
         } catch (error) {
             if (!missingRelation(error)) throw error;
         }
@@ -512,6 +527,7 @@ async function upsertAddress(tenantId = DEFAULT_TENANT_ID, payload = {}) {
     else items.push(normalized);
 
     await writeStore(cleanTenantId, { items });
+    await autoAssignZoneIfPrimary(cleanTenantId, normalized);
     return normalized;
 }
 
@@ -583,6 +599,7 @@ async function setPrimaryAddress(tenantId = DEFAULT_TENANT_ID, options = {}) {
             );
             const updated = updateRes?.rows?.[0] ? mapPostgresRow(updateRes.rows[0]) : null;
             if (!updated) throw new Error('Direccion no encontrada para marcar primaria.');
+            await autoAssignZoneIfPrimary(cleanTenantId, updated);
             return updated;
         } catch (error) {
             if (!missingRelation(error)) throw error;
@@ -604,7 +621,9 @@ async function setPrimaryAddress(tenantId = DEFAULT_TENANT_ID, options = {}) {
     });
 
     await writeStore(cleanTenantId, { items: next });
-    return next.find((item) => item.addressId === addressId) || null;
+    const updated = next.find((item) => item.addressId === addressId) || null;
+    await autoAssignZoneIfPrimary(cleanTenantId, updated);
+    return updated;
 }
 
 module.exports = {

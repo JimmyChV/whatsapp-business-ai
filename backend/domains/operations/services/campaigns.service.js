@@ -1064,8 +1064,19 @@ async function updateCampaign(tenantId = DEFAULT_TENANT_ID, { campaignId = '', p
 }
 
 function normalizeStringArray(input = []) {
-    const source = Array.isArray(input) ? input : [];
+    const source = Array.isArray(input) ? input : (input ? [input] : []);
     return source.map((entry) => toText(entry)).filter(Boolean);
+}
+
+function normalizeZoneLabelIds(filters = {}) {
+    return normalizeStringArray(
+        filters.zoneLabelIds
+        || filters.zoneLabelId
+        || filters.zoneRuleIds
+        || filters.zoneRuleId
+        || filters.zoneIds
+        || filters.zoneId
+    ).map((entry) => toUpper(entry));
 }
 
 function normalizeIdempotencyKey(campaignId = '', moduleId = '', phone = '') {
@@ -1078,6 +1089,7 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     const tagAny = new Set(normalizeStringArray(filters.tagAny).map((entry) => toLower(entry)));
     const tagAll = new Set(normalizeStringArray(filters.tagAll).map((entry) => toLower(entry)));
     const labelsAny = new Set(normalizeStringArray(filters.labels || filters.labelsAny || filters.labelAny).map((entry) => toLower(entry)));
+    const zoneLabelIds = new Set(normalizeZoneLabelIds(filters));
     const search = toLower(filters.search || '');
     const marketingStatus = new Set(normalizeStringArray(filters.marketingStatus).map((entry) => toLower(entry)));
     const commercialStatus = new Set(
@@ -1108,6 +1120,12 @@ function customerMatchesFilters(customer = {}, filters = {}) {
         if (!hasAnyLabel) return false;
     }
 
+    if (zoneLabelIds.size > 0) {
+        const customerZoneIds = new Set(ensureArray(customer.zoneLabelIds).map((entry) => toUpper(entry)));
+        const hasAnyZone = [...zoneLabelIds].some((zoneId) => customerZoneIds.has(zoneId));
+        if (!hasAnyZone) return false;
+    }
+
     if (tagAll.size > 0) {
         const hasAll = [...tagAll].every((tag) => tagsSet.has(tag));
         if (!hasAll) return false;
@@ -1124,6 +1142,31 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     }
 
     return true;
+}
+
+async function attachZoneLabelsToCustomers(tenantId = DEFAULT_TENANT_ID, customers = [], filters = {}) {
+    const zoneFilterIds = normalizeZoneLabelIds(filters);
+    if (zoneFilterIds.length === 0) return customers;
+    const cleanTenantId = normalizeTenant(tenantId);
+    try {
+        const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.service');
+        const assignments = await tenantZoneRulesService.listCustomerLabels(cleanTenantId, { source: 'zone' });
+        const labelsByCustomerId = new Map();
+        ensureArray(assignments).forEach((assignment) => {
+            const customerId = toText(assignment?.customerId || assignment?.customer_id || '');
+            const labelId = toUpper(assignment?.labelId || assignment?.label_id || '');
+            if (!customerId || !labelId) return;
+            const current = labelsByCustomerId.get(customerId) || [];
+            current.push(labelId);
+            labelsByCustomerId.set(customerId, current);
+        });
+        return ensureArray(customers).map((customer) => ({
+            ...customer,
+            zoneLabelIds: labelsByCustomerId.get(toText(customer?.customerId || '')) || []
+        }));
+    } catch {
+        return customers;
+    }
 }
 
 async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {}, filters = {}) {
@@ -1143,9 +1186,11 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
             moduleId: toText(entry.moduleId || entry.module_id || ''),
             preferredLanguage: toLower(entry.preferredLanguage || entry.preferred_language || 'es')
         }));
-        return all
+        const scoped = all
             .filter((item) => item.phone)
-            .filter((item) => !moduleFilter || normalizeModuleId(item.moduleId) === moduleFilter)
+            .filter((item) => !moduleFilter || normalizeModuleId(item.moduleId) === moduleFilter);
+        const withZoneLabels = await attachZoneLabelsToCustomers(cleanTenantId, scoped, filters);
+        return withZoneLabels
             .filter((item) => customerMatchesFilters(item, filters))
             .slice(0, maxRecipients);
     }
@@ -1191,7 +1236,8 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
             }));
 
             if (contextRows.length > 0) {
-                return contextRows
+                const withZoneLabels = await attachZoneLabelsToCustomers(cleanTenantId, contextRows, filters);
+                return withZoneLabels
                     .filter((item) => customerMatchesFilters(item, filters))
                     .slice(0, maxRecipients);
             }
@@ -1232,7 +1278,8 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
         preferredLanguage: toLower(row.preferred_language || 'es')
     }));
 
-    return rows
+    const withZoneLabels = await attachZoneLabelsToCustomers(cleanTenantId, rows, filters);
+    return withZoneLabels
         .filter((item) => customerMatchesFilters(item, filters))
         .slice(0, maxRecipients);
 }

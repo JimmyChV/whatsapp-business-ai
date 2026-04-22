@@ -1,4 +1,11 @@
 export default function buildOpsAndAutomationSectionContext(c) {
+    const normalizedUserRole = String(c.userRole || c.normalizedRole || c.currentUser?.role || '').trim().toLowerCase();
+    const isSuperAdmin = Boolean(
+        c.isSuperAdmin
+        || normalizedUserRole === 'superadmin'
+        || String(c.actorRoleForPolicy || '').trim().toLowerCase() === 'superadmin'
+    );
+
     return {
         isOperationsSection: c.isOperationsSection,
         isCampaignsSection: c.isCampaignsSection,
@@ -52,10 +59,17 @@ export default function buildOpsAndAutomationSectionContext(c) {
         setAiAssistantPanelMode: c.setAiAssistantPanelMode,
         EMPTY_AI_ASSISTANT_FORM: c.EMPTY_AI_ASSISTANT_FORM,
         isLabelsSection: c.isLabelsSection,
+        isGlobalLabelsSection: c.isGlobalLabelsSection,
         loadingLabels: c.loadingLabels,
         loadTenantLabels: c.loadTenantLabels,
         setError: c.setError,
         canManageLabels: c.canManageLabels,
+        userRole: c.userRole,
+        currentUser: c.currentUser,
+        normalizedRole: c.normalizedRole,
+        actorRoleForPolicy: c.actorRoleForPolicy,
+        canViewSuperAdminSections: c.canViewSuperAdminSections,
+        isSuperAdmin,
         openTenantLabelCreate: c.openTenantLabelCreate,
         labelSearch: c.labelSearch,
         setLabelSearch: c.setLabelSearch,

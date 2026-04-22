@@ -47,13 +47,63 @@ function CatalogSection(props = {}) {
     setSelectedCatalogId,
     tenantCatalogForm
     } = context;
+    const [catalogSearch, setCatalogSearch] = React.useState('');
+    const filteredTenantCatalogItems = React.useMemo(() => {
+        const query = catalogSearch.trim().toLowerCase();
+        if (!query) return tenantCatalogItems;
+        return tenantCatalogItems.filter((item) => [
+            item?.name,
+            item?.catalogId,
+            item?.sourceType,
+            item?.isActive ? 'activo' : 'inactivo'
+        ].some((value) => String(value || '').toLowerCase().includes(query)));
+    }, [catalogSearch, tenantCatalogItems]);
+
+    React.useEffect(() => {
+        if (!isCatalogSection) return undefined;
+        const handleEscape = (event) => {
+            if (event.key !== 'Escape') return;
+            if (catalogProductPanelMode === 'create' || catalogProductPanelMode === 'edit') {
+                cancelCatalogProductEdit?.();
+                return;
+            }
+            if (catalogPanelMode === 'create') {
+                setCatalogPanelMode?.('view');
+                setTenantCatalogForm?.(EMPTY_TENANT_CATALOG_FORM);
+                return;
+            }
+            if (catalogPanelMode === 'edit') {
+                cancelCatalogEdit?.();
+                return;
+            }
+            setSelectedCatalogProductId?.('');
+            setSelectedCatalogId?.('');
+            setCatalogProductPanelMode?.('view');
+            setCatalogPanelMode?.('view');
+        };
+        window.addEventListener('keydown', handleEscape);
+        return () => window.removeEventListener('keydown', handleEscape);
+    }, [
+        EMPTY_TENANT_CATALOG_FORM,
+        cancelCatalogEdit,
+        cancelCatalogProductEdit,
+        catalogPanelMode,
+        catalogProductPanelMode,
+        isCatalogSection,
+        setCatalogPanelMode,
+        setCatalogProductPanelMode,
+        setSelectedCatalogId,
+        setSelectedCatalogProductId,
+        setTenantCatalogForm
+    ]);
+
     if (!isCatalogSection) {
         return null;
     }
 
     return (
                     <section id="saas_catalogos" className="saas-admin-card saas-admin-card--full">
-                        <div className="saas-admin-master-detail">
+                        <div className="saas-admin-master-detail saas-admin-master-detail--td-pattern">
                             <aside className="saas-admin-master-pane">
                                 <div className="saas-admin-pane-header">
                                     <div>
@@ -75,6 +125,20 @@ function CatalogSection(props = {}) {
                                 </div>
 
                                 <div className="saas-admin-list saas-admin-list--compact">
+                                    <div className="saas-admin-master-toolbar">
+                                        <input
+                                            value={catalogSearch}
+                                            onChange={(event) => setCatalogSearch(event.target.value)}
+                                            placeholder="Buscar catalogo por nombre, codigo, origen o estado"
+                                            disabled={loadingTenantCatalogs}
+                                        />
+                                        <button type="button">Columnas</button>
+                                    </div>
+                                    <div className="saas-admin-list-table-head saas-admin-list-table-head--catalogs">
+                                        <span>Catalogo</span>
+                                        <span>Origen</span>
+                                        <span>Estado</span>
+                                    </div>
                                     {!settingsTenantId && (
                                         <div className="saas-admin-empty-state">
                                             <h4>Selecciona una empresa</h4>
@@ -91,16 +155,20 @@ function CatalogSection(props = {}) {
                                         </div>
                                     )}
 
-                                    {settingsTenantId && tenantCatalogItems.map((item) => (
+                                    {settingsTenantId && tenantCatalogItems.length > 0 && filteredTenantCatalogItems.length === 0 && (
+                                        <div className="saas-admin-empty-inline">No hay catalogos para esta busqueda.</div>
+                                    )}
+
+                                    {settingsTenantId && filteredTenantCatalogItems.map((item) => (
                                         <button
                                             key={`catalog_item_${item.catalogId}`}
                                             type="button"
-                                            className={`saas-admin-list-item saas-admin-list-item--button ${selectedTenantCatalog?.catalogId === item.catalogId ? 'active' : ''}`.trim()}
+                                            className={`saas-admin-list-item saas-admin-list-item--button saas-admin-list-item--table saas-admin-list-item--catalogs ${selectedTenantCatalog?.catalogId === item.catalogId ? 'active' : ''}`.trim()}
                                             onClick={() => openCatalogView(item.catalogId)}
                                         >
                                             <strong>{item.name || item.catalogId}</strong>
-                                            <small>{item.catalogId}</small>
-                                            <small>{item.sourceType} | {item.isActive ? 'activo' : 'inactivo'}</small>
+                                            <span>{item.sourceType || '-'}</span>
+                                            <small>{item.isActive ? 'Activo' : 'Inactivo'} | {item.catalogId}</small>
                                         </button>
                                     ))}
                                 </div>
@@ -156,6 +224,19 @@ function CatalogSection(props = {}) {
                                                     })}
                                                 >
                                                     Desactivar
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="saas-btn-cancel"
+                                                    disabled={busy}
+                                                    onClick={() => {
+                                                        setSelectedCatalogProductId('');
+                                                        setSelectedCatalogId('');
+                                                        setCatalogProductPanelMode('view');
+                                                        setCatalogPanelMode('view');
+                                                    }}
+                                                >
+                                                    Cerrar
                                                 </button>
                                             </div>
                                         </div>
@@ -269,6 +350,9 @@ function CatalogSection(props = {}) {
                                                                             })}
                                                                         >
                                                                             Desactivar
+                                                                        </button>
+                                                                        <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { setSelectedCatalogProductId(''); setCatalogProductPanelMode('view'); }}>
+                                                                            Cerrar
                                                                         </button>
                                                                     </div>
                                                                 </div>
@@ -481,7 +565,7 @@ function CatalogSection(props = {}) {
                                                                     >
                                                                         {catalogProductPanelMode === 'create' ? 'Guardar producto' : 'Actualizar producto'}
                                                                     </button>
-                                                                    <button type="button" disabled={busy} onClick={cancelCatalogProductEdit}>Cancelar</button>
+                                                                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelCatalogProductEdit}>Cancelar</button>
                                                                 </div>
                                                             </>
                                                         )}
@@ -511,6 +595,23 @@ function CatalogSection(props = {}) {
                                             <div>
                                                 <h3>{catalogPanelMode === 'create' ? 'Nuevo catalogo' : 'Editar catalogo'}</h3>
                                                 <small>{catalogPanelMode === 'create' ? 'Deja ID vacio para generarlo automaticamente.' : 'Actualiza los campos necesarios y guarda.'}</small>
+                                            </div>
+                                            <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                <button
+                                                    type="button"
+                                                    className="saas-btn-cancel"
+                                                    disabled={busy}
+                                                    onClick={() => {
+                                                        if (catalogPanelMode === 'create') {
+                                                            setCatalogPanelMode('view');
+                                                            setTenantCatalogForm(EMPTY_TENANT_CATALOG_FORM);
+                                                            return;
+                                                        }
+                                                        cancelCatalogEdit();
+                                                    }}
+                                                >
+                                                    Cerrar
+                                                </button>
                                             </div>
                                         </div>
 
@@ -628,6 +729,7 @@ function CatalogSection(props = {}) {
                                             </button>
                                             <button
                                                 type="button"
+                                                className="saas-btn-cancel"
                                                 disabled={busy}
                                                 onClick={() => {
                                                     if (catalogPanelMode === 'create') {

@@ -16,6 +16,7 @@ module.exports = {
     metaTemplatesService: require('./meta-templates.service'),
     templateVariablesService: require('./template-variables.service'),
     operationsKpiService: require('./operations-kpi.service'),
+    globalLabelsService: require('./global-labels.service'),
     aiChatHistoryService: require('./ai-chat-history.service'),
     opsTelemetry: require('./ops-telemetry.service'),
     aiService: require('./ai.service'),

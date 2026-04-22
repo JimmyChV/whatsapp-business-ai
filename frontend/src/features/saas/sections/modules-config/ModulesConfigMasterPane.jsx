@@ -17,6 +17,18 @@ export default function ModulesConfigMasterPane({
     selectedConfigKey,
     openConfigModuleView
 }) {
+    const [search, setSearch] = React.useState('');
+    const normalizedSearch = search.trim().toLowerCase();
+    const filteredModules = React.useMemo(() => {
+        if (!normalizedSearch) return waModules;
+        return waModules.filter((moduleItem) => [
+            moduleItem?.name,
+            moduleItem?.moduleId,
+            moduleItem?.phoneNumber,
+            moduleItem?.isActive ? 'activo' : 'inactivo'
+        ].some((value) => String(value || '').toLowerCase().includes(normalizedSearch)));
+    }, [normalizedSearch, waModules]);
+
     return (
         <aside className="saas-admin-master-pane">
             <div className="saas-admin-pane-header">
@@ -68,18 +80,38 @@ export default function ModulesConfigMasterPane({
                     <div className="saas-admin-empty-inline">Sin modulos WhatsApp configurados.</div>
                 )}
 
-                {settingsTenantId && isModulesSection && waModules.map((moduleItem) => (
-                    <button
-                        key={moduleItem.moduleId}
-                        type="button"
-                        className={`saas-admin-list-item saas-admin-list-item--button ${selectedConfigKey === `wa_module:${moduleItem.moduleId}` ? 'active' : ''}`.trim()}
-                        onClick={() => openConfigModuleView(moduleItem.moduleId)}
-                    >
-                        <strong>{moduleItem.name || 'Modulo sin nombre'}</strong>
-                        <small>Cloud API | {moduleItem.isActive ? 'activo' : 'inactivo'}</small>
-                        <small>{moduleItem.phoneNumber ? `Numero: ${moduleItem.phoneNumber}` : 'Numero sin configurar'}</small>
-                    </button>
-                ))}
+                {settingsTenantId && isModulesSection && waModules.length > 0 && (
+                    <>
+                        <div className="saas-admin-master-toolbar">
+                            <input
+                                value={search}
+                                onChange={(event) => setSearch(event.target.value)}
+                                placeholder="Buscar modulo por nombre, codigo o telefono"
+                            />
+                            <button type="button">Columnas</button>
+                        </div>
+                        <div className="saas-admin-list-table-head saas-admin-list-table-head--modules">
+                            <span>Modulo</span>
+                            <span>Telefono</span>
+                            <span>Estado</span>
+                        </div>
+                        {filteredModules.length === 0 && (
+                            <div className="saas-admin-empty-inline">No hay modulos para esta busqueda.</div>
+                        )}
+                        {filteredModules.map((moduleItem) => (
+                            <button
+                                key={moduleItem.moduleId}
+                                type="button"
+                                className={`saas-admin-list-item saas-admin-list-item--button saas-admin-list-item--table saas-admin-list-item--modules ${selectedConfigKey === `wa_module:${moduleItem.moduleId}` ? 'active' : ''}`.trim()}
+                                onClick={() => openConfigModuleView(moduleItem.moduleId)}
+                            >
+                                <strong>{moduleItem.name || 'Modulo sin nombre'}</strong>
+                                <span>{moduleItem.phoneNumber || '-'}</span>
+                                <small>{moduleItem.isActive ? 'Activo' : 'Inactivo'}</small>
+                            </button>
+                        ))}
+                    </>
+                )}
             </div>
         </aside>
     );

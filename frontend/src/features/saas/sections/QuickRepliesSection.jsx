@@ -59,9 +59,39 @@ export default function QuickRepliesSection(props = {}) {
     cancelQuickReplyItemEdit,
     openQuickReplyItemCreate
     } = context;
+
+    React.useEffect(() => {
+        const handleEscape = (event) => {
+            if (event.key !== 'Escape') return;
+            if (quickReplyItemPanelMode === 'create' || quickReplyItemPanelMode === 'edit') {
+                cancelQuickReplyItemEdit?.();
+                return;
+            }
+            if (quickReplyLibraryPanelMode === 'create' || quickReplyLibraryPanelMode === 'edit') {
+                cancelQuickReplyLibraryEdit?.();
+                return;
+            }
+            setSelectedQuickReplyItemId?.('');
+            setSelectedQuickReplyLibraryId?.('');
+            setQuickReplyItemPanelMode?.('view');
+            setQuickReplyLibraryPanelMode?.('view');
+        };
+        window.addEventListener('keydown', handleEscape);
+        return () => window.removeEventListener('keydown', handleEscape);
+    }, [
+        cancelQuickReplyItemEdit,
+        cancelQuickReplyLibraryEdit,
+        quickReplyItemPanelMode,
+        quickReplyLibraryPanelMode,
+        setQuickReplyItemPanelMode,
+        setQuickReplyLibraryPanelMode,
+        setSelectedQuickReplyItemId,
+        setSelectedQuickReplyLibraryId
+    ]);
+
     return (
                     <section id="saas_quick_replies" className="saas-admin-card saas-admin-card--full">
-                        <div className="saas-admin-master-detail">
+                        <div className="saas-admin-master-detail saas-admin-master-detail--td-pattern">
                             <aside className="saas-admin-master-pane">
                                 <div className="saas-admin-pane-header">
                                     <div>
@@ -126,9 +156,15 @@ export default function QuickRepliesSection(props = {}) {
                                                 placeholder="Filtrar bibliotecas por nombre, codigo o descripcion"
                                                 disabled={loadingQuickReplies}
                                             />
+                                            <button type="button">Columnas</button>
                                         </div>
 
                                         <div className="saas-admin-list saas-admin-list--compact">
+                                            <div className="saas-admin-list-table-head saas-admin-list-table-head--quick-libraries">
+                                                <span>Biblioteca</span>
+                                                <span>Alcance</span>
+                                                <span>Estado</span>
+                                            </div>
                                             {visibleQuickReplyLibraries.length === 0 && (
                                                 <div className="saas-admin-empty-state">
                                                     <h4>Sin bibliotecas</h4>
@@ -139,7 +175,7 @@ export default function QuickRepliesSection(props = {}) {
                                                 <button
                                                     key={`qr_library_list_${library.libraryId}`}
                                                     type="button"
-                                                    className={`saas-admin-list-item saas-admin-list-item--button ${selectedQuickReplyLibrary?.libraryId === library.libraryId ? 'active' : ''}`.trim()}
+                                                    className={`saas-admin-list-item saas-admin-list-item--button saas-admin-list-item--table saas-admin-list-item--quick-libraries ${selectedQuickReplyLibrary?.libraryId === library.libraryId ? 'active' : ''}`.trim()}
                                                     onClick={() => {
                                                         setSelectedQuickReplyLibraryId(String(library.libraryId || '').trim().toUpperCase());
                                                         setSelectedQuickReplyItemId('');
@@ -148,8 +184,8 @@ export default function QuickRepliesSection(props = {}) {
                                                     }}
                                                 >
                                                     <strong>{library.name || library.libraryId}</strong>
-                                                    <small>{library.libraryId}</small>
-                                                    <small>{library.isShared ? 'Compartida' : 'Asignada por modulo'} | {library.isActive === false ? 'inactiva' : 'activa'}</small>
+                                                    <span>{library.isShared ? 'Compartida' : 'Por modulo'}</span>
+                                                    <small>{library.isActive === false ? 'Inactiva' : 'Activa'} | {library.libraryId}</small>
                                                 </button>
                                             ))}
                                         </div>
@@ -190,7 +226,25 @@ export default function QuickRepliesSection(props = {}) {
                                                         >
                                                             Desactivar
                                                         </button>
+                                                        <button
+                                                            type="button"
+                                                            className="saas-btn-cancel"
+                                                            disabled={busy}
+                                                            onClick={() => {
+                                                                setSelectedQuickReplyItemId('');
+                                                                setSelectedQuickReplyLibraryId('');
+                                                                setQuickReplyItemPanelMode('view');
+                                                                setQuickReplyLibraryPanelMode('view');
+                                                            }}
+                                                        >
+                                                            Cerrar
+                                                        </button>
                                                     </>
+                                                )}
+                                                {quickReplyLibraryPanelMode !== 'view' && (
+                                                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelQuickReplyLibraryEdit}>
+                                                        Cerrar
+                                                    </button>
                                                 )}
                                             </div>
                                         </div>
@@ -265,7 +319,7 @@ export default function QuickRepliesSection(props = {}) {
                                                     >
                                                         {quickReplyLibraryPanelMode === 'create' ? 'Guardar biblioteca' : 'Actualizar biblioteca'}
                                                     </button>
-                                                    <button type="button" disabled={busy} onClick={cancelQuickReplyLibraryEdit}>Cancelar</button>
+                                                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelQuickReplyLibraryEdit}>Cancelar</button>
                                                 </div>
                                             </div>
                                         )}
@@ -295,10 +349,16 @@ export default function QuickRepliesSection(props = {}) {
                                                 placeholder="Filtrar respuestas por etiqueta, contenido o archivo"
                                                 disabled={loadingQuickReplies}
                                             />
+                                            <button type="button">Columnas</button>
                                         </div>
 
                                         <div className="saas-admin-catalog-products-layout">
                                             <div className="saas-admin-catalog-products-list">
+                                                <div className="saas-admin-list-table-head saas-admin-list-table-head--quick-items">
+                                                    <span>Respuesta</span>
+                                                    <span>Contenido</span>
+                                                    <span>Estado</span>
+                                                </div>
                                                 {visibleQuickReplyItemsForSelectedLibrary.length === 0 && (
                                                     <div className="saas-admin-empty-state">
                                                         <h4>Sin plantillas</h4>
@@ -316,15 +376,15 @@ export default function QuickRepliesSection(props = {}) {
                                                         <button
                                                             key={`qr_item_row_${item.itemId}`}
                                                             type="button"
-                                                            className={`saas-admin-list-item saas-admin-list-item--button ${selectedQuickReplyItem?.itemId === item.itemId ? 'active' : ''}`.trim()}
+                                                            className={`saas-admin-list-item saas-admin-list-item--button saas-admin-list-item--table saas-admin-list-item--quick-items ${selectedQuickReplyItem?.itemId === item.itemId ? 'active' : ''}`.trim()}
                                                             onClick={() => {
                                                                 setSelectedQuickReplyItemId(String(item?.itemId || '').trim().toUpperCase());
                                                                 setQuickReplyItemPanelMode('view');
                                                             }}
                                                         >
                                                             <strong>{item.label || item.itemId}</strong>
-                                                            <small>{String(item.text || '').trim().slice(0, 96) || 'Solo adjuntos'}</small>
-                                                            <small>{itemAssets.length} adjunto(s) | {item.isActive === false ? 'inactiva' : 'activa'}</small>
+                                                            <span>{String(item.text || '').trim().slice(0, 64) || 'Solo adjuntos'}</span>
+                                                            <small>{itemAssets.length} adj. | {item.isActive === false ? 'Inactiva' : 'Activa'}</small>
                                                         </button>
                                                     );
                                                 })}
@@ -353,11 +413,14 @@ export default function QuickRepliesSection(props = {}) {
                                                                     onClick={() => runAction('Respuesta rapida desactivada', async () => {
                                                                         await deactivateQuickReplyItem(selectedQuickReplyItem?.itemId);
                                                                     })}
-                                                                >
-                                                                    Desactivar
-                                                                </button>
+                                                                    >
+                                                                        Desactivar
+                                                                    </button>
+                                                                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { setSelectedQuickReplyItemId(''); setQuickReplyItemPanelMode('view'); }}>
+                                                                        Cerrar
+                                                                    </button>
+                                                                </div>
                                                             </div>
-                                                        </div>
 
                                                         <div className="saas-admin-detail-grid">
                                                             <div className="saas-admin-detail-field"><span>Etiqueta</span><strong>{selectedQuickReplyItem.label || '-'}</strong></div>
@@ -413,6 +476,11 @@ export default function QuickRepliesSection(props = {}) {
                                                             <div>
                                                                 <h4>{quickReplyItemPanelMode === 'create' ? 'Nueva respuesta' : 'Editar respuesta'}</h4>
                                                                 <small>Permite texto y multiples adjuntos.</small>
+                                                            </div>
+                                                            <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                                                <button type="button" className="saas-btn-cancel" disabled={busy || uploadingQuickReplyAssets} onClick={cancelQuickReplyItemEdit}>
+                                                                    Cerrar
+                                                                </button>
                                                             </div>
                                                         </div>
 
@@ -525,7 +593,7 @@ export default function QuickRepliesSection(props = {}) {
                                                             >
                                                                 {quickReplyItemPanelMode === 'create' ? 'Guardar respuesta' : 'Actualizar respuesta'}
                                                             </button>
-                                                            <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={cancelQuickReplyItemEdit}>Cancelar</button>
+                                                            <button type="button" className="saas-btn-cancel" disabled={busy || uploadingQuickReplyAssets} onClick={cancelQuickReplyItemEdit}>Cancelar</button>
                                                         </div>
                                                     </div>
                                                 )}

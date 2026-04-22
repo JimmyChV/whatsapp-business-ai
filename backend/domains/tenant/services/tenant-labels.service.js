@@ -47,6 +47,12 @@ function normalizeSortOrder(value, fallback = 1000) {
     return Math.max(1, parsed);
 }
 
+function normalizeLabelType(value = '') {
+    const type = String(value || '').trim().toLowerCase();
+    if (['operational', 'zone', 'commercial'].includes(type)) return type;
+    return 'operational';
+}
+
 function normalizeColor(value = '', fallback = DEFAULT_COLOR) {
     const raw = String(value || '').trim().toUpperCase();
     if (/^#([0-9A-F]{6})$/.test(raw)) return raw;
@@ -62,6 +68,7 @@ function sanitizeLabel(input = {}, { fallbackColor = DEFAULT_COLOR } = {}) {
     const color = normalizeColor(source.color || source.hex || '', fallbackColor);
     const isActive = source.isActive !== false;
     const sortOrder = normalizeSortOrder(source.sortOrder, 1000);
+    const type = normalizeLabelType(source.type || source.labelType || source.label_type || '');
     const metadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
         ? { ...source.metadata }
         : {};
@@ -73,6 +80,7 @@ function sanitizeLabel(input = {}, { fallbackColor = DEFAULT_COLOR } = {}) {
         color,
         isActive,
         sortOrder,
+        type,
         metadata
     };
 }
@@ -125,11 +133,16 @@ async function ensurePostgresSchema() {
                 color TEXT NOT NULL DEFAULT '#00A884',
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 sort_order INTEGER NOT NULL DEFAULT 1000,
+                type TEXT NOT NULL DEFAULT 'operational',
                 metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 PRIMARY KEY (tenant_id, label_id)
             )`
+        );
+        await queryPostgres(
+            `ALTER TABLE tenant_labels
+                ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'operational'`
         );
         await queryPostgres(
             `CREATE TABLE IF NOT EXISTS tenant_chat_labels (
@@ -182,7 +195,7 @@ async function listLabels(options = {}) {
         if (!includeInactive) where += ' AND is_active = TRUE';
 
         const { rows } = await queryPostgres(
-            `SELECT label_id, name, description, color, is_active, sort_order, metadata, created_at, updated_at
+            `SELECT label_id, name, description, color, is_active, sort_order, type, metadata, created_at, updated_at
                FROM tenant_labels
                ${where}
               ORDER BY sort_order ASC, created_at DESC`,
@@ -196,6 +209,7 @@ async function listLabels(options = {}) {
             color: normalizeColor(row.color, DEFAULT_COLOR),
             isActive: row.is_active !== false,
             sortOrder: normalizeSortOrder(row.sort_order, 1000),
+            type: normalizeLabelType(row.type),
             metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {},
             createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
             updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null
@@ -234,8 +248,8 @@ async function saveLabel(payload = {}, options = {}) {
     await ensurePostgresSchema();
     await queryPostgres(
         `INSERT INTO tenant_labels (
-            tenant_id, label_id, name, description, color, is_active, sort_order, metadata, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW(), NOW())
+            tenant_id, label_id, name, description, color, is_active, sort_order, type, metadata, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, NOW(), NOW())
         ON CONFLICT (tenant_id, label_id)
         DO UPDATE SET
             name = EXCLUDED.name,
@@ -243,6 +257,7 @@ async function saveLabel(payload = {}, options = {}) {
             color = EXCLUDED.color,
             is_active = EXCLUDED.is_active,
             sort_order = EXCLUDED.sort_order,
+            type = EXCLUDED.type,
             metadata = COALESCE(tenant_labels.metadata, '{}'::jsonb) || COALESCE(EXCLUDED.metadata, '{}'::jsonb),
             updated_at = NOW()`,
         [
@@ -253,6 +268,7 @@ async function saveLabel(payload = {}, options = {}) {
             clean.color,
             clean.isActive,
             clean.sortOrder,
+            clean.type,
             JSON.stringify(clean.metadata || {})
         ]
     );
