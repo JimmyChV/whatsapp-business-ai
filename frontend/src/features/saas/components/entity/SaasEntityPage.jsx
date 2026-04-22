@@ -137,10 +137,15 @@ export default function SaasEntityPage({
     actions = EMPTY_ARRAY,
     filters = null,
     onFilterChange = null,
+    header = null,
+    left = null,
+    right: rightSlot = null,
+    layoutClassName = '',
     extra = null,
     className = '',
     detailTitle = '',
-    detailSubtitle = ''
+    detailSubtitle = '',
+    children = null
 }) {
     const preferences = useSaasViewPreferences(sectionKey || id || title, columns, { requestJson });
     const [search, setSearch] = useState('');
@@ -190,6 +195,21 @@ export default function SaasEntityPage({
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     });
+
+    if (header || left || rightSlot) {
+        return (
+            <section id={id || undefined} className={['saas-admin-card saas-admin-card--full saas-entity-page', className].filter(Boolean).join(' ')}>
+                <SaasTableDetailLayout
+                    selectedId={selectedId}
+                    className={layoutClassName || 'saas-entity-layout'}
+                    header={header}
+                    left={left}
+                    right={rightSlot}
+                />
+                {children}
+            </section>
+        );
+    }
 
     const right = hasSelection ? (
         <SaasDetailPanel

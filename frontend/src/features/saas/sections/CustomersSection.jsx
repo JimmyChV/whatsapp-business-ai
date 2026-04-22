@@ -9,6 +9,7 @@ import {
     SaasDataTable,
     SaasDetailPanel,
     SaasDetailPanelSection,
+    SaasEntityPage,
     SaasTableDetailLayout,
     SaasViewHeader,
     useSaasColumnPrefs
@@ -3746,14 +3747,16 @@ function CustomersSection(props = {}) {
     ) : null;
 
     return (
-        <section id="saas_clientes" className="saas-admin-card saas-admin-card--full saas-entity-page" data-saas-section-key="customers">
-            <SaasTableDetailLayout
-                selectedId={layoutSelectedId}
-                className="saas-customers-td-layout"
-                header={headerElement}
-                left={leftPane}
-                right={rightPane}
-            />
+        <SaasEntityPage
+            id="saas_clientes"
+            sectionKey="customers"
+            selectedId={layoutSelectedId}
+            className="saas-entity-page--customers"
+            layoutClassName="saas-customers-td-layout"
+            header={headerElement}
+            left={leftPane}
+            right={rightPane}
+        >
             <SendTemplateModal
                 isOpen={sendTemplateOpen}
                 templates={sendTemplateOptions}
@@ -3785,7 +3788,7 @@ function CustomersSection(props = {}) {
                 onSelectTemplate={(template) => { void handleSelectCampaignTemplate(template); }}
                 onConfirm={() => { void handleConfirmExpressCampaign(); }}
             />
-        </section>
+        </SaasEntityPage>
     );
 }
 
