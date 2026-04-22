@@ -3815,28 +3815,10 @@ function CustomersSection(props = {}) {
         <SaasEntityPage
             id="saas_clientes"
             sectionKey="customers"
-            title="Clientes"
-            rows={tenantScopeLocked ? [] : visibleTableRows}
-            columns={tableColumns}
             selectedId={layoutSelectedId}
-            onSelect={(row) => {
-                if (tenantScopeLocked) return;
-                openCustomerView(row?.id || row?._raw);
-            }}
-            onClose={() => { void handleRequestCloseCustomersPanel(); }}
-            renderDetail={() => rightPane}
-            renderForm={() => rightPane}
-            mode={customerPanelMode === 'create' || customerPanelMode === 'edit' || addressPanelMode === 'address-edit' ? 'form' : 'detail'}
-            dirty={customerPanelMode === 'create' || customerPanelMode === 'edit' || addressPanelMode === 'address-edit'}
-            requestJson={requestJson}
-            loading={busy && !tenantScopeLocked}
-            emptyText={tenantScopeLocked ? 'Selecciona una empresa para ver clientes.' : 'No hay clientes para esta empresa.'}
-            searchPlaceholder="Buscar por codigo, nombre, telefono, email o documento"
-            filters={headerFilterColumns}
-            actions={headerActions.filter((action) => action.key !== 'toggle-columns')}
-            extra={entityHeaderExtra}
-            detailShell={false}
-            hideCloseButton
+            header={headerElement}
+            left={leftPane}
+            right={rightPane}
             className="saas-entity-page--customers"
         >
             <SendTemplateModal

@@ -1232,46 +1232,10 @@ export default React.memo(function CampaignsSection(props = {}) {
         <SaasEntityPage
             id="saas_campaigns"
             sectionKey="campaigns"
-            title="Campanas"
-            rows={tenantScopeLocked ? [] : campaignTableRows}
-            columns={campaignTableColumns}
             selectedId={layoutSelectedId}
-            onSelect={handleSelectCampaignRow}
-            onClose={() => { void handleRequestCloseCampaignPanel(); }}
-            renderDetail={() => rightPane}
-            renderForm={() => rightPane}
-            mode={panelMode === 'create' || panelMode === 'edit' ? 'form' : 'detail'}
-            dirty={panelMode === 'create' || panelMode === 'edit'}
-            requestJson={requestJson}
-            loading={loadingList}
-            emptyText={tenantScopeLocked ? 'Selecciona una empresa para gestionar campanas.' : 'No hay campanas para estos filtros.'}
-            searchPlaceholder="Buscar campana por nombre, template o modulo"
-            filters={[
-                { key: 'status', label: 'Estado', type: 'select', options: Object.keys(STATUS_META).map((key) => ({ value: key, label: STATUS_META[key].label })) },
-                { key: 'moduleId', label: 'Modulo', type: 'select', options: moduleOptions.map((item) => ({ value: item.moduleId, label: item.label })) }
-            ]}
-            actions={[
-                {
-                    key: 'reload',
-                    label: 'Recargar',
-                    onClick: () => loadCampaigns?.().catch(() => {}),
-                    disabled: loadingList || loading || tenantScopeLocked
-                },
-                {
-                    key: 'create',
-                    label: 'Nueva',
-                    onClick: () => {
-                        setPanelMode('create');
-                        clearSelectedCampaign();
-                        setMaxRecipientsTouched(false);
-                        setLocalEstimate(null);
-                        setForm({ ...EMPTY_FORM, moduleId: moduleOptions[0]?.moduleId || '' });
-                    },
-                    disabled: loading || tenantScopeLocked
-                }
-            ]}
-            detailShell={false}
-            hideCloseButton
+            header={headerElement}
+            left={listPane}
+            right={rightPane}
             className="saas-entity-page--campaigns"
         />
     );
