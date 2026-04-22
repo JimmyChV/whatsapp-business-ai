@@ -714,7 +714,7 @@ function extractCustomerModuleCandidates(customer = null) {
         customer?.metadata?.assigned_modules,
         customer?.profile?.moduleIds,
         customer?.profile?.module_ids
-    ];
+    ].filter(Boolean);
 
     return rawCandidates.flatMap((value) => {
         if (Array.isArray(value)) return value;
@@ -1298,9 +1298,8 @@ function CustomersSection(props = {}) {
 
     const tableColumns = useMemo(
         () => ([
-            {
+            ...(campaignSelectionMode ? [{
                 key: 'selectForCampaign',
-                hidden: !campaignSelectionMode || !outreachModuleId,
                 label: (
                     <span className="saas-customers-select-cell">
                         <input
@@ -1349,7 +1348,7 @@ function CustomersSection(props = {}) {
                         </span>
                     );
                 }
-            },
+            }] : []),
             ...CUSTOMER_TABLE_COLUMNS.map((column) => ({
                 ...column,
                 hidden: !columnPrefs.isColumnVisible(column.key)
@@ -3281,20 +3280,20 @@ function CustomersSection(props = {}) {
             variant: campaignSelectionMode ? 'danger' : 'secondary',
             disabled: busy || tenantScopeLocked
         },
-        {
+        campaignSelectionMode && selectedCustomerIdsForCampaign.length > 0 && outreachMode === 'eligible' ? {
             key: 'send-template',
             label: `Enviar campaña${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
             onClick: () => { void handleOpenCampaignTemplateModal(); },
             variant: 'secondary',
-            disabled: busy || tenantScopeLocked || !campaignSelectionMode || !outreachModuleId || outreachMode !== 'eligible' || selectedCustomerIdsForCampaign.length === 0
-        },
-        {
+            disabled: busy || tenantScopeLocked || !outreachModuleId
+        } : null,
+        campaignSelectionMode && selectedCustomerIdsForCampaign.length > 0 && outreachMode === 'assign' ? {
             key: 'assign-module',
             label: `Asignar al modulo${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
             onClick: () => { void handleOpenCampaignTemplateModal(); },
             variant: 'secondary',
-            disabled: busy || tenantScopeLocked || !campaignSelectionMode || !outreachModuleId || outreachMode !== 'assign' || selectedCustomerIdsForCampaign.length === 0
-        },
+            disabled: busy || tenantScopeLocked || !outreachModuleId
+        } : null,
         {
             key: 'refresh-customers',
             label: 'Actualizar',
@@ -3309,7 +3308,7 @@ function CustomersSection(props = {}) {
             variant: 'secondary',
             disabled: busy || tenantScopeLocked
         }
-    ];
+    ].filter(Boolean);
 
     const headerFilterColumns = filterColumns.map((column) => ({
         key: column.key,
