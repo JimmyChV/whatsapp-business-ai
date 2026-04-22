@@ -892,7 +892,7 @@ function CustomersSection(props = {}) {
     const customersRealtimeSyncInFlightRef = useRef(false);
 
     const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
-    const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys);
+    const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys, { requestJson });
 
     useEffect(() => {
         setSelectedCustomerLive((prev) => {

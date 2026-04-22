@@ -286,7 +286,7 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const labelOptions = useMemo(() => buildLabelOptions(availableLabels), [availableLabels]);
     const zoneOptions = useMemo(() => buildZoneOptions(zoneRules), [zoneRules]);
-    const columnPrefs = useSaasColumnPrefs('campaigns', CAMPAIGN_DEFAULT_COLUMN_KEYS);
+    const columnPrefs = useSaasColumnPrefs('campaigns', CAMPAIGN_DEFAULT_COLUMN_KEYS, { requestJson });
 
     const moduleOptions = useMemo(() => (Array.isArray(waModules) ? waModules : [])
         .map((item) => ({
