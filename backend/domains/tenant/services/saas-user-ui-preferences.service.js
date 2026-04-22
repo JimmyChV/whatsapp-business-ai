@@ -21,7 +21,8 @@ function normalizeUserId(value = '') {
 }
 
 function normalizeSectionKey(value = '') {
-    return toText(value).toLowerCase().replace(/[^a-z0-9_.:-]+/g, '_').slice(0, 120) || 'default';
+    const normalized = toText(value).toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80);
+    return /^[a-z0-9_]{1,80}$/.test(normalized) ? normalized : 'default';
 }
 
 function resolveTenantId(value = '') {
