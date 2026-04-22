@@ -3746,16 +3746,97 @@ function CustomersSection(props = {}) {
         </div>
     ) : null;
 
+    const entityHeaderExtra = (
+        <div className="saas-customers-header-extra">
+            {campaignSelectionMode ? (
+                <div className="saas-customers-outreach-toolbar">
+                    <label className="saas-customers-outreach-toolbar__field">
+                        <span>Modulo</span>
+                        <select value={outreachModuleId} onChange={(event) => {
+                            setOutreachModuleId(String(event.target.value || '').trim().toLowerCase());
+                            setSelectedCustomerIdsForCampaign([]);
+                        }}>
+                            <option value="">Selecciona modulo</option>
+                            {outreachModuleOptions.map((moduleItem) => (
+                                <option key={`customers_outreach_module_entity_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
+                                    {moduleItem.label}
+                                </option>
+                            ))}
+                        </select>
+                        <small>Trabaja por ID de modulo normalizado para evitar cruces por mayusculas o nombre.</small>
+                    </label>
+                    <label className="saas-customers-outreach-toolbar__field">
+                        <span>Modo</span>
+                        <select value={outreachMode} onChange={(event) => {
+                            setOutreachMode(String(event.target.value || 'eligible').trim() || 'eligible');
+                            setSelectedCustomerIdsForCampaign([]);
+                        }} disabled={!outreachModuleId}>
+                            <option value="eligible">Seleccionar elegibles</option>
+                            <option value="assign">Asignar al modulo</option>
+                        </select>
+                        <small>{outreachMode === 'assign' ? 'Muestra clientes fuera del modulo para asignarlos y enviar opt-in.' : 'Muestra solo clientes que ya pertenecen al modulo elegido.'}</small>
+                    </label>
+                </div>
+            ) : null}
+            {campaignSelectionMode ? (
+                <div className="saas-customers-selection-pill">
+                    {selectedCustomerIdsForCampaign.length > 0
+                        ? `${selectedCustomerIdsForCampaign.length} cliente${selectedCustomerIdsForCampaign.length === 1 ? '' : 's'} seleccionado${selectedCustomerIdsForCampaign.length === 1 ? '' : 's'}`
+                        : !outreachModuleId
+                            ? 'Selecciona un modulo para preparar outreach.'
+                            : outreachEligibilityLoading
+                                ? 'Calculando elegibilidad por modulo...'
+                                : outreachMode === 'assign'
+                                    ? `${outreachNonEligibleCustomerIds.length} cliente(s) fuera del modulo listos para asignacion`
+                                    : `${outreachEligibleCustomerIds.length} cliente(s) elegibles en el modulo`}
+                </div>
+            ) : null}
+            {campaignSelectionMode && outreachEligibilityError ? (
+                <div className="saas-admin-inline-feedback error">{outreachEligibilityError}</div>
+            ) : null}
+            {(customersLoadingBatch || savingCustomer) ? (
+                <div className="saas-admin-inline-feedback">
+                    {customersLoadingBatch ? `Cargando clientes... ${Math.max(0, Math.min(100, Number(customersLoadProgress) || 0))}%` : null}
+                    {customersLoadingBatch && savingCustomer ? ' | ' : null}
+                    {savingCustomer ? 'Guardando cliente...' : null}
+                </div>
+            ) : null}
+            {(savingCustomer || showCustomerSynced) ? (
+                <div className={`saas-customers-sync-indicator${savingCustomer ? ' is-saving' : ' is-synced'}`}>
+                    <span className="saas-customers-sync-indicator__dot" />
+                    <span>{savingCustomer ? 'Guardando...' : 'Sincronizado'}</span>
+                </div>
+            ) : null}
+        </div>
+    );
+
     return (
         <SaasEntityPage
             id="saas_clientes"
             sectionKey="customers"
+            title="Clientes"
+            rows={tenantScopeLocked ? [] : visibleTableRows}
+            columns={tableColumns}
             selectedId={layoutSelectedId}
+            onSelect={(row) => {
+                if (tenantScopeLocked) return;
+                openCustomerView(row?.id || row?._raw);
+            }}
+            onClose={() => { void handleRequestCloseCustomersPanel(); }}
+            renderDetail={() => rightPane}
+            renderForm={() => rightPane}
+            mode={customerPanelMode === 'create' || customerPanelMode === 'edit' || addressPanelMode === 'address-edit' ? 'form' : 'detail'}
+            dirty={customerPanelMode === 'create' || customerPanelMode === 'edit' || addressPanelMode === 'address-edit'}
+            requestJson={requestJson}
+            loading={busy && !tenantScopeLocked}
+            emptyText={tenantScopeLocked ? 'Selecciona una empresa para ver clientes.' : 'No hay clientes para esta empresa.'}
+            searchPlaceholder="Buscar por codigo, nombre, telefono, email o documento"
+            filters={headerFilterColumns}
+            actions={headerActions.filter((action) => action.key !== 'toggle-columns')}
+            extra={entityHeaderExtra}
+            detailShell={false}
+            hideCloseButton
             className="saas-entity-page--customers"
-            layoutClassName="saas-customers-td-layout"
-            header={headerElement}
-            left={leftPane}
-            right={rightPane}
         >
             <SendTemplateModal
                 isOpen={sendTemplateOpen}

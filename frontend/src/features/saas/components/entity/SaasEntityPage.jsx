@@ -147,6 +147,7 @@ export default function SaasEntityPage({
     detailTitle = '',
     detailSubtitle = '',
     hideCloseButton = false,
+    detailShell = true,
     children = null
 }) {
     const preferences = useSaasViewPreferences(sectionKey || id || title, columns, { requestJson });
@@ -198,7 +199,7 @@ export default function SaasEntityPage({
         return () => window.removeEventListener('keydown', handleKeyDown);
     });
 
-    if (header || left || rightSlot) {
+    if ((header || left || rightSlot) && columns.length === 0 && rows.length === 0) {
         return (
             <section
                 id={id || undefined}
@@ -229,7 +230,11 @@ export default function SaasEntityPage({
         );
     }
 
-    const right = hasSelection ? (
+    const rightContent = mode === 'form' && typeof renderForm === 'function'
+        ? renderForm({ close })
+        : (typeof renderDetail === 'function' ? renderDetail({ close }) : null);
+
+    const right = hasSelection ? (detailShell ? (
         <SaasDetailPanel
             title={detailTitle || title}
             subtitle={detailSubtitle}
@@ -241,11 +246,9 @@ export default function SaasEntityPage({
                 </button>
             )}
         >
-            {mode === 'form' && typeof renderForm === 'function'
-                ? renderForm({ close })
-                : (typeof renderDetail === 'function' ? renderDetail({ close }) : null)}
+            {rightContent}
         </SaasDetailPanel>
-    ) : null;
+    ) : rightContent) : null;
 
     return (
         <section
