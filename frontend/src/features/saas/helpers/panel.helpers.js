@@ -159,6 +159,7 @@ export const MODULE_KEYS = [
 ];
 export const ADMIN_NAV_ITEMS = [
     { id: 'saas_resumen', label: 'Resumen' },
+    { id: 'saas_global_labels', label: 'Etiquetas globales' },
     { id: 'saas_modulos', label: 'Modulos' },
     { id: 'saas_usuarios', label: 'Usuarios' },
     { id: 'saas_catalogos', label: 'Catalogos' },

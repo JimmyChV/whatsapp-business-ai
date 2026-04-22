@@ -66,7 +66,7 @@ export default function useSaasPanelSectionChange({
             setAiAssistantForm({ ...emptyAiAssistantForm });
         }
 
-        if (next === 'saas_etiquetas') {
+        if (next === 'saas_etiquetas' || next === 'saas_global_labels') {
             setSelectedLabelId('');
             setLabelPanelMode('view');
             setLabelForm({ ...emptyLabelForm });

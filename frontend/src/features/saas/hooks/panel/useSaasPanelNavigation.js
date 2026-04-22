@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 
-const GLOBAL_SECTION_IDS = new Set(['saas_resumen', 'saas_empresas', 'saas_roles', 'saas_planes']);
+const GLOBAL_SECTION_IDS = new Set(['saas_resumen', 'saas_global_labels', 'saas_empresas', 'saas_roles', 'saas_planes']);
 const SELLER_VISIBLE_SECTION_IDS = new Set(['saas_clientes']);
 
 export default function useSaasPanelNavigation({
@@ -60,7 +60,7 @@ export default function useSaasPanelNavigation({
         if (cleanId === 'saas_campaigns') return canViewOperations;
         if (cleanId === 'saas_templates') return canViewModules;
         if (cleanId === 'saas_ia') return canViewAi;
-        if (cleanId === 'saas_etiquetas') return canViewLabels;
+        if (cleanId === 'saas_etiquetas' || cleanId === 'saas_global_labels') return canViewLabels;
         if (cleanId === 'saas_quick_replies') return canViewQuickReplies;
         if (cleanId === 'saas_modulos') return canViewModules;
         if (cleanId === 'saas_catalogos') return canManageCatalog;
@@ -119,6 +119,7 @@ export default function useSaasPanelNavigation({
         isMetaTemplatesSection: selectedSectionId === 'saas_templates',
         isAiSection: selectedSectionId === 'saas_ia',
         isLabelsSection: selectedSectionId === 'saas_etiquetas',
+        isGlobalLabelsSection: selectedSectionId === 'saas_global_labels',
         isQuickRepliesSection: selectedSectionId === 'saas_quick_replies',
         isGeneralConfigSection: selectedSectionId === 'saas_config'
     }), [selectedSectionId]);

@@ -25,11 +25,7 @@ const DEFAULT_FILTERS = Object.freeze({
 });
 
 const campaignsCacheByRequestJson = new WeakMap();
-const campaignsFallbackCache = {
-    items: [],
-    total: 0,
-    loaded: false
-};
+const campaignsFallbackCacheByTenant = new Map();
 
 function toText(value = '') {
     return String(value || '').trim();
@@ -79,14 +75,27 @@ function patchCampaignArray(items = [], patch = null) {
     return found ? sortCampaigns(next) : sortCampaigns([patch, ...next]);
 }
 
-function resolveCampaignsCache(requestJson) {
-    if (typeof requestJson !== 'function') return campaignsFallbackCache;
-    let cacheEntry = campaignsCacheByRequestJson.get(requestJson);
-    if (!cacheEntry) {
-        cacheEntry = { items: [], total: 0, loaded: false };
-        campaignsCacheByRequestJson.set(requestJson, cacheEntry);
+function createCampaignsCacheEntry() {
+    return { items: [], total: 0, loaded: false };
+}
+
+function resolveCampaignsCache(requestJson, tenantId = '') {
+    const cacheKey = toLower(tenantId || 'default');
+    if (typeof requestJson !== 'function') {
+        if (!campaignsFallbackCacheByTenant.has(cacheKey)) {
+            campaignsFallbackCacheByTenant.set(cacheKey, createCampaignsCacheEntry());
+        }
+        return campaignsFallbackCacheByTenant.get(cacheKey);
     }
-    return cacheEntry;
+    let tenantCacheMap = campaignsCacheByRequestJson.get(requestJson);
+    if (!tenantCacheMap) {
+        tenantCacheMap = new Map();
+        campaignsCacheByRequestJson.set(requestJson, tenantCacheMap);
+    }
+    if (!tenantCacheMap.has(cacheKey)) {
+        tenantCacheMap.set(cacheKey, createCampaignsCacheEntry());
+    }
+    return tenantCacheMap.get(cacheKey);
 }
 
 export default function useSaasCampaignsController({
@@ -96,7 +105,8 @@ export default function useSaasCampaignsController({
     initialFilters = {}
 } = {}) {
     const { notify } = useUiFeedback();
-    const cacheRef = useRef(resolveCampaignsCache(requestJson));
+    const tenantCacheKey = toLower(tenantId || 'default');
+    const cacheRef = useRef(resolveCampaignsCache(requestJson, tenantCacheKey));
     const campaignsRef = useRef(cacheRef.current.items);
     const [filters, setFilters] = useState(() => normalizeFilters({ ...DEFAULT_FILTERS, ...initialFilters }));
     const filtersRef = useRef(filters);
@@ -126,12 +136,12 @@ export default function useSaasCampaignsController({
     }, [campaigns]);
 
     useEffect(() => {
-        cacheRef.current = resolveCampaignsCache(requestJson);
+        cacheRef.current = resolveCampaignsCache(requestJson, tenantCacheKey);
         setCampaigns(cacheRef.current.items);
         campaignsRef.current = Array.isArray(cacheRef.current.items) ? cacheRef.current.items : [];
         setTotal(cacheRef.current.total);
         setHasLoadedCampaigns(Boolean(cacheRef.current.loaded));
-    }, [requestJson]);
+    }, [requestJson, tenantCacheKey]);
 
     const writeCache = useCallback((nextItems, nextTotal, loaded = true) => {
         cacheRef.current.items = Array.isArray(nextItems) ? nextItems : [];
@@ -199,6 +209,13 @@ export default function useSaasCampaignsController({
             setLoadingList(false);
         }
     }, [requestJson, selectedCampaignId, writeCache]);
+
+    useEffect(() => {
+        if (typeof requestJson !== 'function') return;
+        if (!toText(tenantId)) return;
+        if (cacheRef.current.loaded) return;
+        loadCampaigns().catch(() => { });
+    }, [loadCampaigns, requestJson, tenantCacheKey, tenantId]);
 
     const loadAvailableLabels = useCallback(async (overrideTenantId = '') => {
         if (typeof requestJson !== 'function') return { items: [] };

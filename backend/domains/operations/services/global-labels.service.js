@@ -58,6 +58,48 @@ function missingRelation(error) {
     return String(error?.code || '').trim() === '42P01';
 }
 
+async function seedFromExistingTenantLabelsIfEmpty() {
+    if (getStorageDriver() !== 'postgres') return;
+
+    try {
+        const { rows: countRows } = await queryPostgres('SELECT COUNT(*)::int AS total FROM global_labels');
+        const total = Number(countRows?.[0]?.total || 0);
+        if (total > 0) return;
+
+        await queryPostgres(`
+            INSERT INTO global_labels (
+                id,
+                name,
+                color,
+                description,
+                commercial_status_key,
+                sort_order,
+                is_active,
+                created_at,
+                updated_at
+            )
+            SELECT DISTINCT ON (UPPER(label_id))
+                UPPER(label_id) AS id,
+                name,
+                color,
+                description,
+                NULL AS commercial_status_key,
+                sort_order,
+                is_active,
+                NOW(),
+                NOW()
+              FROM tenant_labels
+             WHERE COALESCE(BTRIM(label_id), '') <> ''
+               AND COALESCE(BTRIM(name), '') <> ''
+             ORDER BY UPPER(label_id), is_active DESC, sort_order ASC, updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+            ON CONFLICT (id) DO NOTHING
+        `);
+    } catch (error) {
+        if (missingRelation(error)) return;
+        throw error;
+    }
+}
+
 async function ensurePostgresSchema() {
     if (schemaPromise) return schemaPromise;
     schemaPromise = (async () => {
@@ -109,6 +151,7 @@ async function listLabels(options = {}) {
 
     try {
         await ensurePostgresSchema();
+        await seedFromExistingTenantLabelsIfEmpty();
         const where = includeInactive ? '' : 'WHERE is_active = TRUE';
         const { rows } = await queryPostgres(
             `SELECT id, name, color, description, commercial_status_key, sort_order, is_active, created_at, updated_at

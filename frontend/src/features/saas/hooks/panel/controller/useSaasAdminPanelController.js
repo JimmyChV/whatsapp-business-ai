@@ -1020,6 +1020,9 @@ export default function useSaasAdminPanelController({
 
     const sectionContextsInput = {
         busy: panelCoreState.busy,
+        userRole,
+        isSuperAdmin,
+        currentUser,
         canEditModules,
         aiAssistantForm: aiController.aiState.aiAssistantForm,
         aiAssistantPanelMode: aiController.aiState.aiAssistantPanelMode,

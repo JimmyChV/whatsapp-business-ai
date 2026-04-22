@@ -1,4 +1,4 @@
-const TENANT_LOCK_EXEMPT_SECTIONS = new Set(['saas_resumen', 'saas_empresas', 'saas_planes', 'saas_roles']);
+const TENANT_LOCK_EXEMPT_SECTIONS = new Set(['saas_resumen', 'saas_empresas', 'saas_planes', 'saas_roles', 'saas_global_labels']);
 
 function NavSectionIcon({ sectionId }) {
     const commonProps = {
@@ -33,6 +33,7 @@ function NavSectionIcon({ sectionId }) {
     case 'saas_ia':
         return <svg {...commonProps}><path d="m12 3 1.4 3.8L17 8.2l-3.1 2.4L15 15l-3-2-3 2 1.1-4.4L7 8.2l3.6-1.4L12 3z" /></svg>;
     case 'saas_etiquetas':
+    case 'saas_global_labels':
         return <svg {...commonProps}><path d="m20 13-7 7-9-9V4h7zM7.5 7.5h.01" /></svg>;
     case 'saas_quick_replies':
         return <svg {...commonProps}><path d="M7 8h10M7 12h7M4 4h16v12H7l-3 3z" /></svg>;
