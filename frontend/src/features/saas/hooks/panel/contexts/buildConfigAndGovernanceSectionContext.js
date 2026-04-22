@@ -105,6 +105,8 @@ export default function buildConfigAndGovernanceSectionContext(c) {
         toggleRolePermission: c.toggleRolePermission,
         saveRoleProfile: c.saveRoleProfile,
         cancelRoleEdit: c.cancelRoleEdit,
+        setSelectedRoleKey: c.setSelectedRoleKey,
+        setRolePanelMode: c.setRolePanelMode,
         isPlansSection: c.isPlansSection,
         loadingPlans: c.loadingPlans,
         loadPlanMatrix: c.loadPlanMatrix,
@@ -120,6 +122,7 @@ export default function buildConfigAndGovernanceSectionContext(c) {
         planForm: c.planForm,
         setPlanForm: c.setPlanForm,
         chunkItems: c.chunkItems,
+        setSelectedPlanId: c.setSelectedPlanId,
         setPlanPanelMode: c.setPlanPanelMode,
         cancelPlanEdit: c.cancelPlanEdit
     };
