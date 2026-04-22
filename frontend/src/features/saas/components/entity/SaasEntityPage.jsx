@@ -216,6 +216,18 @@ export default function SaasEntityPage({
         );
     }
 
+    if (children && !title && columns.length === 0 && rows.length === 0) {
+        return (
+            <section
+                id={id || undefined}
+                className={['saas-admin-card saas-admin-card--full saas-entity-page', className].filter(Boolean).join(' ')}
+                data-saas-section-key={dataSectionKey || sectionKey || undefined}
+            >
+                {children}
+            </section>
+        );
+    }
+
     const right = hasSelection ? (
         <SaasDetailPanel
             title={detailTitle || title}
