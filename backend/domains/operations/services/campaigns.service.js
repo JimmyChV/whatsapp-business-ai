@@ -27,6 +27,9 @@ const EVENT_TYPES = new Set([
     'campaign_resumed',
     'campaign_cancelled',
     'campaign_completed',
+    'campaign_block_started',
+    'campaign_block_completed',
+    'campaign_block_failed',
     'recipient_queued',
     'recipient_claimed',
     'recipient_sent',
@@ -1734,6 +1737,110 @@ async function listCampaignRecipients(tenantId = DEFAULT_TENANT_ID, options = {}
     }
 }
 
+async function listCampaignRecipientsOrderedForBlocks(tenantId = DEFAULT_TENANT_ID, { campaignId = '' } = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const cleanCampaignId = toText(campaignId);
+    if (!cleanCampaignId) return [];
+
+    if (getStorageDriver() !== 'postgres') {
+        const store = await readStore(cleanTenantId);
+        return store.recipients
+            .filter((item) => item.campaignId === cleanCampaignId)
+            .map(sanitizeRecipient)
+            .sort((left, right) => {
+                const leftKey = `${toText(left.customerId)}::${toText(left.recipientId)}::${toText(left.phone)}`;
+                const rightKey = `${toText(right.customerId)}::${toText(right.recipientId)}::${toText(right.phone)}`;
+                return leftKey.localeCompare(rightKey);
+            });
+    }
+
+    try {
+        await ensurePostgresSchema();
+        const result = await queryPostgres(
+            `SELECT *
+               FROM tenant_campaign_recipients
+              WHERE tenant_id = $1
+                AND campaign_id = $2
+              ORDER BY COALESCE(customer_id, ''), recipient_id, phone`,
+            [cleanTenantId, cleanCampaignId]
+        );
+        return ensureArray(result?.rows).map(mapRecipientRow);
+    } catch (error) {
+        if (missingRelation(error)) return [];
+        throw error;
+    }
+}
+
+function getBlockSlice(blocksConfig = null, blockIndex = 0, recipients = []) {
+    const config = normalizeBlocksConfig(blocksConfig);
+    if (!config) return { block: null, recipients: [], offset: 0 };
+    const index = toInt(blockIndex, -1, { min: -1, max: 1000 });
+    const block = config.blocks.find((entry) => entry.blockIndex === index) || null;
+    if (!block) return { block: null, recipients: [], offset: 0 };
+    const offset = config.blocks
+        .filter((entry) => entry.blockIndex < block.blockIndex)
+        .reduce((total, entry) => total + toInt(entry.size, 0, { min: 0 }), 0);
+    return {
+        block,
+        recipients: ensureArray(recipients).slice(offset, offset + toInt(block.size, 0, { min: 0 })),
+        offset
+    };
+}
+
+async function updateCampaignBlocksConfig(tenantId = DEFAULT_TENANT_ID, campaign = {}, blocksConfig = null, patch = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const updated = await persistCampaignRecord(cleanTenantId, {
+        ...campaign,
+        ...patch,
+        blocksConfigJson: normalizeBlocksConfig(blocksConfig),
+        updatedAt: nowIso()
+    });
+    return updated;
+}
+
+async function refreshCampaignBlockStatuses(tenantId = DEFAULT_TENANT_ID, campaign = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const config = normalizeBlocksConfig(campaign?.blocksConfigJson);
+    if (!config || config.blocks.length === 0) return campaign;
+
+    const sendingBlocks = config.blocks.filter((block) => block.status === 'sending');
+    if (sendingBlocks.length === 0) return campaign;
+
+    const recipients = await listCampaignRecipientsOrderedForBlocks(cleanTenantId, { campaignId: campaign.campaignId });
+    let changed = false;
+    const nextBlocks = config.blocks.map((block) => {
+        if (block.status !== 'sending') return block;
+        const slice = getBlockSlice(config, block.blockIndex, recipients).recipients;
+        if (slice.length === 0) return block;
+        const terminal = slice.every((recipient) => ['sent', 'failed', 'skipped', 'opted_out'].includes(normalizeRecipientStatus(recipient.status)));
+        if (!terminal) return block;
+        changed = true;
+        const hasFailure = slice.some((recipient) => normalizeRecipientStatus(recipient.status) === 'failed');
+        return {
+            ...block,
+            status: hasFailure ? 'failed' : 'completed',
+            sentAt: nowIso()
+        };
+    });
+    if (!changed) return campaign;
+
+    const nextConfig = normalizeBlocksConfig({ ...config, blocks: nextBlocks });
+    const updated = await updateCampaignBlocksConfig(cleanTenantId, campaign, nextConfig);
+    const completedBlock = nextBlocks.find((block, index) => block.status !== config.blocks[index]?.status);
+    if (completedBlock) {
+        await recordCampaignEvent(cleanTenantId, {
+            campaignId: updated.campaignId,
+            moduleId: updated.moduleId,
+            eventType: completedBlock.status === 'failed' ? 'campaign_block_failed' : 'campaign_block_completed',
+            severity: completedBlock.status === 'failed' ? 'warn' : 'info',
+            actorType: 'system',
+            message: completedBlock.status === 'failed' ? 'Bloque finalizado con fallas' : 'Bloque completado',
+            payloadJson: { blockIndex: completedBlock.blockIndex, size: completedBlock.size }
+        });
+    }
+    return updated;
+}
+
 async function getRecipientByIdempotencyKey(tenantId = DEFAULT_TENANT_ID, { idempotencyKey = '' } = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
     const cleanIdempotencyKey = toText(idempotencyKey);
@@ -2117,10 +2224,11 @@ async function applyQueueJobUpdate(tenantId = DEFAULT_TENANT_ID, options = {}) {
         });
     }
 
-    const campaign = await recomputeCampaignStats(cleanTenantId, {
+    const recomputedCampaign = await recomputeCampaignStats(cleanTenantId, {
         campaignId: persistedRecipient.campaignId,
         markCompleted: true
     });
+    const campaign = await refreshCampaignBlockStatuses(cleanTenantId, recomputedCampaign);
 
     if (['sent', 'failed', 'skipped'].includes(nextStatus)) {
         emitCampaignUpdated({
@@ -2139,6 +2247,143 @@ async function applyQueueJobUpdate(tenantId = DEFAULT_TENANT_ID, options = {}) {
     return { campaign, recipient: persistedRecipient };
 }
 
+async function sendCampaignBlock(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const campaignId = toText(options.campaignId || '');
+    const blockIndex = toInt(options.blockIndex, -1, { min: -1, max: 1000 });
+    if (!campaignId) throw new Error('campaignId requerido para enviar bloque.');
+    if (blockIndex < 0) throw new Error('blockIndex invalido.');
+
+    const initialCampaign = await getCampaignById(cleanTenantId, campaignId);
+    if (!initialCampaign) throw new Error('Campana no encontrada.');
+    if (['cancelled', 'completed'].includes(initialCampaign.status)) {
+        throw new Error('No se puede enviar un bloque de una campana cancelada o completada.');
+    }
+
+    let campaign = initialCampaign;
+    let blocksConfig = normalizeBlocksConfig(campaign.blocksConfigJson);
+    if (!blocksConfig) throw new Error('La campana no esta configurada para envio por bloques.');
+    if (blocksConfig.blocks.some((block) => block.status === 'sending')) {
+        throw new Error('Ya hay un bloque en envio. Espera a que termine antes de iniciar otro.');
+    }
+
+    let recipients = await listCampaignRecipientsOrderedForBlocks(cleanTenantId, { campaignId });
+    if (recipients.length === 0) {
+        const seeded = await seedRecipientsFromFilters(cleanTenantId, {
+            campaignId,
+            filters: campaign.audienceFiltersJson,
+            audienceSelectionJson: campaign.audienceSelectionJson,
+            actorUserId: options.actorUserId || null
+        });
+        campaign = seeded?.campaign || campaign;
+        recipients = await listCampaignRecipientsOrderedForBlocks(cleanTenantId, { campaignId });
+    }
+    if (recipients.length === 0) throw new Error('No hay destinatarios congelados para este bloque.');
+
+    const hasStartedBlocks = blocksConfig.blocks.some((block) => block.status !== 'pending');
+    if (!hasStartedBlocks && blocksConfig.totalAudience !== recipients.length) {
+        blocksConfig = buildBlocksConfig({
+            mode: 'blocks',
+            blockCount: blocksConfig.blocks.length,
+            totalAudience: recipients.length
+        });
+        campaign = await updateCampaignBlocksConfig(cleanTenantId, campaign, blocksConfig, { totalRecipients: recipients.length });
+    }
+
+    const { block, recipients: blockRecipients } = getBlockSlice(blocksConfig, blockIndex, recipients);
+    if (!block) throw new Error('Bloque no encontrado.');
+    if (!['pending', 'failed'].includes(block.status)) {
+        throw new Error('Solo se pueden enviar bloques pendientes o fallidos.');
+    }
+    if (blockRecipients.length === 0) throw new Error('El bloque no tiene destinatarios.');
+
+    const sendingConfig = normalizeBlocksConfig({
+        ...blocksConfig,
+        blocks: blocksConfig.blocks.map((entry) => (
+            entry.blockIndex === block.blockIndex ? { ...entry, status: 'sending', sentAt: null } : entry
+        ))
+    });
+    campaign = await updateCampaignBlocksConfig(cleanTenantId, campaign, sendingConfig, {
+        status: 'running',
+        startedAt: campaign.startedAt || nowIso(),
+        updatedBy: options.actorUserId || campaign.updatedBy
+    });
+
+    let queued = 0;
+    for (const recipient of blockRecipients) {
+        const status = normalizeRecipientStatus(recipient.status);
+        if (['sent', 'skipped', 'opted_out'].includes(status)) continue;
+
+        let workingRecipient = recipient;
+        if (status === 'failed') {
+            workingRecipient = await persistRecipientRecord(cleanTenantId, {
+                ...recipient,
+                status: 'pending',
+                failedAt: null,
+                lastError: null,
+                nextAttemptAt: nowIso(),
+                updatedAt: nowIso()
+            });
+        }
+
+        const existingJob = await campaignQueueService.getJobByIdempotencyKey(cleanTenantId, workingRecipient.idempotencyKey);
+        if (existingJob) {
+            await campaignQueueService.requeueJob(cleanTenantId, {
+                idempotencyKey: workingRecipient.idempotencyKey,
+                nextAttemptAt: workingRecipient.nextAttemptAt || nowIso()
+            });
+        } else {
+            await campaignQueueService.enqueueJob(cleanTenantId, {
+                campaignId: campaign.campaignId,
+                recipientId: workingRecipient.recipientId,
+                phone: workingRecipient.phone,
+                moduleId: campaign.moduleId,
+                templateName: campaign.templateName,
+                templateLanguage: campaign.templateLanguage,
+                variablesJson: workingRecipient.variablesJson,
+                idempotencyKey: workingRecipient.idempotencyKey,
+                maxAttempts: workingRecipient.maxAttempts,
+                nextAttemptAt: workingRecipient.nextAttemptAt || nowIso(),
+                status: 'pending'
+            });
+        }
+        queued += 1;
+    }
+
+    await recordCampaignEvent(cleanTenantId, {
+        campaignId: campaign.campaignId,
+        moduleId: campaign.moduleId,
+        eventType: 'campaign_block_started',
+        severity: 'info',
+        actorType: options.actorUserId ? 'user' : 'system',
+        actorId: toNullableText(options.actorUserId),
+        message: `Bloque ${block.blockIndex + 1} iniciado`,
+        payloadJson: {
+            blockIndex: block.blockIndex,
+            size: block.size,
+            queued
+        }
+    });
+
+    const finalCampaign = await recomputeCampaignStats(cleanTenantId, { campaignId: campaign.campaignId, markCompleted: false });
+    emitCampaignUpdated({
+        tenantId: cleanTenantId,
+        type: 'blocks',
+        campaignId: finalCampaign.campaignId,
+        campaign: finalCampaign,
+        reason: 'campaign_block_started',
+        source: 'campaigns.sendCampaignBlock',
+        generatedAt: nowIso()
+    });
+
+    return {
+        campaign: finalCampaign,
+        block: normalizeBlocksConfig(finalCampaign.blocksConfigJson)?.blocks?.find((entry) => entry.blockIndex === blockIndex) || block,
+        queued,
+        recipients: blockRecipients.length
+    };
+}
+
 async function startCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
     const campaignId = toText(options.campaignId || '');
@@ -2148,6 +2393,9 @@ async function startCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
     if (!campaign) throw new Error('Campana no encontrada.');
     if (campaign.status === 'cancelled') throw new Error('No se puede iniciar una campana cancelada.');
     if (campaign.status === 'completed') throw new Error('No se puede iniciar una campana completada.');
+    if (normalizeBlocksConfig(campaign.blocksConfigJson)) {
+        throw new Error('Esta campana usa envio por bloques. Inicia cada bloque desde el detalle de campana.');
+    }
 
     let workingCampaign = campaign;
     if (toInt(campaign.totalRecipients, 0, { min: 0 }) === 0 && options.seedIfEmpty !== false) {
@@ -2368,6 +2616,7 @@ module.exports = {
     getCampaignById,
     listCampaigns,
     startCampaign,
+    sendCampaignBlock,
     pauseCampaign,
     resumeCampaign,
     cancelCampaign,

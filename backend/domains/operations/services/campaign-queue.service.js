@@ -580,12 +580,68 @@ async function skipJob(tenantId = DEFAULT_TENANT_ID, payload = {}) {
     });
 }
 
+async function requeueJob(tenantId = DEFAULT_TENANT_ID, payload = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const idempotencyKey = toText(payload.idempotencyKey || payload.idempotency_key);
+    if (!idempotencyKey) throw new Error('idempotencyKey requerido para reencolar job.');
+
+    if (getStorageDriver() !== 'postgres') {
+        return updateJobByIdempotencyKey(cleanTenantId, idempotencyKey, () => ({
+            status: 'pending',
+            claimedAt: null,
+            claimedBy: null,
+            lastError: null,
+            nextAttemptAt: toIso(payload.nextAttemptAt || payload.next_attempt_at) || nowIso()
+        }));
+    }
+
+    await ensurePostgresSchema();
+    const result = await queryPostgres(
+        `UPDATE tenant_campaign_queue
+            SET status = 'pending',
+                claimed_at = NULL,
+                claimed_by = NULL,
+                last_error = NULL,
+                next_attempt_at = COALESCE($3::timestamptz, NOW()),
+                updated_at = NOW()
+          WHERE tenant_id = $1
+            AND idempotency_key = $2
+        RETURNING job_id, campaign_id, recipient_id, phone, module_id, template_name, template_language,
+                  variables_json, idempotency_key, status, attempt_count, max_attempts, next_attempt_at,
+                  claimed_at, claimed_by, last_error, created_at, updated_at`,
+        [cleanTenantId, idempotencyKey, toIso(payload.nextAttemptAt || payload.next_attempt_at)]
+    );
+    const row = result?.rows?.[0] || null;
+    if (!row) return null;
+    return toPublicRecord({
+        jobId: row.job_id,
+        campaignId: row.campaign_id,
+        recipientId: row.recipient_id,
+        phone: row.phone,
+        moduleId: row.module_id,
+        templateName: row.template_name,
+        templateLanguage: row.template_language,
+        variablesJson: row.variables_json,
+        idempotencyKey: row.idempotency_key,
+        status: row.status,
+        attemptCount: row.attempt_count,
+        maxAttempts: row.max_attempts,
+        nextAttemptAt: row.next_attempt_at,
+        claimedAt: row.claimed_at,
+        claimedBy: row.claimed_by,
+        lastError: row.last_error,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+    });
+}
+
 module.exports = {
     enqueueJob,
     claimBatch,
     ackJob,
     failJob,
     skipJob,
+    requeueJob,
     getJobByIdempotencyKey
 };
 

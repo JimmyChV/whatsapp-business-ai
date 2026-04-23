@@ -108,6 +108,18 @@ export async function startCampaign(requestJson, { campaignId } = {}) {
     });
 }
 
+export async function sendCampaignBlock(requestJson, { campaignId, blockIndex } = {}) {
+    assertRequestJson(requestJson);
+    const cleanCampaignId = toCleanText(campaignId);
+    const cleanBlockIndex = Math.max(0, Math.floor(Number(blockIndex)));
+    if (!cleanCampaignId) throw new Error('campaignId requerido.');
+    if (!Number.isFinite(cleanBlockIndex)) throw new Error('blockIndex requerido.');
+    return requestJson(`/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/blocks/${encodeURIComponent(String(cleanBlockIndex))}/send`, {
+        method: 'POST',
+        body: {}
+    });
+}
+
 export async function pauseCampaign(requestJson, { campaignId } = {}) {
     assertRequestJson(requestJson);
     const cleanCampaignId = toCleanText(campaignId);

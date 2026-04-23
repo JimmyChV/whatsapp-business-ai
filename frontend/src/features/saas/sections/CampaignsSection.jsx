@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import { isTemplateAllowedInCampaigns } from '../helpers/templateUseCase.helpers';
 import { fetchTenantZoneRules } from '../services/labels.service';
-import { fetchCampaignFilterOptions } from '../services/campaigns.service';
+import { fetchCampaignFilterOptions, sendCampaignBlock } from '../services/campaigns.service';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -106,6 +106,17 @@ const CAMPAIGN_DEFAULT_COLUMN_KEYS = ['campaignName', 'category', 'language', 's
 function statusMeta(status = '') {
     const key = toLower(status);
     return STATUS_META[key] || { label: key || 'N/A', className: 'saas-campaigns-status--paused' };
+}
+
+function blockStatusMeta(status = '') {
+    const key = toLower(status || 'pending');
+    const map = {
+        pending: { label: 'Pendiente', className: 'saas-campaigns-status--draft' },
+        sending: { label: 'Enviando', className: 'saas-campaigns-status--running' },
+        completed: { label: 'Completado', className: 'saas-campaigns-status--completed' },
+        failed: { label: 'Fallido', className: 'saas-campaigns-status--failed' }
+    };
+    return map[key] || map.pending;
 }
 
 function progress(campaign = {}) {
@@ -586,6 +597,11 @@ export default React.memo(function CampaignsSection(props = {}) {
     const detailAudienceTitle = showsEstimatedAudienceInDetail
         ? `Audiencia estimada (${estimateNumbers.eligible || estimatedAudienceItems.length})`
         : `Destinatarios (${recipients.length})`;
+    const selectedBlocksConfig = useMemo(() => normalizeBlocksConfig(selectedCampaign?.blocksConfigJson), [selectedCampaign]);
+    const selectedBlocks = selectedBlocksConfig?.blocks || [];
+    const hasSendingBlock = selectedBlocks.some((block) => block.status === 'sending');
+    const completedBlocksCount = selectedBlocks.filter((block) => block.status === 'completed').length;
+    const blocksProgress = selectedBlocks.length > 0 ? Math.round((completedBlocksCount / selectedBlocks.length) * 100) : 0;
 
     const runSafe = useCallback(async (action, fallbackMessage) => {
         try {
@@ -835,6 +851,18 @@ export default React.memo(function CampaignsSection(props = {}) {
             setExcludedCustomerIds(getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds);
         }
     }, [estimateReachAction, labelOptions, selectedCampaign, zoneOptions]);
+
+    const handleSendCampaignBlock = useCallback(async (blockIndex) => {
+        if (typeof requestJson !== 'function') throw new Error('Cliente HTTP no disponible.');
+        if (!selectedCampaignId) throw new Error('Selecciona una campana.');
+        const response = await sendCampaignBlock(requestJson, { campaignId: selectedCampaignId, blockIndex });
+        const campaign = response?.campaign || null;
+        if (campaign) {
+            await selectCampaign?.(campaign.campaignId, { loadDetail: false });
+            await loadTracking(campaign.campaignId);
+        }
+        return response;
+    }, [loadTracking, requestJson, selectCampaign, selectedCampaignId]);
 
     const clearSelectedCampaign = useCallback(() => {
         if (typeof selectCampaign === 'function') {
@@ -1176,7 +1204,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                     bodyClassName="saas-campaigns-detail-panel__body"
                     actions={(
                         <>
-                            <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => {
+                            <button type="button" disabled={loading || form.blocksEnabled || !canWrite} onClick={() => runSafe(async () => {
                                 const payload = buildCampaignPayload();
                                 if (!payload.moduleId || !payload.templateName || !payload.campaignName) throw new Error('Nombre, modulo y template son obligatorios.');
                                 const response = panelMode === 'edit' ? await updateCampaign?.({ campaignId: selectedCampaignId, patch: payload }) : await createCampaign?.(payload);
@@ -1211,7 +1239,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                     await loadTracking(selectedCampaignId);
                                 }
                                 notify({ type: 'info', message: 'Campana iniciada.' });
-                            }, 'No se pudo iniciar campana.')} className={canStartWithGuardrails ? '' : 'saas-campaigns-button-danger'}>Guardar e iniciar</button>
+                            }, 'No se pudo iniciar campana.')} className={canStartWithGuardrails && !form.blocksEnabled ? '' : 'saas-campaigns-button-danger'}>{form.blocksEnabled ? 'Guardar y enviar bloques desde detalle' : 'Guardar e iniciar'}</button>
                             <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
                         </>
                     )}
@@ -1520,7 +1548,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 {toLower(selectedCampaign?.status) === 'draft' && <button type="button" disabled={loading || !canWrite} onClick={() => { setForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions)); setPanelMode('edit'); setMaxRecipientsTouched(false); setLocalEstimate(null); }}>Editar</button>}
                                 {toLower(selectedCampaign?.status) === 'running' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => pauseCampaign?.(selectedCampaignId), 'No se pudo pausar campana.')}>Pausar</button>}
                                 {toLower(selectedCampaign?.status) === 'paused' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => resumeCampaign?.(selectedCampaignId), 'No se pudo reanudar campana.')}>Reanudar</button>}
-                                {['draft', 'scheduled'].includes(toLower(selectedCampaign?.status)) && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => startCampaign?.(selectedCampaignId), 'No se pudo iniciar campana.')}>Iniciar</button>}
+                                {['draft', 'scheduled'].includes(toLower(selectedCampaign?.status)) && !selectedBlocksConfig && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => startCampaign?.(selectedCampaignId), 'No se pudo iniciar campana.')}>Iniciar</button>}
                                 {!['cancelled', 'completed'].includes(toLower(selectedCampaign?.status)) && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => { const ok = await confirm({ title: 'Cancelar campana', message: 'Esta accion detendra el procesamiento pendiente.', confirmText: 'Cancelar campana', cancelText: 'Volver', tone: 'danger' }); if (!ok) return; await cancelCampaign?.(selectedCampaignId, 'cancelled_by_user'); }, 'No se pudo cancelar campana.')}>Cancelar</button>}
                                 <button type="button" disabled={loading} onClick={() => runSafe(async () => { await loadCampaigns?.(); await loadTracking(selectedCampaignId); }, 'No se pudo recargar tracking.')}>Recargar</button>
                                 <button type="button" className="saas-btn-close" disabled={loading} onClick={() => { void handleRequestCloseCampaignPanel(); }}>Cerrar</button>
@@ -1546,6 +1574,53 @@ export default React.memo(function CampaignsSection(props = {}) {
                             </div>
                             <div className="saas-campaigns-progress saas-campaigns-progress--detail"><div className="saas-campaigns-progress__track"><div className="saas-campaigns-progress__fill" style={{ width: `${selectedProgress}%` }} /></div><span>{selectedProgress}%</span></div>
                         </SaasDetailPanelSection>
+                        {selectedBlocks.length > 0 ? (
+                            <SaasDetailPanelSection title="Ejecucion por bloques">
+                                <section className="saas-admin-related-block">
+                                    <div className="saas-campaigns-audience-summary">
+                                        <strong>{`${completedBlocksCount} de ${selectedBlocks.length} bloques completados`}</strong>
+                                        <span>{`Audiencia congelada esperada: ${selectedBlocksConfig?.totalAudience || 0}`}</span>
+                                    </div>
+                                    <div className="saas-campaigns-progress saas-campaigns-progress--detail">
+                                        <div className="saas-campaigns-progress__track"><div className="saas-campaigns-progress__fill" style={{ width: `${blocksProgress}%` }} /></div>
+                                        <span>{blocksProgress}%</span>
+                                    </div>
+                                    <div className="saas-campaigns-block-preview saas-campaigns-block-preview--detail">
+                                        <table>
+                                            <thead>
+                                                <tr><th>Bloque</th><th>Contactos</th><th>Estado</th><th>Completado</th><th>Accion</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                {selectedBlocks.map((block) => {
+                                                    const meta = blockStatusMeta(block.status);
+                                                    const canSendBlock = ['pending', 'failed'].includes(toLower(block.status)) && !hasSendingBlock && canWrite;
+                                                    return (
+                                                        <tr key={block.blockIndex}>
+                                                            <td>{`Bloque ${block.blockIndex + 1}`}</td>
+                                                            <td>{block.size}</td>
+                                                            <td><span className={`saas-campaigns-status ${meta.className}`}>{meta.label}</span></td>
+                                                            <td>{formatDateTime(block.sentAt)}</td>
+                                                            <td>
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={loading || !canSendBlock}
+                                                                    onClick={() => runSafe(async () => {
+                                                                        await handleSendCampaignBlock(block.blockIndex);
+                                                                        notify({ type: 'info', message: `Bloque ${block.blockIndex + 1} iniciado.` });
+                                                                    }, 'No se pudo iniciar el bloque.')}
+                                                                >
+                                                                    {block.status === 'failed' ? 'Reintentar' : 'Enviar bloque'}
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </section>
+                            </SaasDetailPanelSection>
+                        ) : null}
                         <SaasDetailPanelSection title={detailAudienceTitle}>
                             {showsEstimatedAudienceInDetail ? (
                                 <section className="saas-admin-related-block saas-campaigns-table-block">
