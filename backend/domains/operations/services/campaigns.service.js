@@ -1531,6 +1531,8 @@ function sanitizeEligibleCustomer(customer = {}) {
         phone: toText(source.phone || '') || null,
         commercialStatus: toLower(source.commercialStatus || source.commercial_status || 'unknown') || 'unknown',
         tags: ensureArray(source.tags).map((entry) => toText(entry)).filter(Boolean),
+        operationalLabelIds: ensureArray(source.operationalLabelIds || source.tags).map((entry) => toLower(entry)).filter(Boolean),
+        zoneLabelIds: ensureArray(source.zoneLabelIds).map((entry) => toUpper(entry)).filter(Boolean),
         preferredLanguage: toLower(source.preferredLanguage || source.preferred_language || 'es') || 'es',
         marketingOptInStatus: toLower(source.marketingOptInStatus || source.marketing_opt_in_status || 'unknown') || 'unknown'
     };

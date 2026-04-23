@@ -210,6 +210,7 @@ function buildLabelOptions(items = []) {
         .map((item) => ({
             labelId: toUpper(item?.labelId || item?.id || ''),
             name: toText(item?.name || item?.labelName || item?.label || ''),
+            color: toText(item?.color || '') || '#00A884',
             isActive: item?.isActive !== false
         }))
         .filter((item) => item.labelId && item.name && item.isActive)
@@ -221,6 +222,7 @@ function buildZoneOptions(items = []) {
         .map((item) => ({
             ruleId: toUpper(item?.ruleId || item?.rule_id || item?.id || ''),
             name: toText(item?.name || item?.label || ''),
+            color: toText(item?.color || '') || '#00A884',
             isActive: item?.isActive !== false
         }))
         .filter((item) => item.ruleId && item.name && item.isActive)
@@ -405,6 +407,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [showColumnsMenu, setShowColumnsMenu] = useState(false);
     const [maxRecipientsTouched, setMaxRecipientsTouched] = useState(false);
     const [localEstimate, setLocalEstimate] = useState(null);
+    const [inclusionOnlyEstimate, setInclusionOnlyEstimate] = useState(null);
     const [excludedCustomerIds, setExcludedCustomerIds] = useState([]);
     const [manualExclusionSearch, setManualExclusionSearch] = useState('');
     const [zoneRules, setZoneRules] = useState([]);
@@ -453,6 +456,32 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const labelOptions = useMemo(() => buildLabelOptions(availableLabels), [availableLabels]);
     const zoneOptions = useMemo(() => buildZoneOptions(zoneRules), [zoneRules]);
+    const zoneFilterChipOptions = useMemo(() => (
+        campaignFilterOptions.zone_labels.length > 0
+            ? campaignFilterOptions.zone_labels.map((item) => ({
+                id: toUpper(item.id),
+                name: toText(item.name),
+                color: toText(item.color) || '#00A884'
+            }))
+            : zoneOptions.map((item) => ({
+                id: toUpper(item.ruleId),
+                name: item.name,
+                color: item.color || '#00A884'
+            }))
+    ), [campaignFilterOptions.zone_labels, zoneOptions]);
+    const operationalFilterChipOptions = useMemo(() => (
+        campaignFilterOptions.operational_labels.length > 0
+            ? campaignFilterOptions.operational_labels.map((item) => ({
+                id: toUpper(item.id),
+                name: toText(item.name),
+                color: toText(item.color) || '#00A884'
+            }))
+            : labelOptions.map((item) => ({
+                id: toUpper(item.labelId),
+                name: item.name,
+                color: item.color || '#00A884'
+            }))
+    ), [campaignFilterOptions.operational_labels, labelOptions]);
     const columnPrefs = useSaasColumnPrefs('campaigns', CAMPAIGN_DEFAULT_COLUMN_KEYS, {
         requestJson,
         availableColumns: CAMPAIGN_TABLE_COLUMNS
@@ -562,11 +591,38 @@ export default React.memo(function CampaignsSection(props = {}) {
                 tags: Array.isArray(item?.tags)
                     ? item.tags.map((entry) => toText(entry)).filter(Boolean)
                     : [],
+                operationalLabelIds: Array.isArray(item?.operationalLabelIds)
+                    ? item.operationalLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
+                    : [],
+                zoneLabelIds: Array.isArray(item?.zoneLabelIds)
+                    ? item.zoneLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
+                    : [],
                 preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
                 marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
             }))
             .filter((item) => item.customerId)
     ), [reachEstimate]);
+    const inclusionOnlyAudienceItems = useMemo(() => (
+        (Array.isArray(inclusionOnlyEstimate?.items) ? inclusionOnlyEstimate.items : [])
+            .map((item) => ({
+                customerId: toText(item?.customerId),
+                contactName: toText(item?.contactName) || 'Sin nombre',
+                phone: toText(item?.phone) || '-',
+                commercialStatus: toLower(item?.commercialStatus || 'unknown') || 'unknown',
+                tags: Array.isArray(item?.tags)
+                    ? item.tags.map((entry) => toText(entry)).filter(Boolean)
+                    : [],
+                operationalLabelIds: Array.isArray(item?.operationalLabelIds)
+                    ? item.operationalLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
+                    : [],
+                zoneLabelIds: Array.isArray(item?.zoneLabelIds)
+                    ? item.zoneLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
+                    : [],
+                preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
+                marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
+            }))
+            .filter((item) => item.customerId)
+    ), [inclusionOnlyEstimate]);
     const excludedCustomerIdSet = useMemo(() => (
         new Set((Array.isArray(excludedCustomerIds) ? excludedCustomerIds : []).map((entry) => toText(entry)).filter(Boolean))
     ), [excludedCustomerIds]);
@@ -649,6 +705,42 @@ export default React.memo(function CampaignsSection(props = {}) {
         () => countDeepFilterSelections(form.exclusionFilters),
         [form.exclusionFilters]
     );
+    const exclusionAudienceOptions = useMemo(() => {
+        const fallbackOptInOptions = [
+            { id: 'opted_in', name: 'Con opt-in', color: '#00A884' },
+            { id: 'pending', name: 'Pendiente', color: '#FFB02E' },
+            { id: 'opted_out', name: 'Sin opt-in', color: '#FF5C5C' }
+        ];
+        const source = inclusionOnlyAudienceItems;
+        if (inclusionOnlyEstimate && source.length === 0) {
+            return {
+                commercialStatuses: [],
+                optInStatuses: [],
+                zoneLabels: [],
+                operationalLabels: []
+            };
+        }
+        if (source.length === 0) {
+            return {
+                commercialStatuses: commercialFilterOptions,
+                optInStatuses: fallbackOptInOptions,
+                zoneLabels: zoneFilterChipOptions,
+                operationalLabels: operationalFilterChipOptions
+            };
+        }
+
+        const commercialStatusSet = new Set(source.map((item) => toLower(item.commercialStatus)).filter(Boolean));
+        const optInSet = new Set(source.map((item) => toLower(item.marketingOptInStatus)).filter(Boolean));
+        const zoneSet = new Set(source.flatMap((item) => item.zoneLabelIds || []).map((entry) => toUpper(entry)).filter(Boolean));
+        const operationalSet = new Set(source.flatMap((item) => item.operationalLabelIds || []).map((entry) => toUpper(entry)).filter(Boolean));
+
+        return {
+            commercialStatuses: commercialFilterOptions.filter((item) => commercialStatusSet.has(toLower(item.key))),
+            optInStatuses: fallbackOptInOptions.filter((item) => optInSet.has(toLower(item.id))),
+            zoneLabels: zoneFilterChipOptions.filter((item) => zoneSet.has(toUpper(item.id))),
+            operationalLabels: operationalFilterChipOptions.filter((item) => operationalSet.has(toUpper(item.id)))
+        };
+    }, [commercialFilterOptions, inclusionOnlyAudienceItems, inclusionOnlyEstimate, operationalFilterChipOptions, zoneFilterChipOptions]);
     const selectedStatusKey = toLower(selectedCampaign?.status);
     const showsEstimatedAudienceInDetail = panelMode === 'detail' && ['draft', 'scheduled'].includes(selectedStatusKey);
     const detailAudienceTitle = showsEstimatedAudienceInDetail
@@ -870,9 +962,22 @@ export default React.memo(function CampaignsSection(props = {}) {
         };
     }, [blockPreview, excludedCustomerIds, form, labelOptions, zoneOptions]);
 
+    const buildEstimatePayload = useCallback((options = {}) => {
+        const payload = buildCampaignPayload();
+        if (options?.inclusionOnly !== true) return payload;
+        return {
+            ...payload,
+            audienceSelectionJson: {
+                ...payload.audienceSelectionJson,
+                excludedCustomerIds: [],
+                exclusionFilters: { ...EMPTY_DEEP_FILTERS }
+            }
+        };
+    }, [buildCampaignPayload]);
+
     const runEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
-        const payload = buildCampaignPayload();
+        const payload = buildEstimatePayload();
         if (!payload.moduleId) throw new Error('Selecciona un modulo antes de estimar alcance.');
         if (!payload.templateName) throw new Error('Selecciona un template aprobado antes de estimar alcance.');
         const response = await estimateReachAction({
@@ -889,17 +994,52 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (estimate) {
             setLocalEstimate(estimate);
         }
-    }, [buildCampaignPayload, estimateReachAction]);
+    }, [buildEstimatePayload, estimateReachAction]);
+
+    const runInclusionOnlyEstimate = useCallback(async () => {
+        if (typeof estimateReachAction !== 'function') return;
+        const payload = buildEstimatePayload({ inclusionOnly: true });
+        if (!payload.moduleId || !payload.templateName) return;
+        const response = await estimateReachAction({
+            scopeModuleId: payload.scopeModuleId,
+            moduleId: payload.moduleId,
+            templateName: payload.templateName,
+            templateLanguage: payload.templateLanguage,
+            filters: payload.audienceFiltersJson,
+            audienceSelectionJson: payload.audienceSelectionJson
+        });
+        const estimate = response?.estimate && typeof response.estimate === 'object'
+            ? response.estimate
+            : null;
+        if (estimate) {
+            setInclusionOnlyEstimate(estimate);
+        }
+    }, [buildEstimatePayload, estimateReachAction]);
 
     useEffect(() => {
         if (panelMode !== 'create' && panelMode !== 'edit') return undefined;
-        if (!form.moduleId || !form.templateName) return undefined;
-        if (!hasDeepFilterValue(form.inclusionFilters) && !hasDeepFilterValue(form.exclusionFilters)) return undefined;
+        if (!form.moduleId || !form.templateName) {
+            setLocalEstimate(null);
+            setInclusionOnlyEstimate(null);
+            return undefined;
+        }
         const timer = setTimeout(() => {
-            runEstimate().catch(() => {});
+            Promise.all([
+                runEstimate().catch(() => {}),
+                runInclusionOnlyEstimate().catch(() => {})
+            ]).catch(() => {});
         }, 400);
         return () => clearTimeout(timer);
-    }, [form.exclusionFilters, form.inclusionFilters, form.moduleId, form.templateName, panelMode, runEstimate]);
+    }, [
+        excludedCustomerIds,
+        form.exclusionFilters,
+        form.inclusionFilters,
+        form.moduleId,
+        form.templateName,
+        panelMode,
+        runEstimate,
+        runInclusionOnlyEstimate
+    ]);
 
     const runDetailEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
@@ -947,6 +1087,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const handleCloseCampaignDetail = useCallback(() => {
         setPanelMode('list');
         setLocalEstimate(null);
+        setInclusionOnlyEstimate(null);
         setMaxRecipientsTouched(false);
         setExcludedCustomerIds([]);
         clearSelectedCampaign();
@@ -965,6 +1106,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         }
 
         setLocalEstimate(null);
+        setInclusionOnlyEstimate(null);
         setMaxRecipientsTouched(false);
         setExcludedCustomerIds([]);
         if (panelMode === 'edit' && selectedCampaign) {
@@ -1029,10 +1171,10 @@ export default React.memo(function CampaignsSection(props = {}) {
                 chips.push({ keyName, value, label: option?.[labelKey] || value, normalize });
             });
         };
-        addList('commercial_status', campaignFilterOptions.commercial_statuses, 'name', 'key', toLower);
+        addList('commercial_status', commercialFilterOptions, 'name', 'key', toLower);
         addList('opt_in_status', [{ id: 'opted_in', name: 'Opted in' }, { id: 'pending', name: 'Pendiente' }, { id: 'opted_out', name: 'Opted out' }], 'name', 'id', toLower);
-        addList('zone_label_ids', campaignFilterOptions.zone_labels, 'name', 'id', toUpper);
-        addList('operational_label_ids', campaignFilterOptions.operational_labels, 'name', 'id', toUpper);
+        addList('zone_label_ids', zoneFilterChipOptions, 'name', 'id', toUpper);
+        addList('operational_label_ids', operationalFilterChipOptions, 'name', 'id', toUpper);
         addList('customer_type_ids', campaignFilterOptions.customer_types, 'name', 'id', toText);
         if (filters.assigned_user_id) {
             const user = campaignFilterOptions.assigned_users.find((entry) => entry.id === filters.assigned_user_id);
@@ -1089,11 +1231,22 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const renderAudienceFilterCard = (scope = 'inclusionFilters', title = 'Filtros', tone = 'include') => {
         const filters = normalizeDeepFilters(form?.[scope] || {});
-        const optInOptions = [
+        const optInOptions = scope === 'exclusionFilters'
+            ? exclusionAudienceOptions.optInStatuses
+            : [
             { id: 'opted_in', name: 'Con opt-in', color: '#00A884' },
             { id: 'pending', name: 'Pendiente', color: '#FFB02E' },
             { id: 'opted_out', name: 'Sin opt-in', color: '#FF5C5C' }
         ];
+        const statusOptions = scope === 'exclusionFilters'
+            ? exclusionAudienceOptions.commercialStatuses
+            : commercialFilterOptions;
+        const zoneOptionsForScope = scope === 'exclusionFilters'
+            ? exclusionAudienceOptions.zoneLabels
+            : zoneFilterChipOptions;
+        const operationalOptionsForScope = scope === 'exclusionFilters'
+            ? exclusionAudienceOptions.operationalLabels
+            : operationalFilterChipOptions;
         const emptyText = scope === 'inclusionFilters' ? 'Todos los clientes' : 'Nadie excluido por filtros';
         return (
             <section className={`saas-campaigns-audience-card saas-campaigns-audience-card--${tone}`}>
@@ -1105,10 +1258,10 @@ export default React.memo(function CampaignsSection(props = {}) {
                     <span className="saas-campaigns-audience-card__count">{countDeepFilterSelections(filters)} seleccionados</span>
                 </div>
                 <div className="saas-campaigns-audience-card__body">
-                    {renderAudienceToggleGroup(scope, 'commercial_status', 'Estado comercial', commercialFilterOptions, toLower)}
+                    {renderAudienceToggleGroup(scope, 'commercial_status', 'Estado comercial', statusOptions, toLower)}
                     {renderAudienceToggleGroup(scope, 'opt_in_status', 'Opt-in', optInOptions, toLower)}
-                    {renderAudienceToggleGroup(scope, 'zone_label_ids', 'Zonas', campaignFilterOptions.zone_labels, toUpper)}
-                    {renderAudienceToggleGroup(scope, 'operational_label_ids', 'Etiquetas operativas', campaignFilterOptions.operational_labels, toUpper)}
+                    {renderAudienceToggleGroup(scope, 'zone_label_ids', 'Zonas', zoneOptionsForScope, toUpper)}
+                    {renderAudienceToggleGroup(scope, 'operational_label_ids', 'Etiquetas operativas', operationalOptionsForScope, toUpper)}
                     {scope === 'exclusionFilters' ? (
                         <div className="saas-admin-field">
                             <label>Exclusion manual por nombre o telefono</label>
@@ -1436,7 +1589,10 @@ export default React.memo(function CampaignsSection(props = {}) {
                                     <div><small>Excluidos</small><strong>{estimateNumbers.excluded}</strong></div>
                                 </div>
                                 <button type="button" disabled={loading || estimating || !canWrite} onClick={() => runSafe(async () => {
-                                    await runEstimate();
+                                    await Promise.all([
+                                        runEstimate(),
+                                        runInclusionOnlyEstimate()
+                                    ]);
                                     notify({ type: 'info', message: 'Estimacion actualizada.' });
                                 }, 'No se pudo estimar alcance.')}>Estimar alcance</button>
                             </div>
