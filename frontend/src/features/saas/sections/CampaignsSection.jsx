@@ -110,6 +110,14 @@ const CAMPAIGN_TABLE_COLUMNS = [
 ];
 
 const CAMPAIGN_DEFAULT_COLUMN_KEYS = ['campaignName', 'category', 'language', 'status', 'moduleId', 'updatedAt'];
+const CAMPAIGN_WIZARD_STEPS = [
+    { key: 'campaign', label: 'Datos de campana' },
+    { key: 'inclusion', label: 'Inclusion' },
+    { key: 'exclusion', label: 'Exclusion' },
+    { key: 'review', label: 'Revision manual' },
+    { key: 'delivery', label: 'Envio' },
+    { key: 'summary', label: 'Resumen' }
+];
 
 function statusMeta(status = '') {
     const key = toLower(status);
@@ -400,6 +408,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     } = context;
 
     const [panelMode, setPanelMode] = useState('list');
+    const [wizardStep, setWizardStep] = useState(1);
     const [form, setForm] = useState(EMPTY_FORM);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
@@ -705,6 +714,20 @@ export default React.memo(function CampaignsSection(props = {}) {
         () => countDeepFilterSelections(form.exclusionFilters),
         [form.exclusionFilters]
     );
+    const currentWizardStep = CAMPAIGN_WIZARD_STEPS[wizardStep - 1] || CAMPAIGN_WIZARD_STEPS[0];
+    const wizardTitle = panelMode === 'edit'
+        ? (toText(form.campaignName) || 'Editar campana')
+        : (toText(form.campaignName) || 'Nueva campana');
+    const wizardCanAdvance = useMemo(() => {
+        if (wizardStep === 1) {
+            return Boolean(toText(form.campaignName) && toText(form.moduleId) && toText(form.templateId || form.templateName));
+        }
+        if (wizardStep === 5 && form.blocksEnabled) {
+            const count = Math.floor(toNumber(form.blockCount, 2));
+            return count >= 2 && count <= 10;
+        }
+        return true;
+    }, [form.blockCount, form.blocksEnabled, form.campaignName, form.moduleId, form.templateId, form.templateName, wizardStep]);
     const exclusionAudienceOptions = useMemo(() => {
         const fallbackOptInOptions = [
             { id: 'opted_in', name: 'Con opt-in', color: '#00A884' },
@@ -1129,6 +1152,46 @@ export default React.memo(function CampaignsSection(props = {}) {
         zoneOptions
     ]);
 
+    useEffect(() => {
+        if (panelMode === 'create' || panelMode === 'edit') {
+            setWizardStep(1);
+        }
+    }, [panelMode, selectedCampaignId]);
+
+    const validateWizardStep = useCallback((step = wizardStep) => {
+        if (step === 1) {
+            if (!toText(form.campaignName)) {
+                notify({ type: 'warn', message: 'Ingresa un nombre para la campana antes de continuar.' });
+                return false;
+            }
+            if (!toText(form.moduleId)) {
+                notify({ type: 'warn', message: 'Selecciona un modulo antes de continuar.' });
+                return false;
+            }
+            if (!toText(form.templateId || form.templateName)) {
+                notify({ type: 'warn', message: 'Selecciona un template aprobado antes de continuar.' });
+                return false;
+            }
+        }
+        if (step === 5 && form.blocksEnabled) {
+            const count = Math.floor(toNumber(form.blockCount, 2));
+            if (count < 2 || count > 10) {
+                notify({ type: 'warn', message: 'El numero de bloques debe estar entre 2 y 10.' });
+                return false;
+            }
+        }
+        return true;
+    }, [form.blockCount, form.blocksEnabled, form.campaignName, form.moduleId, form.templateId, form.templateName, notify, wizardStep]);
+
+    const goToNextWizardStep = useCallback(() => {
+        if (!validateWizardStep(wizardStep)) return;
+        setWizardStep((prev) => Math.min(prev + 1, CAMPAIGN_WIZARD_STEPS.length));
+    }, [validateWizardStep, wizardStep]);
+
+    const goToPreviousWizardStep = useCallback(() => {
+        setWizardStep((prev) => Math.max(prev - 1, 1));
+    }, []);
+
     const handleRequestCloseCampaignPanel = useCallback(async () => {
         if (showColumnsMenu) {
             setShowColumnsMenu(false);
@@ -1332,6 +1395,163 @@ export default React.memo(function CampaignsSection(props = {}) {
     const selectedProgress = progress(selectedCampaign);
     const canWrite = !tenantScopeLocked;
     const layoutSelectedId = panelMode === 'create' ? '__create__' : (selectedCampaignId || '');
+    const renderWizardPlaceholder = (stepNumber, title, description) => (
+        <SaasDetailPanelSection title={`Paso ${stepNumber} - ${title}`}>
+            <div className="saas-campaigns-wizard-placeholder">
+                <strong>{title}</strong>
+                <p>{description}</p>
+            </div>
+        </SaasDetailPanelSection>
+    );
+
+    const renderWizardStepContent = () => {
+        switch (wizardStep) {
+        case 1:
+            return (
+                <SaasDetailPanelSection title="Paso 1 - Datos de campana">
+                    <div className="saas-campaigns-builder saas-campaigns-builder--full">
+                        <div className="saas-campaigns-builder__form">
+                            <div className="saas-admin-form-row">
+                                <div className="saas-admin-field">
+                                    <label>Nombre</label>
+                                    <input value={form.campaignName} onChange={(e) => setForm((p) => ({ ...p, campaignName: e.target.value }))} />
+                                </div>
+                                <div className="saas-admin-field">
+                                    <label>Modulo</label>
+                                    <select value={form.moduleId} onChange={(e) => setForm((p) => ({ ...p, moduleId: e.target.value, templateId: '', templateName: '' }))}>
+                                        <option value="">Selecciona modulo</option>
+                                        {moduleOptions.map((m) => <option key={m.moduleId} value={m.moduleId}>{m.label}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="saas-admin-form-row">
+                                <div className="saas-admin-field">
+                                    <label>Template aprobado</label>
+                                    <select
+                                        value={form.templateId}
+                                        onChange={(e) => {
+                                            const id = toText(e.target.value);
+                                            const t = templatesByModule.find((x) => x.templateId === id) || null;
+                                            setForm((p) => ({ ...p, templateId: id, templateName: t?.templateName || '', templateLanguage: t?.templateLanguage || 'es' }));
+                                        }}
+                                    >
+                                        <option value="">Selecciona template</option>
+                                        {templatesByModule.map((t) => <option key={t.templateId} value={t.templateId}>{`${t.templateName} (${toText(t.templateLanguage).toUpperCase()})`}</option>)}
+                                    </select>
+                                </div>
+                                <div className="saas-admin-field">
+                                    <label>Programada</label>
+                                    <input type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm((p) => ({ ...p, scheduledAt: e.target.value }))} />
+                                </div>
+                            </div>
+                            <div className="saas-admin-form-row saas-admin-form-row--single">
+                                <div className="saas-admin-field">
+                                    <label>Descripcion</label>
+                                    <textarea value={form.campaignDescription} onChange={(e) => setForm((p) => ({ ...p, campaignDescription: e.target.value }))} />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </SaasDetailPanelSection>
+            );
+        case 2:
+            return renderWizardPlaceholder(2, 'Audiencia base', 'En el siguiente commit este paso mostrara la inclusion de audiencia por datos del cliente, etiquetas globales, zonas y etiquetas operativas.');
+        case 3:
+            return renderWizardPlaceholder(3, 'Exclusiones', 'Aqui se mostraran las exclusiones dependientes de la inclusion y la exclusion manual por cliente.');
+        case 4:
+            return renderWizardPlaceholder(4, 'Revision manual', 'Aqui se mostrara la lista final de clientes antes del envio para excluirlos manualmente si hace falta.');
+        case 5:
+            return (
+                <SaasDetailPanelSection title="Paso 5 - Envio">
+                    <div className="saas-admin-related-block">
+                        <div className="saas-campaigns-blocks-header">
+                            <label className="saas-campaigns-block-toggle">
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(form.blocksEnabled)}
+                                    onChange={(event) => setForm((prev) => ({ ...prev, blocksEnabled: event.target.checked }))}
+                                />
+                                <span>Enviar en bloques</span>
+                            </label>
+                            <span className="saas-campaigns-estimation-help">Activalo para dividir la campana entre 2 y 10 bloques.</span>
+                        </div>
+                        {form.blocksEnabled ? (
+                            <div className="saas-campaigns-blocks-config">
+                                <div className="saas-admin-field">
+                                    <label>Numero de bloques</label>
+                                    <input
+                                        type="number"
+                                        min={2}
+                                        max={10}
+                                        value={form.blockCount}
+                                        onChange={(event) => {
+                                            const next = Math.max(2, Math.min(10, Math.floor(toNumber(event.target.value, 2))));
+                                            setForm((prev) => ({ ...prev, blockCount: next }));
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        ) : (
+                            <span className="saas-campaigns-estimation-help">La campana se enviara en una sola ejecucion.</span>
+                        )}
+                    </div>
+                </SaasDetailPanelSection>
+            );
+        case 6:
+        default:
+            return renderWizardPlaceholder(6, 'Resumen final', 'El resumen de audiencia, bloques y acciones finales se completa en los siguientes commits del wizard.');
+        }
+    };
+
+    const renderWizardActions = () => {
+        if (wizardStep === 6) {
+            return (
+                <>
+                    <button type="button" disabled={loading || form.blocksEnabled || !canWrite} onClick={() => runSafe(async () => {
+                        const payload = buildCampaignPayload();
+                        if (!payload.moduleId || !payload.templateName || !payload.campaignName) throw new Error('Nombre, modulo y template son obligatorios.');
+                        const response = panelMode === 'edit' ? await updateCampaign?.({ campaignId: selectedCampaignId, patch: payload }) : await createCampaign?.(payload);
+                        const campaign = response?.campaign || null;
+                        if (!campaign) return;
+                        await loadTracking(campaign.campaignId);
+                        await selectCampaign?.(campaign.campaignId, { loadDetail: false });
+                        setPanelMode('detail');
+                        setLocalEstimate(null);
+                        setInclusionOnlyEstimate(null);
+                        notify({ type: 'info', message: panelMode === 'edit' ? 'Campana actualizada.' : 'Campana creada.' });
+                    }, 'No se pudo guardar campana.')}>Guardar borrador</button>
+                    <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => {
+                        if (panelMode === 'create') {
+                            await (async () => {
+                                if (!canStartWithGuardrails) throw new Error('Debes cumplir las validaciones previas antes de iniciar la campana.');
+                                const payload = buildCampaignPayload();
+                                const response = await createCampaign?.(payload);
+                                const campaign = response?.campaign;
+                                if (!campaign) throw new Error('No se pudo crear campana.');
+                                await startCampaign?.(campaign.campaignId);
+                                await selectCampaign?.(campaign.campaignId, { loadDetail: true });
+                                await loadTracking(campaign.campaignId);
+                                setPanelMode('detail');
+                            })();
+                        } else {
+                            if (!canStartWithGuardrails) throw new Error('Debes cumplir las validaciones previas antes de iniciar la campana.');
+                            await startCampaign?.(selectedCampaignId);
+                            await loadTracking(selectedCampaignId);
+                        }
+                        notify({ type: 'info', message: 'Campana iniciada.' });
+                    }, 'No se pudo iniciar campana.')} className={canStartWithGuardrails && !form.blocksEnabled ? '' : 'saas-campaigns-button-danger'}>{form.blocksEnabled ? 'Guardar y enviar bloques desde detalle' : 'Guardar e iniciar'}</button>
+                    <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
+                </>
+            );
+        }
+        return (
+            <>
+                <button type="button" disabled={loading || wizardStep <= 1} onClick={goToPreviousWizardStep}>Atras</button>
+                <button type="button" disabled={loading || !wizardCanAdvance} onClick={goToNextWizardStep}>Siguiente</button>
+                <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
+            </>
+        );
+    };
 
     const headerElement = (
         <SaasViewHeader
@@ -1352,9 +1572,11 @@ export default React.memo(function CampaignsSection(props = {}) {
                     label: 'Nueva',
                     onClick: () => {
                         setPanelMode('create');
+                        setWizardStep(1);
                         clearSelectedCampaign();
                         setMaxRecipientsTouched(false);
                         setLocalEstimate(null);
+                        setInclusionOnlyEstimate(null);
                         setForm({ ...EMPTY_FORM, moduleId: moduleOptions[0]?.moduleId || '' });
                     },
                     disabled: loading || tenantScopeLocked
@@ -1445,268 +1667,35 @@ export default React.memo(function CampaignsSection(props = {}) {
             {tenantScopeLocked && <div className="saas-admin-empty-state saas-admin-empty-state--detail"><h4>Sin empresa activa</h4><p>Selecciona una empresa para continuar.</p></div>}
             {!tenantScopeLocked && (panelMode === 'create' || panelMode === 'edit') && (
                 <SaasDetailPanel
-                    title={panelMode === 'edit' ? (toText(form.campaignName) || 'Editar campana') : 'Nueva campana'}
-                    subtitle={panelMode === 'edit' ? 'Actualiza segmentacion, template y programacion.' : 'Configura segmentacion, template y estimacion.'}
+                    title={wizardTitle}
+                    subtitle={`Paso ${wizardStep} de ${CAMPAIGN_WIZARD_STEPS.length} - ${currentWizardStep.label}`}
                     className="saas-campaigns-detail-panel saas-campaigns-detail-panel--builder"
                     bodyClassName="saas-campaigns-detail-panel__body"
-                    actions={(
-                        <>
-                            <button type="button" disabled={loading || form.blocksEnabled || !canWrite} onClick={() => runSafe(async () => {
-                                const payload = buildCampaignPayload();
-                                if (!payload.moduleId || !payload.templateName || !payload.campaignName) throw new Error('Nombre, modulo y template son obligatorios.');
-                                const response = panelMode === 'edit' ? await updateCampaign?.({ campaignId: selectedCampaignId, patch: payload }) : await createCampaign?.(payload);
-                                const campaign = response?.campaign || null;
-                                if (!campaign) return;
-                                await loadTracking(campaign.campaignId);
-                                await selectCampaign?.(campaign.campaignId, { loadDetail: false });
-                                setPanelMode('detail');
-                                setLocalEstimate(null);
-                                notify({ type: 'info', message: panelMode === 'edit' ? 'Campana actualizada.' : 'Campana creada.' });
-                            }, 'No se pudo guardar campana.')}>Guardar borrador</button>
-                            <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => {
-                                if (panelMode === 'create') {
-                                    await (async () => {
-                                        if (!canStartWithGuardrails) throw new Error('Debes cumplir las validaciones previas antes de iniciar la campana.');
-                                        const payload = buildCampaignPayload();
-                                        const response = await createCampaign?.(payload);
-                                        const campaign = response?.campaign;
-                                        if (!campaign) throw new Error('No se pudo crear campana.');
-                                        await startCampaign?.(campaign.campaignId);
-                                        await selectCampaign?.(campaign.campaignId, { loadDetail: true });
-                                        await loadTracking(campaign.campaignId);
-                                        setPanelMode('detail');
-                                    })();
-                                } else {
-                                    if (!canStartWithGuardrails) throw new Error('Debes cumplir las validaciones previas antes de iniciar la campana.');
-                                    await startCampaign?.(selectedCampaignId);
-                                    await loadTracking(selectedCampaignId);
-                                }
-                                notify({ type: 'info', message: 'Campana iniciada.' });
-                            }, 'No se pudo iniciar campana.')} className={canStartWithGuardrails && !form.blocksEnabled ? '' : 'saas-campaigns-button-danger'}>{form.blocksEnabled ? 'Guardar y enviar bloques desde detalle' : 'Guardar e iniciar'}</button>
-                            <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
-                        </>
-                    )}
+                    actions={renderWizardActions()}
                 >
-                    <SaasDetailPanelSection title="Configuracion base">
-                        <div className="saas-campaigns-builder saas-campaigns-builder--full">
-                            <div className="saas-campaigns-builder__form">
-                                <div className="saas-admin-form-row">
-                                    <div className="saas-admin-field">
-                                        <label>Nombre</label>
-                                        <input value={form.campaignName} onChange={(e) => setForm((p) => ({ ...p, campaignName: e.target.value }))} />
+                    <div className="saas-campaigns-wizard-shell">
+                        <div className="saas-campaigns-wizard-progress">
+                            {CAMPAIGN_WIZARD_STEPS.map((step, index) => {
+                                const stepNumber = index + 1;
+                                const stateClass = stepNumber === wizardStep
+                                    ? 'is-current'
+                                    : (stepNumber < wizardStep ? 'is-complete' : '');
+                                return (
+                                    <div key={step.key} className={`saas-campaigns-wizard-progress__item ${stateClass}`.trim()}>
+                                        <span>{stepNumber}</span>
+                                        <strong>{step.label}</strong>
                                     </div>
-                                    <div className="saas-admin-field">
-                                        <label>Modulo</label>
-                                        <select value={form.moduleId} onChange={(e) => setForm((p) => ({ ...p, moduleId: e.target.value, templateId: '', templateName: '' }))}>
-                                            <option value="">Selecciona modulo</option>
-                                            {moduleOptions.map((m) => <option key={m.moduleId} value={m.moduleId}>{m.label}</option>)}
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="saas-admin-form-row">
-                                    <div className="saas-admin-field">
-                                        <label>Template aprobado</label>
-                                        <select
-                                            value={form.templateId}
-                                            onChange={(e) => {
-                                                const id = toText(e.target.value);
-                                                const t = templatesByModule.find((x) => x.templateId === id) || null;
-                                                setForm((p) => ({ ...p, templateId: id, templateName: t?.templateName || '', templateLanguage: t?.templateLanguage || 'es' }));
-                                            }}
-                                        >
-                                            <option value="">Selecciona template</option>
-                                            {templatesByModule.map((t) => <option key={t.templateId} value={t.templateId}>{`${t.templateName} (${toText(t.templateLanguage).toUpperCase()})`}</option>)}
-                                        </select>
-                                    </div>
-                                    <div className="saas-admin-field">
-                                        <label>Programada</label>
-                                        <input type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm((p) => ({ ...p, scheduledAt: e.target.value }))} />
-                                    </div>
-                                </div>
-                                <div className="saas-admin-form-row saas-admin-form-row--single">
-                                    <div className="saas-admin-field">
-                                        <label>Descripcion</label>
-                                        <textarea value={form.campaignDescription} onChange={(e) => setForm((p) => ({ ...p, campaignDescription: e.target.value }))} />
-                                    </div>
-                                </div>
-                            </div>
+                                );
+                            })}
                         </div>
-                    </SaasDetailPanelSection>
-                    <SaasDetailPanelSection title="Audiencia">
-                        <div className="saas-campaigns-filter-chip-row">
-                            {renderAudienceFilterChips('inclusionFilters', 'Incluir')}
-                            {renderAudienceFilterChips('exclusionFilters', 'Excluir')}
+                        <div className="saas-campaigns-wizard-content">
+                            {renderWizardStepContent()}
                         </div>
-                        <div className="saas-campaigns-audience-columns">
-                            {renderAudienceFilterCard('inclusionFilters', `¿A quien incluir? (${inclusionSelectionCount})`, 'include')}
-                            {renderAudienceFilterCard('exclusionFilters', `¿A quien excluir? (${exclusionSelectionCount})`, 'exclude')}
-                        </div>
-                        <div className="saas-campaigns-compact-filters">
-                            <div className="saas-admin-field">
-                                <label>Tipo de cliente</label>
-                                <select
-                                    value={normalizeDeepFilters(form.inclusionFilters).customer_type_ids[0] || ''}
-                                    onChange={(event) => updateDeepFilter('inclusionFilters', 'customer_type_ids', event.target.value ? [event.target.value] : [])}
-                                >
-                                    <option value="">Todos</option>
-                                    {campaignFilterOptions.customer_types.map((option) => <option key={`include_type_${option.id}`} value={option.id}>{option.name}</option>)}
-                                </select>
-                            </div>
-                            <div className="saas-admin-field">
-                                <label>Asignado a</label>
-                                <select
-                                    value={normalizeDeepFilters(form.inclusionFilters).assigned_user_id}
-                                    onChange={(event) => updateDeepFilter('inclusionFilters', 'assigned_user_id', event.target.value)}
-                                >
-                                    <option value="">Todos</option>
-                                    {campaignFilterOptions.assigned_users.map((option) => <option key={`include_user_${option.id}`} value={option.id}>{option.name}</option>)}
-                                </select>
-                            </div>
-                            <div className="saas-admin-field">
-                                <label>Fecha desde</label>
-                                <input
-                                    type="date"
-                                    value={normalizeDeepFilters(form.inclusionFilters).created_after}
-                                    onChange={(event) => updateDeepFilter('inclusionFilters', 'created_after', event.target.value)}
-                                />
-                            </div>
-                            <div className="saas-admin-field">
-                                <label>Fecha hasta</label>
-                                <input
-                                    type="date"
-                                    value={normalizeDeepFilters(form.inclusionFilters).created_before}
-                                    onChange={(event) => updateDeepFilter('inclusionFilters', 'created_before', event.target.value)}
-                                />
-                            </div>
-                        </div>
-                    </SaasDetailPanelSection>
-                    <SaasDetailPanelSection title="Alcance y envio">
-                        <div className="saas-admin-related-block">
-                            <div className="saas-campaigns-metrics-header">
-                                <div className="saas-campaigns-estimation-grid">
-                                    <div><small>Total</small><strong>{estimateNumbers.total}</strong></div>
-                                    <div><small>Elegibles</small><strong>{estimateNumbers.eligible}</strong></div>
-                                    <div><small>Excluidos</small><strong>{estimateNumbers.excluded}</strong></div>
-                                </div>
-                                <button type="button" disabled={loading || estimating || !canWrite} onClick={() => runSafe(async () => {
-                                    await Promise.all([
-                                        runEstimate(),
-                                        runInclusionOnlyEstimate()
-                                    ]);
-                                    notify({ type: 'info', message: 'Estimacion actualizada.' });
-                                }, 'No se pudo estimar alcance.')}>Estimar alcance</button>
-                            </div>
-                            <div className="saas-campaigns-audience-summary">
-                                <strong>{`${exclusionSummary.eligible} elegibles - ${exclusionSummary.excluded} excluidos = ${exclusionSummary.finalRecipients} destinatarios finales`}</strong>
-                                <span>{reachEstimate ? 'Lista generada con la estimacion actual.' : 'Activa filtros y estima para ver la audiencia real.'}</span>
-                            </div>
-                            <div className="saas-campaigns-audience-table-wrap saas-campaigns-audience-table-wrap--compact">
-                                {estimatedAudienceItems.length === 0 ? (
-                                    <div className="saas-admin-empty-inline">No hay clientes elegibles para mostrar.</div>
-                                ) : (
-                                    <table className="saas-campaigns-audience-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Excluir</th>
-                                                <th>Nombre</th>
-                                                <th>Telefono</th>
-                                                <th>Estado comercial</th>
-                                                <th>Etiquetas</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {estimatedAudienceItems.map((item) => {
-                                                const isExcluded = excludedCustomerIdSet.has(item.customerId);
-                                                return (
-                                                    <tr key={item.customerId} className={isExcluded ? 'is-excluded' : ''}>
-                                                        <td className="is-center">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={isExcluded}
-                                                                onChange={() => toggleAudienceExclusion(item.customerId)}
-                                                                aria-label={`Excluir ${item.contactName}`}
-                                                            />
-                                                        </td>
-                                                        <td>{item.contactName}</td>
-                                                        <td>{item.phone}</td>
-                                                        <td>{item.commercialStatus || '-'}</td>
-                                                        <td>{item.tags.length > 0 ? item.tags.join(', ') : '-'}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                )}
-                            </div>
-                        </div>
-                        <div className="saas-admin-related-block">
-                            <div className="saas-campaigns-blocks-header">
-                                <label className="saas-campaigns-block-toggle">
-                                    <input
-                                        type="checkbox"
-                                        checked={Boolean(form.blocksEnabled)}
-                                        onChange={(event) => setForm((prev) => ({ ...prev, blocksEnabled: event.target.checked }))}
-                                    />
-                                    <span>Enviar en bloques</span>
-                                </label>
-                                <span className="saas-campaigns-estimation-help">Divide la audiencia congelada en ejecuciones controladas y manuales.</span>
-                            </div>
-                            {form.blocksEnabled ? (
-                                <div className="saas-campaigns-blocks-config">
-                                    <div className="saas-admin-field">
-                                        <label>Numero de bloques</label>
-                                        <input
-                                            type="number"
-                                            min={2}
-                                            max={10}
-                                            value={form.blockCount}
-                                            onChange={(event) => {
-                                                const next = Math.max(2, Math.min(10, Math.floor(toNumber(event.target.value, 2))));
-                                                setForm((prev) => ({ ...prev, blockCount: next }));
-                                            }}
-                                        />
-                                    </div>
-                                    <div className="saas-campaigns-block-preview-chips">
-                                        {blockPreview?.blocks?.map((block) => (
-                                            <span key={`preview_block_${block.blockIndex}`} className="saas-campaigns-block-preview-chip">
-                                                {`Bloque ${block.blockIndex + 1}: ${block.size}`}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
-                            ) : (
-                                <span className="saas-campaigns-estimation-help">Modo normal: todos los destinatarios elegibles se envian en una sola ejecucion.</span>
-                            )}
-                        </div>
-                    </SaasDetailPanelSection>
-                    <SaasDetailPanelSection title="Validaciones y resumen">
-                        <div className="saas-campaigns-two-columns">
-                            <div className="saas-admin-related-block">
-                                <h4>Validaciones antes de iniciar</h4>
-                                <div className="saas-campaigns-guardrails">
-                                    {canStartGuardrails.map((check) => (
-                                        <article key={check.key} className={`saas-campaigns-guardrail ${check.ok ? 'ok' : 'warn'}`}>
-                                            <strong>{check.ok ? 'OK' : 'Pendiente'}: {check.label}</strong>
-                                            <small>{check.hint}</small>
-                                        </article>
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="saas-admin-related-block">
-                                <h4>Resumen</h4>
-                                <div className="saas-campaigns-builder-preview">
-                                    <div><span>Template</span><strong>{toText(form.templateName) || '-'}</strong></div>
-                                    <div><span>Idioma</span><strong>{toText(form.templateLanguage).toUpperCase() || '-'}</strong></div>
-                                    <div><span>Programacion</span><strong>{form.scheduledAt ? formatDateTime(toIsoDateTimeLocal(form.scheduledAt)) : 'Inmediata'}</strong></div>
-                                    <div><span>Incluir</span><strong>{inclusionSelectionCount > 0 ? `${inclusionSelectionCount} filtros activos` : 'Todos los clientes'}</strong></div>
-                                    <div><span>Excluir</span><strong>{exclusionSelectionCount > 0 || manualExcludedAudienceItems.length > 0 ? `${exclusionSelectionCount + manualExcludedAudienceItems.length} exclusiones activas` : 'Sin exclusiones'}</strong></div>
-                                </div>
-                            </div>
-                        </div>
-                    </SaasDetailPanelSection>
+                    </div>
                 </SaasDetailPanel>
             )}
             {!tenantScopeLocked && panelMode === 'detail' && (
+
                 !selectedCampaignId ? <div className="saas-admin-empty-state saas-admin-empty-state--detail"><p>Selecciona una campana para ver tracking.</p></div> : (
                     <SaasDetailPanel
                         title={toText(selectedCampaign?.campaignName) || 'Campana'}
@@ -1715,7 +1704,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                         bodyClassName="saas-campaigns-detail-panel__body"
                         actions={(
                             <>
-                                {toLower(selectedCampaign?.status) === 'draft' && <button type="button" disabled={loading || !canWrite} onClick={() => { setForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions)); setPanelMode('edit'); setMaxRecipientsTouched(false); setLocalEstimate(null); }}>Editar</button>}
+                                {toLower(selectedCampaign?.status) === 'draft' && <button type="button" disabled={loading || !canWrite} onClick={() => { setForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions)); setPanelMode('edit'); setWizardStep(1); setMaxRecipientsTouched(false); setLocalEstimate(null); setInclusionOnlyEstimate(null); }}>Editar</button>}
                                 {toLower(selectedCampaign?.status) === 'running' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => pauseCampaign?.(selectedCampaignId), 'No se pudo pausar campana.')}>Pausar</button>}
                                 {toLower(selectedCampaign?.status) === 'paused' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => resumeCampaign?.(selectedCampaignId), 'No se pudo reanudar campana.')}>Reanudar</button>}
                                 {['draft', 'scheduled'].includes(toLower(selectedCampaign?.status)) && !selectedBlocksConfig && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => startCampaign?.(selectedCampaignId), 'No se pudo iniciar campana.')}>Iniciar</button>}

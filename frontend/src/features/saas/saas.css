@@ -6999,3 +6999,92 @@
     width: 100% !important;
     min-width: 980px !important;
 }
+
+.saas-campaigns-wizard-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 100%;
+}
+
+.saas-campaigns-wizard-progress {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 10px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding-bottom: 4px;
+    background: linear-gradient(180deg, rgba(5, 18, 27, 0.96), rgba(5, 18, 27, 0.88));
+}
+
+.saas-campaigns-wizard-progress__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid rgba(110, 193, 228, 0.2);
+    border-radius: 12px;
+    background: rgba(9, 28, 40, 0.88);
+    color: #8cb6cf;
+}
+
+.saas-campaigns-wizard-progress__item span {
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.saas-campaigns-wizard-progress__item strong {
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.saas-campaigns-wizard-progress__item.is-current {
+    border-color: rgba(0, 168, 132, 0.72);
+    background: rgba(0, 168, 132, 0.14);
+    color: #e9fbf7;
+}
+
+.saas-campaigns-wizard-progress__item.is-complete {
+    border-color: rgba(0, 168, 132, 0.4);
+    color: #bdebe2;
+}
+
+.saas-campaigns-wizard-content {
+    min-height: 0;
+}
+
+.saas-campaigns-wizard-placeholder {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 18px;
+    border: 1px dashed rgba(110, 193, 228, 0.28);
+    border-radius: 14px;
+    background: rgba(6, 19, 28, 0.58);
+}
+
+.saas-campaigns-wizard-placeholder strong {
+    font-size: 16px;
+    color: #f2fbff;
+}
+
+.saas-campaigns-wizard-placeholder p {
+    margin: 0;
+    color: #9cc0d4;
+}
+
+@media (max-width: 980px) {
+    .saas-campaigns-wizard-progress {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
