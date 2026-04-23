@@ -7069,6 +7069,97 @@
     align-items: start;
 }
 
+.saas-campaigns-wizard-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.saas-campaigns-wizard-metric {
+    display: grid;
+    gap: 5px;
+    padding: 14px;
+    border: 1px solid rgba(110, 193, 228, 0.18);
+    border-radius: 14px;
+    background: rgba(7, 25, 35, 0.76);
+}
+
+.saas-campaigns-wizard-metric small {
+    color: #8fb9cf;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.saas-campaigns-wizard-metric strong {
+    color: #f4fdff;
+    font-size: 26px;
+    line-height: 1;
+}
+
+.saas-campaigns-wizard-metric span {
+    color: #9cc0d4;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.saas-campaigns-wizard-block {
+    border: 1px solid rgba(110, 193, 228, 0.18);
+    border-radius: 16px;
+    background: rgba(7, 23, 33, 0.78);
+    overflow: hidden;
+}
+
+.saas-campaigns-wizard-block[open] {
+    border-color: rgba(0, 168, 132, 0.28);
+    background: rgba(7, 23, 33, 0.9);
+}
+
+.saas-campaigns-wizard-block__summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    list-style: none;
+    cursor: pointer;
+    padding: 14px 16px;
+    background: linear-gradient(180deg, rgba(0, 168, 132, 0.08), rgba(7, 23, 33, 0.02));
+}
+
+.saas-campaigns-wizard-block__summary::-webkit-details-marker {
+    display: none;
+}
+
+.saas-campaigns-wizard-block__summary strong {
+    display: block;
+    color: #f4fdff;
+    font-size: 15px;
+}
+
+.saas-campaigns-wizard-block__summary span {
+    display: block;
+    margin-top: 3px;
+    color: #8fb9cf;
+    font-size: 12px;
+}
+
+.saas-campaigns-wizard-block__summary small {
+    flex-shrink: 0;
+    border: 1px solid rgba(110, 193, 228, 0.18);
+    border-radius: 999px;
+    background: rgba(5, 18, 27, 0.72);
+    color: #f2fbff;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 6px 10px;
+}
+
+.saas-campaigns-wizard-block__body {
+    padding: 16px;
+    display: grid;
+    gap: 12px;
+}
+
 .saas-campaigns-wizard-step--campaign {
     grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
 }
@@ -7158,6 +7249,10 @@
     }
 
     .saas-campaigns-wizard-step--campaign {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .saas-campaigns-wizard-metrics {
         grid-template-columns: minmax(0, 1fr);
     }
 }

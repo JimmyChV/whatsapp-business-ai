@@ -442,6 +442,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [showColumnsMenu, setShowColumnsMenu] = useState(false);
     const [maxRecipientsTouched, setMaxRecipientsTouched] = useState(false);
     const [localEstimate, setLocalEstimate] = useState(null);
+    const [baseAudienceEstimate, setBaseAudienceEstimate] = useState(null);
     const [inclusionOnlyEstimate, setInclusionOnlyEstimate] = useState(null);
     const [excludedCustomerIds, setExcludedCustomerIds] = useState([]);
     const [manualExclusionSearch, setManualExclusionSearch] = useState('');
@@ -643,6 +644,16 @@ export default React.memo(function CampaignsSection(props = {}) {
         eligible: Math.max(0, toNumber(reachEstimate?.eligible)),
         excluded: Math.max(0, toNumber(reachEstimate?.excluded))
     }), [reachEstimate]);
+    const baseAudienceNumbers = useMemo(() => ({
+        total: Math.max(0, toNumber(baseAudienceEstimate?.total)),
+        eligible: Math.max(0, toNumber(baseAudienceEstimate?.eligible, Array.isArray(baseAudienceEstimate?.items) ? baseAudienceEstimate.items.length : 0)),
+        excluded: Math.max(0, toNumber(baseAudienceEstimate?.excluded))
+    }), [baseAudienceEstimate]);
+    const inclusionAudienceNumbers = useMemo(() => ({
+        total: Math.max(0, toNumber(inclusionOnlyEstimate?.total)),
+        eligible: Math.max(0, toNumber(inclusionOnlyEstimate?.eligible, Array.isArray(inclusionOnlyEstimate?.items) ? inclusionOnlyEstimate.items.length : 0)),
+        excluded: Math.max(0, toNumber(inclusionOnlyEstimate?.excluded))
+    }), [inclusionOnlyEstimate]);
     const estimatedAudienceItems = useMemo(() => (
         (Array.isArray(reachEstimate?.items) ? reachEstimate.items : [])
             .map((item) => ({
@@ -1041,6 +1052,28 @@ export default React.memo(function CampaignsSection(props = {}) {
     }, [blockPreview, excludedCustomerIds, form, labelOptions, zoneOptions]);
 
     const buildEstimatePayload = useCallback((options = {}) => {
+        if (options?.baseOnly === true) {
+            const baseForm = {
+                ...form,
+                commercialStatuses: [],
+                selectedLabelIds: [],
+                selectedZoneRuleIds: [],
+                languageFilter: '',
+                searchText: '',
+                maxRecipients: '',
+                inclusionFilters: { ...EMPTY_DEEP_FILTERS },
+                exclusionFilters: { ...EMPTY_DEEP_FILTERS }
+            };
+            return {
+                ...buildCampaignPayload(),
+                audienceFiltersJson: buildAudienceFiltersFromForm(baseForm, labelOptions, zoneOptions),
+                audienceSelectionJson: {
+                    excludedCustomerIds: [],
+                    filters: { ...EMPTY_DEEP_FILTERS },
+                    exclusionFilters: { ...EMPTY_DEEP_FILTERS }
+                }
+            };
+        }
         const payload = buildCampaignPayload();
         if (options?.inclusionOnly !== true) return payload;
         return {
@@ -1051,7 +1084,27 @@ export default React.memo(function CampaignsSection(props = {}) {
                 exclusionFilters: { ...EMPTY_DEEP_FILTERS }
             }
         };
-    }, [buildCampaignPayload]);
+    }, [buildCampaignPayload, form, labelOptions, zoneOptions]);
+
+    const runBaseAudienceEstimate = useCallback(async () => {
+        if (typeof estimateReachAction !== 'function') return;
+        const payload = buildEstimatePayload({ baseOnly: true });
+        if (!payload.moduleId || !payload.templateName) return;
+        const response = await estimateReachAction({
+            scopeModuleId: payload.scopeModuleId,
+            moduleId: payload.moduleId,
+            templateName: payload.templateName,
+            templateLanguage: payload.templateLanguage,
+            filters: payload.audienceFiltersJson,
+            audienceSelectionJson: payload.audienceSelectionJson
+        });
+        const estimate = response?.estimate && typeof response.estimate === 'object'
+            ? response.estimate
+            : null;
+        if (estimate) {
+            setBaseAudienceEstimate(estimate);
+        }
+    }, [buildEstimatePayload, estimateReachAction]);
 
     const runEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
@@ -1098,11 +1151,19 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (panelMode !== 'create' && panelMode !== 'edit') return undefined;
         if (!form.moduleId || !form.templateName) {
             setLocalEstimate(null);
+            setBaseAudienceEstimate(null);
+            setInclusionOnlyEstimate(null);
+            return undefined;
+        }
+        if (wizardStep < 2) {
+            setLocalEstimate(null);
+            setBaseAudienceEstimate(null);
             setInclusionOnlyEstimate(null);
             return undefined;
         }
         const timer = setTimeout(() => {
             Promise.all([
+                runBaseAudienceEstimate().catch(() => {}),
                 runEstimate().catch(() => {}),
                 runInclusionOnlyEstimate().catch(() => {})
             ]).catch(() => {});
@@ -1115,8 +1176,10 @@ export default React.memo(function CampaignsSection(props = {}) {
         form.moduleId,
         form.templateName,
         panelMode,
+        runBaseAudienceEstimate,
         runEstimate,
-        runInclusionOnlyEstimate
+        runInclusionOnlyEstimate,
+        wizardStep
     ]);
 
     const runDetailEstimate = useCallback(async () => {
@@ -1165,6 +1228,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const handleCloseCampaignDetail = useCallback(() => {
         setPanelMode('list');
         setLocalEstimate(null);
+        setBaseAudienceEstimate(null);
         setInclusionOnlyEstimate(null);
         setMaxRecipientsTouched(false);
         setExcludedCustomerIds([]);
@@ -1184,6 +1248,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         }
 
         setLocalEstimate(null);
+        setBaseAudienceEstimate(null);
         setInclusionOnlyEstimate(null);
         setMaxRecipientsTouched(false);
         setExcludedCustomerIds([]);
@@ -1320,13 +1385,13 @@ export default React.memo(function CampaignsSection(props = {}) {
         );
     };
 
-    const renderAudienceToggleGroup = (scope = 'inclusionFilters', keyName = '', label = '', options = [], normalize = toText) => {
+    const renderAudienceToggleGroup = (scope = 'inclusionFilters', keyName = '', label = '', options = [], normalize = toText, emptyText = '') => {
         const filters = normalizeDeepFilters(form?.[scope] || {});
         return (
             <div className="saas-admin-field">
                 <label>{label}</label>
                 <div className="saas-campaigns-chip-group">
-                    {options.length === 0 ? <small className="saas-admin-empty-inline">{`Sin ${toLower(label)}.`}</small> : options.map((option) => {
+                    {options.length === 0 ? <small className="saas-admin-empty-inline">{emptyText || `Sin ${toLower(label)}.`}</small> : options.map((option) => {
                         const optionValue = option?.id ?? option?.key;
                         const active = filters[keyName].includes(normalize(optionValue));
                         const accent = toText(option?.color || '');
@@ -1457,6 +1522,19 @@ export default React.memo(function CampaignsSection(props = {}) {
                 <p>{description}</p>
             </div>
         </SaasDetailPanelSection>
+    );
+
+    const renderWizardCollapsibleBlock = ({ title, subtitle, count = null, children, defaultOpen = true }) => (
+        <details className="saas-campaigns-wizard-block" open={defaultOpen}>
+            <summary className="saas-campaigns-wizard-block__summary">
+                <div>
+                    <strong>{title}</strong>
+                    {subtitle ? <span>{subtitle}</span> : null}
+                </div>
+                {count !== null ? <small>{count}</small> : null}
+            </summary>
+            <div className="saas-campaigns-wizard-block__body">{children}</div>
+        </details>
     );
 
     const renderWizardStepContent = () => {
@@ -1594,7 +1672,108 @@ export default React.memo(function CampaignsSection(props = {}) {
                 </SaasDetailPanelSection>
             );
         case 2:
-            return renderWizardPlaceholder(2, 'Audiencia base', 'En el siguiente commit este paso mostrara la inclusion de audiencia por datos del cliente, etiquetas globales, zonas y etiquetas operativas.');
+            return (
+                <SaasDetailPanelSection title="Paso 2 - Inclusion">
+                    <div className="saas-campaigns-wizard-step">
+                        <div className="saas-campaigns-wizard-metrics">
+                            <div className="saas-campaigns-wizard-metric">
+                                <small>Base inicial</small>
+                                <strong>{baseAudienceNumbers.eligible}</strong>
+                                <span>Clientes con opt-in dentro del modulo seleccionado.</span>
+                            </div>
+                            <div className="saas-campaigns-wizard-metric">
+                                <small>Base filtrada</small>
+                                <strong>{inclusionAudienceNumbers.eligible || baseAudienceNumbers.eligible}</strong>
+                                <span>Resultado actual segun los filtros de inclusion.</span>
+                            </div>
+                            <div className="saas-campaigns-wizard-metric">
+                                <small>Filtros activos</small>
+                                <strong>{inclusionSelectionCount}</strong>
+                                <span>{inclusionSelectionCount > 0 ? 'Se aplican sobre la base inicial.' : 'Sin filtros: entran todos los clientes elegibles del modulo.'}</span>
+                            </div>
+                        </div>
+                        <div className="saas-campaigns-audience-summary">
+                            <strong>Base inicial: {baseAudienceNumbers.eligible} clientes</strong>
+                            <span>Base filtrada: {inclusionAudienceNumbers.eligible || baseAudienceNumbers.eligible} clientes</span>
+                            {renderAudienceFilterChips('inclusionFilters', 'Activos') || <span>Todos los clientes</span>}
+                        </div>
+                        {renderWizardCollapsibleBlock({
+                            title: 'Datos del cliente',
+                            subtitle: 'Filtra por responsable, tipo y fecha de registro.',
+                            count: [
+                                form.inclusionFilters.assigned_user_id ? 1 : 0,
+                                form.inclusionFilters.created_after ? 1 : 0,
+                                form.inclusionFilters.created_before ? 1 : 0,
+                                (Array.isArray(form.inclusionFilters.customer_type_ids) ? form.inclusionFilters.customer_type_ids.length : 0)
+                            ].reduce((sum, value) => sum + value, 0),
+                            children: (
+                                <div className="saas-campaigns-compact-filters">
+                                    <div className="saas-admin-field">
+                                        <label>Asignado a</label>
+                                        <select
+                                            value={form.inclusionFilters.assigned_user_id || ''}
+                                            onChange={(event) => updateDeepFilter('inclusionFilters', 'assigned_user_id', event.target.value)}
+                                        >
+                                            <option value="">Todos</option>
+                                            {campaignFilterOptions.assigned_users.map((entry) => (
+                                                <option key={entry.id} value={entry.id}>{entry.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    {campaignFilterOptions.customer_types.length > 0 ? (
+                                        <div className="saas-admin-field">
+                                            <label>Tipo de cliente</label>
+                                            <select
+                                                value={form.inclusionFilters.customer_type_ids[0] || ''}
+                                                onChange={(event) => updateDeepFilter('inclusionFilters', 'customer_type_ids', event.target.value ? [event.target.value] : [])}
+                                            >
+                                                <option value="">Todos</option>
+                                                {campaignFilterOptions.customer_types.map((entry) => (
+                                                    <option key={entry.id} value={entry.id}>{entry.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    ) : null}
+                                    <div className="saas-admin-field">
+                                        <label>Fecha registro desde</label>
+                                        <input
+                                            type="date"
+                                            value={form.inclusionFilters.created_after || ''}
+                                            onChange={(event) => updateDeepFilter('inclusionFilters', 'created_after', event.target.value)}
+                                        />
+                                    </div>
+                                    <div className="saas-admin-field">
+                                        <label>Fecha registro hasta</label>
+                                        <input
+                                            type="date"
+                                            value={form.inclusionFilters.created_before || ''}
+                                            onChange={(event) => updateDeepFilter('inclusionFilters', 'created_before', event.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                            )
+                        })}
+                        {renderWizardCollapsibleBlock({
+                            title: 'Etiquetas globales',
+                            subtitle: 'Estados comerciales incluidos en la audiencia.',
+                            count: Array.isArray(form.inclusionFilters.commercial_status) ? form.inclusionFilters.commercial_status.length : 0,
+                            children: renderAudienceToggleGroup('inclusionFilters', 'commercial_status', 'Estados comerciales', commercialFilterOptions, toLower)
+                        })}
+                        {renderWizardCollapsibleBlock({
+                            title: 'Zonas',
+                            subtitle: 'Se incluyen todas si no seleccionas ninguna.',
+                            count: Array.isArray(form.inclusionFilters.zone_label_ids) ? form.inclusionFilters.zone_label_ids.length : 0,
+                            children: renderAudienceToggleGroup('inclusionFilters', 'zone_label_ids', 'Zonas', zoneFilterChipOptions, toUpper, 'Sin zonas configuradas')
+                        })}
+                        {renderWizardCollapsibleBlock({
+                            title: 'Etiquetas operativas',
+                            subtitle: 'Usa etiquetas internas del tenant para segmentar mejor.',
+                            count: Array.isArray(form.inclusionFilters.operational_label_ids) ? form.inclusionFilters.operational_label_ids.length : 0,
+                            children: renderAudienceToggleGroup('inclusionFilters', 'operational_label_ids', 'Etiquetas operativas', operationalFilterChipOptions, toUpper, 'Sin etiquetas operativas')
+                        })}
+                    </div>
+                </SaasDetailPanelSection>
+            );
         case 3:
             return renderWizardPlaceholder(3, 'Exclusiones', 'Aqui se mostraran las exclusiones dependientes de la inclusion y la exclusion manual por cliente.');
         case 4:
@@ -1656,6 +1835,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                         await selectCampaign?.(campaign.campaignId, { loadDetail: false });
                         setPanelMode('detail');
                         setLocalEstimate(null);
+                        setBaseAudienceEstimate(null);
                         setInclusionOnlyEstimate(null);
                         notify({ type: 'info', message: panelMode === 'edit' ? 'Campana actualizada.' : 'Campana creada.' });
                     }, 'No se pudo guardar campana.')}>Guardar borrador</button>
@@ -1667,11 +1847,12 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 const response = await createCampaign?.(payload);
                                 const campaign = response?.campaign;
                                 if (!campaign) throw new Error('No se pudo crear campana.');
-                                await startCampaign?.(campaign.campaignId);
-                                await selectCampaign?.(campaign.campaignId, { loadDetail: true });
-                                await loadTracking(campaign.campaignId);
-                                setPanelMode('detail');
-                            })();
+                            await startCampaign?.(campaign.campaignId);
+                            await selectCampaign?.(campaign.campaignId, { loadDetail: true });
+                            await loadTracking(campaign.campaignId);
+                            setPanelMode('detail');
+                            setBaseAudienceEstimate(null);
+                        })();
                         } else {
                             if (!canStartWithGuardrails) throw new Error('Debes cumplir las validaciones previas antes de iniciar la campana.');
                             await startCampaign?.(selectedCampaignId);
