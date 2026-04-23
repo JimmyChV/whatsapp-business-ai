@@ -56,6 +56,7 @@ const DEFAULT_GLOBAL_LABELS = Object.freeze([
     }
 ]);
 const DEFAULT_GLOBAL_LABEL_IDS = new Set(DEFAULT_GLOBAL_LABELS.map((entry) => entry.id));
+const DEFAULT_COMMERCIAL_STATUS_KEYS = new Set(DEFAULT_GLOBAL_LABELS.map((entry) => entry.commercialStatusKey));
 
 let schemaPromise = null;
 
@@ -104,6 +105,10 @@ function sanitizeLabel(source = {}) {
 
 function isDefaultGlobalLabelId(id = '') {
     return DEFAULT_GLOBAL_LABEL_IDS.has(normalizeId(id));
+}
+
+function isCommercialGlobalLabel(item = {}) {
+    return DEFAULT_COMMERCIAL_STATUS_KEYS.has(toText(item.commercialStatusKey || item.commercial_status_key || '').toLowerCase());
 }
 
 function missingRelation(error) {
@@ -233,7 +238,7 @@ async function listLabels(options = {}) {
         await ensureDefaultGlobalLabels();
         const store = await readStore();
         return store.items
-            .filter((item) => Boolean(toText(item.commercialStatusKey)))
+            .filter(isCommercialGlobalLabel)
             .filter((item) => includeInactive || item.isActive !== false)
             .sort((a, b) => (a.sortOrder - b.sortOrder) || String(a.name).localeCompare(String(b.name), 'es'));
     }
@@ -241,14 +246,16 @@ async function listLabels(options = {}) {
     try {
         await ensurePostgresSchema();
         await ensureDefaultGlobalLabels();
+        const statusKeys = [...DEFAULT_COMMERCIAL_STATUS_KEYS];
         const where = includeInactive
-            ? "WHERE COALESCE(BTRIM(commercial_status_key), '') <> ''"
-            : "WHERE COALESCE(BTRIM(commercial_status_key), '') <> '' AND is_active = TRUE";
+            ? 'WHERE commercial_status_key = ANY($1::text[])'
+            : 'WHERE commercial_status_key = ANY($1::text[]) AND is_active = TRUE';
         const { rows } = await queryPostgres(
             `SELECT id, name, color, description, commercial_status_key, sort_order, is_active, created_at, updated_at
                FROM global_labels
                ${where}
-              ORDER BY sort_order ASC, name ASC`
+              ORDER BY sort_order ASC, name ASC`,
+            [statusKeys]
         );
         return (Array.isArray(rows) ? rows : []).map(sanitizeLabel);
     } catch (error) {

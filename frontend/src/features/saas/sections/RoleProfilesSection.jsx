@@ -198,28 +198,26 @@ function RoleProfilesSection(props = {}) {
     if (!isRolesSection) return null;
 
     return (
-        <div className="saas-admin-grid">
-            <SaasEntityPage
-                id="saas_roles"
-                sectionKey="roles"
-                title="Roles y accesos"
-                rows={rows}
-                columns={columns}
-                selectedId={selectedId}
-                onSelect={(row) => openRoleView?.(row?.id)}
-                onClose={close}
-                renderDetail={renderDetail}
-                renderForm={renderForm}
-                mode={isEditing ? 'form' : 'detail'}
-                dirty={isEditing}
-                emptyText="No hay perfiles de rol cargados."
-                searchPlaceholder="Buscar rol por nombre, codigo o estado"
-                actions={canManageRoles ? [{ key: 'create', label: 'Nuevo rol', onClick: openRoleCreate, disabled: busy }] : []}
-                detailTitle={rolePanelMode === 'create' ? 'Nuevo rol' : rolePanelMode === 'edit' ? `Editando rol: ${roleForm.role || selectedRoleKey}` : selectedRoleProfile?.label || selectedRoleProfile?.role || 'Rol'}
-                detailSubtitle={isEditing ? 'Define permisos obligatorios, opcionales y bloqueados por perfil.' : 'Catalogo global de perfiles de acceso.'}
-                detailActions={detailActions}
-            />
-        </div>
+        <SaasEntityPage
+            id="saas_roles"
+            sectionKey="roles"
+            title="Roles y accesos"
+            rows={rows}
+            columns={columns}
+            selectedId={selectedId}
+            onSelect={(row) => openRoleView?.(row?.id)}
+            onClose={close}
+            renderDetail={renderDetail}
+            renderForm={renderForm}
+            mode={isEditing ? 'form' : 'detail'}
+            dirty={isEditing}
+            emptyText="No hay perfiles de rol cargados."
+            searchPlaceholder="Buscar rol por nombre, codigo o estado"
+            actions={canManageRoles ? [{ key: 'create', label: 'Nuevo rol', onClick: openRoleCreate, disabled: busy }] : []}
+            detailTitle={rolePanelMode === 'create' ? 'Nuevo rol' : rolePanelMode === 'edit' ? `Editando rol: ${roleForm.role || selectedRoleKey}` : selectedRoleProfile?.label || selectedRoleProfile?.role || 'Rol'}
+            detailSubtitle={isEditing ? 'Define permisos obligatorios, opcionales y bloqueados por perfil.' : 'Catalogo global de perfiles de acceso.'}
+            detailActions={detailActions}
+        />
     );
 }
 

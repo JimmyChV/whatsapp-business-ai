@@ -193,29 +193,27 @@ function PlansSection(props = {}) {
     if (!isPlansSection) return null;
 
     return (
-        <div className="saas-admin-grid">
-            <SaasEntityPage
-                id="saas_planes"
-                sectionKey="plans"
-                title="Planes SaaS"
-                rows={rows}
-                columns={columns}
-                selectedId={selectedPlan?.id || selectedPlanId || ''}
-                onSelect={(row) => openPlanView?.(row?.id)}
-                onClose={close}
-                renderDetail={renderDetail}
-                renderForm={renderForm}
-                mode={isEditing ? 'form' : 'detail'}
-                dirty={isEditing}
-                loading={loadingPlans}
-                emptyText="No hay planes cargados."
-                searchPlaceholder="Buscar plan por nombre o limite"
-                actions={[{ key: 'reload', label: 'Recargar planes', onClick: loadPlanMatrix, disabled: busy || loadingPlans }]}
-                detailTitle={planPanelMode === 'edit' ? `Editando plan: ${planForm.id}` : `Plan: ${selectedPlan?.id || ''}`}
-                detailSubtitle={isEditing ? 'Los cambios aplican globalmente a todos los tenants de este plan.' : 'Control global de limites por plan.'}
-                detailActions={detailActions}
-            />
-        </div>
+        <SaasEntityPage
+            id="saas_planes"
+            sectionKey="plans"
+            title="Planes SaaS"
+            rows={rows}
+            columns={columns}
+            selectedId={selectedPlan?.id || selectedPlanId || ''}
+            onSelect={(row) => openPlanView?.(row?.id)}
+            onClose={close}
+            renderDetail={renderDetail}
+            renderForm={renderForm}
+            mode={isEditing ? 'form' : 'detail'}
+            dirty={isEditing}
+            loading={loadingPlans}
+            emptyText="No hay planes cargados."
+            searchPlaceholder="Buscar plan por nombre o limite"
+            actions={[{ key: 'reload', label: 'Recargar planes', onClick: loadPlanMatrix, disabled: busy || loadingPlans }]}
+            detailTitle={planPanelMode === 'edit' ? `Editando plan: ${planForm.id}` : `Plan: ${selectedPlan?.id || ''}`}
+            detailSubtitle={isEditing ? 'Los cambios aplican globalmente a todos los tenants de este plan.' : 'Control global de limites por plan.'}
+            detailActions={detailActions}
+        />
     );
 }
 

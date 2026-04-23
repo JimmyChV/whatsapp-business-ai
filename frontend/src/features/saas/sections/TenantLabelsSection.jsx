@@ -5,6 +5,7 @@ import { deleteGlobalLabel, deleteTenantZoneRule, fetchGlobalLabels, fetchTenant
 const EMPTY_GLOBAL = { id: '', name: '', color: '#00A884', description: '', commercialStatusKey: '', sortOrder: '100', isActive: true };
 const EMPTY_ZONE = { ruleId: '', name: '', color: '#00A884', departments: [], provinces: [], districts: [], departmentId: '', provinceId: '', districtId: '', isActive: true };
 const LABEL_COLORS = ['#00A884', '#14B8A6', '#38BDF8', '#6366F1', '#8B5CF6', '#F59E0B', '#F97316', '#EF4444', '#EC4899', '#84CC16'];
+const GLOBAL_COMMERCIAL_STATUS_KEYS = new Set(['nuevo', 'en_conversacion', 'cotizado', 'vendido', 'perdido']);
 const zoneRulesCache = new Map();
 const text = (v = '') => String(v || '').trim();
 const upper = (v = '') => text(v).toUpperCase();
@@ -117,7 +118,12 @@ function GlobalPanel({ busy, requestJson, runAction, setError, isSuperAdmin }) {
     const load = useCallback(async () => {
         if (!isSuperAdmin || !requestJson) return;
         setLoading(true);
-        try { const payload = await fetchGlobalLabels(requestJson, { includeInactive: true }); setItems((Array.isArray(payload?.items) ? payload.items : []).map(normGlobal)); } finally { setLoading(false); }
+        try {
+            const payload = await fetchGlobalLabels(requestJson, { includeInactive: true });
+            setItems((Array.isArray(payload?.items) ? payload.items : [])
+                .map(normGlobal)
+                .filter((item) => GLOBAL_COMMERCIAL_STATUS_KEYS.has(item.commercialStatusKey)));
+        } finally { setLoading(false); }
     }, [isSuperAdmin, requestJson]);
     useEffect(() => { load().catch((e) => setError?.(String(e?.message || e || 'No se pudieron cargar etiquetas globales.'))); }, [load, setError]);
     if (!isSuperAdmin) return <Empty title="Globales solo para superadmin" body="Estas etiquetas comerciales se comparten como catalogo central del sistema." />;
