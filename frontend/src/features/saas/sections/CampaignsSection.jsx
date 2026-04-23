@@ -92,6 +92,14 @@ const COMMERCIAL_STATUS_OPTIONS = [
     { key: 'perdido', label: 'Perdido' }
 ];
 
+const COMMERCIAL_STATUS_COLORS = {
+    nuevo: '#7D8D95',
+    en_conversacion: '#34B7F1',
+    cotizado: '#FFB02E',
+    vendido: '#00A884',
+    perdido: '#FF5C5C'
+};
+
 const CAMPAIGN_TABLE_COLUMNS = [
     { key: 'campaignName', label: 'Nombre', width: '240px', minWidth: '220px', maxWidth: '320px', type: 'text' },
     { key: 'category', label: 'Categoria', width: '140px', minWidth: '124px', maxWidth: '180px', type: 'option' },
@@ -182,6 +190,19 @@ function hasDeepFilterValue(filters = {}) {
         || f.has_open_chat === false
         || Boolean(f.created_after)
         || Boolean(f.created_before);
+}
+
+function countDeepFilterSelections(filters = {}) {
+    const f = normalizeDeepFilters(filters);
+    return f.commercial_status.length
+        + f.opt_in_status.length
+        + f.zone_label_ids.length
+        + f.operational_label_ids.length
+        + f.customer_type_ids.length
+        + (f.assigned_user_id ? 1 : 0)
+        + (f.has_open_chat === true || f.has_open_chat === false ? 1 : 0)
+        + (f.created_after ? 1 : 0)
+        + (f.created_before ? 1 : 0);
 }
 
 function buildLabelOptions(items = []) {
@@ -385,6 +406,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [maxRecipientsTouched, setMaxRecipientsTouched] = useState(false);
     const [localEstimate, setLocalEstimate] = useState(null);
     const [excludedCustomerIds, setExcludedCustomerIds] = useState([]);
+    const [manualExclusionSearch, setManualExclusionSearch] = useState('');
     const [zoneRules, setZoneRules] = useState([]);
     const [campaignFilterOptions, setCampaignFilterOptions] = useState({
         commercial_statuses: [],
@@ -499,6 +521,20 @@ export default React.memo(function CampaignsSection(props = {}) {
         return approvedTemplates.filter((entry) => !entry.moduleId || entry.moduleId === form.moduleId);
     }, [approvedTemplates, form.moduleId]);
 
+    const commercialFilterOptions = useMemo(() => (
+        campaignFilterOptions.commercial_statuses.length > 0
+            ? campaignFilterOptions.commercial_statuses.map((item) => ({
+                key: toLower(item.key),
+                name: toText(item.name),
+                color: toText(item.color) || COMMERCIAL_STATUS_COLORS[toLower(item.key)] || '#7D8D95'
+            }))
+            : COMMERCIAL_STATUS_OPTIONS.map((item) => ({
+                key: item.key,
+                name: item.label,
+                color: COMMERCIAL_STATUS_COLORS[item.key] || '#7D8D95'
+            }))
+    ), [campaignFilterOptions.commercial_statuses]);
+
     const selectedTemplate = useMemo(() => {
         const cleanTemplateId = toText(form.templateId);
         if (!cleanTemplateId) return null;
@@ -534,6 +570,19 @@ export default React.memo(function CampaignsSection(props = {}) {
     const excludedCustomerIdSet = useMemo(() => (
         new Set((Array.isArray(excludedCustomerIds) ? excludedCustomerIds : []).map((entry) => toText(entry)).filter(Boolean))
     ), [excludedCustomerIds]);
+    const manualExcludedAudienceItems = useMemo(() => {
+        const audienceById = new Map(estimatedAudienceItems.map((item) => [item.customerId, item]));
+        return excludedCustomerIds
+            .map((customerId) => audienceById.get(toText(customerId)))
+            .filter(Boolean);
+    }, [estimatedAudienceItems, excludedCustomerIds]);
+    const manualExclusionCandidates = useMemo(() => {
+        const term = toLower(manualExclusionSearch);
+        return estimatedAudienceItems
+            .filter((item) => !excludedCustomerIdSet.has(item.customerId))
+            .filter((item) => !term || `${toLower(item.contactName)} ${toLower(item.phone)}`.includes(term))
+            .slice(0, 6);
+    }, [estimatedAudienceItems, excludedCustomerIdSet, manualExclusionSearch]);
     const exclusionSummary = useMemo(() => {
         const eligible = estimatedAudienceItems.length;
         const excluded = estimatedAudienceItems.filter((item) => excludedCustomerIdSet.has(item.customerId)).length;
@@ -592,6 +641,14 @@ export default React.memo(function CampaignsSection(props = {}) {
         const selected = new Set((Array.isArray(form.selectedZoneRuleIds) ? form.selectedZoneRuleIds : []).map((entry) => toUpper(entry)));
         return zoneOptions.filter((entry) => selected.has(toUpper(entry.ruleId)));
     }, [form.selectedZoneRuleIds, zoneOptions]);
+    const inclusionSelectionCount = useMemo(
+        () => countDeepFilterSelections(form.inclusionFilters),
+        [form.inclusionFilters]
+    );
+    const exclusionSelectionCount = useMemo(
+        () => countDeepFilterSelections(form.exclusionFilters),
+        [form.exclusionFilters]
+    );
     const selectedStatusKey = toLower(selectedCampaign?.status);
     const showsEstimatedAudienceInDetail = panelMode === 'detail' && ['draft', 'scheduled'].includes(selectedStatusKey);
     const detailAudienceTitle = showsEstimatedAudienceInDetail
@@ -696,6 +753,12 @@ export default React.memo(function CampaignsSection(props = {}) {
         const validIds = new Set(estimatedAudienceItems.map((item) => item.customerId));
         setExcludedCustomerIds((prev) => prev.filter((customerId) => validIds.has(toText(customerId))));
     }, [estimatedAudienceItems]);
+
+    useEffect(() => {
+        if (panelMode !== 'create' && panelMode !== 'edit') {
+            setManualExclusionSearch('');
+        }
+    }, [panelMode]);
 
     useEffect(() => {
         if (panelMode !== 'edit' && panelMode !== 'detail') return;
@@ -825,7 +888,6 @@ export default React.memo(function CampaignsSection(props = {}) {
             : null;
         if (estimate) {
             setLocalEstimate(estimate);
-            setExcludedCustomerIds([]);
         }
     }, [buildCampaignPayload, estimateReachAction]);
 
@@ -998,73 +1060,93 @@ export default React.memo(function CampaignsSection(props = {}) {
         );
     };
 
-    const renderAudienceFilterPanel = (scope = 'inclusionFilters', title = 'Filtros') => {
+    const renderAudienceToggleGroup = (scope = 'inclusionFilters', keyName = '', label = '', options = [], normalize = toText) => {
         const filters = normalizeDeepFilters(form?.[scope] || {});
-        const optInOptions = [{ id: 'opted_in', name: 'Opted in' }, { id: 'pending', name: 'Pendiente' }, { id: 'opted_out', name: 'Opted out' }];
         return (
-            <details className="saas-campaigns-filter-panel" open={scope === 'inclusionFilters'}>
-                <summary>{title}</summary>
-                <div className="saas-campaigns-filter-grid">
-                    <div className="saas-admin-field">
-                        <label>Estado comercial</label>
-                        <div className="saas-campaigns-chip-group">
-                            {(campaignFilterOptions.commercial_statuses.length ? campaignFilterOptions.commercial_statuses : COMMERCIAL_STATUS_OPTIONS.map((item) => ({ key: item.key, name: item.label }))).map((option) => {
-                                const active = filters.commercial_status.includes(toLower(option.key));
-                                return <button key={`${scope}_cs_${option.key}`} type="button" className={`saas-campaigns-chip ${active ? 'active' : ''}`} onClick={() => toggleDeepFilterValue(scope, 'commercial_status', option.key, toLower)}>{option.name}</button>;
-                            })}
-                        </div>
-                    </div>
-                    <div className="saas-admin-field">
-                        <label>Opt-in</label>
-                        <div className="saas-campaigns-chip-group">
-                            {optInOptions.map((option) => {
-                                const active = filters.opt_in_status.includes(toLower(option.id));
-                                return <button key={`${scope}_opt_${option.id}`} type="button" className={`saas-campaigns-chip ${active ? 'active' : ''}`} onClick={() => toggleDeepFilterValue(scope, 'opt_in_status', option.id, toLower)}>{option.name}</button>;
-                            })}
-                        </div>
-                    </div>
-                    <div className="saas-admin-field">
-                        <label>Zonas</label>
-                        <div className="saas-campaigns-chip-group">
-                            {campaignFilterOptions.zone_labels.length === 0 ? <small className="saas-admin-empty-inline">Sin zonas.</small> : campaignFilterOptions.zone_labels.map((option) => {
-                                const active = filters.zone_label_ids.includes(toUpper(option.id));
-                                return <button key={`${scope}_zone_${option.id}`} type="button" className={`saas-campaigns-chip ${active ? 'active' : ''}`} onClick={() => toggleDeepFilterValue(scope, 'zone_label_ids', option.id, toUpper)}>{option.name}</button>;
-                            })}
-                        </div>
-                    </div>
-                    <div className="saas-admin-field">
-                        <label>Etiquetas operativas</label>
-                        <div className="saas-campaigns-chip-group">
-                            {campaignFilterOptions.operational_labels.length === 0 ? <small className="saas-admin-empty-inline">Sin etiquetas.</small> : campaignFilterOptions.operational_labels.map((option) => {
-                                const active = filters.operational_label_ids.includes(toUpper(option.id));
-                                return <button key={`${scope}_op_${option.id}`} type="button" className={`saas-campaigns-chip ${active ? 'active' : ''}`} onClick={() => toggleDeepFilterValue(scope, 'operational_label_ids', option.id, toUpper)}>{option.name}</button>;
-                            })}
-                        </div>
-                    </div>
-                    <div className="saas-admin-field">
-                        <label>Tipo de cliente</label>
-                        <select value={filters.customer_type_ids[0] || ''} onChange={(event) => updateDeepFilter(scope, 'customer_type_ids', event.target.value ? [event.target.value] : [])}>
-                            <option value="">Todos</option>
-                            {campaignFilterOptions.customer_types.map((option) => <option key={`${scope}_type_${option.id}`} value={option.id}>{option.name}</option>)}
-                        </select>
-                    </div>
-                    <div className="saas-admin-field">
-                        <label>Asignado a</label>
-                        <select value={filters.assigned_user_id} onChange={(event) => updateDeepFilter(scope, 'assigned_user_id', event.target.value)}>
-                            <option value="">Todos</option>
-                            {campaignFilterOptions.assigned_users.map((option) => <option key={`${scope}_user_${option.id}`} value={option.id}>{option.name}</option>)}
-                        </select>
-                    </div>
-                    <div className="saas-admin-field">
-                        <label>Fecha desde</label>
-                        <input type="date" value={filters.created_after} onChange={(event) => updateDeepFilter(scope, 'created_after', event.target.value)} />
-                    </div>
-                    <div className="saas-admin-field">
-                        <label>Fecha hasta</label>
-                        <input type="date" value={filters.created_before} onChange={(event) => updateDeepFilter(scope, 'created_before', event.target.value)} />
-                    </div>
+            <div className="saas-admin-field">
+                <label>{label}</label>
+                <div className="saas-campaigns-chip-group">
+                    {options.length === 0 ? <small className="saas-admin-empty-inline">{`Sin ${toLower(label)}.`}</small> : options.map((option) => {
+                        const optionValue = option?.id ?? option?.key;
+                        const active = filters[keyName].includes(normalize(optionValue));
+                        const accent = toText(option?.color || '');
+                        return (
+                            <button
+                                key={`${scope}_${keyName}_${optionValue}`}
+                                type="button"
+                                className={`saas-campaigns-chip ${active ? 'active' : ''}`}
+                                style={accent ? { '--campaign-chip-accent': accent } : undefined}
+                                onClick={() => toggleDeepFilterValue(scope, keyName, optionValue, normalize)}
+                            >
+                                {option.name}
+                            </button>
+                        );
+                    })}
                 </div>
-            </details>
+            </div>
+        );
+    };
+
+    const renderAudienceFilterCard = (scope = 'inclusionFilters', title = 'Filtros', tone = 'include') => {
+        const filters = normalizeDeepFilters(form?.[scope] || {});
+        const optInOptions = [
+            { id: 'opted_in', name: 'Con opt-in', color: '#00A884' },
+            { id: 'pending', name: 'Pendiente', color: '#FFB02E' },
+            { id: 'opted_out', name: 'Sin opt-in', color: '#FF5C5C' }
+        ];
+        const emptyText = scope === 'inclusionFilters' ? 'Todos los clientes' : 'Nadie excluido por filtros';
+        return (
+            <section className={`saas-campaigns-audience-card saas-campaigns-audience-card--${tone}`}>
+                <div className="saas-campaigns-audience-card__header">
+                    <div>
+                        <h4>{title}</h4>
+                        <p>{emptyText}</p>
+                    </div>
+                    <span className="saas-campaigns-audience-card__count">{countDeepFilterSelections(filters)} seleccionados</span>
+                </div>
+                <div className="saas-campaigns-audience-card__body">
+                    {renderAudienceToggleGroup(scope, 'commercial_status', 'Estado comercial', commercialFilterOptions, toLower)}
+                    {renderAudienceToggleGroup(scope, 'opt_in_status', 'Opt-in', optInOptions, toLower)}
+                    {renderAudienceToggleGroup(scope, 'zone_label_ids', 'Zonas', campaignFilterOptions.zone_labels, toUpper)}
+                    {renderAudienceToggleGroup(scope, 'operational_label_ids', 'Etiquetas operativas', campaignFilterOptions.operational_labels, toUpper)}
+                    {scope === 'exclusionFilters' ? (
+                        <div className="saas-admin-field">
+                            <label>Exclusion manual por nombre o telefono</label>
+                            <input
+                                value={manualExclusionSearch}
+                                onChange={(event) => setManualExclusionSearch(event.target.value)}
+                                placeholder="Buscar en elegibles estimados"
+                            />
+                            <div className="saas-campaigns-manual-exclusion-results">
+                                {manualExclusionCandidates.length === 0 ? (
+                                    <small className="saas-admin-empty-inline">
+                                        {estimatedAudienceItems.length === 0 ? 'Estima el alcance para buscar clientes.' : 'No hay coincidencias disponibles.'}
+                                    </small>
+                                ) : manualExclusionCandidates.map((item) => (
+                                    <button
+                                        key={`exclude_candidate_${item.customerId}`}
+                                        type="button"
+                                        className="saas-campaigns-manual-exclusion-item"
+                                        onClick={() => toggleAudienceExclusion(item.customerId)}
+                                    >
+                                        <strong>{item.contactName}</strong>
+                                        <span>{item.phone}</span>
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="saas-campaigns-filter-chips saas-campaigns-filter-chips--manual">
+                                {manualExcludedAudienceItems.length === 0 ? (
+                                    <small className="saas-admin-empty-inline">Sin exclusiones manuales.</small>
+                                ) : manualExcludedAudienceItems.map((item) => (
+                                    <button key={`excluded_manual_${item.customerId}`} type="button" onClick={() => toggleAudienceExclusion(item.customerId)}>
+                                        {item.contactName || item.phone}<span>x</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+            </section>
         );
     };
 
@@ -1228,10 +1310,6 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 setLocalEstimate(null);
                                 notify({ type: 'info', message: panelMode === 'edit' ? 'Campana actualizada.' : 'Campana creada.' });
                             }, 'No se pudo guardar campana.')}>Guardar borrador</button>
-                            <button type="button" disabled={loading || estimating || !canWrite} onClick={() => runSafe(async () => {
-                                await runEstimate();
-                                notify({ type: 'info', message: 'Estimacion actualizada.' });
-                            }, 'No se pudo estimar alcance.')}>Estimar alcance</button>
                             <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => {
                                 if (panelMode === 'create') {
                                     await (async () => {
@@ -1301,249 +1379,173 @@ export default React.memo(function CampaignsSection(props = {}) {
                             </div>
                         </div>
                     </SaasDetailPanelSection>
-                    <SaasDetailPanelSection title="Segmentacion y filtros">
-                        <div className="saas-campaigns-builder saas-campaigns-builder--full">
-                            <div className="saas-campaigns-builder__form">
-                                <div className="saas-campaigns-filter-chip-row">
-                                    {renderAudienceFilterChips('inclusionFilters', 'Incluir')}
-                                    {renderAudienceFilterChips('exclusionFilters', 'Excluir')}
-                                </div>
-                                {renderAudienceFilterPanel('inclusionFilters', 'Filtros de inclusion')}
-                                {renderAudienceFilterPanel('exclusionFilters', 'Filtros de exclusion')}
-                                <div className="saas-admin-form-row">
-                                    <div className="saas-admin-field">
-                                        <label>Estado comercial (multiseleccion)</label>
-                                        <div className="saas-campaigns-chip-group">
-                                            {COMMERCIAL_STATUS_OPTIONS.map((option) => {
-                                                const active = normalizeCommercialStatuses(form.commercialStatuses).includes(option.key);
-                                                return (
-                                                    <button
-                                                        key={option.key}
-                                                        type="button"
-                                                        className={`saas-campaigns-chip ${active ? 'active' : ''}`}
-                                                        onClick={() => toggleCommercialStatus(option.key)}
-                                                    >
-                                                        {option.label}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                    <div className="saas-admin-field">
-                                        <label>Idioma</label>
-                                        <select value={form.languageFilter} onChange={(e) => setForm((p) => ({ ...p, languageFilter: e.target.value }))}>
-                                            <option value="">Todos</option>
-                                            <option value="es">Espanol</option>
-                                            <option value="en">English</option>
-                                            <option value="pt">Portugues</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="saas-admin-form-row">
-                                    <div className="saas-admin-field">
-                                        <label>Etiquetas (multiseleccion)</label>
-                                        <div className="saas-campaigns-chip-group">
-                                            {labelOptions.length === 0 ? <small className="saas-admin-empty-inline">No hay etiquetas activas.</small> : labelOptions.map((entry) => {
-                                                const active = selectedLabels.some((item) => item.labelId === entry.labelId);
-                                                return (
-                                                    <button
-                                                        key={entry.labelId}
-                                                        type="button"
-                                                        className={`saas-campaigns-chip ${active ? 'active' : ''}`}
-                                                        onClick={() => toggleLabel(entry.labelId)}
-                                                    >
-                                                        {entry.name}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                    <div className="saas-admin-field">
-                                        <label>Zonas (multiseleccion)</label>
-                                        <div className="saas-campaigns-chip-group">
-                                            {zoneOptions.length === 0 ? <small className="saas-admin-empty-inline">No hay zonas activas.</small> : zoneOptions.map((entry) => {
-                                                const active = selectedZones.some((item) => item.ruleId === entry.ruleId);
-                                                return (
-                                                    <button
-                                                        key={entry.ruleId}
-                                                        type="button"
-                                                        className={`saas-campaigns-chip ${active ? 'active' : ''}`}
-                                                        onClick={() => toggleZone(entry.ruleId)}
-                                                    >
-                                                        {entry.name}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="saas-admin-form-row">
-                                    <div className="saas-admin-field">
-                                        <label>Busqueda</label>
-                                        <input value={form.searchText} onChange={(e) => setForm((p) => ({ ...p, searchText: e.target.value }))} placeholder="nombre o telefono" />
-                                    </div>
-                                    <div className="saas-admin-field">
-                                        <label>Opt-in marketing</label>
-                                        <div className="saas-campaigns-fixed-info">Campanas de marketing usan solo clientes con opt-in: <strong>opted_in</strong>.</div>
-                                    </div>
-                                    <div className="saas-admin-field">
-                                        <label>Max destinatarios</label>
-                                        <div className="saas-campaigns-max-recipients">
-                                            <input
-                                                type="range"
-                                                min={1}
-                                                max={maxRecipientsRange}
-                                                value={Math.max(1, Math.min(maxRecipientsRange, toNumber(form.maxRecipients || maxRecipientsRange)))}
-                                                onChange={(e) => {
-                                                    const value = Math.max(1, Math.min(maxRecipientsRange, Math.floor(toNumber(e.target.value, 1))));
-                                                    setMaxRecipientsTouched(true);
-                                                    setForm((p) => ({ ...p, maxRecipients: String(value) }));
-                                                }}
-                                                disabled={maxRecipientsRange <= 1}
-                                            />
-                                            <input
-                                                type="number"
-                                                min={1}
-                                                max={maxRecipientsRange}
-                                                value={form.maxRecipients}
-                                                onChange={(e) => {
-                                                    const raw = Math.floor(toNumber(e.target.value, 1));
-                                                    const value = raw > 0 ? Math.min(maxRecipientsRange, raw) : '';
-                                                    setMaxRecipientsTouched(true);
-                                                    setForm((p) => ({ ...p, maxRecipients: value ? String(value) : '' }));
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
+                    <SaasDetailPanelSection title="Audiencia">
+                        <div className="saas-campaigns-filter-chip-row">
+                            {renderAudienceFilterChips('inclusionFilters', 'Incluir')}
+                            {renderAudienceFilterChips('exclusionFilters', 'Excluir')}
+                        </div>
+                        <div className="saas-campaigns-audience-columns">
+                            {renderAudienceFilterCard('inclusionFilters', `¿A quien incluir? (${inclusionSelectionCount})`, 'include')}
+                            {renderAudienceFilterCard('exclusionFilters', `¿A quien excluir? (${exclusionSelectionCount})`, 'exclude')}
+                        </div>
+                        <div className="saas-campaigns-compact-filters">
+                            <div className="saas-admin-field">
+                                <label>Tipo de cliente</label>
+                                <select
+                                    value={normalizeDeepFilters(form.inclusionFilters).customer_type_ids[0] || ''}
+                                    onChange={(event) => updateDeepFilter('inclusionFilters', 'customer_type_ids', event.target.value ? [event.target.value] : [])}
+                                >
+                                    <option value="">Todos</option>
+                                    {campaignFilterOptions.customer_types.map((option) => <option key={`include_type_${option.id}`} value={option.id}>{option.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="saas-admin-field">
+                                <label>Asignado a</label>
+                                <select
+                                    value={normalizeDeepFilters(form.inclusionFilters).assigned_user_id}
+                                    onChange={(event) => updateDeepFilter('inclusionFilters', 'assigned_user_id', event.target.value)}
+                                >
+                                    <option value="">Todos</option>
+                                    {campaignFilterOptions.assigned_users.map((option) => <option key={`include_user_${option.id}`} value={option.id}>{option.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="saas-admin-field">
+                                <label>Fecha desde</label>
+                                <input
+                                    type="date"
+                                    value={normalizeDeepFilters(form.inclusionFilters).created_after}
+                                    onChange={(event) => updateDeepFilter('inclusionFilters', 'created_after', event.target.value)}
+                                />
+                            </div>
+                            <div className="saas-admin-field">
+                                <label>Fecha hasta</label>
+                                <input
+                                    type="date"
+                                    value={normalizeDeepFilters(form.inclusionFilters).created_before}
+                                    onChange={(event) => updateDeepFilter('inclusionFilters', 'created_before', event.target.value)}
+                                />
                             </div>
                         </div>
                     </SaasDetailPanelSection>
-                    <SaasDetailPanelSection title="Audiencia y validaciones">
-                        <div className="saas-campaigns-builder saas-campaigns-builder--full">
-                            <aside className="saas-campaigns-builder__summary">
-                                <div className="saas-admin-related-block">
-                                    <h4>Estimacion de alcance</h4>
-                                    <div className="saas-campaigns-estimation-grid">
-                                        <div><small>Total</small><strong>{estimateNumbers.total}</strong></div>
-                                        <div><small>Elegibles</small><strong>{estimateNumbers.eligible}</strong></div>
-                                        <div><small>Excluidos</small><strong>{estimateNumbers.excluded}</strong></div>
-                                    </div>
-                                    <span className="saas-campaigns-estimation-help">{reachEstimate ? 'Estimacion calculada con filtros actuales.' : 'Haz clic en \"Estimar alcance\" para precalcular audiencia.'}</span>
+                    <SaasDetailPanelSection title="Alcance y envio">
+                        <div className="saas-admin-related-block">
+                            <div className="saas-campaigns-metrics-header">
+                                <div className="saas-campaigns-estimation-grid">
+                                    <div><small>Total</small><strong>{estimateNumbers.total}</strong></div>
+                                    <div><small>Elegibles</small><strong>{estimateNumbers.eligible}</strong></div>
+                                    <div><small>Excluidos</small><strong>{estimateNumbers.excluded}</strong></div>
                                 </div>
-                                <div className="saas-admin-related-block">
-                                    <h4>Envio por bloques</h4>
-                                    <label className="saas-campaigns-block-toggle">
+                                <button type="button" disabled={loading || estimating || !canWrite} onClick={() => runSafe(async () => {
+                                    await runEstimate();
+                                    notify({ type: 'info', message: 'Estimacion actualizada.' });
+                                }, 'No se pudo estimar alcance.')}>Estimar alcance</button>
+                            </div>
+                            <div className="saas-campaigns-audience-summary">
+                                <strong>{`${exclusionSummary.eligible} elegibles - ${exclusionSummary.excluded} excluidos = ${exclusionSummary.finalRecipients} destinatarios finales`}</strong>
+                                <span>{reachEstimate ? 'Lista generada con la estimacion actual.' : 'Activa filtros y estima para ver la audiencia real.'}</span>
+                            </div>
+                            <div className="saas-campaigns-audience-table-wrap saas-campaigns-audience-table-wrap--compact">
+                                {estimatedAudienceItems.length === 0 ? (
+                                    <div className="saas-admin-empty-inline">No hay clientes elegibles para mostrar.</div>
+                                ) : (
+                                    <table className="saas-campaigns-audience-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Excluir</th>
+                                                <th>Nombre</th>
+                                                <th>Telefono</th>
+                                                <th>Estado comercial</th>
+                                                <th>Etiquetas</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {estimatedAudienceItems.map((item) => {
+                                                const isExcluded = excludedCustomerIdSet.has(item.customerId);
+                                                return (
+                                                    <tr key={item.customerId} className={isExcluded ? 'is-excluded' : ''}>
+                                                        <td className="is-center">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isExcluded}
+                                                                onChange={() => toggleAudienceExclusion(item.customerId)}
+                                                                aria-label={`Excluir ${item.contactName}`}
+                                                            />
+                                                        </td>
+                                                        <td>{item.contactName}</td>
+                                                        <td>{item.phone}</td>
+                                                        <td>{item.commercialStatus || '-'}</td>
+                                                        <td>{item.tags.length > 0 ? item.tags.join(', ') : '-'}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+                        </div>
+                        <div className="saas-admin-related-block">
+                            <div className="saas-campaigns-blocks-header">
+                                <label className="saas-campaigns-block-toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={Boolean(form.blocksEnabled)}
+                                        onChange={(event) => setForm((prev) => ({ ...prev, blocksEnabled: event.target.checked }))}
+                                    />
+                                    <span>Enviar en bloques</span>
+                                </label>
+                                <span className="saas-campaigns-estimation-help">Divide la audiencia congelada en ejecuciones controladas y manuales.</span>
+                            </div>
+                            {form.blocksEnabled ? (
+                                <div className="saas-campaigns-blocks-config">
+                                    <div className="saas-admin-field">
+                                        <label>Numero de bloques</label>
                                         <input
-                                            type="checkbox"
-                                            checked={Boolean(form.blocksEnabled)}
-                                            onChange={(event) => setForm((prev) => ({ ...prev, blocksEnabled: event.target.checked }))}
+                                            type="number"
+                                            min={2}
+                                            max={10}
+                                            value={form.blockCount}
+                                            onChange={(event) => {
+                                                const next = Math.max(2, Math.min(10, Math.floor(toNumber(event.target.value, 2))));
+                                                setForm((prev) => ({ ...prev, blockCount: next }));
+                                            }}
                                         />
-                                        <span>Enviar en bloques controlados</span>
-                                    </label>
-                                    {form.blocksEnabled ? (
-                                        <>
-                                            <div className="saas-admin-field">
-                                                <label>Numero de bloques</label>
-                                                <input
-                                                    type="number"
-                                                    min={2}
-                                                    max={10}
-                                                    value={form.blockCount}
-                                                    onChange={(event) => {
-                                                        const next = Math.max(2, Math.min(10, Math.floor(toNumber(event.target.value, 2))));
-                                                        setForm((prev) => ({ ...prev, blockCount: next }));
-                                                    }}
-                                                />
-                                            </div>
-                                            <div className="saas-campaigns-block-preview">
-                                                <table>
-                                                    <thead>
-                                                        <tr><th>Bloque</th><th>Contactos</th><th>Estado inicial</th></tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {blockPreview?.blocks?.map((block) => (
-                                                            <tr key={block.blockIndex}>
-                                                                <td>{`Bloque ${block.blockIndex + 1}`}</td>
-                                                                <td>{block.size}</td>
-                                                                <td>Pendiente</td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                                <small>{`Audiencia total congelable: ${blockPreview?.totalAudience || 0}`}</small>
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <span className="saas-campaigns-estimation-help">Modo normal: todos los destinatarios elegibles se envian como una sola ejecucion.</span>
-                                    )}
-                                </div>
-                                <div className="saas-admin-related-block">
-                                    <h4>Validaciones antes de iniciar</h4>
-                                    <div className="saas-campaigns-guardrails">
-                                        {canStartGuardrails.map((check) => (
-                                            <article key={check.key} className={`saas-campaigns-guardrail ${check.ok ? 'ok' : 'warn'}`}>
-                                                <strong>{check.ok ? 'OK' : 'Pendiente'}: {check.label}</strong>
-                                                <small>{check.hint}</small>
-                                            </article>
+                                    </div>
+                                    <div className="saas-campaigns-block-preview-chips">
+                                        {blockPreview?.blocks?.map((block) => (
+                                            <span key={`preview_block_${block.blockIndex}`} className="saas-campaigns-block-preview-chip">
+                                                {`Bloque ${block.blockIndex + 1}: ${block.size}`}
+                                            </span>
                                         ))}
                                     </div>
                                 </div>
-                                <div className="saas-admin-related-block">
-                                    <h4>Resumen</h4>
-                                    <div className="saas-campaigns-builder-preview">
-                                        <div><span>Template</span><strong>{toText(form.templateName) || '-'}</strong></div>
-                                        <div><span>Idioma</span><strong>{toText(form.templateLanguage).toUpperCase() || '-'}</strong></div>
-                                        <div><span>Programacion</span><strong>{form.scheduledAt ? formatDateTime(toIsoDateTimeLocal(form.scheduledAt)) : 'Inmediata'}</strong></div>
-                                        <div><span>Etiquetas</span><strong>{selectedLabels.length > 0 ? selectedLabels.map((entry) => entry.name).join(', ') : 'Sin filtro'}</strong></div>
-                                        <div><span>Zonas</span><strong>{selectedZones.length > 0 ? selectedZones.map((entry) => entry.name).join(', ') : 'Sin filtro'}</strong></div>
-                                    </div>
+                            ) : (
+                                <span className="saas-campaigns-estimation-help">Modo normal: todos los destinatarios elegibles se envian en una sola ejecucion.</span>
+                            )}
+                        </div>
+                    </SaasDetailPanelSection>
+                    <SaasDetailPanelSection title="Validaciones y resumen">
+                        <div className="saas-campaigns-two-columns">
+                            <div className="saas-admin-related-block">
+                                <h4>Validaciones antes de iniciar</h4>
+                                <div className="saas-campaigns-guardrails">
+                                    {canStartGuardrails.map((check) => (
+                                        <article key={check.key} className={`saas-campaigns-guardrail ${check.ok ? 'ok' : 'warn'}`}>
+                                            <strong>{check.ok ? 'OK' : 'Pendiente'}: {check.label}</strong>
+                                            <small>{check.hint}</small>
+                                        </article>
+                                    ))}
                                 </div>
-                                <div className="saas-admin-related-block">
-                                    <div className="saas-campaigns-audience-summary">
-                                        <strong>{`${exclusionSummary.eligible} elegibles - ${exclusionSummary.excluded} excluidos = ${exclusionSummary.finalRecipients} destinatarios finales`}</strong>
-                                        <span>{reachEstimate ? 'Lista generada con la estimacion actual.' : 'Haz clic en "Estimar alcance" para ver los clientes elegibles.'}</span>
-                                    </div>
-                                    <div className="saas-campaigns-audience-table-wrap">
-                                        {estimatedAudienceItems.length === 0 ? (
-                                            <div className="saas-admin-empty-inline">No hay clientes elegibles para mostrar.</div>
-                                        ) : (
-                                            <table className="saas-campaigns-audience-table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Excluir</th>
-                                                        <th>Nombre</th>
-                                                        <th>Telefono</th>
-                                                        <th>Estado comercial</th>
-                                                        <th>Etiquetas</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {estimatedAudienceItems.map((item) => {
-                                                        const isExcluded = excludedCustomerIdSet.has(item.customerId);
-                                                        return (
-                                                            <tr key={item.customerId} className={isExcluded ? 'is-excluded' : ''}>
-                                                                <td className="is-center">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={isExcluded}
-                                                                        onChange={() => toggleAudienceExclusion(item.customerId)}
-                                                                        aria-label={`Excluir ${item.contactName}`}
-                                                                    />
-                                                                </td>
-                                                                <td>{item.contactName}</td>
-                                                                <td>{item.phone}</td>
-                                                                <td>{item.commercialStatus || '-'}</td>
-                                                                <td>{item.tags.length > 0 ? item.tags.join(', ') : '-'}</td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        )}
-                                    </div>
+                            </div>
+                            <div className="saas-admin-related-block">
+                                <h4>Resumen</h4>
+                                <div className="saas-campaigns-builder-preview">
+                                    <div><span>Template</span><strong>{toText(form.templateName) || '-'}</strong></div>
+                                    <div><span>Idioma</span><strong>{toText(form.templateLanguage).toUpperCase() || '-'}</strong></div>
+                                    <div><span>Programacion</span><strong>{form.scheduledAt ? formatDateTime(toIsoDateTimeLocal(form.scheduledAt)) : 'Inmediata'}</strong></div>
+                                    <div><span>Incluir</span><strong>{inclusionSelectionCount > 0 ? `${inclusionSelectionCount} filtros activos` : 'Todos los clientes'}</strong></div>
+                                    <div><span>Excluir</span><strong>{exclusionSelectionCount > 0 || manualExcludedAudienceItems.length > 0 ? `${exclusionSelectionCount + manualExcludedAudienceItems.length} exclusiones activas` : 'Sin exclusiones'}</strong></div>
                                 </div>
-                            </aside>
+                            </div>
                         </div>
                     </SaasDetailPanelSection>
                 </SaasDetailPanel>
