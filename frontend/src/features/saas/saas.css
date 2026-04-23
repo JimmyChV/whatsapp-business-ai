@@ -2882,6 +2882,47 @@
   padding-top: 12px;
 }
 
+.saas-campaigns-block-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #d7f7ff;
+  font-size: 0.86rem;
+  margin-bottom: 10px;
+}
+
+.saas-campaigns-block-preview {
+  border: 1px solid rgba(61, 139, 162, 0.42);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(4, 17, 25, 0.36);
+}
+
+.saas-campaigns-block-preview table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.saas-campaigns-block-preview th,
+.saas-campaigns-block-preview td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(61, 139, 162, 0.22);
+  text-align: left;
+}
+
+.saas-campaigns-block-preview th {
+  color: #8bc9dc;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.saas-campaigns-block-preview small {
+  display: block;
+  padding: 8px 10px;
+  color: #99b5c2;
+}
+
 .saas-campaigns-fixed-info {
   border: 1px solid rgba(120, 197, 255, 0.28);
   border-radius: 10px;

@@ -50,7 +50,9 @@ const EMPTY_FORM = {
     searchText: '',
     maxRecipients: '',
     inclusionFilters: { ...EMPTY_DEEP_FILTERS },
-    exclusionFilters: { ...EMPTY_DEEP_FILTERS }
+    exclusionFilters: { ...EMPTY_DEEP_FILTERS },
+    blocksEnabled: false,
+    blockCount: 2
 };
 
 function toText(value = '') { return String(value || '').trim(); }
@@ -226,7 +228,9 @@ function mapCampaignToForm(campaign = {}, labelOptions = [], zoneOptions = []) {
         searchText: toText(filters?.search),
         maxRecipients: filters?.maxRecipients ? String(filters.maxRecipients) : '',
         inclusionFilters: deepFiltersFromLegacy(selection?.filters || filters),
-        exclusionFilters: deepFiltersFromLegacy(selection?.exclusionFilters || selection?.exclusion_filters || {})
+        exclusionFilters: deepFiltersFromLegacy(selection?.exclusionFilters || selection?.exclusion_filters || {}),
+        blocksEnabled: normalizeBlocksConfig(campaign?.blocksConfigJson)?.mode === 'blocks',
+        blockCount: normalizeBlocksConfig(campaign?.blocksConfigJson)?.blocks?.length || 2
     };
 }
 
@@ -280,6 +284,42 @@ function getAudienceSelectionFromCampaign(campaign = {}) {
     };
 }
 
+function normalizeBlocksConfig(value = null) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (toLower(value.mode || 'single') !== 'blocks') return null;
+    const blocks = (Array.isArray(value.blocks) ? value.blocks : [])
+        .map((block, index) => ({
+            blockIndex: Math.max(0, Math.floor(toNumber(block?.blockIndex ?? block?.block_index ?? index, index))),
+            size: Math.max(0, Math.floor(toNumber(block?.size, 0))),
+            status: toLower(block?.status || 'pending') || 'pending',
+            sentAt: toText(block?.sentAt || block?.sent_at || '')
+        }))
+        .sort((left, right) => left.blockIndex - right.blockIndex);
+    return {
+        mode: 'blocks',
+        blocks,
+        totalAudience: Math.max(0, Math.floor(toNumber(value.totalAudience ?? value.total_audience, 0)))
+    };
+}
+
+function buildBlocksConfigFromForm(form = {}, totalAudience = 0) {
+    if (!form?.blocksEnabled) return null;
+    const blockCount = Math.max(2, Math.min(10, Math.floor(toNumber(form.blockCount, 2))));
+    const cleanTotalAudience = Math.max(0, Math.floor(toNumber(totalAudience, 0)));
+    const baseSize = Math.floor(cleanTotalAudience / blockCount);
+    const remainder = cleanTotalAudience % blockCount;
+    return {
+        mode: 'blocks',
+        blocks: Array.from({ length: blockCount }, (_, index) => ({
+            blockIndex: index,
+            size: index === blockCount - 1 ? baseSize + remainder : baseSize,
+            status: 'pending',
+            sentAt: null
+        })),
+        totalAudience: cleanTotalAudience
+    };
+}
+
 function serializeCampaignForm(form = {}) {
     const source = form && typeof form === 'object' ? form : {};
     return JSON.stringify({
@@ -299,10 +339,11 @@ function serializeCampaignForm(form = {}) {
         ).sort(),
         languageFilter: toLower(source.languageFilter || ''),
         searchText: toText(source.searchText),
-        maxRecipients: toText(source.maxRecipients)
-        ,
+        maxRecipients: toText(source.maxRecipients),
         inclusionFilters: normalizeDeepFilters(source.inclusionFilters || {}),
-        exclusionFilters: normalizeDeepFilters(source.exclusionFilters || {})
+        exclusionFilters: normalizeDeepFilters(source.exclusionFilters || {}),
+        blocksEnabled: Boolean(source.blocksEnabled),
+        blockCount: Math.max(2, Math.min(10, Math.floor(toNumber(source.blockCount, 2))))
     });
 }
 
@@ -488,6 +529,9 @@ export default React.memo(function CampaignsSection(props = {}) {
         const finalRecipients = Math.max(0, eligible - excluded);
         return { eligible, excluded, finalRecipients };
     }, [estimatedAudienceItems, excludedCustomerIdSet]);
+    const blockPreview = useMemo(() => (
+        buildBlocksConfigFromForm(form, exclusionSummary.finalRecipients || estimateNumbers.eligible || 0)
+    ), [estimateNumbers.eligible, exclusionSummary.finalRecipients, form]);
     const formBaseline = useMemo(() => {
         if (panelMode === 'edit' && selectedCampaign) {
             return serializeCampaignForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions));
@@ -730,9 +774,10 @@ export default React.memo(function CampaignsSection(props = {}) {
             scheduledAt: toIsoDateTimeLocal(form.scheduledAt),
             audienceFiltersJson,
             audienceSelectionJson: buildAudienceSelectionFromForm(form, excludedCustomerIds),
+            blocksConfigJson: blockPreview,
             variablesPreviewJson: {}
         };
-    }, [excludedCustomerIds, form, labelOptions, zoneOptions]);
+    }, [blockPreview, excludedCustomerIds, form, labelOptions, zoneOptions]);
 
     const runEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
@@ -1345,6 +1390,53 @@ export default React.memo(function CampaignsSection(props = {}) {
                                         <div><small>Excluidos</small><strong>{estimateNumbers.excluded}</strong></div>
                                     </div>
                                     <span className="saas-campaigns-estimation-help">{reachEstimate ? 'Estimacion calculada con filtros actuales.' : 'Haz clic en \"Estimar alcance\" para precalcular audiencia.'}</span>
+                                </div>
+                                <div className="saas-admin-related-block">
+                                    <h4>Envio por bloques</h4>
+                                    <label className="saas-campaigns-block-toggle">
+                                        <input
+                                            type="checkbox"
+                                            checked={Boolean(form.blocksEnabled)}
+                                            onChange={(event) => setForm((prev) => ({ ...prev, blocksEnabled: event.target.checked }))}
+                                        />
+                                        <span>Enviar en bloques controlados</span>
+                                    </label>
+                                    {form.blocksEnabled ? (
+                                        <>
+                                            <div className="saas-admin-field">
+                                                <label>Numero de bloques</label>
+                                                <input
+                                                    type="number"
+                                                    min={2}
+                                                    max={10}
+                                                    value={form.blockCount}
+                                                    onChange={(event) => {
+                                                        const next = Math.max(2, Math.min(10, Math.floor(toNumber(event.target.value, 2))));
+                                                        setForm((prev) => ({ ...prev, blockCount: next }));
+                                                    }}
+                                                />
+                                            </div>
+                                            <div className="saas-campaigns-block-preview">
+                                                <table>
+                                                    <thead>
+                                                        <tr><th>Bloque</th><th>Contactos</th><th>Estado inicial</th></tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {blockPreview?.blocks?.map((block) => (
+                                                            <tr key={block.blockIndex}>
+                                                                <td>{`Bloque ${block.blockIndex + 1}`}</td>
+                                                                <td>{block.size}</td>
+                                                                <td>Pendiente</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                                <small>{`Audiencia total congelable: ${blockPreview?.totalAudience || 0}`}</small>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <span className="saas-campaigns-estimation-help">Modo normal: todos los destinatarios elegibles se envian como una sola ejecucion.</span>
+                                    )}
                                 </div>
                                 <div className="saas-admin-related-block">
                                     <h4>Validaciones antes de iniciar</h4>

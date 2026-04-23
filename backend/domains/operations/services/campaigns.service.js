@@ -18,6 +18,7 @@ const DEFAULT_RECIPIENT_LIMIT = 2000;
 
 const CAMPAIGN_STATUSES = new Set(['draft', 'scheduled', 'running', 'paused', 'completed', 'cancelled', 'failed']);
 const RECIPIENT_STATUSES = new Set(['pending', 'claimed', 'sent', 'failed', 'skipped', 'opted_out']);
+const CAMPAIGN_BLOCK_STATUSES = new Set(['pending', 'sending', 'completed', 'failed']);
 const EVENT_TYPES = new Set([
     'campaign_created',
     'campaign_updated',
@@ -141,6 +142,69 @@ function normalizeActorType(value = '', fallback = 'system') {
 function normalizeObject(value = {}) {
     if (value && typeof value === 'object' && !Array.isArray(value)) return value;
     return {};
+}
+
+function normalizeCampaignBlockStatus(value = '', fallback = 'pending') {
+    const status = toLower(value || fallback);
+    if (CAMPAIGN_BLOCK_STATUSES.has(status)) return status;
+    return fallback;
+}
+
+function normalizeBlocksConfig(value = null) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (toLower(value.mode || 'single') !== 'blocks') return null;
+
+    const totalAudience = toInt(value.totalAudience ?? value.total_audience, 0, { min: 0, max: 1000000 });
+    const blocks = ensureArray(value.blocks)
+        .map((block, index) => ({
+            blockIndex: toInt(block?.blockIndex ?? block?.block_index ?? index, index, { min: 0, max: 1000 }),
+            size: toInt(block?.size, 0, { min: 0, max: 1000000 }),
+            status: normalizeCampaignBlockStatus(block?.status),
+            sentAt: toIso(block?.sentAt || block?.sent_at)
+        }))
+        .sort((left, right) => left.blockIndex - right.blockIndex);
+
+    return {
+        mode: 'blocks',
+        blocks,
+        totalAudience
+    };
+}
+
+function buildBlocksConfig({ mode = 'single', blockCount = 2, totalAudience = 0 } = {}) {
+    if (toLower(mode) !== 'blocks') return null;
+    const cleanBlockCount = toInt(blockCount, 2, { min: 2, max: 10 });
+    const cleanTotalAudience = toInt(totalAudience, 0, { min: 0, max: 1000000 });
+    const baseSize = Math.floor(cleanTotalAudience / cleanBlockCount);
+    const remainder = cleanTotalAudience % cleanBlockCount;
+    const blocks = Array.from({ length: cleanBlockCount }, (_, index) => ({
+        blockIndex: index,
+        size: index === cleanBlockCount - 1 ? baseSize + remainder : baseSize,
+        status: 'pending',
+        sentAt: null
+    }));
+    return normalizeBlocksConfig({
+        mode: 'blocks',
+        blocks,
+        totalAudience: cleanTotalAudience
+    });
+}
+
+function buildBlocksConfigFromPayload(source = {}, existingConfig = null) {
+    const raw = Object.prototype.hasOwnProperty.call(source, 'blocksConfigJson')
+        ? source.blocksConfigJson
+        : (Object.prototype.hasOwnProperty.call(source, 'blocksConfig') ? source.blocksConfig : undefined);
+    if (raw === undefined) return existingConfig === undefined ? null : existingConfig;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+    const normalized = normalizeBlocksConfig(raw);
+    if (normalized && normalized.blocks.length > 0) return normalized;
+
+    return buildBlocksConfig({
+        mode: raw.mode || 'single',
+        blockCount: raw.blockCount ?? raw.blocksCount ?? ensureArray(raw.blocks).length,
+        totalAudience: raw.totalAudience ?? raw.total_audience
+    });
 }
 
 function normalizeLimit(value = DEFAULT_LIMIT) {
@@ -274,6 +338,7 @@ function normalizeCampaignRecord(input = {}) {
         status,
         audienceFiltersJson: normalizeObject(source.audienceFiltersJson || source.audience_filters_json),
         audienceSelectionJson: normalizeObject(source.audienceSelectionJson || source.audience_selection_json),
+        blocksConfigJson: normalizeBlocksConfig(source.blocksConfigJson || source.blocks_config_json),
         variablesPreviewJson: normalizeObject(source.variablesPreviewJson || source.variables_preview_json),
         totalRecipients: toInt(source.totalRecipients ?? source.total_recipients, 0, { min: 0 }),
         pendingRecipients: toInt(source.pendingRecipients ?? source.pending_recipients, 0, { min: 0 }),
@@ -393,6 +458,7 @@ async function ensurePostgresSchema() {
                     CHECK (status IN ('draft', 'scheduled', 'running', 'paused', 'completed', 'cancelled', 'failed')),
                 audience_filters_json JSONB NOT NULL DEFAULT '{}'::jsonb,
                 audience_selection_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                blocks_config_json JSONB NULL DEFAULT NULL,
                 variables_preview_json JSONB NOT NULL DEFAULT '{}'::jsonb,
                 total_recipients INTEGER NOT NULL DEFAULT 0,
                 pending_recipients INTEGER NOT NULL DEFAULT 0,
@@ -415,6 +481,11 @@ async function ensurePostgresSchema() {
         await queryPostgres(`
             ALTER TABLE tenant_campaigns
             ADD COLUMN IF NOT EXISTS audience_selection_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        `);
+
+        await queryPostgres(`
+            ALTER TABLE tenant_campaigns
+            ADD COLUMN IF NOT EXISTS blocks_config_json JSONB NULL DEFAULT NULL
         `);
 
         await queryPostgres(`
@@ -494,6 +565,7 @@ function mapCampaignRow(row = {}) {
         status: row.status,
         audienceFiltersJson: row.audience_filters_json,
         audienceSelectionJson: row.audience_selection_json,
+        blocksConfigJson: row.blocks_config_json,
         variablesPreviewJson: row.variables_preview_json,
         totalRecipients: row.total_recipients,
         pendingRecipients: row.pending_recipients,
@@ -586,14 +658,14 @@ async function persistCampaignRecord(tenantId = DEFAULT_TENANT_ID, record = {}) 
     const result = await queryPostgres(
         `INSERT INTO tenant_campaigns (
             campaign_id, tenant_id, scope_module_id, module_id, template_id, template_name, template_language,
-            campaign_name, campaign_description, status, audience_filters_json, audience_selection_json, variables_preview_json,
+            campaign_name, campaign_description, status, audience_filters_json, audience_selection_json, blocks_config_json, variables_preview_json,
             total_recipients, pending_recipients, claimed_recipients, sent_recipients, failed_recipients, skipped_recipients,
             scheduled_at, started_at, completed_at, cancelled_at, created_by, updated_by, created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7,
-            $8, $9, $10, $11::jsonb, $12::jsonb, $13::jsonb,
-            $14, $15, $16, $17, $18, $19,
-            $20::timestamptz, $21::timestamptz, $22::timestamptz, $23::timestamptz, $24, $25, $26::timestamptz, $27::timestamptz
+            $8, $9, $10, $11::jsonb, $12::jsonb, $13::jsonb, $14::jsonb,
+            $15, $16, $17, $18, $19, $20,
+            $21::timestamptz, $22::timestamptz, $23::timestamptz, $24::timestamptz, $25, $26, $27::timestamptz, $28::timestamptz
         )
         ON CONFLICT (tenant_id, campaign_id)
         DO UPDATE SET
@@ -607,6 +679,7 @@ async function persistCampaignRecord(tenantId = DEFAULT_TENANT_ID, record = {}) 
             status = EXCLUDED.status,
             audience_filters_json = EXCLUDED.audience_filters_json,
             audience_selection_json = EXCLUDED.audience_selection_json,
+            blocks_config_json = EXCLUDED.blocks_config_json,
             variables_preview_json = EXCLUDED.variables_preview_json,
             total_recipients = EXCLUDED.total_recipients,
             pending_recipients = EXCLUDED.pending_recipients,
@@ -634,6 +707,7 @@ async function persistCampaignRecord(tenantId = DEFAULT_TENANT_ID, record = {}) 
             normalized.status,
             JSON.stringify(normalized.audienceFiltersJson || {}),
             JSON.stringify(normalized.audienceSelectionJson || {}),
+            normalized.blocksConfigJson ? JSON.stringify(normalized.blocksConfigJson) : null,
             JSON.stringify(normalized.variablesPreviewJson || {}),
             normalized.totalRecipients,
             normalized.pendingRecipients,
@@ -961,6 +1035,7 @@ async function createCampaign(tenantId = DEFAULT_TENANT_ID, payload = {}) {
         status: source.status || (toIso(source.scheduledAt) ? 'scheduled' : 'draft'),
         audienceFiltersJson: source.audienceFiltersJson || source.audienceFilters || {},
         audienceSelectionJson: source.audienceSelectionJson || source.audienceSelection || {},
+        blocksConfigJson: buildBlocksConfigFromPayload(source, null),
         variablesPreviewJson: source.variablesPreviewJson || source.variablesPreview || {},
         totalRecipients: 0,
         pendingRecipients: 0,
@@ -1030,6 +1105,7 @@ async function updateCampaign(tenantId = DEFAULT_TENANT_ID, { campaignId = '', p
         status: sourcePatch.status !== undefined ? sourcePatch.status : existing.status,
         audienceFiltersJson: sourcePatch.audienceFiltersJson !== undefined ? sourcePatch.audienceFiltersJson : existing.audienceFiltersJson,
         audienceSelectionJson: sourcePatch.audienceSelectionJson !== undefined ? sourcePatch.audienceSelectionJson : existing.audienceSelectionJson,
+        blocksConfigJson: buildBlocksConfigFromPayload(sourcePatch, existing.blocksConfigJson),
         variablesPreviewJson: sourcePatch.variablesPreviewJson !== undefined ? sourcePatch.variablesPreviewJson : existing.variablesPreviewJson,
         scheduledAt: sourcePatch.scheduledAt !== undefined ? sourcePatch.scheduledAt : existing.scheduledAt,
         startedAt: sourcePatch.startedAt !== undefined ? sourcePatch.startedAt : existing.startedAt,
