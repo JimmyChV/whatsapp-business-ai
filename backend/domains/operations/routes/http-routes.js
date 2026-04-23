@@ -416,6 +416,15 @@ function registerOperationsHttpRoutes({
         : async () => {
             throw new Error('Servicio de campanas no disponible.');
         };
+    const listCampaignFilterOptions = typeof campaignsApi.listCampaignFilterOptions === 'function'
+        ? campaignsApi.listCampaignFilterOptions.bind(campaignsApi)
+        : async () => ({
+            commercial_statuses: [],
+            zone_labels: [],
+            operational_labels: [],
+            customer_types: [],
+            assigned_users: []
+        });
 
     async function listCustomerCatalogItems(catalogKey = '') {
         const fallbackCatalogs = loadCustomerCatalogFallbacks();
@@ -1677,7 +1686,8 @@ function registerOperationsHttpRoutes({
                 moduleId: toText(payload.moduleId || ''),
                 templateName: toText(payload.templateName || ''),
                 templateLanguage: toLower(payload.templateLanguage || 'es') || 'es',
-                filters: isPlainObject(payload.filters) ? payload.filters : {}
+                filters: isPlainObject(payload.filters) ? payload.filters : {},
+                audienceSelectionJson: isPlainObject(payload.audienceSelectionJson) ? payload.audienceSelectionJson : {}
             });
 
             return res.json({
@@ -1687,6 +1697,20 @@ function registerOperationsHttpRoutes({
             });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo estimar el alcance de la campana.') });
+        }
+    });
+
+    app.get('/api/tenant/campaigns/filter-options', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const options = await listCampaignFilterOptions(tenantId);
+            return res.json({ ok: true, tenantId, ...options });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar opciones de filtros de campana.') });
         }
     });
 

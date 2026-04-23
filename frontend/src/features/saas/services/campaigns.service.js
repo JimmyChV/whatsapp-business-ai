@@ -50,6 +50,11 @@ export async function estimateCampaign(requestJson, payload = {}) {
     });
 }
 
+export async function fetchCampaignFilterOptions(requestJson) {
+    assertRequestJson(requestJson);
+    return requestJson('/api/tenant/campaigns/filter-options');
+}
+
 export async function listCampaigns(
     requestJson,
     {

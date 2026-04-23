@@ -1068,6 +1068,71 @@ function normalizeStringArray(input = []) {
     return source.map((entry) => toText(entry)).filter(Boolean);
 }
 
+function normalizeNullableBool(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (value === true || value === false) return value;
+    const text = toLower(value);
+    if (['true', '1', 'yes', 'si', 'open'].includes(text)) return true;
+    if (['false', '0', 'no', 'closed'].includes(text)) return false;
+    return null;
+}
+
+function normalizeAudienceSelection(value = {}) {
+    const source = normalizeObject(value);
+    const normalizeFilterSet = (filters = {}) => {
+        const f = normalizeObject(filters);
+        return {
+            commercial_status: normalizeStringArray(f.commercial_status || f.commercialStatuses || f.commercialStatus).map(toLower),
+            opt_in_status: normalizeStringArray(f.opt_in_status || f.marketingStatus || f.marketingStatuses).map(toLower),
+            zone_label_ids: normalizeStringArray(f.zone_label_ids || f.zoneLabelIds || f.zoneRuleIds).map(toUpper),
+            operational_label_ids: normalizeStringArray(f.operational_label_ids || f.labelIds || f.labels).map((entry) => toLower(entry)),
+            customer_type_ids: normalizeStringArray(f.customer_type_ids || f.customerTypeIds).map(toText),
+            assigned_user_id: toNullableText(f.assigned_user_id || f.assignedUserId),
+            has_open_chat: normalizeNullableBool(f.has_open_chat ?? f.hasOpenChat),
+            created_after: toIso(f.created_after || f.createdAfter),
+            created_before: toIso(f.created_before || f.createdBefore)
+        };
+    };
+
+    return {
+        ...source,
+        excludedCustomerIds: normalizeStringArray(source.excludedCustomerIds || source.excluded_customer_ids),
+        filters: normalizeFilterSet(source.filters),
+        exclusionFilters: normalizeFilterSet(source.exclusionFilters || source.exclusion_filters)
+    };
+}
+
+function legacyFiltersFromAudienceSelection(selection = {}) {
+    const normalized = normalizeAudienceSelection(selection);
+    const filters = normalized.filters || {};
+    return {
+        commercialStatuses: filters.commercial_status,
+        marketingStatus: filters.opt_in_status,
+        zoneLabelIds: filters.zone_label_ids,
+        operationalLabelIds: filters.operational_label_ids,
+        customerTypeIds: filters.customer_type_ids,
+        assignedUserId: filters.assigned_user_id,
+        hasOpenChat: filters.has_open_chat,
+        createdAfter: filters.created_after,
+        createdBefore: filters.created_before
+    };
+}
+
+function matchFiltersFromDeepFilterSet(filters = {}) {
+    const source = normalizeObject(filters);
+    return {
+        commercialStatuses: normalizeStringArray(source.commercial_status || source.commercialStatuses || source.commercialStatus).map(toLower),
+        marketingStatus: normalizeStringArray(source.opt_in_status || source.marketingStatus || source.marketingStatuses).map(toLower),
+        zoneLabelIds: normalizeStringArray(source.zone_label_ids || source.zoneLabelIds || source.zoneRuleIds).map(toUpper),
+        operationalLabelIds: normalizeStringArray(source.operational_label_ids || source.operationalLabelIds || source.labelIds || source.labels).map(toLower),
+        customerTypeIds: normalizeStringArray(source.customer_type_ids || source.customerTypeIds).map(toText),
+        assignedUserId: toNullableText(source.assigned_user_id || source.assignedUserId),
+        hasOpenChat: normalizeNullableBool(source.has_open_chat ?? source.hasOpenChat),
+        createdAfter: toIso(source.created_after || source.createdAfter),
+        createdBefore: toIso(source.created_before || source.createdBefore)
+    };
+}
+
 function normalizeZoneLabelIds(filters = {}) {
     return normalizeStringArray(
         filters.zoneLabelIds
@@ -1077,6 +1142,15 @@ function normalizeZoneLabelIds(filters = {}) {
         || filters.zoneIds
         || filters.zoneId
     ).map((entry) => toUpper(entry));
+}
+
+function normalizeOperationalLabelIds(filters = {}) {
+    return normalizeStringArray(
+        filters.operationalLabelIds
+        || filters.operational_label_ids
+        || filters.labelIds
+        || filters.labels
+    ).map((entry) => toLower(entry));
 }
 
 function normalizeIdempotencyKey(campaignId = '', moduleId = '', phone = '') {
@@ -1090,6 +1164,7 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     const tagAll = new Set(normalizeStringArray(filters.tagAll).map((entry) => toLower(entry)));
     const labelsAny = new Set(normalizeStringArray(filters.labels || filters.labelsAny || filters.labelAny).map((entry) => toLower(entry)));
     const zoneLabelIds = new Set(normalizeZoneLabelIds(filters));
+    const operationalLabelIds = new Set(normalizeOperationalLabelIds(filters));
     const search = toLower(filters.search || '');
     const marketingStatus = new Set(normalizeStringArray(filters.marketingStatus).map((entry) => toLower(entry)));
     const commercialStatus = new Set(
@@ -1104,6 +1179,13 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     const customerId = toText(customer.customerId);
     const tags = ensureArray(customer.tags).map((entry) => toLower(entry));
     const tagsSet = new Set(tags);
+    const assignedUserId = toText(filters.assignedUserId || filters.assigned_user_id || '');
+    const customerAssignedUserId = toText(customer.assignedUserId || customer.assignmentUserId || customer.assignment_user_id || '');
+    const customerTypeIds = new Set(normalizeStringArray(filters.customerTypeIds || filters.customer_type_ids).map(toText));
+    const customerTypeId = toText(customer.customerTypeId || customer.customer_type_id || '');
+    const createdAfter = toIso(filters.createdAfter || filters.created_after);
+    const createdBefore = toIso(filters.createdBefore || filters.created_before);
+    const customerCreatedAt = toIso(customer.createdAt || customer.created_at);
     const haystack = `${toLower(customer.contactName)} ${toLower(customer.phone)} ${toLower(customer.email)} ${toLower(customer.customerId)}`;
 
     if (includeCustomerIds.size && !includeCustomerIds.has(customerId)) return false;
@@ -1118,6 +1200,11 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     if (labelsAny.size > 0) {
         const hasAnyLabel = [...labelsAny].some((tag) => tagsSet.has(tag));
         if (!hasAnyLabel) return false;
+    }
+
+    if (operationalLabelIds.size > 0) {
+        const hasAnyOperationalLabel = [...operationalLabelIds].some((labelId) => tagsSet.has(labelId));
+        if (!hasAnyOperationalLabel) return false;
     }
 
     if (zoneLabelIds.size > 0) {
@@ -1141,12 +1228,19 @@ function customerMatchesFilters(customer = {}, filters = {}) {
         if (!commercialStatus.has(currentCommercialStatus)) return false;
     }
 
+    if (assignedUserId && customerAssignedUserId !== assignedUserId) return false;
+    if (customerTypeIds.size > 0 && !customerTypeIds.has(customerTypeId)) return false;
+    if (createdAfter && customerCreatedAt && customerCreatedAt < createdAfter) return false;
+    if (createdBefore && customerCreatedAt && customerCreatedAt > createdBefore) return false;
+
+    // TODO: wire has_open_chat once a stable tenant chat status source is confirmed for campaign audiences.
+
     return true;
 }
 
 async function attachZoneLabelsToCustomers(tenantId = DEFAULT_TENANT_ID, customers = [], filters = {}) {
     const zoneFilterIds = normalizeZoneLabelIds(filters);
-    if (zoneFilterIds.length === 0) return customers;
+    if (zoneFilterIds.length === 0 && !filters.attachZoneLabels) return customers;
     const cleanTenantId = normalizeTenant(tenantId);
     try {
         const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.service');
@@ -1167,6 +1261,33 @@ async function attachZoneLabelsToCustomers(tenantId = DEFAULT_TENANT_ID, custome
     } catch {
         return customers;
     }
+}
+
+function customerMatchesExclusionFilters(customer = {}, filters = {}) {
+    const normalized = normalizeObject(filters);
+    const hasFilters = normalizeStringArray(normalized.commercialStatus || normalized.commercialStatuses || normalized.commercial_status).length > 0
+        || normalizeStringArray(normalized.marketingStatus || normalized.opt_in_status).length > 0
+        || normalizeZoneLabelIds(normalized).length > 0
+        || normalizeOperationalLabelIds(normalized).length > 0
+        || Boolean(toText(normalized.assignedUserId || normalized.assigned_user_id || ''))
+        || Boolean(toText(normalized.createdAfter || normalized.created_after || ''))
+        || Boolean(toText(normalized.createdBefore || normalized.created_before || ''))
+        || normalizeNullableBool(normalized.hasOpenChat ?? normalized.has_open_chat) !== null;
+    if (!hasFilters) return false;
+    return customerMatchesFilters(customer, normalized);
+}
+
+function mergeAudienceFilters(baseFilters = {}, audienceSelection = {}) {
+    const base = normalizeObject(baseFilters);
+    const selection = normalizeAudienceSelection(audienceSelection);
+    const deep = legacyFiltersFromAudienceSelection(selection);
+    return {
+        ...base,
+        ...Object.fromEntries(Object.entries(deep).filter(([, value]) => {
+            if (Array.isArray(value)) return value.length > 0;
+            return value !== null && value !== undefined && value !== '';
+        }))
+    };
 }
 
 async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {}, filters = {}) {
@@ -1205,11 +1326,14 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                     c.contact_name,
                     c.email,
                     c.preferred_language,
+                    c.customer_type_id,
+                    c.created_at,
                     c.module_id AS customer_module_id,
                     cmc.module_id AS context_module_id,
                     cmc.marketing_opt_in_status,
                     cmc.commercial_status,
-                    cmc.labels
+                    cmc.labels,
+                    cmc.assignment_user_id
                  FROM tenant_customer_module_contexts cmc
                  JOIN tenant_customers c
                    ON c.tenant_id = cmc.tenant_id
@@ -1232,7 +1356,10 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                 marketingOptInStatus: toLower(row.marketing_opt_in_status || 'unknown'),
                 commercialStatus: toLower(row.commercial_status || 'unknown'),
                 moduleId: toText(row.context_module_id || row.customer_module_id || ''),
-                preferredLanguage: toLower(row.preferred_language || 'es')
+                preferredLanguage: toLower(row.preferred_language || 'es'),
+                customerTypeId: toText(row.customer_type_id || ''),
+                assignedUserId: toText(row.assignment_user_id || ''),
+                createdAt: toIso(row.created_at)
             }));
 
             if (contextRows.length > 0) {
@@ -1258,7 +1385,7 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
     }
 
     const rowsResult = await queryPostgres(
-        `SELECT customer_id, phone_e164, contact_name, email, tags, module_id, preferred_language, marketing_opt_in_status
+        `SELECT customer_id, phone_e164, contact_name, email, tags, module_id, preferred_language, marketing_opt_in_status, customer_type_id, created_at
            FROM tenant_customers
           WHERE ${where.join(' AND ')}
           ORDER BY updated_at DESC
@@ -1275,7 +1402,10 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
         marketingOptInStatus: toLower(row.marketing_opt_in_status || 'unknown'),
         commercialStatus: 'unknown',
         moduleId: toText(row.module_id || ''),
-        preferredLanguage: toLower(row.preferred_language || 'es')
+        preferredLanguage: toLower(row.preferred_language || 'es'),
+        customerTypeId: toText(row.customer_type_id || ''),
+        assignedUserId: '',
+        createdAt: toIso(row.created_at)
     }));
 
     const withZoneLabels = await attachZoneLabelsToCustomers(cleanTenantId, rows, filters);
@@ -1338,7 +1468,10 @@ async function estimateCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         if (!campaign) throw new Error('Campana no encontrada.');
     }
 
-    const filters = normalizeObject(source.filters || campaign?.audienceFiltersJson || {});
+    const audienceSelection = normalizeAudienceSelection(source.audienceSelectionJson || source.audienceSelection || campaign?.audienceSelectionJson || {});
+    const filters = mergeAudienceFilters(source.filters || campaign?.audienceFiltersJson || {}, audienceSelection);
+    const exclusionFilters = matchFiltersFromDeepFilterSet(audienceSelection.exclusionFilters || {});
+    const excludedCustomerIds = new Set(audienceSelection.excludedCustomerIds);
     const campaignContext = campaign
         ? campaign
         : {
@@ -1350,7 +1483,8 @@ async function estimateCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
             templateLanguage: toLower(source.templateLanguage || 'es') || 'es'
         };
 
-    const candidates = await loadCandidateCustomers(cleanTenantId, campaignContext, filters);
+    const needsZoneLabels = normalizeZoneLabelIds(filters).length > 0 || normalizeZoneLabelIds(exclusionFilters).length > 0;
+    const candidates = await loadCandidateCustomers(cleanTenantId, campaignContext, { ...filters, attachZoneLabels: needsZoneLabels });
     const existingRecipients = campaign?.campaignId
         ? await listCampaignRecipients(cleanTenantId, {
             campaignId: campaign.campaignId,
@@ -1359,7 +1493,13 @@ async function estimateCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         })
         : { items: [] };
 
-    const eligibility = computeRecipientEligibility(candidates, existingRecipients.items);
+    const filteredCandidates = candidates.filter((customer) => {
+        const customerId = toText(customer?.customerId || '');
+        if (customerId && excludedCustomerIds.has(customerId)) return false;
+        if (customerMatchesExclusionFilters(customer, exclusionFilters)) return false;
+        return true;
+    });
+    const eligibility = computeRecipientEligibility(filteredCandidates, existingRecipients.items);
 
     return {
         tenantId: cleanTenantId,
@@ -1367,10 +1507,87 @@ async function estimateCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         scopeModuleId: campaignContext.scopeModuleId || '',
         moduleId: campaignContext.moduleId || null,
         filters,
+        exclusionFilters,
+        excludedCustomerIds: Array.from(excludedCustomerIds),
         total: eligibility.total,
         eligible: eligibility.eligible,
         excluded: eligibility.excluded,
         items: ensureArray(eligibility.eligibleCustomers).map(sanitizeEligibleCustomer)
+    };
+}
+
+async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    if (getStorageDriver() !== 'postgres') {
+        return {
+            commercial_statuses: [],
+            zone_labels: [],
+            operational_labels: [],
+            customer_types: [],
+            assigned_users: []
+        };
+    }
+
+    await ensurePostgresSchema();
+    const safeQuery = async (sql, params = []) => {
+        try {
+            const result = await queryPostgres(sql, params);
+            return ensureArray(result?.rows);
+        } catch (error) {
+            if (missingRelation(error) || String(error?.code || '') === '42703') return [];
+            throw error;
+        }
+    };
+
+    const [commercialRows, zoneRows, operationalRows, typeRows, userRows] = await Promise.all([
+        safeQuery(
+            `SELECT commercial_status_key AS key, name, color
+               FROM global_labels
+              WHERE is_active = TRUE
+                AND commercial_status_key IS NOT NULL
+              ORDER BY sort_order ASC, name ASC`
+        ),
+        safeQuery(
+            `SELECT rule_id AS id, name, color
+               FROM tenant_zone_rules
+              WHERE tenant_id = $1 AND is_active = TRUE
+              ORDER BY name ASC`,
+            [cleanTenantId]
+        ),
+        safeQuery(
+            `SELECT label_id AS id, name, color
+               FROM tenant_labels
+              WHERE tenant_id = $1
+                AND is_active = TRUE
+                AND COALESCE(type, 'operational') = 'operational'
+              ORDER BY sort_order ASC, name ASC`,
+            [cleanTenantId]
+        ),
+        safeQuery(
+            `SELECT id, label AS name
+               FROM global_customer_types
+              WHERE is_active = TRUE
+              ORDER BY label ASC`
+        ),
+        safeQuery(
+            `SELECT u.user_id AS id, COALESCE(NULLIF(BTRIM(u.display_name), ''), u.email, u.user_id) AS name
+               FROM memberships m
+               JOIN users u ON u.user_id = m.user_id
+              WHERE m.tenant_id = $1
+                AND m.is_active = TRUE
+                AND u.is_active = TRUE
+                AND LOWER(m.role) IN ('seller', 'admin')
+              ORDER BY name ASC`,
+            [cleanTenantId]
+        )
+    ]);
+
+    return {
+        commercial_statuses: commercialRows.map((row) => ({ key: toLower(row.key), name: toText(row.name), color: toText(row.color || '#00A884') })),
+        zone_labels: zoneRows.map((row) => ({ id: toUpper(row.id), name: toText(row.name), color: toText(row.color || '#00A884') })),
+        operational_labels: operationalRows.map((row) => ({ id: toUpper(row.id), name: toText(row.name), color: toText(row.color || '#00A884') })),
+        customer_types: typeRows.map((row) => ({ id: toText(row.id), name: toText(row.name) })),
+        assigned_users: userRows.map((row) => ({ id: toText(row.id), name: toText(row.name) }))
     };
 }
 
@@ -1638,27 +1855,29 @@ async function seedRecipientsFromFilters(tenantId = DEFAULT_TENANT_ID, options =
     const campaign = await getCampaignById(cleanTenantId, campaignId);
     if (!campaign) throw new Error('Campana no encontrada.');
 
-    const filters = normalizeObject(options.filters || campaign.audienceFiltersJson);
-    const audienceSelection = normalizeObject(options.audienceSelectionJson || campaign.audienceSelectionJson);
+    const audienceSelection = normalizeAudienceSelection(options.audienceSelectionJson || campaign.audienceSelectionJson);
+    const filters = mergeAudienceFilters(options.filters || campaign.audienceFiltersJson, audienceSelection);
+    const exclusionFilters = matchFiltersFromDeepFilterSet(audienceSelection.exclusionFilters || {});
     const excludedCustomerIds = new Set(
         ensureArray(audienceSelection.excludedCustomerIds)
             .map((entry) => toText(entry))
             .filter(Boolean)
     );
     const enqueueQueue = options.enqueueQueue === true;
-    const candidates = await loadCandidateCustomers(cleanTenantId, campaign, filters);
+    const needsZoneLabels = normalizeZoneLabelIds(filters).length > 0 || normalizeZoneLabelIds(exclusionFilters).length > 0;
+    const candidates = await loadCandidateCustomers(cleanTenantId, campaign, { ...filters, attachZoneLabels: needsZoneLabels });
     const maxAttempts = toInt(options.maxAttempts, 3, { min: 1, max: 10 });
     const existingRecipients = await listCampaignRecipients(cleanTenantId, {
         campaignId: campaign.campaignId,
         limit: MAX_LIMIT,
         offset: 0
     });
-    const filteredCandidates = excludedCustomerIds.size > 0
-        ? candidates.filter((customer) => {
+    const filteredCandidates = candidates.filter((customer) => {
             const customerId = toText(customer?.customerId);
-            return !customerId || !excludedCustomerIds.has(customerId);
-        })
-        : candidates;
+            if (customerId && excludedCustomerIds.has(customerId)) return false;
+            if (customerMatchesExclusionFilters(customer, exclusionFilters)) return false;
+            return true;
+        });
     const eligibility = computeRecipientEligibility(filteredCandidates, existingRecipients.items);
 
     const insertedRecipients = [];
@@ -2077,6 +2296,7 @@ module.exports = {
     resumeCampaign,
     cancelCampaign,
     estimateCampaign,
+    listCampaignFilterOptions,
     seedRecipientsFromFilters,
     listCampaignRecipients,
     recordCampaignEvent,

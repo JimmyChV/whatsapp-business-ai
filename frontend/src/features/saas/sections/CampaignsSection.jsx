@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import { isTemplateAllowedInCampaigns } from '../helpers/templateUseCase.helpers';
 import { fetchTenantZoneRules } from '../services/labels.service';
+import { fetchCampaignFilterOptions } from '../services/campaigns.service';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -22,6 +23,18 @@ const STATUS_META = {
     failed: { label: 'Fallida', className: 'saas-campaigns-status--failed' }
 };
 
+const EMPTY_DEEP_FILTERS = {
+    commercial_status: [],
+    opt_in_status: [],
+    zone_label_ids: [],
+    operational_label_ids: [],
+    customer_type_ids: [],
+    assigned_user_id: '',
+    has_open_chat: '',
+    created_after: '',
+    created_before: ''
+};
+
 const EMPTY_FORM = {
     campaignName: '',
     campaignDescription: '',
@@ -35,7 +48,9 @@ const EMPTY_FORM = {
     selectedZoneRuleIds: [],
     languageFilter: '',
     searchText: '',
-    maxRecipients: ''
+    maxRecipients: '',
+    inclusionFilters: { ...EMPTY_DEEP_FILTERS },
+    exclusionFilters: { ...EMPTY_DEEP_FILTERS }
 };
 
 function toText(value = '') { return String(value || '').trim(); }
@@ -104,6 +119,58 @@ function normalizeCommercialStatuses(value = []) {
     return Array.from(new Set(source.map((entry) => toLower(entry)).filter((entry) => allowed.has(entry))));
 }
 
+function normalizeDeepFilters(value = {}) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    return {
+        commercial_status: Array.from(new Set((Array.isArray(source.commercial_status) ? source.commercial_status : []).map(toLower).filter(Boolean))),
+        opt_in_status: Array.from(new Set((Array.isArray(source.opt_in_status) ? source.opt_in_status : []).map(toLower).filter(Boolean))),
+        zone_label_ids: Array.from(new Set((Array.isArray(source.zone_label_ids) ? source.zone_label_ids : []).map(toUpper).filter(Boolean))),
+        operational_label_ids: Array.from(new Set((Array.isArray(source.operational_label_ids) ? source.operational_label_ids : []).map(toUpper).filter(Boolean))),
+        customer_type_ids: Array.from(new Set((Array.isArray(source.customer_type_ids) ? source.customer_type_ids : []).map(toText).filter(Boolean))),
+        assigned_user_id: toText(source.assigned_user_id || ''),
+        has_open_chat: source.has_open_chat === true || source.has_open_chat === false ? source.has_open_chat : '',
+        created_after: toText(source.created_after || ''),
+        created_before: toText(source.created_before || '')
+    };
+}
+
+function deepFiltersFromLegacy(filters = {}) {
+    return normalizeDeepFilters({
+        commercial_status: filters.commercial_status || filters.commercialStatuses || filters.commercialStatus || [],
+        opt_in_status: filters.opt_in_status || filters.marketingStatus || [],
+        zone_label_ids: filters.zone_label_ids || filters.zoneLabelIds || [],
+        operational_label_ids: filters.operational_label_ids || filters.operationalLabelIds || [],
+        customer_type_ids: filters.customer_type_ids || filters.customerTypeIds || [],
+        assigned_user_id: filters.assigned_user_id || filters.assignedUserId || '',
+        has_open_chat: filters.has_open_chat ?? filters.hasOpenChat ?? '',
+        created_after: filters.created_after || filters.createdAfter || '',
+        created_before: filters.created_before || filters.createdBefore || ''
+    });
+}
+
+function toggleArrayValue(list = [], value = '', normalize = toText) {
+    const cleanValue = normalize(value);
+    if (!cleanValue) return Array.isArray(list) ? list : [];
+    const current = new Set((Array.isArray(list) ? list : []).map(normalize).filter(Boolean));
+    if (current.has(cleanValue)) current.delete(cleanValue);
+    else current.add(cleanValue);
+    return Array.from(current);
+}
+
+function hasDeepFilterValue(filters = {}) {
+    const f = normalizeDeepFilters(filters);
+    return f.commercial_status.length > 0
+        || f.opt_in_status.length > 0
+        || f.zone_label_ids.length > 0
+        || f.operational_label_ids.length > 0
+        || f.customer_type_ids.length > 0
+        || Boolean(f.assigned_user_id)
+        || f.has_open_chat === true
+        || f.has_open_chat === false
+        || Boolean(f.created_after)
+        || Boolean(f.created_before);
+}
+
 function buildLabelOptions(items = []) {
     return (Array.isArray(items) ? items : [])
         .map((item) => ({
@@ -128,6 +195,7 @@ function buildZoneOptions(items = []) {
 
 function mapCampaignToForm(campaign = {}, labelOptions = [], zoneOptions = []) {
     const filters = campaign?.audienceFiltersJson && typeof campaign.audienceFiltersJson === 'object' ? campaign.audienceFiltersJson : {};
+    const selection = campaign?.audienceSelectionJson && typeof campaign.audienceSelectionJson === 'object' ? campaign.audienceSelectionJson : {};
     const labelsByName = new Map(labelOptions.map((entry) => [toLower(entry.name), entry.labelId]));
     const labelsById = new Set(labelOptions.map((entry) => toUpper(entry.labelId)));
     const selectedLabelIds = (Array.isArray(filters?.tagAny) ? filters.tagAny : [])
@@ -156,7 +224,9 @@ function mapCampaignToForm(campaign = {}, labelOptions = [], zoneOptions = []) {
         selectedZoneRuleIds: Array.from(new Set(selectedZoneRuleIds)),
         languageFilter: toLower(filters?.preferredLanguage || ''),
         searchText: toText(filters?.search),
-        maxRecipients: filters?.maxRecipients ? String(filters.maxRecipients) : ''
+        maxRecipients: filters?.maxRecipients ? String(filters.maxRecipients) : '',
+        inclusionFilters: deepFiltersFromLegacy(selection?.filters || filters),
+        exclusionFilters: deepFiltersFromLegacy(selection?.exclusionFilters || selection?.exclusion_filters || {})
     };
 }
 
@@ -183,6 +253,16 @@ function buildAudienceFiltersFromForm(form = {}, labelOptions = [], zoneOptions 
     };
 }
 
+function buildAudienceSelectionFromForm(form = {}, excludedCustomerIds = []) {
+    return {
+        excludedCustomerIds: Array.from(
+            new Set((Array.isArray(excludedCustomerIds) ? excludedCustomerIds : []).map((entry) => toText(entry)).filter(Boolean))
+        ),
+        filters: normalizeDeepFilters(form?.inclusionFilters || {}),
+        exclusionFilters: normalizeDeepFilters(form?.exclusionFilters || {})
+    };
+}
+
 function getAudienceSelectionFromCampaign(campaign = {}) {
     const selection = campaign?.audienceSelectionJson && typeof campaign.audienceSelectionJson === 'object'
         ? campaign.audienceSelectionJson
@@ -194,7 +274,9 @@ function getAudienceSelectionFromCampaign(campaign = {}) {
                     .map((entry) => toText(entry))
                     .filter(Boolean)
             )
-        )
+        ),
+        filters: deepFiltersFromLegacy(selection.filters || {}),
+        exclusionFilters: deepFiltersFromLegacy(selection.exclusionFilters || selection.exclusion_filters || {})
     };
 }
 
@@ -218,6 +300,9 @@ function serializeCampaignForm(form = {}) {
         languageFilter: toLower(source.languageFilter || ''),
         searchText: toText(source.searchText),
         maxRecipients: toText(source.maxRecipients)
+        ,
+        inclusionFilters: normalizeDeepFilters(source.inclusionFilters || {}),
+        exclusionFilters: normalizeDeepFilters(source.exclusionFilters || {})
     });
 }
 
@@ -249,6 +334,13 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [localEstimate, setLocalEstimate] = useState(null);
     const [excludedCustomerIds, setExcludedCustomerIds] = useState([]);
     const [zoneRules, setZoneRules] = useState([]);
+    const [campaignFilterOptions, setCampaignFilterOptions] = useState({
+        commercial_statuses: [],
+        zone_labels: [],
+        operational_labels: [],
+        customer_types: [],
+        assigned_users: []
+    });
 
     const {
         campaigns = [],
@@ -500,6 +592,26 @@ export default React.memo(function CampaignsSection(props = {}) {
     }, [isCampaignsSection, requestJson, tenantScopeLocked]);
 
     useEffect(() => {
+        if (!isCampaignsSection || tenantScopeLocked || typeof requestJson !== 'function') return;
+        let cancelled = false;
+        void fetchCampaignFilterOptions(requestJson)
+            .then((payload) => {
+                if (cancelled) return;
+                setCampaignFilterOptions({
+                    commercial_statuses: Array.isArray(payload?.commercial_statuses) ? payload.commercial_statuses : [],
+                    zone_labels: Array.isArray(payload?.zone_labels) ? payload.zone_labels : [],
+                    operational_labels: Array.isArray(payload?.operational_labels) ? payload.operational_labels : [],
+                    customer_types: Array.isArray(payload?.customer_types) ? payload.customer_types : [],
+                    assigned_users: Array.isArray(payload?.assigned_users) ? payload.assigned_users : []
+                });
+            })
+            .catch(() => {});
+        return () => {
+            cancelled = true;
+        };
+    }, [isCampaignsSection, requestJson, tenantScopeLocked]);
+
+    useEffect(() => {
         if (panelMode !== 'create' && panelMode !== 'edit') return;
         if (maxRecipientsTouched) return;
         const eligible = estimateNumbers.eligible;
@@ -563,6 +675,48 @@ export default React.memo(function CampaignsSection(props = {}) {
         });
     }, []);
 
+    const updateDeepFilter = useCallback((scope = 'inclusionFilters', keyName = '', value) => {
+        if (!keyName) return;
+        setForm((prev) => ({
+            ...prev,
+            [scope]: normalizeDeepFilters({
+                ...(prev?.[scope] || {}),
+                [keyName]: value
+            })
+        }));
+    }, []);
+
+    const toggleDeepFilterValue = useCallback((scope = 'inclusionFilters', keyName = '', value = '', normalize = toText) => {
+        if (!keyName) return;
+        setForm((prev) => {
+            const currentFilters = normalizeDeepFilters(prev?.[scope] || {});
+            return {
+                ...prev,
+                [scope]: normalizeDeepFilters({
+                    ...currentFilters,
+                    [keyName]: toggleArrayValue(currentFilters[keyName], value, normalize)
+                })
+            };
+        });
+    }, []);
+
+    const removeDeepFilterValue = useCallback((scope = 'inclusionFilters', keyName = '', value = '', normalize = toText) => {
+        if (!keyName) return;
+        const cleanValue = normalize(value);
+        setForm((prev) => {
+            const currentFilters = normalizeDeepFilters(prev?.[scope] || {});
+            return {
+                ...prev,
+                [scope]: normalizeDeepFilters({
+                    ...currentFilters,
+                    [keyName]: Array.isArray(currentFilters[keyName])
+                        ? currentFilters[keyName].filter((entry) => normalize(entry) !== cleanValue)
+                        : ''
+                })
+            };
+        });
+    }, []);
+
     const buildCampaignPayload = useCallback(() => {
         const audienceFiltersJson = buildAudienceFiltersFromForm(form, labelOptions, zoneOptions);
         return {
@@ -575,11 +729,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             campaignDescription: toText(form.campaignDescription) || null,
             scheduledAt: toIsoDateTimeLocal(form.scheduledAt),
             audienceFiltersJson,
-            audienceSelectionJson: {
-                excludedCustomerIds: Array.from(
-                    new Set((Array.isArray(excludedCustomerIds) ? excludedCustomerIds : []).map((entry) => toText(entry)).filter(Boolean))
-                )
-            },
+            audienceSelectionJson: buildAudienceSelectionFromForm(form, excludedCustomerIds),
             variablesPreviewJson: {}
         };
     }, [excludedCustomerIds, form, labelOptions, zoneOptions]);
@@ -594,7 +744,8 @@ export default React.memo(function CampaignsSection(props = {}) {
             moduleId: payload.moduleId,
             templateName: payload.templateName,
             templateLanguage: payload.templateLanguage,
-            filters: payload.audienceFiltersJson
+            filters: payload.audienceFiltersJson,
+            audienceSelectionJson: payload.audienceSelectionJson
         });
         const estimate = response?.estimate && typeof response.estimate === 'object'
             ? response.estimate
@@ -604,6 +755,16 @@ export default React.memo(function CampaignsSection(props = {}) {
             setExcludedCustomerIds([]);
         }
     }, [buildCampaignPayload, estimateReachAction]);
+
+    useEffect(() => {
+        if (panelMode !== 'create' && panelMode !== 'edit') return undefined;
+        if (!form.moduleId || !form.templateName) return undefined;
+        if (!hasDeepFilterValue(form.inclusionFilters) && !hasDeepFilterValue(form.exclusionFilters)) return undefined;
+        const timer = setTimeout(() => {
+            runEstimate().catch(() => {});
+        }, 400);
+        return () => clearTimeout(timer);
+    }, [form.exclusionFilters, form.inclusionFilters, form.moduleId, form.templateName, panelMode, runEstimate]);
 
     const runDetailEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
@@ -615,7 +776,8 @@ export default React.memo(function CampaignsSection(props = {}) {
             moduleId: toText(detailForm.moduleId),
             templateName: toText(detailForm.templateName),
             templateLanguage: toLower(detailForm.templateLanguage || 'es'),
-            filters: audienceFiltersJson
+            filters: audienceFiltersJson,
+            audienceSelectionJson: buildAudienceSelectionFromForm(detailForm, getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds)
         };
         if (!payload.moduleId) throw new Error('La campana no tiene modulo configurado.');
         if (!payload.templateName) throw new Error('La campana no tiene template configurado.');
@@ -710,6 +872,116 @@ export default React.memo(function CampaignsSection(props = {}) {
             ]);
         }, 'No se pudo abrir campana.');
     }, [loadTracking, runSafe, selectCampaign]);
+
+    const renderAudienceFilterChips = (scope = 'inclusionFilters', title = 'Incluir') => {
+        const filters = normalizeDeepFilters(form?.[scope] || {});
+        const chips = [];
+        const addList = (keyName, options = [], labelKey = 'name', valueKey = 'id', normalize = toText) => {
+            (Array.isArray(filters[keyName]) ? filters[keyName] : []).forEach((value) => {
+                const option = options.find((entry) => normalize(entry?.[valueKey] || entry?.key) === normalize(value));
+                chips.push({ keyName, value, label: option?.[labelKey] || value, normalize });
+            });
+        };
+        addList('commercial_status', campaignFilterOptions.commercial_statuses, 'name', 'key', toLower);
+        addList('opt_in_status', [{ id: 'opted_in', name: 'Opted in' }, { id: 'pending', name: 'Pendiente' }, { id: 'opted_out', name: 'Opted out' }], 'name', 'id', toLower);
+        addList('zone_label_ids', campaignFilterOptions.zone_labels, 'name', 'id', toUpper);
+        addList('operational_label_ids', campaignFilterOptions.operational_labels, 'name', 'id', toUpper);
+        addList('customer_type_ids', campaignFilterOptions.customer_types, 'name', 'id', toText);
+        if (filters.assigned_user_id) {
+            const user = campaignFilterOptions.assigned_users.find((entry) => entry.id === filters.assigned_user_id);
+            chips.push({ keyName: 'assigned_user_id', value: '', label: user?.name || filters.assigned_user_id, normalize: toText });
+        }
+        if (filters.created_after) chips.push({ keyName: 'created_after', value: '', label: `Desde ${filters.created_after}`, normalize: toText });
+        if (filters.created_before) chips.push({ keyName: 'created_before', value: '', label: `Hasta ${filters.created_before}`, normalize: toText });
+        if (chips.length === 0) return null;
+        return (
+            <div className="saas-campaigns-filter-chips">
+                <strong>{title}:</strong>
+                {chips.map((chip, index) => (
+                    <button
+                        key={`${scope}_${chip.keyName}_${chip.value}_${index}`}
+                        type="button"
+                        onClick={() => {
+                            if (Array.isArray(filters[chip.keyName])) removeDeepFilterValue(scope, chip.keyName, chip.value, chip.normalize);
+                            else updateDeepFilter(scope, chip.keyName, '');
+                        }}
+                    >
+                        {chip.label}<span>x</span>
+                    </button>
+                ))}
+            </div>
+        );
+    };
+
+    const renderAudienceFilterPanel = (scope = 'inclusionFilters', title = 'Filtros') => {
+        const filters = normalizeDeepFilters(form?.[scope] || {});
+        const optInOptions = [{ id: 'opted_in', name: 'Opted in' }, { id: 'pending', name: 'Pendiente' }, { id: 'opted_out', name: 'Opted out' }];
+        return (
+            <details className="saas-campaigns-filter-panel" open={scope === 'inclusionFilters'}>
+                <summary>{title}</summary>
+                <div className="saas-campaigns-filter-grid">
+                    <div className="saas-admin-field">
+                        <label>Estado comercial</label>
+                        <div className="saas-campaigns-chip-group">
+                            {(campaignFilterOptions.commercial_statuses.length ? campaignFilterOptions.commercial_statuses : COMMERCIAL_STATUS_OPTIONS.map((item) => ({ key: item.key, name: item.label }))).map((option) => {
+                                const active = filters.commercial_status.includes(toLower(option.key));
+                                return <button key={`${scope}_cs_${option.key}`} type="button" className={`saas-campaigns-chip ${active ? 'active' : ''}`} onClick={() => toggleDeepFilterValue(scope, 'commercial_status', option.key, toLower)}>{option.name}</button>;
+                            })}
+                        </div>
+                    </div>
+                    <div className="saas-admin-field">
+                        <label>Opt-in</label>
+                        <div className="saas-campaigns-chip-group">
+                            {optInOptions.map((option) => {
+                                const active = filters.opt_in_status.includes(toLower(option.id));
+                                return <button key={`${scope}_opt_${option.id}`} type="button" className={`saas-campaigns-chip ${active ? 'active' : ''}`} onClick={() => toggleDeepFilterValue(scope, 'opt_in_status', option.id, toLower)}>{option.name}</button>;
+                            })}
+                        </div>
+                    </div>
+                    <div className="saas-admin-field">
+                        <label>Zonas</label>
+                        <div className="saas-campaigns-chip-group">
+                            {campaignFilterOptions.zone_labels.length === 0 ? <small className="saas-admin-empty-inline">Sin zonas.</small> : campaignFilterOptions.zone_labels.map((option) => {
+                                const active = filters.zone_label_ids.includes(toUpper(option.id));
+                                return <button key={`${scope}_zone_${option.id}`} type="button" className={`saas-campaigns-chip ${active ? 'active' : ''}`} onClick={() => toggleDeepFilterValue(scope, 'zone_label_ids', option.id, toUpper)}>{option.name}</button>;
+                            })}
+                        </div>
+                    </div>
+                    <div className="saas-admin-field">
+                        <label>Etiquetas operativas</label>
+                        <div className="saas-campaigns-chip-group">
+                            {campaignFilterOptions.operational_labels.length === 0 ? <small className="saas-admin-empty-inline">Sin etiquetas.</small> : campaignFilterOptions.operational_labels.map((option) => {
+                                const active = filters.operational_label_ids.includes(toUpper(option.id));
+                                return <button key={`${scope}_op_${option.id}`} type="button" className={`saas-campaigns-chip ${active ? 'active' : ''}`} onClick={() => toggleDeepFilterValue(scope, 'operational_label_ids', option.id, toUpper)}>{option.name}</button>;
+                            })}
+                        </div>
+                    </div>
+                    <div className="saas-admin-field">
+                        <label>Tipo de cliente</label>
+                        <select value={filters.customer_type_ids[0] || ''} onChange={(event) => updateDeepFilter(scope, 'customer_type_ids', event.target.value ? [event.target.value] : [])}>
+                            <option value="">Todos</option>
+                            {campaignFilterOptions.customer_types.map((option) => <option key={`${scope}_type_${option.id}`} value={option.id}>{option.name}</option>)}
+                        </select>
+                    </div>
+                    <div className="saas-admin-field">
+                        <label>Asignado a</label>
+                        <select value={filters.assigned_user_id} onChange={(event) => updateDeepFilter(scope, 'assigned_user_id', event.target.value)}>
+                            <option value="">Todos</option>
+                            {campaignFilterOptions.assigned_users.map((option) => <option key={`${scope}_user_${option.id}`} value={option.id}>{option.name}</option>)}
+                        </select>
+                    </div>
+                    <div className="saas-admin-field">
+                        <label>Fecha desde</label>
+                        <input type="date" value={filters.created_after} onChange={(event) => updateDeepFilter(scope, 'created_after', event.target.value)} />
+                    </div>
+                    <div className="saas-admin-field">
+                        <label>Fecha hasta</label>
+                        <input type="date" value={filters.created_before} onChange={(event) => updateDeepFilter(scope, 'created_before', event.target.value)} />
+                    </div>
+                </div>
+            </details>
+        );
+    };
 
     useEffect(() => {
         if (!isCampaignsSection) return undefined;
@@ -947,6 +1219,12 @@ export default React.memo(function CampaignsSection(props = {}) {
                     <SaasDetailPanelSection title="Segmentacion y filtros">
                         <div className="saas-campaigns-builder saas-campaigns-builder--full">
                             <div className="saas-campaigns-builder__form">
+                                <div className="saas-campaigns-filter-chip-row">
+                                    {renderAudienceFilterChips('inclusionFilters', 'Incluir')}
+                                    {renderAudienceFilterChips('exclusionFilters', 'Excluir')}
+                                </div>
+                                {renderAudienceFilterPanel('inclusionFilters', 'Filtros de inclusion')}
+                                {renderAudienceFilterPanel('exclusionFilters', 'Filtros de exclusion')}
                                 <div className="saas-admin-form-row">
                                     <div className="saas-admin-field">
                                         <label>Estado comercial (multiseleccion)</label>
