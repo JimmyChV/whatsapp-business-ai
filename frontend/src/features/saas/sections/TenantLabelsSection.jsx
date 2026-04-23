@@ -6,6 +6,7 @@ const EMPTY_GLOBAL = { id: '', name: '', color: '#00A884', description: '', comm
 const EMPTY_ZONE = { ruleId: '', name: '', color: '#00A884', departments: [], provinces: [], districts: [], departmentId: '', provinceId: '', districtId: '', isActive: true };
 const LABEL_COLORS = ['#00A884', '#14B8A6', '#38BDF8', '#6366F1', '#8B5CF6', '#F59E0B', '#F97316', '#EF4444', '#EC4899', '#84CC16'];
 const GLOBAL_COMMERCIAL_STATUS_KEYS = new Set(['nuevo', 'en_conversacion', 'cotizado', 'vendido', 'perdido']);
+const globalLabelsCache = new Map();
 const zoneRulesCache = new Map();
 const text = (v = '') => String(v || '').trim();
 const upper = (v = '') => text(v).toUpperCase();
@@ -57,6 +58,11 @@ function upsertById(items = [], item = {}, idField = 'ruleId') {
     const exists = items.some((entry) => upper(entry?.[idField] || '') === id);
     return exists ? items.map((entry) => (upper(entry?.[idField] || '') === id ? normalized : entry)) : [normalized, ...items];
 }
+function normalizeGlobalItems(items = []) {
+    return (Array.isArray(items) ? items : [])
+        .map(normGlobal)
+        .filter((item) => GLOBAL_COMMERCIAL_STATUS_KEYS.has(item.commercialStatusKey));
+}
 function Dot({ color = '#00A884' }) { return <span className="saas-label-color-dot" style={{ '--label-color': color }} />; }
 function ColorPicker({ value = '#00A884', onChange, disabled = false }) {
     const current = text(value || '#00A884') || '#00A884';
@@ -105,7 +111,8 @@ function LabelsTable({ items = [], selectedId = '', idField = 'id', kind = 'labe
 }
 
 function GlobalPanel({ busy, requestJson, runAction, setError, isSuperAdmin }) {
-    const [items, setItems] = useState([]);
+    const cacheKey = 'commercial';
+    const [items, setItems] = useState(() => globalLabelsCache.get(cacheKey) || []);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState('');
     const [mode, setMode] = useState('list');
@@ -115,16 +122,23 @@ function GlobalPanel({ busy, requestJson, runAction, setError, isSuperAdmin }) {
     const visible = useMemo(() => items.filter((x) => !key(search) || key(`${x.id} ${x.name} ${x.commercialStatusKey}`).includes(key(search))), [items, search]);
     const close = useCallback(() => { setMode('list'); setSelectedId(''); setForm({ ...EMPTY_GLOBAL }); }, []);
     useEscape(mode !== 'list', close);
-    const load = useCallback(async () => {
+    const setCachedItems = useCallback((nextItems) => {
+        const normalized = normalizeGlobalItems(nextItems);
+        globalLabelsCache.set(cacheKey, normalized);
+        setItems(normalized);
+    }, []);
+    const load = useCallback(async ({ force = false } = {}) => {
         if (!isSuperAdmin || !requestJson) return;
+        if (!force && globalLabelsCache.has(cacheKey)) {
+            setItems(globalLabelsCache.get(cacheKey) || []);
+            return;
+        }
         setLoading(true);
         try {
             const payload = await fetchGlobalLabels(requestJson, { includeInactive: true });
-            setItems((Array.isArray(payload?.items) ? payload.items : [])
-                .map(normGlobal)
-                .filter((item) => GLOBAL_COMMERCIAL_STATUS_KEYS.has(item.commercialStatusKey)));
+            setCachedItems(payload?.items || []);
         } finally { setLoading(false); }
-    }, [isSuperAdmin, requestJson]);
+    }, [isSuperAdmin, requestJson, setCachedItems]);
     useEffect(() => { load().catch((e) => setError?.(String(e?.message || e || 'No se pudieron cargar etiquetas globales.'))); }, [load, setError]);
     if (!isSuperAdmin) return <Empty title="Globales solo para superadmin" body="Estas etiquetas comerciales se comparten como catalogo central del sistema." />;
     const openCreate = () => { setMode('create'); setSelectedId('__create_global'); setForm({ ...EMPTY_GLOBAL }); };
@@ -159,13 +173,13 @@ function GlobalPanel({ busy, requestJson, runAction, setError, isSuperAdmin }) {
                 <span>Activa</span>
             </label>
             <div className="saas-admin-form-row saas-admin-form-row--actions">
-                <button type="button" disabled={busy || !text(form.name)} onClick={() => runAction?.('Etiqueta global guardada', async () => { const saved = await saveGlobalLabel(requestJson, { id: form.id || undefined, name: form.name, color: form.color, description: form.description, commercialStatusKey: form.commercialStatusKey, sortOrder: Number(form.sortOrder || 100) || 100, isActive: form.isActive !== false }); await load(); const next = upper(saved?.item?.id || form.id || ''); if (next) { setSelectedId(next); setMode('detail'); } else close(); })}>Guardar global</button>
-                {form.id ? <button type="button" className="danger" disabled={busy} onClick={() => runAction?.('Etiqueta global eliminada', async () => { await deleteGlobalLabel(requestJson, form.id); await load(); close(); })}>Eliminar</button> : null}
+                <button type="button" disabled={busy || !text(form.name)} onClick={() => runAction?.('Etiqueta global guardada', async () => { const saved = await saveGlobalLabel(requestJson, { id: form.id || undefined, name: form.name, color: form.color, description: form.description, commercialStatusKey: form.commercialStatusKey, sortOrder: Number(form.sortOrder || 100) || 100, isActive: form.isActive !== false }); const savedItem = normGlobal(saved?.item || { ...form, id: form.id }); const next = upper(savedItem.id || form.id || ''); if (next) { setCachedItems(upsertById(items, savedItem, 'id')); setSelectedId(next); setForm(globalForm(savedItem)); setMode('detail'); } else close(); })}>Guardar global</button>
+                {form.id ? <button type="button" className="danger" disabled={busy} onClick={() => runAction?.('Etiqueta global eliminada', async () => { await deleteGlobalLabel(requestJson, form.id); setCachedItems(items.filter((item) => upper(item.id) !== upper(form.id))); close(); })}>Eliminar</button> : null}
                 <button type="button" className="saas-btn-cancel" disabled={busy} onClick={close}>Cancelar</button>
             </div>
         </SaasDetailPanelSection>
     );
-    return <SaasEntityPage title="Globales comerciales" sectionKey="global_labels_inner" rows={buildLabelRows(visible, 'id', 'global')} columns={LABEL_TABLE_COLUMNS.map((column) => column.key === 'metaText' ? { ...column, label: 'Estado comercial' } : column)} selectedId={mode === 'list' ? '' : selectedId} onSelect={(row) => openDetail(row)} onClose={close} renderDetail={renderDetail} renderForm={renderForm} mode={mode === 'create' || mode === 'edit' ? 'form' : 'detail'} dirty={mode === 'create' || mode === 'edit'} requestJson={requestJson} loading={loading} emptyText="No hay etiquetas globales para mostrar." searchPlaceholder="Buscar etiqueta global" actions={[{ key: 'reload', label: 'Recargar', onClick: () => load().catch((e) => setError?.(String(e?.message || e))), disabled: busy || loading }, { key: 'create', label: 'Nueva global', onClick: openCreate, disabled: busy }]} detailTitle={mode === 'create' ? 'Nueva global' : mode === 'edit' ? 'Editar global' : selected?.name || 'Etiqueta global'} detailSubtitle={mode === 'detail' ? 'Etiqueta comercial global.' : 'Define nombre, color, orden y estado comercial asociado.'} detailActions={mode === 'detail' && selected ? <button type="button" disabled={busy} onClick={openEdit}>Editar</button> : null} />;
+    return <SaasEntityPage title="Globales comerciales" sectionKey="global_labels_inner" rows={buildLabelRows(visible, 'id', 'global')} columns={LABEL_TABLE_COLUMNS.map((column) => column.key === 'metaText' ? { ...column, label: 'Estado comercial' } : column)} selectedId={mode === 'list' ? '' : selectedId} onSelect={(row) => openDetail(row)} onClose={close} renderDetail={renderDetail} renderForm={renderForm} mode={mode === 'create' || mode === 'edit' ? 'form' : 'detail'} dirty={mode === 'create' || mode === 'edit'} requestJson={requestJson} loading={loading} emptyText="No hay etiquetas globales para mostrar." searchPlaceholder="Buscar etiqueta global" actions={[{ key: 'reload', label: 'Recargar', onClick: () => load({ force: true }).catch((e) => setError?.(String(e?.message || e))), disabled: busy || loading }, { key: 'create', label: 'Nueva global', onClick: openCreate, disabled: busy }]} detailTitle={mode === 'create' ? 'Nueva global' : mode === 'edit' ? 'Editar global' : selected?.name || 'Etiqueta global'} detailSubtitle={mode === 'detail' ? 'Etiqueta comercial global.' : 'Define nombre, color, orden y estado comercial asociado.'} detailActions={mode === 'detail' && selected ? <button type="button" disabled={busy} onClick={openEdit}>Editar</button> : null} />;
 }
 
 function ZonePanel({ busy, requestJson, runAction, setError, canManageLabels, tenantScopeLocked, settingsTenantId }) {
