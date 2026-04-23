@@ -9,6 +9,7 @@ import {
     SaasDataTable,
     SaasDetailPanel,
     SaasDetailPanelSection,
+    SaasEntityPage,
     SaasTableDetailLayout,
     SaasViewHeader,
     useSaasColumnPrefs
@@ -713,7 +714,7 @@ function extractCustomerModuleCandidates(customer = null) {
         customer?.metadata?.assigned_modules,
         customer?.profile?.moduleIds,
         customer?.profile?.module_ids
-    ];
+    ].filter(Boolean);
 
     return rawCandidates.flatMap((value) => {
         if (Array.isArray(value)) return value;
@@ -892,7 +893,10 @@ function CustomersSection(props = {}) {
     const customersRealtimeSyncInFlightRef = useRef(false);
 
     const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
-    const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys);
+    const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys, {
+        requestJson,
+        availableColumns: CUSTOMER_TABLE_COLUMNS
+    });
 
     useEffect(() => {
         setSelectedCustomerLive((prev) => {
@@ -1297,9 +1301,10 @@ function CustomersSection(props = {}) {
 
     const tableColumns = useMemo(
         () => ([
-            {
+            ...(campaignSelectionMode ? [{
                 key: 'selectForCampaign',
-                hidden: !campaignSelectionMode || !outreachModuleId,
+                configurable: false,
+                sortable: false,
                 label: (
                     <span className="saas-customers-select-cell">
                         <input
@@ -1348,7 +1353,7 @@ function CustomersSection(props = {}) {
                         </span>
                     );
                 }
-            },
+            }] : []),
             ...CUSTOMER_TABLE_COLUMNS.map((column) => ({
                 ...column,
                 hidden: !columnPrefs.isColumnVisible(column.key)
@@ -3280,20 +3285,20 @@ function CustomersSection(props = {}) {
             variant: campaignSelectionMode ? 'danger' : 'secondary',
             disabled: busy || tenantScopeLocked
         },
-        {
+        campaignSelectionMode && selectedCustomerIdsForCampaign.length > 0 && outreachMode === 'eligible' ? {
             key: 'send-template',
             label: `Enviar campaña${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
             onClick: () => { void handleOpenCampaignTemplateModal(); },
             variant: 'secondary',
-            disabled: busy || tenantScopeLocked || !campaignSelectionMode || !outreachModuleId || outreachMode !== 'eligible' || selectedCustomerIdsForCampaign.length === 0
-        },
-        {
+            disabled: busy || tenantScopeLocked || !outreachModuleId
+        } : null,
+        campaignSelectionMode && selectedCustomerIdsForCampaign.length > 0 && outreachMode === 'assign' ? {
             key: 'assign-module',
             label: `Asignar al modulo${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
             onClick: () => { void handleOpenCampaignTemplateModal(); },
             variant: 'secondary',
-            disabled: busy || tenantScopeLocked || !campaignSelectionMode || !outreachModuleId || outreachMode !== 'assign' || selectedCustomerIdsForCampaign.length === 0
-        },
+            disabled: busy || tenantScopeLocked || !outreachModuleId
+        } : null,
         {
             key: 'refresh-customers',
             label: 'Actualizar',
@@ -3308,7 +3313,7 @@ function CustomersSection(props = {}) {
             variant: 'secondary',
             disabled: busy || tenantScopeLocked
         }
-    ];
+    ].filter(Boolean);
 
     const headerFilterColumns = filterColumns.map((column) => ({
         key: column.key,
@@ -3325,7 +3330,35 @@ function CustomersSection(props = {}) {
             onSearchChange={setSearchInput}
             searchPlaceholder="Buscar por codigo, nombre, telefono, email o documento"
             searchDisabled={busy || tenantScopeLocked}
-            actions={headerActions}
+            actions={headerActions.filter((action) => action.key !== 'toggle-columns')}
+            actionsExtra={(
+                <div className="saas-entity-columns">
+                    <button type="button" onClick={() => setShowColumnsMenu((prev) => !prev)} disabled={busy || tenantScopeLocked}>
+                        Columnas
+                    </button>
+                    {showColumnsMenu ? (
+                        <div className="saas-entity-columns__menu">
+                            {CUSTOMER_TABLE_COLUMNS.map((column) => (
+                                <label key={column.key} className="saas-entity-columns__item">
+                                    <input
+                                        type="checkbox"
+                                        checked={columnPrefs.isColumnVisible(column.key)}
+                                        onChange={() => columnPrefs.toggleColumn(column.key)}
+                                    />
+                                    <span>{column.label}</span>
+                                </label>
+                            ))}
+                            <div className="saas-entity-columns__actions">
+                                <button type="button" onClick={() => columnPrefs.setVisibleColumnKeys(CUSTOMER_TABLE_COLUMNS.map((column) => column.key))}>
+                                    Mostrar todo
+                                </button>
+                                <button type="button" onClick={columnPrefs.resetColumns}>Restablecer</button>
+                                <button type="button" onClick={() => setShowColumnsMenu(false)}>Cerrar</button>
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+            )}
             filters={{
                 columns: headerFilterColumns,
                 value: headerFilter,
@@ -3400,28 +3433,6 @@ function CustomersSection(props = {}) {
                         <div className={`saas-customers-sync-indicator${savingCustomer ? ' is-saving' : ' is-synced'}`}>
                             <span className="saas-customers-sync-indicator__dot" />
                             <span>{savingCustomer ? 'Guardando...' : 'Sincronizado'}</span>
-                        </div>
-                    ) : null}
-                    {showColumnsMenu ? (
-                        <div className="saas-customers-columns-menu">
-                            {CUSTOMER_TABLE_COLUMNS.map((column) => (
-                                <label key={column.key} className="saas-customers-columns-menu__item">
-                                    <input
-                                        type="checkbox"
-                                        checked={columnPrefs.isColumnVisible(column.key)}
-                                        onChange={() => columnPrefs.toggleColumn(column.key)}
-                                    />
-                                    <span>{column.label}</span>
-                                    <small>{column.width || 'auto'}</small>
-                                </label>
-                            ))}
-                            <div className="saas-customers-columns-menu__actions">
-                                <button type="button" onClick={() => columnPrefs.setVisibleColumnKeys(CUSTOMER_TABLE_COLUMNS.map((column) => column.key))}>
-                                    Mostrar todo
-                                </button>
-                                <button type="button" onClick={columnPrefs.resetColumns}>Restablecer</button>
-                                <button type="button" className="saas-btn-close" onClick={() => setShowColumnsMenu(false)}>Cerrar</button>
-                            </div>
                         </div>
                     ) : null}
                 </div>
@@ -3745,15 +3756,81 @@ function CustomersSection(props = {}) {
         </div>
     ) : null;
 
+    const entityHeaderExtra = (
+        <div className="saas-customers-header-extra">
+            {campaignSelectionMode ? (
+                <div className="saas-customers-outreach-toolbar">
+                    <label className="saas-customers-outreach-toolbar__field">
+                        <span>Modulo</span>
+                        <select value={outreachModuleId} onChange={(event) => {
+                            setOutreachModuleId(String(event.target.value || '').trim().toLowerCase());
+                            setSelectedCustomerIdsForCampaign([]);
+                        }}>
+                            <option value="">Selecciona modulo</option>
+                            {outreachModuleOptions.map((moduleItem) => (
+                                <option key={`customers_outreach_module_entity_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
+                                    {moduleItem.label}
+                                </option>
+                            ))}
+                        </select>
+                        <small>Trabaja por ID de modulo normalizado para evitar cruces por mayusculas o nombre.</small>
+                    </label>
+                    <label className="saas-customers-outreach-toolbar__field">
+                        <span>Modo</span>
+                        <select value={outreachMode} onChange={(event) => {
+                            setOutreachMode(String(event.target.value || 'eligible').trim() || 'eligible');
+                            setSelectedCustomerIdsForCampaign([]);
+                        }} disabled={!outreachModuleId}>
+                            <option value="eligible">Seleccionar elegibles</option>
+                            <option value="assign">Asignar al modulo</option>
+                        </select>
+                        <small>{outreachMode === 'assign' ? 'Muestra clientes fuera del modulo para asignarlos y enviar opt-in.' : 'Muestra solo clientes que ya pertenecen al modulo elegido.'}</small>
+                    </label>
+                </div>
+            ) : null}
+            {campaignSelectionMode ? (
+                <div className="saas-customers-selection-pill">
+                    {selectedCustomerIdsForCampaign.length > 0
+                        ? `${selectedCustomerIdsForCampaign.length} cliente${selectedCustomerIdsForCampaign.length === 1 ? '' : 's'} seleccionado${selectedCustomerIdsForCampaign.length === 1 ? '' : 's'}`
+                        : !outreachModuleId
+                            ? 'Selecciona un modulo para preparar outreach.'
+                            : outreachEligibilityLoading
+                                ? 'Calculando elegibilidad por modulo...'
+                                : outreachMode === 'assign'
+                                    ? `${outreachNonEligibleCustomerIds.length} cliente(s) fuera del modulo listos para asignacion`
+                                    : `${outreachEligibleCustomerIds.length} cliente(s) elegibles en el modulo`}
+                </div>
+            ) : null}
+            {campaignSelectionMode && outreachEligibilityError ? (
+                <div className="saas-admin-inline-feedback error">{outreachEligibilityError}</div>
+            ) : null}
+            {(customersLoadingBatch || savingCustomer) ? (
+                <div className="saas-admin-inline-feedback">
+                    {customersLoadingBatch ? `Cargando clientes... ${Math.max(0, Math.min(100, Number(customersLoadProgress) || 0))}%` : null}
+                    {customersLoadingBatch && savingCustomer ? ' | ' : null}
+                    {savingCustomer ? 'Guardando cliente...' : null}
+                </div>
+            ) : null}
+            {(savingCustomer || showCustomerSynced) ? (
+                <div className={`saas-customers-sync-indicator${savingCustomer ? ' is-saving' : ' is-synced'}`}>
+                    <span className="saas-customers-sync-indicator__dot" />
+                    <span>{savingCustomer ? 'Guardando...' : 'Sincronizado'}</span>
+                </div>
+            ) : null}
+        </div>
+    );
+
     return (
-        <section id="saas_clientes" className="saas-admin-card saas-admin-card--full">
-            <SaasTableDetailLayout
-                selectedId={layoutSelectedId}
-                className="saas-customers-td-layout"
-                header={headerElement}
-                left={leftPane}
-                right={rightPane}
-            />
+        <div className="saas-admin-grid">
+        <SaasEntityPage
+            id="saas_clientes"
+            sectionKey="customers"
+            selectedId={layoutSelectedId}
+            header={headerElement}
+            left={leftPane}
+            right={rightPane}
+            className="saas-entity-page--customers"
+        >
             <SendTemplateModal
                 isOpen={sendTemplateOpen}
                 templates={sendTemplateOptions}
@@ -3785,7 +3862,8 @@ function CustomersSection(props = {}) {
                 onSelectTemplate={(template) => { void handleSelectCampaignTemplate(template); }}
                 onConfirm={() => { void handleConfirmExpressCampaign(); }}
             />
-        </section>
+        </SaasEntityPage>
+        </div>
     );
 }
 

@@ -59,6 +59,7 @@ const SaasViewHeader = ({
     filters = null,
     sortConfig = null,
     onSortChange = null,
+    actionsExtra = null,
     extra = null
 }) => {
     const safeActions = useMemo(() => normalizeActions(actions), [actions]);
@@ -105,6 +106,7 @@ const SaasViewHeader = ({
                             {action.label || 'Accion'}
                         </button>
                     ))}
+                    {actionsExtra}
                 </div>
             </div>
 

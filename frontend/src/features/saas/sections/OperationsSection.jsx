@@ -1,4 +1,5 @@
 import React from 'react';
+import { SaasEntityPage } from '../components/layout';
 
 function toggleRoleInRules(prevRules, role, checked) {
     const current = new Set(
@@ -33,9 +34,13 @@ function OperationsSection(props = {}) {
     formatDateTimeLabel
     } = context;
     return (
-        <section id="saas_operacion" className="saas-admin-card saas-admin-card--full">
-            <div className="saas-admin-master-detail">
-                <aside className="saas-admin-master-pane">
+        <SaasEntityPage
+            id="saas_operacion"
+            sectionKey="operations"
+            selectedId={tenantScopeLocked ? '' : tenantScopeId || 'operations'}
+            className="saas-entity-page--legacy"
+            layoutClassName="saas-admin-master-detail"
+            left={<aside className="saas-admin-master-pane">
                     <div className="saas-admin-pane-header">
                         <div>
                             <h3>Operacion (asignacion y rendimiento)</h3>
@@ -128,9 +133,9 @@ function OperationsSection(props = {}) {
                             </div>
                         </>
                     )}
-                </aside>
+                </aside>}
 
-                <div className="saas-admin-detail-pane">
+            right={<div className="saas-admin-detail-pane">
                     {tenantScopeLocked && (
                         <div className="saas-admin-empty-state saas-admin-empty-state--detail">
                             <h4>Sin empresa activa</h4>
@@ -188,9 +193,8 @@ function OperationsSection(props = {}) {
                             </div>
                         </>
                     )}
-                </div>
-            </div>
-        </section>
+                </div>}
+        />
     );
 }
 

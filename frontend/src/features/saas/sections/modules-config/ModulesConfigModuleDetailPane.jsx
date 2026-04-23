@@ -65,44 +65,6 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
 
     return (
         <>
-            <div className="saas-admin-pane-header">
-                <div>
-                    <h3>
-                        {waModulePanelMode === 'create'
-                            ? 'Nuevo modulo WhatsApp'
-                            : isModuleEditing
-                                ? `Editando modulo: ${moduleInDetail?.name || 'Sin nombre'}`
-                                : moduleInDetail?.name || 'Detalle modulo'}
-                    </h3>
-                    <small>{isModuleEditing ? 'Edicion activa' : 'Vista de solo lectura'}</small>
-                </div>
-                <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                    {!isModuleEditing && moduleInDetail && (
-                        <>
-                            <button
-                                type="button"
-                                disabled={busy || !moduleInDetail.isActive}
-                                onClick={() => handleOpenOperation()}
-                            >
-                                Ir a operacion
-                            </button>
-                            <span style={{ fontSize: '0.72rem', color: '#8eb3c7', alignSelf: 'center' }}>Operacion: seleccion dinamica por chat</span>
-                            <button type="button" disabled={busy || !canEditModules} onClick={openConfigModuleEdit}>Editar</button>
-                            <button
-                                type="button"
-                                disabled={busy || !canEditModules}
-                                onClick={() => toggleWaModuleActive(moduleInDetail)}
-                            >
-                                {moduleInDetail.isActive ? 'Desactivar' : 'Activar'}
-                            </button>
-                        </>
-                    )}
-                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={clearConfigSelection}>
-                        Cerrar
-                    </button>
-                </div>
-            </div>
-
             {!isModuleEditing && moduleInDetail && (
                 <ModulesConfigModuleReadView
                     moduleInDetail={moduleInDetail}

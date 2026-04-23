@@ -3,6 +3,7 @@ import useSaasOperationAccess from '../../useSaasOperationAccess';
 import useSaasPanelLifecycle from '../useSaasPanelLifecycle';
 import useSaasPanelNavigation from '../useSaasPanelNavigation';
 import useSaasPanelAdminDomainActions from './useSaasPanelAdminDomainActions';
+import { loadCachedGlobalLabels } from '../../../services';
 
 export default function useSaasPanelActionContexts(input = {}) {
     const c = input;
@@ -162,12 +163,15 @@ export default function useSaasPanelActionContexts(input = {}) {
                 refreshOverview: c.refreshOverview,
                 loadAccessCatalog: plansRolesActions.loadAccessCatalog,
                 loadPlanMatrix: plansRolesActions.loadPlanMatrix,
+                loadGlobalLabels: () => loadCachedGlobalLabels(c.requestJson),
                 loadTenantSettings: c.loadTenantSettings,
                 loadWaModules: c.loadWaModules,
                 loadTenantCatalogs: catalogAdminActions.loadTenantCatalogs,
                 loadTenantAiAssistants: aiAssistantsAdminActions.loadTenantAiAssistants,
                 loadTenantIntegrations: c.loadTenantIntegrations,
                 loadCustomers: c.loadCustomers,
+                loadMetaTemplates: c.loadMetaTemplates,
+                loadCampaigns: c.loadCampaigns,
                 loadQuickReplyData: quickReplyAdminActions.loadQuickReplyData,
                 loadTenantLabels: tenantLabelsAdminActions.loadTenantLabels,
                 loadTenantAssignmentRules: c.loadTenantAssignmentRules,

@@ -9,12 +9,15 @@ export default function useSaasPanelLoadEffects({
     refreshOverview,
     loadAccessCatalog,
     loadPlanMatrix,
+    loadGlobalLabels,
     loadTenantSettings,
     loadWaModules,
     loadTenantCatalogs,
     loadTenantAiAssistants,
     loadTenantIntegrations,
     loadCustomers,
+    loadMetaTemplates,
+    loadCampaigns,
     loadQuickReplyData,
     loadTenantLabels,
     loadTenantAssignmentRules,
@@ -26,12 +29,15 @@ export default function useSaasPanelLoadEffects({
         refreshOverview,
         loadAccessCatalog,
         loadPlanMatrix,
+        loadGlobalLabels,
         loadTenantSettings,
         loadWaModules,
         loadTenantCatalogs,
         loadTenantAiAssistants,
         loadTenantIntegrations,
         loadCustomers,
+        loadMetaTemplates,
+        loadCampaigns,
         loadQuickReplyData,
         loadTenantLabels,
         loadTenantAssignmentRules,
@@ -44,12 +50,15 @@ export default function useSaasPanelLoadEffects({
         refreshOverview,
         loadAccessCatalog,
         loadPlanMatrix,
+        loadGlobalLabels,
         loadTenantSettings,
         loadWaModules,
         loadTenantCatalogs,
         loadTenantAiAssistants,
         loadTenantIntegrations,
         loadCustomers,
+        loadMetaTemplates,
+        loadCampaigns,
         loadQuickReplyData,
         loadTenantLabels,
         loadTenantAssignmentRules,
@@ -89,6 +98,7 @@ export default function useSaasPanelLoadEffects({
             refreshOverview: refreshOverviewFn,
             loadAccessCatalog: loadAccessCatalogFn,
             loadPlanMatrix: loadPlanMatrixFn,
+            loadGlobalLabels: loadGlobalLabelsFn,
             setError: setErrorFn
         } = loadersRef.current;
 
@@ -104,6 +114,9 @@ export default function useSaasPanelLoadEffects({
             if (typeof loadAccessCatalogFn === 'function') tasks.push(loadAccessCatalogFn());
             if (canViewSuperAdminSections && typeof loadPlanMatrixFn === 'function') {
                 tasks.push(loadPlanMatrixFn());
+            }
+            if (canViewSuperAdminSections && typeof loadGlobalLabelsFn === 'function') {
+                tasks.push(loadGlobalLabelsFn());
             }
             if (tasks.length === 0) return;
             const results = await Promise.allSettled(tasks);
@@ -152,6 +165,8 @@ export default function useSaasPanelLoadEffects({
             loadTenantAiAssistants: loadTenantAiAssistantsFn,
             loadTenantIntegrations: loadTenantIntegrationsFn,
             loadCustomers: loadCustomersFn,
+            loadMetaTemplates: loadMetaTemplatesFn,
+            loadCampaigns: loadCampaignsFn,
             loadQuickReplyData: loadQuickReplyDataFn,
             loadTenantLabels: loadTenantLabelsFn,
             loadTenantAssignmentRules: loadTenantAssignmentRulesFn,
@@ -166,6 +181,8 @@ export default function useSaasPanelLoadEffects({
         if (typeof loadTenantAiAssistantsFn === 'function') tasks.push(loadTenantAiAssistantsFn(tenantScopeId));
         if (typeof loadTenantIntegrationsFn === 'function') tasks.push(loadTenantIntegrationsFn(tenantScopeId));
         if (typeof loadCustomersFn === 'function') tasks.push(loadCustomersFn(tenantScopeId));
+        if (typeof loadMetaTemplatesFn === 'function') tasks.push(loadMetaTemplatesFn(tenantScopeId));
+        if (typeof loadCampaignsFn === 'function') tasks.push(loadCampaignsFn(tenantScopeId));
         if (typeof loadQuickReplyDataFn === 'function') tasks.push(loadQuickReplyDataFn(tenantScopeId));
         if (typeof loadTenantLabelsFn === 'function') tasks.push(loadTenantLabelsFn(tenantScopeId));
         if (typeof loadTenantAssignmentRulesFn === 'function') tasks.push(loadTenantAssignmentRulesFn(tenantScopeId));

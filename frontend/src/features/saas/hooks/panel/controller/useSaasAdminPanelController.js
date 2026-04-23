@@ -874,6 +874,8 @@ export default function useSaasAdminPanelController({
         loadWaModules: tenantController.tenantLoaders.loadWaModules,
         loadTenantIntegrations: tenantController.tenantLoaders.loadTenantIntegrations,
         loadCustomers: tenantController.tenantLoaders.loadCustomers,
+        loadMetaTemplates: metaTemplatesController.loadTemplates,
+        loadCampaigns: campaignsController.loadCampaigns,
         loadTenantAssignmentRules: operationsController.operationsActions.loadTenantAssignmentRules,
         loadTenantOperationsKpis: operationsController.operationsActions.loadTenantOperationsKpis,
         selectedWaModuleId,

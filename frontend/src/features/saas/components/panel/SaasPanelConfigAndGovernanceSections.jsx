@@ -124,7 +124,9 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         sanitizeRoleCode: context.sanitizeRoleCode,
         toggleRolePermission: context.toggleRolePermission,
         saveRoleProfile: context.saveRoleProfile,
-        cancelRoleEdit: context.cancelRoleEdit
+        cancelRoleEdit: context.cancelRoleEdit,
+        setSelectedRoleKey: context.setSelectedRoleKey,
+        setRolePanelMode: context.setRolePanelMode
     };
 
     const plansContext = {
@@ -147,7 +149,8 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         runAction: context.runAction,
         requestJson: context.requestJson,
         setPlanPanelMode: context.setPlanPanelMode,
-        cancelPlanEdit: context.cancelPlanEdit
+        cancelPlanEdit: context.cancelPlanEdit,
+        setSelectedPlanId: context.setSelectedPlanId
     };
     return (
         <>

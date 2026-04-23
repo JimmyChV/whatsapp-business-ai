@@ -6,6 +6,7 @@
   catalogManagerService: require('./catalog-manager.service'),
   tenantLabelService: require('./tenant-labels.service'),
   tenantZoneRulesService: require('./tenant-zone-rules.service'),
+  saasUserUiPreferencesService: require('./saas-user-ui-preferences.service'),
   waModuleService: require('./wa-modules.service'),
   customerService: require('./customers.service'),
   customerAddressesService: require('./customer-addresses.service'),

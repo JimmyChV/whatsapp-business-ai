@@ -3229,6 +3229,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+  overflow: visible;
 }
 
 .saas-view-header__action-btn {
@@ -3378,7 +3379,9 @@
     border-radius: 14px;
     background: rgba(5, 20, 31, 0.72);
     overflow: hidden;
-    min-height: 100%;
+    min-height: 0;
+    height: 100%;
+    max-height: 100%;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
 }
@@ -3466,6 +3469,244 @@
 
 .saas-detail-panel__section-content {
     padding: 12px;
+}
+
+/* Universal entity page pattern. Converted admin sections should depend on
+   these rules instead of section-specific layout patches. */
+.saas-entity-page {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.saas-entity-page .saas-td-layout,
+.saas-entity-page .saas-td-layout__content,
+.saas-entity-page .saas-td-layout__left,
+.saas-entity-page .saas-td-layout__right,
+.saas-entity-page .saas-td-layout__right > * {
+    min-height: 0;
+    max-height: 100%;
+}
+
+.saas-entity-page .saas-td-layout {
+    flex: 1 1 auto;
+    height: 100%;
+}
+
+.saas-entity-page .saas-td-layout__header {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.saas-entity-page .saas-td-layout__content {
+  height: 100%;
+  align-items: stretch;
+    justify-items: stretch;
+}
+
+.saas-entity-page .saas-td-layout--split .saas-td-layout__content {
+    grid-template-columns: minmax(320px, 2fr) minmax(0, 3fr);
+}
+
+.saas-entity-page .saas-td-layout--full .saas-td-layout__content {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.saas-entity-page .saas-td-layout__left,
+.saas-entity-page .saas-td-layout__right {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    overflow: hidden;
+}
+
+.saas-entity-page .saas-td-layout__right > .saas-detail-panel,
+.saas-entity-page .saas-td-layout__right > .saas-admin-detail-pane,
+.saas-entity-page .saas-td-layout__right > [class*="right-shell"] {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+}
+
+.saas-entity-page .saas-data-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-self: stretch;
+  display: block;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.saas-entity-page .saas-data-table {
+  width: 100%;
+  align-self: flex-start;
+}
+
+.saas-entity-page .saas-data-table tbody,
+.saas-entity-page .saas-data-table tbody tr,
+.saas-entity-page .saas-data-table tbody td {
+  vertical-align: top;
+}
+
+.saas-entity-page .saas-view-header,
+.saas-entity-page .saas-view-header__controls,
+.saas-entity-page .saas-view-header__actions,
+.saas-entity-page .saas-view-header__sort {
+  overflow: visible;
+}
+
+.saas-entity-page--legacy .saas-admin-master-detail--td-pattern {
+    grid-template-columns: minmax(320px, 2fr) minmax(0, 3fr);
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    max-height: 100%;
+}
+
+.saas-entity-page--legacy .saas-admin-master-pane,
+.saas-entity-page--legacy .saas-admin-detail-pane {
+    min-height: 0;
+}
+
+.saas-entity-page--legacy .saas-admin-master-toolbar {
+    border-radius: 12px 12px 0 0;
+}
+
+.saas-entity-page--legacy .saas-admin-list-table-head {
+    background: rgba(3, 32, 41, 0.86);
+}
+
+.saas-entity-detail-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+}
+
+.saas-entity-detail-panel__body {
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+.saas-entity-columns {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  z-index: 1001;
+}
+
+.saas-entity-columns > button {
+    border: 1px solid rgba(123, 170, 196, 0.42);
+    background: linear-gradient(180deg, rgba(90, 133, 159, 0.24), rgba(90, 133, 159, 0.14));
+    color: #e3f1fa;
+    border-radius: 10px;
+    padding: 6px 9px;
+    font-size: 0.72rem;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.saas-entity-columns__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: auto;
+  z-index: 1200;
+  width: min(560px, 82vw);
+  max-height: 54vh;
+  overflow: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid rgba(125, 174, 195, 0.34);
+    border-radius: 16px;
+    background: rgba(5, 18, 26, 0.98);
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.38);
+}
+
+.saas-entity-columns__item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    padding: 8px 9px;
+    border: 1px solid rgba(125, 174, 195, 0.18);
+    border-radius: 12px;
+    background: rgba(12, 31, 42, 0.72);
+    color: #dff4ff;
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+.saas-entity-columns__actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-top: 4px;
+}
+
+.saas-entity-columns__actions button {
+    border: 1px solid rgba(0, 168, 132, 0.42);
+    background: rgba(0, 168, 132, 0.14);
+    color: #dff9f2;
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.saas-admin-shell .saas-entity-page .saas-td-layout__right,
+.saas-admin-shell .saas-entity-page .saas-data-table-wrap,
+.saas-admin-shell .saas-entity-detail-panel__body,
+.saas-admin-shell .saas-entity-columns__menu {
+    scrollbar-width: thin;
+    scrollbar-color: var(--saas-scrollbar-thumb) var(--saas-scrollbar-track);
+}
+
+.saas-admin-shell .saas-entity-page .saas-td-layout__right::-webkit-scrollbar,
+.saas-admin-shell .saas-entity-page .saas-data-table-wrap::-webkit-scrollbar,
+.saas-admin-shell .saas-entity-detail-panel__body::-webkit-scrollbar,
+.saas-admin-shell .saas-entity-columns__menu::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.saas-admin-shell .saas-entity-page .saas-td-layout__right::-webkit-scrollbar-track,
+.saas-admin-shell .saas-entity-page .saas-data-table-wrap::-webkit-scrollbar-track,
+.saas-admin-shell .saas-entity-detail-panel__body::-webkit-scrollbar-track,
+.saas-admin-shell .saas-entity-columns__menu::-webkit-scrollbar-track {
+    background: var(--saas-scrollbar-track);
+    border-radius: 999px;
+}
+
+.saas-admin-shell .saas-entity-page .saas-td-layout__right::-webkit-scrollbar-thumb,
+.saas-admin-shell .saas-entity-page .saas-data-table-wrap::-webkit-scrollbar-thumb,
+.saas-admin-shell .saas-entity-detail-panel__body::-webkit-scrollbar-thumb,
+.saas-admin-shell .saas-entity-columns__menu::-webkit-scrollbar-thumb {
+    background: var(--saas-scrollbar-thumb);
+    border-radius: 999px;
+    border: 2px solid var(--saas-scrollbar-track);
+}
+
+.saas-admin-shell .saas-entity-page .saas-td-layout__right::-webkit-scrollbar-thumb:hover,
+.saas-admin-shell .saas-entity-page .saas-data-table-wrap::-webkit-scrollbar-thumb:hover,
+.saas-admin-shell .saas-entity-detail-panel__body::-webkit-scrollbar-thumb:hover,
+.saas-admin-shell .saas-entity-columns__menu::-webkit-scrollbar-thumb:hover {
+    background: var(--saas-scrollbar-thumb-hover);
+}
+
+@media (max-width: 1100px) {
+    .saas-entity-page .saas-td-layout--split .saas-td-layout__content {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 @media (max-width: 1360px) {
@@ -6143,4 +6384,356 @@
     .saas-labels-grid {
         grid-template-columns: 1fr;
     }
+}
+
+/* Final entity layout contract.
+   Keep every admin section aligned: header visible, rows start at top,
+   detail/form panels own their scroll, and column menus never escape left. */
+.saas-admin-shell .saas-entity-page.saas-admin-card,
+.saas-admin-shell .saas-admin-card.saas-entity-page,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+}
+
+.saas-admin-shell .saas-admin-grid:has(> .saas-entity-page) {
+    overflow: hidden !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-td-layout {
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-td-layout__header {
+    min-height: 0 !important;
+    overflow: visible !important;
+    position: relative !important;
+    z-index: 80 !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-view-header,
+.saas-admin-shell .saas-entity-page .saas-view-header__top,
+.saas-admin-shell .saas-entity-page .saas-view-header__actions,
+.saas-admin-shell .saas-entity-page .saas-view-header__controls,
+.saas-admin-shell .saas-entity-page .saas-view-header__extra {
+    overflow: visible !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-td-layout__content {
+    display: grid !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: 100% !important;
+    align-items: stretch !important;
+    justify-items: stretch !important;
+    overflow: hidden !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-td-layout--full .saas-td-layout__content {
+    grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-td-layout--split .saas-td-layout__content {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-td-layout__left,
+.saas-admin-shell .saas-entity-page .saas-td-layout__right {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-td-layout__left > *,
+.saas-admin-shell .saas-entity-page .saas-td-layout__right > * {
+    min-height: 0 !important;
+    max-height: 100% !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-data-table-wrap,
+.saas-admin-shell .saas-entity-page .saas-customers-pane .saas-data-table-wrap,
+.saas-admin-shell .saas-entity-page .saas-campaigns-pane .saas-data-table-wrap,
+.saas-admin-shell .saas-entity-page .saas-meta-templates-pane .saas-data-table-wrap,
+.saas-admin-shell .saas-entity-page .saas-labels-pane .saas-data-table-wrap {
+    flex: 1 1 auto !important;
+    align-self: stretch !important;
+    display: block !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    margin-top: 0 !important;
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell .saas-entity-page .saas-data-table {
+    width: 100% !important;
+    min-width: 980px !important;
+    margin: 0 !important;
+    vertical-align: top !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-data-table thead,
+.saas-admin-shell .saas-entity-page .saas-data-table tbody,
+.saas-admin-shell .saas-entity-page .saas-data-table tr,
+.saas-admin-shell .saas-entity-page .saas-data-table th,
+.saas-admin-shell .saas-entity-page .saas-data-table td {
+    vertical-align: top !important;
+    white-space: nowrap !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-detail-panel,
+.saas-admin-shell .saas-entity-page .saas-customers-detail-panel,
+.saas-admin-shell .saas-entity-page .saas-campaigns-detail-panel,
+.saas-admin-shell .saas-entity-page .saas-meta-templates-detail-panel,
+.saas-admin-shell .saas-entity-page .saas-labels-detail-panel {
+    flex: 1 1 auto !important;
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-td-layout__right > .saas-detail-panel,
+.saas-admin-shell .saas-entity-page .saas-td-layout__right > .saas-entity-detail-panel,
+.saas-admin-shell .saas-entity-page .saas-td-layout__right > .saas-customers-detail-panel,
+.saas-admin-shell .saas-entity-page .saas-td-layout__right > .saas-campaigns-detail-panel,
+.saas-admin-shell .saas-entity-page .saas-td-layout__right > .saas-meta-templates-detail-panel,
+.saas-admin-shell .saas-entity-page .saas-td-layout__right > .saas-labels-detail-panel {
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-detail-panel__body,
+.saas-admin-shell .saas-entity-page .saas-entity-detail-panel__body,
+.saas-admin-shell .saas-entity-page .saas-customers-detail-panel .saas-detail-panel__body,
+.saas-admin-shell .saas-entity-page .saas-campaigns-detail-panel .saas-detail-panel__body,
+.saas-admin-shell .saas-entity-page .saas-meta-templates-detail-panel__body,
+.saas-admin-shell .saas-entity-page .saas-labels-detail-panel .saas-detail-panel__body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding-bottom: 36px !important;
+    scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell .saas-entity-columns {
+    position: relative !important;
+    z-index: 2000 !important;
+    overflow: visible !important;
+    pointer-events: auto !important;
+}
+
+.saas-admin-shell .saas-entity-columns__menu {
+    position: absolute !important;
+    top: calc(100% + 8px) !important;
+    right: 0 !important;
+    left: auto !important;
+    z-index: 2600 !important;
+    width: min(520px, calc(100vw - 360px)) !important;
+    max-height: min(62vh, 520px) !important;
+    overflow: auto !important;
+    pointer-events: auto !important;
+}
+
+.saas-admin-shell .saas-entity-columns__menu input,
+.saas-admin-shell .saas-entity-columns__menu label,
+.saas-admin-shell .saas-entity-columns__menu button {
+    pointer-events: auto !important;
+}
+
+/* Hard override for legacy split rules with higher specificity.
+   Older section CSS used viewport-based heights on the right pane; inside the
+   unified card that makes detail/form content extend below the visible panel. */
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split {
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+}
+
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split > .saas-td-layout__content {
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+    align-items: stretch !important;
+}
+
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split > .saas-td-layout__content > .saas-td-layout__left,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split > .saas-td-layout__content > .saas-td-layout__right {
+    align-self: stretch !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+}
+
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split > .saas-td-layout__content > .saas-td-layout__left > *,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split > .saas-td-layout__content > .saas-td-layout__right > * {
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+}
+
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split .saas-detail-panel,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split .saas-entity-detail-panel,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split .saas-customers-detail-panel,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split .saas-campaigns-detail-panel,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split .saas-meta-templates-detail-panel,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split .saas-labels-detail-panel {
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+}
+
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split .saas-detail-panel__body,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split .saas-entity-detail-panel__body,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split .saas-customers-detail-panel__body,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split .saas-campaigns-detail-panel__body,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split .saas-meta-templates-detail-panel__body,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split .saas-labels-detail-panel .saas-detail-panel__body {
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding-bottom: 48px !important;
+}
+
+/* Slot detail panels must obey the same contract as declarative sections:
+   fixed header/actions, one scrolling body, no viewport-height overflow. */
+.saas-admin-shell .saas-entity-page .saas-entity-slot-right,
+.saas-admin-shell .saas-entity-page .saas-campaigns-right-shell,
+.saas-admin-shell .saas-entity-page .saas-meta-templates-right-shell {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-entity-slot-right > .saas-detail-panel,
+.saas-admin-shell .saas-entity-page .saas-campaigns-right-shell > .saas-detail-panel,
+.saas-admin-shell .saas-entity-page .saas-meta-templates-right-shell > .saas-detail-panel,
+.saas-admin-shell .saas-entity-page--users .saas-detail-panel {
+    flex: 1 1 auto !important;
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-entity-slot-right .saas-detail-panel__header,
+.saas-admin-shell .saas-entity-page .saas-campaigns-right-shell .saas-detail-panel__header,
+.saas-admin-shell .saas-entity-page .saas-meta-templates-right-shell .saas-detail-panel__header,
+.saas-admin-shell .saas-entity-page--users .saas-detail-panel__header {
+    flex-shrink: 0 !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-entity-slot-right .saas-detail-panel__body,
+.saas-admin-shell .saas-entity-page .saas-campaigns-right-shell .saas-detail-panel__body,
+.saas-admin-shell .saas-entity-page .saas-meta-templates-right-shell .saas-detail-panel__body,
+.saas-admin-shell .saas-entity-page--users .saas-detail-panel__body {
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding-bottom: 56px !important;
+    scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell .saas-entity-page .saas-template-builder-modal-overlay,
+.saas-admin-shell .saas-entity-page .saas-template-builder-modal-shell,
+.saas-admin-shell .saas-entity-page .saas-template-builder-modal-panel {
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+}
+
+/* Unified data-table scroll contract.
+   Keep this at the end so legacy section-specific table rules cannot remove
+   horizontal scroll when a table is rendered inside a narrow split pane. */
+.saas-admin-shell .saas-entity-page .saas-data-table-wrap {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell .saas-entity-page .saas-data-table {
+    width: 100% !important;
+    min-width: 980px !important;
+}
+
+.saas-admin-shell .saas-entity-page .saas-data-table th,
+.saas-admin-shell .saas-entity-page .saas-data-table td {
+    white-space: nowrap !important;
+}
+
+.saas-admin-shell :is(
+    #saas_clientes,
+    #saas_templates,
+    #saas_campaigns,
+    #saas_modulos,
+    #saas_usuarios,
+    #saas_catalogos,
+    #saas_quick_replies,
+    #saas_ia,
+    #saas_etiquetas
+) .saas-data-table-wrap,
+.saas-admin-shell .saas-admin-card--full.saas-entity-page .saas-td-layout.saas-td-layout--split > .saas-td-layout__content > .saas-td-layout__left > .saas-data-table-wrap {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    max-width: 100% !important;
+    scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell :is(
+    #saas_clientes,
+    #saas_templates,
+    #saas_campaigns,
+    #saas_modulos,
+    #saas_usuarios,
+    #saas_catalogos,
+    #saas_quick_replies,
+    #saas_ia,
+    #saas_etiquetas
+) .saas-data-table {
+    width: 100% !important;
+    min-width: 980px !important;
 }

@@ -6,6 +6,7 @@ import {
     SaasDataTable,
     SaasDetailPanel,
     SaasDetailPanelSection,
+    SaasEntityPage,
     SaasTableDetailLayout,
     SaasViewHeader,
     useSaasColumnPrefs
@@ -286,7 +287,10 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const labelOptions = useMemo(() => buildLabelOptions(availableLabels), [availableLabels]);
     const zoneOptions = useMemo(() => buildZoneOptions(zoneRules), [zoneRules]);
-    const columnPrefs = useSaasColumnPrefs('campaigns', CAMPAIGN_DEFAULT_COLUMN_KEYS);
+    const columnPrefs = useSaasColumnPrefs('campaigns', CAMPAIGN_DEFAULT_COLUMN_KEYS, {
+        requestJson,
+        availableColumns: CAMPAIGN_TABLE_COLUMNS
+    });
 
     const moduleOptions = useMemo(() => (Array.isArray(waModules) ? waModules : [])
         .map((item) => ({
@@ -694,13 +698,18 @@ export default React.memo(function CampaignsSection(props = {}) {
         showColumnsMenu
     ]);
 
-    const handleSelectCampaignRow = useCallback((row = null) => runSafe(async () => {
+    const handleSelectCampaignRow = useCallback((row = null) => {
         const campaignId = toText(row?.campaignId || '');
         if (!campaignId) return;
-        await selectCampaign?.(campaignId, { loadDetail: true });
-        await loadTracking(campaignId);
+        selectCampaign?.(campaignId, { loadDetail: false }).catch(() => {});
         setPanelMode('detail');
-    }, 'No se pudo abrir campana.'), [loadTracking, runSafe, selectCampaign]);
+        void runSafe(async () => {
+            await Promise.all([
+                selectCampaign?.(campaignId, { loadDetail: true }),
+                loadTracking(campaignId)
+            ]);
+        }, 'No se pudo abrir campana.');
+    }, [loadTracking, runSafe, selectCampaign]);
 
     useEffect(() => {
         if (!isCampaignsSection) return undefined;
@@ -747,13 +756,6 @@ export default React.memo(function CampaignsSection(props = {}) {
                     disabled: loadingList || loading || tenantScopeLocked
                 },
                 {
-                    key: 'columns',
-                    label: 'Columnas',
-                    variant: 'secondary',
-                    onClick: () => setShowColumnsMenu((prev) => !prev),
-                    disabled: tenantScopeLocked
-                },
-                {
                     key: 'create',
                     label: 'Nueva',
                     onClick: () => {
@@ -766,6 +768,37 @@ export default React.memo(function CampaignsSection(props = {}) {
                     disabled: loading || tenantScopeLocked
                 }
             ]}
+            actionsExtra={(
+                <div className="saas-entity-columns">
+                    <button type="button" onClick={() => setShowColumnsMenu((prev) => !prev)} disabled={tenantScopeLocked}>
+                        Columnas
+                    </button>
+                    {showColumnsMenu ? (
+                        <div className="saas-entity-columns__menu">
+                            {CAMPAIGN_TABLE_COLUMNS.map((column) => {
+                                const checked = columnPrefs.visibleColumnKeys.includes(column.key);
+                                return (
+                                    <label key={column.key} className="saas-entity-columns__item">
+                                        <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() => columnPrefs.toggleColumn(column.key)}
+                                        />
+                                        <span>{column.label}</span>
+                                    </label>
+                                );
+                            })}
+                            <div className="saas-entity-columns__actions">
+                                <button type="button" onClick={() => columnPrefs.setVisibleColumnKeys(CAMPAIGN_TABLE_COLUMNS.map((column) => column.key))}>
+                                    Mostrar todo
+                                </button>
+                                <button type="button" onClick={columnPrefs.resetColumns}>Restablecer</button>
+                                <button type="button" onClick={() => setShowColumnsMenu(false)}>Cerrar</button>
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+            )}
             filters={{
                 columns: [
                     { key: 'status', label: 'Estado', type: 'option', options: Object.keys(STATUS_META).map((key) => ({ value: key, label: STATUS_META[key].label })) },
@@ -797,23 +830,6 @@ export default React.memo(function CampaignsSection(props = {}) {
                     setModuleFilter('');
                 }
             }}
-            extra={showColumnsMenu ? (
-                <div className="saas-campaigns-columns-menu">
-                    {CAMPAIGN_TABLE_COLUMNS.map((column) => {
-                        const checked = columnPrefs.visibleColumnKeys.includes(column.key);
-                        return (
-                            <label key={column.key} className="saas-campaigns-columns-menu__item">
-                                <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() => columnPrefs.toggleColumn(column.key)}
-                                />
-                                <span>{column.label}</span>
-                            </label>
-                        );
-                    })}
-                </div>
-            ) : null}
         />
     );
 
@@ -833,7 +849,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     );
 
     const rightPane = (
-        <div className="saas-campaigns-right-shell">
+        <div className="saas-entity-slot-right saas-campaigns-right-shell">
             {tenantScopeLocked && <div className="saas-admin-empty-state saas-admin-empty-state--detail"><h4>Sin empresa activa</h4><p>Selecciona una empresa para continuar.</p></div>}
             {!tenantScopeLocked && (panelMode === 'create' || panelMode === 'edit') && (
                 <SaasDetailPanel
@@ -1223,14 +1239,14 @@ export default React.memo(function CampaignsSection(props = {}) {
     );
 
     return (
-        <section id="saas_campaigns" className="saas-admin-card saas-admin-card--full">
-            <SaasTableDetailLayout
-                selectedId={layoutSelectedId}
-                className={`saas-campaigns-td-layout ${panelMode === 'create' || panelMode === 'edit' ? 'saas-campaigns-td-layout--builder' : ''}`}
-                header={headerElement}
-                left={listPane}
-                right={rightPane}
-            />
-        </section>
+        <SaasEntityPage
+            id="saas_campaigns"
+            sectionKey="campaigns"
+            selectedId={layoutSelectedId}
+            header={headerElement}
+            left={listPane}
+            right={rightPane}
+            className="saas-entity-page--campaigns"
+        />
     );
 });
