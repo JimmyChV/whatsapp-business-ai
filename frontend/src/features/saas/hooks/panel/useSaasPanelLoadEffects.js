@@ -9,6 +9,7 @@ export default function useSaasPanelLoadEffects({
     refreshOverview,
     loadAccessCatalog,
     loadPlanMatrix,
+    loadGlobalLabels,
     loadTenantSettings,
     loadWaModules,
     loadTenantCatalogs,
@@ -28,6 +29,7 @@ export default function useSaasPanelLoadEffects({
         refreshOverview,
         loadAccessCatalog,
         loadPlanMatrix,
+        loadGlobalLabels,
         loadTenantSettings,
         loadWaModules,
         loadTenantCatalogs,
@@ -48,6 +50,7 @@ export default function useSaasPanelLoadEffects({
         refreshOverview,
         loadAccessCatalog,
         loadPlanMatrix,
+        loadGlobalLabels,
         loadTenantSettings,
         loadWaModules,
         loadTenantCatalogs,
@@ -95,6 +98,7 @@ export default function useSaasPanelLoadEffects({
             refreshOverview: refreshOverviewFn,
             loadAccessCatalog: loadAccessCatalogFn,
             loadPlanMatrix: loadPlanMatrixFn,
+            loadGlobalLabels: loadGlobalLabelsFn,
             setError: setErrorFn
         } = loadersRef.current;
 
@@ -110,6 +114,9 @@ export default function useSaasPanelLoadEffects({
             if (typeof loadAccessCatalogFn === 'function') tasks.push(loadAccessCatalogFn());
             if (canViewSuperAdminSections && typeof loadPlanMatrixFn === 'function') {
                 tasks.push(loadPlanMatrixFn());
+            }
+            if (canViewSuperAdminSections && typeof loadGlobalLabelsFn === 'function') {
+                tasks.push(loadGlobalLabelsFn());
             }
             if (tasks.length === 0) return;
             const results = await Promise.allSettled(tasks);

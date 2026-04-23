@@ -1,12 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { SaasDataTable, SaasDetailPanel, SaasDetailPanelSection, SaasEntityPage, SaasTableDetailLayout, SaasViewHeader } from '../components/layout';
-import { deleteGlobalLabel, deleteTenantZoneRule, fetchGlobalLabels, fetchTenantZoneRules, recalculateTenantZones, saveGlobalLabel, saveTenantZoneRule } from '../services';
+import { deleteGlobalLabel, deleteTenantZoneRule, fetchTenantZoneRules, getCachedGlobalLabels, hasCachedGlobalLabels, loadCachedGlobalLabels, normalizeGlobalLabel, recalculateTenantZones, removeCachedGlobalLabel, saveGlobalLabel, saveTenantZoneRule, upsertCachedGlobalLabel } from '../services';
 
 const EMPTY_GLOBAL = { id: '', name: '', color: '#00A884', description: '', commercialStatusKey: '', sortOrder: '100', isActive: true };
 const EMPTY_ZONE = { ruleId: '', name: '', color: '#00A884', departments: [], provinces: [], districts: [], departmentId: '', provinceId: '', districtId: '', isActive: true };
 const LABEL_COLORS = ['#00A884', '#14B8A6', '#38BDF8', '#6366F1', '#8B5CF6', '#F59E0B', '#F97316', '#EF4444', '#EC4899', '#84CC16'];
-const GLOBAL_COMMERCIAL_STATUS_KEYS = new Set(['nuevo', 'en_conversacion', 'cotizado', 'vendido', 'perdido']);
-const globalLabelsCache = new Map();
 const zoneRulesCache = new Map();
 const text = (v = '') => String(v || '').trim();
 const upper = (v = '') => text(v).toUpperCase();
@@ -14,7 +12,7 @@ const key = (v = '') => text(v).toLowerCase().normalize('NFD').replace(/[\u0300-
 const uniq = (arr = []) => Array.from(new Set((Array.isArray(arr) ? arr : []).map(text).filter(Boolean)));
 
 function normGlobal(item = {}) {
-    return { id: upper(item.id || item.labelId || ''), name: text(item.name), color: text(item.color || '#00A884') || '#00A884', description: text(item.description), commercialStatusKey: text(item.commercialStatusKey || item.commercial_status_key), sortOrder: Number(item.sortOrder ?? item.sort_order ?? 100) || 100, isActive: item.isActive !== false && item.is_active !== false };
+    return normalizeGlobalLabel(item);
 }
 function normZone(item = {}) {
     const rules = item.rulesJson || item.rules_json || {};
@@ -57,11 +55,6 @@ function upsertById(items = [], item = {}, idField = 'ruleId') {
     const normalized = { ...item, [idField]: id };
     const exists = items.some((entry) => upper(entry?.[idField] || '') === id);
     return exists ? items.map((entry) => (upper(entry?.[idField] || '') === id ? normalized : entry)) : [normalized, ...items];
-}
-function normalizeGlobalItems(items = []) {
-    return (Array.isArray(items) ? items : [])
-        .map(normGlobal)
-        .filter((item) => GLOBAL_COMMERCIAL_STATUS_KEYS.has(item.commercialStatusKey));
 }
 function Dot({ color = '#00A884' }) { return <span className="saas-label-color-dot" style={{ '--label-color': color }} />; }
 function ColorPicker({ value = '#00A884', onChange, disabled = false }) {
@@ -111,8 +104,7 @@ function LabelsTable({ items = [], selectedId = '', idField = 'id', kind = 'labe
 }
 
 function GlobalPanel({ busy, requestJson, runAction, setError, isSuperAdmin }) {
-    const cacheKey = 'commercial';
-    const [items, setItems] = useState(() => globalLabelsCache.get(cacheKey) || []);
+    const [items, setItems] = useState(() => getCachedGlobalLabels());
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState('');
     const [mode, setMode] = useState('list');
@@ -122,23 +114,18 @@ function GlobalPanel({ busy, requestJson, runAction, setError, isSuperAdmin }) {
     const visible = useMemo(() => items.filter((x) => !key(search) || key(`${x.id} ${x.name} ${x.commercialStatusKey}`).includes(key(search))), [items, search]);
     const close = useCallback(() => { setMode('list'); setSelectedId(''); setForm({ ...EMPTY_GLOBAL }); }, []);
     useEscape(mode !== 'list', close);
-    const setCachedItems = useCallback((nextItems) => {
-        const normalized = normalizeGlobalItems(nextItems);
-        globalLabelsCache.set(cacheKey, normalized);
-        setItems(normalized);
-    }, []);
     const load = useCallback(async ({ force = false } = {}) => {
         if (!isSuperAdmin || !requestJson) return;
-        if (!force && globalLabelsCache.has(cacheKey)) {
-            setItems(globalLabelsCache.get(cacheKey) || []);
+        if (!force && hasCachedGlobalLabels()) {
+            setItems(getCachedGlobalLabels());
             return;
         }
         setLoading(true);
         try {
-            const payload = await fetchGlobalLabels(requestJson, { includeInactive: true });
-            setCachedItems(payload?.items || []);
+            const cached = await loadCachedGlobalLabels(requestJson, { force, includeInactive: true });
+            setItems(cached);
         } finally { setLoading(false); }
-    }, [isSuperAdmin, requestJson, setCachedItems]);
+    }, [isSuperAdmin, requestJson]);
     useEffect(() => { load().catch((e) => setError?.(String(e?.message || e || 'No se pudieron cargar etiquetas globales.'))); }, [load, setError]);
     if (!isSuperAdmin) return <Empty title="Globales solo para superadmin" body="Estas etiquetas comerciales se comparten como catalogo central del sistema." />;
     const openCreate = () => { setMode('create'); setSelectedId('__create_global'); setForm({ ...EMPTY_GLOBAL }); };
@@ -173,8 +160,8 @@ function GlobalPanel({ busy, requestJson, runAction, setError, isSuperAdmin }) {
                 <span>Activa</span>
             </label>
             <div className="saas-admin-form-row saas-admin-form-row--actions">
-                <button type="button" disabled={busy || !text(form.name)} onClick={() => runAction?.('Etiqueta global guardada', async () => { const saved = await saveGlobalLabel(requestJson, { id: form.id || undefined, name: form.name, color: form.color, description: form.description, commercialStatusKey: form.commercialStatusKey, sortOrder: Number(form.sortOrder || 100) || 100, isActive: form.isActive !== false }); const savedItem = normGlobal(saved?.item || { ...form, id: form.id }); const next = upper(savedItem.id || form.id || ''); if (next) { setCachedItems(upsertById(items, savedItem, 'id')); setSelectedId(next); setForm(globalForm(savedItem)); setMode('detail'); } else close(); })}>Guardar global</button>
-                {form.id ? <button type="button" className="danger" disabled={busy} onClick={() => runAction?.('Etiqueta global eliminada', async () => { await deleteGlobalLabel(requestJson, form.id); setCachedItems(items.filter((item) => upper(item.id) !== upper(form.id))); close(); })}>Eliminar</button> : null}
+                <button type="button" disabled={busy || !text(form.name)} onClick={() => runAction?.('Etiqueta global guardada', async () => { const saved = await saveGlobalLabel(requestJson, { id: form.id || undefined, name: form.name, color: form.color, description: form.description, commercialStatusKey: form.commercialStatusKey, sortOrder: Number(form.sortOrder || 100) || 100, isActive: form.isActive !== false }); const savedItem = normGlobal(saved?.item || { ...form, id: form.id }); const next = upper(savedItem.id || form.id || ''); if (next) { const cached = upsertCachedGlobalLabel(savedItem); setItems(cached); setSelectedId(next); setForm(globalForm(savedItem)); setMode('detail'); } else close(); })}>Guardar global</button>
+                {form.id ? <button type="button" className="danger" disabled={busy} onClick={() => runAction?.('Etiqueta global eliminada', async () => { await deleteGlobalLabel(requestJson, form.id); const cached = removeCachedGlobalLabel(form.id); setItems(cached); close(); })}>Eliminar</button> : null}
                 <button type="button" className="saas-btn-cancel" disabled={busy} onClick={close}>Cancelar</button>
             </div>
         </SaasDetailPanelSection>

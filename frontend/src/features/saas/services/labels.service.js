@@ -30,6 +30,70 @@ export async function fetchGlobalLabels(requestJson, { includeInactive = true } 
     return requestJson(`/api/ops/global-labels${query}`);
 }
 
+const GLOBAL_LABELS_CACHE_KEY = 'commercial';
+const GLOBAL_COMMERCIAL_STATUS_KEYS = new Set(['nuevo', 'en_conversacion', 'cotizado', 'vendido', 'perdido']);
+const globalLabelsCache = new Map();
+
+const normalizeText = (value = '') => String(value || '').trim();
+const normalizeUpper = (value = '') => normalizeText(value).toUpperCase();
+
+export function normalizeGlobalLabel(item = {}) {
+    return {
+        id: normalizeUpper(item.id || item.labelId || ''),
+        name: normalizeText(item.name),
+        color: normalizeText(item.color || '#00A884') || '#00A884',
+        description: normalizeText(item.description),
+        commercialStatusKey: normalizeText(item.commercialStatusKey || item.commercial_status_key),
+        sortOrder: Number(item.sortOrder ?? item.sort_order ?? 100) || 100,
+        isActive: item.isActive !== false && item.is_active !== false
+    };
+}
+
+export function normalizeCommercialGlobalLabels(items = []) {
+    return (Array.isArray(items) ? items : [])
+        .map(normalizeGlobalLabel)
+        .filter((item) => GLOBAL_COMMERCIAL_STATUS_KEYS.has(item.commercialStatusKey));
+}
+
+export function hasCachedGlobalLabels() {
+    return globalLabelsCache.has(GLOBAL_LABELS_CACHE_KEY);
+}
+
+export function getCachedGlobalLabels() {
+    return globalLabelsCache.get(GLOBAL_LABELS_CACHE_KEY) || [];
+}
+
+export function setCachedGlobalLabels(items = []) {
+    const normalized = normalizeCommercialGlobalLabels(items);
+    globalLabelsCache.set(GLOBAL_LABELS_CACHE_KEY, normalized);
+    return normalized;
+}
+
+export async function loadCachedGlobalLabels(requestJson, { force = false, includeInactive = true } = {}) {
+    if (!requestJson) return getCachedGlobalLabels();
+    if (!force && hasCachedGlobalLabels()) return getCachedGlobalLabels();
+    const payload = await fetchGlobalLabels(requestJson, { includeInactive });
+    return setCachedGlobalLabels(payload?.items || []);
+}
+
+export function upsertCachedGlobalLabel(item = {}) {
+    const normalized = normalizeGlobalLabel(item);
+    if (!normalized.id || !GLOBAL_COMMERCIAL_STATUS_KEYS.has(normalized.commercialStatusKey)) {
+        return getCachedGlobalLabels();
+    }
+    const current = getCachedGlobalLabels();
+    const exists = current.some((entry) => entry.id === normalized.id);
+    const next = exists
+        ? current.map((entry) => (entry.id === normalized.id ? normalized : entry))
+        : [normalized, ...current];
+    return setCachedGlobalLabels(next);
+}
+
+export function removeCachedGlobalLabel(id = '') {
+    const cleanId = normalizeUpper(id);
+    return setCachedGlobalLabels(getCachedGlobalLabels().filter((item) => item.id !== cleanId));
+}
+
 export async function saveGlobalLabel(requestJson, payload = {}) {
     const id = String(payload?.id || '').trim();
     return requestJson(id ? `/api/ops/global-labels/${encodeURIComponent(id)}` : '/api/ops/global-labels', {
