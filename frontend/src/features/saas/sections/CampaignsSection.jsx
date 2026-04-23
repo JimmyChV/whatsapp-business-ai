@@ -637,7 +637,10 @@ export default React.memo(function CampaignsSection(props = {}) {
     ]);
 
     useEffect(() => {
-        if (!isCampaignsSection || tenantScopeLocked || typeof requestJson !== 'function') return;
+        if (!isCampaignsSection || tenantScopeLocked || !settingsTenantId || typeof requestJson !== 'function') {
+            setZoneRules([]);
+            return undefined;
+        }
         let cancelled = false;
         void fetchTenantZoneRules(requestJson, { includeInactive: false })
             .then((payload) => {
@@ -649,10 +652,19 @@ export default React.memo(function CampaignsSection(props = {}) {
         return () => {
             cancelled = true;
         };
-    }, [isCampaignsSection, requestJson, tenantScopeLocked]);
+    }, [isCampaignsSection, requestJson, settingsTenantId, tenantScopeLocked]);
 
     useEffect(() => {
-        if (!isCampaignsSection || tenantScopeLocked || typeof requestJson !== 'function') return;
+        if (!isCampaignsSection || tenantScopeLocked || !settingsTenantId || typeof requestJson !== 'function') {
+            setCampaignFilterOptions({
+                commercial_statuses: [],
+                zone_labels: [],
+                operational_labels: [],
+                customer_types: [],
+                assigned_users: []
+            });
+            return undefined;
+        }
         let cancelled = false;
         void fetchCampaignFilterOptions(requestJson)
             .then((payload) => {
@@ -669,7 +681,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         return () => {
             cancelled = true;
         };
-    }, [isCampaignsSection, requestJson, tenantScopeLocked]);
+    }, [isCampaignsSection, requestJson, settingsTenantId, tenantScopeLocked]);
 
     useEffect(() => {
         if (panelMode !== 'create' && panelMode !== 'edit') return;
