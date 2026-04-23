@@ -328,6 +328,8 @@ function normalizeCampaignRecord(input = {}) {
     const updatedAt = toIso(source.updatedAt || source.updated_at) || createdAt;
     const status = normalizeCampaignStatus(source.status || 'draft');
     const scheduledAt = toIso(source.scheduledAt || source.scheduled_at);
+    const validFrom = toIso(source.validFrom || source.valid_from);
+    const validTo = toIso(source.validTo || source.valid_to);
     return {
         campaignId: toText(source.campaignId || source.campaign_id) || randomId('camp'),
         tenantId: normalizeTenant(source.tenantId || source.tenant_id),
@@ -350,6 +352,8 @@ function normalizeCampaignRecord(input = {}) {
         failedRecipients: toInt(source.failedRecipients ?? source.failed_recipients, 0, { min: 0 }),
         skippedRecipients: toInt(source.skippedRecipients ?? source.skipped_recipients, 0, { min: 0 }),
         scheduledAt,
+        validFrom,
+        validTo,
         startedAt: toIso(source.startedAt || source.started_at),
         completedAt: toIso(source.completedAt || source.completed_at),
         cancelledAt: toIso(source.cancelledAt || source.cancelled_at),
@@ -470,6 +474,8 @@ async function ensurePostgresSchema() {
                 failed_recipients INTEGER NOT NULL DEFAULT 0,
                 skipped_recipients INTEGER NOT NULL DEFAULT 0,
                 scheduled_at TIMESTAMPTZ NULL,
+                valid_from TIMESTAMPTZ NULL,
+                valid_to TIMESTAMPTZ NULL,
                 started_at TIMESTAMPTZ NULL,
                 completed_at TIMESTAMPTZ NULL,
                 cancelled_at TIMESTAMPTZ NULL,
@@ -489,6 +495,16 @@ async function ensurePostgresSchema() {
         await queryPostgres(`
             ALTER TABLE tenant_campaigns
             ADD COLUMN IF NOT EXISTS blocks_config_json JSONB NULL DEFAULT NULL
+        `);
+
+        await queryPostgres(`
+            ALTER TABLE tenant_campaigns
+            ADD COLUMN IF NOT EXISTS valid_from TIMESTAMPTZ NULL
+        `);
+
+        await queryPostgres(`
+            ALTER TABLE tenant_campaigns
+            ADD COLUMN IF NOT EXISTS valid_to TIMESTAMPTZ NULL
         `);
 
         await queryPostgres(`
@@ -577,6 +593,8 @@ function mapCampaignRow(row = {}) {
         failedRecipients: row.failed_recipients,
         skippedRecipients: row.skipped_recipients,
         scheduledAt: row.scheduled_at,
+        validFrom: row.valid_from,
+        validTo: row.valid_to,
         startedAt: row.started_at,
         completedAt: row.completed_at,
         cancelledAt: row.cancelled_at,
@@ -663,12 +681,12 @@ async function persistCampaignRecord(tenantId = DEFAULT_TENANT_ID, record = {}) 
             campaign_id, tenant_id, scope_module_id, module_id, template_id, template_name, template_language,
             campaign_name, campaign_description, status, audience_filters_json, audience_selection_json, blocks_config_json, variables_preview_json,
             total_recipients, pending_recipients, claimed_recipients, sent_recipients, failed_recipients, skipped_recipients,
-            scheduled_at, started_at, completed_at, cancelled_at, created_by, updated_by, created_at, updated_at
+            scheduled_at, valid_from, valid_to, started_at, completed_at, cancelled_at, created_by, updated_by, created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7,
             $8, $9, $10, $11::jsonb, $12::jsonb, $13::jsonb, $14::jsonb,
             $15, $16, $17, $18, $19, $20,
-            $21::timestamptz, $22::timestamptz, $23::timestamptz, $24::timestamptz, $25, $26, $27::timestamptz, $28::timestamptz
+            $21::timestamptz, $22::timestamptz, $23::timestamptz, $24::timestamptz, $25::timestamptz, $26::timestamptz, $27, $28, $29::timestamptz, $30::timestamptz
         )
         ON CONFLICT (tenant_id, campaign_id)
         DO UPDATE SET
@@ -691,6 +709,8 @@ async function persistCampaignRecord(tenantId = DEFAULT_TENANT_ID, record = {}) 
             failed_recipients = EXCLUDED.failed_recipients,
             skipped_recipients = EXCLUDED.skipped_recipients,
             scheduled_at = EXCLUDED.scheduled_at,
+            valid_from = EXCLUDED.valid_from,
+            valid_to = EXCLUDED.valid_to,
             started_at = EXCLUDED.started_at,
             completed_at = EXCLUDED.completed_at,
             cancelled_at = EXCLUDED.cancelled_at,
@@ -719,6 +739,8 @@ async function persistCampaignRecord(tenantId = DEFAULT_TENANT_ID, record = {}) 
             normalized.failedRecipients,
             normalized.skippedRecipients,
             normalized.scheduledAt,
+            normalized.validFrom,
+            normalized.validTo,
             normalized.startedAt,
             normalized.completedAt,
             normalized.cancelledAt,
@@ -1047,6 +1069,8 @@ async function createCampaign(tenantId = DEFAULT_TENANT_ID, payload = {}) {
         failedRecipients: 0,
         skippedRecipients: 0,
         scheduledAt: source.scheduledAt || null,
+        validFrom: source.validFrom || null,
+        validTo: source.validTo || null,
         startedAt: null,
         completedAt: null,
         cancelledAt: null,
@@ -1111,6 +1135,8 @@ async function updateCampaign(tenantId = DEFAULT_TENANT_ID, { campaignId = '', p
         blocksConfigJson: buildBlocksConfigFromPayload(sourcePatch, existing.blocksConfigJson),
         variablesPreviewJson: sourcePatch.variablesPreviewJson !== undefined ? sourcePatch.variablesPreviewJson : existing.variablesPreviewJson,
         scheduledAt: sourcePatch.scheduledAt !== undefined ? sourcePatch.scheduledAt : existing.scheduledAt,
+        validFrom: sourcePatch.validFrom !== undefined ? sourcePatch.validFrom : existing.validFrom,
+        validTo: sourcePatch.validTo !== undefined ? sourcePatch.validTo : existing.validTo,
         startedAt: sourcePatch.startedAt !== undefined ? sourcePatch.startedAt : existing.startedAt,
         completedAt: sourcePatch.completedAt !== undefined ? sourcePatch.completedAt : existing.completedAt,
         cancelledAt: sourcePatch.cancelledAt !== undefined ? sourcePatch.cancelledAt : existing.cancelledAt,

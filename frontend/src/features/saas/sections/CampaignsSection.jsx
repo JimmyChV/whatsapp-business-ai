@@ -42,7 +42,10 @@ const EMPTY_FORM = {
     templateId: '',
     templateName: '',
     templateLanguage: 'es',
+    scheduleMode: 'immediate',
     scheduledAt: '',
+    validFrom: '',
+    validTo: '',
     commercialStatuses: [],
     selectedLabelIds: [],
     selectedZoneRuleIds: [],
@@ -81,6 +84,23 @@ function toIsoDateTimeLocal(value = '') {
     const raw = toText(value);
     if (!raw) return null;
     const d = new Date(raw);
+    return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
+
+function toDateInputValue(value = '') {
+    const raw = toText(value);
+    if (!raw) return '';
+    const d = new Date(raw);
+    if (!Number.isFinite(d.getTime())) return '';
+    const offset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function toIsoDateBoundary(value = '', boundary = 'start') {
+    const raw = toText(value);
+    if (!raw) return null;
+    const suffix = boundary === 'end' ? 'T23:59:59.999' : 'T00:00:00.000';
+    const d = new Date(`${raw}${suffix}`);
     return Number.isFinite(d.getTime()) ? d.toISOString() : null;
 }
 
@@ -262,7 +282,10 @@ function mapCampaignToForm(campaign = {}, labelOptions = [], zoneOptions = []) {
         templateId: toText(campaign?.templateId),
         templateName: toText(campaign?.templateName),
         templateLanguage: toLower(campaign?.templateLanguage || 'es'),
+        scheduleMode: campaign?.scheduledAt ? 'scheduled' : 'immediate',
         scheduledAt: toDateTimeLocal(campaign?.scheduledAt),
+        validFrom: toDateInputValue(campaign?.validFrom),
+        validTo: toDateInputValue(campaign?.validTo),
         commercialStatuses: normalizeCommercialStatuses(filters?.commercialStatuses || (filters?.commercialStatus ? [filters.commercialStatus] : [])),
         selectedLabelIds: Array.from(new Set(selectedLabelIds)),
         selectedZoneRuleIds: Array.from(new Set(selectedZoneRuleIds)),
@@ -371,7 +394,10 @@ function serializeCampaignForm(form = {}) {
         templateId: toText(source.templateId),
         templateName: toText(source.templateName),
         templateLanguage: toLower(source.templateLanguage || 'es'),
+        scheduleMode: toText(source.scheduleMode || 'immediate') === 'scheduled' ? 'scheduled' : 'immediate',
         scheduledAt: toText(source.scheduledAt),
+        validFrom: toText(source.validFrom),
+        validTo: toText(source.validTo),
         commercialStatuses: normalizeCommercialStatuses(source.commercialStatuses || []),
         selectedLabelIds: Array.from(
             new Set((Array.isArray(source.selectedLabelIds) ? source.selectedLabelIds : []).map((entry) => toUpper(entry)))
@@ -511,7 +537,8 @@ export default React.memo(function CampaignsSection(props = {}) {
             templateId: toText(entry?.templateId || entry?.metaTemplateId || entry?.templateName),
             templateName: toText(entry?.templateName),
             moduleId: toText(entry?.moduleId),
-            templateLanguage: toLower(entry?.templateLanguage || 'es')
+            templateLanguage: toLower(entry?.templateLanguage || 'es'),
+            componentsJson: Array.isArray(entry?.componentsJson) ? entry.componentsJson : []
         }))
         .filter((entry) => entry.templateName), [templateItems]);
 
@@ -584,6 +611,32 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (!cleanModuleId) return null;
         return moduleOptions.find((entry) => entry.moduleId === cleanModuleId) || null;
     }, [form.moduleId, moduleOptions]);
+
+    const selectedTemplatePreview = useMemo(() => {
+        const components = Array.isArray(selectedTemplate?.componentsJson) ? selectedTemplate.componentsJson : [];
+        const byType = (type) => components.find((component) => toUpper(component?.type) === type) || null;
+        const header = byType('HEADER');
+        const body = byType('BODY');
+        const footer = byType('FOOTER');
+        const buttons = byType('BUTTONS');
+        const headerFormat = toLower(header?.format || '');
+        const headerType = header
+            ? (headerFormat === 'text' ? 'text' : (['image', 'video', 'document'].includes(headerFormat) ? headerFormat : 'none'))
+            : 'none';
+        return {
+            headerType,
+            headerText: toText(header?.text),
+            bodyText: toText(body?.text),
+            footerText: toText(footer?.text),
+            buttons: Array.isArray(buttons?.buttons)
+                ? buttons.buttons.map((button, index) => ({
+                    id: `campaign_preview_btn_${index + 1}`,
+                    type: toLower(button?.type || 'quick_reply'),
+                    text: toText(button?.text) || `Boton ${index + 1}`
+                }))
+                : []
+        };
+    }, [selectedTemplate]);
 
     const estimateNumbers = useMemo(() => ({
         total: Math.max(0, toNumber(reachEstimate?.total)),
@@ -977,7 +1030,9 @@ export default React.memo(function CampaignsSection(props = {}) {
             templateLanguage: toLower(form.templateLanguage || 'es'),
             campaignName: toText(form.campaignName),
             campaignDescription: toText(form.campaignDescription) || null,
-            scheduledAt: toIsoDateTimeLocal(form.scheduledAt),
+            scheduledAt: form.scheduleMode === 'scheduled' ? toIsoDateTimeLocal(form.scheduledAt) : null,
+            validFrom: toIsoDateBoundary(form.validFrom, 'start'),
+            validTo: toIsoDateBoundary(form.validTo, 'end'),
             audienceFiltersJson,
             audienceSelectionJson: buildAudienceSelectionFromForm(form, excludedCustomerIds),
             blocksConfigJson: blockPreview,
@@ -1409,7 +1464,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         case 1:
             return (
                 <SaasDetailPanelSection title="Paso 1 - Datos de campana">
-                    <div className="saas-campaigns-builder saas-campaigns-builder--full">
+                    <div className="saas-campaigns-wizard-step saas-campaigns-wizard-step--campaign">
                         <div className="saas-campaigns-builder__form">
                             <div className="saas-admin-form-row">
                                 <div className="saas-admin-field">
@@ -1440,8 +1495,36 @@ export default React.memo(function CampaignsSection(props = {}) {
                                     </select>
                                 </div>
                                 <div className="saas-admin-field">
-                                    <label>Programada</label>
-                                    <input type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm((p) => ({ ...p, scheduledAt: e.target.value }))} />
+                                    <label>Programacion</label>
+                                    <select
+                                        value={form.scheduleMode}
+                                        onChange={(e) => setForm((p) => ({
+                                            ...p,
+                                            scheduleMode: e.target.value === 'scheduled' ? 'scheduled' : 'immediate',
+                                            scheduledAt: e.target.value === 'scheduled' ? p.scheduledAt : ''
+                                        }))}
+                                    >
+                                        <option value="immediate">Inmediata</option>
+                                        <option value="scheduled">Fecha y hora futura</option>
+                                    </select>
+                                </div>
+                            </div>
+                            {form.scheduleMode === 'scheduled' ? (
+                                <div className="saas-admin-form-row saas-admin-form-row--single">
+                                    <div className="saas-admin-field">
+                                        <label>Fecha y hora programada</label>
+                                        <input type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm((p) => ({ ...p, scheduledAt: e.target.value }))} />
+                                    </div>
+                                </div>
+                            ) : null}
+                            <div className="saas-admin-form-row">
+                                <div className="saas-admin-field">
+                                    <label>Vigencia desde</label>
+                                    <input type="date" value={form.validFrom} onChange={(e) => setForm((p) => ({ ...p, validFrom: e.target.value }))} />
+                                </div>
+                                <div className="saas-admin-field">
+                                    <label>Vigencia hasta</label>
+                                    <input type="date" value={form.validTo} onChange={(e) => setForm((p) => ({ ...p, validTo: e.target.value }))} />
                                 </div>
                             </div>
                             <div className="saas-admin-form-row saas-admin-form-row--single">
@@ -1451,6 +1534,62 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 </div>
                             </div>
                         </div>
+                        <aside className="saas-campaigns-wizard-preview">
+                            <div className="saas-campaigns-wizard-preview__header">
+                                <h4>Preview del template</h4>
+                                <small>{selectedTemplate ? `${selectedTemplate.templateName} (${toUpper(selectedTemplate.templateLanguage)})` : 'Selecciona un template para visualizar el mensaje.'}</small>
+                            </div>
+                            {selectedTemplate ? (
+                                <div className="saas-campaigns-wizard-preview__body">
+                                    <div className="saas-wa-preview">
+                                        <div className="saas-wa-preview__chat-bg">
+                                            <div className="saas-wa-preview__delivery-stack">
+                                                <article className="saas-wa-preview__bubble">
+                                                    {selectedTemplatePreview.headerType === 'text' && Boolean(selectedTemplatePreview.headerText) ? (
+                                                        <div className="saas-wa-preview__header">{selectedTemplatePreview.headerText}</div>
+                                                    ) : null}
+                                                    {['image', 'video', 'document'].includes(selectedTemplatePreview.headerType) ? (
+                                                        <div className="saas-wa-preview__media-placeholder">
+                                                            <strong>{selectedTemplatePreview.headerType === 'image' ? 'Imagen' : selectedTemplatePreview.headerType === 'video' ? 'Video' : 'Documento'}</strong>
+                                                            <small>El template usa un header multimedia definido en Meta.</small>
+                                                        </div>
+                                                    ) : null}
+                                                    <div className="saas-wa-preview__body">{selectedTemplatePreview.bodyText || 'El cuerpo del template aparecera aqui.'}</div>
+                                                    {selectedTemplatePreview.footerText ? (
+                                                        <div className="saas-wa-preview__footer">{selectedTemplatePreview.footerText}</div>
+                                                    ) : null}
+                                                    <div className="saas-wa-preview__meta">
+                                                        <span>{new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}</span>
+                                                        <span className="saas-wa-preview__tick">{'\u2713\u2713'}</span>
+                                                    </div>
+                                                </article>
+                                                {selectedTemplatePreview.buttons.length > 0 ? (
+                                                    <div className="saas-wa-preview__template-buttons">
+                                                        {selectedTemplatePreview.buttons.map((buttonRow) => (
+                                                            <div className="saas-wa-preview__template-button" key={buttonRow.id}>
+                                                                <span className="saas-wa-preview__template-button-meta">
+                                                                    {buttonRow.type === 'url' ? 'Enlace' : buttonRow.type === 'phone' || buttonRow.type === 'phone_number' ? 'Llamar' : 'Respuesta'}
+                                                                </span>
+                                                                <span>{buttonRow.text}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="saas-campaigns-wizard-preview__meta">
+                                        <span><strong>Modulo:</strong> {selectedModule?.label || '-'}</span>
+                                        <span><strong>Vigencia:</strong> {form.validFrom || form.validTo ? `${form.validFrom || '-'} a ${form.validTo || '-'}` : 'Sin vigencia definida'}</span>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="saas-campaigns-wizard-preview__empty">
+                                    <strong>Preview no disponible</strong>
+                                    <p>Selecciona un template aprobado para ver una simulacion de entrega en WhatsApp.</p>
+                                </div>
+                            )}
+                        </aside>
                     </div>
                 </SaasDetailPanelSection>
             );

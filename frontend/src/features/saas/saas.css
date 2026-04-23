@@ -7063,6 +7063,75 @@
     min-height: 0;
 }
 
+.saas-campaigns-wizard-step {
+    display: grid;
+    gap: 18px;
+    align-items: start;
+}
+
+.saas-campaigns-wizard-step--campaign {
+    grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+}
+
+.saas-campaigns-wizard-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid rgba(0, 168, 132, 0.24);
+    border-radius: 16px;
+    background: rgba(7, 25, 35, 0.78);
+    min-height: 100%;
+}
+
+.saas-campaigns-wizard-preview__header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.saas-campaigns-wizard-preview__header h4 {
+    margin: 0;
+    font-size: 16px;
+    color: #f4fdff;
+}
+
+.saas-campaigns-wizard-preview__header small,
+.saas-campaigns-wizard-preview__meta,
+.saas-campaigns-wizard-preview__empty p {
+    color: #9cc0d4;
+}
+
+.saas-campaigns-wizard-preview__body,
+.saas-campaigns-wizard-preview__empty {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.saas-campaigns-wizard-preview__empty {
+    justify-content: center;
+    min-height: 240px;
+    padding: 18px;
+    border: 1px dashed rgba(110, 193, 228, 0.24);
+    border-radius: 14px;
+    background: rgba(4, 17, 27, 0.54);
+}
+
+.saas-campaigns-wizard-preview__empty strong {
+    color: #f4fdff;
+}
+
+.saas-campaigns-wizard-preview__empty p {
+    margin: 0;
+}
+
+.saas-campaigns-wizard-preview__meta {
+    display: grid;
+    gap: 6px;
+    font-size: 12px;
+}
+
 .saas-campaigns-wizard-placeholder {
     display: flex;
     flex-direction: column;
@@ -7086,5 +7155,9 @@
 @media (max-width: 980px) {
     .saas-campaigns-wizard-progress {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .saas-campaigns-wizard-step--campaign {
+        grid-template-columns: minmax(0, 1fr);
     }
 }
