@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import { isTemplateAllowedInCampaigns } from '../helpers/templateUseCase.helpers';
-import { fetchTenantLabels, fetchTenantZoneRules } from '../services/labels.service';
+import { fetchTenantCustomerLabels, fetchTenantLabels, fetchTenantZoneRules } from '../services/labels.service';
 import { fetchCampaignFilterOptions, fetchCampaignGeographyOptions, sendCampaignBlock } from '../services/campaigns.service';
 import {
     SaasDataTable,
@@ -346,10 +346,10 @@ function buildLabelOptions(items = []) {
 function buildZoneOptions(items = []) {
     return (Array.isArray(items) ? items : [])
         .map((item) => ({
-            ruleId: toUpper(item?.ruleId || item?.rule_id || item?.id || ''),
-            name: toText(item?.name || item?.label || ''),
+            ruleId: toUpper(item?.ruleId || item?.rule_id || item?.zone_id || item?.id || ''),
+            name: toText(item?.name || item?.labelName || item?.label_name || item?.label || ''),
             color: toText(item?.color || '') || '#00A884',
-            isActive: item?.isActive !== false
+            isActive: item?.isActive !== false && item?.is_active !== false
         }))
         .filter((item) => item.ruleId && item.name && item.isActive !== false)
         .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
@@ -618,6 +618,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [excludedCustomerIds, setExcludedCustomerIds] = useState([]);
     const [manualExclusionSearch, setManualExclusionSearch] = useState('');
     const [zoneRules, setZoneRules] = useState([]);
+    const [customerZoneLabels, setCustomerZoneLabels] = useState([]);
     const [tenantOperationalLabels, setTenantOperationalLabels] = useState([]);
     const [campaignGeographyOptions, setCampaignGeographyOptions] = useState({
         departments: [],
@@ -678,7 +679,22 @@ export default React.memo(function CampaignsSection(props = {}) {
         [availableLabels, tenantOperationalLabels]
     );
     const labelOptions = useMemo(() => buildLabelOptions(effectiveOperationalLabels), [effectiveOperationalLabels]);
-    const zoneOptions = useMemo(() => buildZoneOptions(zoneRules), [zoneRules]);
+    const zoneOptions = useMemo(() => (
+        (Array.isArray(zoneRules) ? zoneRules : [])
+            .filter((item) => item?.isActive !== false && item?.is_active !== false)
+            .map((item) => ({
+                ruleId: String(item?.ruleId || item?.rule_id || item?.id || '').trim().toUpperCase(),
+                name: String(item?.name || item?.label || '').trim(),
+                color: toText(item?.color || '') || '#00A884'
+            }))
+            .map((item) => ({
+                ...item,
+                value: item.ruleId,
+                label: item.name
+            }))
+            .filter((item) => item.ruleId && item.name)
+            .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }))
+    ), [zoneRules]);
     const operationalFilterChipOptions = useMemo(() => (
         campaignFilterOptions.operational_labels.length > 0
             ? campaignFilterOptions.operational_labels.map((item) => ({
@@ -974,107 +990,66 @@ export default React.memo(function CampaignsSection(props = {}) {
         () => buildGeographyOptionsFromAudience(audienceItemsForSelectors),
         [audienceItemsForSelectors]
     );
-    const zoneLabelDirectory = useMemo(() => {
+    const zoneNameById = useMemo(() => {
         const map = new Map();
-        (Array.isArray(campaignFilterOptions.zone_labels) ? campaignFilterOptions.zone_labels : []).forEach((item) => {
-            const id = toUpper(item?.id);
-            if (!id) return;
-            map.set(id, {
-                id,
-                name: toText(item?.name) || id,
-                color: toText(item?.color) || '#00A884'
-            });
-        });
         zoneOptions.forEach((item) => {
-            const id = toUpper(item?.ruleId);
-            if (!id) return;
-            map.set(id, {
-                id,
-                name: toText(item?.name) || id,
-                color: toText(item?.color) || '#00A884'
-            });
-        });
-        audienceItemsForSelectors.forEach((item) => {
-            (Array.isArray(item?.zoneLabels) ? item.zoneLabels : []).forEach((zone, index) => {
-                const id = toUpper(zone?.id || item?.zoneLabelIds?.[index] || '');
-                if (!id) return;
-                const existing = map.get(id);
-                const candidateName = toText(zone?.name || item?.zoneLabelNames?.[index] || '');
-                map.set(id, {
-                    id,
-                    name: (existing?.name && !isZoneIdLike(existing.name))
-                        ? existing.name
-                        : (isZoneIdLike(candidateName) ? (existing?.name || id) : (candidateName || existing?.name || id)),
-                    color: toText(existing?.color || zone?.color || '#00A884') || '#00A884'
-                });
-            });
-            (Array.isArray(item?.zoneLabelIds) ? item.zoneLabelIds : []).forEach((zoneId, index) => {
-                const id = toUpper(zoneId);
-                if (!id || map.has(id)) return;
-                map.set(id, {
-                    id,
-                    name: toText(item?.zoneLabelNames?.[index] || '') || id,
-                    color: '#00A884'
-                });
+            map.set(toUpper(item.value), {
+                id: toUpper(item.value),
+                name: toText(item.label) || toUpper(item.value),
+                color: toText(item.color) || '#00A884'
             });
         });
         return map;
-    }, [audienceItemsForSelectors, campaignFilterOptions.zone_labels, zoneOptions]);
+    }, [zoneOptions]);
+    const zoneByCustomerId = useMemo(() => {
+        const map = new Map();
+        (Array.isArray(customerZoneLabels) ? customerZoneLabels : []).forEach((assignment = {}) => {
+            const source = String(assignment?.source || '').trim().toLowerCase();
+            if (source && source !== 'zone') return;
+            const customerId = String(assignment?.customerId || assignment?.customer_id || '').trim();
+            const labelId = String(assignment?.labelId || assignment?.label_id || '').trim().toUpperCase();
+            const fallbackName = toText(assignment?.labelName || assignment?.label_name || assignment?.name || assignment?.label || '');
+            if (!customerId || !labelId) return;
+            const zone = zoneNameById.get(labelId) || (fallbackName
+                ? {
+                    id: labelId,
+                    name: fallbackName,
+                    color: toText(assignment?.color || '') || '#00A884'
+                }
+                : null);
+            if (!zone) return;
+            map.set(customerId, zone);
+        });
+        return map;
+    }, [customerZoneLabels, zoneNameById]);
     const zoneFilterChipOptions = useMemo(() => {
-        const directOptions = campaignFilterOptions.zone_labels.length > 0
-            ? campaignFilterOptions.zone_labels.map((item) => ({
-                id: toUpper(item.id),
-                name: toText(item.name),
-                color: toText(item.color) || '#00A884'
-            }))
-            : zoneOptions.map((item) => ({
-                id: toUpper(item.ruleId),
-                name: item.name,
-                color: item.color || '#00A884'
-            }));
+        const directOptions = zoneOptions.map((item) => ({
+            id: toUpper(item.value),
+            name: toText(item.label) || toUpper(item.value),
+            color: toText(item.color) || '#00A884'
+        }));
         if (directOptions.length > 0) return directOptions;
 
         const derivedZoneMap = new Map();
         audienceItemsForSelectors.forEach((item) => {
-            (Array.isArray(item?.zoneLabels) ? item.zoneLabels : []).forEach((zone, index) => {
-                const id = toUpper(zone?.id || item?.zoneLabelIds?.[index] || '');
-                if (!id) return;
-                const configured = zoneLabelDirectory.get(id);
-                const candidateName = toText(zone?.name || item?.zoneLabelNames?.[index] || '');
-                derivedZoneMap.set(id, {
-                    id,
-                    name: (configured?.name && !isZoneIdLike(configured.name))
-                        ? configured.name
-                        : (isZoneIdLike(candidateName) ? (configured?.name || id) : (candidateName || configured?.name || id)),
-                    color: toText(configured?.color || zone?.color || '#00A884') || '#00A884'
-                });
-            });
             (Array.isArray(item?.zoneLabelIds) ? item.zoneLabelIds : []).forEach((zoneId, index) => {
                 const id = toUpper(zoneId);
                 if (!id || derivedZoneMap.has(id)) return;
-                const configured = zoneLabelDirectory.get(id);
+                const configured = zoneNameById.get(id);
                 derivedZoneMap.set(id, {
                     id,
-                    name: (configured?.name && !isZoneIdLike(configured.name))
-                        ? configured.name
-                        : (toText(item?.zoneLabelNames?.[index] || '') || configured?.name || id),
-                    color: toText(configured?.color || '#00A884') || '#00A884'
+                    name: toText(configured?.name || item?.zoneLabelNames?.[index] || item?.zoneLabels?.[index]?.name || '') || id,
+                    color: toText(configured?.color || item?.zoneLabels?.[index]?.color || '#00A884') || '#00A884'
                 });
             });
         });
         return Array.from(derivedZoneMap.values());
-    }, [audienceItemsForSelectors, campaignFilterOptions.zone_labels, zoneLabelDirectory, zoneOptions]);
+    }, [audienceItemsForSelectors, zoneNameById, zoneOptions]);
     const resolveZoneDisplayName = useCallback((zoneLabelId = '', fallbackName = '') => {
         const cleanZoneLabelId = toUpper(zoneLabelId);
         if (!cleanZoneLabelId) return toText(fallbackName);
-        const configuredName = (Array.isArray(campaignFilterOptions?.zone_labels) ? campaignFilterOptions.zone_labels : []).find(
-            (zone) => toUpper(zone?.id) === cleanZoneLabelId
-        )?.name;
-        const zoneRuleName = (Array.isArray(zoneRules) ? zoneRules : []).find(
-            (zone) => toUpper(zone?.ruleId || zone?.rule_id || zone?.id) === cleanZoneLabelId
-        )?.name;
-        return toText(configuredName || zoneRuleName || fallbackName || zoneLabelDirectory.get(cleanZoneLabelId)?.name || cleanZoneLabelId);
-    }, [campaignFilterOptions?.zone_labels, zoneLabelDirectory, zoneRules]);
+        return toText(zoneNameById.get(cleanZoneLabelId)?.name || fallbackName || cleanZoneLabelId);
+    }, [zoneNameById]);
     const geographyDepartments = useMemo(
         () => {
             const configured = (Array.isArray(campaignGeographyOptions.departments) ? campaignGeographyOptions.departments : []).map(toText).filter(Boolean);
@@ -1342,15 +1317,24 @@ export default React.memo(function CampaignsSection(props = {}) {
     useEffect(() => {
         if (!isCampaignsSection || tenantScopeLocked || !settingsTenantId || typeof requestJsonRef.current !== 'function') {
             setZoneRules([]);
+            setCustomerZoneLabels([]);
             return undefined;
         }
         let cancelled = false;
-        void fetchTenantZoneRules(requestJsonRef.current, { includeInactive: false, tenantId: settingsTenantId })
-            .then((payload) => {
-                if (!cancelled) setZoneRules(Array.isArray(payload?.items) ? payload.items : []);
+        void Promise.all([
+            fetchTenantZoneRules(requestJsonRef.current, { includeInactive: false, tenantId: settingsTenantId }),
+            fetchTenantCustomerLabels(requestJsonRef.current, { source: 'zone', tenantId: settingsTenantId })
+        ])
+            .then(([rulesPayload, labelsPayload]) => {
+                if (cancelled) return;
+                setZoneRules(Array.isArray(rulesPayload?.items) ? rulesPayload.items : []);
+                setCustomerZoneLabels(Array.isArray(labelsPayload?.items) ? labelsPayload.items : []);
             })
             .catch(() => {
-                if (!cancelled) setZoneRules([]);
+                if (!cancelled) {
+                    setZoneRules([]);
+                    setCustomerZoneLabels([]);
+                }
             });
         return () => {
             cancelled = true;
@@ -1384,17 +1368,20 @@ export default React.memo(function CampaignsSection(props = {}) {
             fetchCampaignFilterOptions(requestJsonRef.current, { tenantId: settingsTenantId }),
             fetchCampaignGeographyOptions(requestJsonRef.current, { tenantId: settingsTenantId }),
             fetchTenantLabels(requestJsonRef.current, settingsTenantId, { includeInactive: false }),
-            fetchTenantZoneRules(requestJsonRef.current, { includeInactive: false, tenantId: settingsTenantId })
-        ]).then(([filterResult, geographyResult, tenantLabelsResult, tenantZonesResult]) => {
+            fetchTenantZoneRules(requestJsonRef.current, { includeInactive: false, tenantId: settingsTenantId }),
+            fetchTenantCustomerLabels(requestJsonRef.current, { source: 'zone', tenantId: settingsTenantId })
+        ]).then(([filterResult, geographyResult, tenantLabelsResult, tenantZonesResult, tenantCustomerZoneLabelsResult]) => {
             if (cancelled || requestId !== audienceRequestRef.current) return;
 
             const filterPayload = filterResult.status === 'fulfilled' ? filterResult.value : null;
             const geographyPayload = geographyResult.status === 'fulfilled' ? geographyResult.value : null;
             const tenantLabelsPayload = tenantLabelsResult.status === 'fulfilled' ? tenantLabelsResult.value : null;
             const tenantZonesPayload = tenantZonesResult.status === 'fulfilled' ? tenantZonesResult.value : null;
+            const tenantCustomerZoneLabelsPayload = tenantCustomerZoneLabelsResult.status === 'fulfilled' ? tenantCustomerZoneLabelsResult.value : null;
 
             const tenantLabelItems = Array.isArray(tenantLabelsPayload?.items) ? tenantLabelsPayload.items : [];
             const tenantZoneItems = Array.isArray(tenantZonesPayload?.items) ? tenantZonesPayload.items : [];
+            const tenantCustomerZoneItems = Array.isArray(tenantCustomerZoneLabelsPayload?.items) ? tenantCustomerZoneLabelsPayload.items : [];
             const fallbackZoneLabels = buildZoneOptions(tenantZoneItems.length > 0 ? tenantZoneItems : zoneRules).map((item) => ({
                 id: toUpper(item.ruleId || item.rule_id || item.zone_id || item.id || ''),
                 name: toText(item.name || item.label || ''),
@@ -1407,7 +1394,8 @@ export default React.memo(function CampaignsSection(props = {}) {
             }));
 
             setTenantOperationalLabels(tenantLabelItems);
-            if (tenantZoneItems.length > 0) setZoneRules(tenantZoneItems);
+            setZoneRules(tenantZoneItems);
+            setCustomerZoneLabels(tenantCustomerZoneItems);
 
             const payload = filterPayload || {};
             const zoneFallbackById = new Map(fallbackZoneLabels.map((item) => [toUpper(item.id), item]));
@@ -2031,19 +2019,18 @@ export default React.memo(function CampaignsSection(props = {}) {
     };
 
     const renderAudienceCustomerRows = (items = [], limit = 50) => {
-        const zoneById = zoneLabelDirectory;
         const operationalById = new Map(operationalFilterChipOptions.map((item) => [toUpper(item.id), item]));
         const commercialByKey = new Map(commercialFilterOptions.map((item) => [toLower(item.key), item]));
         return (
             <div className="saas-campaigns-audience-live-list">
                 {items.slice(0, limit).map((item) => {
-                    const zone = zoneById.get(toUpper(item.zoneLabelIds?.[0] || '')) || (
+                    const zone = zoneByCustomerId.get(toText(item.customerId)) || (
                         item.zoneLabelIds?.[0]
                             ? {
                                 id: toUpper(item.zoneLabelIds[0]),
                                 name: resolveZoneDisplayName(item.zoneLabelIds[0], toText(item.zoneLabelNames?.[0] || item.zoneLabels?.[0]?.name || ''))
                                     || item.zoneLabelIds[0],
-                                color: toText(item.zoneLabels?.[0]?.color || '#00A884') || '#00A884'
+                                color: toText(zoneNameById.get(toUpper(item.zoneLabelIds[0]))?.color || item.zoneLabels?.[0]?.color || '#00A884') || '#00A884'
                             }
                             : null
                     );
