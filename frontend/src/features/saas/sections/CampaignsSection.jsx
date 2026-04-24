@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import { isTemplateAllowedInCampaigns } from '../helpers/templateUseCase.helpers';
-import { fetchTenantZoneRules } from '../services/labels.service';
+import { fetchTenantLabels, fetchTenantZoneRules } from '../services/labels.service';
 import { fetchCampaignFilterOptions, fetchCampaignGeographyOptions, sendCampaignBlock } from '../services/campaigns.service';
 import {
     SaasDataTable,
@@ -355,6 +355,44 @@ function buildZoneOptions(items = []) {
         .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
 }
 
+function buildGeographyOptionsFromAudience(items = []) {
+    const departments = [];
+    const departmentSet = new Set();
+    const provinces = {};
+    const districts = {};
+
+    (Array.isArray(items) ? items : []).forEach((item) => {
+        const entryDepartments = uniqueTextItems(item?.departments?.length > 0 ? item.departments : [item?.departmentName]);
+        const entryProvinces = uniqueTextItems(item?.provinces?.length > 0 ? item.provinces : [item?.provinceName]);
+        const entryDistricts = uniqueTextItems(item?.districts?.length > 0 ? item.districts : [item?.districtName]);
+
+        entryDepartments.forEach((departmentName) => {
+            if (!departmentSet.has(departmentName)) {
+                departmentSet.add(departmentName);
+                departments.push(departmentName);
+            }
+
+            const currentProvinces = provinces[departmentName] || [];
+            entryProvinces.forEach((provinceName) => {
+                if (!currentProvinces.includes(provinceName)) currentProvinces.push(provinceName);
+                const districtKey = `${departmentName}-${provinceName}`;
+                const currentDistricts = districts[districtKey] || [];
+                entryDistricts.forEach((districtName) => {
+                    if (!currentDistricts.includes(districtName)) currentDistricts.push(districtName);
+                });
+                districts[districtKey] = currentDistricts.sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' }));
+            });
+            provinces[departmentName] = currentProvinces.sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' }));
+        });
+    });
+
+    return {
+        departments: departments.sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' })),
+        provinces,
+        districts
+    };
+}
+
 function uniqueTextItems(items = []) {
     return Array.from(new Set((Array.isArray(items) ? items : []).map((item) => toText(item)).filter(Boolean)));
 }
@@ -427,7 +465,6 @@ function buildAudienceFiltersFromForm(form = {}, labelOptions = [], zoneOptions 
     const zoneLabelIds = (Array.isArray(form?.selectedZoneRuleIds) ? form.selectedZoneRuleIds : [])
         .map((entry) => toUpper(entry))
         .filter((entry) => entry && zoneIds.has(entry));
-    const maxRecipients = Math.max(0, Math.floor(toNumber(form?.maxRecipients)));
     const inclusionFilters = normalizeDeepFilters(form?.inclusionFilters || {});
     return {
         commercialStatuses: normalizeCommercialStatuses(form?.commercialStatuses || []),
@@ -449,8 +486,7 @@ function buildAudienceFiltersFromForm(form = {}, labelOptions = [], zoneOptions 
         has_address: inclusionFilters.has_address === '' ? undefined : inclusionFilters.has_address,
         created_after: inclusionFilters.created_after || undefined,
         created_before: inclusionFilters.created_before || undefined,
-        search: toText(form?.searchText || ''),
-        maxRecipients: maxRecipients > 0 ? maxRecipients : undefined
+        search: toText(form?.searchText || '')
     };
 }
 
@@ -572,13 +608,13 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [statusFilter, setStatusFilter] = useState('');
     const [moduleFilter, setModuleFilter] = useState('');
     const [showColumnsMenu, setShowColumnsMenu] = useState(false);
-    const [maxRecipientsTouched, setMaxRecipientsTouched] = useState(false);
     const [localEstimate, setLocalEstimate] = useState(null);
     const [baseAudienceEstimate, setBaseAudienceEstimate] = useState(null);
     const [inclusionOnlyEstimate, setInclusionOnlyEstimate] = useState(null);
     const [excludedCustomerIds, setExcludedCustomerIds] = useState([]);
     const [manualExclusionSearch, setManualExclusionSearch] = useState('');
     const [zoneRules, setZoneRules] = useState([]);
+    const [tenantOperationalLabels, setTenantOperationalLabels] = useState([]);
     const [campaignGeographyOptions, setCampaignGeographyOptions] = useState({
         departments: [],
         provinces: {},
@@ -594,6 +630,8 @@ export default React.memo(function CampaignsSection(props = {}) {
         assigned_users: [],
         acquisition_sources: []
     });
+    const audienceRequestRef = useRef(0);
+    const estimateRequestRef = useRef({ base: 0, full: 0, inclusion: 0 });
 
     const {
         campaigns = [],
@@ -630,33 +668,12 @@ export default React.memo(function CampaignsSection(props = {}) {
     const estimating = Boolean(estimatingFromContext || estimatingFromController);
     const estimateReachAction = estimateReachFromContext || estimateReachFromController;
 
-    const labelOptions = useMemo(() => buildLabelOptions(availableLabels), [availableLabels]);
+    const effectiveOperationalLabels = useMemo(
+        () => (tenantOperationalLabels.length > 0 ? tenantOperationalLabels : availableLabels),
+        [availableLabels, tenantOperationalLabels]
+    );
+    const labelOptions = useMemo(() => buildLabelOptions(effectiveOperationalLabels), [effectiveOperationalLabels]);
     const zoneOptions = useMemo(() => buildZoneOptions(zoneRules), [zoneRules]);
-    const zoneFilterChipOptions = useMemo(() => (
-        campaignFilterOptions.zone_labels.length > 0
-            ? campaignFilterOptions.zone_labels.map((item) => ({
-                id: toUpper(item.id),
-                name: toText(item.name),
-                color: toText(item.color) || '#00A884'
-            }))
-            : zoneOptions.map((item) => ({
-                id: toUpper(item.ruleId),
-                name: item.name,
-                color: item.color || '#00A884'
-            }))
-    ), [campaignFilterOptions.zone_labels, zoneOptions]);
-    const geographyDepartments = useMemo(
-        () => (Array.isArray(campaignGeographyOptions.departments) ? campaignGeographyOptions.departments : []).map(toText).filter(Boolean),
-        [campaignGeographyOptions.departments]
-    );
-    const geographyProvinceMap = useMemo(
-        () => (campaignGeographyOptions.provinces && typeof campaignGeographyOptions.provinces === 'object' ? campaignGeographyOptions.provinces : {}),
-        [campaignGeographyOptions.provinces]
-    );
-    const geographyDistrictMap = useMemo(
-        () => (campaignGeographyOptions.districts && typeof campaignGeographyOptions.districts === 'object' ? campaignGeographyOptions.districts : {}),
-        [campaignGeographyOptions.districts]
-    );
     const operationalFilterChipOptions = useMemo(() => (
         campaignFilterOptions.operational_labels.length > 0
             ? campaignFilterOptions.operational_labels.map((item) => ({
@@ -845,6 +862,38 @@ export default React.memo(function CampaignsSection(props = {}) {
             }))
             .filter((item) => item.customerId)
     ), [reachEstimate]);
+    const baseAudienceItems = useMemo(() => (
+        (Array.isArray(baseAudienceEstimate?.items) ? baseAudienceEstimate.items : [])
+            .map((item) => ({
+                customerId: toText(item?.customerId),
+                contactName: toText(item?.contactName) || 'Sin nombre',
+                phone: toText(item?.phone) || '-',
+                email: toText(item?.email),
+                commercialStatus: toLower(item?.commercialStatus || 'unknown') || 'unknown',
+                tags: Array.isArray(item?.tags)
+                    ? item.tags.map((entry) => toText(entry)).filter(Boolean)
+                    : [],
+                operationalLabelIds: Array.isArray(item?.operationalLabelIds)
+                    ? item.operationalLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
+                    : [],
+                zoneLabelIds: Array.isArray(item?.zoneLabelIds)
+                    ? item.zoneLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
+                    : [],
+                customerTypeId: toText(item?.customerTypeId),
+                acquisitionSourceId: toText(item?.acquisitionSourceId),
+                assignedUserId: toText(item?.assignedUserId),
+                departmentName: toText(item?.departmentName),
+                provinceName: toText(item?.provinceName),
+                districtName: toText(item?.districtName),
+                departments: uniqueTextItems(item?.departments),
+                provinces: uniqueTextItems(item?.provinces),
+                districts: uniqueTextItems(item?.districts),
+                hasAddress: item?.hasAddress === true,
+                preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
+                marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
+            }))
+            .filter((item) => item.customerId)
+    ), [baseAudienceEstimate]);
     const inclusionOnlyAudienceItems = useMemo(() => (
         (Array.isArray(inclusionOnlyEstimate?.items) ? inclusionOnlyEstimate.items : [])
             .map((item) => ({
@@ -877,6 +926,60 @@ export default React.memo(function CampaignsSection(props = {}) {
             }))
             .filter((item) => item.customerId)
     ), [inclusionOnlyEstimate]);
+    const audienceItemsForSelectors = useMemo(() => {
+        if (inclusionOnlyAudienceItems.length > 0) return inclusionOnlyAudienceItems;
+        if (estimatedAudienceItems.length > 0) return estimatedAudienceItems;
+        return baseAudienceItems;
+    }, [baseAudienceItems, estimatedAudienceItems, inclusionOnlyAudienceItems]);
+    const audienceGeographyOptions = useMemo(
+        () => buildGeographyOptionsFromAudience(audienceItemsForSelectors),
+        [audienceItemsForSelectors]
+    );
+    const zoneFilterChipOptions = useMemo(() => {
+        const directOptions = campaignFilterOptions.zone_labels.length > 0
+            ? campaignFilterOptions.zone_labels.map((item) => ({
+                id: toUpper(item.id),
+                name: toText(item.name),
+                color: toText(item.color) || '#00A884'
+            }))
+            : zoneOptions.map((item) => ({
+                id: toUpper(item.ruleId),
+                name: item.name,
+                color: item.color || '#00A884'
+            }));
+        if (directOptions.length > 0) return directOptions;
+
+        const derivedZoneIds = uniqueTextItems(audienceItemsForSelectors.flatMap((item) => item.zoneLabelIds || []).map(toUpper));
+        return derivedZoneIds.map((zoneId) => {
+            const configured = zoneOptions.find((entry) => toUpper(entry.ruleId) === zoneId);
+            return {
+                id: zoneId,
+                name: configured?.name || zoneId,
+                color: configured?.color || '#00A884'
+            };
+        });
+    }, [audienceItemsForSelectors, campaignFilterOptions.zone_labels, zoneOptions]);
+    const geographyDepartments = useMemo(
+        () => {
+            const configured = (Array.isArray(campaignGeographyOptions.departments) ? campaignGeographyOptions.departments : []).map(toText).filter(Boolean);
+            return configured.length > 0 ? configured : audienceGeographyOptions.departments;
+        },
+        [audienceGeographyOptions.departments, campaignGeographyOptions.departments]
+    );
+    const geographyProvinceMap = useMemo(
+        () => {
+            const configured = campaignGeographyOptions.provinces && typeof campaignGeographyOptions.provinces === 'object' ? campaignGeographyOptions.provinces : {};
+            return Object.keys(configured).length > 0 ? configured : audienceGeographyOptions.provinces;
+        },
+        [audienceGeographyOptions.provinces, campaignGeographyOptions.provinces]
+    );
+    const geographyDistrictMap = useMemo(
+        () => {
+            const configured = campaignGeographyOptions.districts && typeof campaignGeographyOptions.districts === 'object' ? campaignGeographyOptions.districts : {};
+            return Object.keys(configured).length > 0 ? configured : audienceGeographyOptions.districts;
+        },
+        [audienceGeographyOptions.districts, campaignGeographyOptions.districts]
+    );
     const excludedCustomerIdSet = useMemo(() => (
         new Set((Array.isArray(excludedCustomerIds) ? excludedCustomerIds : []).map((entry) => toText(entry)).filter(Boolean))
     ), [excludedCustomerIds]);
@@ -943,7 +1046,6 @@ export default React.memo(function CampaignsSection(props = {}) {
         ];
     }, [estimateNumbers.eligible, reachEstimate, selectedModule, selectedTemplate]);
     const canStartWithGuardrails = canStartGuardrails.every((entry) => entry.ok);
-    const maxRecipientsRange = Math.max(1, estimateNumbers.eligible || 1);
     const selectedLabels = useMemo(() => {
         const selected = new Set((Array.isArray(form.selectedLabelIds) ? form.selectedLabelIds : []).map((entry) => toUpper(entry)));
         return labelOptions.filter((entry) => selected.has(toUpper(entry.labelId)));
@@ -1127,7 +1229,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             return undefined;
         }
         let cancelled = false;
-        void fetchTenantZoneRules(requestJson, { includeInactive: false })
+        void fetchTenantZoneRules(requestJson, { includeInactive: false, tenantId: settingsTenantId })
             .then((payload) => {
                 if (!cancelled) setZoneRules(Array.isArray(payload?.items) ? payload.items : []);
             })
@@ -1155,49 +1257,61 @@ export default React.memo(function CampaignsSection(props = {}) {
                 assigned_users: [],
                 acquisition_sources: []
             });
+            setTenantOperationalLabels([]);
             setCampaignGeographyOptions({ departments: [], provinces: {}, districts: {} });
             return undefined;
         }
         let cancelled = false;
-        void fetchCampaignFilterOptions(requestJson)
-            .then((payload) => {
-                if (cancelled) return;
-                if (import.meta.env.DEV) console.log('[campaign-filter-options]', payload);
-                setCampaignFilterOptions({
-                    commercial_statuses: Array.isArray(payload?.commercial_statuses) ? payload.commercial_statuses : [],
-                    zone_labels: Array.isArray(payload?.zone_labels) ? payload.zone_labels : [],
-                    operational_labels: Array.isArray(payload?.operational_labels) ? payload.operational_labels : [],
-                    customer_types: Array.isArray(payload?.customer_types) ? payload.customer_types : [],
-                    assigned_users: Array.isArray(payload?.assigned_users) ? payload.assigned_users : [],
-                    acquisition_sources: Array.isArray(payload?.acquisition_sources) ? payload.acquisition_sources : []
-                });
-            })
-            .catch(() => {});
-        void fetchCampaignGeographyOptions(requestJson)
-            .then((payload) => {
-                if (cancelled) return;
-                if (import.meta.env.DEV) console.log('[campaign-geography-options]', payload);
-                setCampaignGeographyOptions({
-                    departments: Array.isArray(payload?.departments) ? payload.departments : [],
-                    provinces: payload?.provinces && typeof payload.provinces === 'object' ? payload.provinces : {},
-                    districts: payload?.districts && typeof payload.districts === 'object' ? payload.districts : {}
-                });
-            })
-            .catch(() => {
-                if (!cancelled) setCampaignGeographyOptions({ departments: [], provinces: {}, districts: {} });
+        const requestId = audienceRequestRef.current + 1;
+        audienceRequestRef.current = requestId;
+        Promise.allSettled([
+            fetchCampaignFilterOptions(requestJson, { tenantId: settingsTenantId }),
+            fetchCampaignGeographyOptions(requestJson, { tenantId: settingsTenantId }),
+            fetchTenantLabels(requestJson, settingsTenantId, { includeInactive: false }),
+            fetchTenantZoneRules(requestJson, { includeInactive: false, tenantId: settingsTenantId })
+        ]).then(([filterResult, geographyResult, tenantLabelsResult, tenantZonesResult]) => {
+            if (cancelled || requestId !== audienceRequestRef.current) return;
+
+            const filterPayload = filterResult.status === 'fulfilled' ? filterResult.value : null;
+            const geographyPayload = geographyResult.status === 'fulfilled' ? geographyResult.value : null;
+            const tenantLabelsPayload = tenantLabelsResult.status === 'fulfilled' ? tenantLabelsResult.value : null;
+            const tenantZonesPayload = tenantZonesResult.status === 'fulfilled' ? tenantZonesResult.value : null;
+
+            const tenantLabelItems = Array.isArray(tenantLabelsPayload?.items) ? tenantLabelsPayload.items : [];
+            const tenantZoneItems = Array.isArray(tenantZonesPayload?.items) ? tenantZonesPayload.items : [];
+            const fallbackZoneLabels = buildZoneOptions(tenantZoneItems.length > 0 ? tenantZoneItems : zoneRules).map((item) => ({
+                id: toUpper(item.ruleId),
+                name: toText(item.name),
+                color: toText(item.color) || '#00A884'
+            }));
+            const fallbackOperationalLabels = buildLabelOptions(tenantLabelItems.length > 0 ? tenantLabelItems : availableLabels).map((item) => ({
+                id: toUpper(item.labelId),
+                name: toText(item.name),
+                color: toText(item.color) || '#00A884'
+            }));
+
+            setTenantOperationalLabels(tenantLabelItems);
+            if (tenantZoneItems.length > 0) setZoneRules(tenantZoneItems);
+
+            const payload = filterPayload || {};
+            setCampaignFilterOptions({
+                commercial_statuses: Array.isArray(payload?.commercial_statuses) ? payload.commercial_statuses : [],
+                zone_labels: Array.isArray(payload?.zone_labels) && payload.zone_labels.length > 0 ? payload.zone_labels : fallbackZoneLabels,
+                operational_labels: Array.isArray(payload?.operational_labels) && payload.operational_labels.length > 0 ? payload.operational_labels : fallbackOperationalLabels,
+                customer_types: Array.isArray(payload?.customer_types) ? payload.customer_types : [],
+                assigned_users: Array.isArray(payload?.assigned_users) ? payload.assigned_users : [],
+                acquisition_sources: Array.isArray(payload?.acquisition_sources) ? payload.acquisition_sources : []
             });
+            setCampaignGeographyOptions({
+                departments: Array.isArray(geographyPayload?.departments) ? geographyPayload.departments : [],
+                provinces: geographyPayload?.provinces && typeof geographyPayload.provinces === 'object' ? geographyPayload.provinces : {},
+                districts: geographyPayload?.districts && typeof geographyPayload.districts === 'object' ? geographyPayload.districts : {}
+            });
+        });
         return () => {
             cancelled = true;
         };
-    }, [isCampaignsSection, panelMode, requestJson, settingsTenantId, tenantScopeLocked, wizardStep]);
-
-    useEffect(() => {
-        if (panelMode !== 'create' && panelMode !== 'edit') return;
-        if (maxRecipientsTouched) return;
-        const eligible = estimateNumbers.eligible;
-        if (!Number.isFinite(eligible) || eligible <= 0) return;
-        setForm((prev) => ({ ...prev, maxRecipients: String(eligible) }));
-    }, [estimateNumbers.eligible, maxRecipientsTouched, panelMode]);
+    }, [availableLabels, isCampaignsSection, panelMode, requestJson, settingsTenantId, tenantScopeLocked, wizardStep, zoneRules]);
 
     useEffect(() => {
         if (inclusionOnlyAudienceItems.length === 0) return;
@@ -1318,19 +1432,6 @@ export default React.memo(function CampaignsSection(props = {}) {
         }
     }, []);
 
-    const removeFilterChip = useCallback((scope = 'inclusionFilters', chip = {}) => {
-        if (Array.isArray(normalizeDeepFilters(form?.[scope] || {})[chip.keyName])) {
-            removeDeepFilterValue(scope, chip.keyName, chip.value, chip.normalize || toText);
-            return;
-        }
-        if (chip.keyName === 'created_range') {
-            updateDeepFilter(scope, 'created_after', '');
-            updateDeepFilter(scope, 'created_before', '');
-            return;
-        }
-        updateDeepFilter(scope, chip.keyName, '');
-    }, [form, removeDeepFilterValue, updateDeepFilter]);
-
     const removeDeepFilterValue = useCallback((scope = 'inclusionFilters', keyName = '', value = '', normalize = toText) => {
         if (!keyName) return;
         const cleanValue = normalize(value);
@@ -1347,6 +1448,19 @@ export default React.memo(function CampaignsSection(props = {}) {
             };
         });
     }, []);
+
+    const removeFilterChip = useCallback((scope = 'inclusionFilters', chip = {}) => {
+        if (Array.isArray(normalizeDeepFilters(form?.[scope] || {})[chip.keyName])) {
+            removeDeepFilterValue(scope, chip.keyName, chip.value, chip.normalize || toText);
+            return;
+        }
+        if (chip.keyName === 'created_range') {
+            updateDeepFilter(scope, 'created_after', '');
+            updateDeepFilter(scope, 'created_before', '');
+            return;
+        }
+        updateDeepFilter(scope, chip.keyName, '');
+    }, [form, removeDeepFilterValue, updateDeepFilter]);
 
     const buildCampaignPayload = useCallback(() => {
         const audienceFiltersJson = buildAudienceFiltersFromForm(form, labelOptions, zoneOptions);
@@ -1405,6 +1519,8 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const runBaseAudienceEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
+        const requestId = estimateRequestRef.current.base + 1;
+        estimateRequestRef.current.base = requestId;
         const payload = buildEstimatePayload({ baseOnly: true });
         if (!payload.moduleId || !payload.templateName) return;
         const response = await estimateReachAction({
@@ -1418,13 +1534,15 @@ export default React.memo(function CampaignsSection(props = {}) {
         const estimate = response?.estimate && typeof response.estimate === 'object'
             ? response.estimate
             : null;
-        if (estimate) {
+        if (estimate && requestId === estimateRequestRef.current.base) {
             setBaseAudienceEstimate(estimate);
         }
     }, [buildEstimatePayload, estimateReachAction]);
 
     const runEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
+        const requestId = estimateRequestRef.current.full + 1;
+        estimateRequestRef.current.full = requestId;
         const payload = buildEstimatePayload();
         if (!payload.moduleId) throw new Error('Selecciona un modulo antes de estimar alcance.');
         if (!payload.templateName) throw new Error('Selecciona un template aprobado antes de estimar alcance.');
@@ -1439,13 +1557,15 @@ export default React.memo(function CampaignsSection(props = {}) {
         const estimate = response?.estimate && typeof response.estimate === 'object'
             ? response.estimate
             : null;
-        if (estimate) {
+        if (estimate && requestId === estimateRequestRef.current.full) {
             setLocalEstimate(estimate);
         }
     }, [buildEstimatePayload, estimateReachAction]);
 
     const runInclusionOnlyEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
+        const requestId = estimateRequestRef.current.inclusion + 1;
+        estimateRequestRef.current.inclusion = requestId;
         const payload = buildEstimatePayload({ inclusionOnly: true });
         if (!payload.moduleId || !payload.templateName) return;
         const response = await estimateReachAction({
@@ -1459,7 +1579,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         const estimate = response?.estimate && typeof response.estimate === 'object'
             ? response.estimate
             : null;
-        if (estimate) {
+        if (estimate && requestId === estimateRequestRef.current.inclusion) {
             setInclusionOnlyEstimate(estimate);
         }
     }, [buildEstimatePayload, estimateReachAction]);
@@ -1467,12 +1587,18 @@ export default React.memo(function CampaignsSection(props = {}) {
     useEffect(() => {
         if (panelMode !== 'create' && panelMode !== 'edit') return undefined;
         if (!form.moduleId || !form.templateName) {
+            estimateRequestRef.current.base += 1;
+            estimateRequestRef.current.full += 1;
+            estimateRequestRef.current.inclusion += 1;
             setLocalEstimate(null);
             setBaseAudienceEstimate(null);
             setInclusionOnlyEstimate(null);
             return undefined;
         }
         if (wizardStep < 2) {
+            estimateRequestRef.current.base += 1;
+            estimateRequestRef.current.full += 1;
+            estimateRequestRef.current.inclusion += 1;
             setLocalEstimate(null);
             setBaseAudienceEstimate(null);
             setInclusionOnlyEstimate(null);
@@ -1527,7 +1653,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const handleSendCampaignBlock = useCallback(async (blockIndex) => {
         if (typeof requestJson !== 'function') throw new Error('Cliente HTTP no disponible.');
         if (!selectedCampaignId) throw new Error('Selecciona una campana.');
-        const response = await sendCampaignBlock(requestJson, { campaignId: selectedCampaignId, blockIndex });
+        const response = await sendCampaignBlock(requestJson, { campaignId: selectedCampaignId, blockIndex }, { tenantId: settingsTenantId });
         const campaign = response?.campaign || null;
         if (campaign) {
             await selectCampaign?.(campaign.campaignId, { loadDetail: false });
@@ -1547,7 +1673,6 @@ export default React.memo(function CampaignsSection(props = {}) {
         setLocalEstimate(null);
         setBaseAudienceEstimate(null);
         setInclusionOnlyEstimate(null);
-        setMaxRecipientsTouched(false);
         setExcludedCustomerIds([]);
         clearSelectedCampaign();
     }, [clearSelectedCampaign]);
@@ -1567,7 +1692,6 @@ export default React.memo(function CampaignsSection(props = {}) {
         setLocalEstimate(null);
         setBaseAudienceEstimate(null);
         setInclusionOnlyEstimate(null);
-        setMaxRecipientsTouched(false);
         setExcludedCustomerIds([]);
         if (panelMode === 'edit' && selectedCampaign) {
             setForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions));
@@ -1936,6 +2060,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                         <label>Departamento</label>
                         <select
                             multiple
+                            size={Math.min(Math.max(departments.length, 3), 8)}
                             value={filters.departments}
                             onChange={(event) => updateDeepFilter(scope, 'departments', Array.from(event.target.selectedOptions).map((option) => option.value))}
                         >
@@ -1948,6 +2073,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                         <label>Provincia</label>
                         <select
                             multiple
+                            size={Math.min(Math.max(provinces.length, 3), 8)}
                             value={filters.provinces}
                             onChange={(event) => updateDeepFilter(scope, 'provinces', Array.from(event.target.selectedOptions).map((option) => option.value))}
                         >
@@ -1960,6 +2086,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                         <label>Distrito</label>
                         <select
                             multiple
+                            size={Math.min(Math.max(districts.length, 3), 8)}
                             value={filters.districts}
                             onChange={(event) => updateDeepFilter(scope, 'districts', Array.from(event.target.selectedOptions).map((option) => option.value))}
                         >
@@ -1975,6 +2102,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                         <label>Tipo de cliente</label>
                         <select
                             multiple
+                            size={Math.min(Math.max(customerTypeOptions.length, 3), 8)}
                             value={filters.customer_type_ids}
                             onChange={(event) => updateDeepFilter(scope, 'customer_type_ids', Array.from(event.target.selectedOptions).map((option) => option.value))}
                         >
@@ -1987,6 +2115,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                         <label>Fuente de adquisicion</label>
                         <select
                             multiple
+                            size={Math.min(Math.max(acquisitionOptions.length, 3), 8)}
                             value={filters.acquisition_source_ids}
                             onChange={(event) => updateDeepFilter(scope, 'acquisition_source_ids', Array.from(event.target.selectedOptions).map((option) => option.value))}
                         >
@@ -2395,7 +2524,6 @@ export default React.memo(function CampaignsSection(props = {}) {
                         setPanelMode('create');
                         setWizardStep(1);
                         clearSelectedCampaign();
-                        setMaxRecipientsTouched(false);
                         setLocalEstimate(null);
                         setInclusionOnlyEstimate(null);
                         setForm({ ...EMPTY_FORM, moduleId: moduleOptions[0]?.moduleId || '' });
@@ -2525,7 +2653,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                         bodyClassName="saas-campaigns-detail-panel__body"
                         actions={(
                             <>
-                                {toLower(selectedCampaign?.status) === 'draft' && <button type="button" disabled={loading || !canWrite} onClick={() => { setForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions)); setPanelMode('edit'); setWizardStep(1); setMaxRecipientsTouched(false); setLocalEstimate(null); setInclusionOnlyEstimate(null); }}>Editar</button>}
+                                {toLower(selectedCampaign?.status) === 'draft' && <button type="button" disabled={loading || !canWrite} onClick={() => { setForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions)); setPanelMode('edit'); setWizardStep(1); setLocalEstimate(null); setInclusionOnlyEstimate(null); }}>Editar</button>}
                                 {toLower(selectedCampaign?.status) === 'running' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => pauseCampaign?.(selectedCampaignId), 'No se pudo pausar campana.')}>Pausar</button>}
                                 {toLower(selectedCampaign?.status) === 'paused' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => resumeCampaign?.(selectedCampaignId), 'No se pudo reanudar campana.')}>Reanudar</button>}
                                 {['draft', 'scheduled'].includes(toLower(selectedCampaign?.status)) && !selectedBlocksConfig && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => startCampaign?.(selectedCampaignId), 'No se pudo iniciar campana.')}>Iniciar</button>}
