@@ -355,6 +355,10 @@ function buildZoneOptions(items = []) {
         .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
 }
 
+function isZoneIdLike(value = '') {
+    return /^ZONE[-_]/i.test(toText(value));
+}
+
 function buildGeographyOptionsFromAudience(items = []) {
     const departments = [];
     const departmentSet = new Set();
@@ -994,10 +998,14 @@ export default React.memo(function CampaignsSection(props = {}) {
             (Array.isArray(item?.zoneLabels) ? item.zoneLabels : []).forEach((zone, index) => {
                 const id = toUpper(zone?.id || item?.zoneLabelIds?.[index] || '');
                 if (!id) return;
+                const existing = map.get(id);
+                const candidateName = toText(zone?.name || item?.zoneLabelNames?.[index] || '');
                 map.set(id, {
                     id,
-                    name: toText(zone?.name || item?.zoneLabelNames?.[index] || '') || id,
-                    color: toText(zone?.color || '#00A884') || '#00A884'
+                    name: (existing?.name && !isZoneIdLike(existing.name))
+                        ? existing.name
+                        : (isZoneIdLike(candidateName) ? (existing?.name || id) : (candidateName || existing?.name || id)),
+                    color: toText(existing?.color || zone?.color || '#00A884') || '#00A884'
                 });
             });
             (Array.isArray(item?.zoneLabelIds) ? item.zoneLabelIds : []).forEach((zoneId, index) => {
@@ -1031,10 +1039,14 @@ export default React.memo(function CampaignsSection(props = {}) {
             (Array.isArray(item?.zoneLabels) ? item.zoneLabels : []).forEach((zone, index) => {
                 const id = toUpper(zone?.id || item?.zoneLabelIds?.[index] || '');
                 if (!id) return;
+                const configured = zoneLabelDirectory.get(id);
+                const candidateName = toText(zone?.name || item?.zoneLabelNames?.[index] || '');
                 derivedZoneMap.set(id, {
                     id,
-                    name: toText(zone?.name || item?.zoneLabelNames?.[index] || '') || id,
-                    color: toText(zone?.color || '#00A884') || '#00A884'
+                    name: (configured?.name && !isZoneIdLike(configured.name))
+                        ? configured.name
+                        : (isZoneIdLike(candidateName) ? (configured?.name || id) : (candidateName || configured?.name || id)),
+                    color: toText(configured?.color || zone?.color || '#00A884') || '#00A884'
                 });
             });
             (Array.isArray(item?.zoneLabelIds) ? item.zoneLabelIds : []).forEach((zoneId, index) => {
@@ -1043,7 +1055,9 @@ export default React.memo(function CampaignsSection(props = {}) {
                 const configured = zoneLabelDirectory.get(id);
                 derivedZoneMap.set(id, {
                     id,
-                    name: toText(item?.zoneLabelNames?.[index] || configured?.name || '') || id,
+                    name: (configured?.name && !isZoneIdLike(configured.name))
+                        ? configured.name
+                        : (toText(item?.zoneLabelNames?.[index] || '') || configured?.name || id),
                     color: toText(configured?.color || '#00A884') || '#00A884'
                 });
             });
