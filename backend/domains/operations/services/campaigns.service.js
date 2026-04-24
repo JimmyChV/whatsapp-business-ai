@@ -1192,8 +1192,15 @@ function normalizeAudienceSelection(value = {}) {
             zone_label_ids: normalizeStringArray(f.zone_label_ids || f.zoneLabelIds || f.zoneRuleIds).map(toUpper),
             operational_label_ids: normalizeStringArray(f.operational_label_ids || f.labelIds || f.labels).map((entry) => toLower(entry)),
             customer_type_ids: normalizeStringArray(f.customer_type_ids || f.customerTypeIds).map(toText),
+            acquisition_source_ids: normalizeStringArray(f.acquisition_source_ids || f.acquisitionSourceIds).map(toText),
+            departments: normalizeStringArray(f.departments || f.departmentNames).map(toText),
+            provinces: normalizeStringArray(f.provinces || f.provinceNames).map(toText),
+            districts: normalizeStringArray(f.districts || f.districtNames).map(toText),
             assigned_user_id: toNullableText(f.assigned_user_id || f.assignedUserId),
             has_open_chat: normalizeNullableBool(f.has_open_chat ?? f.hasOpenChat),
+            has_phone: normalizeNullableBool(f.has_phone ?? f.hasPhone),
+            has_email: normalizeNullableBool(f.has_email ?? f.hasEmail),
+            has_address: normalizeNullableBool(f.has_address ?? f.hasAddress),
             created_after: toIso(f.created_after || f.createdAfter),
             created_before: toIso(f.created_before || f.createdBefore)
         };
@@ -1216,8 +1223,15 @@ function legacyFiltersFromAudienceSelection(selection = {}) {
         zoneLabelIds: filters.zone_label_ids,
         operationalLabelIds: filters.operational_label_ids,
         customerTypeIds: filters.customer_type_ids,
+        acquisitionSourceIds: filters.acquisition_source_ids,
+        departments: filters.departments,
+        provinces: filters.provinces,
+        districts: filters.districts,
         assignedUserId: filters.assigned_user_id,
         hasOpenChat: filters.has_open_chat,
+        hasPhone: filters.has_phone,
+        hasEmail: filters.has_email,
+        hasAddress: filters.has_address,
         createdAfter: filters.created_after,
         createdBefore: filters.created_before
     };
@@ -1231,8 +1245,15 @@ function matchFiltersFromDeepFilterSet(filters = {}) {
         zoneLabelIds: normalizeStringArray(source.zone_label_ids || source.zoneLabelIds || source.zoneRuleIds).map(toUpper),
         operationalLabelIds: normalizeStringArray(source.operational_label_ids || source.operationalLabelIds || source.labelIds || source.labels).map(toLower),
         customerTypeIds: normalizeStringArray(source.customer_type_ids || source.customerTypeIds).map(toText),
+        acquisitionSourceIds: normalizeStringArray(source.acquisition_source_ids || source.acquisitionSourceIds).map(toText),
+        departments: normalizeStringArray(source.departments || source.departmentNames).map(toText),
+        provinces: normalizeStringArray(source.provinces || source.provinceNames).map(toText),
+        districts: normalizeStringArray(source.districts || source.districtNames).map(toText),
         assignedUserId: toNullableText(source.assigned_user_id || source.assignedUserId),
         hasOpenChat: normalizeNullableBool(source.has_open_chat ?? source.hasOpenChat),
+        hasPhone: normalizeNullableBool(source.has_phone ?? source.hasPhone),
+        hasEmail: normalizeNullableBool(source.has_email ?? source.hasEmail),
+        hasAddress: normalizeNullableBool(source.has_address ?? source.hasAddress),
         createdAfter: toIso(source.created_after || source.createdAfter),
         createdBefore: toIso(source.created_before || source.createdBefore)
     };
@@ -1288,6 +1309,17 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     const customerAssignedUserId = toText(customer.assignedUserId || customer.assignmentUserId || customer.assignment_user_id || '');
     const customerTypeIds = new Set(normalizeStringArray(filters.customerTypeIds || filters.customer_type_ids).map(toText));
     const customerTypeId = toText(customer.customerTypeId || customer.customer_type_id || '');
+    const acquisitionSourceIds = new Set(normalizeStringArray(filters.acquisitionSourceIds || filters.acquisition_source_ids).map(toText));
+    const acquisitionSourceId = toText(customer.acquisitionSourceId || customer.acquisition_source_id || '');
+    const departments = new Set(normalizeStringArray(filters.departments || filters.departmentNames).map(toLower));
+    const provinces = new Set(normalizeStringArray(filters.provinces || filters.provinceNames).map(toLower));
+    const districts = new Set(normalizeStringArray(filters.districts || filters.districtNames).map(toLower));
+    const customerDepartments = ensureArray(customer.departments || [customer.departmentName]).map((entry) => toLower(entry)).filter(Boolean);
+    const customerProvinces = ensureArray(customer.provinces || [customer.provinceName]).map((entry) => toLower(entry)).filter(Boolean);
+    const customerDistricts = ensureArray(customer.districts || [customer.districtName]).map((entry) => toLower(entry)).filter(Boolean);
+    const hasPhone = normalizeNullableBool(filters.hasPhone ?? filters.has_phone);
+    const hasEmail = normalizeNullableBool(filters.hasEmail ?? filters.has_email);
+    const hasAddress = normalizeNullableBool(filters.hasAddress ?? filters.has_address);
     const createdAfter = toIso(filters.createdAfter || filters.created_after);
     const createdBefore = toIso(filters.createdBefore || filters.created_before);
     const customerCreatedAt = toIso(customer.createdAt || customer.created_at);
@@ -1335,6 +1367,16 @@ function customerMatchesFilters(customer = {}, filters = {}) {
 
     if (assignedUserId && customerAssignedUserId !== assignedUserId) return false;
     if (customerTypeIds.size > 0 && !customerTypeIds.has(customerTypeId)) return false;
+    if (acquisitionSourceIds.size > 0 && !acquisitionSourceIds.has(acquisitionSourceId)) return false;
+    if (departments.size > 0 && !customerDepartments.some((entry) => departments.has(entry))) return false;
+    if (provinces.size > 0 && !customerProvinces.some((entry) => provinces.has(entry))) return false;
+    if (districts.size > 0 && !customerDistricts.some((entry) => districts.has(entry))) return false;
+    if (hasPhone === true && !toText(customer.phone || customer.phone_e164)) return false;
+    if (hasPhone === false && toText(customer.phone || customer.phone_e164)) return false;
+    if (hasEmail === true && !toText(customer.email)) return false;
+    if (hasEmail === false && toText(customer.email)) return false;
+    if (hasAddress === true && !(customer.hasAddress === true || customerDepartments.length > 0 || customerProvinces.length > 0 || customerDistricts.length > 0)) return false;
+    if (hasAddress === false && (customer.hasAddress === true || customerDepartments.length > 0 || customerProvinces.length > 0 || customerDistricts.length > 0)) return false;
     if (createdAfter && customerCreatedAt && customerCreatedAt < createdAfter) return false;
     if (createdBefore && customerCreatedAt && customerCreatedAt > createdBefore) return false;
 
@@ -1374,7 +1416,14 @@ function customerMatchesExclusionFilters(customer = {}, filters = {}) {
         || normalizeStringArray(normalized.marketingStatus || normalized.opt_in_status).length > 0
         || normalizeZoneLabelIds(normalized).length > 0
         || normalizeOperationalLabelIds(normalized).length > 0
+        || normalizeStringArray(normalized.acquisitionSourceIds || normalized.acquisition_source_ids).length > 0
+        || normalizeStringArray(normalized.departments || normalized.departmentNames).length > 0
+        || normalizeStringArray(normalized.provinces || normalized.provinceNames).length > 0
+        || normalizeStringArray(normalized.districts || normalized.districtNames).length > 0
         || Boolean(toText(normalized.assignedUserId || normalized.assigned_user_id || ''))
+        || normalizeNullableBool(normalized.hasPhone ?? normalized.has_phone) !== null
+        || normalizeNullableBool(normalized.hasEmail ?? normalized.has_email) !== null
+        || normalizeNullableBool(normalized.hasAddress ?? normalized.has_address) !== null
         || Boolean(toText(normalized.createdAfter || normalized.created_after || ''))
         || Boolean(toText(normalized.createdBefore || normalized.created_before || ''))
         || normalizeNullableBool(normalized.hasOpenChat ?? normalized.has_open_chat) !== null;
@@ -1392,6 +1441,35 @@ function mergeAudienceFilters(baseFilters = {}, audienceSelection = {}) {
             if (Array.isArray(value)) return value.length > 0;
             return value !== null && value !== undefined && value !== '';
         }))
+    };
+}
+
+function normalizeTextArray(value = []) {
+    return Array.from(new Set(normalizeStringArray(value).map(toText).filter(Boolean)));
+}
+
+function mapCustomerRowWithAddress(row = {}) {
+    return {
+        customerId: toText(row.customer_id),
+        phone: toText(row.phone_e164),
+        contactName: toText(row.contact_name),
+        email: toText(row.email),
+        tags: ensureArray(row.labels || row.tags),
+        marketingOptInStatus: toLower(row.marketing_opt_in_status || 'unknown'),
+        commercialStatus: toLower(row.commercial_status || 'unknown'),
+        moduleId: toText(row.context_module_id || row.customer_module_id || row.module_id || ''),
+        preferredLanguage: toLower(row.preferred_language || 'es'),
+        customerTypeId: toText(row.customer_type_id || ''),
+        acquisitionSourceId: toText(row.acquisition_source_id || ''),
+        assignedUserId: toText(row.assignment_user_id || ''),
+        createdAt: toIso(row.created_at),
+        departmentName: toText(row.primary_department_name || ''),
+        provinceName: toText(row.primary_province_name || ''),
+        districtName: toText(row.primary_district_name || ''),
+        departments: normalizeTextArray(row.department_names),
+        provinces: normalizeTextArray(row.province_names),
+        districts: normalizeTextArray(row.district_names),
+        hasAddress: Boolean(row.has_address)
     };
 }
 
@@ -1432,17 +1510,47 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                     c.email,
                     c.preferred_language,
                     c.customer_type_id,
+                    c.acquisition_source_id,
                     c.created_at,
                     c.module_id AS customer_module_id,
                     cmc.module_id AS context_module_id,
                     cmc.marketing_opt_in_status,
                     cmc.commercial_status,
                     cmc.labels,
-                    cmc.assignment_user_id
+                    cmc.assignment_user_id,
+                    COALESCE(addr.has_address, FALSE) AS has_address,
+                    addr.department_names,
+                    addr.province_names,
+                    addr.district_names,
+                    addr.primary_department_name,
+                    addr.primary_province_name,
+                    addr.primary_district_name
                  FROM tenant_customer_module_contexts cmc
                  JOIN tenant_customers c
                    ON c.tenant_id = cmc.tenant_id
                   AND c.customer_id = cmc.customer_id
+                 LEFT JOIN LATERAL (
+                    SELECT
+                        COUNT(*) > 0 AS has_address,
+                        ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.department_name), '')), NULL) AS department_names,
+                        ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.province_name), '')), NULL) AS province_names,
+                        ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.district_name), '')), NULL) AS district_names,
+                        COALESCE(
+                            MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.department_name), '') END),
+                            MAX(NULLIF(BTRIM(a.department_name), ''))
+                        ) AS primary_department_name,
+                        COALESCE(
+                            MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.province_name), '') END),
+                            MAX(NULLIF(BTRIM(a.province_name), ''))
+                        ) AS primary_province_name,
+                        COALESCE(
+                            MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.district_name), '') END),
+                            MAX(NULLIF(BTRIM(a.district_name), ''))
+                        ) AS primary_district_name
+                    FROM tenant_customer_addresses a
+                    WHERE a.tenant_id = c.tenant_id
+                      AND a.customer_id = c.customer_id
+                 ) addr ON TRUE
                  WHERE cmc.tenant_id = $1
                    AND LOWER(cmc.module_id) = LOWER($2)
                    AND COALESCE(c.phone_e164, '') <> ''
@@ -1452,20 +1560,7 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                 [cleanTenantId, moduleFilter, Math.max(maxRecipients * 3, 300)]
             );
 
-            const contextRows = ensureArray(contextRowsResult?.rows).map((row) => ({
-                customerId: toText(row.customer_id),
-                phone: toText(row.phone_e164),
-                contactName: toText(row.contact_name),
-                email: toText(row.email),
-                tags: ensureArray(row.labels),
-                marketingOptInStatus: toLower(row.marketing_opt_in_status || 'unknown'),
-                commercialStatus: toLower(row.commercial_status || 'unknown'),
-                moduleId: toText(row.context_module_id || row.customer_module_id || ''),
-                preferredLanguage: toLower(row.preferred_language || 'es'),
-                customerTypeId: toText(row.customer_type_id || ''),
-                assignedUserId: toText(row.assignment_user_id || ''),
-                createdAt: toIso(row.created_at)
-            }));
+            const contextRows = ensureArray(contextRowsResult?.rows).map(mapCustomerRowWithAddress);
 
             if (contextRows.length > 0) {
                 const withZoneLabels = await attachZoneLabelsToCustomers(cleanTenantId, contextRows, filters);
@@ -1490,28 +1585,56 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
     }
 
     const rowsResult = await queryPostgres(
-        `SELECT customer_id, phone_e164, contact_name, email, tags, module_id, preferred_language, marketing_opt_in_status, customer_type_id, created_at
+        `SELECT
+            c.customer_id,
+            c.phone_e164,
+            c.contact_name,
+            c.email,
+            c.tags,
+            c.module_id,
+            c.preferred_language,
+            c.marketing_opt_in_status,
+            c.customer_type_id,
+            c.acquisition_source_id,
+            c.created_at,
+            COALESCE(addr.has_address, FALSE) AS has_address,
+            addr.department_names,
+            addr.province_names,
+            addr.district_names,
+            addr.primary_department_name,
+            addr.primary_province_name,
+            addr.primary_district_name
            FROM tenant_customers
+           c
+           LEFT JOIN LATERAL (
+                SELECT
+                    COUNT(*) > 0 AS has_address,
+                    ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.department_name), '')), NULL) AS department_names,
+                    ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.province_name), '')), NULL) AS province_names,
+                    ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.district_name), '')), NULL) AS district_names,
+                    COALESCE(
+                        MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.department_name), '') END),
+                        MAX(NULLIF(BTRIM(a.department_name), ''))
+                    ) AS primary_department_name,
+                    COALESCE(
+                        MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.province_name), '') END),
+                        MAX(NULLIF(BTRIM(a.province_name), ''))
+                    ) AS primary_province_name,
+                    COALESCE(
+                        MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.district_name), '') END),
+                        MAX(NULLIF(BTRIM(a.district_name), ''))
+                    ) AS primary_district_name
+                FROM tenant_customer_addresses a
+                WHERE a.tenant_id = c.tenant_id
+                  AND a.customer_id = c.customer_id
+           ) addr ON TRUE
           WHERE ${where.join(' AND ')}
           ORDER BY updated_at DESC
           LIMIT $${params.length + 1}`,
         [...params, Math.max(maxRecipients * 3, 300)]
     );
 
-    const rows = ensureArray(rowsResult?.rows).map((row) => ({
-        customerId: toText(row.customer_id),
-        phone: toText(row.phone_e164),
-        contactName: toText(row.contact_name),
-        email: toText(row.email),
-        tags: ensureArray(row.tags),
-        marketingOptInStatus: toLower(row.marketing_opt_in_status || 'unknown'),
-        commercialStatus: 'unknown',
-        moduleId: toText(row.module_id || ''),
-        preferredLanguage: toLower(row.preferred_language || 'es'),
-        customerTypeId: toText(row.customer_type_id || ''),
-        assignedUserId: '',
-        createdAt: toIso(row.created_at)
-    }));
+    const rows = ensureArray(rowsResult?.rows).map(mapCustomerRowWithAddress);
 
     const withZoneLabels = await attachZoneLabelsToCustomers(cleanTenantId, rows, filters);
     return withZoneLabels
@@ -1555,12 +1678,23 @@ function sanitizeEligibleCustomer(customer = {}) {
         customerId: toText(source.customerId || '') || null,
         contactName: toText(source.contactName || '') || null,
         phone: toText(source.phone || '') || null,
+        email: toText(source.email || '') || null,
         commercialStatus: toLower(source.commercialStatus || source.commercial_status || 'unknown') || 'unknown',
         tags: ensureArray(source.tags).map((entry) => toText(entry)).filter(Boolean),
         operationalLabelIds: ensureArray(source.operationalLabelIds || source.tags).map((entry) => toLower(entry)).filter(Boolean),
         zoneLabelIds: ensureArray(source.zoneLabelIds).map((entry) => toUpper(entry)).filter(Boolean),
         preferredLanguage: toLower(source.preferredLanguage || source.preferred_language || 'es') || 'es',
-        marketingOptInStatus: toLower(source.marketingOptInStatus || source.marketing_opt_in_status || 'unknown') || 'unknown'
+        marketingOptInStatus: toLower(source.marketingOptInStatus || source.marketing_opt_in_status || 'unknown') || 'unknown',
+        customerTypeId: toText(source.customerTypeId || source.customer_type_id || '') || null,
+        acquisitionSourceId: toText(source.acquisitionSourceId || source.acquisition_source_id || '') || null,
+        assignedUserId: toText(source.assignedUserId || source.assignmentUserId || source.assignment_user_id || '') || null,
+        departmentName: toText(source.departmentName || '') || null,
+        provinceName: toText(source.provinceName || '') || null,
+        districtName: toText(source.districtName || '') || null,
+        departments: normalizeTextArray(source.departments),
+        provinces: normalizeTextArray(source.provinces),
+        districts: normalizeTextArray(source.districts),
+        hasAddress: source.hasAddress === true
     };
 }
 
@@ -1646,7 +1780,7 @@ async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
         }
     };
 
-    const [commercialRows, zoneRows, operationalRows, typeRows, userRows] = await Promise.all([
+    const [commercialRows, zoneRows, operationalRows, typeRows, userRows, acquisitionSourceRows] = await Promise.all([
         safeQuery(
             `SELECT commercial_status_key AS key, name, color
                FROM global_labels
@@ -1686,6 +1820,11 @@ async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
                 AND LOWER(m.role) IN ('seller', 'admin')
               ORDER BY name ASC`,
             [cleanTenantId]
+        ),
+        safeQuery(
+            `SELECT id, label AS name
+               FROM global_acquisition_sources
+              ORDER BY label ASC`
         )
     ]);
 
@@ -1694,8 +1833,62 @@ async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
         zone_labels: zoneRows.map((row) => ({ id: toUpper(row.id), name: toText(row.name), color: toText(row.color || '#00A884') })),
         operational_labels: operationalRows.map((row) => ({ id: toUpper(row.id), name: toText(row.name), color: toText(row.color || '#00A884') })),
         customer_types: typeRows.map((row) => ({ id: toText(row.id), name: toText(row.name) })),
-        assigned_users: userRows.map((row) => ({ id: toText(row.id), name: toText(row.name) }))
+        assigned_users: userRows.map((row) => ({ id: toText(row.id), name: toText(row.name) })),
+        acquisition_sources: acquisitionSourceRows.map((row) => ({ id: toText(row.id), name: toText(row.name) }))
     };
+}
+
+async function listCampaignGeographyOptions(tenantId = DEFAULT_TENANT_ID) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    if (getStorageDriver() !== 'postgres') {
+        return { departments: [], provinces: {}, districts: {} };
+    }
+    await ensurePostgresSchema();
+    try {
+        const result = await queryPostgres(
+            `SELECT DISTINCT
+                NULLIF(BTRIM(department_name), '') AS department_name,
+                NULLIF(BTRIM(province_name), '') AS province_name,
+                NULLIF(BTRIM(district_name), '') AS district_name
+             FROM tenant_customer_addresses
+             WHERE tenant_id = $1
+               AND NULLIF(BTRIM(department_name), '') IS NOT NULL
+             ORDER BY department_name, province_name, district_name`,
+            [cleanTenantId]
+        );
+        const departments = [];
+        const departmentSet = new Set();
+        const provinces = {};
+        const districts = {};
+        ensureArray(result?.rows).forEach((row) => {
+            const departmentName = toText(row.department_name);
+            const provinceName = toText(row.province_name);
+            const districtName = toText(row.district_name);
+            if (departmentName && !departmentSet.has(departmentName)) {
+                departmentSet.add(departmentName);
+                departments.push(departmentName);
+            }
+            if (departmentName && provinceName) {
+                const current = provinces[departmentName] || [];
+                if (!current.includes(provinceName)) current.push(provinceName);
+                provinces[departmentName] = current.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+            }
+            if (departmentName && provinceName && districtName) {
+                const key = `${departmentName}-${provinceName}`;
+                const current = districts[key] || [];
+                if (!current.includes(districtName)) current.push(districtName);
+                districts[key] = current.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+            }
+        });
+        return {
+            departments: departments.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })),
+            provinces,
+            districts
+        };
+    } catch (error) {
+        if (missingRelation(error)) return { departments: [], provinces: {}, districts: {} };
+        throw error;
+    }
 }
 
 async function listCampaignRecipients(tenantId = DEFAULT_TENANT_ID, options = {}) {
@@ -2650,6 +2843,7 @@ module.exports = {
     cancelCampaign,
     estimateCampaign,
     listCampaignFilterOptions,
+    listCampaignGeographyOptions,
     seedRecipientsFromFilters,
     listCampaignRecipients,
     recordCampaignEvent,

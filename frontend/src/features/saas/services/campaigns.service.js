@@ -55,6 +55,11 @@ export async function fetchCampaignFilterOptions(requestJson) {
     return requestJson('/api/tenant/campaigns/filter-options');
 }
 
+export async function fetchCampaignGeographyOptions(requestJson) {
+    assertRequestJson(requestJson);
+    return requestJson('/api/tenant/campaigns/geography-options');
+}
+
 export async function listCampaigns(
     requestJson,
     {

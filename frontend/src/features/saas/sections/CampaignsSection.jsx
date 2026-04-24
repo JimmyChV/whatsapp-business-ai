@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import { isTemplateAllowedInCampaigns } from '../helpers/templateUseCase.helpers';
 import { fetchTenantZoneRules } from '../services/labels.service';
-import { fetchCampaignFilterOptions, sendCampaignBlock } from '../services/campaigns.service';
+import { fetchCampaignFilterOptions, fetchCampaignGeographyOptions, sendCampaignBlock } from '../services/campaigns.service';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -26,11 +26,18 @@ const STATUS_META = {
 const EMPTY_DEEP_FILTERS = {
     commercial_status: [],
     opt_in_status: [],
+    departments: [],
+    provinces: [],
+    districts: [],
     zone_label_ids: [],
     operational_label_ids: [],
     customer_type_ids: [],
+    acquisition_source_ids: [],
     assigned_user_id: '',
     has_open_chat: '',
+    has_phone: '',
+    has_email: '',
+    has_address: '',
     created_after: '',
     created_before: ''
 };
@@ -173,11 +180,18 @@ function normalizeDeepFilters(value = {}) {
     return {
         commercial_status: Array.from(new Set((Array.isArray(source.commercial_status) ? source.commercial_status : []).map(toLower).filter(Boolean))),
         opt_in_status: Array.from(new Set((Array.isArray(source.opt_in_status) ? source.opt_in_status : []).map(toLower).filter(Boolean))),
+        departments: Array.from(new Set((Array.isArray(source.departments) ? source.departments : []).map(toText).filter(Boolean))),
+        provinces: Array.from(new Set((Array.isArray(source.provinces) ? source.provinces : []).map(toText).filter(Boolean))),
+        districts: Array.from(new Set((Array.isArray(source.districts) ? source.districts : []).map(toText).filter(Boolean))),
         zone_label_ids: Array.from(new Set((Array.isArray(source.zone_label_ids) ? source.zone_label_ids : []).map(toUpper).filter(Boolean))),
         operational_label_ids: Array.from(new Set((Array.isArray(source.operational_label_ids) ? source.operational_label_ids : []).map(toUpper).filter(Boolean))),
         customer_type_ids: Array.from(new Set((Array.isArray(source.customer_type_ids) ? source.customer_type_ids : []).map(toText).filter(Boolean))),
+        acquisition_source_ids: Array.from(new Set((Array.isArray(source.acquisition_source_ids) ? source.acquisition_source_ids : []).map(toText).filter(Boolean))),
         assigned_user_id: toText(source.assigned_user_id || ''),
         has_open_chat: source.has_open_chat === true || source.has_open_chat === false ? source.has_open_chat : '',
+        has_phone: source.has_phone === true || source.has_phone === false ? source.has_phone : '',
+        has_email: source.has_email === true || source.has_email === false ? source.has_email : '',
+        has_address: source.has_address === true || source.has_address === false ? source.has_address : '',
         created_after: toText(source.created_after || ''),
         created_before: toText(source.created_before || '')
     };
@@ -187,11 +201,18 @@ function deepFiltersFromLegacy(filters = {}) {
     return normalizeDeepFilters({
         commercial_status: filters.commercial_status || filters.commercialStatuses || filters.commercialStatus || [],
         opt_in_status: filters.opt_in_status || filters.marketingStatus || [],
+        departments: filters.departments || filters.departmentNames || [],
+        provinces: filters.provinces || filters.provinceNames || [],
+        districts: filters.districts || filters.districtNames || [],
         zone_label_ids: filters.zone_label_ids || filters.zoneLabelIds || [],
         operational_label_ids: filters.operational_label_ids || filters.operationalLabelIds || [],
         customer_type_ids: filters.customer_type_ids || filters.customerTypeIds || [],
+        acquisition_source_ids: filters.acquisition_source_ids || filters.acquisitionSourceIds || [],
         assigned_user_id: filters.assigned_user_id || filters.assignedUserId || '',
         has_open_chat: filters.has_open_chat ?? filters.hasOpenChat ?? '',
+        has_phone: filters.has_phone ?? filters.hasPhone ?? '',
+        has_email: filters.has_email ?? filters.hasEmail ?? '',
+        has_address: filters.has_address ?? filters.hasAddress ?? '',
         created_after: filters.created_after || filters.createdAfter || '',
         created_before: filters.created_before || filters.createdBefore || ''
     });
@@ -210,12 +231,22 @@ function hasDeepFilterValue(filters = {}) {
     const f = normalizeDeepFilters(filters);
     return f.commercial_status.length > 0
         || f.opt_in_status.length > 0
+        || f.departments.length > 0
+        || f.provinces.length > 0
+        || f.districts.length > 0
         || f.zone_label_ids.length > 0
         || f.operational_label_ids.length > 0
         || f.customer_type_ids.length > 0
+        || f.acquisition_source_ids.length > 0
         || Boolean(f.assigned_user_id)
         || f.has_open_chat === true
         || f.has_open_chat === false
+        || f.has_phone === true
+        || f.has_phone === false
+        || f.has_email === true
+        || f.has_email === false
+        || f.has_address === true
+        || f.has_address === false
         || Boolean(f.created_after)
         || Boolean(f.created_before);
 }
@@ -224,13 +255,80 @@ function countDeepFilterSelections(filters = {}) {
     const f = normalizeDeepFilters(filters);
     return f.commercial_status.length
         + f.opt_in_status.length
+        + f.departments.length
+        + f.provinces.length
+        + f.districts.length
         + f.zone_label_ids.length
         + f.operational_label_ids.length
         + f.customer_type_ids.length
+        + f.acquisition_source_ids.length
         + (f.assigned_user_id ? 1 : 0)
         + (f.has_open_chat === true || f.has_open_chat === false ? 1 : 0)
+        + (f.has_phone === true || f.has_phone === false ? 1 : 0)
+        + (f.has_email === true || f.has_email === false ? 1 : 0)
+        + (f.has_address === true || f.has_address === false ? 1 : 0)
         + (f.created_after ? 1 : 0)
         + (f.created_before ? 1 : 0);
+}
+
+function getActiveCriteriaKeys(filters = {}) {
+    const f = normalizeDeepFilters(filters);
+    const keys = [];
+    if (f.departments.length > 0) keys.push('departments');
+    if (f.provinces.length > 0) keys.push('provinces');
+    if (f.districts.length > 0) keys.push('districts');
+    if (f.zone_label_ids.length > 0) keys.push('zone_label_ids');
+    if (f.commercial_status.length > 0) keys.push('commercial_status');
+    if (f.operational_label_ids.length > 0) keys.push('operational_label_ids');
+    if (f.customer_type_ids.length > 0) keys.push('customer_type_ids');
+    if (f.acquisition_source_ids.length > 0) keys.push('acquisition_source_ids');
+    if (f.assigned_user_id) keys.push('assigned_user_id');
+    if (f.created_after || f.created_before) keys.push('created_range');
+    if (f.has_phone === true || f.has_phone === false) keys.push('has_phone');
+    if (f.has_email === true || f.has_email === false) keys.push('has_email');
+    if (f.has_address === true || f.has_address === false) keys.push('has_address');
+    return keys;
+}
+
+function clearCriterionFromFilters(filters = {}, criterion = '') {
+    const f = normalizeDeepFilters(filters);
+    const next = { ...f };
+    switch (criterion) {
+    case 'departments':
+        next.departments = [];
+        next.provinces = [];
+        next.districts = [];
+        break;
+    case 'provinces':
+        next.provinces = [];
+        next.districts = [];
+        break;
+    case 'districts':
+        next.districts = [];
+        break;
+    case 'zone_label_ids':
+    case 'commercial_status':
+    case 'operational_label_ids':
+    case 'customer_type_ids':
+    case 'acquisition_source_ids':
+        next[criterion] = [];
+        break;
+    case 'assigned_user_id':
+        next.assigned_user_id = '';
+        break;
+    case 'created_range':
+        next.created_after = '';
+        next.created_before = '';
+        break;
+    case 'has_phone':
+    case 'has_email':
+    case 'has_address':
+        next[criterion] = '';
+        break;
+    default:
+        break;
+    }
+    return normalizeDeepFilters(next);
 }
 
 function buildLabelOptions(items = []) {
@@ -255,6 +353,25 @@ function buildZoneOptions(items = []) {
         }))
         .filter((item) => item.ruleId && item.name && item.isActive)
         .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+}
+
+function uniqueTextItems(items = []) {
+    return Array.from(new Set((Array.isArray(items) ? items : []).map((item) => toText(item)).filter(Boolean)));
+}
+
+function uniqueOptionObjects(items = [], idKey = 'id', nameKey = 'name') {
+    const seen = new Set();
+    return (Array.isArray(items) ? items : [])
+        .filter(Boolean)
+        .filter((item) => {
+            const id = toText(item?.[idKey] || item?.key || item?.ruleId || item?.labelId);
+            const name = toText(item?.[nameKey] || item?.label || item?.title || item?.name);
+            if (!id || !name) return false;
+            const compound = `${id}::${name}`;
+            if (seen.has(compound)) return false;
+            seen.add(compound);
+            return true;
+        });
 }
 
 function mapCampaignToForm(campaign = {}, labelOptions = [], zoneOptions = []) {
@@ -311,12 +428,27 @@ function buildAudienceFiltersFromForm(form = {}, labelOptions = [], zoneOptions 
         .map((entry) => toUpper(entry))
         .filter((entry) => entry && zoneIds.has(entry));
     const maxRecipients = Math.max(0, Math.floor(toNumber(form?.maxRecipients)));
+    const inclusionFilters = normalizeDeepFilters(form?.inclusionFilters || {});
     return {
         commercialStatuses: normalizeCommercialStatuses(form?.commercialStatuses || []),
         preferredLanguage: toLower(form?.languageFilter || ''),
         marketingStatus: ['opted_in'],
         tagAny,
         zoneLabelIds,
+        commercial_status: inclusionFilters.commercial_status,
+        departments: inclusionFilters.departments,
+        provinces: inclusionFilters.provinces,
+        districts: inclusionFilters.districts,
+        zone_label_ids: inclusionFilters.zone_label_ids,
+        operational_label_ids: inclusionFilters.operational_label_ids,
+        customer_type_ids: inclusionFilters.customer_type_ids,
+        acquisition_source_ids: inclusionFilters.acquisition_source_ids,
+        assigned_user_id: inclusionFilters.assigned_user_id || undefined,
+        has_phone: inclusionFilters.has_phone === '' ? undefined : inclusionFilters.has_phone,
+        has_email: inclusionFilters.has_email === '' ? undefined : inclusionFilters.has_email,
+        has_address: inclusionFilters.has_address === '' ? undefined : inclusionFilters.has_address,
+        created_after: inclusionFilters.created_after || undefined,
+        created_before: inclusionFilters.created_before || undefined,
         search: toText(form?.searchText || ''),
         maxRecipients: maxRecipients > 0 ? maxRecipients : undefined
     };
@@ -447,12 +579,20 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [excludedCustomerIds, setExcludedCustomerIds] = useState([]);
     const [manualExclusionSearch, setManualExclusionSearch] = useState('');
     const [zoneRules, setZoneRules] = useState([]);
+    const [campaignGeographyOptions, setCampaignGeographyOptions] = useState({
+        departments: [],
+        provinces: {},
+        districts: {}
+    });
+    const [activeInclusionCriteria, setActiveInclusionCriteria] = useState([]);
+    const [activeExclusionCriteria, setActiveExclusionCriteria] = useState([]);
     const [campaignFilterOptions, setCampaignFilterOptions] = useState({
         commercial_statuses: [],
         zone_labels: [],
         operational_labels: [],
         customer_types: [],
-        assigned_users: []
+        assigned_users: [],
+        acquisition_sources: []
     });
 
     const {
@@ -505,6 +645,18 @@ export default React.memo(function CampaignsSection(props = {}) {
                 color: item.color || '#00A884'
             }))
     ), [campaignFilterOptions.zone_labels, zoneOptions]);
+    const geographyDepartments = useMemo(
+        () => (Array.isArray(campaignGeographyOptions.departments) ? campaignGeographyOptions.departments : []).map(toText).filter(Boolean),
+        [campaignGeographyOptions.departments]
+    );
+    const geographyProvinceMap = useMemo(
+        () => (campaignGeographyOptions.provinces && typeof campaignGeographyOptions.provinces === 'object' ? campaignGeographyOptions.provinces : {}),
+        [campaignGeographyOptions.provinces]
+    );
+    const geographyDistrictMap = useMemo(
+        () => (campaignGeographyOptions.districts && typeof campaignGeographyOptions.districts === 'object' ? campaignGeographyOptions.districts : {}),
+        [campaignGeographyOptions.districts]
+    );
     const operationalFilterChipOptions = useMemo(() => (
         campaignFilterOptions.operational_labels.length > 0
             ? campaignFilterOptions.operational_labels.map((item) => ({
@@ -518,6 +670,13 @@ export default React.memo(function CampaignsSection(props = {}) {
                 color: item.color || '#00A884'
             }))
     ), [campaignFilterOptions.operational_labels, labelOptions]);
+    const acquisitionSourceOptions = useMemo(
+        () => (Array.isArray(campaignFilterOptions.acquisition_sources) ? campaignFilterOptions.acquisition_sources : []).map((entry) => ({
+            id: toText(entry.id),
+            name: toText(entry.name)
+        })).filter((entry) => entry.id && entry.name),
+        [campaignFilterOptions.acquisition_sources]
+    );
     const columnPrefs = useSaasColumnPrefs('campaigns', CAMPAIGN_DEFAULT_COLUMN_KEYS, {
         requestJson,
         availableColumns: CAMPAIGN_TABLE_COLUMNS
@@ -660,6 +819,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                 customerId: toText(item?.customerId),
                 contactName: toText(item?.contactName) || 'Sin nombre',
                 phone: toText(item?.phone) || '-',
+                email: toText(item?.email),
                 commercialStatus: toLower(item?.commercialStatus || 'unknown') || 'unknown',
                 tags: Array.isArray(item?.tags)
                     ? item.tags.map((entry) => toText(entry)).filter(Boolean)
@@ -670,6 +830,16 @@ export default React.memo(function CampaignsSection(props = {}) {
                 zoneLabelIds: Array.isArray(item?.zoneLabelIds)
                     ? item.zoneLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
                     : [],
+                customerTypeId: toText(item?.customerTypeId),
+                acquisitionSourceId: toText(item?.acquisitionSourceId),
+                assignedUserId: toText(item?.assignedUserId),
+                departmentName: toText(item?.departmentName),
+                provinceName: toText(item?.provinceName),
+                districtName: toText(item?.districtName),
+                departments: uniqueTextItems(item?.departments),
+                provinces: uniqueTextItems(item?.provinces),
+                districts: uniqueTextItems(item?.districts),
+                hasAddress: item?.hasAddress === true,
                 preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
                 marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
             }))
@@ -681,6 +851,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                 customerId: toText(item?.customerId),
                 contactName: toText(item?.contactName) || 'Sin nombre',
                 phone: toText(item?.phone) || '-',
+                email: toText(item?.email),
                 commercialStatus: toLower(item?.commercialStatus || 'unknown') || 'unknown',
                 tags: Array.isArray(item?.tags)
                     ? item.tags.map((entry) => toText(entry)).filter(Boolean)
@@ -691,6 +862,16 @@ export default React.memo(function CampaignsSection(props = {}) {
                 zoneLabelIds: Array.isArray(item?.zoneLabelIds)
                     ? item.zoneLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
                     : [],
+                customerTypeId: toText(item?.customerTypeId),
+                acquisitionSourceId: toText(item?.acquisitionSourceId),
+                assignedUserId: toText(item?.assignedUserId),
+                departmentName: toText(item?.departmentName),
+                provinceName: toText(item?.provinceName),
+                districtName: toText(item?.districtName),
+                departments: uniqueTextItems(item?.departments),
+                provinces: uniqueTextItems(item?.provinces),
+                districts: uniqueTextItems(item?.districts),
+                hasAddress: item?.hasAddress === true,
                 preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
                 marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
             }))
@@ -700,24 +881,25 @@ export default React.memo(function CampaignsSection(props = {}) {
         new Set((Array.isArray(excludedCustomerIds) ? excludedCustomerIds : []).map((entry) => toText(entry)).filter(Boolean))
     ), [excludedCustomerIds]);
     const manualExcludedAudienceItems = useMemo(() => {
-        const audienceById = new Map(estimatedAudienceItems.map((item) => [item.customerId, item]));
+        const audienceById = new Map(inclusionOnlyAudienceItems.map((item) => [item.customerId, item]));
         return excludedCustomerIds
             .map((customerId) => audienceById.get(toText(customerId)))
             .filter(Boolean);
-    }, [estimatedAudienceItems, excludedCustomerIds]);
+    }, [excludedCustomerIds, inclusionOnlyAudienceItems]);
     const manualExclusionCandidates = useMemo(() => {
         const term = toLower(manualExclusionSearch);
-        return estimatedAudienceItems
+        return inclusionOnlyAudienceItems
             .filter((item) => !excludedCustomerIdSet.has(item.customerId))
             .filter((item) => !term || `${toLower(item.contactName)} ${toLower(item.phone)}`.includes(term))
-            .slice(0, 6);
-    }, [estimatedAudienceItems, excludedCustomerIdSet, manualExclusionSearch]);
+            .slice(0, 12);
+    }, [excludedCustomerIdSet, inclusionOnlyAudienceItems, manualExclusionSearch]);
     const exclusionSummary = useMemo(() => {
-        const eligible = estimatedAudienceItems.length;
-        const excluded = estimatedAudienceItems.filter((item) => excludedCustomerIdSet.has(item.customerId)).length;
-        const finalRecipients = Math.max(0, eligible - excluded);
+        const included = inclusionOnlyAudienceItems.length;
+        const finalRecipients = estimatedAudienceItems.length;
+        const excluded = Math.max(0, included - finalRecipients);
+        const eligible = included;
         return { eligible, excluded, finalRecipients };
-    }, [estimatedAudienceItems, excludedCustomerIdSet]);
+    }, [estimatedAudienceItems.length, inclusionOnlyAudienceItems.length]);
     const blockPreview = useMemo(() => (
         buildBlocksConfigFromForm(form, exclusionSummary.finalRecipients || estimateNumbers.eligible || 0)
     ), [estimateNumbers.eligible, exclusionSummary.finalRecipients, form]);
@@ -828,6 +1010,73 @@ export default React.memo(function CampaignsSection(props = {}) {
             operationalLabels: operationalFilterChipOptions.filter((item) => operationalSet.has(toUpper(item.id)))
         };
     }, [commercialFilterOptions, inclusionOnlyAudienceItems, inclusionOnlyEstimate, operationalFilterChipOptions, zoneFilterChipOptions]);
+    const inclusionProvinceOptions = useMemo(() => {
+        if (form.inclusionFilters.departments.length === 0) {
+            return uniqueTextItems(Object.values(geographyProvinceMap).flat());
+        }
+        return uniqueTextItems(
+            form.inclusionFilters.departments.flatMap((department) => geographyProvinceMap[toText(department)] || [])
+        );
+    }, [form.inclusionFilters.departments, geographyProvinceMap]);
+    const inclusionDistrictOptions = useMemo(() => {
+        if (form.inclusionFilters.provinces.length === 0) {
+            const keys = Object.keys(geographyDistrictMap);
+            const byDepartments = form.inclusionFilters.departments.length === 0
+                ? keys
+                : keys.filter((key) => form.inclusionFilters.departments.some((department) => key.startsWith(`${toText(department)}-`)));
+            return uniqueTextItems(byDepartments.flatMap((key) => geographyDistrictMap[key] || []));
+        }
+        return uniqueTextItems(
+            form.inclusionFilters.provinces.flatMap((province) => {
+                const matchingKeys = Object.keys(geographyDistrictMap).filter((key) => key.endsWith(`-${toText(province)}`));
+                return matchingKeys.flatMap((key) => geographyDistrictMap[key] || []);
+            })
+        );
+    }, [form.inclusionFilters.departments, form.inclusionFilters.provinces, geographyDistrictMap]);
+    const inclusionCustomerTypeOptions = useMemo(
+        () => uniqueOptionObjects(campaignFilterOptions.customer_types, 'id', 'name'),
+        [campaignFilterOptions.customer_types]
+    );
+    const exclusionCustomerTypeOptions = useMemo(() => {
+        const ids = new Set(inclusionOnlyAudienceItems.map((item) => toText(item.customerTypeId)).filter(Boolean));
+        return inclusionCustomerTypeOptions.filter((option) => ids.has(toText(option.id)));
+    }, [inclusionCustomerTypeOptions, inclusionOnlyAudienceItems]);
+    const exclusionAcquisitionSourceOptions = useMemo(() => {
+        const ids = new Set(inclusionOnlyAudienceItems.map((item) => toText(item.acquisitionSourceId)).filter(Boolean));
+        return acquisitionSourceOptions.filter((option) => ids.has(toText(option.id)));
+    }, [acquisitionSourceOptions, inclusionOnlyAudienceItems]);
+    const exclusionAssignedUserOptions = useMemo(() => {
+        const ids = new Set(inclusionOnlyAudienceItems.map((item) => toText(item.assignedUserId)).filter(Boolean));
+        return campaignFilterOptions.assigned_users.filter((option) => ids.has(toText(option.id)));
+    }, [campaignFilterOptions.assigned_users, inclusionOnlyAudienceItems]);
+    const exclusionDepartments = useMemo(
+        () => uniqueTextItems(inclusionOnlyAudienceItems.flatMap((item) => item.departments.length > 0 ? item.departments : [item.departmentName])),
+        [inclusionOnlyAudienceItems]
+    );
+    const exclusionProvinces = useMemo(() => {
+        const items = form.exclusionFilters.departments.length > 0
+            ? inclusionOnlyAudienceItems.filter((item) => {
+                const departments = item.departments.length > 0 ? item.departments : [item.departmentName];
+                return departments.some((entry) => form.exclusionFilters.departments.includes(toText(entry)));
+            })
+            : inclusionOnlyAudienceItems;
+        return uniqueTextItems(items.flatMap((item) => item.provinces.length > 0 ? item.provinces : [item.provinceName]));
+    }, [form.exclusionFilters.departments, inclusionOnlyAudienceItems]);
+    const exclusionDistricts = useMemo(() => {
+        let items = inclusionOnlyAudienceItems;
+        if (form.exclusionFilters.provinces.length > 0) {
+            items = items.filter((item) => {
+                const provinces = item.provinces.length > 0 ? item.provinces : [item.provinceName];
+                return provinces.some((entry) => form.exclusionFilters.provinces.includes(toText(entry)));
+            });
+        } else if (form.exclusionFilters.departments.length > 0) {
+            items = items.filter((item) => {
+                const departments = item.departments.length > 0 ? item.departments : [item.departmentName];
+                return departments.some((entry) => form.exclusionFilters.departments.includes(toText(entry)));
+            });
+        }
+        return uniqueTextItems(items.flatMap((item) => item.districts.length > 0 ? item.districts : [item.districtName]));
+    }, [form.exclusionFilters.departments, form.exclusionFilters.provinces, inclusionOnlyAudienceItems]);
     const selectedStatusKey = toLower(selectedCampaign?.status);
     const showsEstimatedAudienceInDetail = panelMode === 'detail' && ['draft', 'scheduled'].includes(selectedStatusKey);
     const detailAudienceTitle = showsEstimatedAudienceInDetail
@@ -891,33 +1140,56 @@ export default React.memo(function CampaignsSection(props = {}) {
     }, [isCampaignsSection, requestJson, settingsTenantId, tenantScopeLocked]);
 
     useEffect(() => {
-        if (!isCampaignsSection || tenantScopeLocked || !settingsTenantId || typeof requestJson !== 'function') {
+        const shouldLoadAudienceSelectors = isCampaignsSection
+            && !tenantScopeLocked
+            && Boolean(settingsTenantId)
+            && typeof requestJson === 'function'
+            && (panelMode === 'create' || panelMode === 'edit')
+            && wizardStep >= 2;
+        if (!shouldLoadAudienceSelectors) {
             setCampaignFilterOptions({
                 commercial_statuses: [],
                 zone_labels: [],
                 operational_labels: [],
                 customer_types: [],
-                assigned_users: []
+                assigned_users: [],
+                acquisition_sources: []
             });
+            setCampaignGeographyOptions({ departments: [], provinces: {}, districts: {} });
             return undefined;
         }
         let cancelled = false;
         void fetchCampaignFilterOptions(requestJson)
             .then((payload) => {
                 if (cancelled) return;
+                if (import.meta.env.DEV) console.log('[campaign-filter-options]', payload);
                 setCampaignFilterOptions({
                     commercial_statuses: Array.isArray(payload?.commercial_statuses) ? payload.commercial_statuses : [],
                     zone_labels: Array.isArray(payload?.zone_labels) ? payload.zone_labels : [],
                     operational_labels: Array.isArray(payload?.operational_labels) ? payload.operational_labels : [],
                     customer_types: Array.isArray(payload?.customer_types) ? payload.customer_types : [],
-                    assigned_users: Array.isArray(payload?.assigned_users) ? payload.assigned_users : []
+                    assigned_users: Array.isArray(payload?.assigned_users) ? payload.assigned_users : [],
+                    acquisition_sources: Array.isArray(payload?.acquisition_sources) ? payload.acquisition_sources : []
                 });
             })
             .catch(() => {});
+        void fetchCampaignGeographyOptions(requestJson)
+            .then((payload) => {
+                if (cancelled) return;
+                if (import.meta.env.DEV) console.log('[campaign-geography-options]', payload);
+                setCampaignGeographyOptions({
+                    departments: Array.isArray(payload?.departments) ? payload.departments : [],
+                    provinces: payload?.provinces && typeof payload.provinces === 'object' ? payload.provinces : {},
+                    districts: payload?.districts && typeof payload.districts === 'object' ? payload.districts : {}
+                });
+            })
+            .catch(() => {
+                if (!cancelled) setCampaignGeographyOptions({ departments: [], provinces: {}, districts: {} });
+            });
         return () => {
             cancelled = true;
         };
-    }, [isCampaignsSection, requestJson, settingsTenantId, tenantScopeLocked]);
+    }, [isCampaignsSection, panelMode, requestJson, settingsTenantId, tenantScopeLocked, wizardStep]);
 
     useEffect(() => {
         if (panelMode !== 'create' && panelMode !== 'edit') return;
@@ -928,10 +1200,10 @@ export default React.memo(function CampaignsSection(props = {}) {
     }, [estimateNumbers.eligible, maxRecipientsTouched, panelMode]);
 
     useEffect(() => {
-        if (estimatedAudienceItems.length === 0) return;
-        const validIds = new Set(estimatedAudienceItems.map((item) => item.customerId));
+        if (inclusionOnlyAudienceItems.length === 0) return;
+        const validIds = new Set(inclusionOnlyAudienceItems.map((item) => item.customerId));
         setExcludedCustomerIds((prev) => prev.filter((customerId) => validIds.has(toText(customerId))));
-    }, [estimatedAudienceItems]);
+    }, [inclusionOnlyAudienceItems]);
 
     useEffect(() => {
         if (panelMode !== 'create' && panelMode !== 'edit') {
@@ -944,6 +1216,22 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (!selectedCampaign) return;
         setExcludedCustomerIds(getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds);
     }, [panelMode, selectedCampaign]);
+
+    useEffect(() => {
+        if (panelMode !== 'create' && panelMode !== 'edit') {
+            setActiveInclusionCriteria([]);
+            setActiveExclusionCriteria([]);
+            return;
+        }
+        setActiveInclusionCriteria((prev) => {
+            const current = new Set([...(Array.isArray(prev) ? prev : []), ...getActiveCriteriaKeys(form.inclusionFilters)]);
+            return Array.from(current);
+        });
+        setActiveExclusionCriteria((prev) => {
+            const current = new Set([...(Array.isArray(prev) ? prev : []), ...getActiveCriteriaKeys(form.exclusionFilters)]);
+            return Array.from(current);
+        });
+    }, [form.exclusionFilters, form.inclusionFilters, panelMode]);
 
     const toggleAudienceExclusion = useCallback((customerId = '') => {
         const cleanCustomerId = toText(customerId);
@@ -1013,6 +1301,35 @@ export default React.memo(function CampaignsSection(props = {}) {
             };
         });
     }, []);
+
+    const setCriterionEnabled = useCallback((scope = 'inclusionFilters', criterion = '', enabled = true) => {
+        const setter = scope === 'exclusionFilters' ? setActiveExclusionCriteria : setActiveInclusionCriteria;
+        setter((prev) => {
+            const current = new Set(Array.isArray(prev) ? prev : []);
+            if (enabled) current.add(criterion);
+            else current.delete(criterion);
+            return Array.from(current);
+        });
+        if (!enabled) {
+            setForm((prev) => ({
+                ...prev,
+                [scope]: clearCriterionFromFilters(prev?.[scope] || {}, criterion)
+            }));
+        }
+    }, []);
+
+    const removeFilterChip = useCallback((scope = 'inclusionFilters', chip = {}) => {
+        if (Array.isArray(normalizeDeepFilters(form?.[scope] || {})[chip.keyName])) {
+            removeDeepFilterValue(scope, chip.keyName, chip.value, chip.normalize || toText);
+            return;
+        }
+        if (chip.keyName === 'created_range') {
+            updateDeepFilter(scope, 'created_after', '');
+            updateDeepFilter(scope, 'created_before', '');
+            return;
+        }
+        updateDeepFilter(scope, chip.keyName, '');
+    }, [form, removeDeepFilterValue, updateDeepFilter]);
 
     const removeDeepFilterValue = useCallback((scope = 'inclusionFilters', keyName = '', value = '', normalize = toText) => {
         if (!keyName) return;
@@ -1355,16 +1672,28 @@ export default React.memo(function CampaignsSection(props = {}) {
             });
         };
         addList('commercial_status', commercialFilterOptions, 'name', 'key', toLower);
-        addList('opt_in_status', [{ id: 'opted_in', name: 'Opted in' }, { id: 'pending', name: 'Pendiente' }, { id: 'opted_out', name: 'Opted out' }], 'name', 'id', toLower);
         addList('zone_label_ids', zoneFilterChipOptions, 'name', 'id', toUpper);
         addList('operational_label_ids', operationalFilterChipOptions, 'name', 'id', toUpper);
         addList('customer_type_ids', campaignFilterOptions.customer_types, 'name', 'id', toText);
+        addList('acquisition_source_ids', acquisitionSourceOptions, 'name', 'id', toText);
+        addList('departments', geographyDepartments.map((name) => ({ id: name, name })), 'name', 'id', toText);
+        addList('provinces', uniqueTextItems(Object.values(geographyProvinceMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
+        addList('districts', uniqueTextItems(Object.values(geographyDistrictMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
         if (filters.assigned_user_id) {
             const user = campaignFilterOptions.assigned_users.find((entry) => entry.id === filters.assigned_user_id);
             chips.push({ keyName: 'assigned_user_id', value: '', label: user?.name || filters.assigned_user_id, normalize: toText });
         }
-        if (filters.created_after) chips.push({ keyName: 'created_after', value: '', label: `Desde ${filters.created_after}`, normalize: toText });
-        if (filters.created_before) chips.push({ keyName: 'created_before', value: '', label: `Hasta ${filters.created_before}`, normalize: toText });
+        if (filters.created_after || filters.created_before) {
+            chips.push({
+                keyName: 'created_range',
+                value: '',
+                label: `Registro: ${filters.created_after || '...'} a ${filters.created_before || '...'}`,
+                normalize: toText
+            });
+        }
+        if (filters.has_phone === true) chips.push({ keyName: 'has_phone', value: '', label: 'Tiene telefono valido', normalize: toText });
+        if (filters.has_email === true) chips.push({ keyName: 'has_email', value: '', label: 'Tiene email', normalize: toText });
+        if (filters.has_address === true) chips.push({ keyName: 'has_address', value: '', label: 'Tiene direccion registrada', normalize: toText });
         if (chips.length === 0) return null;
         return (
             <div className="saas-campaigns-filter-chips">
@@ -1373,10 +1702,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                     <button
                         key={`${scope}_${chip.keyName}_${chip.value}_${index}`}
                         type="button"
-                        onClick={() => {
-                            if (Array.isArray(filters[chip.keyName])) removeDeepFilterValue(scope, chip.keyName, chip.value, chip.normalize);
-                            else updateDeepFilter(scope, chip.keyName, '');
-                        }}
+                        onClick={() => removeFilterChip(scope, chip)}
                     >
                         {chip.label}<span>x</span>
                     </button>
@@ -1385,7 +1711,41 @@ export default React.memo(function CampaignsSection(props = {}) {
         );
     };
 
-    const renderAudienceToggleGroup = (scope = 'inclusionFilters', keyName = '', label = '', options = [], normalize = toText, emptyText = '') => {
+    const renderCriterionToggleList = (scope = 'inclusionFilters', groups = []) => {
+        const activeCriteria = scope === 'exclusionFilters' ? activeExclusionCriteria : activeInclusionCriteria;
+        return (
+            <div className="saas-campaigns-criteria-panel">
+                {groups.map((group) => (
+                    <section key={`${scope}_${group.title}`} className="saas-campaigns-criteria-group">
+                        <header>{group.title}</header>
+                        <div className="saas-campaigns-criteria-list">
+                            {group.items.map((criterion) => {
+                                const enabled = activeCriteria.includes(criterion.key);
+                                return (
+                                    <label
+                                        key={`${scope}_${criterion.key}`}
+                                        className={`saas-campaigns-criteria-item ${enabled ? 'is-active' : ''}`}
+                                    >
+                                        <div>
+                                            <strong>{criterion.label}</strong>
+                                            {criterion.description ? <span>{criterion.description}</span> : null}
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            checked={enabled}
+                                            onChange={(event) => setCriterionEnabled(scope, criterion.key, event.target.checked)}
+                                        />
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    </section>
+                ))}
+            </div>
+        );
+    };
+
+    const renderAudienceChipGroup = (scope = 'inclusionFilters', keyName = '', label = '', options = [], normalize = toText, emptyText = '') => {
         const filters = normalizeDeepFilters(form?.[scope] || {});
         return (
             <div className="saas-admin-field">
@@ -1393,7 +1753,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                 <div className="saas-campaigns-chip-group">
                     {options.length === 0 ? <small className="saas-admin-empty-inline">{emptyText || `Sin ${toLower(label)}.`}</small> : options.map((option) => {
                         const optionValue = option?.id ?? option?.key;
-                        const active = filters[keyName].includes(normalize(optionValue));
+                        const active = Array.isArray(filters[keyName]) && filters[keyName].includes(normalize(optionValue));
                         const accent = toText(option?.color || '');
                         return (
                             <button
@@ -1412,77 +1772,278 @@ export default React.memo(function CampaignsSection(props = {}) {
         );
     };
 
-    const renderAudienceFilterCard = (scope = 'inclusionFilters', title = 'Filtros', tone = 'include') => {
-        const filters = normalizeDeepFilters(form?.[scope] || {});
-        const optInOptions = scope === 'exclusionFilters'
-            ? exclusionAudienceOptions.optInStatuses
-            : [
-            { id: 'opted_in', name: 'Con opt-in', color: '#00A884' },
-            { id: 'pending', name: 'Pendiente', color: '#FFB02E' },
-            { id: 'opted_out', name: 'Sin opt-in', color: '#FF5C5C' }
-        ];
-        const statusOptions = scope === 'exclusionFilters'
-            ? exclusionAudienceOptions.commercialStatuses
-            : commercialFilterOptions;
-        const zoneOptionsForScope = scope === 'exclusionFilters'
-            ? exclusionAudienceOptions.zoneLabels
-            : zoneFilterChipOptions;
-        const operationalOptionsForScope = scope === 'exclusionFilters'
-            ? exclusionAudienceOptions.operationalLabels
-            : operationalFilterChipOptions;
-        const emptyText = scope === 'inclusionFilters' ? 'Todos los clientes' : 'Nadie excluido por filtros';
+    const renderAudienceCustomerRows = (items = [], limit = 50) => {
+        const zoneById = new Map(zoneFilterChipOptions.map((item) => [toUpper(item.id), item]));
+        const operationalById = new Map(operationalFilterChipOptions.map((item) => [toUpper(item.id), item]));
+        const commercialByKey = new Map(commercialFilterOptions.map((item) => [toLower(item.key), item]));
         return (
-            <section className={`saas-campaigns-audience-card saas-campaigns-audience-card--${tone}`}>
-                <div className="saas-campaigns-audience-card__header">
+            <div className="saas-campaigns-audience-live-list">
+                {items.slice(0, limit).map((item) => {
+                    const zone = zoneById.get(toUpper(item.zoneLabelIds?.[0] || '')) || null;
+                    const operational = operationalById.get(toUpper(item.operationalLabelIds?.[0] || '')) || null;
+                    const statusMetaItem = commercialByKey.get(toLower(item.commercialStatus)) || null;
+                    return (
+                        <article key={item.customerId} className="saas-campaigns-audience-live-item">
+                            <div className="saas-campaigns-audience-live-item__main">
+                                <strong>{item.contactName}</strong>
+                                <span>{item.phone || 'Sin telefono'}</span>
+                            </div>
+                            <div className="saas-campaigns-audience-live-item__meta">
+                                {statusMetaItem ? (
+                                    <span className="saas-campaigns-chip active" style={{ '--campaign-chip-accent': statusMetaItem.color }}>{statusMetaItem.name}</span>
+                                ) : null}
+                                {zone ? (
+                                    <span className="saas-campaigns-chip active" style={{ '--campaign-chip-accent': zone.color }}>{zone.name}</span>
+                                ) : null}
+                                {operational ? (
+                                    <span className="saas-campaigns-chip active" style={{ '--campaign-chip-accent': operational.color }}>{operational.name}</span>
+                                ) : null}
+                            </div>
+                        </article>
+                    );
+                })}
+                {items.length > limit ? <div className="saas-campaigns-audience-live-more">y {items.length - limit} mas...</div> : null}
+            </div>
+        );
+    };
+
+    const renderAudienceStepPanel = ({ scope = 'inclusionFilters', baseCount = 0, filteredCount = 0, items = [], subtitle = '', activeCriteria = [], criteriaGroups = [], controls = null, bottomAction = null }) => (
+        <div className="saas-campaigns-audience-step">
+            <div className="saas-campaigns-audience-step__criteria">
+                {renderCriterionToggleList(scope, criteriaGroups)}
+            </div>
+            <div className="saas-campaigns-audience-step__results">
+                <div className="saas-campaigns-audience-step__results-header">
                     <div>
-                        <h4>{title}</h4>
-                        <p>{emptyText}</p>
+                        <strong>{filteredCount} clientes {scope === 'exclusionFilters' ? 'finales' : 'incluidos'}</strong>
+                        <span>{subtitle || `de ${baseCount} base total del modulo`}</span>
                     </div>
-                    <span className="saas-campaigns-audience-card__count">{countDeepFilterSelections(filters)} seleccionados</span>
+                    {renderAudienceFilterChips(scope, scope === 'exclusionFilters' ? 'Excluir' : 'Incluir')}
                 </div>
-                <div className="saas-campaigns-audience-card__body">
-                    {renderAudienceToggleGroup(scope, 'commercial_status', 'Estado comercial', statusOptions, toLower)}
-                    {renderAudienceToggleGroup(scope, 'opt_in_status', 'Opt-in', optInOptions, toLower)}
-                    {renderAudienceToggleGroup(scope, 'zone_label_ids', 'Zonas', zoneOptionsForScope, toUpper)}
-                    {renderAudienceToggleGroup(scope, 'operational_label_ids', 'Etiquetas operativas', operationalOptionsForScope, toUpper)}
-                    {scope === 'exclusionFilters' ? (
+                <div className="saas-campaigns-audience-step__controls">
+                    {activeCriteria.length > 0 ? controls : <p className="saas-campaigns-audience-empty">Sin filtros activos. Se incluiran todos los {baseCount} clientes base.</p>}
+                </div>
+                <div className="saas-campaigns-audience-step__list">
+                    {activeCriteria.length > 0 && items.length > 0 ? renderAudienceCustomerRows(items, 50) : null}
+                    {activeCriteria.length > 0 && items.length === 0 ? <p className="saas-campaigns-audience-empty">No hay clientes para los filtros seleccionados.</p> : null}
+                </div>
+                <div className="saas-campaigns-audience-step__footer">
+                    {bottomAction}
+                </div>
+            </div>
+        </div>
+    );
+
+    const inclusionCriteriaGroups = useMemo(() => {
+        const customerItems = [];
+        if (inclusionCustomerTypeOptions.length > 0) customerItems.push({ key: 'customer_type_ids', label: 'Tipo de cliente' });
+        if (acquisitionSourceOptions.length > 0) customerItems.push({ key: 'acquisition_source_ids', label: 'Fuente de adquisicion' });
+        customerItems.push({ key: 'assigned_user_id', label: 'Asignado a' });
+        customerItems.push({ key: 'created_range', label: 'Fecha de registro' });
+        return [
+            {
+                title: 'Geografia',
+                items: [
+                    { key: 'departments', label: 'Departamento' },
+                    { key: 'provinces', label: 'Provincia' },
+                    { key: 'districts', label: 'Distrito' },
+                    { key: 'zone_label_ids', label: 'Zona' }
+                ]
+            },
+            {
+                title: 'Estado',
+                items: [
+                    { key: 'commercial_status', label: 'Estado comercial' },
+                    { key: 'operational_label_ids', label: 'Etiqueta operativa' }
+                ]
+            },
+            {
+                title: 'Perfil del cliente',
+                items: customerItems
+            },
+            {
+                title: 'Datos completos',
+                items: [
+                    { key: 'has_phone', label: 'Tiene telefono valido' },
+                    { key: 'has_email', label: 'Tiene email' },
+                    { key: 'has_address', label: 'Tiene direccion registrada' }
+                ]
+            }
+        ];
+    }, [acquisitionSourceOptions.length, inclusionCustomerTypeOptions.length]);
+
+    const exclusionCriteriaGroups = useMemo(() => {
+        const groups = [];
+        if (exclusionDepartments.length > 0 || exclusionProvinces.length > 0 || exclusionDistricts.length > 0 || exclusionAudienceOptions.zoneLabels.length > 0) {
+            groups.push({
+                title: 'Geografia',
+                items: [
+                    ...(exclusionDepartments.length > 0 ? [{ key: 'departments', label: 'Departamento' }] : []),
+                    ...(exclusionProvinces.length > 0 ? [{ key: 'provinces', label: 'Provincia' }] : []),
+                    ...(exclusionDistricts.length > 0 ? [{ key: 'districts', label: 'Distrito' }] : []),
+                    ...(exclusionAudienceOptions.zoneLabels.length > 0 ? [{ key: 'zone_label_ids', label: 'Zona' }] : [])
+                ]
+            });
+        }
+        const stateItems = [];
+        if (exclusionAudienceOptions.commercialStatuses.length > 0) stateItems.push({ key: 'commercial_status', label: 'Estado comercial' });
+        if (exclusionAudienceOptions.operationalLabels.length > 0) stateItems.push({ key: 'operational_label_ids', label: 'Etiqueta operativa' });
+        if (stateItems.length > 0) groups.push({ title: 'Estado', items: stateItems });
+        const customerItems = [];
+        if (exclusionCustomerTypeOptions.length > 0) customerItems.push({ key: 'customer_type_ids', label: 'Tipo de cliente' });
+        if (exclusionAcquisitionSourceOptions.length > 0) customerItems.push({ key: 'acquisition_source_ids', label: 'Fuente de adquisicion' });
+        if (exclusionAssignedUserOptions.length > 0) customerItems.push({ key: 'assigned_user_id', label: 'Asignado a' });
+        customerItems.push({ key: 'created_range', label: 'Fecha de registro' });
+        if (customerItems.length > 0) groups.push({ title: 'Perfil del cliente', items: customerItems });
+        groups.push({
+            title: 'Datos completos',
+            items: [
+                { key: 'has_phone', label: 'Tiene telefono valido' },
+                { key: 'has_email', label: 'Tiene email' },
+                { key: 'has_address', label: 'Tiene direccion registrada' },
+                { key: 'manual_customers', label: 'Clientes especificos' }
+            ]
+        });
+        return groups.filter((group) => group.items.length > 0);
+    }, [
+        exclusionAcquisitionSourceOptions.length,
+        exclusionAssignedUserOptions.length,
+        exclusionAudienceOptions.commercialStatuses.length,
+        exclusionAudienceOptions.operationalLabels.length,
+        exclusionAudienceOptions.zoneLabels.length,
+        exclusionCustomerTypeOptions.length,
+        exclusionDepartments.length,
+        exclusionDistricts.length,
+        exclusionProvinces.length
+    ]);
+
+    const renderAudienceStepControls = (scope = 'inclusionFilters') => {
+        const filters = normalizeDeepFilters(form?.[scope] || {});
+        const activeCriteria = scope === 'exclusionFilters' ? activeExclusionCriteria : activeInclusionCriteria;
+        const statusOptions = scope === 'exclusionFilters' ? exclusionAudienceOptions.commercialStatuses : commercialFilterOptions;
+        const zoneOptionsForScope = scope === 'exclusionFilters' ? exclusionAudienceOptions.zoneLabels : zoneFilterChipOptions;
+        const operationalOptionsForScope = scope === 'exclusionFilters' ? exclusionAudienceOptions.operationalLabels : operationalFilterChipOptions;
+        const customerTypeOptions = scope === 'exclusionFilters' ? exclusionCustomerTypeOptions : inclusionCustomerTypeOptions;
+        const assignedUserOptions = scope === 'exclusionFilters' ? exclusionAssignedUserOptions : campaignFilterOptions.assigned_users;
+        const acquisitionOptions = scope === 'exclusionFilters' ? exclusionAcquisitionSourceOptions : acquisitionSourceOptions;
+        const departments = scope === 'exclusionFilters' ? exclusionDepartments : geographyDepartments;
+        const provinces = scope === 'exclusionFilters' ? exclusionProvinces : inclusionProvinceOptions;
+        const districts = scope === 'exclusionFilters' ? exclusionDistricts : inclusionDistrictOptions;
+        return (
+            <div className="saas-campaigns-audience-step__filters">
+                {activeCriteria.includes('departments') ? (
+                    <div className="saas-admin-field">
+                        <label>Departamento</label>
+                        <select
+                            multiple
+                            value={filters.departments}
+                            onChange={(event) => updateDeepFilter(scope, 'departments', Array.from(event.target.selectedOptions).map((option) => option.value))}
+                        >
+                            {departments.map((name) => <option key={`${scope}_dep_${name}`} value={name}>{name}</option>)}
+                        </select>
+                    </div>
+                ) : null}
+                {activeCriteria.includes('provinces') ? (
+                    <div className="saas-admin-field">
+                        <label>Provincia</label>
+                        <select
+                            multiple
+                            value={filters.provinces}
+                            onChange={(event) => updateDeepFilter(scope, 'provinces', Array.from(event.target.selectedOptions).map((option) => option.value))}
+                        >
+                            {provinces.map((name) => <option key={`${scope}_prov_${name}`} value={name}>{name}</option>)}
+                        </select>
+                    </div>
+                ) : null}
+                {activeCriteria.includes('districts') ? (
+                    <div className="saas-admin-field">
+                        <label>Distrito</label>
+                        <select
+                            multiple
+                            value={filters.districts}
+                            onChange={(event) => updateDeepFilter(scope, 'districts', Array.from(event.target.selectedOptions).map((option) => option.value))}
+                        >
+                            {districts.map((name) => <option key={`${scope}_dist_${name}`} value={name}>{name}</option>)}
+                        </select>
+                    </div>
+                ) : null}
+                {activeCriteria.includes('zone_label_ids') ? renderAudienceChipGroup(scope, 'zone_label_ids', 'Zona', zoneOptionsForScope, toUpper, 'Sin zonas configuradas') : null}
+                {activeCriteria.includes('commercial_status') ? renderAudienceChipGroup(scope, 'commercial_status', 'Estado comercial', statusOptions, toLower, 'Sin estados disponibles') : null}
+                {activeCriteria.includes('operational_label_ids') ? renderAudienceChipGroup(scope, 'operational_label_ids', 'Etiqueta operativa', operationalOptionsForScope, toUpper, 'Sin etiquetas operativas') : null}
+                {activeCriteria.includes('customer_type_ids') && customerTypeOptions.length > 0 ? (
+                    <div className="saas-admin-field">
+                        <label>Tipo de cliente</label>
+                        <select
+                            multiple
+                            value={filters.customer_type_ids}
+                            onChange={(event) => updateDeepFilter(scope, 'customer_type_ids', Array.from(event.target.selectedOptions).map((option) => option.value))}
+                        >
+                            {customerTypeOptions.map((entry) => <option key={`${scope}_ctype_${entry.id}`} value={entry.id}>{entry.name}</option>)}
+                        </select>
+                    </div>
+                ) : null}
+                {activeCriteria.includes('acquisition_source_ids') && acquisitionOptions.length > 0 ? (
+                    <div className="saas-admin-field">
+                        <label>Fuente de adquisicion</label>
+                        <select
+                            multiple
+                            value={filters.acquisition_source_ids}
+                            onChange={(event) => updateDeepFilter(scope, 'acquisition_source_ids', Array.from(event.target.selectedOptions).map((option) => option.value))}
+                        >
+                            {acquisitionOptions.map((entry) => <option key={`${scope}_src_${entry.id}`} value={entry.id}>{entry.name}</option>)}
+                        </select>
+                    </div>
+                ) : null}
+                {activeCriteria.includes('assigned_user_id') ? (
+                    <div className="saas-admin-field">
+                        <label>Asignado a</label>
+                        <select value={filters.assigned_user_id || ''} onChange={(event) => updateDeepFilter(scope, 'assigned_user_id', event.target.value)}>
+                            <option value="">Todos</option>
+                            {assignedUserOptions.map((entry) => <option key={`${scope}_usr_${entry.id}`} value={entry.id}>{entry.name}</option>)}
+                        </select>
+                    </div>
+                ) : null}
+                {activeCriteria.includes('created_range') ? (
+                    <div className="saas-campaigns-compact-filters">
                         <div className="saas-admin-field">
-                            <label>Exclusion manual por nombre o telefono</label>
-                            <input
-                                value={manualExclusionSearch}
-                                onChange={(event) => setManualExclusionSearch(event.target.value)}
-                                placeholder="Buscar en elegibles estimados"
-                            />
-                            <div className="saas-campaigns-manual-exclusion-results">
-                                {manualExclusionCandidates.length === 0 ? (
-                                    <small className="saas-admin-empty-inline">
-                                        {estimatedAudienceItems.length === 0 ? 'Estima el alcance para buscar clientes.' : 'No hay coincidencias disponibles.'}
-                                    </small>
-                                ) : manualExclusionCandidates.map((item) => (
-                                    <button
-                                        key={`exclude_candidate_${item.customerId}`}
-                                        type="button"
-                                        className="saas-campaigns-manual-exclusion-item"
-                                        onClick={() => toggleAudienceExclusion(item.customerId)}
-                                    >
-                                        <strong>{item.contactName}</strong>
-                                        <span>{item.phone}</span>
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="saas-campaigns-filter-chips saas-campaigns-filter-chips--manual">
-                                {manualExcludedAudienceItems.length === 0 ? (
-                                    <small className="saas-admin-empty-inline">Sin exclusiones manuales.</small>
-                                ) : manualExcludedAudienceItems.map((item) => (
-                                    <button key={`excluded_manual_${item.customerId}`} type="button" onClick={() => toggleAudienceExclusion(item.customerId)}>
-                                        {item.contactName || item.phone}<span>x</span>
-                                    </button>
-                                ))}
-                            </div>
+                            <label>Fecha de registro desde</label>
+                            <input type="date" value={filters.created_after || ''} onChange={(event) => updateDeepFilter(scope, 'created_after', event.target.value)} />
                         </div>
-                    ) : null}
-                </div>
-            </section>
+                        <div className="saas-admin-field">
+                            <label>Fecha de registro hasta</label>
+                            <input type="date" value={filters.created_before || ''} onChange={(event) => updateDeepFilter(scope, 'created_before', event.target.value)} />
+                        </div>
+                    </div>
+                ) : null}
+                {activeCriteria.includes('has_phone') ? (
+                    <label className="saas-campaigns-criteria-inline-toggle"><input type="checkbox" checked={filters.has_phone === true} onChange={(event) => updateDeepFilter(scope, 'has_phone', event.target.checked ? true : '')} />Tiene telefono valido</label>
+                ) : null}
+                {activeCriteria.includes('has_email') ? (
+                    <label className="saas-campaigns-criteria-inline-toggle"><input type="checkbox" checked={filters.has_email === true} onChange={(event) => updateDeepFilter(scope, 'has_email', event.target.checked ? true : '')} />Tiene email</label>
+                ) : null}
+                {activeCriteria.includes('has_address') ? (
+                    <label className="saas-campaigns-criteria-inline-toggle"><input type="checkbox" checked={filters.has_address === true} onChange={(event) => updateDeepFilter(scope, 'has_address', event.target.checked ? true : '')} />Tiene direccion registrada</label>
+                ) : null}
+                {scope === 'exclusionFilters' && activeCriteria.includes('manual_customers') ? (
+                    <div className="saas-admin-field">
+                        <label>Clientes especificos</label>
+                        <input value={manualExclusionSearch} onChange={(event) => setManualExclusionSearch(event.target.value)} placeholder="Buscar por nombre o telefono" />
+                        <div className="saas-campaigns-manual-exclusion-results">
+                            {manualExclusionCandidates.length === 0 ? <small className="saas-admin-empty-inline">{inclusionOnlyAudienceItems.length === 0 ? 'No hay audiencia incluida para excluir.' : 'No hay coincidencias disponibles.'}</small> : manualExclusionCandidates.map((item) => (
+                                <button key={`exclude_candidate_${item.customerId}`} type="button" className="saas-campaigns-manual-exclusion-item" onClick={() => toggleAudienceExclusion(item.customerId)}>
+                                    <strong>{item.contactName}</strong>
+                                    <span>{item.phone}</span>
+                                </button>
+                            ))}
+                        </div>
+                        <div className="saas-campaigns-filter-chips saas-campaigns-filter-chips--manual">
+                            {manualExcludedAudienceItems.length === 0 ? <small className="saas-admin-empty-inline">Sin exclusiones manuales.</small> : manualExcludedAudienceItems.map((item) => (
+                                <button key={`excluded_manual_${item.customerId}`} type="button" onClick={() => toggleAudienceExclusion(item.customerId)}>{item.contactName || item.phone}<span>x</span></button>
+                            ))}
+                        </div>
+                    </div>
+                ) : null}
+            </div>
         );
     };
 
@@ -1674,108 +2235,48 @@ export default React.memo(function CampaignsSection(props = {}) {
         case 2:
             return (
                 <SaasDetailPanelSection title="Paso 2 - Inclusion">
-                    <div className="saas-campaigns-wizard-step">
-                        <div className="saas-campaigns-wizard-metrics">
-                            <div className="saas-campaigns-wizard-metric">
-                                <small>Base inicial</small>
-                                <strong>{baseAudienceNumbers.eligible}</strong>
-                                <span>Clientes con opt-in dentro del modulo seleccionado.</span>
-                            </div>
-                            <div className="saas-campaigns-wizard-metric">
-                                <small>Base filtrada</small>
-                                <strong>{inclusionAudienceNumbers.eligible || baseAudienceNumbers.eligible}</strong>
-                                <span>Resultado actual segun los filtros de inclusion.</span>
-                            </div>
-                            <div className="saas-campaigns-wizard-metric">
-                                <small>Filtros activos</small>
-                                <strong>{inclusionSelectionCount}</strong>
-                                <span>{inclusionSelectionCount > 0 ? 'Se aplican sobre la base inicial.' : 'Sin filtros: entran todos los clientes elegibles del modulo.'}</span>
-                            </div>
-                        </div>
-                        <div className="saas-campaigns-audience-summary">
-                            <strong>Base inicial: {baseAudienceNumbers.eligible} clientes</strong>
-                            <span>Base filtrada: {inclusionAudienceNumbers.eligible || baseAudienceNumbers.eligible} clientes</span>
-                            {renderAudienceFilterChips('inclusionFilters', 'Activos') || <span>Todos los clientes</span>}
-                        </div>
-                        {renderWizardCollapsibleBlock({
-                            title: 'Datos del cliente',
-                            subtitle: 'Filtra por responsable, tipo y fecha de registro.',
-                            count: [
-                                form.inclusionFilters.assigned_user_id ? 1 : 0,
-                                form.inclusionFilters.created_after ? 1 : 0,
-                                form.inclusionFilters.created_before ? 1 : 0,
-                                (Array.isArray(form.inclusionFilters.customer_type_ids) ? form.inclusionFilters.customer_type_ids.length : 0)
-                            ].reduce((sum, value) => sum + value, 0),
-                            children: (
-                                <div className="saas-campaigns-compact-filters">
-                                    <div className="saas-admin-field">
-                                        <label>Asignado a</label>
-                                        <select
-                                            value={form.inclusionFilters.assigned_user_id || ''}
-                                            onChange={(event) => updateDeepFilter('inclusionFilters', 'assigned_user_id', event.target.value)}
-                                        >
-                                            <option value="">Todos</option>
-                                            {campaignFilterOptions.assigned_users.map((entry) => (
-                                                <option key={entry.id} value={entry.id}>{entry.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    {campaignFilterOptions.customer_types.length > 0 ? (
-                                        <div className="saas-admin-field">
-                                            <label>Tipo de cliente</label>
-                                            <select
-                                                value={form.inclusionFilters.customer_type_ids[0] || ''}
-                                                onChange={(event) => updateDeepFilter('inclusionFilters', 'customer_type_ids', event.target.value ? [event.target.value] : [])}
-                                            >
-                                                <option value="">Todos</option>
-                                                {campaignFilterOptions.customer_types.map((entry) => (
-                                                    <option key={entry.id} value={entry.id}>{entry.name}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    ) : null}
-                                    <div className="saas-admin-field">
-                                        <label>Fecha registro desde</label>
-                                        <input
-                                            type="date"
-                                            value={form.inclusionFilters.created_after || ''}
-                                            onChange={(event) => updateDeepFilter('inclusionFilters', 'created_after', event.target.value)}
-                                        />
-                                    </div>
-                                    <div className="saas-admin-field">
-                                        <label>Fecha registro hasta</label>
-                                        <input
-                                            type="date"
-                                            value={form.inclusionFilters.created_before || ''}
-                                            onChange={(event) => updateDeepFilter('inclusionFilters', 'created_before', event.target.value)}
-                                        />
-                                    </div>
-                                </div>
-                            )
-                        })}
-                        {renderWizardCollapsibleBlock({
-                            title: 'Etiquetas globales',
-                            subtitle: 'Estados comerciales incluidos en la audiencia.',
-                            count: Array.isArray(form.inclusionFilters.commercial_status) ? form.inclusionFilters.commercial_status.length : 0,
-                            children: renderAudienceToggleGroup('inclusionFilters', 'commercial_status', 'Estados comerciales', commercialFilterOptions, toLower)
-                        })}
-                        {renderWizardCollapsibleBlock({
-                            title: 'Zonas',
-                            subtitle: 'Se incluyen todas si no seleccionas ninguna.',
-                            count: Array.isArray(form.inclusionFilters.zone_label_ids) ? form.inclusionFilters.zone_label_ids.length : 0,
-                            children: renderAudienceToggleGroup('inclusionFilters', 'zone_label_ids', 'Zonas', zoneFilterChipOptions, toUpper, 'Sin zonas configuradas')
-                        })}
-                        {renderWizardCollapsibleBlock({
-                            title: 'Etiquetas operativas',
-                            subtitle: 'Usa etiquetas internas del tenant para segmentar mejor.',
-                            count: Array.isArray(form.inclusionFilters.operational_label_ids) ? form.inclusionFilters.operational_label_ids.length : 0,
-                            children: renderAudienceToggleGroup('inclusionFilters', 'operational_label_ids', 'Etiquetas operativas', operationalFilterChipOptions, toUpper, 'Sin etiquetas operativas')
-                        })}
-                    </div>
+                    {renderAudienceStepPanel({
+                        scope: 'inclusionFilters',
+                        baseCount: baseAudienceNumbers.eligible,
+                        filteredCount: inclusionAudienceNumbers.eligible || baseAudienceNumbers.eligible,
+                        items: inclusionOnlyAudienceItems,
+                        subtitle: `de ${baseAudienceNumbers.eligible} base total del modulo`,
+                        activeCriteria: activeInclusionCriteria,
+                        criteriaGroups: inclusionCriteriaGroups,
+                        controls: renderAudienceStepControls('inclusionFilters'),
+                        bottomAction: (
+                            <>
+                                <span>{inclusionAudienceNumbers.eligible || baseAudienceNumbers.eligible} clientes incluidos</span>
+                                <span>{inclusionSelectionCount} filtros activos</span>
+                                <button type="button" disabled={!wizardCanAdvance || loading} onClick={goToNextWizardStep}>Siguiente →</button>
+                            </>
+                        )
+                    })}
                 </SaasDetailPanelSection>
             );
         case 3:
-            return renderWizardPlaceholder(3, 'Exclusiones', 'Aqui se mostraran las exclusiones dependientes de la inclusion y la exclusion manual por cliente.');
+            return (
+                <SaasDetailPanelSection title="Paso 3 - Exclusion">
+                    {renderAudienceStepPanel({
+                        scope: 'exclusionFilters',
+                        baseCount: inclusionAudienceNumbers.eligible || inclusionOnlyAudienceItems.length,
+                        filteredCount: exclusionSummary.finalRecipients,
+                        items: estimatedAudienceItems,
+                        subtitle: `${exclusionSummary.excluded} excluidos de ${inclusionAudienceNumbers.eligible || inclusionOnlyAudienceItems.length} incluidos`,
+                        activeCriteria: activeExclusionCriteria,
+                        criteriaGroups: exclusionCriteriaGroups,
+                        controls: renderAudienceStepControls('exclusionFilters'),
+                        bottomAction: (
+                            <>
+                                <span>Clientes incluidos: {exclusionSummary.eligible}</span>
+                                <span>Excluidos: {exclusionSummary.excluded}</span>
+                                <span>Clientes finales: {exclusionSummary.finalRecipients}</span>
+                                <button type="button" disabled={!wizardCanAdvance || loading} onClick={goToNextWizardStep}>Siguiente →</button>
+                            </>
+                        )
+                    })}
+                </SaasDetailPanelSection>
+            );
         case 4:
             return renderWizardPlaceholder(4, 'Revision manual', 'Aqui se mostrara la lista final de clientes antes del envio para excluirlos manualmente si hace falta.');
         case 5:

@@ -430,6 +430,13 @@ function registerOperationsHttpRoutes({
             customer_types: [],
             assigned_users: []
         });
+    const listCampaignGeographyOptions = typeof campaignsApi.listCampaignGeographyOptions === 'function'
+        ? campaignsApi.listCampaignGeographyOptions.bind(campaignsApi)
+        : async () => ({
+            departments: [],
+            provinces: {},
+            districts: {}
+        });
 
     async function listCustomerCatalogItems(catalogKey = '') {
         const fallbackCatalogs = loadCustomerCatalogFallbacks();
@@ -1716,6 +1723,20 @@ function registerOperationsHttpRoutes({
             return res.json({ ok: true, tenantId, ...options });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar opciones de filtros de campana.') });
+        }
+    });
+
+    app.get('/api/tenant/campaigns/geography-options', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const options = await listCampaignGeographyOptions(tenantId);
+            return res.json({ ok: true, tenantId, ...options });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar opciones geograficas de campana.') });
         }
     });
 
