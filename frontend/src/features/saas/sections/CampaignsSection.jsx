@@ -1051,8 +1051,11 @@ export default React.memo(function CampaignsSection(props = {}) {
         const configuredName = (Array.isArray(campaignFilterOptions?.zone_labels) ? campaignFilterOptions.zone_labels : []).find(
             (zone) => toUpper(zone?.id) === cleanZoneLabelId
         )?.name;
-        return toText(configuredName || fallbackName || zoneLabelDirectory.get(cleanZoneLabelId)?.name || cleanZoneLabelId);
-    }, [campaignFilterOptions?.zone_labels, zoneLabelDirectory]);
+        const zoneRuleName = (Array.isArray(zoneRules) ? zoneRules : []).find(
+            (zone) => toUpper(zone?.ruleId || zone?.rule_id || zone?.id) === cleanZoneLabelId
+        )?.name;
+        return toText(configuredName || zoneRuleName || fallbackName || zoneLabelDirectory.get(cleanZoneLabelId)?.name || cleanZoneLabelId);
+    }, [campaignFilterOptions?.zone_labels, zoneLabelDirectory, zoneRules]);
     const geographyDepartments = useMemo(
         () => {
             const configured = (Array.isArray(campaignGeographyOptions.departments) ? campaignGeographyOptions.departments : []).map(toText).filter(Boolean);
