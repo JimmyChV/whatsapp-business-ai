@@ -10,6 +10,7 @@ const {
 const campaignQueueService = require('./campaign-queue.service');
 const metaTemplatesService = require('./meta-templates.service');
 const templateVariablesService = require('./template-variables.service');
+const customerAddressesService = require('../../tenant/services/customer-addresses.service');
 
 const STORE_FILE = 'campaigns.json';
 const DEFAULT_LIMIT = 50;
@@ -1391,19 +1392,37 @@ async function attachZoneLabelsToCustomers(tenantId = DEFAULT_TENANT_ID, custome
     const cleanTenantId = normalizeTenant(tenantId);
     try {
         const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.service');
+        const rules = await tenantZoneRulesService.listZoneRules(cleanTenantId, { includeInactive: false });
         const assignments = await tenantZoneRulesService.listCustomerLabels(cleanTenantId, { source: 'zone' });
+        const ruleById = new Map(
+            ensureArray(rules).map((rule) => {
+                const id = toUpper(rule?.ruleId || rule?.rule_id || rule?.id || '');
+                return [id, {
+                    id,
+                    name: toText(rule?.name || rule?.label || '') || id,
+                    color: toText(rule?.color || '#00A884') || '#00A884'
+                }];
+            }).filter(([id]) => Boolean(id))
+        );
         const labelsByCustomerId = new Map();
         ensureArray(assignments).forEach((assignment) => {
             const customerId = toText(assignment?.customerId || assignment?.customer_id || '');
             const labelId = toUpper(assignment?.labelId || assignment?.label_id || '');
             if (!customerId || !labelId) return;
             const current = labelsByCustomerId.get(customerId) || [];
-            current.push(labelId);
+            const configured = ruleById.get(labelId);
+            current.push({
+                id: labelId,
+                name: configured?.name || labelId,
+                color: configured?.color || '#00A884'
+            });
             labelsByCustomerId.set(customerId, current);
         });
         return ensureArray(customers).map((customer) => ({
             ...customer,
-            zoneLabelIds: labelsByCustomerId.get(toText(customer?.customerId || '')) || []
+            zoneLabelIds: (labelsByCustomerId.get(toText(customer?.customerId || '')) || []).map((entry) => entry.id),
+            zoneLabelNames: (labelsByCustomerId.get(toText(customer?.customerId || '')) || []).map((entry) => entry.name),
+            zoneLabels: labelsByCustomerId.get(toText(customer?.customerId || '')) || []
         }));
     } catch {
         return customers;
@@ -1683,6 +1702,12 @@ function sanitizeEligibleCustomer(customer = {}) {
         tags: ensureArray(source.tags).map((entry) => toText(entry)).filter(Boolean),
         operationalLabelIds: ensureArray(source.operationalLabelIds || source.tags).map((entry) => toLower(entry)).filter(Boolean),
         zoneLabelIds: ensureArray(source.zoneLabelIds).map((entry) => toUpper(entry)).filter(Boolean),
+        zoneLabelNames: ensureArray(source.zoneLabelNames).map((entry) => toText(entry)).filter(Boolean),
+        zoneLabels: ensureArray(source.zoneLabels).map((entry) => ({
+            id: toUpper(entry?.id || ''),
+            name: toText(entry?.name || ''),
+            color: toText(entry?.color || '#00A884') || '#00A884'
+        })).filter((entry) => entry.id),
         preferredLanguage: toLower(source.preferredLanguage || source.preferred_language || 'es') || 'es',
         marketingOptInStatus: toLower(source.marketingOptInStatus || source.marketing_opt_in_status || 'unknown') || 'unknown',
         customerTypeId: toText(source.customerTypeId || source.customer_type_id || '') || null,
@@ -1724,8 +1749,7 @@ async function estimateCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
             templateLanguage: toLower(source.templateLanguage || 'es') || 'es'
         };
 
-    const needsZoneLabels = normalizeZoneLabelIds(filters).length > 0 || normalizeZoneLabelIds(exclusionFilters).length > 0;
-    const candidates = await loadCandidateCustomers(cleanTenantId, campaignContext, { ...filters, attachZoneLabels: needsZoneLabels });
+    const candidates = await loadCandidateCustomers(cleanTenantId, campaignContext, { ...filters, attachZoneLabels: true });
     const existingRecipients = campaign?.campaignId
         ? await listCampaignRecipients(cleanTenantId, {
             campaignId: campaign.campaignId,
@@ -1847,12 +1871,12 @@ async function listCampaignGeographyOptions(tenantId = DEFAULT_TENANT_ID) {
     try {
         const result = await queryPostgres(
             `SELECT DISTINCT
+                NULLIF(BTRIM(district_id), '') AS district_id,
                 NULLIF(BTRIM(department_name), '') AS department_name,
                 NULLIF(BTRIM(province_name), '') AS province_name,
                 NULLIF(BTRIM(district_name), '') AS district_name
              FROM tenant_customer_addresses
              WHERE tenant_id = $1
-               AND NULLIF(BTRIM(department_name), '') IS NOT NULL
              ORDER BY department_name, province_name, district_name`,
             [cleanTenantId]
         );
@@ -1861,9 +1885,16 @@ async function listCampaignGeographyOptions(tenantId = DEFAULT_TENANT_ID) {
         const provinces = {};
         const districts = {};
         ensureArray(result?.rows).forEach((row) => {
-            const departmentName = toText(row.department_name);
-            const provinceName = toText(row.province_name);
-            const districtName = toText(row.district_name);
+            const enriched = customerAddressesService.enrichAddressGeo({
+                districtId: row.district_id,
+                districtName: row.district_name,
+                provinceName: row.province_name,
+                departmentName: row.department_name
+            });
+            const departmentName = toText(enriched?.departmentName || enriched?.department_name);
+            const provinceName = toText(enriched?.provinceName || enriched?.province_name);
+            const districtName = toText(enriched?.districtName || enriched?.district_name);
+            if (!departmentName && !provinceName && !districtName) return;
             if (departmentName && !departmentSet.has(departmentName)) {
                 departmentSet.add(departmentName);
                 departments.push(departmentName);
