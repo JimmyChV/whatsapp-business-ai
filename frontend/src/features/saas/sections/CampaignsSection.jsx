@@ -351,7 +351,7 @@ function buildZoneOptions(items = []) {
             color: toText(item?.color || '') || '#00A884',
             isActive: item?.isActive !== false
         }))
-        .filter((item) => item.ruleId && item.name && item.isActive)
+        .filter((item) => item.ruleId && item.name && item.isActive !== false)
         .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
 }
 
