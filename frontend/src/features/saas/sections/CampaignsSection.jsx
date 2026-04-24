@@ -1898,12 +1898,18 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const renderAudienceFilterChips = (scope = 'inclusionFilters', title = 'Incluir') => {
         const filters = normalizeDeepFilters(form?.[scope] || {});
+        const zoneNameById = new Map(
+            (campaignFilterOptions?.zone_labels || []).map((z) => [
+                String(z.id || '').toUpperCase(),
+                z.name || z.id
+            ])
+        );
         const chips = [];
         const addList = (keyName, options = [], labelKey = 'name', valueKey = 'id', normalize = toText) => {
             (Array.isArray(filters[keyName]) ? filters[keyName] : []).forEach((value) => {
                 const option = options.find((entry) => normalize(entry?.[valueKey] || entry?.key) === normalize(value));
                 const fallbackLabel = keyName === 'zone_label_ids'
-                    ? resolveZoneDisplayName(value)
+                    ? zoneNameById.get(String(value || '').toUpperCase()) || value
                     : value;
                 chips.push({ keyName, value, label: option?.[labelKey] || fallbackLabel, normalize });
             });
@@ -1984,6 +1990,12 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const renderAudienceChipGroup = (scope = 'inclusionFilters', keyName = '', label = '', options = [], normalize = toText, emptyText = '') => {
         const filters = normalizeDeepFilters(form?.[scope] || {});
+        const zoneNameById = new Map(
+            (campaignFilterOptions?.zone_labels || []).map((z) => [
+                String(z.id || '').toUpperCase(),
+                z.name || z.id
+            ])
+        );
         return (
             <div className="saas-admin-field">
                 <label>{label}</label>
@@ -2000,7 +2012,9 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 style={accent ? { '--campaign-chip-accent': accent } : undefined}
                                 onClick={() => toggleDeepFilterValue(scope, keyName, optionValue, normalize)}
                             >
-                                {keyName === 'zone_label_ids' ? resolveZoneDisplayName(optionValue, option.name) : option.name}
+                                {keyName === 'zone_label_ids'
+                                    ? zoneNameById.get(String(optionValue || '').toUpperCase()) || optionValue
+                                    : option.name}
                             </button>
                         );
                     })}
@@ -2012,6 +2026,12 @@ export default React.memo(function CampaignsSection(props = {}) {
     const renderAudienceCustomerRows = (items = [], limit = 50) => {
         const zoneById = zoneLabelDirectory;
         const operationalById = new Map(operationalFilterChipOptions.map((item) => [toUpper(item.id), item]));
+        const zoneNameById = new Map(
+            (campaignFilterOptions?.zone_labels || []).map((z) => [
+                String(z.id || '').toUpperCase(),
+                z.name || z.id
+            ])
+        );
         const commercialByKey = new Map(commercialFilterOptions.map((item) => [toLower(item.key), item]));
         return (
             <div className="saas-campaigns-audience-live-list">
@@ -2020,7 +2040,9 @@ export default React.memo(function CampaignsSection(props = {}) {
                         item.zoneLabelIds?.[0]
                             ? {
                                 id: toUpper(item.zoneLabelIds[0]),
-                                name: resolveZoneDisplayName(item.zoneLabelIds[0], toText(item.zoneLabelNames?.[0] || item.zoneLabels?.[0]?.name || '')),
+                                name: zoneNameById.get(String(item.zoneLabelIds[0] || '').toUpperCase())
+                                    || resolveZoneDisplayName(item.zoneLabelIds[0], toText(item.zoneLabelNames?.[0] || item.zoneLabels?.[0]?.name || ''))
+                                    || item.zoneLabelIds[0],
                                 color: toText(item.zoneLabels?.[0]?.color || '#00A884') || '#00A884'
                             }
                             : null
