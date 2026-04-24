@@ -1941,7 +1941,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (chips.length === 0) return null;
         return (
             <div className="saas-campaigns-filter-chips">
-                <strong>{title}:</strong>
+                <span className="saas-campaigns-filter-chips__title">{title}</span>
                 {chips.map((chip, index) => (
                     <button
                         key={`${scope}_${chip.keyName}_${chip.value}_${index}`}
@@ -1992,7 +1992,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const renderAudienceChipGroup = (scope = 'inclusionFilters', keyName = '', label = '', options = [], normalize = toText, emptyText = '') => {
         const filters = normalizeDeepFilters(form?.[scope] || {});
         return (
-            <div className="saas-admin-field">
+            <div className="saas-admin-field saas-campaigns-audience-control-card">
                 <label>{label}</label>
                 <div className="saas-campaigns-chip-group">
                     {options.length === 0 ? <small className="saas-admin-empty-inline">{emptyText || `Sin ${toLower(label)}.`}</small> : options.map((option) => {
@@ -2061,25 +2061,28 @@ export default React.memo(function CampaignsSection(props = {}) {
         );
     };
 
-    const renderAudienceStepPanel = ({ scope = 'inclusionFilters', baseCount = 0, filteredCount = 0, items = [], subtitle = '', activeCriteria = [], criteriaGroups = [], controls = null, bottomAction = null }) => (
+    const renderAudienceStepPanel = ({ scope = 'inclusionFilters', baseCount = 0, filteredCount = 0, subtitle = '', activeCriteria = [], criteriaGroups = [], controls = null, bottomAction = null }) => (
         <div className="saas-campaigns-audience-step">
             <div className="saas-campaigns-audience-step__criteria">
                 {renderCriterionToggleList(scope, criteriaGroups)}
             </div>
             <div className="saas-campaigns-audience-step__results">
                 <div className="saas-campaigns-audience-step__results-header">
-                    <div>
+                    <div className="saas-campaigns-audience-step__results-metric">
                         <strong>{filteredCount} clientes {scope === 'exclusionFilters' ? 'finales' : 'incluidos'}</strong>
                         <span>{subtitle || `de ${baseCount} base total del modulo`}</span>
                     </div>
-                    {renderAudienceFilterChips(scope, scope === 'exclusionFilters' ? 'Excluir' : 'Incluir')}
+                    <div className="saas-campaigns-audience-step__results-summary">
+                        {renderAudienceFilterChips(scope, scope === 'exclusionFilters' ? 'Excluir' : 'Incluir')}
+                        <div className="saas-campaigns-audience-step__results-note">
+                            {scope === 'exclusionFilters'
+                                ? 'Aqui decides a quien sacar de la audiencia incluida. La lista final se revisa en el siguiente paso.'
+                                : 'Aqui construyes la audiencia. La revision detallada de clientes se hace en el paso de revision manual.'}
+                        </div>
+                    </div>
                 </div>
                 <div className="saas-campaigns-audience-step__controls">
                     {activeCriteria.length > 0 ? controls : <p className="saas-campaigns-audience-empty">Sin filtros activos. Se incluiran todos los {baseCount} clientes base.</p>}
-                </div>
-                <div className="saas-campaigns-audience-step__list">
-                    {activeCriteria.length > 0 && items.length > 0 ? renderAudienceCustomerRows(items, 50) : null}
-                    {activeCriteria.length > 0 && items.length === 0 ? <p className="saas-campaigns-audience-empty">No hay clientes para los filtros seleccionados.</p> : null}
                 </div>
                 <div className="saas-campaigns-audience-step__footer">
                     {bottomAction}
@@ -2183,87 +2186,108 @@ export default React.memo(function CampaignsSection(props = {}) {
         const departments = scope === 'exclusionFilters' ? exclusionDepartments : geographyDepartments;
         const provinces = scope === 'exclusionFilters' ? exclusionProvinces : inclusionProvinceOptions;
         const districts = scope === 'exclusionFilters' ? exclusionDistricts : inclusionDistrictOptions;
+        const renderMultiSelectControl = (label, values = [], options = [], onChange, emptyText = 'Sin opciones disponibles.') => (
+            <div className="saas-admin-field saas-campaigns-audience-control-card">
+                <label>{label}</label>
+                {options.length === 0 ? (
+                    <div className="saas-campaigns-audience-control-empty">{emptyText}</div>
+                ) : (
+                    <select
+                        className="saas-campaigns-audience-multiselect"
+                        multiple
+                        size={Math.min(Math.max(options.length, 2), 4)}
+                        value={values}
+                        onChange={onChange}
+                    >
+                        {options.map((entry) => (
+                            <option key={entry.value} value={entry.value}>
+                                {entry.label}
+                            </option>
+                        ))}
+                    </select>
+                )}
+            </div>
+        );
+        const renderSingleSelectControl = (label, value, options = [], onChange, placeholder = 'Todos') => (
+            <div className="saas-admin-field saas-campaigns-audience-control-card">
+                <label>{label}</label>
+                <select className="saas-campaigns-audience-select" value={value} onChange={onChange}>
+                    <option value="">{placeholder}</option>
+                    {options.map((entry) => (
+                        <option key={entry.value} value={entry.value}>
+                            {entry.label}
+                        </option>
+                    ))}
+                </select>
+            </div>
+        );
+        const renderBooleanControl = (keyName, text) => (
+            <label className="saas-campaigns-criteria-inline-toggle saas-campaigns-audience-toggle-card">
+                <span>
+                    <strong>{text}</strong>
+                    <small>Activar para exigir este dato en la audiencia.</small>
+                </span>
+                <input type="checkbox" checked={filters[keyName] === true} onChange={(event) => updateDeepFilter(scope, keyName, event.target.checked ? true : '')} />
+            </label>
+        );
         return (
             <div className="saas-campaigns-audience-step__filters">
                 {activeCriteria.includes('departments') ? (
-                    <div className="saas-admin-field">
-                        <label>Departamento</label>
-                        <select
-                            multiple
-                            size={Math.min(Math.max(departments.length, 3), 8)}
-                            value={filters.departments}
-                            onChange={(event) => updateDeepFilter(scope, 'departments', Array.from(event.target.selectedOptions).map((option) => option.value))}
-                        >
-                            {departments.map((name) => <option key={`${scope}_dep_${name}`} value={name}>{name}</option>)}
-                        </select>
-                    </div>
+                    renderMultiSelectControl(
+                        'Departamento',
+                        filters.departments,
+                        departments.map((name) => ({ value: name, label: name })),
+                        (event) => updateDeepFilter(scope, 'departments', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'Sin departamentos disponibles.'
+                    )
                 ) : null}
                 {activeCriteria.includes('provinces') ? (
-                    <div className="saas-admin-field">
-                        <label>Provincia</label>
-                        <select
-                            multiple
-                            size={Math.min(Math.max(provinces.length, 3), 8)}
-                            value={filters.provinces}
-                            onChange={(event) => updateDeepFilter(scope, 'provinces', Array.from(event.target.selectedOptions).map((option) => option.value))}
-                        >
-                            {provinces.map((name) => <option key={`${scope}_prov_${name}`} value={name}>{name}</option>)}
-                        </select>
-                    </div>
+                    renderMultiSelectControl(
+                        'Provincia',
+                        filters.provinces,
+                        provinces.map((name) => ({ value: name, label: name })),
+                        (event) => updateDeepFilter(scope, 'provinces', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'Selecciona primero un departamento para acotar provincias.'
+                    )
                 ) : null}
                 {activeCriteria.includes('districts') ? (
-                    <div className="saas-admin-field">
-                        <label>Distrito</label>
-                        <select
-                            multiple
-                            size={Math.min(Math.max(districts.length, 3), 8)}
-                            value={filters.districts}
-                            onChange={(event) => updateDeepFilter(scope, 'districts', Array.from(event.target.selectedOptions).map((option) => option.value))}
-                        >
-                            {districts.map((name) => <option key={`${scope}_dist_${name}`} value={name}>{name}</option>)}
-                        </select>
-                    </div>
+                    renderMultiSelectControl(
+                        'Distrito',
+                        filters.districts,
+                        districts.map((name) => ({ value: name, label: name })),
+                        (event) => updateDeepFilter(scope, 'districts', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'Selecciona primero una provincia para ver distritos.'
+                    )
                 ) : null}
                 {activeCriteria.includes('zone_label_ids') ? renderAudienceChipGroup(scope, 'zone_label_ids', 'Zona', zoneOptionsForScope, toUpper, 'Sin zonas configuradas') : null}
                 {activeCriteria.includes('commercial_status') ? renderAudienceChipGroup(scope, 'commercial_status', 'Estado comercial', statusOptions, toLower, 'Sin estados disponibles') : null}
                 {activeCriteria.includes('operational_label_ids') ? renderAudienceChipGroup(scope, 'operational_label_ids', 'Etiqueta operativa', operationalOptionsForScope, toUpper, 'Sin etiquetas operativas') : null}
                 {activeCriteria.includes('customer_type_ids') && customerTypeOptions.length > 0 ? (
-                    <div className="saas-admin-field">
-                        <label>Tipo de cliente</label>
-                        <select
-                            multiple
-                            size={Math.min(Math.max(customerTypeOptions.length, 3), 8)}
-                            value={filters.customer_type_ids}
-                            onChange={(event) => updateDeepFilter(scope, 'customer_type_ids', Array.from(event.target.selectedOptions).map((option) => option.value))}
-                        >
-                            {customerTypeOptions.map((entry) => <option key={`${scope}_ctype_${entry.id}`} value={entry.id}>{entry.name}</option>)}
-                        </select>
-                    </div>
+                    renderMultiSelectControl(
+                        'Tipo de cliente',
+                        filters.customer_type_ids,
+                        customerTypeOptions.map((entry) => ({ value: entry.id, label: entry.name })),
+                        (event) => updateDeepFilter(scope, 'customer_type_ids', Array.from(event.target.selectedOptions).map((option) => option.value))
+                    )
                 ) : null}
                 {activeCriteria.includes('acquisition_source_ids') && acquisitionOptions.length > 0 ? (
-                    <div className="saas-admin-field">
-                        <label>Fuente de adquisicion</label>
-                        <select
-                            multiple
-                            size={Math.min(Math.max(acquisitionOptions.length, 3), 8)}
-                            value={filters.acquisition_source_ids}
-                            onChange={(event) => updateDeepFilter(scope, 'acquisition_source_ids', Array.from(event.target.selectedOptions).map((option) => option.value))}
-                        >
-                            {acquisitionOptions.map((entry) => <option key={`${scope}_src_${entry.id}`} value={entry.id}>{entry.name}</option>)}
-                        </select>
-                    </div>
+                    renderMultiSelectControl(
+                        'Fuente de adquisición',
+                        filters.acquisition_source_ids,
+                        acquisitionOptions.map((entry) => ({ value: entry.id, label: entry.name })),
+                        (event) => updateDeepFilter(scope, 'acquisition_source_ids', Array.from(event.target.selectedOptions).map((option) => option.value))
+                    )
                 ) : null}
                 {activeCriteria.includes('assigned_user_id') ? (
-                    <div className="saas-admin-field">
-                        <label>Asignado a</label>
-                        <select value={filters.assigned_user_id || ''} onChange={(event) => updateDeepFilter(scope, 'assigned_user_id', event.target.value)}>
-                            <option value="">Todos</option>
-                            {assignedUserOptions.map((entry) => <option key={`${scope}_usr_${entry.id}`} value={entry.id}>{entry.name}</option>)}
-                        </select>
-                    </div>
+                    renderSingleSelectControl(
+                        'Asignado a',
+                        filters.assigned_user_id || '',
+                        assignedUserOptions.map((entry) => ({ value: entry.id, label: entry.name })),
+                        (event) => updateDeepFilter(scope, 'assigned_user_id', event.target.value)
+                    )
                 ) : null}
                 {activeCriteria.includes('created_range') ? (
-                    <div className="saas-campaigns-compact-filters">
+                    <div className="saas-campaigns-compact-filters saas-campaigns-audience-control-card">
                         <div className="saas-admin-field">
                             <label>Fecha de registro desde</label>
                             <input type="date" value={filters.created_after || ''} onChange={(event) => updateDeepFilter(scope, 'created_after', event.target.value)} />
@@ -2275,16 +2299,16 @@ export default React.memo(function CampaignsSection(props = {}) {
                     </div>
                 ) : null}
                 {activeCriteria.includes('has_phone') ? (
-                    <label className="saas-campaigns-criteria-inline-toggle"><input type="checkbox" checked={filters.has_phone === true} onChange={(event) => updateDeepFilter(scope, 'has_phone', event.target.checked ? true : '')} />Tiene telefono valido</label>
+                    renderBooleanControl('has_phone', 'Tiene teléfono válido')
                 ) : null}
                 {activeCriteria.includes('has_email') ? (
-                    <label className="saas-campaigns-criteria-inline-toggle"><input type="checkbox" checked={filters.has_email === true} onChange={(event) => updateDeepFilter(scope, 'has_email', event.target.checked ? true : '')} />Tiene email</label>
+                    renderBooleanControl('has_email', 'Tiene email')
                 ) : null}
                 {activeCriteria.includes('has_address') ? (
-                    <label className="saas-campaigns-criteria-inline-toggle"><input type="checkbox" checked={filters.has_address === true} onChange={(event) => updateDeepFilter(scope, 'has_address', event.target.checked ? true : '')} />Tiene direccion registrada</label>
+                    renderBooleanControl('has_address', 'Tiene dirección registrada')
                 ) : null}
                 {scope === 'exclusionFilters' && activeCriteria.includes('manual_customers') ? (
-                    <div className="saas-admin-field">
+                    <div className="saas-admin-field saas-campaigns-audience-control-card">
                         <label>Clientes especificos</label>
                         <input value={manualExclusionSearch} onChange={(event) => setManualExclusionSearch(event.target.value)} placeholder="Buscar por nombre o telefono" />
                         <div className="saas-campaigns-manual-exclusion-results">
@@ -2498,7 +2522,6 @@ export default React.memo(function CampaignsSection(props = {}) {
                         scope: 'inclusionFilters',
                         baseCount: baseAudienceNumbers.eligible,
                         filteredCount: inclusionAudienceNumbers.eligible || baseAudienceNumbers.eligible,
-                        items: inclusionOnlyAudienceItems,
                         subtitle: `de ${baseAudienceNumbers.eligible} base total del modulo`,
                         activeCriteria: activeInclusionCriteria,
                         criteriaGroups: inclusionCriteriaGroups,
@@ -2520,7 +2543,6 @@ export default React.memo(function CampaignsSection(props = {}) {
                         scope: 'exclusionFilters',
                         baseCount: inclusionAudienceNumbers.eligible || inclusionOnlyAudienceItems.length,
                         filteredCount: exclusionSummary.finalRecipients,
-                        items: estimatedAudienceItems,
                         subtitle: `${exclusionSummary.excluded} excluidos de ${inclusionAudienceNumbers.eligible || inclusionOnlyAudienceItems.length} incluidos`,
                         activeCriteria: activeExclusionCriteria,
                         criteriaGroups: exclusionCriteriaGroups,

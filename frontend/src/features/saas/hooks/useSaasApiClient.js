@@ -3,11 +3,18 @@
 export default function useSaasApiClient({ apiBase, buildApiHeaders }) {
     const [pendingRequests, setPendingRequests] = useState(0);
 
-    const requestJson = useCallback(async (path, { method = 'GET', body = null } = {}) => {
+    const requestJson = useCallback(async (path, { method = 'GET', body = null, tenantIdOverride = '', headers: extraHeaders = null } = {}) => {
         setPendingRequests((prev) => prev + 1);
         try {
             const url = `${apiBase}${path}`;
-            const headers = buildApiHeaders?.({ includeJson: body !== null }) || (body !== null ? { 'Content-Type': 'application/json' } : {});
+            const baseHeaders = buildApiHeaders?.({
+                includeJson: body !== null,
+                tenantIdOverride
+            }) || (body !== null ? { 'Content-Type': 'application/json' } : {});
+            const headers = {
+                ...baseHeaders,
+                ...(extraHeaders && typeof extraHeaders === 'object' ? extraHeaders : {})
+            };
             const response = await fetch(url, {
                 method,
                 cache: 'no-store',

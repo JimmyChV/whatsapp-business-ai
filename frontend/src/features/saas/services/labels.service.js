@@ -108,32 +108,42 @@ export async function deleteGlobalLabel(requestJson, id = '') {
     });
 }
 
-export async function fetchTenantZoneRules(requestJson, { includeInactive = true } = {}) {
+export async function fetchTenantZoneRules(requestJson, { includeInactive = true, tenantId = '' } = {}) {
     const query = includeInactive ? '?includeInactive=true' : '';
-    return requestJson(`/api/tenant/zone-rules${query}`);
+    const cleanTenantId = String(tenantId || '').trim();
+    return requestJson(`/api/tenant/zone-rules${query}`, cleanTenantId ? { tenantIdOverride: cleanTenantId } : undefined);
 }
 
-export async function fetchTenantCustomerLabels(requestJson, { source = '' } = {}) {
+export async function fetchTenantCustomerLabels(requestJson, { source = '', tenantId = '' } = {}) {
     const params = new URLSearchParams();
     if (String(source || '').trim()) params.set('source', String(source || '').trim());
     const query = params.toString() ? `?${params.toString()}` : '';
-    return requestJson(`/api/tenant/customer-labels${query}`);
+    const cleanTenantId = String(tenantId || '').trim();
+    return requestJson(`/api/tenant/customer-labels${query}`, cleanTenantId ? { tenantIdOverride: cleanTenantId } : undefined);
 }
 
-export async function saveTenantZoneRule(requestJson, payload = {}) {
+export async function saveTenantZoneRule(requestJson, payload = {}, { tenantId = '' } = {}) {
     const ruleId = String(payload?.ruleId || payload?.rule_id || '').trim();
+    const cleanTenantId = String(tenantId || '').trim();
     return requestJson(ruleId ? `/api/tenant/zone-rules/${encodeURIComponent(ruleId)}` : '/api/tenant/zone-rules', {
         method: ruleId ? 'PUT' : 'POST',
-        body: payload
+        body: payload,
+        ...(cleanTenantId ? { tenantIdOverride: cleanTenantId } : {})
     });
 }
 
-export async function deleteTenantZoneRule(requestJson, ruleId = '') {
+export async function deleteTenantZoneRule(requestJson, ruleId = '', { tenantId = '' } = {}) {
+    const cleanTenantId = String(tenantId || '').trim();
     return requestJson(`/api/tenant/zone-rules/${encodeURIComponent(String(ruleId || '').trim())}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        ...(cleanTenantId ? { tenantIdOverride: cleanTenantId } : {})
     });
 }
 
-export async function recalculateTenantZones(requestJson) {
-    return requestJson('/api/tenant/zone-rules/recalculate', { method: 'POST' });
+export async function recalculateTenantZones(requestJson, { tenantId = '' } = {}) {
+    const cleanTenantId = String(tenantId || '').trim();
+    return requestJson('/api/tenant/zone-rules/recalculate', {
+        method: 'POST',
+        ...(cleanTenantId ? { tenantIdOverride: cleanTenantId } : {})
+    });
 }

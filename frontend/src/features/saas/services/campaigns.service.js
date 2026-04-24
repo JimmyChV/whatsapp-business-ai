@@ -28,36 +28,45 @@ function toQueryString(params = {}) {
     return encoded ? `?${encoded}` : '';
 }
 
-export async function createCampaign(requestJson, payload = {}) {
+function requestWithTenant(requestJson, path, tenantId = '', options = {}) {
+    const cleanTenantId = String(tenantId || '').trim();
+    if (!cleanTenantId) return requestJson(path, options);
+    return requestJson(path, {
+        ...options,
+        tenantIdOverride: cleanTenantId
+    });
+}
+
+export async function createCampaign(requestJson, payload = {}, { tenantId = '' } = {}) {
     assertRequestJson(requestJson);
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         throw new Error('payload de campaña requerido.');
     }
-    return requestJson('/api/tenant/campaigns', {
+    return requestWithTenant(requestJson, '/api/tenant/campaigns', tenantId, {
         method: 'POST',
         body: payload
     });
 }
 
-export async function estimateCampaign(requestJson, payload = {}) {
+export async function estimateCampaign(requestJson, payload = {}, { tenantId = '' } = {}) {
     assertRequestJson(requestJson);
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         throw new Error('payload de estimacion requerido.');
     }
-    return requestJson('/api/tenant/campaigns/estimate', {
+    return requestWithTenant(requestJson, '/api/tenant/campaigns/estimate', tenantId, {
         method: 'POST',
         body: payload
     });
 }
 
-export async function fetchCampaignFilterOptions(requestJson) {
+export async function fetchCampaignFilterOptions(requestJson, { tenantId = '' } = {}) {
     assertRequestJson(requestJson);
-    return requestJson('/api/tenant/campaigns/filter-options');
+    return requestWithTenant(requestJson, '/api/tenant/campaigns/filter-options', tenantId);
 }
 
-export async function fetchCampaignGeographyOptions(requestJson) {
+export async function fetchCampaignGeographyOptions(requestJson, { tenantId = '' } = {}) {
     assertRequestJson(requestJson);
-    return requestJson('/api/tenant/campaigns/geography-options');
+    return requestWithTenant(requestJson, '/api/tenant/campaigns/geography-options', tenantId);
 }
 
 export async function listCampaigns(
@@ -69,7 +78,8 @@ export async function listCampaigns(
         query = '',
         limit = 50,
         offset = 0
-    } = {}
+    } = {},
+    { tenantId = '' } = {}
 ) {
     assertRequestJson(requestJson);
     const suffix = toQueryString({
@@ -80,77 +90,77 @@ export async function listCampaigns(
         limit: String(toPositiveInt(limit, 50)),
         offset: String(toPositiveInt(offset, 0))
     });
-    return requestJson(`/api/tenant/campaigns${suffix}`);
+    return requestWithTenant(requestJson, `/api/tenant/campaigns${suffix}`, tenantId);
 }
 
-export async function getCampaignDetail(requestJson, { campaignId } = {}) {
+export async function getCampaignDetail(requestJson, { campaignId } = {}, { tenantId = '' } = {}) {
     assertRequestJson(requestJson);
     const cleanCampaignId = toCleanText(campaignId);
     if (!cleanCampaignId) throw new Error('campaignId requerido.');
-    return requestJson(`/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}`);
+    return requestWithTenant(requestJson, `/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}`, tenantId);
 }
 
-export async function updateCampaign(requestJson, { campaignId, patch = {} } = {}) {
+export async function updateCampaign(requestJson, { campaignId, patch = {} } = {}, { tenantId = '' } = {}) {
     assertRequestJson(requestJson);
     const cleanCampaignId = toCleanText(campaignId);
     if (!cleanCampaignId) throw new Error('campaignId requerido.');
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
         throw new Error('patch de campaña requerido.');
     }
-    return requestJson(`/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}`, {
+    return requestWithTenant(requestJson, `/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}`, tenantId, {
         method: 'PATCH',
         body: patch
     });
 }
 
-export async function startCampaign(requestJson, { campaignId } = {}) {
+export async function startCampaign(requestJson, { campaignId } = {}, { tenantId = '' } = {}) {
     assertRequestJson(requestJson);
     const cleanCampaignId = toCleanText(campaignId);
     if (!cleanCampaignId) throw new Error('campaignId requerido.');
-    return requestJson(`/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/start`, {
+    return requestWithTenant(requestJson, `/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/start`, tenantId, {
         method: 'POST',
         body: {}
     });
 }
 
-export async function sendCampaignBlock(requestJson, { campaignId, blockIndex } = {}) {
+export async function sendCampaignBlock(requestJson, { campaignId, blockIndex } = {}, { tenantId = '' } = {}) {
     assertRequestJson(requestJson);
     const cleanCampaignId = toCleanText(campaignId);
     const cleanBlockIndex = Math.max(0, Math.floor(Number(blockIndex)));
     if (!cleanCampaignId) throw new Error('campaignId requerido.');
     if (!Number.isFinite(cleanBlockIndex)) throw new Error('blockIndex requerido.');
-    return requestJson(`/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/blocks/${encodeURIComponent(String(cleanBlockIndex))}/send`, {
+    return requestWithTenant(requestJson, `/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/blocks/${encodeURIComponent(String(cleanBlockIndex))}/send`, tenantId, {
         method: 'POST',
         body: {}
     });
 }
 
-export async function pauseCampaign(requestJson, { campaignId } = {}) {
+export async function pauseCampaign(requestJson, { campaignId } = {}, { tenantId = '' } = {}) {
     assertRequestJson(requestJson);
     const cleanCampaignId = toCleanText(campaignId);
     if (!cleanCampaignId) throw new Error('campaignId requerido.');
-    return requestJson(`/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/pause`, {
+    return requestWithTenant(requestJson, `/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/pause`, tenantId, {
         method: 'POST',
         body: {}
     });
 }
 
-export async function resumeCampaign(requestJson, { campaignId } = {}) {
+export async function resumeCampaign(requestJson, { campaignId } = {}, { tenantId = '' } = {}) {
     assertRequestJson(requestJson);
     const cleanCampaignId = toCleanText(campaignId);
     if (!cleanCampaignId) throw new Error('campaignId requerido.');
-    return requestJson(`/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/resume`, {
+    return requestWithTenant(requestJson, `/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/resume`, tenantId, {
         method: 'POST',
         body: {}
     });
 }
 
-export async function cancelCampaign(requestJson, { campaignId, reason = '' } = {}) {
+export async function cancelCampaign(requestJson, { campaignId, reason = '' } = {}, { tenantId = '' } = {}) {
     assertRequestJson(requestJson);
     const cleanCampaignId = toCleanText(campaignId);
     if (!cleanCampaignId) throw new Error('campaignId requerido.');
     const cleanReason = toCleanText(reason);
-    return requestJson(`/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/cancel`, {
+    return requestWithTenant(requestJson, `/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/cancel`, tenantId, {
         method: 'POST',
         body: cleanReason ? { reason: cleanReason } : {}
     });
@@ -165,7 +175,8 @@ export async function listCampaignRecipients(
         search = '',
         limit = 50,
         offset = 0
-    } = {}
+    } = {},
+    { tenantId = '' } = {}
 ) {
     assertRequestJson(requestJson);
     const cleanCampaignId = toCleanText(campaignId);
@@ -177,7 +188,7 @@ export async function listCampaignRecipients(
         limit: String(toPositiveInt(limit, 50)),
         offset: String(toPositiveInt(offset, 0))
     });
-    return requestJson(`/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/recipients${suffix}`);
+    return requestWithTenant(requestJson, `/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/recipients${suffix}`, tenantId);
 }
 
 export async function listCampaignEvents(
@@ -188,7 +199,8 @@ export async function listCampaignEvents(
         severity = '',
         limit = 50,
         offset = 0
-    } = {}
+    } = {},
+    { tenantId = '' } = {}
 ) {
     assertRequestJson(requestJson);
     const cleanCampaignId = toCleanText(campaignId);
@@ -199,5 +211,5 @@ export async function listCampaignEvents(
         limit: String(toPositiveInt(limit, 50)),
         offset: String(toPositiveInt(offset, 0))
     });
-    return requestJson(`/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/events${suffix}`);
+    return requestWithTenant(requestJson, `/api/tenant/campaigns/${encodeURIComponent(cleanCampaignId)}/events${suffix}`, tenantId);
 }

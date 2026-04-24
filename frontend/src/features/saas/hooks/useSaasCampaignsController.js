@@ -188,7 +188,7 @@ export default function useSaasCampaignsController({
                 ...(filtersRef.current || DEFAULT_FILTERS),
                 ...(overrideFilters && typeof overrideFilters === 'object' ? overrideFilters : {})
             });
-            const response = await listCampaignsApi(requestJson, nextFilters);
+            const response = await listCampaignsApi(requestJson, nextFilters, { tenantId });
             const nextItems = Array.isArray(response?.items) ? response.items : [];
             const nextTotal = Number.isFinite(Number(response?.total)) ? Math.max(0, Number(response.total)) : nextItems.length;
             const sortedItems = sortCampaigns(nextItems);
@@ -246,7 +246,7 @@ export default function useSaasCampaignsController({
         setEstimating(true);
         setError('');
         try {
-            const response = await estimateCampaignApi(requestJson, payload);
+            const response = await estimateCampaignApi(requestJson, payload, { tenantId });
             const estimate = response?.estimate && typeof response.estimate === 'object'
                 ? response.estimate
                 : null;
@@ -278,7 +278,7 @@ export default function useSaasCampaignsController({
         setLoadingAction(true);
         setError('');
         try {
-            const response = await getCampaignDetail(requestJson, { campaignId: cleanCampaignId });
+            const response = await getCampaignDetail(requestJson, { campaignId: cleanCampaignId }, { tenantId });
             const campaign = response?.campaign && typeof response.campaign === 'object' ? response.campaign : fromList;
             if (campaign) {
                 patchCampaignState(campaign);
@@ -299,7 +299,7 @@ export default function useSaasCampaignsController({
         setLoadingAction(true);
         setError('');
         try {
-            const response = await createCampaignApi(requestJson, payload);
+            const response = await createCampaignApi(requestJson, payload, { tenantId });
             const campaign = response?.campaign && typeof response.campaign === 'object' ? response.campaign : null;
             if (campaign) {
                 patchCampaignState(campaign);
@@ -325,7 +325,7 @@ export default function useSaasCampaignsController({
         setLoadingAction(true);
         setError('');
         try {
-            const response = await updateCampaignApi(requestJson, { campaignId, patch });
+            const response = await updateCampaignApi(requestJson, { campaignId, patch }, { tenantId });
             const campaign = response?.campaign && typeof response.campaign === 'object' ? response.campaign : null;
             if (campaign) patchCampaignState(campaign);
             return response;
@@ -345,7 +345,7 @@ export default function useSaasCampaignsController({
         setLoadingAction(true);
         setError('');
         try {
-            const response = await startCampaignApi(requestJson, { campaignId: cleanCampaignId });
+            const response = await startCampaignApi(requestJson, { campaignId: cleanCampaignId }, { tenantId });
             const campaign = response?.campaign && typeof response.campaign === 'object' ? response.campaign : null;
             if (campaign) patchCampaignState(campaign);
             return response;
@@ -365,7 +365,7 @@ export default function useSaasCampaignsController({
         setLoadingAction(true);
         setError('');
         try {
-            const response = await pauseCampaignApi(requestJson, { campaignId: cleanCampaignId });
+            const response = await pauseCampaignApi(requestJson, { campaignId: cleanCampaignId }, { tenantId });
             const campaign = response?.campaign && typeof response.campaign === 'object' ? response.campaign : null;
             if (campaign) patchCampaignState(campaign);
             return response;
@@ -385,7 +385,7 @@ export default function useSaasCampaignsController({
         setLoadingAction(true);
         setError('');
         try {
-            const response = await resumeCampaignApi(requestJson, { campaignId: cleanCampaignId });
+            const response = await resumeCampaignApi(requestJson, { campaignId: cleanCampaignId }, { tenantId });
             const campaign = response?.campaign && typeof response.campaign === 'object' ? response.campaign : null;
             if (campaign) patchCampaignState(campaign);
             return response;
@@ -405,7 +405,7 @@ export default function useSaasCampaignsController({
         setLoadingAction(true);
         setError('');
         try {
-            const response = await cancelCampaignApi(requestJson, { campaignId: cleanCampaignId, reason });
+            const response = await cancelCampaignApi(requestJson, { campaignId: cleanCampaignId, reason }, { tenantId });
             const campaign = response?.campaign && typeof response.campaign === 'object' ? response.campaign : null;
             if (campaign) patchCampaignState(campaign);
             return response;
@@ -440,7 +440,7 @@ export default function useSaasCampaignsController({
                 search,
                 limit,
                 offset
-            });
+            }, { tenantId });
             setRecipients(Array.isArray(response?.items) ? response.items : []);
             return response;
         } catch (err) {
@@ -472,7 +472,7 @@ export default function useSaasCampaignsController({
                 severity,
                 limit,
                 offset
-            });
+            }, { tenantId });
             setEvents(Array.isArray(response?.items) ? response.items : []);
             return response;
         } catch (err) {
