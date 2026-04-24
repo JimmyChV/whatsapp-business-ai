@@ -1377,8 +1377,8 @@ export default React.memo(function CampaignsSection(props = {}) {
             const tenantLabelItems = Array.isArray(tenantLabelsPayload?.items) ? tenantLabelsPayload.items : [];
             const tenantZoneItems = Array.isArray(tenantZonesPayload?.items) ? tenantZonesPayload.items : [];
             const fallbackZoneLabels = buildZoneOptions(tenantZoneItems.length > 0 ? tenantZoneItems : zoneRules).map((item) => ({
-                id: toUpper(item.ruleId),
-                name: toText(item.name),
+                id: toUpper(item.ruleId || item.rule_id || item.zone_id || item.id || ''),
+                name: toText(item.name || item.label || ''),
                 color: toText(item.color) || '#00A884'
             }));
             const fallbackOperationalLabels = buildLabelOptions(tenantLabelItems.length > 0 ? tenantLabelItems : availableLabels).map((item) => ({
