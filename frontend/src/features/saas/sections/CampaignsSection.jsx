@@ -632,6 +632,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     });
     const audienceRequestRef = useRef(0);
     const estimateRequestRef = useRef({ base: 0, full: 0, inclusion: 0 });
+    const requestJsonRef = useRef(requestJson);
 
     const {
         campaigns = [],
@@ -718,6 +719,10 @@ export default React.memo(function CampaignsSection(props = {}) {
             componentsJson: Array.isArray(entry?.componentsJson) ? entry.componentsJson : []
         }))
         .filter((entry) => entry.templateName), [templateItems]);
+
+    useEffect(() => {
+        requestJsonRef.current = requestJson;
+    }, [requestJson]);
 
     const filteredCampaigns = useMemo(() => {
         const term = toLower(search);
@@ -1342,7 +1347,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         const shouldLoadAudienceSelectors = isCampaignsSection
             && !tenantScopeLocked
             && Boolean(settingsTenantId)
-            && typeof requestJson === 'function'
+            && typeof requestJsonRef.current === 'function'
             && (panelMode === 'create' || panelMode === 'edit')
             && wizardStep >= 2;
         if (!shouldLoadAudienceSelectors) {
@@ -1362,10 +1367,10 @@ export default React.memo(function CampaignsSection(props = {}) {
         const requestId = audienceRequestRef.current + 1;
         audienceRequestRef.current = requestId;
         Promise.allSettled([
-            fetchCampaignFilterOptions(requestJson, { tenantId: settingsTenantId }),
-            fetchCampaignGeographyOptions(requestJson, { tenantId: settingsTenantId }),
-            fetchTenantLabels(requestJson, settingsTenantId, { includeInactive: false }),
-            fetchTenantZoneRules(requestJson, { includeInactive: false, tenantId: settingsTenantId })
+            fetchCampaignFilterOptions(requestJsonRef.current, { tenantId: settingsTenantId }),
+            fetchCampaignGeographyOptions(requestJsonRef.current, { tenantId: settingsTenantId }),
+            fetchTenantLabels(requestJsonRef.current, settingsTenantId, { includeInactive: false }),
+            fetchTenantZoneRules(requestJsonRef.current, { includeInactive: false, tenantId: settingsTenantId })
         ]).then(([filterResult, geographyResult, tenantLabelsResult, tenantZonesResult]) => {
             if (cancelled || requestId !== audienceRequestRef.current) return;
 
@@ -1426,7 +1431,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         return () => {
             cancelled = true;
         };
-    }, [isCampaignsSection, panelMode, requestJson, settingsTenantId, tenantScopeLocked, wizardStep]);
+    }, [isCampaignsSection, panelMode, settingsTenantId, tenantScopeLocked, wizardStep]);
 
     useEffect(() => {
         if (inclusionOnlyAudienceItems.length === 0) return;
