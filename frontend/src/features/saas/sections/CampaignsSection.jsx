@@ -1417,11 +1417,6 @@ export default React.memo(function CampaignsSection(props = {}) {
                 assigned_users: Array.isArray(payload?.assigned_users) ? payload.assigned_users : [],
                 acquisition_sources: Array.isArray(payload?.acquisition_sources) ? payload.acquisition_sources : []
             });
-            console.log('[DIAG-1] setCampaignFilterOptions llamado con:', {
-                zone_labels: normalizedZoneLabels,
-                operational_labels: payload?.operational_labels,
-                source: filterPayload ? 'backend' : 'fallback'
-            });
             setCampaignGeographyOptions({
                 departments: Array.isArray(geographyPayload?.departments) ? geographyPayload.departments : [],
                 provinces: geographyPayload?.provinces && typeof geographyPayload.provinces === 'object' ? geographyPayload.provinces : {},
@@ -1908,27 +1903,12 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const renderAudienceFilterChips = (scope = 'inclusionFilters', title = 'Incluir') => {
         const filters = normalizeDeepFilters(form?.[scope] || {});
-        const zoneNameById = new Map(
-            (campaignFilterOptions?.zone_labels || []).map((z) => [
-                String(z.id || '').toUpperCase(),
-                z.name || z.id
-            ])
-        );
-        console.log('[DIAG-2] zoneNameById construido:', {
-            entries: Array.from(zoneNameById.entries()),
-            campaignFilterOptionsZoneLabels: campaignFilterOptions?.zone_labels
-        });
-        console.log('[DIAG-4] Chips de zona cabecera:', {
-            zoneFilterChipOptions,
-            campaignFilterOptionsZoneLabels: campaignFilterOptions?.zone_labels,
-            zoneNameByIdSize: zoneNameById?.size
-        });
         const chips = [];
         const addList = (keyName, options = [], labelKey = 'name', valueKey = 'id', normalize = toText) => {
             (Array.isArray(filters[keyName]) ? filters[keyName] : []).forEach((value) => {
                 const option = options.find((entry) => normalize(entry?.[valueKey] || entry?.key) === normalize(value));
                 const fallbackLabel = keyName === 'zone_label_ids'
-                    ? zoneNameById.get(String(value || '').toUpperCase()) || value
+                    ? resolveZoneDisplayName(value)
                     : value;
                 chips.push({ keyName, value, label: option?.[labelKey] || fallbackLabel, normalize });
             });
@@ -2009,12 +1989,6 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const renderAudienceChipGroup = (scope = 'inclusionFilters', keyName = '', label = '', options = [], normalize = toText, emptyText = '') => {
         const filters = normalizeDeepFilters(form?.[scope] || {});
-        const zoneNameById = new Map(
-            (campaignFilterOptions?.zone_labels || []).map((z) => [
-                String(z.id || '').toUpperCase(),
-                z.name || z.id
-            ])
-        );
         return (
             <div className="saas-admin-field">
                 <label>{label}</label>
@@ -2032,7 +2006,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 onClick={() => toggleDeepFilterValue(scope, keyName, optionValue, normalize)}
                             >
                                 {keyName === 'zone_label_ids'
-                                    ? zoneNameById.get(String(optionValue || '').toUpperCase()) || optionValue
+                                    ? resolveZoneDisplayName(optionValue, option.name)
                                     : option.name}
                             </button>
                         );
@@ -2045,33 +2019,15 @@ export default React.memo(function CampaignsSection(props = {}) {
     const renderAudienceCustomerRows = (items = [], limit = 50) => {
         const zoneById = zoneLabelDirectory;
         const operationalById = new Map(operationalFilterChipOptions.map((item) => [toUpper(item.id), item]));
-        const zoneNameById = new Map(
-            (campaignFilterOptions?.zone_labels || []).map((z) => [
-                String(z.id || '').toUpperCase(),
-                z.name || z.id
-            ])
-        );
-        console.log('[DIAG-2] zoneNameById construido:', {
-            entries: Array.from(zoneNameById.entries()),
-            campaignFilterOptionsZoneLabels: campaignFilterOptions?.zone_labels
-        });
         const commercialByKey = new Map(commercialFilterOptions.map((item) => [toLower(item.key), item]));
         return (
             <div className="saas-campaigns-audience-live-list">
                 {items.slice(0, limit).map((item) => {
-                    console.log('[DIAG-3] Renderizando zona de cliente:', {
-                        zoneLabelIds: item?.zoneLabelIds,
-                        zoneNameByIdSize: zoneNameById?.size,
-                        resolved: item?.zoneLabelIds?.map(id =>
-                            zoneNameById?.get(String(id).toUpperCase())
-                        )
-                    });
                     const zone = zoneById.get(toUpper(item.zoneLabelIds?.[0] || '')) || (
                         item.zoneLabelIds?.[0]
                             ? {
                                 id: toUpper(item.zoneLabelIds[0]),
-                                name: zoneNameById.get(String(item.zoneLabelIds[0] || '').toUpperCase())
-                                    || resolveZoneDisplayName(item.zoneLabelIds[0], toText(item.zoneLabelNames?.[0] || item.zoneLabels?.[0]?.name || ''))
+                                name: resolveZoneDisplayName(item.zoneLabelIds[0], toText(item.zoneLabelNames?.[0] || item.zoneLabels?.[0]?.name || ''))
                                     || item.zoneLabelIds[0],
                                 color: toText(item.zoneLabels?.[0]?.color || '#00A884') || '#00A884'
                             }
