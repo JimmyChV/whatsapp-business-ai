@@ -82,6 +82,8 @@ function sanitizeAssignment(source = {}) {
         tenantId: normalizeTenant(input.tenantId || input.tenant_id || DEFAULT_TENANT_ID),
         customerId: toText(input.customerId || input.customer_id || ''),
         labelId: normalizeId(input.labelId || input.label_id || ''),
+        labelName: toText(input.labelName || input.label_name || input.name || input.label || ''),
+        color: normalizeColor(input.color || input.labelColor || input.label_color || '', DEFAULT_COLOR),
         addressId: toText(input.addressId || input.address_id || '') || null,
         source: ['zone', 'commercial', 'manual'].includes(sourceType) ? sourceType : 'manual',
         createdAt: input.createdAt || input.created_at || new Date().toISOString()
@@ -371,10 +373,21 @@ async function listCustomerLabels(tenantId = DEFAULT_TENANT_ID, options = {}) {
 
     if (getStorageDriver() !== 'postgres') {
         const store = await readAssignmentsStore(cleanTenantId);
-        return store.items.filter((item) => {
+        const assignments = store.items.filter((item) => {
             if (customerId && item.customerId !== customerId) return false;
             if (source && item.source !== source) return false;
             return true;
+        });
+        if (source !== 'zone') return assignments;
+        const zoneRules = await listZoneRules(cleanTenantId, { includeInactive: true });
+        const zoneById = new Map(zoneRules.map((rule) => [normalizeRuleId(rule.ruleId || rule.rule_id || rule.id || ''), rule]));
+        return assignments.map((item) => {
+            const rule = zoneById.get(normalizeId(item.labelId || item.label_id || ''));
+            return sanitizeAssignment({
+                ...item,
+                labelName: rule?.name || item?.labelName || item?.label_name || '',
+                color: rule?.color || item?.color || ''
+            });
         });
     }
 
@@ -391,10 +404,20 @@ async function listCustomerLabels(tenantId = DEFAULT_TENANT_ID, options = {}) {
             where.push(`source = $${params.length}`);
         }
         const { rows } = await queryPostgres(
-            `SELECT tenant_id, customer_id, label_id, address_id, source, created_at
-               FROM tenant_customer_labels
-              WHERE ${where.join(' AND ')}
-              ORDER BY created_at DESC`,
+            `SELECT tcl.tenant_id,
+                    tcl.customer_id,
+                    tcl.label_id,
+                    tcl.address_id,
+                    tcl.source,
+                    tcl.created_at,
+                    tzr.name AS label_name,
+                    tzr.color AS label_color
+               FROM tenant_customer_labels tcl
+               LEFT JOIN tenant_zone_rules tzr
+                 ON tzr.tenant_id = tcl.tenant_id
+                AND tzr.rule_id = tcl.label_id
+              WHERE ${where.map((entry) => entry.replace(/\btenant_id\b/g, 'tcl.tenant_id').replace(/\bcustomer_id\b/g, 'tcl.customer_id').replace(/\bsource\b/g, 'tcl.source')).join(' AND ')}
+              ORDER BY tcl.created_at DESC`,
             params
         );
         return ensureArray(rows).map(sanitizeAssignment);
@@ -406,12 +429,109 @@ async function listCustomerLabels(tenantId = DEFAULT_TENANT_ID, options = {}) {
 
 async function recalculateZonesForTenant(tenantId = DEFAULT_TENANT_ID) {
     const cleanTenantId = normalizeTenant(tenantId);
-    const customerService = require('./customers.service');
     const customerAddressesService = require('./customer-addresses.service');
-    const result = await customerService.listCustomers(cleanTenantId, { limit: 100000, offset: 0, includeInactive: true });
-    const customers = ensureArray(result?.items);
     let scanned = 0;
     let assigned = 0;
+
+    if (getStorageDriver() === 'postgres') {
+        await ensurePostgresSchema();
+        const rules = await listZoneRules(cleanTenantId, { includeInactive: false });
+        const countResult = await queryPostgres(
+            `SELECT COUNT(DISTINCT customer_id)::int AS total
+               FROM tenant_customer_addresses
+              WHERE tenant_id = $1`,
+            [cleanTenantId]
+        );
+        const totalCustomers = Number(countResult?.rows?.[0]?.total || 0) || 0;
+        const addressesResult = await queryPostgres(
+            `SELECT DISTINCT ON (customer_id)
+                tenant_id,
+                customer_id,
+                address_id,
+                district_id,
+                district_name,
+                province_name,
+                department_name,
+                is_primary,
+                updated_at
+             FROM tenant_customer_addresses
+             WHERE tenant_id = $1
+             ORDER BY customer_id, is_primary DESC, updated_at DESC`,
+            [cleanTenantId]
+        );
+        const primaryAddresses = ensureArray(addressesResult?.rows);
+
+        for (const address of primaryAddresses) {
+            const customerId = toText(address?.customer_id || '');
+            const addressId = toText(address?.address_id || '');
+            if (!customerId || !addressId) continue;
+            const enriched = customerAddressesService.enrichAddressGeo({
+                tenantId: cleanTenantId,
+                customerId,
+                addressId,
+                districtId: address?.district_id,
+                districtName: address?.district_name,
+                provinceName: address?.province_name,
+                departmentName: address?.department_name,
+                isPrimary: address?.is_primary === true
+            });
+            scanned += 1;
+
+            const nextDistrictName = toText(enriched?.districtName || enriched?.district_name) || null;
+            const nextProvinceName = toText(enriched?.provinceName || enriched?.province_name) || null;
+            const nextDepartmentName = toText(enriched?.departmentName || enriched?.department_name) || null;
+            const prevDistrictName = toText(address?.district_name) || null;
+            const prevProvinceName = toText(address?.province_name) || null;
+            const prevDepartmentName = toText(address?.department_name) || null;
+
+            if (
+                nextDistrictName !== prevDistrictName
+                || nextProvinceName !== prevProvinceName
+                || nextDepartmentName !== prevDepartmentName
+            ) {
+                await queryPostgres(
+                    `UPDATE tenant_customer_addresses
+                        SET district_name = $3,
+                            province_name = $4,
+                            department_name = $5,
+                            updated_at = NOW()
+                      WHERE tenant_id = $1
+                        AND address_id = $2`,
+                    [cleanTenantId, addressId, nextDistrictName, nextProvinceName, nextDepartmentName]
+                );
+            }
+
+            const rule = resolveZoneFromAddress(enriched, rules);
+            const assignment = await replaceCustomerZoneLabel(cleanTenantId, {
+                customerId,
+                addressId,
+                rule
+            });
+            if (assignment?.labelId) assigned += 1;
+        }
+
+        return { scanned, assigned, totalCustomers };
+    }
+
+    const customerService = require('./customers.service');
+    const customers = [];
+    let offset = 0;
+    let totalCustomers = 0;
+
+    while (true) {
+        const page = await customerService.listCustomers(cleanTenantId, {
+            limit: 500,
+            offset,
+            includeInactive: true
+        });
+        const pageItems = ensureArray(page?.items);
+        totalCustomers = Number(page?.total || totalCustomers || 0);
+        if (pageItems.length === 0) break;
+        customers.push(...pageItems);
+        offset += pageItems.length;
+        if (pageItems.length < 500) break;
+        if (totalCustomers > 0 && customers.length >= totalCustomers) break;
+    }
 
     for (const customer of customers) {
         const customerId = toText(customer?.customerId || '');
@@ -420,11 +540,12 @@ async function recalculateZonesForTenant(tenantId = DEFAULT_TENANT_ID) {
         const primary = ensureArray(addresses).find((item) => item?.isPrimary === true) || ensureArray(addresses)[0] || null;
         if (!primary) continue;
         scanned += 1;
-        const assignment = await applyZoneForAddress(cleanTenantId, primary);
+        const normalizedPrimary = await customerAddressesService.upsertAddress(cleanTenantId, primary);
+        const assignment = await applyZoneForAddress(cleanTenantId, normalizedPrimary || primary);
         if (assignment?.labelId) assigned += 1;
     }
 
-    return { scanned, assigned, totalCustomers: customers.length };
+    return { scanned, assigned, totalCustomers: totalCustomers || customers.length };
 }
 
 module.exports = {
