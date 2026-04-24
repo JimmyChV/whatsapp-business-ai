@@ -1326,12 +1326,12 @@ export default React.memo(function CampaignsSection(props = {}) {
     ]);
 
     useEffect(() => {
-        if (!isCampaignsSection || tenantScopeLocked || !settingsTenantId || typeof requestJson !== 'function') {
+        if (!isCampaignsSection || tenantScopeLocked || !settingsTenantId || typeof requestJsonRef.current !== 'function') {
             setZoneRules([]);
             return undefined;
         }
         let cancelled = false;
-        void fetchTenantZoneRules(requestJson, { includeInactive: false, tenantId: settingsTenantId })
+        void fetchTenantZoneRules(requestJsonRef.current, { includeInactive: false, tenantId: settingsTenantId })
             .then((payload) => {
                 if (!cancelled) setZoneRules(Array.isArray(payload?.items) ? payload.items : []);
             })
@@ -1341,7 +1341,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         return () => {
             cancelled = true;
         };
-    }, [isCampaignsSection, requestJson, settingsTenantId, tenantScopeLocked]);
+    }, [isCampaignsSection, settingsTenantId, tenantScopeLocked]);
 
     useEffect(() => {
         const shouldLoadAudienceSelectors = isCampaignsSection
