@@ -1426,7 +1426,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         return () => {
             cancelled = true;
         };
-    }, [availableLabels, isCampaignsSection, panelMode, requestJson, settingsTenantId, tenantScopeLocked, wizardStep]);
+    }, [isCampaignsSection, panelMode, requestJson, settingsTenantId, tenantScopeLocked, wizardStep]);
 
     useEffect(() => {
         if (inclusionOnlyAudienceItems.length === 0) return;
