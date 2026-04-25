@@ -2713,20 +2713,27 @@ export default React.memo(function CampaignsSection(props = {}) {
         case 5:
             return (
                 <SaasDetailPanelSection title="Paso 5 - Envio">
-                    <div className="saas-admin-related-block">
-                        <div className="saas-campaigns-blocks-header">
-                            <label className="saas-campaigns-block-toggle">
-                                <input
-                                    type="checkbox"
-                                    checked={Boolean(form.blocksEnabled)}
-                                    onChange={(event) => setForm((prev) => ({ ...prev, blocksEnabled: event.target.checked }))}
-                                />
-                                <span>Enviar en bloques</span>
-                            </label>
-                            <span className="saas-campaigns-estimation-help">Activalo para dividir la campana entre 2 y 10 bloques.</span>
+                    <div className="saas-campaigns-delivery-step">
+                        <div className="saas-campaigns-delivery-step__cards">
+                            <button
+                                type="button"
+                                className={`saas-campaigns-delivery-card ${form.blocksEnabled ? '' : 'is-selected'}`.trim()}
+                                onClick={() => setForm((prev) => ({ ...prev, blocksEnabled: false }))}
+                            >
+                                <strong>Envio unico</strong>
+                                <span>Un solo despacho con todos los clientes de la audiencia final.</span>
+                            </button>
+                            <button
+                                type="button"
+                                className={`saas-campaigns-delivery-card ${form.blocksEnabled ? 'is-selected' : ''}`.trim()}
+                                onClick={() => setForm((prev) => ({ ...prev, blocksEnabled: true, blockCount: Math.max(2, Math.min(10, Math.floor(toNumber(prev.blockCount, 2)))) }))}
+                            >
+                                <strong>Envio por bloques</strong>
+                                <span>Divide la campana en grupos controlados para ejecutar por tandas.</span>
+                            </button>
                         </div>
                         {form.blocksEnabled ? (
-                            <div className="saas-campaigns-blocks-config">
+                            <div className="saas-campaigns-delivery-step__config">
                                 <div className="saas-admin-field">
                                     <label>Numero de bloques</label>
                                     <input
@@ -2740,10 +2747,22 @@ export default React.memo(function CampaignsSection(props = {}) {
                                         }}
                                     />
                                 </div>
+                                <div className="saas-campaigns-delivery-step__preview">
+                                    {(blockPreview?.blocks || []).map((block) => (
+                                        <span key={`wizard_block_${block.blockIndex}`} className="saas-campaigns-review-chip" style={{ '--saas-chip-color': '#00A884' }}>
+                                            {`Bloque ${block.blockIndex + 1}: ${block.size}`}
+                                        </span>
+                                    ))}
+                                </div>
                             </div>
                         ) : (
-                            <span className="saas-campaigns-estimation-help">La campana se enviara en una sola ejecucion.</span>
+                            <div className="saas-campaigns-delivery-step__single-note">
+                                Todos los {reviewAudienceItems.length || exclusionSummary.finalRecipients || estimateNumbers.eligible || 0} clientes se enviaran en una sola ejecucion.
+                            </div>
                         )}
+                        <div className="saas-campaigns-delivery-step__summary">
+                            {`Se enviaran ${reviewAudienceItems.length || exclusionSummary.finalRecipients || estimateNumbers.eligible || 0} mensajes via ${selectedModule?.label || 'modulo seleccionado'} con ${selectedTemplate?.templateName || form.templateName || 'template elegido'}.`}
+                        </div>
                     </div>
                 </SaasDetailPanelSection>
             );
