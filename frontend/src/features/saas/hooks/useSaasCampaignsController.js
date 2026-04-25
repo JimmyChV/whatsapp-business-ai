@@ -11,6 +11,7 @@ import {
     listCampaigns as listCampaignsApi,
     pauseCampaign as pauseCampaignApi,
     resumeCampaign as resumeCampaignApi,
+    sendCampaignBlock as sendCampaignBlockApi,
     startCampaign as startCampaignApi,
     updateCampaign as updateCampaignApi
 } from '../services/campaigns.service';
@@ -358,6 +359,28 @@ export default function useSaasCampaignsController({
         }
     }, [patchCampaignState, requestJson, selectedCampaignId]);
 
+    const sendCampaignBlock = useCallback(async (campaignId = '', blockIndex = 0) => {
+        if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
+        const cleanCampaignId = toText(campaignId || selectedCampaignId);
+        const cleanBlockIndex = Math.max(0, Math.floor(Number(blockIndex)));
+        if (!cleanCampaignId) throw new Error('campaignId requerido.');
+        if (!Number.isFinite(cleanBlockIndex)) throw new Error('blockIndex requerido.');
+        setLoadingAction(true);
+        setError('');
+        try {
+            const response = await sendCampaignBlockApi(requestJson, { campaignId: cleanCampaignId, blockIndex: cleanBlockIndex }, { tenantId });
+            const campaign = response?.campaign && typeof response.campaign === 'object' ? response.campaign : null;
+            if (campaign) patchCampaignState(campaign);
+            return response;
+        } catch (err) {
+            const message = String(err?.message || 'No se pudo iniciar el bloque de campaña.');
+            setError(message);
+            throw err;
+        } finally {
+            setLoadingAction(false);
+        }
+    }, [patchCampaignState, requestJson, selectedCampaignId]);
+
     const pauseCampaign = useCallback(async (campaignId = '') => {
         if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');
         const cleanCampaignId = toText(campaignId || selectedCampaignId);
@@ -594,6 +617,7 @@ export default function useSaasCampaignsController({
         createCampaign,
         updateCampaign,
         startCampaign,
+        sendCampaignBlock,
         pauseCampaign,
         resumeCampaign,
         cancelCampaign,

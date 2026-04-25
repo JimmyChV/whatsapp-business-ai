@@ -2093,6 +2093,29 @@ async function refreshCampaignBlockStatuses(tenantId = DEFAULT_TENANT_ID, campai
     return updated;
 }
 
+async function hydrateCampaignRuntimeState(tenantId = DEFAULT_TENANT_ID, campaignOrId = null, { markCompleted = true } = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const campaignId = toText(
+        typeof campaignOrId === 'string'
+            ? campaignOrId
+            : campaignOrId?.campaignId
+    );
+    if (!campaignId) return null;
+
+    const baseCampaign = campaignOrId && typeof campaignOrId === 'object'
+        ? campaignOrId
+        : await getCampaignById(cleanTenantId, campaignId);
+    if (!baseCampaign) return null;
+
+    const refreshedBeforeStats = await refreshCampaignBlockStatuses(cleanTenantId, baseCampaign);
+    const recomputedCampaign = await recomputeCampaignStats(cleanTenantId, {
+        campaignId,
+        markCompleted
+    });
+    const finalCampaign = await refreshCampaignBlockStatuses(cleanTenantId, recomputedCampaign || refreshedBeforeStats || baseCampaign);
+    return finalCampaign || recomputedCampaign || refreshedBeforeStats || baseCampaign;
+}
+
 async function getRecipientByIdempotencyKey(tenantId = DEFAULT_TENANT_ID, { idempotencyKey = '' } = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
     const cleanIdempotencyKey = toText(idempotencyKey);
@@ -2750,6 +2773,7 @@ async function resumeCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
     if (!campaign) throw new Error('Campana no encontrada.');
     if (campaign.status === 'cancelled') throw new Error('No se puede reanudar una campana cancelada.');
     if (campaign.status === 'completed') throw new Error('No se puede reanudar una campana completada.');
+    const blocksConfig = normalizeBlocksConfig(campaign.blocksConfigJson);
 
     const updated = await persistCampaignRecord(cleanTenantId, {
         ...campaign,
@@ -2759,7 +2783,9 @@ async function resumeCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         updatedAt: nowIso()
     });
 
-    await enqueuePendingRecipientsForCampaign(cleanTenantId, updated);
+    if (!blocksConfig) {
+        await enqueuePendingRecipientsForCampaign(cleanTenantId, updated);
+    }
     await recordCampaignEvent(cleanTenantId, {
         campaignId: updated.campaignId,
         moduleId: updated.moduleId,
@@ -2771,20 +2797,23 @@ async function resumeCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         payloadJson: {}
     });
 
+    const finalCampaign = await hydrateCampaignRuntimeState(cleanTenantId, updated, {
+        markCompleted: true
+    });
     emitCampaignUpdated({
         tenantId: cleanTenantId,
-        type: 'status',
-        campaignId: updated.campaignId,
-        campaign: updated,
+        type: blocksConfig ? 'blocks' : 'status',
+        campaignId: finalCampaign?.campaignId || updated.campaignId,
+        campaign: finalCampaign || updated,
         previousCampaign: campaign,
         previousStatus: campaign.status,
-        status: updated.status,
+        status: (finalCampaign || updated).status,
         reason: 'campaign_resumed',
         source: 'campaigns.resumeCampaign',
         generatedAt: nowIso()
     });
 
-    return updated;
+    return finalCampaign || updated;
 }
 
 async function cancelCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
@@ -2880,6 +2909,7 @@ module.exports = {
     recordCampaignEvent,
     listCampaignEvents,
     recomputeCampaignStats,
+    hydrateCampaignRuntimeState,
     applyQueueJobUpdate,
     onCampaignUpdated
 };

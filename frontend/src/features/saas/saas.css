@@ -7001,35 +7001,44 @@
 }
 
 .saas-campaigns-wizard-shell {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 14px;
     min-height: 100%;
-    height: 100%;
+    height: auto;
+    overflow: visible;
 }
 
 .saas-campaigns-wizard-progress {
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 10px;
+    align-items: stretch;
+    gap: 8px;
     position: sticky;
     top: 0;
-    z-index: 4;
-    padding: 2px 0 8px;
-    background: linear-gradient(180deg, rgba(5, 18, 27, 0.98), rgba(5, 18, 27, 0.9));
+    z-index: 12;
+    padding: 2px 0 12px;
+    margin-bottom: 0;
+    background: linear-gradient(180deg, rgba(5, 18, 27, 0.99), rgba(5, 18, 27, 0.97) 82%, rgba(5, 18, 27, 0));
+    box-shadow: 0 10px 14px -14px rgba(0, 0, 0, 0.85);
+    overflow: visible;
+    isolation: isolate;
+    flex: 0 0 auto;
 }
 
 .saas-campaigns-wizard-progress__item {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 4px;
     border: 1px solid rgba(110, 193, 228, 0.2);
     border-radius: 12px;
     background: rgba(9, 28, 40, 0.88);
     color: #8cb6cf;
     min-width: 0;
-    min-height: 50px;
+    min-height: 44px;
+    text-align: center;
 }
 
 .saas-campaigns-wizard-progress__item span {
@@ -7046,7 +7055,7 @@
 }
 
 .saas-campaigns-wizard-progress__item strong {
-    font-size: 0.74rem;
+    font-size: 0.58rem;
     letter-spacing: 0.03em;
     text-transform: uppercase;
     white-space: nowrap;
@@ -7069,6 +7078,8 @@
 .saas-campaigns-wizard-content {
     min-height: 0;
     flex: 1 1 auto;
+    overflow: visible;
+    padding-right: 0;
 }
 
 .saas-campaigns-wizard-step {
@@ -7253,7 +7264,7 @@
 
 .saas-campaigns-audience-step {
     display: grid;
-    grid-template-columns: minmax(250px, 280px) minmax(0, 1fr);
+    grid-template-columns: 210px minmax(0, 1fr);
     gap: 18px;
     min-height: 0;
     align-items: start;
@@ -7268,7 +7279,8 @@
     border: 1px solid rgba(110, 193, 228, 0.18);
     border-radius: 16px;
     background: rgba(7, 23, 33, 0.78);
-    padding: 14px;
+    padding: 12px;
+    align-self: start;
 }
 
 .saas-campaigns-criteria-panel {
@@ -7337,8 +7349,8 @@
 }
 
 .saas-campaigns-audience-step__results {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
     min-height: 0;
     border: 1px solid rgba(110, 193, 228, 0.18);
     border-radius: 16px;
@@ -7347,11 +7359,11 @@
 }
 
 .saas-campaigns-audience-step__results-header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
-    gap: 12px;
-    padding: 18px 18px 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 16px 18px 12px;
     border-bottom: 1px solid rgba(125, 174, 195, 0.14);
     background: linear-gradient(180deg, rgba(6, 19, 28, 0.96), rgba(6, 19, 28, 0.9));
 }
@@ -7375,11 +7387,12 @@
 }
 
 .saas-campaigns-audience-step__results-summary {
-    display: grid;
-    gap: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
     min-width: 0;
     width: 100%;
-    overflow-wrap: anywhere;
 }
 
 .saas-campaigns-audience-step__results-note {
@@ -7397,14 +7410,15 @@
     gap: 14px;
     align-content: start;
     min-height: 0;
-    padding: 16px 18px 0;
+    padding: 14px 18px;
+    overflow: visible;
 }
 
 .saas-campaigns-audience-step__filters {
     display: grid;
     gap: 12px;
     align-content: start;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
 }
 
 .saas-campaigns-audience-step__filters > .saas-campaigns-audience-control-card,
@@ -7446,6 +7460,12 @@
 .saas-campaigns-audience-select option {
     background: #07141c;
     color: #eef8ff;
+    min-height: 42px;
+}
+
+.saas-campaigns-audience-multiselect {
+    min-height: 104px;
+    max-height: 140px;
 }
 
 .saas-campaigns-audience-multiselect:focus,
@@ -7615,65 +7635,110 @@
     min-height: 0;
     overflow: auto;
     display: grid;
-    gap: 10px;
+    gap: 0;
     padding-right: 4px;
 }
 
-.saas-campaigns-review-customer {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 12px;
-    align-items: center;
-    padding: 14px 16px;
-    border: 1px solid rgba(123, 170, 196, 0.18);
+.saas-campaigns-review-table {
+    border: 1px solid rgba(123, 170, 196, 0.14);
     border-radius: 14px;
     background: rgba(7, 24, 35, 0.76);
+    overflow: auto;
 }
 
-.saas-campaigns-review-customer__main {
+.saas-campaigns-review-table__head,
+.saas-campaigns-review-row {
     display: grid;
-    gap: 4px;
+    grid-template-columns: minmax(180px, 1.4fr) minmax(120px, 0.85fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(96px, 0.6fr);
+    gap: 10px;
+    align-items: center;
+    padding: 8px 12px;
 }
 
-.saas-campaigns-review-customer__main strong {
-    color: #effbff;
-    font-size: 0.95rem;
-}
-
-.saas-campaigns-review-customer__main span {
+.saas-campaigns-review-table__head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: rgba(6, 19, 28, 0.96);
+    border-bottom: 1px solid rgba(123, 170, 196, 0.14);
     color: #8fb9cf;
-    font-size: 0.82rem;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
-.saas-campaigns-review-customer__meta {
+.saas-campaigns-review-row {
+    border-bottom: 1px solid rgba(123, 170, 196, 0.08);
+}
+
+.saas-campaigns-review-row:last-child {
+    border-bottom: 0;
+}
+
+.saas-campaigns-review-row.is-excluded {
+    opacity: 0.72;
+    background: rgba(255, 92, 92, 0.04);
+}
+
+.saas-campaigns-review-row__customer {
+    display: grid;
+    gap: 3px;
+}
+
+.saas-campaigns-review-row__customer strong {
+    color: #effbff;
+    font-size: 0.84rem;
+}
+
+.saas-campaigns-review-row__customer small,
+.saas-campaigns-review-row__phone,
+.saas-campaigns-review-row__empty {
+    color: #8fb9cf;
+    font-size: 0.74rem;
+}
+
+.saas-campaigns-review-row__cell {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    justify-content: flex-end;
+    align-items: center;
 }
 
 .saas-campaigns-review-chip {
     display: inline-flex;
     align-items: center;
-    padding: 6px 12px;
+    padding: 5px 10px;
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--saas-chip-color) 58%, rgba(255, 255, 255, 0.12));
     background: color-mix(in srgb, var(--saas-chip-color) 18%, rgba(5, 18, 27, 0.92));
     color: #eefbff;
-    font-size: 0.78rem;
+    font-size: 0.72rem;
     font-weight: 700;
     white-space: nowrap;
 }
 
-.saas-campaigns-review-customer__exclude {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 92, 92, 0.42);
+.saas-campaigns-review-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border: 1px solid rgba(123, 170, 196, 0.18);
+    border-radius: 999px;
+    color: #dff4ff;
+    background: rgba(8, 24, 35, 0.72);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.saas-campaigns-review-toggle.is-active {
+    border-color: rgba(255, 92, 92, 0.4);
     background: rgba(255, 92, 92, 0.12);
-    color: #ffd6d6;
-    font-size: 1.25rem;
-    line-height: 1;
+}
+
+.saas-campaigns-review-toggle input {
+    margin: 0;
 }
 
 .saas-campaigns-review-step__footer {
@@ -7714,6 +7779,13 @@
     border-radius: 16px;
     background: rgba(8, 24, 35, 0.78);
     color: #eefbff;
+    transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+    cursor: pointer;
+}
+
+.saas-campaigns-delivery-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(110, 193, 228, 0.28);
 }
 
 .saas-campaigns-delivery-card strong {
@@ -7741,6 +7813,45 @@
     background: rgba(7, 23, 33, 0.78);
 }
 
+.saas-campaigns-delivery-step__slider {
+    display: grid;
+    gap: 10px;
+}
+
+.saas-campaigns-delivery-step__slider-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.saas-campaigns-delivery-step__slider-header strong {
+    color: #f4fdff;
+    font-size: 1.1rem;
+}
+
+.saas-campaigns-delivery-step__slider input[type="range"] {
+    width: 100%;
+    accent-color: #00a884;
+}
+
+.saas-campaigns-delivery-step__slider-scale {
+    display: grid;
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.saas-campaigns-delivery-step__slider-scale span {
+    text-align: center;
+    color: #8fb9cf;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.saas-campaigns-delivery-step__slider-scale span.is-active {
+    color: #f4fdff;
+}
+
 .saas-campaigns-delivery-step__preview {
     display: flex;
     flex-wrap: wrap;
@@ -7758,11 +7869,106 @@
     line-height: 1.5;
 }
 
+.saas-campaigns-summary-step {
+    display: grid;
+    gap: 16px;
+    padding-bottom: 8px;
+}
+
+.saas-campaigns-summary-section {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid rgba(123, 170, 196, 0.16);
+    border-radius: 16px;
+    background: rgba(7, 23, 33, 0.78);
+}
+
+.saas-campaigns-summary-section > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.saas-campaigns-summary-section > header h4 {
+    margin: 0;
+    color: #f4fdff;
+    font-size: 1rem;
+}
+
+.saas-campaigns-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.saas-campaigns-summary-grid div,
+.saas-campaigns-summary-metric {
+    display: grid;
+    gap: 4px;
+}
+
+.saas-campaigns-summary-grid span,
+.saas-campaigns-summary-metric span {
+    color: #8fb9cf;
+    font-size: 0.76rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.saas-campaigns-summary-grid strong,
+.saas-campaigns-summary-metric strong {
+    color: #effbff;
+}
+
+.saas-campaigns-summary-audience {
+    display: grid;
+    gap: 14px;
+}
+
+.saas-campaigns-summary-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.saas-campaigns-summary-metric--highlight {
+    padding: 14px;
+    border: 1px solid rgba(0, 168, 132, 0.26);
+    border-radius: 14px;
+    background: rgba(0, 168, 132, 0.08);
+}
+
+.saas-campaigns-summary-metric--highlight strong {
+    font-size: 1.6rem;
+}
+
+.saas-campaigns-summary-metric--highlight small {
+    color: #9cc0d4;
+    font-size: 0.82rem;
+}
+
+.saas-campaigns-summary-delivery {
+    display: grid;
+    gap: 12px;
+}
+
+.saas-campaigns-summary-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    position: sticky;
+    bottom: 0;
+    padding: 14px 0 4px;
+    background: linear-gradient(180deg, rgba(7, 23, 33, 0), rgba(7, 23, 33, 0.98) 36%);
+}
+
 @media (max-width: 980px) {
     .saas-campaigns-wizard-progress {
-        grid-template-columns: repeat(6, minmax(118px, 1fr));
-        gap: 8px;
-        overflow-x: auto;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
         padding-bottom: 10px;
     }
 
@@ -7778,15 +7984,13 @@
         grid-template-columns: minmax(0, 1fr);
     }
 
-    .saas-campaigns-audience-step__results-header {
-        grid-template-columns: 1fr;
-    }
-
     .saas-campaigns-audience-step__filters {
         grid-template-columns: minmax(0, 1fr);
     }
 
-    .saas-campaigns-review-step__header {
+    .saas-campaigns-review-step__header,
+    .saas-campaigns-summary-grid,
+    .saas-campaigns-summary-metrics {
         grid-template-columns: minmax(0, 1fr);
     }
 
@@ -7802,6 +8006,11 @@
 
 @media (max-width: 760px) {
     .saas-campaigns-wizard-progress {
-        grid-template-columns: repeat(3, minmax(140px, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        padding-bottom: 8px;
+    }
+
+    .saas-campaigns-wizard-progress__item {
+        min-width: 0;
     }
 }

@@ -138,12 +138,12 @@ const CAMPAIGN_TABLE_COLUMNS = [
 
 const CAMPAIGN_DEFAULT_COLUMN_KEYS = ['campaignName', 'category', 'language', 'status', 'moduleId', 'updatedAt'];
 const CAMPAIGN_WIZARD_STEPS = [
-    { key: 'campaign', label: 'Datos de campana' },
-    { key: 'inclusion', label: 'Inclusion' },
-    { key: 'exclusion', label: 'Exclusion' },
-    { key: 'review', label: 'Revision manual' },
-    { key: 'delivery', label: 'Envio' },
-    { key: 'summary', label: 'Resumen' }
+    { key: 'campaign', label: 'Datos de campana', shortLabel: 'Datos' },
+    { key: 'inclusion', label: 'Inclusion', shortLabel: 'Inclusion' },
+    { key: 'exclusion', label: 'Exclusion', shortLabel: 'Exclusion' },
+    { key: 'review', label: 'Revision manual', shortLabel: 'Revision' },
+    { key: 'delivery', label: 'Envio', shortLabel: 'Envio' },
+    { key: 'summary', label: 'Resumen', shortLabel: 'Resumen' }
 ];
 
 function statusMeta(status = '') {
@@ -641,6 +641,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const estimateRequestRef = useRef({ base: 0, full: 0, inclusion: 0 });
     const requestJsonRef = useRef(requestJson);
     const reviewAudienceRef = useRef([]);
+    const previousWizardStepRef = useRef(1);
 
     const {
         campaigns = [],
@@ -656,6 +657,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         createCampaign,
         updateCampaign,
         startCampaign,
+        sendCampaignBlock: sendCampaignBlockAction,
         pauseCampaign,
         resumeCampaign,
         cancelCampaign,
@@ -1111,12 +1113,9 @@ export default React.memo(function CampaignsSection(props = {}) {
         return { eligible, excluded, finalRecipients };
     }, [estimatedAudienceItems.length, inclusionOnlyAudienceItems.length]);
     const currentFinalAudienceItems = useMemo(() => {
-        if (estimatedAudienceItems.length > 0) return estimatedAudienceItems;
-        return inclusionOnlyAudienceItems.filter((item) => !excludedCustomerIdSet.has(item.customerId));
+        const source = estimatedAudienceItems.length > 0 ? estimatedAudienceItems : inclusionOnlyAudienceItems;
+        return source.filter((item) => !excludedCustomerIdSet.has(item.customerId));
     }, [estimatedAudienceItems, excludedCustomerIdSet, inclusionOnlyAudienceItems]);
-    const blockPreview = useMemo(() => (
-        buildBlocksConfigFromForm(form, exclusionSummary.finalRecipients || estimateNumbers.eligible || 0)
-    ), [estimateNumbers.eligible, exclusionSummary.finalRecipients, form]);
     const formBaseline = useMemo(() => {
         if (panelMode === 'edit' && selectedCampaign) {
             return serializeCampaignForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions));
@@ -1191,6 +1190,29 @@ export default React.memo(function CampaignsSection(props = {}) {
         const term = toLower(reviewSearch);
         return reviewAudienceItems.filter((item) => !term || `${toLower(item.contactName)} ${toLower(item.phone)}`.includes(term));
     }, [reviewAudienceItems, reviewSearch]);
+    const reviewExcludedCustomerIdSet = useMemo(() => (
+        new Set(
+            reviewAudienceItems
+                .map((item) => item.customerId)
+                .filter((customerId) => excludedCustomerIdSet.has(customerId))
+        )
+    ), [excludedCustomerIdSet, reviewAudienceItems]);
+    const reviewIncludedCount = useMemo(() => (
+        Math.max(0, reviewAudienceItems.length - reviewExcludedCustomerIdSet.size)
+    ), [reviewAudienceItems.length, reviewExcludedCustomerIdSet]);
+    const finalAudienceCount = useMemo(() => {
+        if (reviewAudienceItems.length > 0) return reviewIncludedCount;
+        return currentFinalAudienceItems.length || exclusionSummary.finalRecipients || estimateNumbers.eligible || 0;
+    }, [
+        currentFinalAudienceItems.length,
+        estimateNumbers.eligible,
+        exclusionSummary.finalRecipients,
+        reviewAudienceItems.length,
+        reviewIncludedCount
+    ]);
+    const blockPreview = useMemo(() => (
+        buildBlocksConfigFromForm(form, finalAudienceCount)
+    ), [finalAudienceCount, form]);
     const exclusionAudienceOptions = useMemo(() => {
         const fallbackOptInOptions = [
             { id: 'opted_in', name: 'Con opt-in', color: '#00A884' },
@@ -1295,15 +1317,39 @@ export default React.memo(function CampaignsSection(props = {}) {
         return uniqueTextItems(items.flatMap((item) => item.districts.length > 0 ? item.districts : [item.districtName]));
     }, [form.exclusionFilters.departments, form.exclusionFilters.provinces, inclusionOnlyAudienceItems]);
     const selectedStatusKey = toLower(selectedCampaign?.status);
-    const showsEstimatedAudienceInDetail = panelMode === 'detail' && ['draft', 'scheduled'].includes(selectedStatusKey);
-    const detailAudienceTitle = showsEstimatedAudienceInDetail
-        ? `Audiencia estimada (${estimateNumbers.eligible || estimatedAudienceItems.length})`
-        : `Destinatarios (${recipients.length})`;
+    const detailUsesFinalAudience = panelMode === 'detail' && ['draft', 'scheduled'].includes(selectedStatusKey);
     const selectedBlocksConfig = useMemo(() => normalizeBlocksConfig(selectedCampaign?.blocksConfigJson), [selectedCampaign]);
     const selectedBlocks = selectedBlocksConfig?.blocks || [];
     const hasSendingBlock = selectedBlocks.some((block) => block.status === 'sending');
     const completedBlocksCount = selectedBlocks.filter((block) => block.status === 'completed').length;
     const blocksProgress = selectedBlocks.length > 0 ? Math.round((completedBlocksCount / selectedBlocks.length) * 100) : 0;
+    const frozenRecipientCustomerIds = useMemo(() => (
+        new Set(
+            (Array.isArray(recipients) ? recipients : [])
+                .map((recipient) => toText(recipient?.customerId))
+                .filter(Boolean)
+        )
+    ), [recipients]);
+    const detailFinalAudienceItems = useMemo(() => {
+        if (selectedBlocks.length === 0 || frozenRecipientCustomerIds.size === 0) return currentFinalAudienceItems;
+        const filtered = currentFinalAudienceItems.filter((item) => frozenRecipientCustomerIds.has(item.customerId));
+        if (filtered.length > 0) return filtered;
+        return (Array.isArray(recipients) ? recipients : [])
+            .map((recipient) => ({
+                customerId: toText(recipient?.customerId),
+                contactName: toText(recipient?.contactName || recipient?.customerName || recipient?.customerId) || 'Sin nombre',
+                phone: toText(recipient?.phone) || '-',
+                commercialStatus: '',
+                operationalLabelIds: [],
+                zoneLabelIds: [],
+                zoneLabelNames: [],
+                zoneLabels: []
+            }))
+            .filter((item) => item.customerId);
+    }, [currentFinalAudienceItems, frozenRecipientCustomerIds, recipients, selectedBlocks.length]);
+    const detailAudienceTitle = detailUsesFinalAudience
+        ? `Audiencia final (${detailFinalAudienceItems.length})`
+        : `Destinatarios (${recipients.length})`;
 
     const runSafe = useCallback(async (action, fallbackMessage) => {
         try {
@@ -1773,49 +1819,72 @@ export default React.memo(function CampaignsSection(props = {}) {
     ]);
 
     useEffect(() => {
-        if ((panelMode !== 'create' && panelMode !== 'edit') || wizardStep !== 4) return;
+        const previousStep = previousWizardStepRef.current;
+        previousWizardStepRef.current = wizardStep;
+        if (panelMode !== 'create' && panelMode !== 'edit') return;
+        if (wizardStep !== 4 || previousStep === 4) return;
         const snapshot = currentFinalAudienceItems.map((item) => ({ ...item }));
         reviewAudienceRef.current = snapshot;
         setReviewAudienceItems(snapshot);
         setReviewSearch('');
     }, [currentFinalAudienceItems, panelMode, wizardStep]);
 
-    const runDetailEstimate = useCallback(async () => {
-        if (typeof estimateReachAction !== 'function') return;
-        if (!selectedCampaign) throw new Error('No hay campana seleccionada.');
-        const detailForm = mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions);
-        const audienceFiltersJson = buildAudienceFiltersFromForm(detailForm, labelOptions, zoneOptions);
-        const payload = {
-            scopeModuleId: toLower(detailForm.moduleId),
-            moduleId: toText(detailForm.moduleId),
-            templateName: toText(detailForm.templateName),
-            templateLanguage: toLower(detailForm.templateLanguage || 'es'),
-            filters: audienceFiltersJson,
-            audienceSelectionJson: buildAudienceSelectionFromForm(detailForm, getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds)
-        };
-        if (!payload.moduleId) throw new Error('La campana no tiene modulo configurado.');
-        if (!payload.templateName) throw new Error('La campana no tiene template configurado.');
-        const response = await estimateReachAction(payload);
-        const estimate = response?.estimate && typeof response.estimate === 'object'
-            ? response.estimate
-            : null;
-        if (estimate) {
-            setLocalEstimate(estimate);
-            setExcludedCustomerIds(getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds);
-        }
-    }, [estimateReachAction, labelOptions, selectedCampaign, zoneOptions]);
-
     const handleSendCampaignBlock = useCallback(async (blockIndex) => {
-        if (typeof requestJson !== 'function') throw new Error('Cliente HTTP no disponible.');
         if (!selectedCampaignId) throw new Error('Selecciona una campana.');
-        const response = await sendCampaignBlock(requestJson, { campaignId: selectedCampaignId, blockIndex }, { tenantId: settingsTenantId });
+        if (typeof sendCampaignBlockAction !== 'function') throw new Error('Cliente HTTP no disponible.');
+        const response = await sendCampaignBlockAction(selectedCampaignId, blockIndex);
         const campaign = response?.campaign || null;
-        if (campaign) {
-            await selectCampaign?.(campaign.campaignId, { loadDetail: false });
-            await loadTracking(campaign.campaignId);
+        const campaignId = toText(campaign?.campaignId || selectedCampaignId);
+        if (campaignId) {
+            const refreshDetail = async () => {
+                await loadTracking(campaignId);
+                return typeof selectCampaign === 'function'
+                    ? selectCampaign(campaignId, { loadDetail: true })
+                    : campaign;
+            };
+
+            let latestCampaign = await refreshDetail();
+            for (let attempt = 0; attempt < 8; attempt += 1) {
+                const latestBlocks = normalizeBlocksConfig(latestCampaign?.blocksConfigJson)?.blocks || [];
+                const targetBlock = latestBlocks.find((entry) => entry.blockIndex === blockIndex);
+                const stillSending = targetBlock?.status === 'sending';
+                const campaignStillRunning = ['running', 'scheduled', 'paused'].includes(toLower(latestCampaign?.status || ''));
+                if (!stillSending && !(campaignStillRunning && latestBlocks.length > 0 && latestBlocks.every((entry) => entry.status === 'completed'))) {
+                    break;
+                }
+                await new Promise((resolve) => window.setTimeout(resolve, 500));
+                latestCampaign = await refreshDetail();
+            }
         }
         return response;
-    }, [loadTracking, requestJson, selectCampaign, selectedCampaignId]);
+    }, [loadTracking, selectCampaign, selectedCampaignId, sendCampaignBlockAction]);
+
+    useEffect(() => {
+        if (panelMode !== 'detail') return undefined;
+        if (!selectedCampaignId) return undefined;
+        if (!selectedBlocks.some((block) => block.status === 'sending')) return undefined;
+
+        let cancelled = false;
+        let timeoutId = null;
+
+        const refreshWhileSending = async () => {
+            if (cancelled) return;
+            try {
+                await loadTracking(selectedCampaignId);
+                await selectCampaign?.(selectedCampaignId, { loadDetail: true });
+            } catch (_) {
+                // keep polling while the detail remains open
+            }
+            if (cancelled) return;
+            timeoutId = window.setTimeout(refreshWhileSending, 1000);
+        };
+
+        timeoutId = window.setTimeout(refreshWhileSending, 800);
+        return () => {
+            cancelled = true;
+            if (timeoutId) window.clearTimeout(timeoutId);
+        };
+    }, [loadTracking, panelMode, selectCampaign, selectedBlocks, selectedCampaignId]);
 
     const clearSelectedCampaign = useCallback(() => {
         if (typeof selectCampaign === 'function') {
@@ -1907,6 +1976,91 @@ export default React.memo(function CampaignsSection(props = {}) {
     const goToPreviousWizardStep = useCallback(() => {
         setWizardStep((prev) => Math.max(prev - 1, 1));
     }, []);
+
+    const saveCampaignDraftAction = useCallback(async () => {
+        const payload = {
+            ...buildCampaignPayload(),
+            status: 'draft'
+        };
+        if (!payload.moduleId || !payload.templateName || !payload.campaignName) {
+            throw new Error('Nombre, modulo y template son obligatorios.');
+        }
+        const response = panelMode === 'edit'
+            ? await updateCampaign?.({ campaignId: selectedCampaignId, patch: payload })
+            : await createCampaign?.(payload);
+        const campaign = response?.campaign || null;
+        await loadCampaigns?.();
+        setPanelMode('list');
+        setLocalEstimate(null);
+        setBaseAudienceEstimate(null);
+        setInclusionOnlyEstimate(null);
+        setExcludedCustomerIds([]);
+        setReviewAudienceItems([]);
+        clearSelectedCampaign();
+        notify({ type: 'info', message: campaign ? 'Campana guardada como borrador.' : 'Cambios guardados.' });
+    }, [
+        buildCampaignPayload,
+        clearSelectedCampaign,
+        createCampaign,
+        loadCampaigns,
+        notify,
+        panelMode,
+        selectedCampaignId,
+        updateCampaign
+    ]);
+
+    const saveAndStartCampaignAction = useCallback(async () => {
+        const payload = buildCampaignPayload();
+        if (!payload.moduleId || !payload.templateName || !payload.campaignName) {
+            throw new Error('Nombre, modulo y template son obligatorios.');
+        }
+        const hasSchedule = Boolean(payload.scheduledAt);
+        const shouldStartNow = !hasSchedule && !form.blocksEnabled;
+        const response = panelMode === 'edit'
+            ? await updateCampaign?.({
+                campaignId: selectedCampaignId,
+                patch: {
+                    ...payload,
+                    status: shouldStartNow ? 'running' : 'scheduled'
+                }
+            })
+            : await createCampaign?.({
+                ...payload,
+                status: shouldStartNow ? 'running' : 'scheduled'
+            });
+        const campaign = response?.campaign || null;
+        if (!campaign) throw new Error('No se pudo guardar la campana.');
+        if (shouldStartNow) {
+            await startCampaign?.(campaign.campaignId);
+        }
+        await loadCampaigns?.();
+        setPanelMode('list');
+        setLocalEstimate(null);
+        setBaseAudienceEstimate(null);
+        setInclusionOnlyEstimate(null);
+        setExcludedCustomerIds([]);
+        setReviewAudienceItems([]);
+        clearSelectedCampaign();
+        notify({
+            type: 'info',
+            message: form.blocksEnabled
+                ? 'Campana guardada. Podras ejecutar los bloques desde el detalle.'
+                : hasSchedule
+                    ? 'Campana programada correctamente.'
+                    : 'Campana iniciada.'
+        });
+    }, [
+        buildCampaignPayload,
+        clearSelectedCampaign,
+        createCampaign,
+        form.blocksEnabled,
+        loadCampaigns,
+        notify,
+        panelMode,
+        selectedCampaignId,
+        startCampaign,
+        updateCampaign
+    ]);
 
     const handleRequestCloseCampaignPanel = useCallback(async () => {
         if (showColumnsMenu) {
@@ -2036,15 +2190,18 @@ export default React.memo(function CampaignsSection(props = {}) {
         zoneFilterChipOptions
     ]);
 
-    const handleReviewExcludeCustomer = useCallback((customerId = '') => {
+    const handleReviewToggleCustomer = useCallback((customerId = '') => {
         const cleanCustomerId = toText(customerId);
         if (!cleanCustomerId) return;
         setExcludedCustomerIds((prev) => {
-            const next = Array.from(new Set([...prev.map((entry) => toText(entry)).filter(Boolean), cleanCustomerId]));
-            return next;
+            const current = new Set(prev.map((entry) => toText(entry)).filter(Boolean));
+            if (current.has(cleanCustomerId)) {
+                current.delete(cleanCustomerId);
+            } else {
+                current.add(cleanCustomerId);
+            }
+            return Array.from(current);
         });
-        reviewAudienceRef.current = reviewAudienceRef.current.filter((item) => item.customerId !== cleanCustomerId);
-        setReviewAudienceItems(reviewAudienceRef.current);
     }, []);
 
     const renderCriterionToggleList = (scope = 'inclusionFilters', groups = []) => {
@@ -2080,6 +2237,68 @@ export default React.memo(function CampaignsSection(props = {}) {
             </div>
         );
     };
+
+    const renderReadonlyChipList = (title, chips = []) => (
+        <div className="saas-campaigns-summary-chip-group">
+            <span className="saas-campaigns-summary-chip-group__title">{title}</span>
+            <div className="saas-campaigns-summary-chip-group__items">
+                {chips.length === 0 ? <small className="saas-admin-empty-inline">Sin filtros activos.</small> : chips.map((chip, index) => (
+                    <span key={`${title}_${chip.keyName}_${chip.value}_${index}`} className="saas-campaigns-summary-chip">
+                        {chip.label}
+                    </span>
+                ))}
+            </div>
+        </div>
+    );
+
+    const renderTemplatePreviewBubble = () => (
+        selectedTemplate ? (
+            <div className="saas-campaigns-wizard-preview__body">
+                <div className="saas-wa-preview">
+                    <div className="saas-wa-preview__chat-bg">
+                        <div className="saas-wa-preview__delivery-stack">
+                            <article className="saas-wa-preview__bubble">
+                                {selectedTemplatePreview.headerType === 'text' && Boolean(selectedTemplatePreview.headerText) ? (
+                                    <div className="saas-wa-preview__header">{selectedTemplatePreview.headerText}</div>
+                                ) : null}
+                                {['image', 'video', 'document'].includes(selectedTemplatePreview.headerType) ? (
+                                    <div className="saas-wa-preview__media-placeholder">
+                                        <strong>{selectedTemplatePreview.headerType === 'image' ? 'Imagen' : selectedTemplatePreview.headerType === 'video' ? 'Video' : 'Documento'}</strong>
+                                        <small>El template usa un header multimedia definido en Meta.</small>
+                                    </div>
+                                ) : null}
+                                <div className="saas-wa-preview__body">{selectedTemplatePreview.bodyText || 'El cuerpo del template aparecera aqui.'}</div>
+                                {selectedTemplatePreview.footerText ? (
+                                    <div className="saas-wa-preview__footer">{selectedTemplatePreview.footerText}</div>
+                                ) : null}
+                                <div className="saas-wa-preview__meta">
+                                    <span>{new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}</span>
+                                    <span className="saas-wa-preview__tick">{'\u2713\u2713'}</span>
+                                </div>
+                            </article>
+                            {selectedTemplatePreview.buttons.length > 0 ? (
+                                <div className="saas-wa-preview__template-buttons">
+                                    {selectedTemplatePreview.buttons.map((buttonRow) => (
+                                        <div className="saas-wa-preview__template-button" key={buttonRow.id}>
+                                            <span className="saas-wa-preview__template-button-meta">
+                                                {buttonRow.type === 'url' ? 'Enlace' : buttonRow.type === 'phone' || buttonRow.type === 'phone_number' ? 'Llamar' : 'Respuesta'}
+                                            </span>
+                                            <span>{buttonRow.text}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        ) : (
+            <div className="saas-campaigns-wizard-preview__empty">
+                <strong>Preview no disponible</strong>
+                <p>Selecciona un template aprobado para ver una simulacion de entrega en WhatsApp.</p>
+            </div>
+        )
+    );
 
     const renderAudienceChipGroup = (scope = 'inclusionFilters', keyName = '', label = '', options = [], normalize = toText, emptyText = '') => {
         const filters = normalizeDeepFilters(form?.[scope] || {});
@@ -2548,56 +2767,11 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 <h4>Preview del template</h4>
                                 <small>{selectedTemplate ? `${selectedTemplate.templateName} (${toUpper(selectedTemplate.templateLanguage)})` : 'Selecciona un template para visualizar el mensaje.'}</small>
                             </div>
-                            {selectedTemplate ? (
-                                <div className="saas-campaigns-wizard-preview__body">
-                                    <div className="saas-wa-preview">
-                                        <div className="saas-wa-preview__chat-bg">
-                                            <div className="saas-wa-preview__delivery-stack">
-                                                <article className="saas-wa-preview__bubble">
-                                                    {selectedTemplatePreview.headerType === 'text' && Boolean(selectedTemplatePreview.headerText) ? (
-                                                        <div className="saas-wa-preview__header">{selectedTemplatePreview.headerText}</div>
-                                                    ) : null}
-                                                    {['image', 'video', 'document'].includes(selectedTemplatePreview.headerType) ? (
-                                                        <div className="saas-wa-preview__media-placeholder">
-                                                            <strong>{selectedTemplatePreview.headerType === 'image' ? 'Imagen' : selectedTemplatePreview.headerType === 'video' ? 'Video' : 'Documento'}</strong>
-                                                            <small>El template usa un header multimedia definido en Meta.</small>
-                                                        </div>
-                                                    ) : null}
-                                                    <div className="saas-wa-preview__body">{selectedTemplatePreview.bodyText || 'El cuerpo del template aparecera aqui.'}</div>
-                                                    {selectedTemplatePreview.footerText ? (
-                                                        <div className="saas-wa-preview__footer">{selectedTemplatePreview.footerText}</div>
-                                                    ) : null}
-                                                    <div className="saas-wa-preview__meta">
-                                                        <span>{new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}</span>
-                                                        <span className="saas-wa-preview__tick">{'\u2713\u2713'}</span>
-                                                    </div>
-                                                </article>
-                                                {selectedTemplatePreview.buttons.length > 0 ? (
-                                                    <div className="saas-wa-preview__template-buttons">
-                                                        {selectedTemplatePreview.buttons.map((buttonRow) => (
-                                                            <div className="saas-wa-preview__template-button" key={buttonRow.id}>
-                                                                <span className="saas-wa-preview__template-button-meta">
-                                                                    {buttonRow.type === 'url' ? 'Enlace' : buttonRow.type === 'phone' || buttonRow.type === 'phone_number' ? 'Llamar' : 'Respuesta'}
-                                                                </span>
-                                                                <span>{buttonRow.text}</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                ) : null}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="saas-campaigns-wizard-preview__meta">
-                                        <span><strong>Modulo:</strong> {selectedModule?.label || '-'}</span>
-                                        <span><strong>Vigencia:</strong> {form.validFrom || form.validTo ? `${form.validFrom || '-'} a ${form.validTo || '-'}` : 'Sin vigencia definida'}</span>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="saas-campaigns-wizard-preview__empty">
-                                    <strong>Preview no disponible</strong>
-                                    <p>Selecciona un template aprobado para ver una simulacion de entrega en WhatsApp.</p>
-                                </div>
-                            )}
+                            {renderTemplatePreviewBubble()}
+                            <div className="saas-campaigns-wizard-preview__meta">
+                                <span><strong>Modulo:</strong> {selectedModule?.label || '-'}</span>
+                                <span><strong>Vigencia:</strong> {form.validFrom || form.validTo ? `${form.validFrom || '-'} a ${form.validTo || '-'}` : 'Sin vigencia definida'}</span>
+                            </div>
                         </aside>
                     </div>
                 </SaasDetailPanelSection>
@@ -2651,8 +2825,8 @@ export default React.memo(function CampaignsSection(props = {}) {
                     <div className="saas-campaigns-review-step">
                         <div className="saas-campaigns-review-step__header">
                             <div>
-                                <strong>{`${reviewAudienceItems.length} clientes en esta campana`}</strong>
-                                <span>Audiencia final congelada para revision manual antes del envio.</span>
+                                <strong>{`${reviewIncludedCount} clientes en esta campana`}</strong>
+                                <span>Marca clientes como excluidos sin quitarlos del listado. Puedes revertirlo antes de guardar.</span>
                             </div>
                             <div className="saas-admin-field saas-campaigns-review-step__search">
                                 <label>Buscar cliente</label>
@@ -2663,7 +2837,15 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 />
                             </div>
                         </div>
-                        <div className="saas-campaigns-review-step__list">
+                        <div className="saas-campaigns-review-step__list saas-campaigns-review-table">
+                            <div className="saas-campaigns-review-table__head">
+                                <span>Cliente</span>
+                                <span>Telefono</span>
+                                <span>Estado</span>
+                                <span>Zona</span>
+                                <span>Etiqueta</span>
+                                <span>Excluir</span>
+                            </div>
                             {reviewVisibleItems.length === 0 ? (
                                 <div className="saas-admin-empty-state saas-admin-empty-state--inline">
                                     <p>{reviewAudienceItems.length === 0 ? 'No hay clientes en la audiencia final.' : 'No hay coincidencias para esta busqueda.'}</p>
@@ -2672,39 +2854,50 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 const commercialMeta = commercialFilterOptions.find((entry) => toLower(entry.key) === toLower(item.commercialStatus));
                                 const zone = item.zoneLabelIds?.[0] ? zoneNameById.get(toUpper(item.zoneLabelIds[0])) : null;
                                 const operationalLabel = item.operationalLabelIds?.[0] ? operationalLabelById.get(toUpper(item.operationalLabelIds[0])) : null;
+                                const isExcluded = reviewExcludedCustomerIdSet.has(item.customerId);
                                 return (
-                                    <article key={`review_${item.customerId}`} className="saas-campaigns-review-customer">
-                                        <div className="saas-campaigns-review-customer__main">
+                                    <article key={`review_${item.customerId}`} className={`saas-campaigns-review-row ${isExcluded ? 'is-excluded' : ''}`.trim()}>
+                                        <div className="saas-campaigns-review-row__customer">
                                             <strong>{item.contactName}</strong>
-                                            <span>{item.phone}</span>
+                                            <small>{item.customerCode || item.customerId}</small>
                                         </div>
-                                        <div className="saas-campaigns-review-customer__meta">
+                                        <span className="saas-campaigns-review-row__phone">{item.phone || '-'}</span>
+                                        <div className="saas-campaigns-review-row__cell">
                                             {commercialMeta ? (
                                                 <span className="saas-campaigns-review-chip" style={{ '--saas-chip-color': commercialMeta.color || COMMERCIAL_STATUS_COLORS[toLower(commercialMeta.key)] || '#7D8D95' }}>
                                                     {commercialMeta.name}
                                                 </span>
-                                            ) : null}
+                                            ) : <span className="saas-campaigns-review-row__empty">-</span>}
+                                        </div>
+                                        <div className="saas-campaigns-review-row__cell">
                                             {zone ? (
                                                 <span className="saas-campaigns-review-chip" style={{ '--saas-chip-color': zone.color || '#00A884' }}>
                                                     {zone.name}
                                                 </span>
-                                            ) : null}
+                                            ) : <span className="saas-campaigns-review-row__empty">-</span>}
+                                        </div>
+                                        <div className="saas-campaigns-review-row__cell">
                                             {operationalLabel ? (
                                                 <span className="saas-campaigns-review-chip" style={{ '--saas-chip-color': operationalLabel.color || '#00A884' }}>
                                                     {operationalLabel.name}
                                                 </span>
-                                            ) : null}
+                                            ) : <span className="saas-campaigns-review-row__empty">-</span>}
                                         </div>
-                                        <button type="button" className="saas-campaigns-review-customer__exclude" onClick={() => handleReviewExcludeCustomer(item.customerId)}>
-                                            ×
-                                        </button>
+                                        <label className={`saas-campaigns-review-toggle ${isExcluded ? 'is-active' : ''}`.trim()}>
+                                            <input
+                                                type="checkbox"
+                                                checked={isExcluded}
+                                                onChange={() => handleReviewToggleCustomer(item.customerId)}
+                                            />
+                                            <span>{isExcluded ? 'Excluido' : 'Activo'}</span>
+                                        </label>
                                     </article>
                                 );
                             })}
                         </div>
                         <div className="saas-campaigns-review-step__footer">
-                            <span>{`${reviewAudienceItems.length} incluidos`}</span>
-                            <span>{`${excludedCustomerIds.length} excluidos manualmente`}</span>
+                            <span>{`${reviewIncludedCount} incluidos`}</span>
+                            <span>{`${reviewExcludedCustomerIdSet.size} excluidos manualmente`}</span>
                             <button type="button" disabled={!wizardCanAdvance || loading} onClick={goToNextWizardStep}>Siguiente →</button>
                         </div>
                     </div>
@@ -2734,18 +2927,27 @@ export default React.memo(function CampaignsSection(props = {}) {
                         </div>
                         {form.blocksEnabled ? (
                             <div className="saas-campaigns-delivery-step__config">
-                                <div className="saas-admin-field">
-                                    <label>Numero de bloques</label>
+                                <div className="saas-campaigns-delivery-step__slider">
+                                    <div className="saas-campaigns-delivery-step__slider-header">
+                                        <label>Numero de bloques</label>
+                                        <strong>{form.blockCount}</strong>
+                                    </div>
                                     <input
-                                        type="number"
+                                        type="range"
                                         min={2}
                                         max={10}
+                                        step={1}
                                         value={form.blockCount}
                                         onChange={(event) => {
                                             const next = Math.max(2, Math.min(10, Math.floor(toNumber(event.target.value, 2))));
                                             setForm((prev) => ({ ...prev, blockCount: next }));
                                         }}
                                     />
+                                    <div className="saas-campaigns-delivery-step__slider-scale">
+                                        {Array.from({ length: 9 }, (_, index) => index + 2).map((value) => (
+                                            <span key={`block_scale_${value}`} className={value === form.blockCount ? 'is-active' : ''}>{value}</span>
+                                        ))}
+                                    </div>
                                 </div>
                                 <div className="saas-campaigns-delivery-step__preview">
                                     {(blockPreview?.blocks || []).map((block) => (
@@ -2757,18 +2959,93 @@ export default React.memo(function CampaignsSection(props = {}) {
                             </div>
                         ) : (
                             <div className="saas-campaigns-delivery-step__single-note">
-                                Todos los {reviewAudienceItems.length || exclusionSummary.finalRecipients || estimateNumbers.eligible || 0} clientes se enviaran en una sola ejecucion.
+                                Todos los {finalAudienceCount} clientes se enviaran en una sola ejecucion.
                             </div>
                         )}
                         <div className="saas-campaigns-delivery-step__summary">
-                            {`Se enviaran ${reviewAudienceItems.length || exclusionSummary.finalRecipients || estimateNumbers.eligible || 0} mensajes via ${selectedModule?.label || 'modulo seleccionado'} con ${selectedTemplate?.templateName || form.templateName || 'template elegido'}.`}
+                            {`Se enviaran ${finalAudienceCount} mensajes via ${selectedModule?.label || 'modulo seleccionado'} con ${selectedTemplate?.templateName || form.templateName || 'template elegido'}.`}
                         </div>
                     </div>
                 </SaasDetailPanelSection>
             );
         case 6:
         default:
-            return renderWizardPlaceholder(6, 'Resumen final', 'El resumen de audiencia, bloques y acciones finales se completa en los siguientes commits del wizard.');
+            return (
+                <SaasDetailPanelSection title="Paso 6 - Resumen final">
+                    <div className="saas-campaigns-summary-step">
+                        <section className="saas-campaigns-summary-section">
+                            <header>
+                                <h4>Campana</h4>
+                                <button type="button" onClick={() => setWizardStep(1)}>Volver al paso 1</button>
+                            </header>
+                            <div className="saas-campaigns-summary-grid">
+                                <div><span>Nombre</span><strong>{toText(form.campaignName) || '-'}</strong></div>
+                                <div><span>Modulo</span><strong>{selectedModule?.label || '-'}</strong></div>
+                                <div><span>Template</span><strong>{selectedTemplate?.templateName || form.templateName || '-'}</strong></div>
+                                <div><span>Programacion</span><strong>{form.scheduleMode === 'scheduled' ? formatDateTime(form.scheduledAt) : 'Inmediata'}</strong></div>
+                                <div><span>Vigencia desde</span><strong>{form.validFrom || '-'}</strong></div>
+                                <div><span>Vigencia hasta</span><strong>{form.validTo || '-'}</strong></div>
+                            </div>
+                        </section>
+                        <section className="saas-campaigns-summary-section saas-campaigns-summary-preview">
+                            <header>
+                                <h4>Preview template</h4>
+                            </header>
+                            {renderTemplatePreviewBubble()}
+                        </section>
+                        <section className="saas-campaigns-summary-section">
+                            <header>
+                                <h4>Audiencia</h4>
+                                <button type="button" onClick={() => setWizardStep(2)}>Volver al paso 2</button>
+                            </header>
+                            <div className="saas-campaigns-summary-audience">
+                                {renderReadonlyChipList('Inclusion', buildAudienceFilterChipData('inclusionFilters'))}
+                                {renderReadonlyChipList('Exclusion', buildAudienceFilterChipData('exclusionFilters'))}
+                                <div className="saas-campaigns-summary-metrics">
+                                    <div className="saas-campaigns-summary-metric">
+                                        <span>Excluidos manualmente</span>
+                                        <strong>{reviewExcludedCustomerIdSet.size}</strong>
+                                    </div>
+                                    <div className="saas-campaigns-summary-metric saas-campaigns-summary-metric--highlight">
+                                        <span>Total final</span>
+                                        <strong>{finalAudienceCount}</strong>
+                                        <small>clientes recibiran esta campana</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                        <section className="saas-campaigns-summary-section">
+                            <header>
+                                <h4>Envio</h4>
+                                <button type="button" onClick={() => setWizardStep(5)}>Volver al paso 5</button>
+                            </header>
+                            <div className="saas-campaigns-summary-delivery">
+                                {!form.blocksEnabled ? (
+                                    <strong>Envio unico</strong>
+                                ) : (
+                                    <>
+                                        <strong>{`${form.blockCount} bloques`}</strong>
+                                        <div className="saas-campaigns-delivery-step__preview">
+                                            {(blockPreview?.blocks || []).map((block) => (
+                                                <span key={`summary_block_${block.blockIndex}`} className="saas-campaigns-review-chip" style={{ '--saas-chip-color': '#00A884' }}>
+                                                    {`Bloque ${block.blockIndex + 1}: ${block.size}`}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </section>
+                        <div className="saas-campaigns-summary-footer">
+                            <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(saveCampaignDraftAction, 'No se pudo guardar campana.')}>Guardar borrador</button>
+                            <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(saveAndStartCampaignAction, 'No se pudo guardar e iniciar campana.')}>
+                                {form.blocksEnabled ? 'Guardar y preparar bloques' : 'Guardar e iniciar'}
+                            </button>
+                            <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
+                        </div>
+                    </div>
+                </SaasDetailPanelSection>
+            );
         }
     };
 
@@ -2776,41 +3053,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (wizardStep === 6) {
             return (
                 <>
-                    <button type="button" disabled={loading || form.blocksEnabled || !canWrite} onClick={() => runSafe(async () => {
-                        const payload = buildCampaignPayload();
-                        if (!payload.moduleId || !payload.templateName || !payload.campaignName) throw new Error('Nombre, modulo y template son obligatorios.');
-                        const response = panelMode === 'edit' ? await updateCampaign?.({ campaignId: selectedCampaignId, patch: payload }) : await createCampaign?.(payload);
-                        const campaign = response?.campaign || null;
-                        if (!campaign) return;
-                        await loadTracking(campaign.campaignId);
-                        await selectCampaign?.(campaign.campaignId, { loadDetail: false });
-                        setPanelMode('detail');
-                        setLocalEstimate(null);
-                        setBaseAudienceEstimate(null);
-                        setInclusionOnlyEstimate(null);
-                        notify({ type: 'info', message: panelMode === 'edit' ? 'Campana actualizada.' : 'Campana creada.' });
-                    }, 'No se pudo guardar campana.')}>Guardar borrador</button>
-                    <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => {
-                        if (panelMode === 'create') {
-                            await (async () => {
-                                if (!canStartWithGuardrails) throw new Error('Debes cumplir las validaciones previas antes de iniciar la campana.');
-                                const payload = buildCampaignPayload();
-                                const response = await createCampaign?.(payload);
-                                const campaign = response?.campaign;
-                                if (!campaign) throw new Error('No se pudo crear campana.');
-                            await startCampaign?.(campaign.campaignId);
-                            await selectCampaign?.(campaign.campaignId, { loadDetail: true });
-                            await loadTracking(campaign.campaignId);
-                            setPanelMode('detail');
-                            setBaseAudienceEstimate(null);
-                        })();
-                        } else {
-                            if (!canStartWithGuardrails) throw new Error('Debes cumplir las validaciones previas antes de iniciar la campana.');
-                            await startCampaign?.(selectedCampaignId);
-                            await loadTracking(selectedCampaignId);
-                        }
-                        notify({ type: 'info', message: 'Campana iniciada.' });
-                    }, 'No se pudo iniciar campana.')} className={canStartWithGuardrails && !form.blocksEnabled ? '' : 'saas-campaigns-button-danger'}>{form.blocksEnabled ? 'Guardar y enviar bloques desde detalle' : 'Guardar e iniciar'}</button>
+                    <button type="button" disabled={loading || wizardStep <= 1} onClick={goToPreviousWizardStep}>Atras</button>
                     <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
                 </>
             );
@@ -2953,7 +3196,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 return (
                                     <div key={step.key} className={`saas-campaigns-wizard-progress__item ${stateClass}`.trim()}>
                                         <span>{stepNumber}</span>
-                                        <strong>{step.label}</strong>
+                                        <strong>{step.shortLabel || step.label}</strong>
                                     </div>
                                 );
                             })}
@@ -3051,56 +3294,51 @@ export default React.memo(function CampaignsSection(props = {}) {
                             </SaasDetailPanelSection>
                         ) : null}
                         <SaasDetailPanelSection title={detailAudienceTitle}>
-                            {showsEstimatedAudienceInDetail ? (
-                                <section className="saas-admin-related-block saas-campaigns-table-block">
-                                    <div className="saas-campaigns-audience-summary">
-                                        <strong>{`${exclusionSummary.eligible} elegibles - ${exclusionSummary.excluded} excluidos = ${exclusionSummary.finalRecipients} destinatarios finales`}</strong>
-                                        <span>{reachEstimate ? 'Vista previa generada con la estimacion actual.' : 'Calcula la audiencia para ver los clientes elegibles de esta campana.'}</span>
-                                    </div>
-                                    <div className="saas-campaigns-actions-row">
-                                        <button
-                                            type="button"
-                                            disabled={loading || estimating || !canWrite}
-                                            onClick={() => runSafe(async () => {
-                                                await runDetailEstimate();
-                                                notify({ type: 'info', message: 'Audiencia estimada actualizada.' });
-                                            }, 'No se pudo calcular la audiencia.')}
-                                        >
-                                            Calcular audiencia
-                                        </button>
-                                    </div>
-                                    <div className="saas-campaigns-audience-table-wrap">
-                                        {estimatedAudienceItems.length === 0 ? (
-                                            <div className="saas-admin-empty-inline">No hay audiencia estimada disponible.</div>
-                                        ) : (
-                                            <table className="saas-campaigns-audience-table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Nombre</th>
-                                                        <th>Telefono</th>
-                                                        <th>Estado comercial</th>
-                                                        <th>Etiquetas</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {estimatedAudienceItems.map((item) => (
-                                                        <tr key={item.customerId}>
-                                                            <td>{item.contactName}</td>
-                                                            <td>{item.phone}</td>
-                                                            <td>{item.commercialStatus || '-'}</td>
-                                                            <td>{item.tags.length > 0 ? item.tags.join(', ') : '-'}</td>
+                            <section className="saas-admin-related-block saas-campaigns-table-block">
+                                {detailUsesFinalAudience ? (
+                                    <>
+                                        <div className="saas-campaigns-audience-summary">
+                                            <strong>{`${detailFinalAudienceItems.length} clientes finales definidos en el wizard`}</strong>
+                                            <span>Esta vista refleja la audiencia construida en los pasos de inclusion, exclusion y revision manual.</span>
+                                        </div>
+                                        <div className="saas-campaigns-audience-table-wrap">
+                                            {detailFinalAudienceItems.length === 0 ? (
+                                                <div className="saas-admin-empty-inline">No hay audiencia final disponible.</div>
+                                            ) : (
+                                                <table className="saas-campaigns-audience-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Nombre</th>
+                                                            <th>Telefono</th>
+                                                            <th>Estado comercial</th>
+                                                            <th>Zona</th>
+                                                            <th>Etiqueta</th>
                                                         </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        )}
-                                    </div>
-                                </section>
-                            ) : (
-                                <section className="saas-admin-related-block saas-campaigns-table-block">
+                                                    </thead>
+                                                    <tbody>
+                                                        {detailFinalAudienceItems.map((item) => {
+                                                            const commercialMeta = commercialFilterOptions.find((entry) => toLower(entry.key) === toLower(item.commercialStatus));
+                                                            const zone = item.zoneLabelIds?.[0] ? zoneNameById.get(toUpper(item.zoneLabelIds[0])) : null;
+                                                            const operationalLabel = item.operationalLabelIds?.[0] ? operationalLabelById.get(toUpper(item.operationalLabelIds[0])) : null;
+                                                            return (
+                                                                <tr key={`detail_audience_${item.customerId}`}>
+                                                                    <td>{item.contactName}</td>
+                                                                    <td>{item.phone}</td>
+                                                                    <td>{commercialMeta ? commercialMeta.name : (item.commercialStatus || '-')}</td>
+                                                                    <td>{zone || '-'}</td>
+                                                                    <td>{operationalLabel?.name || '-'}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            )}
+                                        </div>
+                                    </>
+                                ) : (
                                     <div className="saas-campaigns-table-wrap"><table className="saas-campaigns-table"><thead><tr><th>Telefono</th><th>Cliente</th><th>Estado</th><th>Intentos</th><th>Actualizado</th><th>Error</th></tr></thead><tbody>{recipients.length === 0 ? <tr><td colSpan={6}>Sin destinatarios.</td></tr> : recipients.map((r) => { const m = statusMeta(r?.status); return <tr key={`${toText(r?.recipientId)}_${toText(r?.phone)}`}><td>{toText(r?.phone) || '-'}</td><td>{toText(r?.customerId) || '-'}</td><td><span className={`saas-campaigns-status ${m.className}`}>{m.label}</span></td><td>{toNumber(r?.attemptCount)} / {toNumber(r?.maxAttempts)}</td><td>{formatDateTime(r?.updatedAt)}</td><td>{toText(r?.lastError || r?.skipReason) || '-'}</td></tr>; })}</tbody></table></div>
-                                </section>
-                            )}
+                                )}
+                            </section>
                         </SaasDetailPanelSection>
                         <SaasDetailPanelSection title={`Eventos (${events.length})`}>
                             <section className="saas-admin-related-block saas-campaigns-events-block"><div className="saas-campaigns-events-list">{events.length === 0 ? <div className="saas-admin-empty-inline">Sin eventos.</div> : events.map((ev) => <article key={toText(ev?.eventId)} className="saas-campaigns-event-item"><header><strong>{toText(ev?.eventType) || 'event'}</strong><span>{formatDateTime(ev?.createdAt)}</span></header><p>{toText(ev?.message || ev?.reason) || '-'}</p><small>{`Actor: ${toText(ev?.actorType) || 'system'} | Severidad: ${toText(ev?.severity) || '-'}`}</small></article>)}</div></section>
