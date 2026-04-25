@@ -617,6 +617,8 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [inclusionOnlyEstimate, setInclusionOnlyEstimate] = useState(null);
     const [excludedCustomerIds, setExcludedCustomerIds] = useState([]);
     const [manualExclusionSearch, setManualExclusionSearch] = useState('');
+    const [reviewSearch, setReviewSearch] = useState('');
+    const [reviewAudienceItems, setReviewAudienceItems] = useState([]);
     const [zoneRules, setZoneRules] = useState([]);
     const [customerZoneLabels, setCustomerZoneLabels] = useState([]);
     const [tenantOperationalLabels, setTenantOperationalLabels] = useState([]);
@@ -638,6 +640,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const audienceRequestRef = useRef(0);
     const estimateRequestRef = useRef({ base: 0, full: 0, inclusion: 0 });
     const requestJsonRef = useRef(requestJson);
+    const reviewAudienceRef = useRef([]);
 
     const {
         campaigns = [],
@@ -1087,6 +1090,19 @@ export default React.memo(function CampaignsSection(props = {}) {
             .filter((item) => !term || `${toLower(item.contactName)} ${toLower(item.phone)}`.includes(term))
             .slice(0, 12);
     }, [excludedCustomerIdSet, inclusionOnlyAudienceItems, manualExclusionSearch]);
+    const operationalLabelById = useMemo(() => {
+        const map = new Map();
+        effectiveOperationalLabels.forEach((item) => {
+            const labelId = toUpper(item?.labelId || item?.id || '');
+            if (!labelId) return;
+            map.set(labelId, {
+                id: labelId,
+                name: toText(item?.name || item?.label || labelId),
+                color: toText(item?.color || '#00A884') || '#00A884'
+            });
+        });
+        return map;
+    }, [effectiveOperationalLabels]);
     const exclusionSummary = useMemo(() => {
         const included = inclusionOnlyAudienceItems.length;
         const finalRecipients = estimatedAudienceItems.length;
@@ -1094,6 +1110,10 @@ export default React.memo(function CampaignsSection(props = {}) {
         const eligible = included;
         return { eligible, excluded, finalRecipients };
     }, [estimatedAudienceItems.length, inclusionOnlyAudienceItems.length]);
+    const currentFinalAudienceItems = useMemo(() => {
+        if (estimatedAudienceItems.length > 0) return estimatedAudienceItems;
+        return inclusionOnlyAudienceItems.filter((item) => !excludedCustomerIdSet.has(item.customerId));
+    }, [estimatedAudienceItems, excludedCustomerIdSet, inclusionOnlyAudienceItems]);
     const blockPreview = useMemo(() => (
         buildBlocksConfigFromForm(form, exclusionSummary.finalRecipients || estimateNumbers.eligible || 0)
     ), [estimateNumbers.eligible, exclusionSummary.finalRecipients, form]);
@@ -1167,6 +1187,10 @@ export default React.memo(function CampaignsSection(props = {}) {
         }
         return true;
     }, [form.blockCount, form.blocksEnabled, form.campaignName, form.moduleId, form.templateId, form.templateName, wizardStep]);
+    const reviewVisibleItems = useMemo(() => {
+        const term = toLower(reviewSearch);
+        return reviewAudienceItems.filter((item) => !term || `${toLower(item.contactName)} ${toLower(item.phone)}`.includes(term));
+    }, [reviewAudienceItems, reviewSearch]);
     const exclusionAudienceOptions = useMemo(() => {
         const fallbackOptInOptions = [
             { id: 'opted_in', name: 'Con opt-in', color: '#00A884' },
@@ -1721,6 +1745,12 @@ export default React.memo(function CampaignsSection(props = {}) {
             setInclusionOnlyEstimate(null);
             return undefined;
         }
+        if (wizardStep >= 4) {
+            estimateRequestRef.current.base += 1;
+            estimateRequestRef.current.full += 1;
+            estimateRequestRef.current.inclusion += 1;
+            return undefined;
+        }
         const timer = setTimeout(() => {
             Promise.all([
                 runBaseAudienceEstimate().catch(() => {}),
@@ -1741,6 +1771,14 @@ export default React.memo(function CampaignsSection(props = {}) {
         runInclusionOnlyEstimate,
         wizardStep
     ]);
+
+    useEffect(() => {
+        if ((panelMode !== 'create' && panelMode !== 'edit') || wizardStep !== 4) return;
+        const snapshot = currentFinalAudienceItems.map((item) => ({ ...item }));
+        reviewAudienceRef.current = snapshot;
+        setReviewAudienceItems(snapshot);
+        setReviewSearch('');
+    }, [currentFinalAudienceItems, panelMode, wizardStep]);
 
     const runDetailEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
@@ -1955,6 +1993,60 @@ export default React.memo(function CampaignsSection(props = {}) {
         );
     };
 
+    const buildAudienceFilterChipData = useCallback((scope = 'inclusionFilters') => {
+        const filters = normalizeDeepFilters(form?.[scope] || {});
+        const chips = [];
+        const addList = (keyName, options = [], labelKey = 'name', valueKey = 'id', normalize = toText) => {
+            (Array.isArray(filters[keyName]) ? filters[keyName] : []).forEach((value) => {
+                const option = options.find((entry) => normalize(entry?.[valueKey] || entry?.key) === normalize(value));
+                const fallbackLabel = keyName === 'zone_label_ids' ? resolveZoneDisplayName(value) : value;
+                chips.push({ keyName, value, label: option?.[labelKey] || fallbackLabel });
+            });
+        };
+        addList('commercial_status', commercialFilterOptions, 'name', 'key', toLower);
+        addList('zone_label_ids', zoneFilterChipOptions, 'name', 'id', toUpper);
+        addList('operational_label_ids', operationalFilterChipOptions, 'name', 'id', toUpper);
+        addList('customer_type_ids', campaignFilterOptions.customer_types, 'name', 'id', toText);
+        addList('acquisition_source_ids', acquisitionSourceOptions, 'name', 'id', toText);
+        addList('departments', geographyDepartments.map((name) => ({ id: name, name })), 'name', 'id', toText);
+        addList('provinces', uniqueTextItems(Object.values(geographyProvinceMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
+        addList('districts', uniqueTextItems(Object.values(geographyDistrictMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
+        if (filters.assigned_user_id) {
+            const user = campaignFilterOptions.assigned_users.find((entry) => entry.id === filters.assigned_user_id);
+            chips.push({ keyName: 'assigned_user_id', value: '', label: user?.name || filters.assigned_user_id });
+        }
+        if (filters.created_after || filters.created_before) {
+            chips.push({ keyName: 'created_range', value: '', label: `Registro: ${filters.created_after || '...'} a ${filters.created_before || '...'}` });
+        }
+        if (filters.has_phone === true) chips.push({ keyName: 'has_phone', value: '', label: 'Tiene telefono valido' });
+        if (filters.has_email === true) chips.push({ keyName: 'has_email', value: '', label: 'Tiene email' });
+        if (filters.has_address === true) chips.push({ keyName: 'has_address', value: '', label: 'Tiene direccion registrada' });
+        return chips;
+    }, [
+        acquisitionSourceOptions,
+        campaignFilterOptions.assigned_users,
+        campaignFilterOptions.customer_types,
+        commercialFilterOptions,
+        form,
+        geographyDepartments,
+        geographyDistrictMap,
+        geographyProvinceMap,
+        operationalFilterChipOptions,
+        resolveZoneDisplayName,
+        zoneFilterChipOptions
+    ]);
+
+    const handleReviewExcludeCustomer = useCallback((customerId = '') => {
+        const cleanCustomerId = toText(customerId);
+        if (!cleanCustomerId) return;
+        setExcludedCustomerIds((prev) => {
+            const next = Array.from(new Set([...prev.map((entry) => toText(entry)).filter(Boolean), cleanCustomerId]));
+            return next;
+        });
+        reviewAudienceRef.current = reviewAudienceRef.current.filter((item) => item.customerId !== cleanCustomerId);
+        setReviewAudienceItems(reviewAudienceRef.current);
+    }, []);
+
     const renderCriterionToggleList = (scope = 'inclusionFilters', groups = []) => {
         const activeCriteria = scope === 'exclusionFilters' ? activeExclusionCriteria : activeInclusionCriteria;
         return (
@@ -2074,11 +2166,6 @@ export default React.memo(function CampaignsSection(props = {}) {
                     </div>
                     <div className="saas-campaigns-audience-step__results-summary">
                         {renderAudienceFilterChips(scope, scope === 'exclusionFilters' ? 'Excluir' : 'Incluir')}
-                        <div className="saas-campaigns-audience-step__results-note">
-                            {scope === 'exclusionFilters'
-                                ? 'Aqui decides a quien sacar de la audiencia incluida. La lista final se revisa en el siguiente paso.'
-                                : 'Aqui construyes la audiencia. La revision detallada de clientes se hace en el paso de revision manual.'}
-                        </div>
                     </div>
                 </div>
                 <div className="saas-campaigns-audience-step__controls">
@@ -2559,7 +2646,70 @@ export default React.memo(function CampaignsSection(props = {}) {
                 </SaasDetailPanelSection>
             );
         case 4:
-            return renderWizardPlaceholder(4, 'Revision manual', 'Aqui se mostrara la lista final de clientes antes del envio para excluirlos manualmente si hace falta.');
+            return (
+                <SaasDetailPanelSection title="Paso 4 - Revision manual">
+                    <div className="saas-campaigns-review-step">
+                        <div className="saas-campaigns-review-step__header">
+                            <div>
+                                <strong>{`${reviewAudienceItems.length} clientes en esta campana`}</strong>
+                                <span>Audiencia final congelada para revision manual antes del envio.</span>
+                            </div>
+                            <div className="saas-admin-field saas-campaigns-review-step__search">
+                                <label>Buscar cliente</label>
+                                <input
+                                    value={reviewSearch}
+                                    onChange={(event) => setReviewSearch(event.target.value)}
+                                    placeholder="Buscar por nombre o telefono"
+                                />
+                            </div>
+                        </div>
+                        <div className="saas-campaigns-review-step__list">
+                            {reviewVisibleItems.length === 0 ? (
+                                <div className="saas-admin-empty-state saas-admin-empty-state--inline">
+                                    <p>{reviewAudienceItems.length === 0 ? 'No hay clientes en la audiencia final.' : 'No hay coincidencias para esta busqueda.'}</p>
+                                </div>
+                            ) : reviewVisibleItems.map((item) => {
+                                const commercialMeta = commercialFilterOptions.find((entry) => toLower(entry.key) === toLower(item.commercialStatus));
+                                const zone = item.zoneLabelIds?.[0] ? zoneNameById.get(toUpper(item.zoneLabelIds[0])) : null;
+                                const operationalLabel = item.operationalLabelIds?.[0] ? operationalLabelById.get(toUpper(item.operationalLabelIds[0])) : null;
+                                return (
+                                    <article key={`review_${item.customerId}`} className="saas-campaigns-review-customer">
+                                        <div className="saas-campaigns-review-customer__main">
+                                            <strong>{item.contactName}</strong>
+                                            <span>{item.phone}</span>
+                                        </div>
+                                        <div className="saas-campaigns-review-customer__meta">
+                                            {commercialMeta ? (
+                                                <span className="saas-campaigns-review-chip" style={{ '--saas-chip-color': commercialMeta.color || COMMERCIAL_STATUS_COLORS[toLower(commercialMeta.key)] || '#7D8D95' }}>
+                                                    {commercialMeta.name}
+                                                </span>
+                                            ) : null}
+                                            {zone ? (
+                                                <span className="saas-campaigns-review-chip" style={{ '--saas-chip-color': zone.color || '#00A884' }}>
+                                                    {zone.name}
+                                                </span>
+                                            ) : null}
+                                            {operationalLabel ? (
+                                                <span className="saas-campaigns-review-chip" style={{ '--saas-chip-color': operationalLabel.color || '#00A884' }}>
+                                                    {operationalLabel.name}
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                        <button type="button" className="saas-campaigns-review-customer__exclude" onClick={() => handleReviewExcludeCustomer(item.customerId)}>
+                                            ×
+                                        </button>
+                                    </article>
+                                );
+                            })}
+                        </div>
+                        <div className="saas-campaigns-review-step__footer">
+                            <span>{`${reviewAudienceItems.length} incluidos`}</span>
+                            <span>{`${excludedCustomerIds.length} excluidos manualmente`}</span>
+                            <button type="button" disabled={!wizardCanAdvance || loading} onClick={goToNextWizardStep}>Siguiente →</button>
+                        </div>
+                    </div>
+                </SaasDetailPanelSection>
+            );
         case 5:
             return (
                 <SaasDetailPanelSection title="Paso 5 - Envio">
