@@ -627,6 +627,7 @@ async function setPrimaryAddress(tenantId = DEFAULT_TENANT_ID, options = {}) {
 }
 
 module.exports = {
+    enrichAddressGeo,
     listAddresses,
     upsertAddress,
     deleteAddress,

@@ -380,6 +380,9 @@ function registerOperationsHttpRoutes({
     const getCampaignById = typeof campaignsApi.getCampaignById === 'function'
         ? campaignsApi.getCampaignById.bind(campaignsApi)
         : async () => null;
+    const hydrateCampaignRuntimeState = typeof campaignsApi.hydrateCampaignRuntimeState === 'function'
+        ? campaignsApi.hydrateCampaignRuntimeState.bind(campaignsApi)
+        : async (_tenantId, campaign) => campaign;
     const updateCampaign = typeof campaignsApi.updateCampaign === 'function'
         ? campaignsApi.updateCampaign.bind(campaignsApi)
         : async () => {
@@ -389,6 +392,11 @@ function registerOperationsHttpRoutes({
         ? campaignsApi.startCampaign.bind(campaignsApi)
         : async () => {
             throw new Error('Servicio de campanas no disponible.');
+        };
+    const sendCampaignBlock = typeof campaignsApi.sendCampaignBlock === 'function'
+        ? campaignsApi.sendCampaignBlock.bind(campaignsApi)
+        : async () => {
+            throw new Error('Servicio de bloques de campana no disponible.');
         };
     const pauseCampaign = typeof campaignsApi.pauseCampaign === 'function'
         ? campaignsApi.pauseCampaign.bind(campaignsApi)
@@ -416,6 +424,22 @@ function registerOperationsHttpRoutes({
         : async () => {
             throw new Error('Servicio de campanas no disponible.');
         };
+    const listCampaignFilterOptions = typeof campaignsApi.listCampaignFilterOptions === 'function'
+        ? campaignsApi.listCampaignFilterOptions.bind(campaignsApi)
+        : async () => ({
+            commercial_statuses: [],
+            zone_labels: [],
+            operational_labels: [],
+            customer_types: [],
+            assigned_users: []
+        });
+    const listCampaignGeographyOptions = typeof campaignsApi.listCampaignGeographyOptions === 'function'
+        ? campaignsApi.listCampaignGeographyOptions.bind(campaignsApi)
+        : async () => ({
+            departments: [],
+            provinces: {},
+            districts: {}
+        });
 
     async function listCustomerCatalogItems(catalogKey = '') {
         const fallbackCatalogs = loadCustomerCatalogFallbacks();
@@ -1677,7 +1701,8 @@ function registerOperationsHttpRoutes({
                 moduleId: toText(payload.moduleId || ''),
                 templateName: toText(payload.templateName || ''),
                 templateLanguage: toLower(payload.templateLanguage || 'es') || 'es',
-                filters: isPlainObject(payload.filters) ? payload.filters : {}
+                filters: isPlainObject(payload.filters) ? payload.filters : {},
+                audienceSelectionJson: isPlainObject(payload.audienceSelectionJson) ? payload.audienceSelectionJson : {}
             });
 
             return res.json({
@@ -1687,6 +1712,34 @@ function registerOperationsHttpRoutes({
             });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo estimar el alcance de la campana.') });
+        }
+    });
+
+    app.get('/api/tenant/campaigns/filter-options', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const options = await listCampaignFilterOptions(tenantId);
+            return res.json({ ok: true, tenantId, ...options });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar opciones de filtros de campana.') });
+        }
+    });
+
+    app.get('/api/tenant/campaigns/geography-options', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const options = await listCampaignGeographyOptions(tenantId);
+            return res.json({ ok: true, tenantId, ...options });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar opciones geograficas de campana.') });
         }
     });
 
@@ -1741,7 +1794,7 @@ function registerOperationsHttpRoutes({
             const campaignId = toText(req.params?.campaignId || '');
             if (!campaignId) return res.status(400).json({ ok: false, error: 'campaignId invalido.' });
 
-            const campaign = await getCampaignById(tenantId, { campaignId });
+            const campaign = await hydrateCampaignRuntimeState(tenantId, campaignId, { markCompleted: true });
             if (!campaign) return res.status(404).json({ ok: false, error: 'Campana no encontrada.' });
 
             return res.json({ ok: true, tenantId, campaign });
@@ -1819,6 +1872,32 @@ function registerOperationsHttpRoutes({
             return res.json({ ok: true, tenantId, campaign });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo iniciar la campana.') });
+        }
+    });
+
+    app.post('/api/tenant/campaigns/:campaignId/blocks/:blockIndex/send', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const access = ensureCampaignWriteAccess(req, tenantId);
+            if (!access.ok) {
+                return res.status(Number(access.statusCode || 403)).json({ ok: false, error: String(access.error || 'No autorizado.') });
+            }
+
+            const campaignId = toText(req.params?.campaignId || '');
+            const blockIndex = Number(req.params?.blockIndex);
+            if (!campaignId) return res.status(400).json({ ok: false, error: 'campaignId invalido.' });
+            if (!Number.isFinite(blockIndex) || blockIndex < 0) return res.status(400).json({ ok: false, error: 'blockIndex invalido.' });
+
+            const result = await sendCampaignBlock(tenantId, {
+                campaignId,
+                blockIndex,
+                actorUserId: resolveActorUserId(req)
+            });
+
+            return res.json({ ok: true, tenantId, campaignId, ...result });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo enviar el bloque de campana.') });
         }
     });
 

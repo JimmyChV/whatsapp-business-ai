@@ -10,6 +10,7 @@ const {
 const campaignQueueService = require('./campaign-queue.service');
 const metaTemplatesService = require('./meta-templates.service');
 const templateVariablesService = require('./template-variables.service');
+const customerAddressesService = require('../../tenant/services/customer-addresses.service');
 
 const STORE_FILE = 'campaigns.json';
 const DEFAULT_LIMIT = 50;
@@ -18,6 +19,7 @@ const DEFAULT_RECIPIENT_LIMIT = 2000;
 
 const CAMPAIGN_STATUSES = new Set(['draft', 'scheduled', 'running', 'paused', 'completed', 'cancelled', 'failed']);
 const RECIPIENT_STATUSES = new Set(['pending', 'claimed', 'sent', 'failed', 'skipped', 'opted_out']);
+const CAMPAIGN_BLOCK_STATUSES = new Set(['pending', 'sending', 'completed', 'failed']);
 const EVENT_TYPES = new Set([
     'campaign_created',
     'campaign_updated',
@@ -26,6 +28,9 @@ const EVENT_TYPES = new Set([
     'campaign_resumed',
     'campaign_cancelled',
     'campaign_completed',
+    'campaign_block_started',
+    'campaign_block_completed',
+    'campaign_block_failed',
     'recipient_queued',
     'recipient_claimed',
     'recipient_sent',
@@ -141,6 +146,69 @@ function normalizeActorType(value = '', fallback = 'system') {
 function normalizeObject(value = {}) {
     if (value && typeof value === 'object' && !Array.isArray(value)) return value;
     return {};
+}
+
+function normalizeCampaignBlockStatus(value = '', fallback = 'pending') {
+    const status = toLower(value || fallback);
+    if (CAMPAIGN_BLOCK_STATUSES.has(status)) return status;
+    return fallback;
+}
+
+function normalizeBlocksConfig(value = null) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (toLower(value.mode || 'single') !== 'blocks') return null;
+
+    const totalAudience = toInt(value.totalAudience ?? value.total_audience, 0, { min: 0, max: 1000000 });
+    const blocks = ensureArray(value.blocks)
+        .map((block, index) => ({
+            blockIndex: toInt(block?.blockIndex ?? block?.block_index ?? index, index, { min: 0, max: 1000 }),
+            size: toInt(block?.size, 0, { min: 0, max: 1000000 }),
+            status: normalizeCampaignBlockStatus(block?.status),
+            sentAt: toIso(block?.sentAt || block?.sent_at)
+        }))
+        .sort((left, right) => left.blockIndex - right.blockIndex);
+
+    return {
+        mode: 'blocks',
+        blocks,
+        totalAudience
+    };
+}
+
+function buildBlocksConfig({ mode = 'single', blockCount = 2, totalAudience = 0 } = {}) {
+    if (toLower(mode) !== 'blocks') return null;
+    const cleanBlockCount = toInt(blockCount, 2, { min: 2, max: 10 });
+    const cleanTotalAudience = toInt(totalAudience, 0, { min: 0, max: 1000000 });
+    const baseSize = Math.floor(cleanTotalAudience / cleanBlockCount);
+    const remainder = cleanTotalAudience % cleanBlockCount;
+    const blocks = Array.from({ length: cleanBlockCount }, (_, index) => ({
+        blockIndex: index,
+        size: index === cleanBlockCount - 1 ? baseSize + remainder : baseSize,
+        status: 'pending',
+        sentAt: null
+    }));
+    return normalizeBlocksConfig({
+        mode: 'blocks',
+        blocks,
+        totalAudience: cleanTotalAudience
+    });
+}
+
+function buildBlocksConfigFromPayload(source = {}, existingConfig = null) {
+    const raw = Object.prototype.hasOwnProperty.call(source, 'blocksConfigJson')
+        ? source.blocksConfigJson
+        : (Object.prototype.hasOwnProperty.call(source, 'blocksConfig') ? source.blocksConfig : undefined);
+    if (raw === undefined) return existingConfig === undefined ? null : existingConfig;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+    const normalized = normalizeBlocksConfig(raw);
+    if (normalized && normalized.blocks.length > 0) return normalized;
+
+    return buildBlocksConfig({
+        mode: raw.mode || 'single',
+        blockCount: raw.blockCount ?? raw.blocksCount ?? ensureArray(raw.blocks).length,
+        totalAudience: raw.totalAudience ?? raw.total_audience
+    });
 }
 
 function normalizeLimit(value = DEFAULT_LIMIT) {
@@ -261,6 +329,8 @@ function normalizeCampaignRecord(input = {}) {
     const updatedAt = toIso(source.updatedAt || source.updated_at) || createdAt;
     const status = normalizeCampaignStatus(source.status || 'draft');
     const scheduledAt = toIso(source.scheduledAt || source.scheduled_at);
+    const validFrom = toIso(source.validFrom || source.valid_from);
+    const validTo = toIso(source.validTo || source.valid_to);
     return {
         campaignId: toText(source.campaignId || source.campaign_id) || randomId('camp'),
         tenantId: normalizeTenant(source.tenantId || source.tenant_id),
@@ -274,6 +344,7 @@ function normalizeCampaignRecord(input = {}) {
         status,
         audienceFiltersJson: normalizeObject(source.audienceFiltersJson || source.audience_filters_json),
         audienceSelectionJson: normalizeObject(source.audienceSelectionJson || source.audience_selection_json),
+        blocksConfigJson: normalizeBlocksConfig(source.blocksConfigJson || source.blocks_config_json),
         variablesPreviewJson: normalizeObject(source.variablesPreviewJson || source.variables_preview_json),
         totalRecipients: toInt(source.totalRecipients ?? source.total_recipients, 0, { min: 0 }),
         pendingRecipients: toInt(source.pendingRecipients ?? source.pending_recipients, 0, { min: 0 }),
@@ -282,6 +353,8 @@ function normalizeCampaignRecord(input = {}) {
         failedRecipients: toInt(source.failedRecipients ?? source.failed_recipients, 0, { min: 0 }),
         skippedRecipients: toInt(source.skippedRecipients ?? source.skipped_recipients, 0, { min: 0 }),
         scheduledAt,
+        validFrom,
+        validTo,
         startedAt: toIso(source.startedAt || source.started_at),
         completedAt: toIso(source.completedAt || source.completed_at),
         cancelledAt: toIso(source.cancelledAt || source.cancelled_at),
@@ -393,6 +466,7 @@ async function ensurePostgresSchema() {
                     CHECK (status IN ('draft', 'scheduled', 'running', 'paused', 'completed', 'cancelled', 'failed')),
                 audience_filters_json JSONB NOT NULL DEFAULT '{}'::jsonb,
                 audience_selection_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                blocks_config_json JSONB NULL DEFAULT NULL,
                 variables_preview_json JSONB NOT NULL DEFAULT '{}'::jsonb,
                 total_recipients INTEGER NOT NULL DEFAULT 0,
                 pending_recipients INTEGER NOT NULL DEFAULT 0,
@@ -401,6 +475,8 @@ async function ensurePostgresSchema() {
                 failed_recipients INTEGER NOT NULL DEFAULT 0,
                 skipped_recipients INTEGER NOT NULL DEFAULT 0,
                 scheduled_at TIMESTAMPTZ NULL,
+                valid_from TIMESTAMPTZ NULL,
+                valid_to TIMESTAMPTZ NULL,
                 started_at TIMESTAMPTZ NULL,
                 completed_at TIMESTAMPTZ NULL,
                 cancelled_at TIMESTAMPTZ NULL,
@@ -415,6 +491,21 @@ async function ensurePostgresSchema() {
         await queryPostgres(`
             ALTER TABLE tenant_campaigns
             ADD COLUMN IF NOT EXISTS audience_selection_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        `);
+
+        await queryPostgres(`
+            ALTER TABLE tenant_campaigns
+            ADD COLUMN IF NOT EXISTS blocks_config_json JSONB NULL DEFAULT NULL
+        `);
+
+        await queryPostgres(`
+            ALTER TABLE tenant_campaigns
+            ADD COLUMN IF NOT EXISTS valid_from TIMESTAMPTZ NULL
+        `);
+
+        await queryPostgres(`
+            ALTER TABLE tenant_campaigns
+            ADD COLUMN IF NOT EXISTS valid_to TIMESTAMPTZ NULL
         `);
 
         await queryPostgres(`
@@ -494,6 +585,7 @@ function mapCampaignRow(row = {}) {
         status: row.status,
         audienceFiltersJson: row.audience_filters_json,
         audienceSelectionJson: row.audience_selection_json,
+        blocksConfigJson: row.blocks_config_json,
         variablesPreviewJson: row.variables_preview_json,
         totalRecipients: row.total_recipients,
         pendingRecipients: row.pending_recipients,
@@ -502,6 +594,8 @@ function mapCampaignRow(row = {}) {
         failedRecipients: row.failed_recipients,
         skippedRecipients: row.skipped_recipients,
         scheduledAt: row.scheduled_at,
+        validFrom: row.valid_from,
+        validTo: row.valid_to,
         startedAt: row.started_at,
         completedAt: row.completed_at,
         cancelledAt: row.cancelled_at,
@@ -586,14 +680,14 @@ async function persistCampaignRecord(tenantId = DEFAULT_TENANT_ID, record = {}) 
     const result = await queryPostgres(
         `INSERT INTO tenant_campaigns (
             campaign_id, tenant_id, scope_module_id, module_id, template_id, template_name, template_language,
-            campaign_name, campaign_description, status, audience_filters_json, audience_selection_json, variables_preview_json,
+            campaign_name, campaign_description, status, audience_filters_json, audience_selection_json, blocks_config_json, variables_preview_json,
             total_recipients, pending_recipients, claimed_recipients, sent_recipients, failed_recipients, skipped_recipients,
-            scheduled_at, started_at, completed_at, cancelled_at, created_by, updated_by, created_at, updated_at
+            scheduled_at, valid_from, valid_to, started_at, completed_at, cancelled_at, created_by, updated_by, created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7,
-            $8, $9, $10, $11::jsonb, $12::jsonb, $13::jsonb,
-            $14, $15, $16, $17, $18, $19,
-            $20::timestamptz, $21::timestamptz, $22::timestamptz, $23::timestamptz, $24, $25, $26::timestamptz, $27::timestamptz
+            $8, $9, $10, $11::jsonb, $12::jsonb, $13::jsonb, $14::jsonb,
+            $15, $16, $17, $18, $19, $20,
+            $21::timestamptz, $22::timestamptz, $23::timestamptz, $24::timestamptz, $25::timestamptz, $26::timestamptz, $27, $28, $29::timestamptz, $30::timestamptz
         )
         ON CONFLICT (tenant_id, campaign_id)
         DO UPDATE SET
@@ -607,6 +701,7 @@ async function persistCampaignRecord(tenantId = DEFAULT_TENANT_ID, record = {}) 
             status = EXCLUDED.status,
             audience_filters_json = EXCLUDED.audience_filters_json,
             audience_selection_json = EXCLUDED.audience_selection_json,
+            blocks_config_json = EXCLUDED.blocks_config_json,
             variables_preview_json = EXCLUDED.variables_preview_json,
             total_recipients = EXCLUDED.total_recipients,
             pending_recipients = EXCLUDED.pending_recipients,
@@ -615,6 +710,8 @@ async function persistCampaignRecord(tenantId = DEFAULT_TENANT_ID, record = {}) 
             failed_recipients = EXCLUDED.failed_recipients,
             skipped_recipients = EXCLUDED.skipped_recipients,
             scheduled_at = EXCLUDED.scheduled_at,
+            valid_from = EXCLUDED.valid_from,
+            valid_to = EXCLUDED.valid_to,
             started_at = EXCLUDED.started_at,
             completed_at = EXCLUDED.completed_at,
             cancelled_at = EXCLUDED.cancelled_at,
@@ -634,6 +731,7 @@ async function persistCampaignRecord(tenantId = DEFAULT_TENANT_ID, record = {}) 
             normalized.status,
             JSON.stringify(normalized.audienceFiltersJson || {}),
             JSON.stringify(normalized.audienceSelectionJson || {}),
+            normalized.blocksConfigJson ? JSON.stringify(normalized.blocksConfigJson) : null,
             JSON.stringify(normalized.variablesPreviewJson || {}),
             normalized.totalRecipients,
             normalized.pendingRecipients,
@@ -642,6 +740,8 @@ async function persistCampaignRecord(tenantId = DEFAULT_TENANT_ID, record = {}) 
             normalized.failedRecipients,
             normalized.skippedRecipients,
             normalized.scheduledAt,
+            normalized.validFrom,
+            normalized.validTo,
             normalized.startedAt,
             normalized.completedAt,
             normalized.cancelledAt,
@@ -961,6 +1061,7 @@ async function createCampaign(tenantId = DEFAULT_TENANT_ID, payload = {}) {
         status: source.status || (toIso(source.scheduledAt) ? 'scheduled' : 'draft'),
         audienceFiltersJson: source.audienceFiltersJson || source.audienceFilters || {},
         audienceSelectionJson: source.audienceSelectionJson || source.audienceSelection || {},
+        blocksConfigJson: buildBlocksConfigFromPayload(source, null),
         variablesPreviewJson: source.variablesPreviewJson || source.variablesPreview || {},
         totalRecipients: 0,
         pendingRecipients: 0,
@@ -969,6 +1070,8 @@ async function createCampaign(tenantId = DEFAULT_TENANT_ID, payload = {}) {
         failedRecipients: 0,
         skippedRecipients: 0,
         scheduledAt: source.scheduledAt || null,
+        validFrom: source.validFrom || null,
+        validTo: source.validTo || null,
         startedAt: null,
         completedAt: null,
         cancelledAt: null,
@@ -1030,8 +1133,11 @@ async function updateCampaign(tenantId = DEFAULT_TENANT_ID, { campaignId = '', p
         status: sourcePatch.status !== undefined ? sourcePatch.status : existing.status,
         audienceFiltersJson: sourcePatch.audienceFiltersJson !== undefined ? sourcePatch.audienceFiltersJson : existing.audienceFiltersJson,
         audienceSelectionJson: sourcePatch.audienceSelectionJson !== undefined ? sourcePatch.audienceSelectionJson : existing.audienceSelectionJson,
+        blocksConfigJson: buildBlocksConfigFromPayload(sourcePatch, existing.blocksConfigJson),
         variablesPreviewJson: sourcePatch.variablesPreviewJson !== undefined ? sourcePatch.variablesPreviewJson : existing.variablesPreviewJson,
         scheduledAt: sourcePatch.scheduledAt !== undefined ? sourcePatch.scheduledAt : existing.scheduledAt,
+        validFrom: sourcePatch.validFrom !== undefined ? sourcePatch.validFrom : existing.validFrom,
+        validTo: sourcePatch.validTo !== undefined ? sourcePatch.validTo : existing.validTo,
         startedAt: sourcePatch.startedAt !== undefined ? sourcePatch.startedAt : existing.startedAt,
         completedAt: sourcePatch.completedAt !== undefined ? sourcePatch.completedAt : existing.completedAt,
         cancelledAt: sourcePatch.cancelledAt !== undefined ? sourcePatch.cancelledAt : existing.cancelledAt,
@@ -1068,6 +1174,92 @@ function normalizeStringArray(input = []) {
     return source.map((entry) => toText(entry)).filter(Boolean);
 }
 
+function normalizeNullableBool(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (value === true || value === false) return value;
+    const text = toLower(value);
+    if (['true', '1', 'yes', 'si', 'open'].includes(text)) return true;
+    if (['false', '0', 'no', 'closed'].includes(text)) return false;
+    return null;
+}
+
+function normalizeAudienceSelection(value = {}) {
+    const source = normalizeObject(value);
+    const normalizeFilterSet = (filters = {}) => {
+        const f = normalizeObject(filters);
+        return {
+            commercial_status: normalizeStringArray(f.commercial_status || f.commercialStatuses || f.commercialStatus).map(toLower),
+            opt_in_status: normalizeStringArray(f.opt_in_status || f.marketingStatus || f.marketingStatuses).map(toLower),
+            zone_label_ids: normalizeStringArray(f.zone_label_ids || f.zoneLabelIds || f.zoneRuleIds).map(toUpper),
+            operational_label_ids: normalizeStringArray(f.operational_label_ids || f.labelIds || f.labels).map((entry) => toLower(entry)),
+            customer_type_ids: normalizeStringArray(f.customer_type_ids || f.customerTypeIds).map(toText),
+            acquisition_source_ids: normalizeStringArray(f.acquisition_source_ids || f.acquisitionSourceIds).map(toText),
+            departments: normalizeStringArray(f.departments || f.departmentNames).map(toText),
+            provinces: normalizeStringArray(f.provinces || f.provinceNames).map(toText),
+            districts: normalizeStringArray(f.districts || f.districtNames).map(toText),
+            assigned_user_id: toNullableText(f.assigned_user_id || f.assignedUserId),
+            has_open_chat: normalizeNullableBool(f.has_open_chat ?? f.hasOpenChat),
+            has_phone: normalizeNullableBool(f.has_phone ?? f.hasPhone),
+            has_email: normalizeNullableBool(f.has_email ?? f.hasEmail),
+            has_address: normalizeNullableBool(f.has_address ?? f.hasAddress),
+            created_after: toIso(f.created_after || f.createdAfter),
+            created_before: toIso(f.created_before || f.createdBefore)
+        };
+    };
+
+    return {
+        ...source,
+        excludedCustomerIds: normalizeStringArray(source.excludedCustomerIds || source.excluded_customer_ids),
+        filters: normalizeFilterSet(source.filters),
+        exclusionFilters: normalizeFilterSet(source.exclusionFilters || source.exclusion_filters)
+    };
+}
+
+function legacyFiltersFromAudienceSelection(selection = {}) {
+    const normalized = normalizeAudienceSelection(selection);
+    const filters = normalized.filters || {};
+    return {
+        commercialStatuses: filters.commercial_status,
+        marketingStatus: filters.opt_in_status,
+        zoneLabelIds: filters.zone_label_ids,
+        operationalLabelIds: filters.operational_label_ids,
+        customerTypeIds: filters.customer_type_ids,
+        acquisitionSourceIds: filters.acquisition_source_ids,
+        departments: filters.departments,
+        provinces: filters.provinces,
+        districts: filters.districts,
+        assignedUserId: filters.assigned_user_id,
+        hasOpenChat: filters.has_open_chat,
+        hasPhone: filters.has_phone,
+        hasEmail: filters.has_email,
+        hasAddress: filters.has_address,
+        createdAfter: filters.created_after,
+        createdBefore: filters.created_before
+    };
+}
+
+function matchFiltersFromDeepFilterSet(filters = {}) {
+    const source = normalizeObject(filters);
+    return {
+        commercialStatuses: normalizeStringArray(source.commercial_status || source.commercialStatuses || source.commercialStatus).map(toLower),
+        marketingStatus: normalizeStringArray(source.opt_in_status || source.marketingStatus || source.marketingStatuses).map(toLower),
+        zoneLabelIds: normalizeStringArray(source.zone_label_ids || source.zoneLabelIds || source.zoneRuleIds).map(toUpper),
+        operationalLabelIds: normalizeStringArray(source.operational_label_ids || source.operationalLabelIds || source.labelIds || source.labels).map(toLower),
+        customerTypeIds: normalizeStringArray(source.customer_type_ids || source.customerTypeIds).map(toText),
+        acquisitionSourceIds: normalizeStringArray(source.acquisition_source_ids || source.acquisitionSourceIds).map(toText),
+        departments: normalizeStringArray(source.departments || source.departmentNames).map(toText),
+        provinces: normalizeStringArray(source.provinces || source.provinceNames).map(toText),
+        districts: normalizeStringArray(source.districts || source.districtNames).map(toText),
+        assignedUserId: toNullableText(source.assigned_user_id || source.assignedUserId),
+        hasOpenChat: normalizeNullableBool(source.has_open_chat ?? source.hasOpenChat),
+        hasPhone: normalizeNullableBool(source.has_phone ?? source.hasPhone),
+        hasEmail: normalizeNullableBool(source.has_email ?? source.hasEmail),
+        hasAddress: normalizeNullableBool(source.has_address ?? source.hasAddress),
+        createdAfter: toIso(source.created_after || source.createdAfter),
+        createdBefore: toIso(source.created_before || source.createdBefore)
+    };
+}
+
 function normalizeZoneLabelIds(filters = {}) {
     return normalizeStringArray(
         filters.zoneLabelIds
@@ -1077,6 +1269,15 @@ function normalizeZoneLabelIds(filters = {}) {
         || filters.zoneIds
         || filters.zoneId
     ).map((entry) => toUpper(entry));
+}
+
+function normalizeOperationalLabelIds(filters = {}) {
+    return normalizeStringArray(
+        filters.operationalLabelIds
+        || filters.operational_label_ids
+        || filters.labelIds
+        || filters.labels
+    ).map((entry) => toLower(entry));
 }
 
 function normalizeIdempotencyKey(campaignId = '', moduleId = '', phone = '') {
@@ -1090,6 +1291,7 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     const tagAll = new Set(normalizeStringArray(filters.tagAll).map((entry) => toLower(entry)));
     const labelsAny = new Set(normalizeStringArray(filters.labels || filters.labelsAny || filters.labelAny).map((entry) => toLower(entry)));
     const zoneLabelIds = new Set(normalizeZoneLabelIds(filters));
+    const operationalLabelIds = new Set(normalizeOperationalLabelIds(filters));
     const search = toLower(filters.search || '');
     const marketingStatus = new Set(normalizeStringArray(filters.marketingStatus).map((entry) => toLower(entry)));
     const commercialStatus = new Set(
@@ -1104,6 +1306,24 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     const customerId = toText(customer.customerId);
     const tags = ensureArray(customer.tags).map((entry) => toLower(entry));
     const tagsSet = new Set(tags);
+    const assignedUserId = toText(filters.assignedUserId || filters.assigned_user_id || '');
+    const customerAssignedUserId = toText(customer.assignedUserId || customer.assignmentUserId || customer.assignment_user_id || '');
+    const customerTypeIds = new Set(normalizeStringArray(filters.customerTypeIds || filters.customer_type_ids).map(toText));
+    const customerTypeId = toText(customer.customerTypeId || customer.customer_type_id || '');
+    const acquisitionSourceIds = new Set(normalizeStringArray(filters.acquisitionSourceIds || filters.acquisition_source_ids).map(toText));
+    const acquisitionSourceId = toText(customer.acquisitionSourceId || customer.acquisition_source_id || '');
+    const departments = new Set(normalizeStringArray(filters.departments || filters.departmentNames).map(toLower));
+    const provinces = new Set(normalizeStringArray(filters.provinces || filters.provinceNames).map(toLower));
+    const districts = new Set(normalizeStringArray(filters.districts || filters.districtNames).map(toLower));
+    const customerDepartments = ensureArray(customer.departments || [customer.departmentName]).map((entry) => toLower(entry)).filter(Boolean);
+    const customerProvinces = ensureArray(customer.provinces || [customer.provinceName]).map((entry) => toLower(entry)).filter(Boolean);
+    const customerDistricts = ensureArray(customer.districts || [customer.districtName]).map((entry) => toLower(entry)).filter(Boolean);
+    const hasPhone = normalizeNullableBool(filters.hasPhone ?? filters.has_phone);
+    const hasEmail = normalizeNullableBool(filters.hasEmail ?? filters.has_email);
+    const hasAddress = normalizeNullableBool(filters.hasAddress ?? filters.has_address);
+    const createdAfter = toIso(filters.createdAfter || filters.created_after);
+    const createdBefore = toIso(filters.createdBefore || filters.created_before);
+    const customerCreatedAt = toIso(customer.createdAt || customer.created_at);
     const haystack = `${toLower(customer.contactName)} ${toLower(customer.phone)} ${toLower(customer.email)} ${toLower(customer.customerId)}`;
 
     if (includeCustomerIds.size && !includeCustomerIds.has(customerId)) return false;
@@ -1118,6 +1338,11 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     if (labelsAny.size > 0) {
         const hasAnyLabel = [...labelsAny].some((tag) => tagsSet.has(tag));
         if (!hasAnyLabel) return false;
+    }
+
+    if (operationalLabelIds.size > 0) {
+        const hasAnyOperationalLabel = [...operationalLabelIds].some((labelId) => tagsSet.has(labelId));
+        if (!hasAnyOperationalLabel) return false;
     }
 
     if (zoneLabelIds.size > 0) {
@@ -1141,32 +1366,130 @@ function customerMatchesFilters(customer = {}, filters = {}) {
         if (!commercialStatus.has(currentCommercialStatus)) return false;
     }
 
+    if (assignedUserId && customerAssignedUserId !== assignedUserId) return false;
+    if (customerTypeIds.size > 0 && !customerTypeIds.has(customerTypeId)) return false;
+    if (acquisitionSourceIds.size > 0 && !acquisitionSourceIds.has(acquisitionSourceId)) return false;
+    if (departments.size > 0 && !customerDepartments.some((entry) => departments.has(entry))) return false;
+    if (provinces.size > 0 && !customerProvinces.some((entry) => provinces.has(entry))) return false;
+    if (districts.size > 0 && !customerDistricts.some((entry) => districts.has(entry))) return false;
+    if (hasPhone === true && !toText(customer.phone || customer.phone_e164)) return false;
+    if (hasPhone === false && toText(customer.phone || customer.phone_e164)) return false;
+    if (hasEmail === true && !toText(customer.email)) return false;
+    if (hasEmail === false && toText(customer.email)) return false;
+    if (hasAddress === true && !(customer.hasAddress === true || customerDepartments.length > 0 || customerProvinces.length > 0 || customerDistricts.length > 0)) return false;
+    if (hasAddress === false && (customer.hasAddress === true || customerDepartments.length > 0 || customerProvinces.length > 0 || customerDistricts.length > 0)) return false;
+    if (createdAfter && customerCreatedAt && customerCreatedAt < createdAfter) return false;
+    if (createdBefore && customerCreatedAt && customerCreatedAt > createdBefore) return false;
+
+    // TODO: wire has_open_chat once a stable tenant chat status source is confirmed for campaign audiences.
+
     return true;
 }
 
 async function attachZoneLabelsToCustomers(tenantId = DEFAULT_TENANT_ID, customers = [], filters = {}) {
     const zoneFilterIds = normalizeZoneLabelIds(filters);
-    if (zoneFilterIds.length === 0) return customers;
+    if (zoneFilterIds.length === 0 && !filters.attachZoneLabels) return customers;
     const cleanTenantId = normalizeTenant(tenantId);
     try {
         const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.service');
+        const rules = await tenantZoneRulesService.listZoneRules(cleanTenantId, { includeInactive: false });
         const assignments = await tenantZoneRulesService.listCustomerLabels(cleanTenantId, { source: 'zone' });
+        const ruleById = new Map(
+            ensureArray(rules).map((rule) => {
+                const id = toUpper(rule?.ruleId || rule?.rule_id || rule?.id || '');
+                return [id, {
+                    id,
+                    name: toText(rule?.name || rule?.label || '') || id,
+                    color: toText(rule?.color || '#00A884') || '#00A884'
+                }];
+            }).filter(([id]) => Boolean(id))
+        );
         const labelsByCustomerId = new Map();
         ensureArray(assignments).forEach((assignment) => {
             const customerId = toText(assignment?.customerId || assignment?.customer_id || '');
             const labelId = toUpper(assignment?.labelId || assignment?.label_id || '');
             if (!customerId || !labelId) return;
             const current = labelsByCustomerId.get(customerId) || [];
-            current.push(labelId);
+            const configured = ruleById.get(labelId);
+            current.push({
+                id: labelId,
+                name: configured?.name || labelId,
+                color: configured?.color || '#00A884'
+            });
             labelsByCustomerId.set(customerId, current);
         });
         return ensureArray(customers).map((customer) => ({
             ...customer,
-            zoneLabelIds: labelsByCustomerId.get(toText(customer?.customerId || '')) || []
+            zoneLabelIds: (labelsByCustomerId.get(toText(customer?.customerId || '')) || []).map((entry) => entry.id),
+            zoneLabelNames: (labelsByCustomerId.get(toText(customer?.customerId || '')) || []).map((entry) => entry.name),
+            zoneLabels: labelsByCustomerId.get(toText(customer?.customerId || '')) || []
         }));
     } catch {
         return customers;
     }
+}
+
+function customerMatchesExclusionFilters(customer = {}, filters = {}) {
+    const normalized = normalizeObject(filters);
+    const hasFilters = normalizeStringArray(normalized.commercialStatus || normalized.commercialStatuses || normalized.commercial_status).length > 0
+        || normalizeStringArray(normalized.marketingStatus || normalized.opt_in_status).length > 0
+        || normalizeZoneLabelIds(normalized).length > 0
+        || normalizeOperationalLabelIds(normalized).length > 0
+        || normalizeStringArray(normalized.acquisitionSourceIds || normalized.acquisition_source_ids).length > 0
+        || normalizeStringArray(normalized.departments || normalized.departmentNames).length > 0
+        || normalizeStringArray(normalized.provinces || normalized.provinceNames).length > 0
+        || normalizeStringArray(normalized.districts || normalized.districtNames).length > 0
+        || Boolean(toText(normalized.assignedUserId || normalized.assigned_user_id || ''))
+        || normalizeNullableBool(normalized.hasPhone ?? normalized.has_phone) !== null
+        || normalizeNullableBool(normalized.hasEmail ?? normalized.has_email) !== null
+        || normalizeNullableBool(normalized.hasAddress ?? normalized.has_address) !== null
+        || Boolean(toText(normalized.createdAfter || normalized.created_after || ''))
+        || Boolean(toText(normalized.createdBefore || normalized.created_before || ''))
+        || normalizeNullableBool(normalized.hasOpenChat ?? normalized.has_open_chat) !== null;
+    if (!hasFilters) return false;
+    return customerMatchesFilters(customer, normalized);
+}
+
+function mergeAudienceFilters(baseFilters = {}, audienceSelection = {}) {
+    const base = normalizeObject(baseFilters);
+    const selection = normalizeAudienceSelection(audienceSelection);
+    const deep = legacyFiltersFromAudienceSelection(selection);
+    return {
+        ...base,
+        ...Object.fromEntries(Object.entries(deep).filter(([, value]) => {
+            if (Array.isArray(value)) return value.length > 0;
+            return value !== null && value !== undefined && value !== '';
+        }))
+    };
+}
+
+function normalizeTextArray(value = []) {
+    return Array.from(new Set(normalizeStringArray(value).map(toText).filter(Boolean)));
+}
+
+function mapCustomerRowWithAddress(row = {}) {
+    return {
+        customerId: toText(row.customer_id),
+        phone: toText(row.phone_e164),
+        contactName: toText(row.contact_name),
+        email: toText(row.email),
+        tags: ensureArray(row.labels || row.tags),
+        marketingOptInStatus: toLower(row.marketing_opt_in_status || 'unknown'),
+        commercialStatus: toLower(row.commercial_status || 'unknown'),
+        moduleId: toText(row.context_module_id || row.customer_module_id || row.module_id || ''),
+        preferredLanguage: toLower(row.preferred_language || 'es'),
+        customerTypeId: toText(row.customer_type_id || ''),
+        acquisitionSourceId: toText(row.acquisition_source_id || ''),
+        assignedUserId: toText(row.assignment_user_id || ''),
+        createdAt: toIso(row.created_at),
+        departmentName: toText(row.primary_department_name || ''),
+        provinceName: toText(row.primary_province_name || ''),
+        districtName: toText(row.primary_district_name || ''),
+        departments: normalizeTextArray(row.department_names),
+        provinces: normalizeTextArray(row.province_names),
+        districts: normalizeTextArray(row.district_names),
+        hasAddress: Boolean(row.has_address)
+    };
 }
 
 async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {}, filters = {}) {
@@ -1205,15 +1528,48 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                     c.contact_name,
                     c.email,
                     c.preferred_language,
+                    c.customer_type_id,
+                    c.acquisition_source_id,
+                    c.created_at,
                     c.module_id AS customer_module_id,
                     cmc.module_id AS context_module_id,
                     cmc.marketing_opt_in_status,
                     cmc.commercial_status,
-                    cmc.labels
+                    cmc.labels,
+                    cmc.assignment_user_id,
+                    COALESCE(addr.has_address, FALSE) AS has_address,
+                    addr.department_names,
+                    addr.province_names,
+                    addr.district_names,
+                    addr.primary_department_name,
+                    addr.primary_province_name,
+                    addr.primary_district_name
                  FROM tenant_customer_module_contexts cmc
                  JOIN tenant_customers c
                    ON c.tenant_id = cmc.tenant_id
                   AND c.customer_id = cmc.customer_id
+                 LEFT JOIN LATERAL (
+                    SELECT
+                        COUNT(*) > 0 AS has_address,
+                        ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.department_name), '')), NULL) AS department_names,
+                        ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.province_name), '')), NULL) AS province_names,
+                        ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.district_name), '')), NULL) AS district_names,
+                        COALESCE(
+                            MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.department_name), '') END),
+                            MAX(NULLIF(BTRIM(a.department_name), ''))
+                        ) AS primary_department_name,
+                        COALESCE(
+                            MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.province_name), '') END),
+                            MAX(NULLIF(BTRIM(a.province_name), ''))
+                        ) AS primary_province_name,
+                        COALESCE(
+                            MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.district_name), '') END),
+                            MAX(NULLIF(BTRIM(a.district_name), ''))
+                        ) AS primary_district_name
+                    FROM tenant_customer_addresses a
+                    WHERE a.tenant_id = c.tenant_id
+                      AND a.customer_id = c.customer_id
+                 ) addr ON TRUE
                  WHERE cmc.tenant_id = $1
                    AND LOWER(cmc.module_id) = LOWER($2)
                    AND COALESCE(c.phone_e164, '') <> ''
@@ -1223,17 +1579,7 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                 [cleanTenantId, moduleFilter, Math.max(maxRecipients * 3, 300)]
             );
 
-            const contextRows = ensureArray(contextRowsResult?.rows).map((row) => ({
-                customerId: toText(row.customer_id),
-                phone: toText(row.phone_e164),
-                contactName: toText(row.contact_name),
-                email: toText(row.email),
-                tags: ensureArray(row.labels),
-                marketingOptInStatus: toLower(row.marketing_opt_in_status || 'unknown'),
-                commercialStatus: toLower(row.commercial_status || 'unknown'),
-                moduleId: toText(row.context_module_id || row.customer_module_id || ''),
-                preferredLanguage: toLower(row.preferred_language || 'es')
-            }));
+            const contextRows = ensureArray(contextRowsResult?.rows).map(mapCustomerRowWithAddress);
 
             if (contextRows.length > 0) {
                 const withZoneLabels = await attachZoneLabelsToCustomers(cleanTenantId, contextRows, filters);
@@ -1258,25 +1604,56 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
     }
 
     const rowsResult = await queryPostgres(
-        `SELECT customer_id, phone_e164, contact_name, email, tags, module_id, preferred_language, marketing_opt_in_status
+        `SELECT
+            c.customer_id,
+            c.phone_e164,
+            c.contact_name,
+            c.email,
+            c.tags,
+            c.module_id,
+            c.preferred_language,
+            c.marketing_opt_in_status,
+            c.customer_type_id,
+            c.acquisition_source_id,
+            c.created_at,
+            COALESCE(addr.has_address, FALSE) AS has_address,
+            addr.department_names,
+            addr.province_names,
+            addr.district_names,
+            addr.primary_department_name,
+            addr.primary_province_name,
+            addr.primary_district_name
            FROM tenant_customers
+           c
+           LEFT JOIN LATERAL (
+                SELECT
+                    COUNT(*) > 0 AS has_address,
+                    ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.department_name), '')), NULL) AS department_names,
+                    ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.province_name), '')), NULL) AS province_names,
+                    ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.district_name), '')), NULL) AS district_names,
+                    COALESCE(
+                        MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.department_name), '') END),
+                        MAX(NULLIF(BTRIM(a.department_name), ''))
+                    ) AS primary_department_name,
+                    COALESCE(
+                        MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.province_name), '') END),
+                        MAX(NULLIF(BTRIM(a.province_name), ''))
+                    ) AS primary_province_name,
+                    COALESCE(
+                        MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.district_name), '') END),
+                        MAX(NULLIF(BTRIM(a.district_name), ''))
+                    ) AS primary_district_name
+                FROM tenant_customer_addresses a
+                WHERE a.tenant_id = c.tenant_id
+                  AND a.customer_id = c.customer_id
+           ) addr ON TRUE
           WHERE ${where.join(' AND ')}
           ORDER BY updated_at DESC
           LIMIT $${params.length + 1}`,
         [...params, Math.max(maxRecipients * 3, 300)]
     );
 
-    const rows = ensureArray(rowsResult?.rows).map((row) => ({
-        customerId: toText(row.customer_id),
-        phone: toText(row.phone_e164),
-        contactName: toText(row.contact_name),
-        email: toText(row.email),
-        tags: ensureArray(row.tags),
-        marketingOptInStatus: toLower(row.marketing_opt_in_status || 'unknown'),
-        commercialStatus: 'unknown',
-        moduleId: toText(row.module_id || ''),
-        preferredLanguage: toLower(row.preferred_language || 'es')
-    }));
+    const rows = ensureArray(rowsResult?.rows).map(mapCustomerRowWithAddress);
 
     const withZoneLabels = await attachZoneLabelsToCustomers(cleanTenantId, rows, filters);
     return withZoneLabels
@@ -1320,10 +1697,29 @@ function sanitizeEligibleCustomer(customer = {}) {
         customerId: toText(source.customerId || '') || null,
         contactName: toText(source.contactName || '') || null,
         phone: toText(source.phone || '') || null,
+        email: toText(source.email || '') || null,
         commercialStatus: toLower(source.commercialStatus || source.commercial_status || 'unknown') || 'unknown',
         tags: ensureArray(source.tags).map((entry) => toText(entry)).filter(Boolean),
+        operationalLabelIds: ensureArray(source.operationalLabelIds || source.tags).map((entry) => toLower(entry)).filter(Boolean),
+        zoneLabelIds: ensureArray(source.zoneLabelIds).map((entry) => toUpper(entry)).filter(Boolean),
+        zoneLabelNames: ensureArray(source.zoneLabelNames).map((entry) => toText(entry)).filter(Boolean),
+        zoneLabels: ensureArray(source.zoneLabels).map((entry) => ({
+            id: toUpper(entry?.id || ''),
+            name: toText(entry?.name || ''),
+            color: toText(entry?.color || '#00A884') || '#00A884'
+        })).filter((entry) => entry.id),
         preferredLanguage: toLower(source.preferredLanguage || source.preferred_language || 'es') || 'es',
-        marketingOptInStatus: toLower(source.marketingOptInStatus || source.marketing_opt_in_status || 'unknown') || 'unknown'
+        marketingOptInStatus: toLower(source.marketingOptInStatus || source.marketing_opt_in_status || 'unknown') || 'unknown',
+        customerTypeId: toText(source.customerTypeId || source.customer_type_id || '') || null,
+        acquisitionSourceId: toText(source.acquisitionSourceId || source.acquisition_source_id || '') || null,
+        assignedUserId: toText(source.assignedUserId || source.assignmentUserId || source.assignment_user_id || '') || null,
+        departmentName: toText(source.departmentName || '') || null,
+        provinceName: toText(source.provinceName || '') || null,
+        districtName: toText(source.districtName || '') || null,
+        departments: normalizeTextArray(source.departments),
+        provinces: normalizeTextArray(source.provinces),
+        districts: normalizeTextArray(source.districts),
+        hasAddress: source.hasAddress === true
     };
 }
 
@@ -1338,7 +1734,10 @@ async function estimateCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         if (!campaign) throw new Error('Campana no encontrada.');
     }
 
-    const filters = normalizeObject(source.filters || campaign?.audienceFiltersJson || {});
+    const audienceSelection = normalizeAudienceSelection(source.audienceSelectionJson || source.audienceSelection || campaign?.audienceSelectionJson || {});
+    const filters = mergeAudienceFilters(source.filters || campaign?.audienceFiltersJson || {}, audienceSelection);
+    const exclusionFilters = matchFiltersFromDeepFilterSet(audienceSelection.exclusionFilters || {});
+    const excludedCustomerIds = new Set(audienceSelection.excludedCustomerIds);
     const campaignContext = campaign
         ? campaign
         : {
@@ -1350,7 +1749,7 @@ async function estimateCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
             templateLanguage: toLower(source.templateLanguage || 'es') || 'es'
         };
 
-    const candidates = await loadCandidateCustomers(cleanTenantId, campaignContext, filters);
+    const candidates = await loadCandidateCustomers(cleanTenantId, campaignContext, { ...filters, attachZoneLabels: true });
     const existingRecipients = campaign?.campaignId
         ? await listCampaignRecipients(cleanTenantId, {
             campaignId: campaign.campaignId,
@@ -1359,7 +1758,13 @@ async function estimateCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         })
         : { items: [] };
 
-    const eligibility = computeRecipientEligibility(candidates, existingRecipients.items);
+    const filteredCandidates = candidates.filter((customer) => {
+        const customerId = toText(customer?.customerId || '');
+        if (customerId && excludedCustomerIds.has(customerId)) return false;
+        if (customerMatchesExclusionFilters(customer, exclusionFilters)) return false;
+        return true;
+    });
+    const eligibility = computeRecipientEligibility(filteredCandidates, existingRecipients.items);
 
     return {
         tenantId: cleanTenantId,
@@ -1367,11 +1772,154 @@ async function estimateCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         scopeModuleId: campaignContext.scopeModuleId || '',
         moduleId: campaignContext.moduleId || null,
         filters,
+        exclusionFilters,
+        excludedCustomerIds: Array.from(excludedCustomerIds),
         total: eligibility.total,
         eligible: eligibility.eligible,
         excluded: eligibility.excluded,
         items: ensureArray(eligibility.eligibleCustomers).map(sanitizeEligibleCustomer)
     };
+}
+
+async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    if (getStorageDriver() !== 'postgres') {
+        return {
+            commercial_statuses: [],
+            zone_labels: [],
+            operational_labels: [],
+            customer_types: [],
+            assigned_users: []
+        };
+    }
+
+    await ensurePostgresSchema();
+    const safeQuery = async (sql, params = []) => {
+        try {
+            const result = await queryPostgres(sql, params);
+            return ensureArray(result?.rows);
+        } catch (error) {
+            if (missingRelation(error) || String(error?.code || '') === '42703') return [];
+            throw error;
+        }
+    };
+
+    const [commercialRows, zoneRows, operationalRows, typeRows, userRows, acquisitionSourceRows] = await Promise.all([
+        safeQuery(
+            `SELECT commercial_status_key AS key, name, color
+               FROM global_labels
+              WHERE is_active = TRUE
+                AND commercial_status_key IS NOT NULL
+              ORDER BY sort_order ASC, name ASC`
+        ),
+        safeQuery(
+            `SELECT rule_id AS id, name, color
+               FROM tenant_zone_rules
+              WHERE tenant_id = $1 AND is_active = TRUE
+              ORDER BY name ASC`,
+            [cleanTenantId]
+        ),
+        safeQuery(
+            `SELECT label_id AS id, name, color
+               FROM tenant_labels
+              WHERE tenant_id = $1
+                AND is_active = TRUE
+                AND COALESCE(type, 'operational') = 'operational'
+              ORDER BY sort_order ASC, name ASC`,
+            [cleanTenantId]
+        ),
+        safeQuery(
+            `SELECT id, label AS name
+               FROM global_customer_types
+              WHERE is_active = TRUE
+              ORDER BY label ASC`
+        ),
+        safeQuery(
+            `SELECT u.user_id AS id, COALESCE(NULLIF(BTRIM(u.display_name), ''), u.email, u.user_id) AS name
+               FROM memberships m
+               JOIN users u ON u.user_id = m.user_id
+              WHERE m.tenant_id = $1
+                AND m.is_active = TRUE
+                AND u.is_active = TRUE
+                AND LOWER(m.role) IN ('seller', 'admin')
+              ORDER BY name ASC`,
+            [cleanTenantId]
+        ),
+        safeQuery(
+            `SELECT id, label AS name
+               FROM global_acquisition_sources
+              ORDER BY label ASC`
+        )
+    ]);
+
+    return {
+        commercial_statuses: commercialRows.map((row) => ({ key: toLower(row.key), name: toText(row.name), color: toText(row.color || '#00A884') })),
+        zone_labels: zoneRows.map((row) => ({ id: toUpper(row.id), name: toText(row.name), color: toText(row.color || '#00A884') })),
+        operational_labels: operationalRows.map((row) => ({ id: toUpper(row.id), name: toText(row.name), color: toText(row.color || '#00A884') })),
+        customer_types: typeRows.map((row) => ({ id: toText(row.id), name: toText(row.name) })),
+        assigned_users: userRows.map((row) => ({ id: toText(row.id), name: toText(row.name) })),
+        acquisition_sources: acquisitionSourceRows.map((row) => ({ id: toText(row.id), name: toText(row.name) }))
+    };
+}
+
+async function listCampaignGeographyOptions(tenantId = DEFAULT_TENANT_ID) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    if (getStorageDriver() !== 'postgres') {
+        return { departments: [], provinces: {}, districts: {} };
+    }
+    await ensurePostgresSchema();
+    try {
+        const result = await queryPostgres(
+            `SELECT DISTINCT
+                NULLIF(BTRIM(district_id), '') AS district_id,
+                NULLIF(BTRIM(department_name), '') AS department_name,
+                NULLIF(BTRIM(province_name), '') AS province_name,
+                NULLIF(BTRIM(district_name), '') AS district_name
+             FROM tenant_customer_addresses
+             WHERE tenant_id = $1
+             ORDER BY department_name, province_name, district_name`,
+            [cleanTenantId]
+        );
+        const departments = [];
+        const departmentSet = new Set();
+        const provinces = {};
+        const districts = {};
+        ensureArray(result?.rows).forEach((row) => {
+            const enriched = customerAddressesService.enrichAddressGeo({
+                districtId: row.district_id,
+                districtName: row.district_name,
+                provinceName: row.province_name,
+                departmentName: row.department_name
+            });
+            const departmentName = toText(enriched?.departmentName || enriched?.department_name);
+            const provinceName = toText(enriched?.provinceName || enriched?.province_name);
+            const districtName = toText(enriched?.districtName || enriched?.district_name);
+            if (!departmentName && !provinceName && !districtName) return;
+            if (departmentName && !departmentSet.has(departmentName)) {
+                departmentSet.add(departmentName);
+                departments.push(departmentName);
+            }
+            if (departmentName && provinceName) {
+                const current = provinces[departmentName] || [];
+                if (!current.includes(provinceName)) current.push(provinceName);
+                provinces[departmentName] = current.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+            }
+            if (departmentName && provinceName && districtName) {
+                const key = `${departmentName}-${provinceName}`;
+                const current = districts[key] || [];
+                if (!current.includes(districtName)) current.push(districtName);
+                districts[key] = current.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+            }
+        });
+        return {
+            departments: departments.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })),
+            provinces,
+            districts
+        };
+    } catch (error) {
+        if (missingRelation(error)) return { departments: [], provinces: {}, districts: {} };
+        throw error;
+    }
 }
 
 async function listCampaignRecipients(tenantId = DEFAULT_TENANT_ID, options = {}) {
@@ -1439,6 +1987,133 @@ async function listCampaignRecipients(tenantId = DEFAULT_TENANT_ID, options = {}
         if (missingRelation(error)) return { items: [], total: 0, limit, offset };
         throw error;
     }
+}
+
+async function listCampaignRecipientsOrderedForBlocks(tenantId = DEFAULT_TENANT_ID, { campaignId = '' } = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const cleanCampaignId = toText(campaignId);
+    if (!cleanCampaignId) return [];
+
+    if (getStorageDriver() !== 'postgres') {
+        const store = await readStore(cleanTenantId);
+        return store.recipients
+            .filter((item) => item.campaignId === cleanCampaignId)
+            .map(sanitizeRecipient)
+            .sort((left, right) => {
+                const leftKey = `${toText(left.customerId)}::${toText(left.recipientId)}::${toText(left.phone)}`;
+                const rightKey = `${toText(right.customerId)}::${toText(right.recipientId)}::${toText(right.phone)}`;
+                return leftKey.localeCompare(rightKey);
+            });
+    }
+
+    try {
+        await ensurePostgresSchema();
+        const result = await queryPostgres(
+            `SELECT *
+               FROM tenant_campaign_recipients
+              WHERE tenant_id = $1
+                AND campaign_id = $2
+              ORDER BY COALESCE(customer_id, ''), recipient_id, phone`,
+            [cleanTenantId, cleanCampaignId]
+        );
+        return ensureArray(result?.rows).map(mapRecipientRow);
+    } catch (error) {
+        if (missingRelation(error)) return [];
+        throw error;
+    }
+}
+
+function getBlockSlice(blocksConfig = null, blockIndex = 0, recipients = []) {
+    const config = normalizeBlocksConfig(blocksConfig);
+    if (!config) return { block: null, recipients: [], offset: 0 };
+    const index = toInt(blockIndex, -1, { min: -1, max: 1000 });
+    const block = config.blocks.find((entry) => entry.blockIndex === index) || null;
+    if (!block) return { block: null, recipients: [], offset: 0 };
+    const offset = config.blocks
+        .filter((entry) => entry.blockIndex < block.blockIndex)
+        .reduce((total, entry) => total + toInt(entry.size, 0, { min: 0 }), 0);
+    return {
+        block,
+        recipients: ensureArray(recipients).slice(offset, offset + toInt(block.size, 0, { min: 0 })),
+        offset
+    };
+}
+
+async function updateCampaignBlocksConfig(tenantId = DEFAULT_TENANT_ID, campaign = {}, blocksConfig = null, patch = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const updated = await persistCampaignRecord(cleanTenantId, {
+        ...campaign,
+        ...patch,
+        blocksConfigJson: normalizeBlocksConfig(blocksConfig),
+        updatedAt: nowIso()
+    });
+    return updated;
+}
+
+async function refreshCampaignBlockStatuses(tenantId = DEFAULT_TENANT_ID, campaign = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const config = normalizeBlocksConfig(campaign?.blocksConfigJson);
+    if (!config || config.blocks.length === 0) return campaign;
+
+    const sendingBlocks = config.blocks.filter((block) => block.status === 'sending');
+    if (sendingBlocks.length === 0) return campaign;
+
+    const recipients = await listCampaignRecipientsOrderedForBlocks(cleanTenantId, { campaignId: campaign.campaignId });
+    let changed = false;
+    const nextBlocks = config.blocks.map((block) => {
+        if (block.status !== 'sending') return block;
+        const slice = getBlockSlice(config, block.blockIndex, recipients).recipients;
+        if (slice.length === 0) return block;
+        const terminal = slice.every((recipient) => ['sent', 'failed', 'skipped', 'opted_out'].includes(normalizeRecipientStatus(recipient.status)));
+        if (!terminal) return block;
+        changed = true;
+        const hasFailure = slice.some((recipient) => normalizeRecipientStatus(recipient.status) === 'failed');
+        return {
+            ...block,
+            status: hasFailure ? 'failed' : 'completed',
+            sentAt: nowIso()
+        };
+    });
+    if (!changed) return campaign;
+
+    const nextConfig = normalizeBlocksConfig({ ...config, blocks: nextBlocks });
+    const updated = await updateCampaignBlocksConfig(cleanTenantId, campaign, nextConfig);
+    const completedBlock = nextBlocks.find((block, index) => block.status !== config.blocks[index]?.status);
+    if (completedBlock) {
+        await recordCampaignEvent(cleanTenantId, {
+            campaignId: updated.campaignId,
+            moduleId: updated.moduleId,
+            eventType: completedBlock.status === 'failed' ? 'campaign_block_failed' : 'campaign_block_completed',
+            severity: completedBlock.status === 'failed' ? 'warn' : 'info',
+            actorType: 'system',
+            message: completedBlock.status === 'failed' ? 'Bloque finalizado con fallas' : 'Bloque completado',
+            payloadJson: { blockIndex: completedBlock.blockIndex, size: completedBlock.size }
+        });
+    }
+    return updated;
+}
+
+async function hydrateCampaignRuntimeState(tenantId = DEFAULT_TENANT_ID, campaignOrId = null, { markCompleted = true } = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const campaignId = toText(
+        typeof campaignOrId === 'string'
+            ? campaignOrId
+            : campaignOrId?.campaignId
+    );
+    if (!campaignId) return null;
+
+    const baseCampaign = campaignOrId && typeof campaignOrId === 'object'
+        ? campaignOrId
+        : await getCampaignById(cleanTenantId, campaignId);
+    if (!baseCampaign) return null;
+
+    const refreshedBeforeStats = await refreshCampaignBlockStatuses(cleanTenantId, baseCampaign);
+    const recomputedCampaign = await recomputeCampaignStats(cleanTenantId, {
+        campaignId,
+        markCompleted
+    });
+    const finalCampaign = await refreshCampaignBlockStatuses(cleanTenantId, recomputedCampaign || refreshedBeforeStats || baseCampaign);
+    return finalCampaign || recomputedCampaign || refreshedBeforeStats || baseCampaign;
 }
 
 async function getRecipientByIdempotencyKey(tenantId = DEFAULT_TENANT_ID, { idempotencyKey = '' } = {}) {
@@ -1638,27 +2313,29 @@ async function seedRecipientsFromFilters(tenantId = DEFAULT_TENANT_ID, options =
     const campaign = await getCampaignById(cleanTenantId, campaignId);
     if (!campaign) throw new Error('Campana no encontrada.');
 
-    const filters = normalizeObject(options.filters || campaign.audienceFiltersJson);
-    const audienceSelection = normalizeObject(options.audienceSelectionJson || campaign.audienceSelectionJson);
+    const audienceSelection = normalizeAudienceSelection(options.audienceSelectionJson || campaign.audienceSelectionJson);
+    const filters = mergeAudienceFilters(options.filters || campaign.audienceFiltersJson, audienceSelection);
+    const exclusionFilters = matchFiltersFromDeepFilterSet(audienceSelection.exclusionFilters || {});
     const excludedCustomerIds = new Set(
         ensureArray(audienceSelection.excludedCustomerIds)
             .map((entry) => toText(entry))
             .filter(Boolean)
     );
     const enqueueQueue = options.enqueueQueue === true;
-    const candidates = await loadCandidateCustomers(cleanTenantId, campaign, filters);
+    const needsZoneLabels = normalizeZoneLabelIds(filters).length > 0 || normalizeZoneLabelIds(exclusionFilters).length > 0;
+    const candidates = await loadCandidateCustomers(cleanTenantId, campaign, { ...filters, attachZoneLabels: needsZoneLabels });
     const maxAttempts = toInt(options.maxAttempts, 3, { min: 1, max: 10 });
     const existingRecipients = await listCampaignRecipients(cleanTenantId, {
         campaignId: campaign.campaignId,
         limit: MAX_LIMIT,
         offset: 0
     });
-    const filteredCandidates = excludedCustomerIds.size > 0
-        ? candidates.filter((customer) => {
+    const filteredCandidates = candidates.filter((customer) => {
             const customerId = toText(customer?.customerId);
-            return !customerId || !excludedCustomerIds.has(customerId);
-        })
-        : candidates;
+            if (customerId && excludedCustomerIds.has(customerId)) return false;
+            if (customerMatchesExclusionFilters(customer, exclusionFilters)) return false;
+            return true;
+        });
     const eligibility = computeRecipientEligibility(filteredCandidates, existingRecipients.items);
 
     const insertedRecipients = [];
@@ -1822,10 +2499,11 @@ async function applyQueueJobUpdate(tenantId = DEFAULT_TENANT_ID, options = {}) {
         });
     }
 
-    const campaign = await recomputeCampaignStats(cleanTenantId, {
+    const recomputedCampaign = await recomputeCampaignStats(cleanTenantId, {
         campaignId: persistedRecipient.campaignId,
         markCompleted: true
     });
+    const campaign = await refreshCampaignBlockStatuses(cleanTenantId, recomputedCampaign);
 
     if (['sent', 'failed', 'skipped'].includes(nextStatus)) {
         emitCampaignUpdated({
@@ -1844,6 +2522,143 @@ async function applyQueueJobUpdate(tenantId = DEFAULT_TENANT_ID, options = {}) {
     return { campaign, recipient: persistedRecipient };
 }
 
+async function sendCampaignBlock(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const campaignId = toText(options.campaignId || '');
+    const blockIndex = toInt(options.blockIndex, -1, { min: -1, max: 1000 });
+    if (!campaignId) throw new Error('campaignId requerido para enviar bloque.');
+    if (blockIndex < 0) throw new Error('blockIndex invalido.');
+
+    const initialCampaign = await getCampaignById(cleanTenantId, campaignId);
+    if (!initialCampaign) throw new Error('Campana no encontrada.');
+    if (['cancelled', 'completed'].includes(initialCampaign.status)) {
+        throw new Error('No se puede enviar un bloque de una campana cancelada o completada.');
+    }
+
+    let campaign = initialCampaign;
+    let blocksConfig = normalizeBlocksConfig(campaign.blocksConfigJson);
+    if (!blocksConfig) throw new Error('La campana no esta configurada para envio por bloques.');
+    if (blocksConfig.blocks.some((block) => block.status === 'sending')) {
+        throw new Error('Ya hay un bloque en envio. Espera a que termine antes de iniciar otro.');
+    }
+
+    let recipients = await listCampaignRecipientsOrderedForBlocks(cleanTenantId, { campaignId });
+    if (recipients.length === 0) {
+        const seeded = await seedRecipientsFromFilters(cleanTenantId, {
+            campaignId,
+            filters: campaign.audienceFiltersJson,
+            audienceSelectionJson: campaign.audienceSelectionJson,
+            actorUserId: options.actorUserId || null
+        });
+        campaign = seeded?.campaign || campaign;
+        recipients = await listCampaignRecipientsOrderedForBlocks(cleanTenantId, { campaignId });
+    }
+    if (recipients.length === 0) throw new Error('No hay destinatarios congelados para este bloque.');
+
+    const hasStartedBlocks = blocksConfig.blocks.some((block) => block.status !== 'pending');
+    if (!hasStartedBlocks && blocksConfig.totalAudience !== recipients.length) {
+        blocksConfig = buildBlocksConfig({
+            mode: 'blocks',
+            blockCount: blocksConfig.blocks.length,
+            totalAudience: recipients.length
+        });
+        campaign = await updateCampaignBlocksConfig(cleanTenantId, campaign, blocksConfig, { totalRecipients: recipients.length });
+    }
+
+    const { block, recipients: blockRecipients } = getBlockSlice(blocksConfig, blockIndex, recipients);
+    if (!block) throw new Error('Bloque no encontrado.');
+    if (!['pending', 'failed'].includes(block.status)) {
+        throw new Error('Solo se pueden enviar bloques pendientes o fallidos.');
+    }
+    if (blockRecipients.length === 0) throw new Error('El bloque no tiene destinatarios.');
+
+    const sendingConfig = normalizeBlocksConfig({
+        ...blocksConfig,
+        blocks: blocksConfig.blocks.map((entry) => (
+            entry.blockIndex === block.blockIndex ? { ...entry, status: 'sending', sentAt: null } : entry
+        ))
+    });
+    campaign = await updateCampaignBlocksConfig(cleanTenantId, campaign, sendingConfig, {
+        status: 'running',
+        startedAt: campaign.startedAt || nowIso(),
+        updatedBy: options.actorUserId || campaign.updatedBy
+    });
+
+    let queued = 0;
+    for (const recipient of blockRecipients) {
+        const status = normalizeRecipientStatus(recipient.status);
+        if (['sent', 'skipped', 'opted_out'].includes(status)) continue;
+
+        let workingRecipient = recipient;
+        if (status === 'failed') {
+            workingRecipient = await persistRecipientRecord(cleanTenantId, {
+                ...recipient,
+                status: 'pending',
+                failedAt: null,
+                lastError: null,
+                nextAttemptAt: nowIso(),
+                updatedAt: nowIso()
+            });
+        }
+
+        const existingJob = await campaignQueueService.getJobByIdempotencyKey(cleanTenantId, workingRecipient.idempotencyKey);
+        if (existingJob) {
+            await campaignQueueService.requeueJob(cleanTenantId, {
+                idempotencyKey: workingRecipient.idempotencyKey,
+                nextAttemptAt: workingRecipient.nextAttemptAt || nowIso()
+            });
+        } else {
+            await campaignQueueService.enqueueJob(cleanTenantId, {
+                campaignId: campaign.campaignId,
+                recipientId: workingRecipient.recipientId,
+                phone: workingRecipient.phone,
+                moduleId: campaign.moduleId,
+                templateName: campaign.templateName,
+                templateLanguage: campaign.templateLanguage,
+                variablesJson: workingRecipient.variablesJson,
+                idempotencyKey: workingRecipient.idempotencyKey,
+                maxAttempts: workingRecipient.maxAttempts,
+                nextAttemptAt: workingRecipient.nextAttemptAt || nowIso(),
+                status: 'pending'
+            });
+        }
+        queued += 1;
+    }
+
+    await recordCampaignEvent(cleanTenantId, {
+        campaignId: campaign.campaignId,
+        moduleId: campaign.moduleId,
+        eventType: 'campaign_block_started',
+        severity: 'info',
+        actorType: options.actorUserId ? 'user' : 'system',
+        actorId: toNullableText(options.actorUserId),
+        message: `Bloque ${block.blockIndex + 1} iniciado`,
+        payloadJson: {
+            blockIndex: block.blockIndex,
+            size: block.size,
+            queued
+        }
+    });
+
+    const finalCampaign = await recomputeCampaignStats(cleanTenantId, { campaignId: campaign.campaignId, markCompleted: false });
+    emitCampaignUpdated({
+        tenantId: cleanTenantId,
+        type: 'blocks',
+        campaignId: finalCampaign.campaignId,
+        campaign: finalCampaign,
+        reason: 'campaign_block_started',
+        source: 'campaigns.sendCampaignBlock',
+        generatedAt: nowIso()
+    });
+
+    return {
+        campaign: finalCampaign,
+        block: normalizeBlocksConfig(finalCampaign.blocksConfigJson)?.blocks?.find((entry) => entry.blockIndex === blockIndex) || block,
+        queued,
+        recipients: blockRecipients.length
+    };
+}
+
 async function startCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
     const campaignId = toText(options.campaignId || '');
@@ -1853,6 +2668,9 @@ async function startCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
     if (!campaign) throw new Error('Campana no encontrada.');
     if (campaign.status === 'cancelled') throw new Error('No se puede iniciar una campana cancelada.');
     if (campaign.status === 'completed') throw new Error('No se puede iniciar una campana completada.');
+    if (normalizeBlocksConfig(campaign.blocksConfigJson)) {
+        throw new Error('Esta campana usa envio por bloques. Inicia cada bloque desde el detalle de campana.');
+    }
 
     let workingCampaign = campaign;
     if (toInt(campaign.totalRecipients, 0, { min: 0 }) === 0 && options.seedIfEmpty !== false) {
@@ -1955,6 +2773,7 @@ async function resumeCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
     if (!campaign) throw new Error('Campana no encontrada.');
     if (campaign.status === 'cancelled') throw new Error('No se puede reanudar una campana cancelada.');
     if (campaign.status === 'completed') throw new Error('No se puede reanudar una campana completada.');
+    const blocksConfig = normalizeBlocksConfig(campaign.blocksConfigJson);
 
     const updated = await persistCampaignRecord(cleanTenantId, {
         ...campaign,
@@ -1964,7 +2783,9 @@ async function resumeCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         updatedAt: nowIso()
     });
 
-    await enqueuePendingRecipientsForCampaign(cleanTenantId, updated);
+    if (!blocksConfig) {
+        await enqueuePendingRecipientsForCampaign(cleanTenantId, updated);
+    }
     await recordCampaignEvent(cleanTenantId, {
         campaignId: updated.campaignId,
         moduleId: updated.moduleId,
@@ -1976,20 +2797,23 @@ async function resumeCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
         payloadJson: {}
     });
 
+    const finalCampaign = await hydrateCampaignRuntimeState(cleanTenantId, updated, {
+        markCompleted: true
+    });
     emitCampaignUpdated({
         tenantId: cleanTenantId,
-        type: 'status',
-        campaignId: updated.campaignId,
-        campaign: updated,
+        type: blocksConfig ? 'blocks' : 'status',
+        campaignId: finalCampaign?.campaignId || updated.campaignId,
+        campaign: finalCampaign || updated,
         previousCampaign: campaign,
         previousStatus: campaign.status,
-        status: updated.status,
+        status: (finalCampaign || updated).status,
         reason: 'campaign_resumed',
         source: 'campaigns.resumeCampaign',
         generatedAt: nowIso()
     });
 
-    return updated;
+    return finalCampaign || updated;
 }
 
 async function cancelCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
@@ -2073,15 +2897,19 @@ module.exports = {
     getCampaignById,
     listCampaigns,
     startCampaign,
+    sendCampaignBlock,
     pauseCampaign,
     resumeCampaign,
     cancelCampaign,
     estimateCampaign,
+    listCampaignFilterOptions,
+    listCampaignGeographyOptions,
     seedRecipientsFromFilters,
     listCampaignRecipients,
     recordCampaignEvent,
     listCampaignEvents,
     recomputeCampaignStats,
+    hydrateCampaignRuntimeState,
     applyQueueJobUpdate,
     onCampaignUpdated
 };

@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import { isTemplateAllowedInCampaigns } from '../helpers/templateUseCase.helpers';
-import { fetchTenantZoneRules } from '../services/labels.service';
+import { fetchTenantCustomerLabels, fetchTenantLabels, fetchTenantZoneRules } from '../services/labels.service';
+import { fetchCampaignFilterOptions, fetchCampaignGeographyOptions, sendCampaignBlock } from '../services/campaigns.service';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -22,6 +23,25 @@ const STATUS_META = {
     failed: { label: 'Fallida', className: 'saas-campaigns-status--failed' }
 };
 
+const EMPTY_DEEP_FILTERS = {
+    commercial_status: [],
+    opt_in_status: [],
+    departments: [],
+    provinces: [],
+    districts: [],
+    zone_label_ids: [],
+    operational_label_ids: [],
+    customer_type_ids: [],
+    acquisition_source_ids: [],
+    assigned_user_id: '',
+    has_open_chat: '',
+    has_phone: '',
+    has_email: '',
+    has_address: '',
+    created_after: '',
+    created_before: ''
+};
+
 const EMPTY_FORM = {
     campaignName: '',
     campaignDescription: '',
@@ -29,13 +49,20 @@ const EMPTY_FORM = {
     templateId: '',
     templateName: '',
     templateLanguage: 'es',
+    scheduleMode: 'immediate',
     scheduledAt: '',
+    validFrom: '',
+    validTo: '',
     commercialStatuses: [],
     selectedLabelIds: [],
     selectedZoneRuleIds: [],
     languageFilter: '',
     searchText: '',
-    maxRecipients: ''
+    maxRecipients: '',
+    inclusionFilters: { ...EMPTY_DEEP_FILTERS },
+    exclusionFilters: { ...EMPTY_DEEP_FILTERS },
+    blocksEnabled: false,
+    blockCount: 2
 };
 
 function toText(value = '') { return String(value || '').trim(); }
@@ -67,6 +94,23 @@ function toIsoDateTimeLocal(value = '') {
     return Number.isFinite(d.getTime()) ? d.toISOString() : null;
 }
 
+function toDateInputValue(value = '') {
+    const raw = toText(value);
+    if (!raw) return '';
+    const d = new Date(raw);
+    if (!Number.isFinite(d.getTime())) return '';
+    const offset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function toIsoDateBoundary(value = '', boundary = 'start') {
+    const raw = toText(value);
+    if (!raw) return null;
+    const suffix = boundary === 'end' ? 'T23:59:59.999' : 'T00:00:00.000';
+    const d = new Date(`${raw}${suffix}`);
+    return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
+
 const COMMERCIAL_STATUS_OPTIONS = [
     { key: 'nuevo', label: 'Nuevo' },
     { key: 'en_conversacion', label: 'En conversacion' },
@@ -74,6 +118,14 @@ const COMMERCIAL_STATUS_OPTIONS = [
     { key: 'vendido', label: 'Vendido' },
     { key: 'perdido', label: 'Perdido' }
 ];
+
+const COMMERCIAL_STATUS_COLORS = {
+    nuevo: '#7D8D95',
+    en_conversacion: '#34B7F1',
+    cotizado: '#FFB02E',
+    vendido: '#00A884',
+    perdido: '#FF5C5C'
+};
 
 const CAMPAIGN_TABLE_COLUMNS = [
     { key: 'campaignName', label: 'Nombre', width: '240px', minWidth: '220px', maxWidth: '320px', type: 'text' },
@@ -85,10 +137,29 @@ const CAMPAIGN_TABLE_COLUMNS = [
 ];
 
 const CAMPAIGN_DEFAULT_COLUMN_KEYS = ['campaignName', 'category', 'language', 'status', 'moduleId', 'updatedAt'];
+const CAMPAIGN_WIZARD_STEPS = [
+    { key: 'campaign', label: 'Datos de campana', shortLabel: 'Datos' },
+    { key: 'inclusion', label: 'Inclusion', shortLabel: 'Inclusion' },
+    { key: 'exclusion', label: 'Exclusion', shortLabel: 'Exclusion' },
+    { key: 'review', label: 'Revision manual', shortLabel: 'Revision' },
+    { key: 'delivery', label: 'Envio', shortLabel: 'Envio' },
+    { key: 'summary', label: 'Resumen', shortLabel: 'Resumen' }
+];
 
 function statusMeta(status = '') {
     const key = toLower(status);
     return STATUS_META[key] || { label: key || 'N/A', className: 'saas-campaigns-status--paused' };
+}
+
+function blockStatusMeta(status = '') {
+    const key = toLower(status || 'pending');
+    const map = {
+        pending: { label: 'Pendiente', className: 'saas-campaigns-status--draft' },
+        sending: { label: 'Enviando', className: 'saas-campaigns-status--running' },
+        completed: { label: 'Completado', className: 'saas-campaigns-status--completed' },
+        failed: { label: 'Fallido', className: 'saas-campaigns-status--failed' }
+    };
+    return map[key] || map.pending;
 }
 
 function progress(campaign = {}) {
@@ -104,11 +175,168 @@ function normalizeCommercialStatuses(value = []) {
     return Array.from(new Set(source.map((entry) => toLower(entry)).filter((entry) => allowed.has(entry))));
 }
 
+function normalizeDeepFilters(value = {}) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    return {
+        commercial_status: Array.from(new Set((Array.isArray(source.commercial_status) ? source.commercial_status : []).map(toLower).filter(Boolean))),
+        opt_in_status: Array.from(new Set((Array.isArray(source.opt_in_status) ? source.opt_in_status : []).map(toLower).filter(Boolean))),
+        departments: Array.from(new Set((Array.isArray(source.departments) ? source.departments : []).map(toText).filter(Boolean))),
+        provinces: Array.from(new Set((Array.isArray(source.provinces) ? source.provinces : []).map(toText).filter(Boolean))),
+        districts: Array.from(new Set((Array.isArray(source.districts) ? source.districts : []).map(toText).filter(Boolean))),
+        zone_label_ids: Array.from(new Set((Array.isArray(source.zone_label_ids) ? source.zone_label_ids : []).map(toUpper).filter(Boolean))),
+        operational_label_ids: Array.from(new Set((Array.isArray(source.operational_label_ids) ? source.operational_label_ids : []).map(toUpper).filter(Boolean))),
+        customer_type_ids: Array.from(new Set((Array.isArray(source.customer_type_ids) ? source.customer_type_ids : []).map(toText).filter(Boolean))),
+        acquisition_source_ids: Array.from(new Set((Array.isArray(source.acquisition_source_ids) ? source.acquisition_source_ids : []).map(toText).filter(Boolean))),
+        assigned_user_id: toText(source.assigned_user_id || ''),
+        has_open_chat: source.has_open_chat === true || source.has_open_chat === false ? source.has_open_chat : '',
+        has_phone: source.has_phone === true || source.has_phone === false ? source.has_phone : '',
+        has_email: source.has_email === true || source.has_email === false ? source.has_email : '',
+        has_address: source.has_address === true || source.has_address === false ? source.has_address : '',
+        created_after: toText(source.created_after || ''),
+        created_before: toText(source.created_before || '')
+    };
+}
+
+function deepFiltersFromLegacy(filters = {}) {
+    return normalizeDeepFilters({
+        commercial_status: filters.commercial_status || filters.commercialStatuses || filters.commercialStatus || [],
+        opt_in_status: filters.opt_in_status || filters.marketingStatus || [],
+        departments: filters.departments || filters.departmentNames || [],
+        provinces: filters.provinces || filters.provinceNames || [],
+        districts: filters.districts || filters.districtNames || [],
+        zone_label_ids: filters.zone_label_ids || filters.zoneLabelIds || [],
+        operational_label_ids: filters.operational_label_ids || filters.operationalLabelIds || [],
+        customer_type_ids: filters.customer_type_ids || filters.customerTypeIds || [],
+        acquisition_source_ids: filters.acquisition_source_ids || filters.acquisitionSourceIds || [],
+        assigned_user_id: filters.assigned_user_id || filters.assignedUserId || '',
+        has_open_chat: filters.has_open_chat ?? filters.hasOpenChat ?? '',
+        has_phone: filters.has_phone ?? filters.hasPhone ?? '',
+        has_email: filters.has_email ?? filters.hasEmail ?? '',
+        has_address: filters.has_address ?? filters.hasAddress ?? '',
+        created_after: filters.created_after || filters.createdAfter || '',
+        created_before: filters.created_before || filters.createdBefore || ''
+    });
+}
+
+function toggleArrayValue(list = [], value = '', normalize = toText) {
+    const cleanValue = normalize(value);
+    if (!cleanValue) return Array.isArray(list) ? list : [];
+    const current = new Set((Array.isArray(list) ? list : []).map(normalize).filter(Boolean));
+    if (current.has(cleanValue)) current.delete(cleanValue);
+    else current.add(cleanValue);
+    return Array.from(current);
+}
+
+function hasDeepFilterValue(filters = {}) {
+    const f = normalizeDeepFilters(filters);
+    return f.commercial_status.length > 0
+        || f.opt_in_status.length > 0
+        || f.departments.length > 0
+        || f.provinces.length > 0
+        || f.districts.length > 0
+        || f.zone_label_ids.length > 0
+        || f.operational_label_ids.length > 0
+        || f.customer_type_ids.length > 0
+        || f.acquisition_source_ids.length > 0
+        || Boolean(f.assigned_user_id)
+        || f.has_open_chat === true
+        || f.has_open_chat === false
+        || f.has_phone === true
+        || f.has_phone === false
+        || f.has_email === true
+        || f.has_email === false
+        || f.has_address === true
+        || f.has_address === false
+        || Boolean(f.created_after)
+        || Boolean(f.created_before);
+}
+
+function countDeepFilterSelections(filters = {}) {
+    const f = normalizeDeepFilters(filters);
+    return f.commercial_status.length
+        + f.opt_in_status.length
+        + f.departments.length
+        + f.provinces.length
+        + f.districts.length
+        + f.zone_label_ids.length
+        + f.operational_label_ids.length
+        + f.customer_type_ids.length
+        + f.acquisition_source_ids.length
+        + (f.assigned_user_id ? 1 : 0)
+        + (f.has_open_chat === true || f.has_open_chat === false ? 1 : 0)
+        + (f.has_phone === true || f.has_phone === false ? 1 : 0)
+        + (f.has_email === true || f.has_email === false ? 1 : 0)
+        + (f.has_address === true || f.has_address === false ? 1 : 0)
+        + (f.created_after ? 1 : 0)
+        + (f.created_before ? 1 : 0);
+}
+
+function getActiveCriteriaKeys(filters = {}) {
+    const f = normalizeDeepFilters(filters);
+    const keys = [];
+    if (f.departments.length > 0) keys.push('departments');
+    if (f.provinces.length > 0) keys.push('provinces');
+    if (f.districts.length > 0) keys.push('districts');
+    if (f.zone_label_ids.length > 0) keys.push('zone_label_ids');
+    if (f.commercial_status.length > 0) keys.push('commercial_status');
+    if (f.operational_label_ids.length > 0) keys.push('operational_label_ids');
+    if (f.customer_type_ids.length > 0) keys.push('customer_type_ids');
+    if (f.acquisition_source_ids.length > 0) keys.push('acquisition_source_ids');
+    if (f.assigned_user_id) keys.push('assigned_user_id');
+    if (f.created_after || f.created_before) keys.push('created_range');
+    if (f.has_phone === true || f.has_phone === false) keys.push('has_phone');
+    if (f.has_email === true || f.has_email === false) keys.push('has_email');
+    if (f.has_address === true || f.has_address === false) keys.push('has_address');
+    return keys;
+}
+
+function clearCriterionFromFilters(filters = {}, criterion = '') {
+    const f = normalizeDeepFilters(filters);
+    const next = { ...f };
+    switch (criterion) {
+    case 'departments':
+        next.departments = [];
+        next.provinces = [];
+        next.districts = [];
+        break;
+    case 'provinces':
+        next.provinces = [];
+        next.districts = [];
+        break;
+    case 'districts':
+        next.districts = [];
+        break;
+    case 'zone_label_ids':
+    case 'commercial_status':
+    case 'operational_label_ids':
+    case 'customer_type_ids':
+    case 'acquisition_source_ids':
+        next[criterion] = [];
+        break;
+    case 'assigned_user_id':
+        next.assigned_user_id = '';
+        break;
+    case 'created_range':
+        next.created_after = '';
+        next.created_before = '';
+        break;
+    case 'has_phone':
+    case 'has_email':
+    case 'has_address':
+        next[criterion] = '';
+        break;
+    default:
+        break;
+    }
+    return normalizeDeepFilters(next);
+}
+
 function buildLabelOptions(items = []) {
     return (Array.isArray(items) ? items : [])
         .map((item) => ({
             labelId: toUpper(item?.labelId || item?.id || ''),
             name: toText(item?.name || item?.labelName || item?.label || ''),
+            color: toText(item?.color || '') || '#00A884',
             isActive: item?.isActive !== false
         }))
         .filter((item) => item.labelId && item.name && item.isActive)
@@ -118,16 +346,79 @@ function buildLabelOptions(items = []) {
 function buildZoneOptions(items = []) {
     return (Array.isArray(items) ? items : [])
         .map((item) => ({
-            ruleId: toUpper(item?.ruleId || item?.rule_id || item?.id || ''),
-            name: toText(item?.name || item?.label || ''),
-            isActive: item?.isActive !== false
+            ruleId: toUpper(item?.ruleId || item?.rule_id || item?.zone_id || item?.id || ''),
+            name: toText(item?.name || item?.labelName || item?.label_name || item?.label || ''),
+            color: toText(item?.color || '') || '#00A884',
+            isActive: item?.isActive !== false && item?.is_active !== false
         }))
-        .filter((item) => item.ruleId && item.name && item.isActive)
+        .filter((item) => item.ruleId && item.name && item.isActive !== false)
         .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+}
+
+function isZoneIdLike(value = '') {
+    return /^ZONE[-_]/i.test(toText(value));
+}
+
+function buildGeographyOptionsFromAudience(items = []) {
+    const departments = [];
+    const departmentSet = new Set();
+    const provinces = {};
+    const districts = {};
+
+    (Array.isArray(items) ? items : []).forEach((item) => {
+        const entryDepartments = uniqueTextItems(item?.departments?.length > 0 ? item.departments : [item?.departmentName]);
+        const entryProvinces = uniqueTextItems(item?.provinces?.length > 0 ? item.provinces : [item?.provinceName]);
+        const entryDistricts = uniqueTextItems(item?.districts?.length > 0 ? item.districts : [item?.districtName]);
+
+        entryDepartments.forEach((departmentName) => {
+            if (!departmentSet.has(departmentName)) {
+                departmentSet.add(departmentName);
+                departments.push(departmentName);
+            }
+
+            const currentProvinces = provinces[departmentName] || [];
+            entryProvinces.forEach((provinceName) => {
+                if (!currentProvinces.includes(provinceName)) currentProvinces.push(provinceName);
+                const districtKey = `${departmentName}-${provinceName}`;
+                const currentDistricts = districts[districtKey] || [];
+                entryDistricts.forEach((districtName) => {
+                    if (!currentDistricts.includes(districtName)) currentDistricts.push(districtName);
+                });
+                districts[districtKey] = currentDistricts.sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' }));
+            });
+            provinces[departmentName] = currentProvinces.sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' }));
+        });
+    });
+
+    return {
+        departments: departments.sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' })),
+        provinces,
+        districts
+    };
+}
+
+function uniqueTextItems(items = []) {
+    return Array.from(new Set((Array.isArray(items) ? items : []).map((item) => toText(item)).filter(Boolean)));
+}
+
+function uniqueOptionObjects(items = [], idKey = 'id', nameKey = 'name') {
+    const seen = new Set();
+    return (Array.isArray(items) ? items : [])
+        .filter(Boolean)
+        .filter((item) => {
+            const id = toText(item?.[idKey] || item?.key || item?.ruleId || item?.labelId);
+            const name = toText(item?.[nameKey] || item?.label || item?.title || item?.name);
+            if (!id || !name) return false;
+            const compound = `${id}::${name}`;
+            if (seen.has(compound)) return false;
+            seen.add(compound);
+            return true;
+        });
 }
 
 function mapCampaignToForm(campaign = {}, labelOptions = [], zoneOptions = []) {
     const filters = campaign?.audienceFiltersJson && typeof campaign.audienceFiltersJson === 'object' ? campaign.audienceFiltersJson : {};
+    const selection = campaign?.audienceSelectionJson && typeof campaign.audienceSelectionJson === 'object' ? campaign.audienceSelectionJson : {};
     const labelsByName = new Map(labelOptions.map((entry) => [toLower(entry.name), entry.labelId]));
     const labelsById = new Set(labelOptions.map((entry) => toUpper(entry.labelId)));
     const selectedLabelIds = (Array.isArray(filters?.tagAny) ? filters.tagAny : [])
@@ -150,13 +441,20 @@ function mapCampaignToForm(campaign = {}, labelOptions = [], zoneOptions = []) {
         templateId: toText(campaign?.templateId),
         templateName: toText(campaign?.templateName),
         templateLanguage: toLower(campaign?.templateLanguage || 'es'),
+        scheduleMode: campaign?.scheduledAt ? 'scheduled' : 'immediate',
         scheduledAt: toDateTimeLocal(campaign?.scheduledAt),
+        validFrom: toDateInputValue(campaign?.validFrom),
+        validTo: toDateInputValue(campaign?.validTo),
         commercialStatuses: normalizeCommercialStatuses(filters?.commercialStatuses || (filters?.commercialStatus ? [filters.commercialStatus] : [])),
         selectedLabelIds: Array.from(new Set(selectedLabelIds)),
         selectedZoneRuleIds: Array.from(new Set(selectedZoneRuleIds)),
         languageFilter: toLower(filters?.preferredLanguage || ''),
         searchText: toText(filters?.search),
-        maxRecipients: filters?.maxRecipients ? String(filters.maxRecipients) : ''
+        maxRecipients: filters?.maxRecipients ? String(filters.maxRecipients) : '',
+        inclusionFilters: deepFiltersFromLegacy(selection?.filters || filters),
+        exclusionFilters: deepFiltersFromLegacy(selection?.exclusionFilters || selection?.exclusion_filters || {}),
+        blocksEnabled: normalizeBlocksConfig(campaign?.blocksConfigJson)?.mode === 'blocks',
+        blockCount: normalizeBlocksConfig(campaign?.blocksConfigJson)?.blocks?.length || 2
     };
 }
 
@@ -171,15 +469,38 @@ function buildAudienceFiltersFromForm(form = {}, labelOptions = [], zoneOptions 
     const zoneLabelIds = (Array.isArray(form?.selectedZoneRuleIds) ? form.selectedZoneRuleIds : [])
         .map((entry) => toUpper(entry))
         .filter((entry) => entry && zoneIds.has(entry));
-    const maxRecipients = Math.max(0, Math.floor(toNumber(form?.maxRecipients)));
+    const inclusionFilters = normalizeDeepFilters(form?.inclusionFilters || {});
     return {
         commercialStatuses: normalizeCommercialStatuses(form?.commercialStatuses || []),
         preferredLanguage: toLower(form?.languageFilter || ''),
         marketingStatus: ['opted_in'],
         tagAny,
         zoneLabelIds,
-        search: toText(form?.searchText || ''),
-        maxRecipients: maxRecipients > 0 ? maxRecipients : undefined
+        commercial_status: inclusionFilters.commercial_status,
+        departments: inclusionFilters.departments,
+        provinces: inclusionFilters.provinces,
+        districts: inclusionFilters.districts,
+        zone_label_ids: inclusionFilters.zone_label_ids,
+        operational_label_ids: inclusionFilters.operational_label_ids,
+        customer_type_ids: inclusionFilters.customer_type_ids,
+        acquisition_source_ids: inclusionFilters.acquisition_source_ids,
+        assigned_user_id: inclusionFilters.assigned_user_id || undefined,
+        has_phone: inclusionFilters.has_phone === '' ? undefined : inclusionFilters.has_phone,
+        has_email: inclusionFilters.has_email === '' ? undefined : inclusionFilters.has_email,
+        has_address: inclusionFilters.has_address === '' ? undefined : inclusionFilters.has_address,
+        created_after: inclusionFilters.created_after || undefined,
+        created_before: inclusionFilters.created_before || undefined,
+        search: toText(form?.searchText || '')
+    };
+}
+
+function buildAudienceSelectionFromForm(form = {}, excludedCustomerIds = []) {
+    return {
+        excludedCustomerIds: Array.from(
+            new Set((Array.isArray(excludedCustomerIds) ? excludedCustomerIds : []).map((entry) => toText(entry)).filter(Boolean))
+        ),
+        filters: normalizeDeepFilters(form?.inclusionFilters || {}),
+        exclusionFilters: normalizeDeepFilters(form?.exclusionFilters || {})
     };
 }
 
@@ -194,7 +515,45 @@ function getAudienceSelectionFromCampaign(campaign = {}) {
                     .map((entry) => toText(entry))
                     .filter(Boolean)
             )
-        )
+        ),
+        filters: deepFiltersFromLegacy(selection.filters || {}),
+        exclusionFilters: deepFiltersFromLegacy(selection.exclusionFilters || selection.exclusion_filters || {})
+    };
+}
+
+function normalizeBlocksConfig(value = null) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (toLower(value.mode || 'single') !== 'blocks') return null;
+    const blocks = (Array.isArray(value.blocks) ? value.blocks : [])
+        .map((block, index) => ({
+            blockIndex: Math.max(0, Math.floor(toNumber(block?.blockIndex ?? block?.block_index ?? index, index))),
+            size: Math.max(0, Math.floor(toNumber(block?.size, 0))),
+            status: toLower(block?.status || 'pending') || 'pending',
+            sentAt: toText(block?.sentAt || block?.sent_at || '')
+        }))
+        .sort((left, right) => left.blockIndex - right.blockIndex);
+    return {
+        mode: 'blocks',
+        blocks,
+        totalAudience: Math.max(0, Math.floor(toNumber(value.totalAudience ?? value.total_audience, 0)))
+    };
+}
+
+function buildBlocksConfigFromForm(form = {}, totalAudience = 0) {
+    if (!form?.blocksEnabled) return null;
+    const blockCount = Math.max(2, Math.min(10, Math.floor(toNumber(form.blockCount, 2))));
+    const cleanTotalAudience = Math.max(0, Math.floor(toNumber(totalAudience, 0)));
+    const baseSize = Math.floor(cleanTotalAudience / blockCount);
+    const remainder = cleanTotalAudience % blockCount;
+    return {
+        mode: 'blocks',
+        blocks: Array.from({ length: blockCount }, (_, index) => ({
+            blockIndex: index,
+            size: index === blockCount - 1 ? baseSize + remainder : baseSize,
+            status: 'pending',
+            sentAt: null
+        })),
+        totalAudience: cleanTotalAudience
     };
 }
 
@@ -207,7 +566,10 @@ function serializeCampaignForm(form = {}) {
         templateId: toText(source.templateId),
         templateName: toText(source.templateName),
         templateLanguage: toLower(source.templateLanguage || 'es'),
+        scheduleMode: toText(source.scheduleMode || 'immediate') === 'scheduled' ? 'scheduled' : 'immediate',
         scheduledAt: toText(source.scheduledAt),
+        validFrom: toText(source.validFrom),
+        validTo: toText(source.validTo),
         commercialStatuses: normalizeCommercialStatuses(source.commercialStatuses || []),
         selectedLabelIds: Array.from(
             new Set((Array.isArray(source.selectedLabelIds) ? source.selectedLabelIds : []).map((entry) => toUpper(entry)))
@@ -217,7 +579,11 @@ function serializeCampaignForm(form = {}) {
         ).sort(),
         languageFilter: toLower(source.languageFilter || ''),
         searchText: toText(source.searchText),
-        maxRecipients: toText(source.maxRecipients)
+        maxRecipients: toText(source.maxRecipients),
+        inclusionFilters: normalizeDeepFilters(source.inclusionFilters || {}),
+        exclusionFilters: normalizeDeepFilters(source.exclusionFilters || {}),
+        blocksEnabled: Boolean(source.blocksEnabled),
+        blockCount: Math.max(2, Math.min(10, Math.floor(toNumber(source.blockCount, 2))))
     });
 }
 
@@ -240,15 +606,42 @@ export default React.memo(function CampaignsSection(props = {}) {
     } = context;
 
     const [panelMode, setPanelMode] = useState('list');
+    const [wizardStep, setWizardStep] = useState(1);
     const [form, setForm] = useState(EMPTY_FORM);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [moduleFilter, setModuleFilter] = useState('');
     const [showColumnsMenu, setShowColumnsMenu] = useState(false);
-    const [maxRecipientsTouched, setMaxRecipientsTouched] = useState(false);
     const [localEstimate, setLocalEstimate] = useState(null);
+    const [baseAudienceEstimate, setBaseAudienceEstimate] = useState(null);
+    const [inclusionOnlyEstimate, setInclusionOnlyEstimate] = useState(null);
     const [excludedCustomerIds, setExcludedCustomerIds] = useState([]);
+    const [manualExclusionSearch, setManualExclusionSearch] = useState('');
+    const [reviewSearch, setReviewSearch] = useState('');
+    const [reviewAudienceItems, setReviewAudienceItems] = useState([]);
     const [zoneRules, setZoneRules] = useState([]);
+    const [customerZoneLabels, setCustomerZoneLabels] = useState([]);
+    const [tenantOperationalLabels, setTenantOperationalLabels] = useState([]);
+    const [campaignGeographyOptions, setCampaignGeographyOptions] = useState({
+        departments: [],
+        provinces: {},
+        districts: {}
+    });
+    const [activeInclusionCriteria, setActiveInclusionCriteria] = useState([]);
+    const [activeExclusionCriteria, setActiveExclusionCriteria] = useState([]);
+    const [campaignFilterOptions, setCampaignFilterOptions] = useState({
+        commercial_statuses: [],
+        zone_labels: [],
+        operational_labels: [],
+        customer_types: [],
+        assigned_users: [],
+        acquisition_sources: []
+    });
+    const audienceRequestRef = useRef(0);
+    const estimateRequestRef = useRef({ base: 0, full: 0, inclusion: 0 });
+    const requestJsonRef = useRef(requestJson);
+    const reviewAudienceRef = useRef([]);
+    const previousWizardStepRef = useRef(1);
 
     const {
         campaigns = [],
@@ -264,6 +657,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         createCampaign,
         updateCampaign,
         startCampaign,
+        sendCampaignBlock: sendCampaignBlockAction,
         pauseCampaign,
         resumeCampaign,
         cancelCampaign,
@@ -285,8 +679,47 @@ export default React.memo(function CampaignsSection(props = {}) {
     const estimating = Boolean(estimatingFromContext || estimatingFromController);
     const estimateReachAction = estimateReachFromContext || estimateReachFromController;
 
-    const labelOptions = useMemo(() => buildLabelOptions(availableLabels), [availableLabels]);
-    const zoneOptions = useMemo(() => buildZoneOptions(zoneRules), [zoneRules]);
+    const effectiveOperationalLabels = useMemo(
+        () => (tenantOperationalLabels.length > 0 ? tenantOperationalLabels : availableLabels),
+        [availableLabels, tenantOperationalLabels]
+    );
+    const labelOptions = useMemo(() => buildLabelOptions(effectiveOperationalLabels), [effectiveOperationalLabels]);
+    const zoneOptions = useMemo(() => (
+        (Array.isArray(zoneRules) ? zoneRules : [])
+            .filter((item) => item?.isActive !== false && item?.is_active !== false)
+            .map((item) => ({
+                ruleId: String(item?.ruleId || item?.rule_id || item?.id || '').trim().toUpperCase(),
+                name: String(item?.name || item?.label || '').trim(),
+                color: toText(item?.color || '') || '#00A884'
+            }))
+            .map((item) => ({
+                ...item,
+                value: item.ruleId,
+                label: item.name
+            }))
+            .filter((item) => item.ruleId && item.name)
+            .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }))
+    ), [zoneRules]);
+    const operationalFilterChipOptions = useMemo(() => (
+        campaignFilterOptions.operational_labels.length > 0
+            ? campaignFilterOptions.operational_labels.map((item) => ({
+                id: toUpper(item.id),
+                name: toText(item.name),
+                color: toText(item.color) || '#00A884'
+            }))
+            : labelOptions.map((item) => ({
+                id: toUpper(item.labelId),
+                name: item.name,
+                color: item.color || '#00A884'
+            }))
+    ), [campaignFilterOptions.operational_labels, labelOptions]);
+    const acquisitionSourceOptions = useMemo(
+        () => (Array.isArray(campaignFilterOptions.acquisition_sources) ? campaignFilterOptions.acquisition_sources : []).map((entry) => ({
+            id: toText(entry.id),
+            name: toText(entry.name)
+        })).filter((entry) => entry.id && entry.name),
+        [campaignFilterOptions.acquisition_sources]
+    );
     const columnPrefs = useSaasColumnPrefs('campaigns', CAMPAIGN_DEFAULT_COLUMN_KEYS, {
         requestJson,
         availableColumns: CAMPAIGN_TABLE_COLUMNS
@@ -307,9 +740,14 @@ export default React.memo(function CampaignsSection(props = {}) {
             templateId: toText(entry?.templateId || entry?.metaTemplateId || entry?.templateName),
             templateName: toText(entry?.templateName),
             moduleId: toText(entry?.moduleId),
-            templateLanguage: toLower(entry?.templateLanguage || 'es')
+            templateLanguage: toLower(entry?.templateLanguage || 'es'),
+            componentsJson: Array.isArray(entry?.componentsJson) ? entry.componentsJson : []
         }))
         .filter((entry) => entry.templateName), [templateItems]);
+
+    useEffect(() => {
+        requestJsonRef.current = requestJson;
+    }, [requestJson]);
 
     const filteredCampaigns = useMemo(() => {
         const term = toLower(search);
@@ -355,6 +793,20 @@ export default React.memo(function CampaignsSection(props = {}) {
         return approvedTemplates.filter((entry) => !entry.moduleId || entry.moduleId === form.moduleId);
     }, [approvedTemplates, form.moduleId]);
 
+    const commercialFilterOptions = useMemo(() => (
+        campaignFilterOptions.commercial_statuses.length > 0
+            ? campaignFilterOptions.commercial_statuses.map((item) => ({
+                key: toLower(item.key),
+                name: toText(item.name),
+                color: toText(item.color) || COMMERCIAL_STATUS_COLORS[toLower(item.key)] || '#7D8D95'
+            }))
+            : COMMERCIAL_STATUS_OPTIONS.map((item) => ({
+                key: item.key,
+                name: item.label,
+                color: COMMERCIAL_STATUS_COLORS[item.key] || '#7D8D95'
+            }))
+    ), [campaignFilterOptions.commercial_statuses]);
+
     const selectedTemplate = useMemo(() => {
         const cleanTemplateId = toText(form.templateId);
         if (!cleanTemplateId) return null;
@@ -367,35 +819,303 @@ export default React.memo(function CampaignsSection(props = {}) {
         return moduleOptions.find((entry) => entry.moduleId === cleanModuleId) || null;
     }, [form.moduleId, moduleOptions]);
 
+    const selectedTemplatePreview = useMemo(() => {
+        const components = Array.isArray(selectedTemplate?.componentsJson) ? selectedTemplate.componentsJson : [];
+        const byType = (type) => components.find((component) => toUpper(component?.type) === type) || null;
+        const header = byType('HEADER');
+        const body = byType('BODY');
+        const footer = byType('FOOTER');
+        const buttons = byType('BUTTONS');
+        const headerFormat = toLower(header?.format || '');
+        const headerType = header
+            ? (headerFormat === 'text' ? 'text' : (['image', 'video', 'document'].includes(headerFormat) ? headerFormat : 'none'))
+            : 'none';
+        return {
+            headerType,
+            headerText: toText(header?.text),
+            bodyText: toText(body?.text),
+            footerText: toText(footer?.text),
+            buttons: Array.isArray(buttons?.buttons)
+                ? buttons.buttons.map((button, index) => ({
+                    id: `campaign_preview_btn_${index + 1}`,
+                    type: toLower(button?.type || 'quick_reply'),
+                    text: toText(button?.text) || `Boton ${index + 1}`
+                }))
+                : []
+        };
+    }, [selectedTemplate]);
+
     const estimateNumbers = useMemo(() => ({
         total: Math.max(0, toNumber(reachEstimate?.total)),
         eligible: Math.max(0, toNumber(reachEstimate?.eligible)),
         excluded: Math.max(0, toNumber(reachEstimate?.excluded))
     }), [reachEstimate]);
+    const baseAudienceNumbers = useMemo(() => ({
+        total: Math.max(0, toNumber(baseAudienceEstimate?.total)),
+        eligible: Math.max(0, toNumber(baseAudienceEstimate?.eligible, Array.isArray(baseAudienceEstimate?.items) ? baseAudienceEstimate.items.length : 0)),
+        excluded: Math.max(0, toNumber(baseAudienceEstimate?.excluded))
+    }), [baseAudienceEstimate]);
+    const inclusionAudienceNumbers = useMemo(() => ({
+        total: Math.max(0, toNumber(inclusionOnlyEstimate?.total)),
+        eligible: Math.max(0, toNumber(inclusionOnlyEstimate?.eligible, Array.isArray(inclusionOnlyEstimate?.items) ? inclusionOnlyEstimate.items.length : 0)),
+        excluded: Math.max(0, toNumber(inclusionOnlyEstimate?.excluded))
+    }), [inclusionOnlyEstimate]);
     const estimatedAudienceItems = useMemo(() => (
         (Array.isArray(reachEstimate?.items) ? reachEstimate.items : [])
             .map((item) => ({
                 customerId: toText(item?.customerId),
                 contactName: toText(item?.contactName) || 'Sin nombre',
                 phone: toText(item?.phone) || '-',
+                email: toText(item?.email),
                 commercialStatus: toLower(item?.commercialStatus || 'unknown') || 'unknown',
                 tags: Array.isArray(item?.tags)
                     ? item.tags.map((entry) => toText(entry)).filter(Boolean)
                     : [],
+                operationalLabelIds: Array.isArray(item?.operationalLabelIds)
+                    ? item.operationalLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
+                    : [],
+                zoneLabelIds: Array.isArray(item?.zoneLabelIds)
+                    ? item.zoneLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
+                    : [],
+                zoneLabelNames: Array.isArray(item?.zoneLabelNames)
+                    ? item.zoneLabelNames.map((entry) => toText(entry)).filter(Boolean)
+                    : [],
+                zoneLabels: Array.isArray(item?.zoneLabels)
+                    ? item.zoneLabels.map((entry) => ({
+                        id: toUpper(entry?.id || ''),
+                        name: toText(entry?.name || ''),
+                        color: toText(entry?.color || '#00A884') || '#00A884'
+                    })).filter((entry) => entry.id)
+                    : [],
+                customerTypeId: toText(item?.customerTypeId),
+                acquisitionSourceId: toText(item?.acquisitionSourceId),
+                assignedUserId: toText(item?.assignedUserId),
+                departmentName: toText(item?.departmentName),
+                provinceName: toText(item?.provinceName),
+                districtName: toText(item?.districtName),
+                departments: uniqueTextItems(item?.departments),
+                provinces: uniqueTextItems(item?.provinces),
+                districts: uniqueTextItems(item?.districts),
+                hasAddress: item?.hasAddress === true,
                 preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
                 marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
             }))
             .filter((item) => item.customerId)
     ), [reachEstimate]);
+    const baseAudienceItems = useMemo(() => (
+        (Array.isArray(baseAudienceEstimate?.items) ? baseAudienceEstimate.items : [])
+            .map((item) => ({
+                customerId: toText(item?.customerId),
+                contactName: toText(item?.contactName) || 'Sin nombre',
+                phone: toText(item?.phone) || '-',
+                email: toText(item?.email),
+                commercialStatus: toLower(item?.commercialStatus || 'unknown') || 'unknown',
+                tags: Array.isArray(item?.tags)
+                    ? item.tags.map((entry) => toText(entry)).filter(Boolean)
+                    : [],
+                operationalLabelIds: Array.isArray(item?.operationalLabelIds)
+                    ? item.operationalLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
+                    : [],
+                zoneLabelIds: Array.isArray(item?.zoneLabelIds)
+                    ? item.zoneLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
+                    : [],
+                zoneLabelNames: Array.isArray(item?.zoneLabelNames)
+                    ? item.zoneLabelNames.map((entry) => toText(entry)).filter(Boolean)
+                    : [],
+                zoneLabels: Array.isArray(item?.zoneLabels)
+                    ? item.zoneLabels.map((entry) => ({
+                        id: toUpper(entry?.id || ''),
+                        name: toText(entry?.name || ''),
+                        color: toText(entry?.color || '#00A884') || '#00A884'
+                    })).filter((entry) => entry.id)
+                    : [],
+                customerTypeId: toText(item?.customerTypeId),
+                acquisitionSourceId: toText(item?.acquisitionSourceId),
+                assignedUserId: toText(item?.assignedUserId),
+                departmentName: toText(item?.departmentName),
+                provinceName: toText(item?.provinceName),
+                districtName: toText(item?.districtName),
+                departments: uniqueTextItems(item?.departments),
+                provinces: uniqueTextItems(item?.provinces),
+                districts: uniqueTextItems(item?.districts),
+                hasAddress: item?.hasAddress === true,
+                preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
+                marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
+            }))
+            .filter((item) => item.customerId)
+    ), [baseAudienceEstimate]);
+    const inclusionOnlyAudienceItems = useMemo(() => (
+        (Array.isArray(inclusionOnlyEstimate?.items) ? inclusionOnlyEstimate.items : [])
+            .map((item) => ({
+                customerId: toText(item?.customerId),
+                contactName: toText(item?.contactName) || 'Sin nombre',
+                phone: toText(item?.phone) || '-',
+                email: toText(item?.email),
+                commercialStatus: toLower(item?.commercialStatus || 'unknown') || 'unknown',
+                tags: Array.isArray(item?.tags)
+                    ? item.tags.map((entry) => toText(entry)).filter(Boolean)
+                    : [],
+                operationalLabelIds: Array.isArray(item?.operationalLabelIds)
+                    ? item.operationalLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
+                    : [],
+                zoneLabelIds: Array.isArray(item?.zoneLabelIds)
+                    ? item.zoneLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
+                    : [],
+                zoneLabelNames: Array.isArray(item?.zoneLabelNames)
+                    ? item.zoneLabelNames.map((entry) => toText(entry)).filter(Boolean)
+                    : [],
+                zoneLabels: Array.isArray(item?.zoneLabels)
+                    ? item.zoneLabels.map((entry) => ({
+                        id: toUpper(entry?.id || ''),
+                        name: toText(entry?.name || ''),
+                        color: toText(entry?.color || '#00A884') || '#00A884'
+                    })).filter((entry) => entry.id)
+                    : [],
+                customerTypeId: toText(item?.customerTypeId),
+                acquisitionSourceId: toText(item?.acquisitionSourceId),
+                assignedUserId: toText(item?.assignedUserId),
+                departmentName: toText(item?.departmentName),
+                provinceName: toText(item?.provinceName),
+                districtName: toText(item?.districtName),
+                departments: uniqueTextItems(item?.departments),
+                provinces: uniqueTextItems(item?.provinces),
+                districts: uniqueTextItems(item?.districts),
+                hasAddress: item?.hasAddress === true,
+                preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
+                marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
+            }))
+            .filter((item) => item.customerId)
+    ), [inclusionOnlyEstimate]);
+    const audienceItemsForSelectors = useMemo(() => {
+        if (inclusionOnlyAudienceItems.length > 0) return inclusionOnlyAudienceItems;
+        if (estimatedAudienceItems.length > 0) return estimatedAudienceItems;
+        return baseAudienceItems;
+    }, [baseAudienceItems, estimatedAudienceItems, inclusionOnlyAudienceItems]);
+    const audienceGeographyOptions = useMemo(
+        () => buildGeographyOptionsFromAudience(audienceItemsForSelectors),
+        [audienceItemsForSelectors]
+    );
+    const zoneNameById = useMemo(() => {
+        const map = new Map();
+        zoneOptions.forEach((item) => {
+            map.set(toUpper(item.value), {
+                id: toUpper(item.value),
+                name: toText(item.label) || toUpper(item.value),
+                color: toText(item.color) || '#00A884'
+            });
+        });
+        return map;
+    }, [zoneOptions]);
+    const zoneByCustomerId = useMemo(() => {
+        const map = new Map();
+        (Array.isArray(customerZoneLabels) ? customerZoneLabels : []).forEach((assignment = {}) => {
+            const source = String(assignment?.source || '').trim().toLowerCase();
+            if (source && source !== 'zone') return;
+            const customerId = String(assignment?.customerId || assignment?.customer_id || '').trim();
+            const labelId = String(assignment?.labelId || assignment?.label_id || '').trim().toUpperCase();
+            const fallbackName = toText(assignment?.labelName || assignment?.label_name || assignment?.name || assignment?.label || '');
+            if (!customerId || !labelId) return;
+            const zone = zoneNameById.get(labelId) || (fallbackName
+                ? {
+                    id: labelId,
+                    name: fallbackName,
+                    color: toText(assignment?.color || '') || '#00A884'
+                }
+                : null);
+            if (!zone) return;
+            map.set(customerId, zone);
+        });
+        return map;
+    }, [customerZoneLabels, zoneNameById]);
+    const zoneFilterChipOptions = useMemo(() => {
+        const directOptions = zoneOptions.map((item) => ({
+            id: toUpper(item.value),
+            name: toText(item.label) || toUpper(item.value),
+            color: toText(item.color) || '#00A884'
+        }));
+        if (directOptions.length > 0) return directOptions;
+
+        const derivedZoneMap = new Map();
+        audienceItemsForSelectors.forEach((item) => {
+            (Array.isArray(item?.zoneLabelIds) ? item.zoneLabelIds : []).forEach((zoneId, index) => {
+                const id = toUpper(zoneId);
+                if (!id || derivedZoneMap.has(id)) return;
+                const configured = zoneNameById.get(id);
+                derivedZoneMap.set(id, {
+                    id,
+                    name: toText(configured?.name || item?.zoneLabelNames?.[index] || item?.zoneLabels?.[index]?.name || '') || id,
+                    color: toText(configured?.color || item?.zoneLabels?.[index]?.color || '#00A884') || '#00A884'
+                });
+            });
+        });
+        return Array.from(derivedZoneMap.values());
+    }, [audienceItemsForSelectors, zoneNameById, zoneOptions]);
+    const resolveZoneDisplayName = useCallback((zoneLabelId = '', fallbackName = '') => {
+        const cleanZoneLabelId = toUpper(zoneLabelId);
+        if (!cleanZoneLabelId) return toText(fallbackName);
+        return toText(zoneNameById.get(cleanZoneLabelId)?.name || fallbackName || cleanZoneLabelId);
+    }, [zoneNameById]);
+    const geographyDepartments = useMemo(
+        () => {
+            const configured = (Array.isArray(campaignGeographyOptions.departments) ? campaignGeographyOptions.departments : []).map(toText).filter(Boolean);
+            return configured.length > 0 ? configured : audienceGeographyOptions.departments;
+        },
+        [audienceGeographyOptions.departments, campaignGeographyOptions.departments]
+    );
+    const geographyProvinceMap = useMemo(
+        () => {
+            const configured = campaignGeographyOptions.provinces && typeof campaignGeographyOptions.provinces === 'object' ? campaignGeographyOptions.provinces : {};
+            return Object.keys(configured).length > 0 ? configured : audienceGeographyOptions.provinces;
+        },
+        [audienceGeographyOptions.provinces, campaignGeographyOptions.provinces]
+    );
+    const geographyDistrictMap = useMemo(
+        () => {
+            const configured = campaignGeographyOptions.districts && typeof campaignGeographyOptions.districts === 'object' ? campaignGeographyOptions.districts : {};
+            return Object.keys(configured).length > 0 ? configured : audienceGeographyOptions.districts;
+        },
+        [audienceGeographyOptions.districts, campaignGeographyOptions.districts]
+    );
     const excludedCustomerIdSet = useMemo(() => (
         new Set((Array.isArray(excludedCustomerIds) ? excludedCustomerIds : []).map((entry) => toText(entry)).filter(Boolean))
     ), [excludedCustomerIds]);
+    const manualExcludedAudienceItems = useMemo(() => {
+        const audienceById = new Map(inclusionOnlyAudienceItems.map((item) => [item.customerId, item]));
+        return excludedCustomerIds
+            .map((customerId) => audienceById.get(toText(customerId)))
+            .filter(Boolean);
+    }, [excludedCustomerIds, inclusionOnlyAudienceItems]);
+    const manualExclusionCandidates = useMemo(() => {
+        const term = toLower(manualExclusionSearch);
+        return inclusionOnlyAudienceItems
+            .filter((item) => !excludedCustomerIdSet.has(item.customerId))
+            .filter((item) => !term || `${toLower(item.contactName)} ${toLower(item.phone)}`.includes(term))
+            .slice(0, 12);
+    }, [excludedCustomerIdSet, inclusionOnlyAudienceItems, manualExclusionSearch]);
+    const operationalLabelById = useMemo(() => {
+        const map = new Map();
+        effectiveOperationalLabels.forEach((item) => {
+            const labelId = toUpper(item?.labelId || item?.id || '');
+            if (!labelId) return;
+            map.set(labelId, {
+                id: labelId,
+                name: toText(item?.name || item?.label || labelId),
+                color: toText(item?.color || '#00A884') || '#00A884'
+            });
+        });
+        return map;
+    }, [effectiveOperationalLabels]);
     const exclusionSummary = useMemo(() => {
-        const eligible = estimatedAudienceItems.length;
-        const excluded = estimatedAudienceItems.filter((item) => excludedCustomerIdSet.has(item.customerId)).length;
-        const finalRecipients = Math.max(0, eligible - excluded);
+        const included = inclusionOnlyAudienceItems.length;
+        const finalRecipients = estimatedAudienceItems.length;
+        const excluded = Math.max(0, included - finalRecipients);
+        const eligible = included;
         return { eligible, excluded, finalRecipients };
-    }, [estimatedAudienceItems, excludedCustomerIdSet]);
+    }, [estimatedAudienceItems.length, inclusionOnlyAudienceItems.length]);
+    const currentFinalAudienceItems = useMemo(() => {
+        const source = estimatedAudienceItems.length > 0 ? estimatedAudienceItems : inclusionOnlyAudienceItems;
+        return source.filter((item) => !excludedCustomerIdSet.has(item.customerId));
+    }, [estimatedAudienceItems, excludedCustomerIdSet, inclusionOnlyAudienceItems]);
     const formBaseline = useMemo(() => {
         if (panelMode === 'edit' && selectedCampaign) {
             return serializeCampaignForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions));
@@ -436,7 +1156,6 @@ export default React.memo(function CampaignsSection(props = {}) {
         ];
     }, [estimateNumbers.eligible, reachEstimate, selectedModule, selectedTemplate]);
     const canStartWithGuardrails = canStartGuardrails.every((entry) => entry.ok);
-    const maxRecipientsRange = Math.max(1, estimateNumbers.eligible || 1);
     const selectedLabels = useMemo(() => {
         const selected = new Set((Array.isArray(form.selectedLabelIds) ? form.selectedLabelIds : []).map((entry) => toUpper(entry)));
         return labelOptions.filter((entry) => selected.has(toUpper(entry.labelId)));
@@ -445,10 +1164,191 @@ export default React.memo(function CampaignsSection(props = {}) {
         const selected = new Set((Array.isArray(form.selectedZoneRuleIds) ? form.selectedZoneRuleIds : []).map((entry) => toUpper(entry)));
         return zoneOptions.filter((entry) => selected.has(toUpper(entry.ruleId)));
     }, [form.selectedZoneRuleIds, zoneOptions]);
+    const inclusionSelectionCount = useMemo(
+        () => countDeepFilterSelections(form.inclusionFilters),
+        [form.inclusionFilters]
+    );
+    const exclusionSelectionCount = useMemo(
+        () => countDeepFilterSelections(form.exclusionFilters),
+        [form.exclusionFilters]
+    );
+    const currentWizardStep = CAMPAIGN_WIZARD_STEPS[wizardStep - 1] || CAMPAIGN_WIZARD_STEPS[0];
+    const wizardTitle = panelMode === 'edit'
+        ? (toText(form.campaignName) || 'Editar campana')
+        : (toText(form.campaignName) || 'Nueva campana');
+    const wizardCanAdvance = useMemo(() => {
+        if (wizardStep === 1) {
+            return Boolean(toText(form.campaignName) && toText(form.moduleId) && toText(form.templateId || form.templateName));
+        }
+        if (wizardStep === 5 && form.blocksEnabled) {
+            const count = Math.floor(toNumber(form.blockCount, 2));
+            return count >= 2 && count <= 10;
+        }
+        return true;
+    }, [form.blockCount, form.blocksEnabled, form.campaignName, form.moduleId, form.templateId, form.templateName, wizardStep]);
+    const reviewVisibleItems = useMemo(() => {
+        const term = toLower(reviewSearch);
+        return reviewAudienceItems.filter((item) => !term || `${toLower(item.contactName)} ${toLower(item.phone)}`.includes(term));
+    }, [reviewAudienceItems, reviewSearch]);
+    const reviewExcludedCustomerIdSet = useMemo(() => (
+        new Set(
+            reviewAudienceItems
+                .map((item) => item.customerId)
+                .filter((customerId) => excludedCustomerIdSet.has(customerId))
+        )
+    ), [excludedCustomerIdSet, reviewAudienceItems]);
+    const reviewIncludedCount = useMemo(() => (
+        Math.max(0, reviewAudienceItems.length - reviewExcludedCustomerIdSet.size)
+    ), [reviewAudienceItems.length, reviewExcludedCustomerIdSet]);
+    const finalAudienceCount = useMemo(() => {
+        if (reviewAudienceItems.length > 0) return reviewIncludedCount;
+        return currentFinalAudienceItems.length || exclusionSummary.finalRecipients || estimateNumbers.eligible || 0;
+    }, [
+        currentFinalAudienceItems.length,
+        estimateNumbers.eligible,
+        exclusionSummary.finalRecipients,
+        reviewAudienceItems.length,
+        reviewIncludedCount
+    ]);
+    const blockPreview = useMemo(() => (
+        buildBlocksConfigFromForm(form, finalAudienceCount)
+    ), [finalAudienceCount, form]);
+    const exclusionAudienceOptions = useMemo(() => {
+        const fallbackOptInOptions = [
+            { id: 'opted_in', name: 'Con opt-in', color: '#00A884' },
+            { id: 'pending', name: 'Pendiente', color: '#FFB02E' },
+            { id: 'opted_out', name: 'Sin opt-in', color: '#FF5C5C' }
+        ];
+        const source = inclusionOnlyAudienceItems;
+        if (inclusionOnlyEstimate && source.length === 0) {
+            return {
+                commercialStatuses: [],
+                optInStatuses: [],
+                zoneLabels: [],
+                operationalLabels: []
+            };
+        }
+        if (source.length === 0) {
+            return {
+                commercialStatuses: commercialFilterOptions,
+                optInStatuses: fallbackOptInOptions,
+                zoneLabels: zoneFilterChipOptions,
+                operationalLabels: operationalFilterChipOptions
+            };
+        }
+
+        const commercialStatusSet = new Set(source.map((item) => toLower(item.commercialStatus)).filter(Boolean));
+        const optInSet = new Set(source.map((item) => toLower(item.marketingOptInStatus)).filter(Boolean));
+        const zoneSet = new Set(source.flatMap((item) => item.zoneLabelIds || []).map((entry) => toUpper(entry)).filter(Boolean));
+        const operationalSet = new Set(source.flatMap((item) => item.operationalLabelIds || []).map((entry) => toUpper(entry)).filter(Boolean));
+
+        return {
+            commercialStatuses: commercialFilterOptions.filter((item) => commercialStatusSet.has(toLower(item.key))),
+            optInStatuses: fallbackOptInOptions.filter((item) => optInSet.has(toLower(item.id))),
+            zoneLabels: zoneFilterChipOptions.filter((item) => zoneSet.has(toUpper(item.id))),
+            operationalLabels: operationalFilterChipOptions.filter((item) => operationalSet.has(toUpper(item.id)))
+        };
+    }, [commercialFilterOptions, inclusionOnlyAudienceItems, inclusionOnlyEstimate, operationalFilterChipOptions, zoneFilterChipOptions]);
+    const inclusionProvinceOptions = useMemo(() => {
+        if (form.inclusionFilters.departments.length === 0) {
+            return uniqueTextItems(Object.values(geographyProvinceMap).flat());
+        }
+        return uniqueTextItems(
+            form.inclusionFilters.departments.flatMap((department) => geographyProvinceMap[toText(department)] || [])
+        );
+    }, [form.inclusionFilters.departments, geographyProvinceMap]);
+    const inclusionDistrictOptions = useMemo(() => {
+        if (form.inclusionFilters.provinces.length === 0) {
+            const keys = Object.keys(geographyDistrictMap);
+            const byDepartments = form.inclusionFilters.departments.length === 0
+                ? keys
+                : keys.filter((key) => form.inclusionFilters.departments.some((department) => key.startsWith(`${toText(department)}-`)));
+            return uniqueTextItems(byDepartments.flatMap((key) => geographyDistrictMap[key] || []));
+        }
+        return uniqueTextItems(
+            form.inclusionFilters.provinces.flatMap((province) => {
+                const matchingKeys = Object.keys(geographyDistrictMap).filter((key) => key.endsWith(`-${toText(province)}`));
+                return matchingKeys.flatMap((key) => geographyDistrictMap[key] || []);
+            })
+        );
+    }, [form.inclusionFilters.departments, form.inclusionFilters.provinces, geographyDistrictMap]);
+    const inclusionCustomerTypeOptions = useMemo(
+        () => uniqueOptionObjects(campaignFilterOptions.customer_types, 'id', 'name'),
+        [campaignFilterOptions.customer_types]
+    );
+    const exclusionCustomerTypeOptions = useMemo(() => {
+        const ids = new Set(inclusionOnlyAudienceItems.map((item) => toText(item.customerTypeId)).filter(Boolean));
+        return inclusionCustomerTypeOptions.filter((option) => ids.has(toText(option.id)));
+    }, [inclusionCustomerTypeOptions, inclusionOnlyAudienceItems]);
+    const exclusionAcquisitionSourceOptions = useMemo(() => {
+        const ids = new Set(inclusionOnlyAudienceItems.map((item) => toText(item.acquisitionSourceId)).filter(Boolean));
+        return acquisitionSourceOptions.filter((option) => ids.has(toText(option.id)));
+    }, [acquisitionSourceOptions, inclusionOnlyAudienceItems]);
+    const exclusionAssignedUserOptions = useMemo(() => {
+        const ids = new Set(inclusionOnlyAudienceItems.map((item) => toText(item.assignedUserId)).filter(Boolean));
+        return campaignFilterOptions.assigned_users.filter((option) => ids.has(toText(option.id)));
+    }, [campaignFilterOptions.assigned_users, inclusionOnlyAudienceItems]);
+    const exclusionDepartments = useMemo(
+        () => uniqueTextItems(inclusionOnlyAudienceItems.flatMap((item) => item.departments.length > 0 ? item.departments : [item.departmentName])),
+        [inclusionOnlyAudienceItems]
+    );
+    const exclusionProvinces = useMemo(() => {
+        const items = form.exclusionFilters.departments.length > 0
+            ? inclusionOnlyAudienceItems.filter((item) => {
+                const departments = item.departments.length > 0 ? item.departments : [item.departmentName];
+                return departments.some((entry) => form.exclusionFilters.departments.includes(toText(entry)));
+            })
+            : inclusionOnlyAudienceItems;
+        return uniqueTextItems(items.flatMap((item) => item.provinces.length > 0 ? item.provinces : [item.provinceName]));
+    }, [form.exclusionFilters.departments, inclusionOnlyAudienceItems]);
+    const exclusionDistricts = useMemo(() => {
+        let items = inclusionOnlyAudienceItems;
+        if (form.exclusionFilters.provinces.length > 0) {
+            items = items.filter((item) => {
+                const provinces = item.provinces.length > 0 ? item.provinces : [item.provinceName];
+                return provinces.some((entry) => form.exclusionFilters.provinces.includes(toText(entry)));
+            });
+        } else if (form.exclusionFilters.departments.length > 0) {
+            items = items.filter((item) => {
+                const departments = item.departments.length > 0 ? item.departments : [item.departmentName];
+                return departments.some((entry) => form.exclusionFilters.departments.includes(toText(entry)));
+            });
+        }
+        return uniqueTextItems(items.flatMap((item) => item.districts.length > 0 ? item.districts : [item.districtName]));
+    }, [form.exclusionFilters.departments, form.exclusionFilters.provinces, inclusionOnlyAudienceItems]);
     const selectedStatusKey = toLower(selectedCampaign?.status);
-    const showsEstimatedAudienceInDetail = panelMode === 'detail' && ['draft', 'scheduled'].includes(selectedStatusKey);
-    const detailAudienceTitle = showsEstimatedAudienceInDetail
-        ? `Audiencia estimada (${estimateNumbers.eligible || estimatedAudienceItems.length})`
+    const detailUsesFinalAudience = panelMode === 'detail' && ['draft', 'scheduled'].includes(selectedStatusKey);
+    const selectedBlocksConfig = useMemo(() => normalizeBlocksConfig(selectedCampaign?.blocksConfigJson), [selectedCampaign]);
+    const selectedBlocks = selectedBlocksConfig?.blocks || [];
+    const hasSendingBlock = selectedBlocks.some((block) => block.status === 'sending');
+    const completedBlocksCount = selectedBlocks.filter((block) => block.status === 'completed').length;
+    const blocksProgress = selectedBlocks.length > 0 ? Math.round((completedBlocksCount / selectedBlocks.length) * 100) : 0;
+    const frozenRecipientCustomerIds = useMemo(() => (
+        new Set(
+            (Array.isArray(recipients) ? recipients : [])
+                .map((recipient) => toText(recipient?.customerId))
+                .filter(Boolean)
+        )
+    ), [recipients]);
+    const detailFinalAudienceItems = useMemo(() => {
+        if (selectedBlocks.length === 0 || frozenRecipientCustomerIds.size === 0) return currentFinalAudienceItems;
+        const filtered = currentFinalAudienceItems.filter((item) => frozenRecipientCustomerIds.has(item.customerId));
+        if (filtered.length > 0) return filtered;
+        return (Array.isArray(recipients) ? recipients : [])
+            .map((recipient) => ({
+                customerId: toText(recipient?.customerId),
+                contactName: toText(recipient?.contactName || recipient?.customerName || recipient?.customerId) || 'Sin nombre',
+                phone: toText(recipient?.phone) || '-',
+                commercialStatus: '',
+                operationalLabelIds: [],
+                zoneLabelIds: [],
+                zoneLabelNames: [],
+                zoneLabels: []
+            }))
+            .filter((item) => item.customerId);
+    }, [currentFinalAudienceItems, frozenRecipientCustomerIds, recipients, selectedBlocks.length]);
+    const detailAudienceTitle = detailUsesFinalAudience
+        ? `Audiencia final (${detailFinalAudienceItems.length})`
         : `Destinatarios (${recipients.length})`;
 
     const runSafe = useCallback(async (action, fallbackMessage) => {
@@ -485,39 +1385,154 @@ export default React.memo(function CampaignsSection(props = {}) {
     ]);
 
     useEffect(() => {
-        if (!isCampaignsSection || tenantScopeLocked || typeof requestJson !== 'function') return;
+        if (!isCampaignsSection || tenantScopeLocked || !settingsTenantId || typeof requestJsonRef.current !== 'function') {
+            setZoneRules([]);
+            setCustomerZoneLabels([]);
+            return undefined;
+        }
         let cancelled = false;
-        void fetchTenantZoneRules(requestJson, { includeInactive: false })
-            .then((payload) => {
-                if (!cancelled) setZoneRules(Array.isArray(payload?.items) ? payload.items : []);
+        void Promise.all([
+            fetchTenantZoneRules(requestJsonRef.current, { includeInactive: false, tenantId: settingsTenantId }),
+            fetchTenantCustomerLabels(requestJsonRef.current, { source: 'zone', tenantId: settingsTenantId })
+        ])
+            .then(([rulesPayload, labelsPayload]) => {
+                if (cancelled) return;
+                setZoneRules(Array.isArray(rulesPayload?.items) ? rulesPayload.items : []);
+                setCustomerZoneLabels(Array.isArray(labelsPayload?.items) ? labelsPayload.items : []);
             })
             .catch(() => {
-                if (!cancelled) setZoneRules([]);
+                if (!cancelled) {
+                    setZoneRules([]);
+                    setCustomerZoneLabels([]);
+                }
             });
         return () => {
             cancelled = true;
         };
-    }, [isCampaignsSection, requestJson, tenantScopeLocked]);
+    }, [isCampaignsSection, settingsTenantId, tenantScopeLocked]);
 
     useEffect(() => {
-        if (panelMode !== 'create' && panelMode !== 'edit') return;
-        if (maxRecipientsTouched) return;
-        const eligible = estimateNumbers.eligible;
-        if (!Number.isFinite(eligible) || eligible <= 0) return;
-        setForm((prev) => ({ ...prev, maxRecipients: String(eligible) }));
-    }, [estimateNumbers.eligible, maxRecipientsTouched, panelMode]);
+        const shouldLoadAudienceSelectors = isCampaignsSection
+            && !tenantScopeLocked
+            && Boolean(settingsTenantId)
+            && typeof requestJsonRef.current === 'function'
+            && (panelMode === 'create' || panelMode === 'edit')
+            && wizardStep >= 2;
+        if (!shouldLoadAudienceSelectors) {
+            setCampaignFilterOptions({
+                commercial_statuses: [],
+                zone_labels: [],
+                operational_labels: [],
+                customer_types: [],
+                assigned_users: [],
+                acquisition_sources: []
+            });
+            setTenantOperationalLabels([]);
+            setCampaignGeographyOptions({ departments: [], provinces: {}, districts: {} });
+            return undefined;
+        }
+        let cancelled = false;
+        const requestId = audienceRequestRef.current + 1;
+        audienceRequestRef.current = requestId;
+        Promise.allSettled([
+            fetchCampaignFilterOptions(requestJsonRef.current, { tenantId: settingsTenantId }),
+            fetchCampaignGeographyOptions(requestJsonRef.current, { tenantId: settingsTenantId }),
+            fetchTenantLabels(requestJsonRef.current, settingsTenantId, { includeInactive: false }),
+            fetchTenantZoneRules(requestJsonRef.current, { includeInactive: false, tenantId: settingsTenantId }),
+            fetchTenantCustomerLabels(requestJsonRef.current, { source: 'zone', tenantId: settingsTenantId })
+        ]).then(([filterResult, geographyResult, tenantLabelsResult, tenantZonesResult, tenantCustomerZoneLabelsResult]) => {
+            if (cancelled || requestId !== audienceRequestRef.current) return;
+
+            const filterPayload = filterResult.status === 'fulfilled' ? filterResult.value : null;
+            const geographyPayload = geographyResult.status === 'fulfilled' ? geographyResult.value : null;
+            const tenantLabelsPayload = tenantLabelsResult.status === 'fulfilled' ? tenantLabelsResult.value : null;
+            const tenantZonesPayload = tenantZonesResult.status === 'fulfilled' ? tenantZonesResult.value : null;
+            const tenantCustomerZoneLabelsPayload = tenantCustomerZoneLabelsResult.status === 'fulfilled' ? tenantCustomerZoneLabelsResult.value : null;
+
+            const tenantLabelItems = Array.isArray(tenantLabelsPayload?.items) ? tenantLabelsPayload.items : [];
+            const tenantZoneItems = Array.isArray(tenantZonesPayload?.items) ? tenantZonesPayload.items : [];
+            const tenantCustomerZoneItems = Array.isArray(tenantCustomerZoneLabelsPayload?.items) ? tenantCustomerZoneLabelsPayload.items : [];
+            const fallbackZoneLabels = buildZoneOptions(tenantZoneItems.length > 0 ? tenantZoneItems : zoneRules).map((item) => ({
+                id: toUpper(item.ruleId || item.rule_id || item.zone_id || item.id || ''),
+                name: toText(item.name || item.label || ''),
+                color: toText(item.color) || '#00A884'
+            }));
+            const fallbackOperationalLabels = buildLabelOptions(tenantLabelItems.length > 0 ? tenantLabelItems : availableLabels).map((item) => ({
+                id: toUpper(item.labelId),
+                name: toText(item.name),
+                color: toText(item.color) || '#00A884'
+            }));
+
+            setTenantOperationalLabels(tenantLabelItems);
+            setZoneRules(tenantZoneItems);
+            setCustomerZoneLabels(tenantCustomerZoneItems);
+
+            const payload = filterPayload || {};
+            const zoneFallbackById = new Map(fallbackZoneLabels.map((item) => [toUpper(item.id), item]));
+            const normalizedZoneLabels = Array.isArray(payload?.zone_labels) && payload.zone_labels.length > 0
+                ? payload.zone_labels.map((item) => {
+                    const cleanId = toUpper(item?.id || item?.ruleId || item?.rule_id || '');
+                    const fallback = zoneFallbackById.get(cleanId);
+                    return {
+                        id: cleanId,
+                        name: toText(item?.name || item?.label || fallback?.name || cleanId),
+                        color: toText(item?.color || fallback?.color || '#00A884') || '#00A884'
+                    };
+                }).filter((item) => item.id)
+                : fallbackZoneLabels;
+
+            setCampaignFilterOptions({
+                commercial_statuses: Array.isArray(payload?.commercial_statuses) ? payload.commercial_statuses : [],
+                zone_labels: normalizedZoneLabels,
+                operational_labels: Array.isArray(payload?.operational_labels) && payload.operational_labels.length > 0 ? payload.operational_labels : fallbackOperationalLabels,
+                customer_types: Array.isArray(payload?.customer_types) ? payload.customer_types : [],
+                assigned_users: Array.isArray(payload?.assigned_users) ? payload.assigned_users : [],
+                acquisition_sources: Array.isArray(payload?.acquisition_sources) ? payload.acquisition_sources : []
+            });
+            setCampaignGeographyOptions({
+                departments: Array.isArray(geographyPayload?.departments) ? geographyPayload.departments : [],
+                provinces: geographyPayload?.provinces && typeof geographyPayload.provinces === 'object' ? geographyPayload.provinces : {},
+                districts: geographyPayload?.districts && typeof geographyPayload.districts === 'object' ? geographyPayload.districts : {}
+            });
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [isCampaignsSection, panelMode, settingsTenantId, tenantScopeLocked, wizardStep]);
 
     useEffect(() => {
-        if (estimatedAudienceItems.length === 0) return;
-        const validIds = new Set(estimatedAudienceItems.map((item) => item.customerId));
+        if (inclusionOnlyAudienceItems.length === 0) return;
+        const validIds = new Set(inclusionOnlyAudienceItems.map((item) => item.customerId));
         setExcludedCustomerIds((prev) => prev.filter((customerId) => validIds.has(toText(customerId))));
-    }, [estimatedAudienceItems]);
+    }, [inclusionOnlyAudienceItems]);
+
+    useEffect(() => {
+        if (panelMode !== 'create' && panelMode !== 'edit') {
+            setManualExclusionSearch('');
+        }
+    }, [panelMode]);
 
     useEffect(() => {
         if (panelMode !== 'edit' && panelMode !== 'detail') return;
         if (!selectedCampaign) return;
         setExcludedCustomerIds(getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds);
     }, [panelMode, selectedCampaign]);
+
+    useEffect(() => {
+        if (panelMode !== 'create' && panelMode !== 'edit') {
+            setActiveInclusionCriteria([]);
+            setActiveExclusionCriteria([]);
+            return;
+        }
+        setActiveInclusionCriteria((prev) => {
+            const current = new Set([...(Array.isArray(prev) ? prev : []), ...getActiveCriteriaKeys(form.inclusionFilters)]);
+            return Array.from(current);
+        });
+        setActiveExclusionCriteria((prev) => {
+            const current = new Set([...(Array.isArray(prev) ? prev : []), ...getActiveCriteriaKeys(form.exclusionFilters)]);
+            return Array.from(current);
+        });
+    }, [form.exclusionFilters, form.inclusionFilters, panelMode]);
 
     const toggleAudienceExclusion = useCallback((customerId = '') => {
         const cleanCustomerId = toText(customerId);
@@ -563,6 +1578,77 @@ export default React.memo(function CampaignsSection(props = {}) {
         });
     }, []);
 
+    const updateDeepFilter = useCallback((scope = 'inclusionFilters', keyName = '', value) => {
+        if (!keyName) return;
+        setForm((prev) => ({
+            ...prev,
+            [scope]: normalizeDeepFilters({
+                ...(prev?.[scope] || {}),
+                [keyName]: value
+            })
+        }));
+    }, []);
+
+    const toggleDeepFilterValue = useCallback((scope = 'inclusionFilters', keyName = '', value = '', normalize = toText) => {
+        if (!keyName) return;
+        setForm((prev) => {
+            const currentFilters = normalizeDeepFilters(prev?.[scope] || {});
+            return {
+                ...prev,
+                [scope]: normalizeDeepFilters({
+                    ...currentFilters,
+                    [keyName]: toggleArrayValue(currentFilters[keyName], value, normalize)
+                })
+            };
+        });
+    }, []);
+
+    const setCriterionEnabled = useCallback((scope = 'inclusionFilters', criterion = '', enabled = true) => {
+        const setter = scope === 'exclusionFilters' ? setActiveExclusionCriteria : setActiveInclusionCriteria;
+        setter((prev) => {
+            const current = new Set(Array.isArray(prev) ? prev : []);
+            if (enabled) current.add(criterion);
+            else current.delete(criterion);
+            return Array.from(current);
+        });
+        if (!enabled) {
+            setForm((prev) => ({
+                ...prev,
+                [scope]: clearCriterionFromFilters(prev?.[scope] || {}, criterion)
+            }));
+        }
+    }, []);
+
+    const removeDeepFilterValue = useCallback((scope = 'inclusionFilters', keyName = '', value = '', normalize = toText) => {
+        if (!keyName) return;
+        const cleanValue = normalize(value);
+        setForm((prev) => {
+            const currentFilters = normalizeDeepFilters(prev?.[scope] || {});
+            return {
+                ...prev,
+                [scope]: normalizeDeepFilters({
+                    ...currentFilters,
+                    [keyName]: Array.isArray(currentFilters[keyName])
+                        ? currentFilters[keyName].filter((entry) => normalize(entry) !== cleanValue)
+                        : ''
+                })
+            };
+        });
+    }, []);
+
+    const removeFilterChip = useCallback((scope = 'inclusionFilters', chip = {}) => {
+        if (Array.isArray(normalizeDeepFilters(form?.[scope] || {})[chip.keyName])) {
+            removeDeepFilterValue(scope, chip.keyName, chip.value, chip.normalize || toText);
+            return;
+        }
+        if (chip.keyName === 'created_range') {
+            updateDeepFilter(scope, 'created_after', '');
+            updateDeepFilter(scope, 'created_before', '');
+            return;
+        }
+        updateDeepFilter(scope, chip.keyName, '');
+    }, [form, removeDeepFilterValue, updateDeepFilter]);
+
     const buildCampaignPayload = useCallback(() => {
         const audienceFiltersJson = buildAudienceFiltersFromForm(form, labelOptions, zoneOptions);
         return {
@@ -573,20 +1659,78 @@ export default React.memo(function CampaignsSection(props = {}) {
             templateLanguage: toLower(form.templateLanguage || 'es'),
             campaignName: toText(form.campaignName),
             campaignDescription: toText(form.campaignDescription) || null,
-            scheduledAt: toIsoDateTimeLocal(form.scheduledAt),
+            scheduledAt: form.scheduleMode === 'scheduled' ? toIsoDateTimeLocal(form.scheduledAt) : null,
+            validFrom: toIsoDateBoundary(form.validFrom, 'start'),
+            validTo: toIsoDateBoundary(form.validTo, 'end'),
             audienceFiltersJson,
-            audienceSelectionJson: {
-                excludedCustomerIds: Array.from(
-                    new Set((Array.isArray(excludedCustomerIds) ? excludedCustomerIds : []).map((entry) => toText(entry)).filter(Boolean))
-                )
-            },
+            audienceSelectionJson: buildAudienceSelectionFromForm(form, excludedCustomerIds),
+            blocksConfigJson: blockPreview,
             variablesPreviewJson: {}
         };
-    }, [excludedCustomerIds, form, labelOptions, zoneOptions]);
+    }, [blockPreview, excludedCustomerIds, form, labelOptions, zoneOptions]);
+
+    const buildEstimatePayload = useCallback((options = {}) => {
+        if (options?.baseOnly === true) {
+            const baseForm = {
+                ...form,
+                commercialStatuses: [],
+                selectedLabelIds: [],
+                selectedZoneRuleIds: [],
+                languageFilter: '',
+                searchText: '',
+                maxRecipients: '',
+                inclusionFilters: { ...EMPTY_DEEP_FILTERS },
+                exclusionFilters: { ...EMPTY_DEEP_FILTERS }
+            };
+            return {
+                ...buildCampaignPayload(),
+                audienceFiltersJson: buildAudienceFiltersFromForm(baseForm, labelOptions, zoneOptions),
+                audienceSelectionJson: {
+                    excludedCustomerIds: [],
+                    filters: { ...EMPTY_DEEP_FILTERS },
+                    exclusionFilters: { ...EMPTY_DEEP_FILTERS }
+                }
+            };
+        }
+        const payload = buildCampaignPayload();
+        if (options?.inclusionOnly !== true) return payload;
+        return {
+            ...payload,
+            audienceSelectionJson: {
+                ...payload.audienceSelectionJson,
+                excludedCustomerIds: [],
+                exclusionFilters: { ...EMPTY_DEEP_FILTERS }
+            }
+        };
+    }, [buildCampaignPayload, form, labelOptions, zoneOptions]);
+
+    const runBaseAudienceEstimate = useCallback(async () => {
+        if (typeof estimateReachAction !== 'function') return;
+        const requestId = estimateRequestRef.current.base + 1;
+        estimateRequestRef.current.base = requestId;
+        const payload = buildEstimatePayload({ baseOnly: true });
+        if (!payload.moduleId || !payload.templateName) return;
+        const response = await estimateReachAction({
+            scopeModuleId: payload.scopeModuleId,
+            moduleId: payload.moduleId,
+            templateName: payload.templateName,
+            templateLanguage: payload.templateLanguage,
+            filters: payload.audienceFiltersJson,
+            audienceSelectionJson: payload.audienceSelectionJson
+        });
+        const estimate = response?.estimate && typeof response.estimate === 'object'
+            ? response.estimate
+            : null;
+        if (estimate && requestId === estimateRequestRef.current.base) {
+            setBaseAudienceEstimate(estimate);
+        }
+    }, [buildEstimatePayload, estimateReachAction]);
 
     const runEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
-        const payload = buildCampaignPayload();
+        const requestId = estimateRequestRef.current.full + 1;
+        estimateRequestRef.current.full = requestId;
+        const payload = buildEstimatePayload();
         if (!payload.moduleId) throw new Error('Selecciona un modulo antes de estimar alcance.');
         if (!payload.templateName) throw new Error('Selecciona un template aprobado antes de estimar alcance.');
         const response = await estimateReachAction({
@@ -594,40 +1738,153 @@ export default React.memo(function CampaignsSection(props = {}) {
             moduleId: payload.moduleId,
             templateName: payload.templateName,
             templateLanguage: payload.templateLanguage,
-            filters: payload.audienceFiltersJson
+            filters: payload.audienceFiltersJson,
+            audienceSelectionJson: payload.audienceSelectionJson
         });
         const estimate = response?.estimate && typeof response.estimate === 'object'
             ? response.estimate
             : null;
-        if (estimate) {
+        if (estimate && requestId === estimateRequestRef.current.full) {
             setLocalEstimate(estimate);
-            setExcludedCustomerIds([]);
         }
-    }, [buildCampaignPayload, estimateReachAction]);
+    }, [buildEstimatePayload, estimateReachAction]);
 
-    const runDetailEstimate = useCallback(async () => {
+    const runInclusionOnlyEstimate = useCallback(async () => {
         if (typeof estimateReachAction !== 'function') return;
-        if (!selectedCampaign) throw new Error('No hay campana seleccionada.');
-        const detailForm = mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions);
-        const audienceFiltersJson = buildAudienceFiltersFromForm(detailForm, labelOptions, zoneOptions);
-        const payload = {
-            scopeModuleId: toLower(detailForm.moduleId),
-            moduleId: toText(detailForm.moduleId),
-            templateName: toText(detailForm.templateName),
-            templateLanguage: toLower(detailForm.templateLanguage || 'es'),
-            filters: audienceFiltersJson
-        };
-        if (!payload.moduleId) throw new Error('La campana no tiene modulo configurado.');
-        if (!payload.templateName) throw new Error('La campana no tiene template configurado.');
-        const response = await estimateReachAction(payload);
+        const requestId = estimateRequestRef.current.inclusion + 1;
+        estimateRequestRef.current.inclusion = requestId;
+        const payload = buildEstimatePayload({ inclusionOnly: true });
+        if (!payload.moduleId || !payload.templateName) return;
+        const response = await estimateReachAction({
+            scopeModuleId: payload.scopeModuleId,
+            moduleId: payload.moduleId,
+            templateName: payload.templateName,
+            templateLanguage: payload.templateLanguage,
+            filters: payload.audienceFiltersJson,
+            audienceSelectionJson: payload.audienceSelectionJson
+        });
         const estimate = response?.estimate && typeof response.estimate === 'object'
             ? response.estimate
             : null;
-        if (estimate) {
-            setLocalEstimate(estimate);
-            setExcludedCustomerIds(getAudienceSelectionFromCampaign(selectedCampaign).excludedCustomerIds);
+        if (estimate && requestId === estimateRequestRef.current.inclusion) {
+            setInclusionOnlyEstimate(estimate);
         }
-    }, [estimateReachAction, labelOptions, selectedCampaign, zoneOptions]);
+    }, [buildEstimatePayload, estimateReachAction]);
+
+    useEffect(() => {
+        if (panelMode !== 'create' && panelMode !== 'edit') return undefined;
+        if (!form.moduleId || !form.templateName) {
+            estimateRequestRef.current.base += 1;
+            estimateRequestRef.current.full += 1;
+            estimateRequestRef.current.inclusion += 1;
+            setLocalEstimate(null);
+            setBaseAudienceEstimate(null);
+            setInclusionOnlyEstimate(null);
+            return undefined;
+        }
+        if (wizardStep < 2) {
+            estimateRequestRef.current.base += 1;
+            estimateRequestRef.current.full += 1;
+            estimateRequestRef.current.inclusion += 1;
+            setLocalEstimate(null);
+            setBaseAudienceEstimate(null);
+            setInclusionOnlyEstimate(null);
+            return undefined;
+        }
+        if (wizardStep >= 4) {
+            estimateRequestRef.current.base += 1;
+            estimateRequestRef.current.full += 1;
+            estimateRequestRef.current.inclusion += 1;
+            return undefined;
+        }
+        const timer = setTimeout(() => {
+            Promise.all([
+                runBaseAudienceEstimate().catch(() => {}),
+                runEstimate().catch(() => {}),
+                runInclusionOnlyEstimate().catch(() => {})
+            ]).catch(() => {});
+        }, 400);
+        return () => clearTimeout(timer);
+    }, [
+        excludedCustomerIds,
+        form.exclusionFilters,
+        form.inclusionFilters,
+        form.moduleId,
+        form.templateName,
+        panelMode,
+        runBaseAudienceEstimate,
+        runEstimate,
+        runInclusionOnlyEstimate,
+        wizardStep
+    ]);
+
+    useEffect(() => {
+        const previousStep = previousWizardStepRef.current;
+        previousWizardStepRef.current = wizardStep;
+        if (panelMode !== 'create' && panelMode !== 'edit') return;
+        if (wizardStep !== 4 || previousStep === 4) return;
+        const snapshot = currentFinalAudienceItems.map((item) => ({ ...item }));
+        reviewAudienceRef.current = snapshot;
+        setReviewAudienceItems(snapshot);
+        setReviewSearch('');
+    }, [currentFinalAudienceItems, panelMode, wizardStep]);
+
+    const handleSendCampaignBlock = useCallback(async (blockIndex) => {
+        if (!selectedCampaignId) throw new Error('Selecciona una campana.');
+        if (typeof sendCampaignBlockAction !== 'function') throw new Error('Cliente HTTP no disponible.');
+        const response = await sendCampaignBlockAction(selectedCampaignId, blockIndex);
+        const campaign = response?.campaign || null;
+        const campaignId = toText(campaign?.campaignId || selectedCampaignId);
+        if (campaignId) {
+            const refreshDetail = async () => {
+                await loadTracking(campaignId);
+                return typeof selectCampaign === 'function'
+                    ? selectCampaign(campaignId, { loadDetail: true })
+                    : campaign;
+            };
+
+            let latestCampaign = await refreshDetail();
+            for (let attempt = 0; attempt < 8; attempt += 1) {
+                const latestBlocks = normalizeBlocksConfig(latestCampaign?.blocksConfigJson)?.blocks || [];
+                const targetBlock = latestBlocks.find((entry) => entry.blockIndex === blockIndex);
+                const stillSending = targetBlock?.status === 'sending';
+                const campaignStillRunning = ['running', 'scheduled', 'paused'].includes(toLower(latestCampaign?.status || ''));
+                if (!stillSending && !(campaignStillRunning && latestBlocks.length > 0 && latestBlocks.every((entry) => entry.status === 'completed'))) {
+                    break;
+                }
+                await new Promise((resolve) => window.setTimeout(resolve, 500));
+                latestCampaign = await refreshDetail();
+            }
+        }
+        return response;
+    }, [loadTracking, selectCampaign, selectedCampaignId, sendCampaignBlockAction]);
+
+    useEffect(() => {
+        if (panelMode !== 'detail') return undefined;
+        if (!selectedCampaignId) return undefined;
+        if (!selectedBlocks.some((block) => block.status === 'sending')) return undefined;
+
+        let cancelled = false;
+        let timeoutId = null;
+
+        const refreshWhileSending = async () => {
+            if (cancelled) return;
+            try {
+                await loadTracking(selectedCampaignId);
+                await selectCampaign?.(selectedCampaignId, { loadDetail: true });
+            } catch (_) {
+                // keep polling while the detail remains open
+            }
+            if (cancelled) return;
+            timeoutId = window.setTimeout(refreshWhileSending, 1000);
+        };
+
+        timeoutId = window.setTimeout(refreshWhileSending, 800);
+        return () => {
+            cancelled = true;
+            if (timeoutId) window.clearTimeout(timeoutId);
+        };
+    }, [loadTracking, panelMode, selectCampaign, selectedBlocks, selectedCampaignId]);
 
     const clearSelectedCampaign = useCallback(() => {
         if (typeof selectCampaign === 'function') {
@@ -638,7 +1895,8 @@ export default React.memo(function CampaignsSection(props = {}) {
     const handleCloseCampaignDetail = useCallback(() => {
         setPanelMode('list');
         setLocalEstimate(null);
-        setMaxRecipientsTouched(false);
+        setBaseAudienceEstimate(null);
+        setInclusionOnlyEstimate(null);
         setExcludedCustomerIds([]);
         clearSelectedCampaign();
     }, [clearSelectedCampaign]);
@@ -656,7 +1914,8 @@ export default React.memo(function CampaignsSection(props = {}) {
         }
 
         setLocalEstimate(null);
-        setMaxRecipientsTouched(false);
+        setBaseAudienceEstimate(null);
+        setInclusionOnlyEstimate(null);
         setExcludedCustomerIds([]);
         if (panelMode === 'edit' && selectedCampaign) {
             setForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions));
@@ -676,6 +1935,131 @@ export default React.memo(function CampaignsSection(props = {}) {
         clearSelectedCampaign,
         selectedCampaign,
         zoneOptions
+    ]);
+
+    useEffect(() => {
+        if (panelMode === 'create' || panelMode === 'edit') {
+            setWizardStep(1);
+        }
+    }, [panelMode, selectedCampaignId]);
+
+    const validateWizardStep = useCallback((step = wizardStep) => {
+        if (step === 1) {
+            if (!toText(form.campaignName)) {
+                notify({ type: 'warn', message: 'Ingresa un nombre para la campana antes de continuar.' });
+                return false;
+            }
+            if (!toText(form.moduleId)) {
+                notify({ type: 'warn', message: 'Selecciona un modulo antes de continuar.' });
+                return false;
+            }
+            if (!toText(form.templateId || form.templateName)) {
+                notify({ type: 'warn', message: 'Selecciona un template aprobado antes de continuar.' });
+                return false;
+            }
+        }
+        if (step === 5 && form.blocksEnabled) {
+            const count = Math.floor(toNumber(form.blockCount, 2));
+            if (count < 2 || count > 10) {
+                notify({ type: 'warn', message: 'El numero de bloques debe estar entre 2 y 10.' });
+                return false;
+            }
+        }
+        return true;
+    }, [form.blockCount, form.blocksEnabled, form.campaignName, form.moduleId, form.templateId, form.templateName, notify, wizardStep]);
+
+    const goToNextWizardStep = useCallback(() => {
+        if (!validateWizardStep(wizardStep)) return;
+        setWizardStep((prev) => Math.min(prev + 1, CAMPAIGN_WIZARD_STEPS.length));
+    }, [validateWizardStep, wizardStep]);
+
+    const goToPreviousWizardStep = useCallback(() => {
+        setWizardStep((prev) => Math.max(prev - 1, 1));
+    }, []);
+
+    const saveCampaignDraftAction = useCallback(async () => {
+        const payload = {
+            ...buildCampaignPayload(),
+            status: 'draft'
+        };
+        if (!payload.moduleId || !payload.templateName || !payload.campaignName) {
+            throw new Error('Nombre, modulo y template son obligatorios.');
+        }
+        const response = panelMode === 'edit'
+            ? await updateCampaign?.({ campaignId: selectedCampaignId, patch: payload })
+            : await createCampaign?.(payload);
+        const campaign = response?.campaign || null;
+        await loadCampaigns?.();
+        setPanelMode('list');
+        setLocalEstimate(null);
+        setBaseAudienceEstimate(null);
+        setInclusionOnlyEstimate(null);
+        setExcludedCustomerIds([]);
+        setReviewAudienceItems([]);
+        clearSelectedCampaign();
+        notify({ type: 'info', message: campaign ? 'Campana guardada como borrador.' : 'Cambios guardados.' });
+    }, [
+        buildCampaignPayload,
+        clearSelectedCampaign,
+        createCampaign,
+        loadCampaigns,
+        notify,
+        panelMode,
+        selectedCampaignId,
+        updateCampaign
+    ]);
+
+    const saveAndStartCampaignAction = useCallback(async () => {
+        const payload = buildCampaignPayload();
+        if (!payload.moduleId || !payload.templateName || !payload.campaignName) {
+            throw new Error('Nombre, modulo y template son obligatorios.');
+        }
+        const hasSchedule = Boolean(payload.scheduledAt);
+        const shouldStartNow = !hasSchedule && !form.blocksEnabled;
+        const response = panelMode === 'edit'
+            ? await updateCampaign?.({
+                campaignId: selectedCampaignId,
+                patch: {
+                    ...payload,
+                    status: shouldStartNow ? 'running' : 'scheduled'
+                }
+            })
+            : await createCampaign?.({
+                ...payload,
+                status: shouldStartNow ? 'running' : 'scheduled'
+            });
+        const campaign = response?.campaign || null;
+        if (!campaign) throw new Error('No se pudo guardar la campana.');
+        if (shouldStartNow) {
+            await startCampaign?.(campaign.campaignId);
+        }
+        await loadCampaigns?.();
+        setPanelMode('list');
+        setLocalEstimate(null);
+        setBaseAudienceEstimate(null);
+        setInclusionOnlyEstimate(null);
+        setExcludedCustomerIds([]);
+        setReviewAudienceItems([]);
+        clearSelectedCampaign();
+        notify({
+            type: 'info',
+            message: form.blocksEnabled
+                ? 'Campana guardada. Podras ejecutar los bloques desde el detalle.'
+                : hasSchedule
+                    ? 'Campana programada correctamente.'
+                    : 'Campana iniciada.'
+        });
+    }, [
+        buildCampaignPayload,
+        clearSelectedCampaign,
+        createCampaign,
+        form.blocksEnabled,
+        loadCampaigns,
+        notify,
+        panelMode,
+        selectedCampaignId,
+        startCampaign,
+        updateCampaign
     ]);
 
     const handleRequestCloseCampaignPanel = useCallback(async () => {
@@ -711,6 +2095,547 @@ export default React.memo(function CampaignsSection(props = {}) {
         }, 'No se pudo abrir campana.');
     }, [loadTracking, runSafe, selectCampaign]);
 
+    const renderAudienceFilterChips = (scope = 'inclusionFilters', title = 'Incluir') => {
+        const filters = normalizeDeepFilters(form?.[scope] || {});
+        const chips = [];
+        const addList = (keyName, options = [], labelKey = 'name', valueKey = 'id', normalize = toText) => {
+            (Array.isArray(filters[keyName]) ? filters[keyName] : []).forEach((value) => {
+                const option = options.find((entry) => normalize(entry?.[valueKey] || entry?.key) === normalize(value));
+                const fallbackLabel = keyName === 'zone_label_ids'
+                    ? resolveZoneDisplayName(value)
+                    : value;
+                chips.push({ keyName, value, label: option?.[labelKey] || fallbackLabel, normalize });
+            });
+        };
+        addList('commercial_status', commercialFilterOptions, 'name', 'key', toLower);
+        addList('zone_label_ids', zoneFilterChipOptions, 'name', 'id', toUpper);
+        addList('operational_label_ids', operationalFilterChipOptions, 'name', 'id', toUpper);
+        addList('customer_type_ids', campaignFilterOptions.customer_types, 'name', 'id', toText);
+        addList('acquisition_source_ids', acquisitionSourceOptions, 'name', 'id', toText);
+        addList('departments', geographyDepartments.map((name) => ({ id: name, name })), 'name', 'id', toText);
+        addList('provinces', uniqueTextItems(Object.values(geographyProvinceMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
+        addList('districts', uniqueTextItems(Object.values(geographyDistrictMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
+        if (filters.assigned_user_id) {
+            const user = campaignFilterOptions.assigned_users.find((entry) => entry.id === filters.assigned_user_id);
+            chips.push({ keyName: 'assigned_user_id', value: '', label: user?.name || filters.assigned_user_id, normalize: toText });
+        }
+        if (filters.created_after || filters.created_before) {
+            chips.push({
+                keyName: 'created_range',
+                value: '',
+                label: `Registro: ${filters.created_after || '...'} a ${filters.created_before || '...'}`,
+                normalize: toText
+            });
+        }
+        if (filters.has_phone === true) chips.push({ keyName: 'has_phone', value: '', label: 'Tiene telefono valido', normalize: toText });
+        if (filters.has_email === true) chips.push({ keyName: 'has_email', value: '', label: 'Tiene email', normalize: toText });
+        if (filters.has_address === true) chips.push({ keyName: 'has_address', value: '', label: 'Tiene direccion registrada', normalize: toText });
+        if (chips.length === 0) return null;
+        return (
+            <div className="saas-campaigns-filter-chips">
+                <span className="saas-campaigns-filter-chips__title">{title}</span>
+                {chips.map((chip, index) => (
+                    <button
+                        key={`${scope}_${chip.keyName}_${chip.value}_${index}`}
+                        type="button"
+                        onClick={() => removeFilterChip(scope, chip)}
+                    >
+                        {chip.label}<span>x</span>
+                    </button>
+                ))}
+            </div>
+        );
+    };
+
+    const buildAudienceFilterChipData = useCallback((scope = 'inclusionFilters') => {
+        const filters = normalizeDeepFilters(form?.[scope] || {});
+        const chips = [];
+        const addList = (keyName, options = [], labelKey = 'name', valueKey = 'id', normalize = toText) => {
+            (Array.isArray(filters[keyName]) ? filters[keyName] : []).forEach((value) => {
+                const option = options.find((entry) => normalize(entry?.[valueKey] || entry?.key) === normalize(value));
+                const fallbackLabel = keyName === 'zone_label_ids' ? resolveZoneDisplayName(value) : value;
+                chips.push({ keyName, value, label: option?.[labelKey] || fallbackLabel });
+            });
+        };
+        addList('commercial_status', commercialFilterOptions, 'name', 'key', toLower);
+        addList('zone_label_ids', zoneFilterChipOptions, 'name', 'id', toUpper);
+        addList('operational_label_ids', operationalFilterChipOptions, 'name', 'id', toUpper);
+        addList('customer_type_ids', campaignFilterOptions.customer_types, 'name', 'id', toText);
+        addList('acquisition_source_ids', acquisitionSourceOptions, 'name', 'id', toText);
+        addList('departments', geographyDepartments.map((name) => ({ id: name, name })), 'name', 'id', toText);
+        addList('provinces', uniqueTextItems(Object.values(geographyProvinceMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
+        addList('districts', uniqueTextItems(Object.values(geographyDistrictMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
+        if (filters.assigned_user_id) {
+            const user = campaignFilterOptions.assigned_users.find((entry) => entry.id === filters.assigned_user_id);
+            chips.push({ keyName: 'assigned_user_id', value: '', label: user?.name || filters.assigned_user_id });
+        }
+        if (filters.created_after || filters.created_before) {
+            chips.push({ keyName: 'created_range', value: '', label: `Registro: ${filters.created_after || '...'} a ${filters.created_before || '...'}` });
+        }
+        if (filters.has_phone === true) chips.push({ keyName: 'has_phone', value: '', label: 'Tiene telefono valido' });
+        if (filters.has_email === true) chips.push({ keyName: 'has_email', value: '', label: 'Tiene email' });
+        if (filters.has_address === true) chips.push({ keyName: 'has_address', value: '', label: 'Tiene direccion registrada' });
+        return chips;
+    }, [
+        acquisitionSourceOptions,
+        campaignFilterOptions.assigned_users,
+        campaignFilterOptions.customer_types,
+        commercialFilterOptions,
+        form,
+        geographyDepartments,
+        geographyDistrictMap,
+        geographyProvinceMap,
+        operationalFilterChipOptions,
+        resolveZoneDisplayName,
+        zoneFilterChipOptions
+    ]);
+
+    const handleReviewToggleCustomer = useCallback((customerId = '') => {
+        const cleanCustomerId = toText(customerId);
+        if (!cleanCustomerId) return;
+        setExcludedCustomerIds((prev) => {
+            const current = new Set(prev.map((entry) => toText(entry)).filter(Boolean));
+            if (current.has(cleanCustomerId)) {
+                current.delete(cleanCustomerId);
+            } else {
+                current.add(cleanCustomerId);
+            }
+            return Array.from(current);
+        });
+    }, []);
+
+    const renderCriterionToggleList = (scope = 'inclusionFilters', groups = []) => {
+        const activeCriteria = scope === 'exclusionFilters' ? activeExclusionCriteria : activeInclusionCriteria;
+        return (
+            <div className="saas-campaigns-criteria-panel">
+                {groups.map((group) => (
+                    <section key={`${scope}_${group.title}`} className="saas-campaigns-criteria-group">
+                        <header>{group.title}</header>
+                        <div className="saas-campaigns-criteria-list">
+                            {group.items.map((criterion) => {
+                                const enabled = activeCriteria.includes(criterion.key);
+                                return (
+                                    <label
+                                        key={`${scope}_${criterion.key}`}
+                                        className={`saas-campaigns-criteria-item ${enabled ? 'is-active' : ''}`}
+                                    >
+                                        <div>
+                                            <strong>{criterion.label}</strong>
+                                            {criterion.description ? <span>{criterion.description}</span> : null}
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            checked={enabled}
+                                            onChange={(event) => setCriterionEnabled(scope, criterion.key, event.target.checked)}
+                                        />
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    </section>
+                ))}
+            </div>
+        );
+    };
+
+    const renderReadonlyChipList = (title, chips = []) => (
+        <div className="saas-campaigns-summary-chip-group">
+            <span className="saas-campaigns-summary-chip-group__title">{title}</span>
+            <div className="saas-campaigns-summary-chip-group__items">
+                {chips.length === 0 ? <small className="saas-admin-empty-inline">Sin filtros activos.</small> : chips.map((chip, index) => (
+                    <span key={`${title}_${chip.keyName}_${chip.value}_${index}`} className="saas-campaigns-summary-chip">
+                        {chip.label}
+                    </span>
+                ))}
+            </div>
+        </div>
+    );
+
+    const renderTemplatePreviewBubble = () => (
+        selectedTemplate ? (
+            <div className="saas-campaigns-wizard-preview__body">
+                <div className="saas-wa-preview">
+                    <div className="saas-wa-preview__chat-bg">
+                        <div className="saas-wa-preview__delivery-stack">
+                            <article className="saas-wa-preview__bubble">
+                                {selectedTemplatePreview.headerType === 'text' && Boolean(selectedTemplatePreview.headerText) ? (
+                                    <div className="saas-wa-preview__header">{selectedTemplatePreview.headerText}</div>
+                                ) : null}
+                                {['image', 'video', 'document'].includes(selectedTemplatePreview.headerType) ? (
+                                    <div className="saas-wa-preview__media-placeholder">
+                                        <strong>{selectedTemplatePreview.headerType === 'image' ? 'Imagen' : selectedTemplatePreview.headerType === 'video' ? 'Video' : 'Documento'}</strong>
+                                        <small>El template usa un header multimedia definido en Meta.</small>
+                                    </div>
+                                ) : null}
+                                <div className="saas-wa-preview__body">{selectedTemplatePreview.bodyText || 'El cuerpo del template aparecera aqui.'}</div>
+                                {selectedTemplatePreview.footerText ? (
+                                    <div className="saas-wa-preview__footer">{selectedTemplatePreview.footerText}</div>
+                                ) : null}
+                                <div className="saas-wa-preview__meta">
+                                    <span>{new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}</span>
+                                    <span className="saas-wa-preview__tick">{'\u2713\u2713'}</span>
+                                </div>
+                            </article>
+                            {selectedTemplatePreview.buttons.length > 0 ? (
+                                <div className="saas-wa-preview__template-buttons">
+                                    {selectedTemplatePreview.buttons.map((buttonRow) => (
+                                        <div className="saas-wa-preview__template-button" key={buttonRow.id}>
+                                            <span className="saas-wa-preview__template-button-meta">
+                                                {buttonRow.type === 'url' ? 'Enlace' : buttonRow.type === 'phone' || buttonRow.type === 'phone_number' ? 'Llamar' : 'Respuesta'}
+                                            </span>
+                                            <span>{buttonRow.text}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        ) : (
+            <div className="saas-campaigns-wizard-preview__empty">
+                <strong>Preview no disponible</strong>
+                <p>Selecciona un template aprobado para ver una simulacion de entrega en WhatsApp.</p>
+            </div>
+        )
+    );
+
+    const renderAudienceChipGroup = (scope = 'inclusionFilters', keyName = '', label = '', options = [], normalize = toText, emptyText = '') => {
+        const filters = normalizeDeepFilters(form?.[scope] || {});
+        return (
+            <div className="saas-admin-field saas-campaigns-audience-control-card">
+                <label>{label}</label>
+                <div className="saas-campaigns-chip-group">
+                    {options.length === 0 ? <small className="saas-admin-empty-inline">{emptyText || `Sin ${toLower(label)}.`}</small> : options.map((option) => {
+                        const optionValue = option?.id ?? option?.key;
+                        const active = Array.isArray(filters[keyName]) && filters[keyName].includes(normalize(optionValue));
+                        const accent = toText(option?.color || '');
+                        return (
+                            <button
+                                key={`${scope}_${keyName}_${optionValue}`}
+                                type="button"
+                                className={`saas-campaigns-chip ${active ? 'active' : ''}`}
+                                style={accent ? { '--campaign-chip-accent': accent } : undefined}
+                                onClick={() => toggleDeepFilterValue(scope, keyName, optionValue, normalize)}
+                            >
+                                {keyName === 'zone_label_ids'
+                                    ? resolveZoneDisplayName(optionValue, option.name)
+                                    : option.name}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+    };
+
+    const renderAudienceCustomerRows = (items = [], limit = 50) => {
+        const operationalById = new Map(operationalFilterChipOptions.map((item) => [toUpper(item.id), item]));
+        const commercialByKey = new Map(commercialFilterOptions.map((item) => [toLower(item.key), item]));
+        return (
+            <div className="saas-campaigns-audience-live-list">
+                {items.slice(0, limit).map((item) => {
+                    const zone = zoneByCustomerId.get(toText(item.customerId)) || (
+                        item.zoneLabelIds?.[0]
+                            ? {
+                                id: toUpper(item.zoneLabelIds[0]),
+                                name: resolveZoneDisplayName(item.zoneLabelIds[0], toText(item.zoneLabelNames?.[0] || item.zoneLabels?.[0]?.name || ''))
+                                    || item.zoneLabelIds[0],
+                                color: toText(zoneNameById.get(toUpper(item.zoneLabelIds[0]))?.color || item.zoneLabels?.[0]?.color || '#00A884') || '#00A884'
+                            }
+                            : null
+                    );
+                    const operational = operationalById.get(toUpper(item.operationalLabelIds?.[0] || '')) || null;
+                    const statusMetaItem = commercialByKey.get(toLower(item.commercialStatus)) || null;
+                    return (
+                        <article key={item.customerId} className="saas-campaigns-audience-live-item">
+                            <div className="saas-campaigns-audience-live-item__main">
+                                <strong>{item.contactName}</strong>
+                                <span>{item.phone || 'Sin telefono'}</span>
+                            </div>
+                            <div className="saas-campaigns-audience-live-item__meta">
+                                {statusMetaItem ? (
+                                    <span className="saas-campaigns-chip active" style={{ '--campaign-chip-accent': statusMetaItem.color }}>{statusMetaItem.name}</span>
+                                ) : null}
+                                {zone ? (
+                                    <span className="saas-campaigns-chip active" style={{ '--campaign-chip-accent': zone.color }}>{zone.name}</span>
+                                ) : null}
+                                {operational ? (
+                                    <span className="saas-campaigns-chip active" style={{ '--campaign-chip-accent': operational.color }}>{operational.name}</span>
+                                ) : null}
+                            </div>
+                        </article>
+                    );
+                })}
+                {items.length > limit ? <div className="saas-campaigns-audience-live-more">y {items.length - limit} mas...</div> : null}
+            </div>
+        );
+    };
+
+    const renderAudienceStepPanel = ({ scope = 'inclusionFilters', baseCount = 0, filteredCount = 0, subtitle = '', activeCriteria = [], criteriaGroups = [], controls = null, bottomAction = null }) => (
+        <div className="saas-campaigns-audience-step">
+            <div className="saas-campaigns-audience-step__criteria">
+                {renderCriterionToggleList(scope, criteriaGroups)}
+            </div>
+            <div className="saas-campaigns-audience-step__results">
+                <div className="saas-campaigns-audience-step__results-header">
+                    <div className="saas-campaigns-audience-step__results-metric">
+                        <strong>{filteredCount} clientes {scope === 'exclusionFilters' ? 'finales' : 'incluidos'}</strong>
+                        <span>{subtitle || `de ${baseCount} base total del modulo`}</span>
+                    </div>
+                    <div className="saas-campaigns-audience-step__results-summary">
+                        {renderAudienceFilterChips(scope, scope === 'exclusionFilters' ? 'Excluir' : 'Incluir')}
+                    </div>
+                </div>
+                <div className="saas-campaigns-audience-step__controls">
+                    {activeCriteria.length > 0 ? controls : <p className="saas-campaigns-audience-empty">Sin filtros activos. Se incluiran todos los {baseCount} clientes base.</p>}
+                </div>
+                <div className="saas-campaigns-audience-step__footer">
+                    {bottomAction}
+                </div>
+            </div>
+        </div>
+    );
+
+    const inclusionCriteriaGroups = useMemo(() => {
+        const customerItems = [];
+        if (inclusionCustomerTypeOptions.length > 0) customerItems.push({ key: 'customer_type_ids', label: 'Tipo de cliente' });
+        if (acquisitionSourceOptions.length > 0) customerItems.push({ key: 'acquisition_source_ids', label: 'Fuente de adquisicion' });
+        customerItems.push({ key: 'assigned_user_id', label: 'Asignado a' });
+        customerItems.push({ key: 'created_range', label: 'Fecha de registro' });
+        return [
+            {
+                title: 'Geografia',
+                items: [
+                    { key: 'departments', label: 'Departamento' },
+                    { key: 'provinces', label: 'Provincia' },
+                    { key: 'districts', label: 'Distrito' },
+                    { key: 'zone_label_ids', label: 'Zona' }
+                ]
+            },
+            {
+                title: 'Estado',
+                items: [
+                    { key: 'commercial_status', label: 'Estado comercial' },
+                    { key: 'operational_label_ids', label: 'Etiqueta operativa' }
+                ]
+            },
+            {
+                title: 'Perfil del cliente',
+                items: customerItems
+            },
+            {
+                title: 'Datos completos',
+                items: [
+                    { key: 'has_phone', label: 'Tiene telefono valido' },
+                    { key: 'has_email', label: 'Tiene email' },
+                    { key: 'has_address', label: 'Tiene direccion registrada' }
+                ]
+            }
+        ];
+    }, [acquisitionSourceOptions.length, inclusionCustomerTypeOptions.length]);
+
+    const exclusionCriteriaGroups = useMemo(() => {
+        const groups = [];
+        if (exclusionDepartments.length > 0 || exclusionProvinces.length > 0 || exclusionDistricts.length > 0 || exclusionAudienceOptions.zoneLabels.length > 0) {
+            groups.push({
+                title: 'Geografia',
+                items: [
+                    ...(exclusionDepartments.length > 0 ? [{ key: 'departments', label: 'Departamento' }] : []),
+                    ...(exclusionProvinces.length > 0 ? [{ key: 'provinces', label: 'Provincia' }] : []),
+                    ...(exclusionDistricts.length > 0 ? [{ key: 'districts', label: 'Distrito' }] : []),
+                    ...(exclusionAudienceOptions.zoneLabels.length > 0 ? [{ key: 'zone_label_ids', label: 'Zona' }] : [])
+                ]
+            });
+        }
+        const stateItems = [];
+        if (exclusionAudienceOptions.commercialStatuses.length > 0) stateItems.push({ key: 'commercial_status', label: 'Estado comercial' });
+        if (exclusionAudienceOptions.operationalLabels.length > 0) stateItems.push({ key: 'operational_label_ids', label: 'Etiqueta operativa' });
+        if (stateItems.length > 0) groups.push({ title: 'Estado', items: stateItems });
+        const customerItems = [];
+        if (exclusionCustomerTypeOptions.length > 0) customerItems.push({ key: 'customer_type_ids', label: 'Tipo de cliente' });
+        if (exclusionAcquisitionSourceOptions.length > 0) customerItems.push({ key: 'acquisition_source_ids', label: 'Fuente de adquisicion' });
+        if (exclusionAssignedUserOptions.length > 0) customerItems.push({ key: 'assigned_user_id', label: 'Asignado a' });
+        customerItems.push({ key: 'created_range', label: 'Fecha de registro' });
+        if (customerItems.length > 0) groups.push({ title: 'Perfil del cliente', items: customerItems });
+        groups.push({
+            title: 'Datos completos',
+            items: [
+                { key: 'has_phone', label: 'Tiene telefono valido' },
+                { key: 'has_email', label: 'Tiene email' },
+                { key: 'has_address', label: 'Tiene direccion registrada' },
+                { key: 'manual_customers', label: 'Clientes especificos' }
+            ]
+        });
+        return groups.filter((group) => group.items.length > 0);
+    }, [
+        exclusionAcquisitionSourceOptions.length,
+        exclusionAssignedUserOptions.length,
+        exclusionAudienceOptions.commercialStatuses.length,
+        exclusionAudienceOptions.operationalLabels.length,
+        exclusionAudienceOptions.zoneLabels.length,
+        exclusionCustomerTypeOptions.length,
+        exclusionDepartments.length,
+        exclusionDistricts.length,
+        exclusionProvinces.length
+    ]);
+
+    const renderAudienceStepControls = (scope = 'inclusionFilters') => {
+        const filters = normalizeDeepFilters(form?.[scope] || {});
+        const activeCriteria = scope === 'exclusionFilters' ? activeExclusionCriteria : activeInclusionCriteria;
+        const statusOptions = scope === 'exclusionFilters' ? exclusionAudienceOptions.commercialStatuses : commercialFilterOptions;
+        const zoneOptionsForScope = scope === 'exclusionFilters' ? exclusionAudienceOptions.zoneLabels : zoneFilterChipOptions;
+        const operationalOptionsForScope = scope === 'exclusionFilters' ? exclusionAudienceOptions.operationalLabels : operationalFilterChipOptions;
+        const customerTypeOptions = scope === 'exclusionFilters' ? exclusionCustomerTypeOptions : inclusionCustomerTypeOptions;
+        const assignedUserOptions = scope === 'exclusionFilters' ? exclusionAssignedUserOptions : campaignFilterOptions.assigned_users;
+        const acquisitionOptions = scope === 'exclusionFilters' ? exclusionAcquisitionSourceOptions : acquisitionSourceOptions;
+        const departments = scope === 'exclusionFilters' ? exclusionDepartments : geographyDepartments;
+        const provinces = scope === 'exclusionFilters' ? exclusionProvinces : inclusionProvinceOptions;
+        const districts = scope === 'exclusionFilters' ? exclusionDistricts : inclusionDistrictOptions;
+        const renderMultiSelectControl = (label, values = [], options = [], onChange, emptyText = 'Sin opciones disponibles.') => (
+            <div className="saas-admin-field saas-campaigns-audience-control-card">
+                <label>{label}</label>
+                {options.length === 0 ? (
+                    <div className="saas-campaigns-audience-control-empty">{emptyText}</div>
+                ) : (
+                    <select
+                        className="saas-campaigns-audience-multiselect"
+                        multiple
+                        size={Math.min(Math.max(options.length, 2), 4)}
+                        value={values}
+                        onChange={onChange}
+                    >
+                        {options.map((entry) => (
+                            <option key={entry.value} value={entry.value}>
+                                {entry.label}
+                            </option>
+                        ))}
+                    </select>
+                )}
+            </div>
+        );
+        const renderSingleSelectControl = (label, value, options = [], onChange, placeholder = 'Todos') => (
+            <div className="saas-admin-field saas-campaigns-audience-control-card">
+                <label>{label}</label>
+                <select className="saas-campaigns-audience-select" value={value} onChange={onChange}>
+                    <option value="">{placeholder}</option>
+                    {options.map((entry) => (
+                        <option key={entry.value} value={entry.value}>
+                            {entry.label}
+                        </option>
+                    ))}
+                </select>
+            </div>
+        );
+        const renderBooleanControl = (keyName, text) => (
+            <label className="saas-campaigns-criteria-inline-toggle saas-campaigns-audience-toggle-card">
+                <span>
+                    <strong>{text}</strong>
+                    <small>Activar para exigir este dato en la audiencia.</small>
+                </span>
+                <input type="checkbox" checked={filters[keyName] === true} onChange={(event) => updateDeepFilter(scope, keyName, event.target.checked ? true : '')} />
+            </label>
+        );
+        return (
+            <div className="saas-campaigns-audience-step__filters">
+                {activeCriteria.includes('departments') ? (
+                    renderMultiSelectControl(
+                        'Departamento',
+                        filters.departments,
+                        departments.map((name) => ({ value: name, label: name })),
+                        (event) => updateDeepFilter(scope, 'departments', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'Sin departamentos disponibles.'
+                    )
+                ) : null}
+                {activeCriteria.includes('provinces') ? (
+                    renderMultiSelectControl(
+                        'Provincia',
+                        filters.provinces,
+                        provinces.map((name) => ({ value: name, label: name })),
+                        (event) => updateDeepFilter(scope, 'provinces', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'Selecciona primero un departamento para acotar provincias.'
+                    )
+                ) : null}
+                {activeCriteria.includes('districts') ? (
+                    renderMultiSelectControl(
+                        'Distrito',
+                        filters.districts,
+                        districts.map((name) => ({ value: name, label: name })),
+                        (event) => updateDeepFilter(scope, 'districts', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'Selecciona primero una provincia para ver distritos.'
+                    )
+                ) : null}
+                {activeCriteria.includes('zone_label_ids') ? renderAudienceChipGroup(scope, 'zone_label_ids', 'Zona', zoneOptionsForScope, toUpper, 'Sin zonas configuradas') : null}
+                {activeCriteria.includes('commercial_status') ? renderAudienceChipGroup(scope, 'commercial_status', 'Estado comercial', statusOptions, toLower, 'Sin estados disponibles') : null}
+                {activeCriteria.includes('operational_label_ids') ? renderAudienceChipGroup(scope, 'operational_label_ids', 'Etiqueta operativa', operationalOptionsForScope, toUpper, 'Sin etiquetas operativas') : null}
+                {activeCriteria.includes('customer_type_ids') && customerTypeOptions.length > 0 ? (
+                    renderMultiSelectControl(
+                        'Tipo de cliente',
+                        filters.customer_type_ids,
+                        customerTypeOptions.map((entry) => ({ value: entry.id, label: entry.name })),
+                        (event) => updateDeepFilter(scope, 'customer_type_ids', Array.from(event.target.selectedOptions).map((option) => option.value))
+                    )
+                ) : null}
+                {activeCriteria.includes('acquisition_source_ids') && acquisitionOptions.length > 0 ? (
+                    renderMultiSelectControl(
+                        'Fuente de adquisición',
+                        filters.acquisition_source_ids,
+                        acquisitionOptions.map((entry) => ({ value: entry.id, label: entry.name })),
+                        (event) => updateDeepFilter(scope, 'acquisition_source_ids', Array.from(event.target.selectedOptions).map((option) => option.value))
+                    )
+                ) : null}
+                {activeCriteria.includes('assigned_user_id') ? (
+                    renderSingleSelectControl(
+                        'Asignado a',
+                        filters.assigned_user_id || '',
+                        assignedUserOptions.map((entry) => ({ value: entry.id, label: entry.name })),
+                        (event) => updateDeepFilter(scope, 'assigned_user_id', event.target.value)
+                    )
+                ) : null}
+                {activeCriteria.includes('created_range') ? (
+                    <div className="saas-campaigns-compact-filters saas-campaigns-audience-control-card">
+                        <div className="saas-admin-field">
+                            <label>Fecha de registro desde</label>
+                            <input type="date" value={filters.created_after || ''} onChange={(event) => updateDeepFilter(scope, 'created_after', event.target.value)} />
+                        </div>
+                        <div className="saas-admin-field">
+                            <label>Fecha de registro hasta</label>
+                            <input type="date" value={filters.created_before || ''} onChange={(event) => updateDeepFilter(scope, 'created_before', event.target.value)} />
+                        </div>
+                    </div>
+                ) : null}
+                {activeCriteria.includes('has_phone') ? (
+                    renderBooleanControl('has_phone', 'Tiene teléfono válido')
+                ) : null}
+                {activeCriteria.includes('has_email') ? (
+                    renderBooleanControl('has_email', 'Tiene email')
+                ) : null}
+                {activeCriteria.includes('has_address') ? (
+                    renderBooleanControl('has_address', 'Tiene dirección registrada')
+                ) : null}
+                {scope === 'exclusionFilters' && activeCriteria.includes('manual_customers') ? (
+                    <div className="saas-admin-field saas-campaigns-audience-control-card">
+                        <label>Clientes especificos</label>
+                        <input value={manualExclusionSearch} onChange={(event) => setManualExclusionSearch(event.target.value)} placeholder="Buscar por nombre o telefono" />
+                        <div className="saas-campaigns-manual-exclusion-results">
+                            {manualExclusionCandidates.length === 0 ? <small className="saas-admin-empty-inline">{inclusionOnlyAudienceItems.length === 0 ? 'No hay audiencia incluida para excluir.' : 'No hay coincidencias disponibles.'}</small> : manualExclusionCandidates.map((item) => (
+                                <button key={`exclude_candidate_${item.customerId}`} type="button" className="saas-campaigns-manual-exclusion-item" onClick={() => toggleAudienceExclusion(item.customerId)}>
+                                    <strong>{item.contactName}</strong>
+                                    <span>{item.phone}</span>
+                                </button>
+                            ))}
+                        </div>
+                        <div className="saas-campaigns-filter-chips saas-campaigns-filter-chips--manual">
+                            {manualExcludedAudienceItems.length === 0 ? <small className="saas-admin-empty-inline">Sin exclusiones manuales.</small> : manualExcludedAudienceItems.map((item) => (
+                                <button key={`excluded_manual_${item.customerId}`} type="button" onClick={() => toggleAudienceExclusion(item.customerId)}>{item.contactName || item.phone}<span>x</span></button>
+                            ))}
+                        </div>
+                    </div>
+                ) : null}
+            </div>
+        );
+    };
+
     useEffect(() => {
         if (!isCampaignsSection) return undefined;
         const onPanelEscape = (event) => {
@@ -740,6 +2665,407 @@ export default React.memo(function CampaignsSection(props = {}) {
     const selectedProgress = progress(selectedCampaign);
     const canWrite = !tenantScopeLocked;
     const layoutSelectedId = panelMode === 'create' ? '__create__' : (selectedCampaignId || '');
+    const renderWizardPlaceholder = (stepNumber, title, description) => (
+        <SaasDetailPanelSection title={`Paso ${stepNumber} - ${title}`}>
+            <div className="saas-campaigns-wizard-placeholder">
+                <strong>{title}</strong>
+                <p>{description}</p>
+            </div>
+        </SaasDetailPanelSection>
+    );
+
+    const renderWizardCollapsibleBlock = ({ title, subtitle, count = null, children, defaultOpen = true }) => (
+        <details className="saas-campaigns-wizard-block" open={defaultOpen}>
+            <summary className="saas-campaigns-wizard-block__summary">
+                <div>
+                    <strong>{title}</strong>
+                    {subtitle ? <span>{subtitle}</span> : null}
+                </div>
+                {count !== null ? <small>{count}</small> : null}
+            </summary>
+            <div className="saas-campaigns-wizard-block__body">{children}</div>
+        </details>
+    );
+
+    const renderWizardStepContent = () => {
+        switch (wizardStep) {
+        case 1:
+            return (
+                <SaasDetailPanelSection title="Paso 1 - Datos de campana">
+                    <div className="saas-campaigns-wizard-step saas-campaigns-wizard-step--campaign">
+                        <div className="saas-campaigns-builder__form">
+                            <div className="saas-admin-form-row">
+                                <div className="saas-admin-field">
+                                    <label>Nombre</label>
+                                    <input value={form.campaignName} onChange={(e) => setForm((p) => ({ ...p, campaignName: e.target.value }))} />
+                                </div>
+                                <div className="saas-admin-field">
+                                    <label>Modulo</label>
+                                    <select value={form.moduleId} onChange={(e) => setForm((p) => ({ ...p, moduleId: e.target.value, templateId: '', templateName: '' }))}>
+                                        <option value="">Selecciona modulo</option>
+                                        {moduleOptions.map((m) => <option key={m.moduleId} value={m.moduleId}>{m.label}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="saas-admin-form-row">
+                                <div className="saas-admin-field">
+                                    <label>Template aprobado</label>
+                                    <select
+                                        value={form.templateId}
+                                        onChange={(e) => {
+                                            const id = toText(e.target.value);
+                                            const t = templatesByModule.find((x) => x.templateId === id) || null;
+                                            setForm((p) => ({ ...p, templateId: id, templateName: t?.templateName || '', templateLanguage: t?.templateLanguage || 'es' }));
+                                        }}
+                                    >
+                                        <option value="">Selecciona template</option>
+                                        {templatesByModule.map((t) => <option key={t.templateId} value={t.templateId}>{`${t.templateName} (${toText(t.templateLanguage).toUpperCase()})`}</option>)}
+                                    </select>
+                                </div>
+                                <div className="saas-admin-field">
+                                    <label>Programacion</label>
+                                    <select
+                                        value={form.scheduleMode}
+                                        onChange={(e) => setForm((p) => ({
+                                            ...p,
+                                            scheduleMode: e.target.value === 'scheduled' ? 'scheduled' : 'immediate',
+                                            scheduledAt: e.target.value === 'scheduled' ? p.scheduledAt : ''
+                                        }))}
+                                    >
+                                        <option value="immediate">Inmediata</option>
+                                        <option value="scheduled">Fecha y hora futura</option>
+                                    </select>
+                                </div>
+                            </div>
+                            {form.scheduleMode === 'scheduled' ? (
+                                <div className="saas-admin-form-row saas-admin-form-row--single">
+                                    <div className="saas-admin-field">
+                                        <label>Fecha y hora programada</label>
+                                        <input type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm((p) => ({ ...p, scheduledAt: e.target.value }))} />
+                                    </div>
+                                </div>
+                            ) : null}
+                            <div className="saas-admin-form-row">
+                                <div className="saas-admin-field">
+                                    <label>Vigencia desde</label>
+                                    <input type="date" value={form.validFrom} onChange={(e) => setForm((p) => ({ ...p, validFrom: e.target.value }))} />
+                                </div>
+                                <div className="saas-admin-field">
+                                    <label>Vigencia hasta</label>
+                                    <input type="date" value={form.validTo} onChange={(e) => setForm((p) => ({ ...p, validTo: e.target.value }))} />
+                                </div>
+                            </div>
+                            <div className="saas-admin-form-row saas-admin-form-row--single">
+                                <div className="saas-admin-field">
+                                    <label>Descripcion</label>
+                                    <textarea value={form.campaignDescription} onChange={(e) => setForm((p) => ({ ...p, campaignDescription: e.target.value }))} />
+                                </div>
+                            </div>
+                        </div>
+                        <aside className="saas-campaigns-wizard-preview">
+                            <div className="saas-campaigns-wizard-preview__header">
+                                <h4>Preview del template</h4>
+                                <small>{selectedTemplate ? `${selectedTemplate.templateName} (${toUpper(selectedTemplate.templateLanguage)})` : 'Selecciona un template para visualizar el mensaje.'}</small>
+                            </div>
+                            {renderTemplatePreviewBubble()}
+                            <div className="saas-campaigns-wizard-preview__meta">
+                                <span><strong>Modulo:</strong> {selectedModule?.label || '-'}</span>
+                                <span><strong>Vigencia:</strong> {form.validFrom || form.validTo ? `${form.validFrom || '-'} a ${form.validTo || '-'}` : 'Sin vigencia definida'}</span>
+                            </div>
+                        </aside>
+                    </div>
+                </SaasDetailPanelSection>
+            );
+        case 2:
+            return (
+                <SaasDetailPanelSection title="Paso 2 - Inclusion">
+                    {renderAudienceStepPanel({
+                        scope: 'inclusionFilters',
+                        baseCount: baseAudienceNumbers.eligible,
+                        filteredCount: inclusionAudienceNumbers.eligible || baseAudienceNumbers.eligible,
+                        subtitle: `de ${baseAudienceNumbers.eligible} base total del modulo`,
+                        activeCriteria: activeInclusionCriteria,
+                        criteriaGroups: inclusionCriteriaGroups,
+                        controls: renderAudienceStepControls('inclusionFilters'),
+                        bottomAction: (
+                            <>
+                                <span>{inclusionAudienceNumbers.eligible || baseAudienceNumbers.eligible} clientes incluidos</span>
+                                <span>{inclusionSelectionCount} filtros activos</span>
+                                <button type="button" disabled={!wizardCanAdvance || loading} onClick={goToNextWizardStep}>Siguiente →</button>
+                            </>
+                        )
+                    })}
+                </SaasDetailPanelSection>
+            );
+        case 3:
+            return (
+                <SaasDetailPanelSection title="Paso 3 - Exclusion">
+                    {renderAudienceStepPanel({
+                        scope: 'exclusionFilters',
+                        baseCount: inclusionAudienceNumbers.eligible || inclusionOnlyAudienceItems.length,
+                        filteredCount: exclusionSummary.finalRecipients,
+                        subtitle: `${exclusionSummary.excluded} excluidos de ${inclusionAudienceNumbers.eligible || inclusionOnlyAudienceItems.length} incluidos`,
+                        activeCriteria: activeExclusionCriteria,
+                        criteriaGroups: exclusionCriteriaGroups,
+                        controls: renderAudienceStepControls('exclusionFilters'),
+                        bottomAction: (
+                            <>
+                                <span>Clientes incluidos: {exclusionSummary.eligible}</span>
+                                <span>Excluidos: {exclusionSummary.excluded}</span>
+                                <span>Clientes finales: {exclusionSummary.finalRecipients}</span>
+                                <button type="button" disabled={!wizardCanAdvance || loading} onClick={goToNextWizardStep}>Siguiente →</button>
+                            </>
+                        )
+                    })}
+                </SaasDetailPanelSection>
+            );
+        case 4:
+            return (
+                <SaasDetailPanelSection title="Paso 4 - Revision manual">
+                    <div className="saas-campaigns-review-step">
+                        <div className="saas-campaigns-review-step__header">
+                            <div>
+                                <strong>{`${reviewIncludedCount} clientes en esta campana`}</strong>
+                                <span>Marca clientes como excluidos sin quitarlos del listado. Puedes revertirlo antes de guardar.</span>
+                            </div>
+                            <div className="saas-admin-field saas-campaigns-review-step__search">
+                                <label>Buscar cliente</label>
+                                <input
+                                    value={reviewSearch}
+                                    onChange={(event) => setReviewSearch(event.target.value)}
+                                    placeholder="Buscar por nombre o telefono"
+                                />
+                            </div>
+                        </div>
+                        <div className="saas-campaigns-review-step__list saas-campaigns-review-table">
+                            <div className="saas-campaigns-review-table__head">
+                                <span>Cliente</span>
+                                <span>Telefono</span>
+                                <span>Estado</span>
+                                <span>Zona</span>
+                                <span>Etiqueta</span>
+                                <span>Excluir</span>
+                            </div>
+                            {reviewVisibleItems.length === 0 ? (
+                                <div className="saas-admin-empty-state saas-admin-empty-state--inline">
+                                    <p>{reviewAudienceItems.length === 0 ? 'No hay clientes en la audiencia final.' : 'No hay coincidencias para esta busqueda.'}</p>
+                                </div>
+                            ) : reviewVisibleItems.map((item) => {
+                                const commercialMeta = commercialFilterOptions.find((entry) => toLower(entry.key) === toLower(item.commercialStatus));
+                                const zone = item.zoneLabelIds?.[0] ? zoneNameById.get(toUpper(item.zoneLabelIds[0])) : null;
+                                const operationalLabel = item.operationalLabelIds?.[0] ? operationalLabelById.get(toUpper(item.operationalLabelIds[0])) : null;
+                                const isExcluded = reviewExcludedCustomerIdSet.has(item.customerId);
+                                return (
+                                    <article key={`review_${item.customerId}`} className={`saas-campaigns-review-row ${isExcluded ? 'is-excluded' : ''}`.trim()}>
+                                        <div className="saas-campaigns-review-row__customer">
+                                            <strong>{item.contactName}</strong>
+                                            <small>{item.customerCode || item.customerId}</small>
+                                        </div>
+                                        <span className="saas-campaigns-review-row__phone">{item.phone || '-'}</span>
+                                        <div className="saas-campaigns-review-row__cell">
+                                            {commercialMeta ? (
+                                                <span className="saas-campaigns-review-chip" style={{ '--saas-chip-color': commercialMeta.color || COMMERCIAL_STATUS_COLORS[toLower(commercialMeta.key)] || '#7D8D95' }}>
+                                                    {commercialMeta.name}
+                                                </span>
+                                            ) : <span className="saas-campaigns-review-row__empty">-</span>}
+                                        </div>
+                                        <div className="saas-campaigns-review-row__cell">
+                                            {zone ? (
+                                                <span className="saas-campaigns-review-chip" style={{ '--saas-chip-color': zone.color || '#00A884' }}>
+                                                    {zone.name}
+                                                </span>
+                                            ) : <span className="saas-campaigns-review-row__empty">-</span>}
+                                        </div>
+                                        <div className="saas-campaigns-review-row__cell">
+                                            {operationalLabel ? (
+                                                <span className="saas-campaigns-review-chip" style={{ '--saas-chip-color': operationalLabel.color || '#00A884' }}>
+                                                    {operationalLabel.name}
+                                                </span>
+                                            ) : <span className="saas-campaigns-review-row__empty">-</span>}
+                                        </div>
+                                        <label className={`saas-campaigns-review-toggle ${isExcluded ? 'is-active' : ''}`.trim()}>
+                                            <input
+                                                type="checkbox"
+                                                checked={isExcluded}
+                                                onChange={() => handleReviewToggleCustomer(item.customerId)}
+                                            />
+                                            <span>{isExcluded ? 'Excluido' : 'Activo'}</span>
+                                        </label>
+                                    </article>
+                                );
+                            })}
+                        </div>
+                        <div className="saas-campaigns-review-step__footer">
+                            <span>{`${reviewIncludedCount} incluidos`}</span>
+                            <span>{`${reviewExcludedCustomerIdSet.size} excluidos manualmente`}</span>
+                            <button type="button" disabled={!wizardCanAdvance || loading} onClick={goToNextWizardStep}>Siguiente →</button>
+                        </div>
+                    </div>
+                </SaasDetailPanelSection>
+            );
+        case 5:
+            return (
+                <SaasDetailPanelSection title="Paso 5 - Envio">
+                    <div className="saas-campaigns-delivery-step">
+                        <div className="saas-campaigns-delivery-step__cards">
+                            <button
+                                type="button"
+                                className={`saas-campaigns-delivery-card ${form.blocksEnabled ? '' : 'is-selected'}`.trim()}
+                                onClick={() => setForm((prev) => ({ ...prev, blocksEnabled: false }))}
+                            >
+                                <strong>Envio unico</strong>
+                                <span>Un solo despacho con todos los clientes de la audiencia final.</span>
+                            </button>
+                            <button
+                                type="button"
+                                className={`saas-campaigns-delivery-card ${form.blocksEnabled ? 'is-selected' : ''}`.trim()}
+                                onClick={() => setForm((prev) => ({ ...prev, blocksEnabled: true, blockCount: Math.max(2, Math.min(10, Math.floor(toNumber(prev.blockCount, 2)))) }))}
+                            >
+                                <strong>Envio por bloques</strong>
+                                <span>Divide la campana en grupos controlados para ejecutar por tandas.</span>
+                            </button>
+                        </div>
+                        {form.blocksEnabled ? (
+                            <div className="saas-campaigns-delivery-step__config">
+                                <div className="saas-campaigns-delivery-step__slider">
+                                    <div className="saas-campaigns-delivery-step__slider-header">
+                                        <label>Numero de bloques</label>
+                                        <strong>{form.blockCount}</strong>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min={2}
+                                        max={10}
+                                        step={1}
+                                        value={form.blockCount}
+                                        onChange={(event) => {
+                                            const next = Math.max(2, Math.min(10, Math.floor(toNumber(event.target.value, 2))));
+                                            setForm((prev) => ({ ...prev, blockCount: next }));
+                                        }}
+                                    />
+                                    <div className="saas-campaigns-delivery-step__slider-scale">
+                                        {Array.from({ length: 9 }, (_, index) => index + 2).map((value) => (
+                                            <span key={`block_scale_${value}`} className={value === form.blockCount ? 'is-active' : ''}>{value}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="saas-campaigns-delivery-step__preview">
+                                    {(blockPreview?.blocks || []).map((block) => (
+                                        <span key={`wizard_block_${block.blockIndex}`} className="saas-campaigns-review-chip" style={{ '--saas-chip-color': '#00A884' }}>
+                                            {`Bloque ${block.blockIndex + 1}: ${block.size}`}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="saas-campaigns-delivery-step__single-note">
+                                Todos los {finalAudienceCount} clientes se enviaran en una sola ejecucion.
+                            </div>
+                        )}
+                        <div className="saas-campaigns-delivery-step__summary">
+                            {`Se enviaran ${finalAudienceCount} mensajes via ${selectedModule?.label || 'modulo seleccionado'} con ${selectedTemplate?.templateName || form.templateName || 'template elegido'}.`}
+                        </div>
+                    </div>
+                </SaasDetailPanelSection>
+            );
+        case 6:
+        default:
+            return (
+                <SaasDetailPanelSection title="Paso 6 - Resumen final">
+                    <div className="saas-campaigns-summary-step">
+                        <section className="saas-campaigns-summary-section">
+                            <header>
+                                <h4>Campana</h4>
+                                <button type="button" onClick={() => setWizardStep(1)}>Volver al paso 1</button>
+                            </header>
+                            <div className="saas-campaigns-summary-grid">
+                                <div><span>Nombre</span><strong>{toText(form.campaignName) || '-'}</strong></div>
+                                <div><span>Modulo</span><strong>{selectedModule?.label || '-'}</strong></div>
+                                <div><span>Template</span><strong>{selectedTemplate?.templateName || form.templateName || '-'}</strong></div>
+                                <div><span>Programacion</span><strong>{form.scheduleMode === 'scheduled' ? formatDateTime(form.scheduledAt) : 'Inmediata'}</strong></div>
+                                <div><span>Vigencia desde</span><strong>{form.validFrom || '-'}</strong></div>
+                                <div><span>Vigencia hasta</span><strong>{form.validTo || '-'}</strong></div>
+                            </div>
+                        </section>
+                        <section className="saas-campaigns-summary-section saas-campaigns-summary-preview">
+                            <header>
+                                <h4>Preview template</h4>
+                            </header>
+                            {renderTemplatePreviewBubble()}
+                        </section>
+                        <section className="saas-campaigns-summary-section">
+                            <header>
+                                <h4>Audiencia</h4>
+                                <button type="button" onClick={() => setWizardStep(2)}>Volver al paso 2</button>
+                            </header>
+                            <div className="saas-campaigns-summary-audience">
+                                {renderReadonlyChipList('Inclusion', buildAudienceFilterChipData('inclusionFilters'))}
+                                {renderReadonlyChipList('Exclusion', buildAudienceFilterChipData('exclusionFilters'))}
+                                <div className="saas-campaigns-summary-metrics">
+                                    <div className="saas-campaigns-summary-metric">
+                                        <span>Excluidos manualmente</span>
+                                        <strong>{reviewExcludedCustomerIdSet.size}</strong>
+                                    </div>
+                                    <div className="saas-campaigns-summary-metric saas-campaigns-summary-metric--highlight">
+                                        <span>Total final</span>
+                                        <strong>{finalAudienceCount}</strong>
+                                        <small>clientes recibiran esta campana</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                        <section className="saas-campaigns-summary-section">
+                            <header>
+                                <h4>Envio</h4>
+                                <button type="button" onClick={() => setWizardStep(5)}>Volver al paso 5</button>
+                            </header>
+                            <div className="saas-campaigns-summary-delivery">
+                                {!form.blocksEnabled ? (
+                                    <strong>Envio unico</strong>
+                                ) : (
+                                    <>
+                                        <strong>{`${form.blockCount} bloques`}</strong>
+                                        <div className="saas-campaigns-delivery-step__preview">
+                                            {(blockPreview?.blocks || []).map((block) => (
+                                                <span key={`summary_block_${block.blockIndex}`} className="saas-campaigns-review-chip" style={{ '--saas-chip-color': '#00A884' }}>
+                                                    {`Bloque ${block.blockIndex + 1}: ${block.size}`}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </section>
+                        <div className="saas-campaigns-summary-footer">
+                            <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(saveCampaignDraftAction, 'No se pudo guardar campana.')}>Guardar borrador</button>
+                            <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(saveAndStartCampaignAction, 'No se pudo guardar e iniciar campana.')}>
+                                {form.blocksEnabled ? 'Guardar y preparar bloques' : 'Guardar e iniciar'}
+                            </button>
+                            <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
+                        </div>
+                    </div>
+                </SaasDetailPanelSection>
+            );
+        }
+    };
+
+    const renderWizardActions = () => {
+        if (wizardStep === 6) {
+            return (
+                <>
+                    <button type="button" disabled={loading || wizardStep <= 1} onClick={goToPreviousWizardStep}>Atras</button>
+                    <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
+                </>
+            );
+        }
+        return (
+            <>
+                <button type="button" disabled={loading || wizardStep <= 1} onClick={goToPreviousWizardStep}>Atras</button>
+                <button type="button" disabled={loading || !wizardCanAdvance} onClick={goToNextWizardStep}>Siguiente</button>
+                <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
+            </>
+        );
+    };
 
     const headerElement = (
         <SaasViewHeader
@@ -760,9 +3086,10 @@ export default React.memo(function CampaignsSection(props = {}) {
                     label: 'Nueva',
                     onClick: () => {
                         setPanelMode('create');
+                        setWizardStep(1);
                         clearSelectedCampaign();
-                        setMaxRecipientsTouched(false);
                         setLocalEstimate(null);
+                        setInclusionOnlyEstimate(null);
                         setForm({ ...EMPTY_FORM, moduleId: moduleOptions[0]?.moduleId || '' });
                     },
                     disabled: loading || tenantScopeLocked
@@ -853,292 +3180,35 @@ export default React.memo(function CampaignsSection(props = {}) {
             {tenantScopeLocked && <div className="saas-admin-empty-state saas-admin-empty-state--detail"><h4>Sin empresa activa</h4><p>Selecciona una empresa para continuar.</p></div>}
             {!tenantScopeLocked && (panelMode === 'create' || panelMode === 'edit') && (
                 <SaasDetailPanel
-                    title={panelMode === 'edit' ? (toText(form.campaignName) || 'Editar campana') : 'Nueva campana'}
-                    subtitle={panelMode === 'edit' ? 'Actualiza segmentacion, template y programacion.' : 'Configura segmentacion, template y estimacion.'}
+                    title={wizardTitle}
+                    subtitle={`Paso ${wizardStep} de ${CAMPAIGN_WIZARD_STEPS.length} - ${currentWizardStep.label}`}
                     className="saas-campaigns-detail-panel saas-campaigns-detail-panel--builder"
                     bodyClassName="saas-campaigns-detail-panel__body"
-                    actions={(
-                        <>
-                            <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => {
-                                const payload = buildCampaignPayload();
-                                if (!payload.moduleId || !payload.templateName || !payload.campaignName) throw new Error('Nombre, modulo y template son obligatorios.');
-                                const response = panelMode === 'edit' ? await updateCampaign?.({ campaignId: selectedCampaignId, patch: payload }) : await createCampaign?.(payload);
-                                const campaign = response?.campaign || null;
-                                if (!campaign) return;
-                                await loadTracking(campaign.campaignId);
-                                await selectCampaign?.(campaign.campaignId, { loadDetail: false });
-                                setPanelMode('detail');
-                                setLocalEstimate(null);
-                                notify({ type: 'info', message: panelMode === 'edit' ? 'Campana actualizada.' : 'Campana creada.' });
-                            }, 'No se pudo guardar campana.')}>Guardar borrador</button>
-                            <button type="button" disabled={loading || estimating || !canWrite} onClick={() => runSafe(async () => {
-                                await runEstimate();
-                                notify({ type: 'info', message: 'Estimacion actualizada.' });
-                            }, 'No se pudo estimar alcance.')}>Estimar alcance</button>
-                            <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => {
-                                if (panelMode === 'create') {
-                                    await (async () => {
-                                        if (!canStartWithGuardrails) throw new Error('Debes cumplir las validaciones previas antes de iniciar la campana.');
-                                        const payload = buildCampaignPayload();
-                                        const response = await createCampaign?.(payload);
-                                        const campaign = response?.campaign;
-                                        if (!campaign) throw new Error('No se pudo crear campana.');
-                                        await startCampaign?.(campaign.campaignId);
-                                        await selectCampaign?.(campaign.campaignId, { loadDetail: true });
-                                        await loadTracking(campaign.campaignId);
-                                        setPanelMode('detail');
-                                    })();
-                                } else {
-                                    if (!canStartWithGuardrails) throw new Error('Debes cumplir las validaciones previas antes de iniciar la campana.');
-                                    await startCampaign?.(selectedCampaignId);
-                                    await loadTracking(selectedCampaignId);
-                                }
-                                notify({ type: 'info', message: 'Campana iniciada.' });
-                            }, 'No se pudo iniciar campana.')} className={canStartWithGuardrails ? '' : 'saas-campaigns-button-danger'}>Guardar e iniciar</button>
-                            <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
-                        </>
-                    )}
+                    actions={renderWizardActions()}
                 >
-                    <SaasDetailPanelSection title="Configuracion base">
-                        <div className="saas-campaigns-builder saas-campaigns-builder--full">
-                            <div className="saas-campaigns-builder__form">
-                                <div className="saas-admin-form-row">
-                                    <div className="saas-admin-field">
-                                        <label>Nombre</label>
-                                        <input value={form.campaignName} onChange={(e) => setForm((p) => ({ ...p, campaignName: e.target.value }))} />
+                    <div className="saas-campaigns-wizard-shell">
+                        <div className="saas-campaigns-wizard-progress">
+                            {CAMPAIGN_WIZARD_STEPS.map((step, index) => {
+                                const stepNumber = index + 1;
+                                const stateClass = stepNumber === wizardStep
+                                    ? 'is-current'
+                                    : (stepNumber < wizardStep ? 'is-complete' : '');
+                                return (
+                                    <div key={step.key} className={`saas-campaigns-wizard-progress__item ${stateClass}`.trim()}>
+                                        <span>{stepNumber}</span>
+                                        <strong>{step.shortLabel || step.label}</strong>
                                     </div>
-                                    <div className="saas-admin-field">
-                                        <label>Modulo</label>
-                                        <select value={form.moduleId} onChange={(e) => setForm((p) => ({ ...p, moduleId: e.target.value, templateId: '', templateName: '' }))}>
-                                            <option value="">Selecciona modulo</option>
-                                            {moduleOptions.map((m) => <option key={m.moduleId} value={m.moduleId}>{m.label}</option>)}
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="saas-admin-form-row">
-                                    <div className="saas-admin-field">
-                                        <label>Template aprobado</label>
-                                        <select
-                                            value={form.templateId}
-                                            onChange={(e) => {
-                                                const id = toText(e.target.value);
-                                                const t = templatesByModule.find((x) => x.templateId === id) || null;
-                                                setForm((p) => ({ ...p, templateId: id, templateName: t?.templateName || '', templateLanguage: t?.templateLanguage || 'es' }));
-                                            }}
-                                        >
-                                            <option value="">Selecciona template</option>
-                                            {templatesByModule.map((t) => <option key={t.templateId} value={t.templateId}>{`${t.templateName} (${toText(t.templateLanguage).toUpperCase()})`}</option>)}
-                                        </select>
-                                    </div>
-                                    <div className="saas-admin-field">
-                                        <label>Programada</label>
-                                        <input type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm((p) => ({ ...p, scheduledAt: e.target.value }))} />
-                                    </div>
-                                </div>
-                                <div className="saas-admin-form-row saas-admin-form-row--single">
-                                    <div className="saas-admin-field">
-                                        <label>Descripcion</label>
-                                        <textarea value={form.campaignDescription} onChange={(e) => setForm((p) => ({ ...p, campaignDescription: e.target.value }))} />
-                                    </div>
-                                </div>
-                            </div>
+                                );
+                            })}
                         </div>
-                    </SaasDetailPanelSection>
-                    <SaasDetailPanelSection title="Segmentacion y filtros">
-                        <div className="saas-campaigns-builder saas-campaigns-builder--full">
-                            <div className="saas-campaigns-builder__form">
-                                <div className="saas-admin-form-row">
-                                    <div className="saas-admin-field">
-                                        <label>Estado comercial (multiseleccion)</label>
-                                        <div className="saas-campaigns-chip-group">
-                                            {COMMERCIAL_STATUS_OPTIONS.map((option) => {
-                                                const active = normalizeCommercialStatuses(form.commercialStatuses).includes(option.key);
-                                                return (
-                                                    <button
-                                                        key={option.key}
-                                                        type="button"
-                                                        className={`saas-campaigns-chip ${active ? 'active' : ''}`}
-                                                        onClick={() => toggleCommercialStatus(option.key)}
-                                                    >
-                                                        {option.label}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                    <div className="saas-admin-field">
-                                        <label>Idioma</label>
-                                        <select value={form.languageFilter} onChange={(e) => setForm((p) => ({ ...p, languageFilter: e.target.value }))}>
-                                            <option value="">Todos</option>
-                                            <option value="es">Espanol</option>
-                                            <option value="en">English</option>
-                                            <option value="pt">Portugues</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="saas-admin-form-row">
-                                    <div className="saas-admin-field">
-                                        <label>Etiquetas (multiseleccion)</label>
-                                        <div className="saas-campaigns-chip-group">
-                                            {labelOptions.length === 0 ? <small className="saas-admin-empty-inline">No hay etiquetas activas.</small> : labelOptions.map((entry) => {
-                                                const active = selectedLabels.some((item) => item.labelId === entry.labelId);
-                                                return (
-                                                    <button
-                                                        key={entry.labelId}
-                                                        type="button"
-                                                        className={`saas-campaigns-chip ${active ? 'active' : ''}`}
-                                                        onClick={() => toggleLabel(entry.labelId)}
-                                                    >
-                                                        {entry.name}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                    <div className="saas-admin-field">
-                                        <label>Zonas (multiseleccion)</label>
-                                        <div className="saas-campaigns-chip-group">
-                                            {zoneOptions.length === 0 ? <small className="saas-admin-empty-inline">No hay zonas activas.</small> : zoneOptions.map((entry) => {
-                                                const active = selectedZones.some((item) => item.ruleId === entry.ruleId);
-                                                return (
-                                                    <button
-                                                        key={entry.ruleId}
-                                                        type="button"
-                                                        className={`saas-campaigns-chip ${active ? 'active' : ''}`}
-                                                        onClick={() => toggleZone(entry.ruleId)}
-                                                    >
-                                                        {entry.name}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="saas-admin-form-row">
-                                    <div className="saas-admin-field">
-                                        <label>Busqueda</label>
-                                        <input value={form.searchText} onChange={(e) => setForm((p) => ({ ...p, searchText: e.target.value }))} placeholder="nombre o telefono" />
-                                    </div>
-                                    <div className="saas-admin-field">
-                                        <label>Opt-in marketing</label>
-                                        <div className="saas-campaigns-fixed-info">Campanas de marketing usan solo clientes con opt-in: <strong>opted_in</strong>.</div>
-                                    </div>
-                                    <div className="saas-admin-field">
-                                        <label>Max destinatarios</label>
-                                        <div className="saas-campaigns-max-recipients">
-                                            <input
-                                                type="range"
-                                                min={1}
-                                                max={maxRecipientsRange}
-                                                value={Math.max(1, Math.min(maxRecipientsRange, toNumber(form.maxRecipients || maxRecipientsRange)))}
-                                                onChange={(e) => {
-                                                    const value = Math.max(1, Math.min(maxRecipientsRange, Math.floor(toNumber(e.target.value, 1))));
-                                                    setMaxRecipientsTouched(true);
-                                                    setForm((p) => ({ ...p, maxRecipients: String(value) }));
-                                                }}
-                                                disabled={maxRecipientsRange <= 1}
-                                            />
-                                            <input
-                                                type="number"
-                                                min={1}
-                                                max={maxRecipientsRange}
-                                                value={form.maxRecipients}
-                                                onChange={(e) => {
-                                                    const raw = Math.floor(toNumber(e.target.value, 1));
-                                                    const value = raw > 0 ? Math.min(maxRecipientsRange, raw) : '';
-                                                    setMaxRecipientsTouched(true);
-                                                    setForm((p) => ({ ...p, maxRecipients: value ? String(value) : '' }));
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                        <div className="saas-campaigns-wizard-content">
+                            {renderWizardStepContent()}
                         </div>
-                    </SaasDetailPanelSection>
-                    <SaasDetailPanelSection title="Audiencia y validaciones">
-                        <div className="saas-campaigns-builder saas-campaigns-builder--full">
-                            <aside className="saas-campaigns-builder__summary">
-                                <div className="saas-admin-related-block">
-                                    <h4>Estimacion de alcance</h4>
-                                    <div className="saas-campaigns-estimation-grid">
-                                        <div><small>Total</small><strong>{estimateNumbers.total}</strong></div>
-                                        <div><small>Elegibles</small><strong>{estimateNumbers.eligible}</strong></div>
-                                        <div><small>Excluidos</small><strong>{estimateNumbers.excluded}</strong></div>
-                                    </div>
-                                    <span className="saas-campaigns-estimation-help">{reachEstimate ? 'Estimacion calculada con filtros actuales.' : 'Haz clic en \"Estimar alcance\" para precalcular audiencia.'}</span>
-                                </div>
-                                <div className="saas-admin-related-block">
-                                    <h4>Validaciones antes de iniciar</h4>
-                                    <div className="saas-campaigns-guardrails">
-                                        {canStartGuardrails.map((check) => (
-                                            <article key={check.key} className={`saas-campaigns-guardrail ${check.ok ? 'ok' : 'warn'}`}>
-                                                <strong>{check.ok ? 'OK' : 'Pendiente'}: {check.label}</strong>
-                                                <small>{check.hint}</small>
-                                            </article>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="saas-admin-related-block">
-                                    <h4>Resumen</h4>
-                                    <div className="saas-campaigns-builder-preview">
-                                        <div><span>Template</span><strong>{toText(form.templateName) || '-'}</strong></div>
-                                        <div><span>Idioma</span><strong>{toText(form.templateLanguage).toUpperCase() || '-'}</strong></div>
-                                        <div><span>Programacion</span><strong>{form.scheduledAt ? formatDateTime(toIsoDateTimeLocal(form.scheduledAt)) : 'Inmediata'}</strong></div>
-                                        <div><span>Etiquetas</span><strong>{selectedLabels.length > 0 ? selectedLabels.map((entry) => entry.name).join(', ') : 'Sin filtro'}</strong></div>
-                                        <div><span>Zonas</span><strong>{selectedZones.length > 0 ? selectedZones.map((entry) => entry.name).join(', ') : 'Sin filtro'}</strong></div>
-                                    </div>
-                                </div>
-                                <div className="saas-admin-related-block">
-                                    <div className="saas-campaigns-audience-summary">
-                                        <strong>{`${exclusionSummary.eligible} elegibles - ${exclusionSummary.excluded} excluidos = ${exclusionSummary.finalRecipients} destinatarios finales`}</strong>
-                                        <span>{reachEstimate ? 'Lista generada con la estimacion actual.' : 'Haz clic en "Estimar alcance" para ver los clientes elegibles.'}</span>
-                                    </div>
-                                    <div className="saas-campaigns-audience-table-wrap">
-                                        {estimatedAudienceItems.length === 0 ? (
-                                            <div className="saas-admin-empty-inline">No hay clientes elegibles para mostrar.</div>
-                                        ) : (
-                                            <table className="saas-campaigns-audience-table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Excluir</th>
-                                                        <th>Nombre</th>
-                                                        <th>Telefono</th>
-                                                        <th>Estado comercial</th>
-                                                        <th>Etiquetas</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {estimatedAudienceItems.map((item) => {
-                                                        const isExcluded = excludedCustomerIdSet.has(item.customerId);
-                                                        return (
-                                                            <tr key={item.customerId} className={isExcluded ? 'is-excluded' : ''}>
-                                                                <td className="is-center">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={isExcluded}
-                                                                        onChange={() => toggleAudienceExclusion(item.customerId)}
-                                                                        aria-label={`Excluir ${item.contactName}`}
-                                                                    />
-                                                                </td>
-                                                                <td>{item.contactName}</td>
-                                                                <td>{item.phone}</td>
-                                                                <td>{item.commercialStatus || '-'}</td>
-                                                                <td>{item.tags.length > 0 ? item.tags.join(', ') : '-'}</td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        )}
-                                    </div>
-                                </div>
-                            </aside>
-                        </div>
-                    </SaasDetailPanelSection>
+                    </div>
                 </SaasDetailPanel>
             )}
             {!tenantScopeLocked && panelMode === 'detail' && (
+
                 !selectedCampaignId ? <div className="saas-admin-empty-state saas-admin-empty-state--detail"><p>Selecciona una campana para ver tracking.</p></div> : (
                     <SaasDetailPanel
                         title={toText(selectedCampaign?.campaignName) || 'Campana'}
@@ -1147,10 +3217,10 @@ export default React.memo(function CampaignsSection(props = {}) {
                         bodyClassName="saas-campaigns-detail-panel__body"
                         actions={(
                             <>
-                                {toLower(selectedCampaign?.status) === 'draft' && <button type="button" disabled={loading || !canWrite} onClick={() => { setForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions)); setPanelMode('edit'); setMaxRecipientsTouched(false); setLocalEstimate(null); }}>Editar</button>}
+                                {toLower(selectedCampaign?.status) === 'draft' && <button type="button" disabled={loading || !canWrite} onClick={() => { setForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions)); setPanelMode('edit'); setWizardStep(1); setLocalEstimate(null); setInclusionOnlyEstimate(null); }}>Editar</button>}
                                 {toLower(selectedCampaign?.status) === 'running' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => pauseCampaign?.(selectedCampaignId), 'No se pudo pausar campana.')}>Pausar</button>}
                                 {toLower(selectedCampaign?.status) === 'paused' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => resumeCampaign?.(selectedCampaignId), 'No se pudo reanudar campana.')}>Reanudar</button>}
-                                {['draft', 'scheduled'].includes(toLower(selectedCampaign?.status)) && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => startCampaign?.(selectedCampaignId), 'No se pudo iniciar campana.')}>Iniciar</button>}
+                                {['draft', 'scheduled'].includes(toLower(selectedCampaign?.status)) && !selectedBlocksConfig && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => startCampaign?.(selectedCampaignId), 'No se pudo iniciar campana.')}>Iniciar</button>}
                                 {!['cancelled', 'completed'].includes(toLower(selectedCampaign?.status)) && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => { const ok = await confirm({ title: 'Cancelar campana', message: 'Esta accion detendra el procesamiento pendiente.', confirmText: 'Cancelar campana', cancelText: 'Volver', tone: 'danger' }); if (!ok) return; await cancelCampaign?.(selectedCampaignId, 'cancelled_by_user'); }, 'No se pudo cancelar campana.')}>Cancelar</button>}
                                 <button type="button" disabled={loading} onClick={() => runSafe(async () => { await loadCampaigns?.(); await loadTracking(selectedCampaignId); }, 'No se pudo recargar tracking.')}>Recargar</button>
                                 <button type="button" className="saas-btn-close" disabled={loading} onClick={() => { void handleRequestCloseCampaignPanel(); }}>Cerrar</button>
@@ -1176,57 +3246,99 @@ export default React.memo(function CampaignsSection(props = {}) {
                             </div>
                             <div className="saas-campaigns-progress saas-campaigns-progress--detail"><div className="saas-campaigns-progress__track"><div className="saas-campaigns-progress__fill" style={{ width: `${selectedProgress}%` }} /></div><span>{selectedProgress}%</span></div>
                         </SaasDetailPanelSection>
-                        <SaasDetailPanelSection title={detailAudienceTitle}>
-                            {showsEstimatedAudienceInDetail ? (
-                                <section className="saas-admin-related-block saas-campaigns-table-block">
+                        {selectedBlocks.length > 0 ? (
+                            <SaasDetailPanelSection title="Ejecucion por bloques">
+                                <section className="saas-admin-related-block">
                                     <div className="saas-campaigns-audience-summary">
-                                        <strong>{`${exclusionSummary.eligible} elegibles - ${exclusionSummary.excluded} excluidos = ${exclusionSummary.finalRecipients} destinatarios finales`}</strong>
-                                        <span>{reachEstimate ? 'Vista previa generada con la estimacion actual.' : 'Calcula la audiencia para ver los clientes elegibles de esta campana.'}</span>
+                                        <strong>{`${completedBlocksCount} de ${selectedBlocks.length} bloques completados`}</strong>
+                                        <span>{`Audiencia congelada esperada: ${selectedBlocksConfig?.totalAudience || 0}`}</span>
                                     </div>
-                                    <div className="saas-campaigns-actions-row">
-                                        <button
-                                            type="button"
-                                            disabled={loading || estimating || !canWrite}
-                                            onClick={() => runSafe(async () => {
-                                                await runDetailEstimate();
-                                                notify({ type: 'info', message: 'Audiencia estimada actualizada.' });
-                                            }, 'No se pudo calcular la audiencia.')}
-                                        >
-                                            Calcular audiencia
-                                        </button>
+                                    <div className="saas-campaigns-progress saas-campaigns-progress--detail">
+                                        <div className="saas-campaigns-progress__track"><div className="saas-campaigns-progress__fill" style={{ width: `${blocksProgress}%` }} /></div>
+                                        <span>{blocksProgress}%</span>
                                     </div>
-                                    <div className="saas-campaigns-audience-table-wrap">
-                                        {estimatedAudienceItems.length === 0 ? (
-                                            <div className="saas-admin-empty-inline">No hay audiencia estimada disponible.</div>
-                                        ) : (
-                                            <table className="saas-campaigns-audience-table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Nombre</th>
-                                                        <th>Telefono</th>
-                                                        <th>Estado comercial</th>
-                                                        <th>Etiquetas</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {estimatedAudienceItems.map((item) => (
-                                                        <tr key={item.customerId}>
-                                                            <td>{item.contactName}</td>
-                                                            <td>{item.phone}</td>
-                                                            <td>{item.commercialStatus || '-'}</td>
-                                                            <td>{item.tags.length > 0 ? item.tags.join(', ') : '-'}</td>
+                                    <div className="saas-campaigns-block-preview saas-campaigns-block-preview--detail">
+                                        <table>
+                                            <thead>
+                                                <tr><th>Bloque</th><th>Contactos</th><th>Estado</th><th>Completado</th><th>Accion</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                {selectedBlocks.map((block) => {
+                                                    const meta = blockStatusMeta(block.status);
+                                                    const canSendBlock = ['pending', 'failed'].includes(toLower(block.status)) && !hasSendingBlock && canWrite;
+                                                    return (
+                                                        <tr key={block.blockIndex}>
+                                                            <td>{`Bloque ${block.blockIndex + 1}`}</td>
+                                                            <td>{block.size}</td>
+                                                            <td><span className={`saas-campaigns-status ${meta.className}`}>{meta.label}</span></td>
+                                                            <td>{formatDateTime(block.sentAt)}</td>
+                                                            <td>
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={loading || !canSendBlock}
+                                                                    onClick={() => runSafe(async () => {
+                                                                        await handleSendCampaignBlock(block.blockIndex);
+                                                                        notify({ type: 'info', message: `Bloque ${block.blockIndex + 1} iniciado.` });
+                                                                    }, 'No se pudo iniciar el bloque.')}
+                                                                >
+                                                                    {block.status === 'failed' ? 'Reintentar' : 'Enviar bloque'}
+                                                                </button>
+                                                            </td>
                                                         </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        )}
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </section>
-                            ) : (
-                                <section className="saas-admin-related-block saas-campaigns-table-block">
+                            </SaasDetailPanelSection>
+                        ) : null}
+                        <SaasDetailPanelSection title={detailAudienceTitle}>
+                            <section className="saas-admin-related-block saas-campaigns-table-block">
+                                {detailUsesFinalAudience ? (
+                                    <>
+                                        <div className="saas-campaigns-audience-summary">
+                                            <strong>{`${detailFinalAudienceItems.length} clientes finales definidos en el wizard`}</strong>
+                                            <span>Esta vista refleja la audiencia construida en los pasos de inclusion, exclusion y revision manual.</span>
+                                        </div>
+                                        <div className="saas-campaigns-audience-table-wrap">
+                                            {detailFinalAudienceItems.length === 0 ? (
+                                                <div className="saas-admin-empty-inline">No hay audiencia final disponible.</div>
+                                            ) : (
+                                                <table className="saas-campaigns-audience-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Nombre</th>
+                                                            <th>Telefono</th>
+                                                            <th>Estado comercial</th>
+                                                            <th>Zona</th>
+                                                            <th>Etiqueta</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {detailFinalAudienceItems.map((item) => {
+                                                            const commercialMeta = commercialFilterOptions.find((entry) => toLower(entry.key) === toLower(item.commercialStatus));
+                                                            const zone = item.zoneLabelIds?.[0] ? zoneNameById.get(toUpper(item.zoneLabelIds[0])) : null;
+                                                            const operationalLabel = item.operationalLabelIds?.[0] ? operationalLabelById.get(toUpper(item.operationalLabelIds[0])) : null;
+                                                            return (
+                                                                <tr key={`detail_audience_${item.customerId}`}>
+                                                                    <td>{item.contactName}</td>
+                                                                    <td>{item.phone}</td>
+                                                                    <td>{commercialMeta ? commercialMeta.name : (item.commercialStatus || '-')}</td>
+                                                                    <td>{zone || '-'}</td>
+                                                                    <td>{operationalLabel?.name || '-'}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            )}
+                                        </div>
+                                    </>
+                                ) : (
                                     <div className="saas-campaigns-table-wrap"><table className="saas-campaigns-table"><thead><tr><th>Telefono</th><th>Cliente</th><th>Estado</th><th>Intentos</th><th>Actualizado</th><th>Error</th></tr></thead><tbody>{recipients.length === 0 ? <tr><td colSpan={6}>Sin destinatarios.</td></tr> : recipients.map((r) => { const m = statusMeta(r?.status); return <tr key={`${toText(r?.recipientId)}_${toText(r?.phone)}`}><td>{toText(r?.phone) || '-'}</td><td>{toText(r?.customerId) || '-'}</td><td><span className={`saas-campaigns-status ${m.className}`}>{m.label}</span></td><td>{toNumber(r?.attemptCount)} / {toNumber(r?.maxAttempts)}</td><td>{formatDateTime(r?.updatedAt)}</td><td>{toText(r?.lastError || r?.skipReason) || '-'}</td></tr>; })}</tbody></table></div>
-                                </section>
-                            )}
+                                )}
+                            </section>
                         </SaasDetailPanelSection>
                         <SaasDetailPanelSection title={`Eventos (${events.length})`}>
                             <section className="saas-admin-related-block saas-campaigns-events-block"><div className="saas-campaigns-events-list">{events.length === 0 ? <div className="saas-admin-empty-inline">Sin eventos.</div> : events.map((ev) => <article key={toText(ev?.eventId)} className="saas-campaigns-event-item"><header><strong>{toText(ev?.eventType) || 'event'}</strong><span>{formatDateTime(ev?.createdAt)}</span></header><p>{toText(ev?.message || ev?.reason) || '-'}</p><small>{`Actor: ${toText(ev?.actorType) || 'system'} | Severidad: ${toText(ev?.severity) || '-'}`}</small></article>)}</div></section>
