@@ -2093,6 +2093,108 @@ async function refreshCampaignBlockStatuses(tenantId = DEFAULT_TENANT_ID, campai
     return updated;
 }
 
+function summarizeRecipientCounts(recipients = []) {
+    const counts = {
+        total: 0,
+        pending: 0,
+        claimed: 0,
+        sent: 0,
+        failed: 0,
+        skipped: 0
+    };
+    for (const recipient of ensureArray(recipients)) {
+        counts.total += 1;
+        const status = normalizeRecipientStatus(recipient?.status);
+        if (status === 'pending') counts.pending += 1;
+        if (status === 'claimed') counts.claimed += 1;
+        if (status === 'sent') counts.sent += 1;
+        if (status === 'failed') counts.failed += 1;
+        if (status === 'skipped' || status === 'opted_out') counts.skipped += 1;
+    }
+    return counts;
+}
+
+function applyCountsToCampaignSnapshot(campaign = {}, counts = {}, { markCompleted = true } = {}) {
+    const nextStatus = (
+        markCompleted
+        && toInt(counts.total, 0, { min: 0 }) > 0
+        && toInt(counts.pending, 0, { min: 0 }) === 0
+        && toInt(counts.claimed, 0, { min: 0 }) === 0
+        && ['running', 'paused', 'scheduled'].includes(campaign.status)
+    )
+        ? 'completed'
+        : campaign.status;
+
+    const completedAt = nextStatus === 'completed'
+        ? (campaign.completedAt || nowIso())
+        : campaign.completedAt;
+
+    return sanitizeCampaign({
+        ...campaign,
+        totalRecipients: counts.total,
+        pendingRecipients: counts.pending,
+        claimedRecipients: counts.claimed,
+        sentRecipients: counts.sent,
+        failedRecipients: counts.failed,
+        skippedRecipients: counts.skipped,
+        status: nextStatus,
+        completedAt
+    });
+}
+
+function refreshCampaignBlockStatusesInMemory(campaign = {}, recipients = []) {
+    const config = normalizeBlocksConfig(campaign?.blocksConfigJson);
+    if (!config || config.blocks.length === 0) return sanitizeCampaign(campaign);
+
+    let changed = false;
+    const nextBlocks = config.blocks.map((block) => {
+        if (block.status !== 'sending') return block;
+        const slice = getBlockSlice(config, block.blockIndex, recipients).recipients;
+        if (slice.length === 0) return block;
+        const terminal = slice.every((recipient) => ['sent', 'failed', 'skipped', 'opted_out'].includes(normalizeRecipientStatus(recipient.status)));
+        if (!terminal) return block;
+        changed = true;
+        const hasFailure = slice.some((recipient) => normalizeRecipientStatus(recipient.status) === 'failed');
+        const derivedSentAt = slice
+            .map((recipient) => toText(recipient.sentAt || recipient.failedAt || recipient.skippedAt || recipient.updatedAt || ''))
+            .filter(Boolean)
+            .sort()
+            .pop() || null;
+        return {
+            ...block,
+            status: hasFailure ? 'failed' : 'completed',
+            sentAt: block.sentAt || derivedSentAt
+        };
+    });
+
+    if (!changed) return sanitizeCampaign(campaign);
+
+    return sanitizeCampaign({
+        ...campaign,
+        blocksConfigJson: normalizeBlocksConfig({ ...config, blocks: nextBlocks })
+    });
+}
+
+async function hydrateCampaignReadOnlyState(tenantId = DEFAULT_TENANT_ID, campaignOrId = null, { markCompleted = true } = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const campaignId = toText(
+        typeof campaignOrId === 'string'
+            ? campaignOrId
+            : campaignOrId?.campaignId
+    );
+    if (!campaignId) return null;
+
+    const baseCampaign = campaignOrId && typeof campaignOrId === 'object'
+        ? campaignOrId
+        : await getCampaignById(cleanTenantId, campaignId);
+    if (!baseCampaign) return null;
+
+    const recipients = await listCampaignRecipientsOrderedForBlocks(cleanTenantId, { campaignId });
+    const blockRefreshedCampaign = refreshCampaignBlockStatusesInMemory(baseCampaign, recipients);
+    const counts = summarizeRecipientCounts(recipients);
+    return applyCountsToCampaignSnapshot(blockRefreshedCampaign, counts, { markCompleted });
+}
+
 async function hydrateCampaignRuntimeState(tenantId = DEFAULT_TENANT_ID, campaignOrId = null, { markCompleted = true } = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
     const campaignId = toText(
@@ -2909,6 +3011,7 @@ module.exports = {
     recordCampaignEvent,
     listCampaignEvents,
     recomputeCampaignStats,
+    hydrateCampaignReadOnlyState,
     hydrateCampaignRuntimeState,
     applyQueueJobUpdate,
     onCampaignUpdated

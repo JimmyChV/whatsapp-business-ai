@@ -380,6 +380,9 @@ function registerOperationsHttpRoutes({
     const getCampaignById = typeof campaignsApi.getCampaignById === 'function'
         ? campaignsApi.getCampaignById.bind(campaignsApi)
         : async () => null;
+    const hydrateCampaignReadOnlyState = typeof campaignsApi.hydrateCampaignReadOnlyState === 'function'
+        ? campaignsApi.hydrateCampaignReadOnlyState.bind(campaignsApi)
+        : async (_tenantId, campaign) => campaign;
     const hydrateCampaignRuntimeState = typeof campaignsApi.hydrateCampaignRuntimeState === 'function'
         ? campaignsApi.hydrateCampaignRuntimeState.bind(campaignsApi)
         : async (_tenantId, campaign) => campaign;
@@ -1794,7 +1797,7 @@ function registerOperationsHttpRoutes({
             const campaignId = toText(req.params?.campaignId || '');
             if (!campaignId) return res.status(400).json({ ok: false, error: 'campaignId invalido.' });
 
-            const campaign = await hydrateCampaignRuntimeState(tenantId, campaignId, { markCompleted: true });
+            const campaign = await hydrateCampaignReadOnlyState(tenantId, campaignId, { markCompleted: true });
             if (!campaign) return res.status(404).json({ ok: false, error: 'Campana no encontrada.' });
 
             return res.json({ ok: true, tenantId, campaign });
