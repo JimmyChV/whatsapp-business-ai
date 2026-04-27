@@ -156,7 +156,8 @@ function normalizeCatalogItems(items = []) {
         .map((item = {}) => ({
             id: String(item.id || item.code || '').trim(),
             label: String(item.label || item.name || item.code || item.id || '').trim(),
-            value: String(item.label || item.name || item.code || item.id || '').trim()
+            value: String(item.label || item.name || item.code || item.id || '').trim(),
+            abbreviation: String(item.abbreviation || '').trim()
         }))
         .filter((item) => item.id && item.label);
 }
@@ -168,12 +169,13 @@ function normalizeCatalogLookupKey(value = '') {
     return raw.toLowerCase();
 }
 
-function buildCatalogLabelMap(items = []) {
+function buildCatalogLabelMap(items = [], preferredField = 'label') {
     return normalizeCatalogItems(items).reduce((acc, item) => {
         const rawId = String(item.id || '').trim();
         const normalizedId = normalizeCatalogLookupKey(rawId);
-        if (rawId) acc[rawId] = item.label;
-        if (normalizedId) acc[normalizedId] = item.label;
+        const preferredValue = String(item?.[preferredField] || item.label || '').trim() || item.label;
+        if (rawId) acc[rawId] = preferredValue;
+        if (normalizedId) acc[normalizedId] = preferredValue;
         return acc;
     }, {});
 }
@@ -1017,8 +1019,8 @@ function CustomersSection(props = {}) {
     );
     const customerLabelMaps = useMemo(() => ({
         customerTypeById: buildCatalogLabelMap(customerTypeOptions),
-        documentTypeById: buildCatalogLabelMap(documentTypeOptions),
-        treatmentById: buildCatalogLabelMap(treatmentOptions),
+        documentTypeById: buildCatalogLabelMap(documentTypeOptions, 'abbreviation'),
+        treatmentById: buildCatalogLabelMap(treatmentOptions, 'abbreviation'),
         sourceById: buildCatalogLabelMap(sourceOptions)
     }), [customerTypeOptions, documentTypeOptions, treatmentOptions, sourceOptions]);
     const geoDepartmentOptions = useMemo(
@@ -3655,7 +3657,7 @@ function CustomersSection(props = {}) {
                         >
                             <option value="">{loadingCustomerCatalogs ? 'Cargando tratamientos...' : 'Tratamiento'}</option>
                             {treatmentOptions.map((item) => (
-                                <option key={`customer-treatment-${item.id}`} value={item.id}>{item.label}</option>
+                                <option key={`customer-treatment-${item.id}`} value={item.id}>{item.abbreviation || item.label}</option>
                             ))}
                         </select>
                     </div>
@@ -3710,7 +3712,7 @@ function CustomersSection(props = {}) {
                         >
                             <option value="">{loadingCustomerCatalogs ? 'Cargando tipos documento...' : 'Tipo de documento'}</option>
                             {documentTypeOptions.map((item) => (
-                                <option key={`customer-document-${item.id}`} value={item.id}>{item.label}</option>
+                                <option key={`customer-document-${item.id}`} value={item.id}>{item.abbreviation || item.label}</option>
                             ))}
                         </select>
                         <input
