@@ -78,7 +78,7 @@ function CompaniesSection(props = {}) {
             return (
                 <div className="saas-admin-empty-state saas-admin-empty-state--detail">
                     <h4>Selecciona una empresa</h4>
-                    <p>El detalle se mostrara aqui en solo lectura. Editar se habilita solo por accion explicita.</p>
+                    <p>El detalle se mostrará aquí en solo lectura. Editar se habilita solo por acción explícita.</p>
                 </div>
             );
         }
@@ -97,11 +97,11 @@ function CompaniesSection(props = {}) {
                     </div>
                 </div>
                 <div className="saas-admin-detail-grid">
-                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedTenant?.id || '-'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>CÓDIGO</span><strong>{selectedTenant?.id || '-'}</strong></div>
                     <div className="saas-admin-detail-field"><span>Slug</span><strong>{selectedTenant.slug || '-'}</strong></div>
                     <div className="saas-admin-detail-field"><span>Plan</span><strong>{selectedTenant.plan || '-'}</strong></div>
-                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedTenant.active === false ? 'Inactiva' : 'Activa'}</strong></div>
-                    <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(selectedTenant.updatedAt)}</strong></div>
+                    <div className="saas-admin-detail-field"><span>ESTADO</span><strong>{selectedTenant.active === false ? 'Inactiva' : 'Activa'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>ACTUALIZADO</span><strong>{formatDateTimeLabel(selectedTenant.updatedAt)}</strong></div>
                     <div className="saas-admin-detail-field"><span>Logo</span><strong>{selectedTenant.logoUrl ? 'Configurado' : 'Sin logo'}</strong></div>
                 </div>
                 {(selectedTenant.logoUrl || selectedTenant.coverImageUrl) ? (
@@ -227,7 +227,7 @@ function CompaniesSection(props = {}) {
                 >
                     {tenantPanelMode === 'create' ? 'Guardar empresa' : 'Actualizar empresa'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelTenantEdit}>Cancelar</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelTenantEdit}>CANCELAR</button>
             </div>
         </>
     ), [
@@ -252,7 +252,7 @@ function CompaniesSection(props = {}) {
         if (tenantPanelMode !== 'view' || !selectedTenant || !canManageTenants) return null;
         return (
             <>
-                <button type="button" disabled={busy} onClick={openTenantEdit}>Editar</button>
+                <button type="button" disabled={busy} onClick={openTenantEdit}>EDITAR</button>
                 <button
                     type="button"
                     disabled={busy}
@@ -270,7 +270,7 @@ function CompaniesSection(props = {}) {
                         });
                     })}
                 >
-                    {selectedTenant.active === false ? 'Activar' : 'Desactivar'}
+                    {selectedTenant.active === false ? 'ACTIVAR' : 'DESACTIVAR'}
                 </button>
             </>
         );
@@ -295,10 +295,10 @@ function CompaniesSection(props = {}) {
                 dirty={isEditing}
                 requestJson={requestJson}
                 emptyText="No hay empresas registradas."
-                searchPlaceholder="Buscar empresa por nombre, slug, plan o estado"
+                searchPlaceholder="Buscar empresa por nombre, slug, plan o estado..."
                 actions={canManageTenants ? [{ key: 'create', label: 'Agregar empresa', onClick: openTenantCreate, disabled: busy }] : []}
                 detailTitle={tenantPanelMode === 'create' ? 'Nueva empresa' : tenantPanelMode === 'edit' ? `Editando: ${toTenantDisplayName(selectedTenant || {})}` : toTenantDisplayName(selectedTenant || {})}
-                detailSubtitle={tenantPanelMode === 'view' ? 'Campos bloqueados. Usa Editar para modificar.' : 'ID fijo despues de crear. Ajusta solo campos permitidos.'}
+                detailSubtitle={tenantPanelMode === 'view' ? 'Campos bloqueados. Usa Editar para modificar.' : 'ID fijo después de crear. Ajusta solo campos permitidos.'}
                 detailActions={detailActions}
             />
         </div>

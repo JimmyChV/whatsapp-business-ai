@@ -57,7 +57,7 @@ function ModulesConfigSection(props = {}) {
         if (isGeneralConfigSection) {
             return [{
                 id: MODULE_KEYS?.GENERAL || 'general',
-                name: 'Configuracion general',
+                name: 'Configuración general',
                 phone: tenantSettings?.contactPhone || '-',
                 status: tenantSettings?.enabled === false ? 'Inactiva' : 'Activa',
                 type: 'General'
@@ -68,14 +68,14 @@ function ModulesConfigSection(props = {}) {
             name: module?.name || module?.moduleName || module?.moduleId || '-',
             phone: module?.phoneE164 || module?.phone || '-',
             status: module?.isActive === false || module?.active === false ? 'Inactivo' : 'Activo',
-            type: module?.catalogMode || module?.mode || 'Modulo',
+            type: module?.catalogMode || module?.mode || 'Módulo',
             raw: module
         }));
     }, [MODULE_KEYS, isGeneralConfigSection, tenantSettings, waModules]);
 
     const columns = React.useMemo(() => [
-        { key: 'name', label: isGeneralConfigSection ? 'Configuracion' : 'Modulo', width: '32%', minWidth: '240px', sortable: true },
-        { key: 'phone', label: 'Telefono', width: '24%', minWidth: '180px', sortable: true },
+        { key: 'name', label: isGeneralConfigSection ? 'CONFIGURACIÓN' : 'MÓDULO', width: '32%', minWidth: '240px', sortable: true },
+        { key: 'phone', label: 'TELÉFONO', width: '24%', minWidth: '180px', sortable: true },
         { key: 'type', label: 'Tipo', width: '20%', minWidth: '160px', sortable: true },
         { key: 'status', label: 'Estado', width: '18%', minWidth: '120px', sortable: true }
     ], [isGeneralConfigSection]);
@@ -232,7 +232,7 @@ function ModulesConfigSection(props = {}) {
         <SaasEntityPage
             id={isModulesSection ? 'saas_modulos' : 'saas_config'}
             sectionKey={isModulesSection ? 'saas_modulos' : 'saas_config'}
-            title={isModulesSection ? 'Modulos' : 'Configuracion'}
+            title={isModulesSection ? 'MÓDULOS' : 'CONFIGURACIÓN'}
             rows={rows}
             columns={columns}
             selectedId={selectedEntityId}
@@ -247,7 +247,7 @@ function ModulesConfigSection(props = {}) {
             dirty={isModulesSection && waModulePanelMode !== 'view'}
             requestJson={context.requestJson}
             loading={busy && rows.length === 0}
-            searchPlaceholder={isModulesSection ? 'Buscar modulo por nombre, codigo o telefono' : 'Buscar configuracion'}
+            searchPlaceholder={isModulesSection ? 'Buscar módulo por nombre, código o teléfono...' : 'Buscar configuración...'}
             filters={filters}
             emptyText={isModulesSection ? 'No hay modulos registrados.' : 'No hay configuracion disponible.'}
             actions={[
@@ -255,12 +255,12 @@ function ModulesConfigSection(props = {}) {
                     ? { label: 'Nuevo modulo', onClick: openConfigModuleCreate, disabled: busy || !settingsTenantId }
                     : null,
                 isGeneralConfigSection
-                    ? { label: 'Configuracion general', onClick: openConfigSettingsView, disabled: busy || !settingsTenantId }
+                    ? { label: 'Configuración general', onClick: openConfigSettingsView, disabled: busy || !settingsTenantId }
                     : null
             ].filter(Boolean)}
             detailTitle={isModulesSection
                 ? (waModulePanelMode === 'create' ? 'Nuevo modulo' : (selectedConfigModule?.name || 'Detalle de modulo'))
-                : 'Configuracion general'}
+                : 'Configuración general'}
             detailSubtitle={settingsTenantId
                 ? `Empresa: ${toTenantDisplayName?.(tenantOptions?.find((tenant) => tenant.id === settingsTenantId) || {}) || settingsTenantId}`
                 : 'Selecciona una empresa para continuar.'}

@@ -5,8 +5,8 @@ const DEFAULT_OPERATORS = [
     { value: 'equals', label: 'Igual a' },
     { value: 'starts_with', label: 'Empieza con' },
     { value: 'ends_with', label: 'Termina con' },
-    { value: 'is_empty', label: 'Vacio' },
-    { value: 'not_empty', label: 'No vacio' }
+    { value: 'is_empty', label: 'Vacío' },
+    { value: 'not_empty', label: 'No vacío' }
 ];
 
 const OPERATORS_BY_TYPE = {
@@ -15,14 +15,14 @@ const OPERATORS_BY_TYPE = {
         { value: 'equals', label: 'Igual a' },
         { value: 'starts_with', label: 'Empieza con' },
         { value: 'ends_with', label: 'Termina con' },
-        { value: 'is_empty', label: 'Vacio' },
-        { value: 'not_empty', label: 'No vacio' }
+        { value: 'is_empty', label: 'Vacío' },
+        { value: 'not_empty', label: 'No vacío' }
     ],
     option: [
-        { value: 'equals', label: 'Es' },
-        { value: 'not_equals', label: 'No es' },
-        { value: 'is_empty', label: 'Vacio' },
-        { value: 'not_empty', label: 'No vacio' }
+        { value: 'equals', label: 'IGUAL A' },
+        { value: 'not_equals', label: 'DISTINTO DE' },
+        { value: 'is_empty', label: 'Vacío' },
+        { value: 'not_empty', label: 'No vacío' }
     ],
     number: [
         { value: 'equals', label: '=' },
@@ -30,15 +30,15 @@ const OPERATORS_BY_TYPE = {
         { value: 'gte', label: '>=' },
         { value: 'lt', label: '<' },
         { value: 'lte', label: '<=' },
-        { value: 'is_empty', label: 'Vacio' },
-        { value: 'not_empty', label: 'No vacio' }
+        { value: 'is_empty', label: 'Vacío' },
+        { value: 'not_empty', label: 'No vacío' }
     ],
     date: [
         { value: 'on', label: 'En fecha' },
         { value: 'before', label: 'Antes de' },
-        { value: 'after', label: 'Despues de' },
-        { value: 'is_empty', label: 'Vacio' },
-        { value: 'not_empty', label: 'No vacio' }
+        { value: 'after', label: 'DESPUÉS DE' },
+        { value: 'is_empty', label: 'Vacío' },
+        { value: 'not_empty', label: 'No vacío' }
     ]
 };
 
@@ -103,7 +103,7 @@ const SaasViewHeader = ({
                             onClick={typeof action.onClick === 'function' ? action.onClick : undefined}
                             disabled={Boolean(action.disabled)}
                         >
-                            {action.label || 'Accion'}
+                            {action.label || 'Acción'}
                         </button>
                     ))}
                     {actionsExtra}
@@ -167,7 +167,7 @@ const SaasViewHeader = ({
                                     type={selectedFilterType === 'number' ? 'number' : (selectedFilterType === 'date' ? 'date' : 'text')}
                                     value={String(filters?.value?.value || '')}
                                     onChange={(event) => filters?.onChange?.({ ...filters.value, value: event.target.value })}
-                                    placeholder="Valor filtro"
+                                    placeholder="valor de filtro"
                                 />
                             )
                         ) : (
@@ -191,7 +191,7 @@ const SaasViewHeader = ({
                                 }
                             }}
                         >
-                            <option value="">Ordenar por...</option>
+                            <option value="">ORDENAR POR...</option>
                             {sortColumns.map((column) => (
                                 <option key={column.key} value={column.key}>{column.label || column.key}</option>
                             ))}
@@ -208,7 +208,7 @@ const SaasViewHeader = ({
                             }}
                             disabled={!String(sortConfig?.columnKey || '').trim()}
                         >
-                            {String(sortConfig?.direction || 'asc') === 'asc' ? 'Asc' : 'Desc'}
+                            {String(sortConfig?.direction || 'asc') === 'asc' ? 'ASC' : 'DESC'}
                         </button>
                     </div>
                 ) : null}

@@ -10,7 +10,7 @@ export default function ModulesConfigDetailEmptyState({
     if (!settingsTenantId) {
         return (
             <div className="saas-admin-empty-state saas-admin-empty-state--detail">
-                <h4>{isModulesSection ? 'Modulos por empresa' : 'Configuracion por empresa'}</h4>
+                <h4>{isModulesSection ? 'MÓDULOS POR EMPRESA' : 'CONFIGURACIÓN POR EMPRESA'}</h4>
                 <p>Selecciona una empresa en el panel izquierdo para ver el detalle.</p>
             </div>
         );

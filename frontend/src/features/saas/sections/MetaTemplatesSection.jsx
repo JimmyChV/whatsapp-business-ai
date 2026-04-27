@@ -50,10 +50,10 @@ const HEADER_TYPE_OPTIONS = [
 
 const TEMPLATE_TABLE_COLUMNS = [
     { key: 'templateName', label: 'Nombre', width: '280px', minWidth: '220px', maxWidth: '360px', type: 'text' },
-    { key: 'category', label: 'Categoria', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option' },
+    { key: 'category', label: 'CATEGORÍA', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option' },
     { key: 'templateLanguage', label: 'Idioma', width: '120px', minWidth: '100px', maxWidth: '150px', type: 'option' },
     { key: 'statusLabel', label: 'Estado', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option' },
-    { key: 'moduleLabel', label: 'Modulo', width: '200px', minWidth: '160px', maxWidth: '280px', type: 'text' },
+    { key: 'moduleLabel', label: 'MÓDULO', width: '200px', minWidth: '160px', maxWidth: '280px', type: 'text' },
     { key: 'updatedAt', label: 'Actualizado', width: '190px', minWidth: '160px', maxWidth: '230px', type: 'date' }
 ];
 
@@ -721,7 +721,7 @@ function MetaTemplatesSection(props = {}) {
             });
             return payload;
         } catch (error) {
-            const message = String(error?.message || 'No se pudo cargar el catalogo de variables.');
+            const message = String(error?.message || 'No se pudo cargar el catálogo de variables.');
             setVarCatalogError(message);
             return null;
         } finally {
@@ -838,7 +838,7 @@ function MetaTemplatesSection(props = {}) {
     const handleCreateTemplate = useCallback(async () => {
         if (!canWrite || typeof createTemplate !== 'function') return;
         const moduleId = toText(createForm.moduleId);
-        if (!moduleId) throw new Error('Selecciona un modulo para crear el template.');
+        if (!moduleId) throw new Error('Selecciona un módulo para crear la plantilla.');
 
         const {
             metaPayload: templatePayload,
@@ -878,7 +878,7 @@ function MetaTemplatesSection(props = {}) {
             title: 'Eliminar template',
             message: `Se eliminara \"${templateName}\" en Meta y en el registro local.`,
             confirmText: 'Eliminar',
-            cancelText: 'Cancelar',
+            cancelText: 'CANCELAR',
             tone: 'danger'
         });
         if (!ok) return;
@@ -900,7 +900,7 @@ function MetaTemplatesSection(props = {}) {
     const handleSyncTemplates = useCallback(async () => {
         if (!canWrite || typeof syncTemplates !== 'function') return;
         const moduleId = toText(syncModuleId);
-        if (!moduleId) throw new Error('Selecciona un modulo para sincronizar.');
+        if (!moduleId) throw new Error('Selecciona un módulo para sincronizar.');
 
         await runActionSafe('Templates Meta sincronizados', async () => {
             const response = await syncTemplates({
@@ -1296,7 +1296,7 @@ function MetaTemplatesSection(props = {}) {
                     offset: 0
                 }));
             }}
-            searchPlaceholder="Buscar template por nombre, categoria o idioma"
+            searchPlaceholder="Buscar plantilla por nombre, categoría o idioma..."
             searchDisabled={templatesBusy || tenantScopeLocked}
             actions={[
                 {
@@ -1362,7 +1362,7 @@ function MetaTemplatesSection(props = {}) {
                             updateFilter({ scopeModuleId: nextScopeModuleId, offset: 0 });
                         }}
                     >
-                        <option value="">Todos los modulos</option>
+                        <option value="">Todos los módulos</option>
                         {moduleOptions.map((moduleItem) => (
                             <option key={`meta_template_scope_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
                                 {moduleItem.label}
@@ -1520,7 +1520,7 @@ function MetaTemplatesSection(props = {}) {
                                             void handleRequestCloseTemplateBuilder();
                                         }}
                                     >
-                                        Cancelar
+                                        CANCELAR
                                     </button>
                                     <button
                                         type="button"
@@ -1548,7 +1548,7 @@ function MetaTemplatesSection(props = {}) {
                                                 onChange={(event) => setCreateForm((prev) => ({ ...prev, moduleId: toText(event.target.value) }))}
                                                 disabled={templatesBusy || !canWrite}
                                             >
-                                                <option value="">Selecciona modulo</option>
+                                                <option value="">Selecciona módulo</option>
                                                 {moduleOptions.map((moduleItem) => (
                                                     <option key={`meta_template_form_module_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
                                                         {moduleItem.label}
@@ -1592,7 +1592,7 @@ function MetaTemplatesSection(props = {}) {
                                             </small>
                                         </div>
                                         <div className="saas-meta-template-field">
-                                            <label htmlFor="meta_template_category">Categoria</label>
+                                            <label htmlFor="meta_template_category">Categoría</label>
                                             <select
                                                 id="meta_template_category"
                                                 value={createForm.category}
@@ -1743,7 +1743,7 @@ function MetaTemplatesSection(props = {}) {
                                                         >
                                                             <option value="quick_reply">Quick reply</option>
                                                             <option value="url">URL</option>
-                                                            <option value="phone">Telefono</option>
+                                                            <option value="phone">Teléfono</option>
                                                         </select>
                                                     </div>
                                                     <div className="saas-meta-template-field">
@@ -1833,7 +1833,7 @@ function MetaTemplatesSection(props = {}) {
                                                 void handleRequestCloseTemplateBuilder();
                                             }}
                                         >
-                                            Cancelar
+                                            CANCELAR
                                         </button>
                                     </div>
                                 </section>
@@ -1841,7 +1841,7 @@ function MetaTemplatesSection(props = {}) {
                                 <aside className="saas-meta-template-builder__side">
                                     <section className="saas-meta-template-builder__variables">
                                         <div className="saas-admin-related-block saas-meta-template-pane">
-                                            <h4>Variables por categoria</h4>
+                                            <h4>Variables por categoría</h4>
                                             <div className="saas-meta-template-variables-toolbar">
                                                 <input
                                                     value={variableSearchQuery}
@@ -1850,7 +1850,7 @@ function MetaTemplatesSection(props = {}) {
                                                     disabled={templatesBusy}
                                                 />
                                             </div>
-                                            {loadingVarCatalog && <small className="saas-meta-template-help">Cargando catalogo de variables...</small>}
+                                            {loadingVarCatalog && <small className="saas-meta-template-help">Cargando catálogo de variables...</small>}
                                             {varCatalogError && <small className="saas-meta-template-error">{varCatalogError}</small>}
                                             {!loadingVarCatalog && !varCatalogError && filteredVarCategories.map((category) => {
                                                 const categoryKey = toText(category?.id);
@@ -1893,7 +1893,7 @@ function MetaTemplatesSection(props = {}) {
                                             );
                                         })}
                                             {!loadingVarCatalog && !varCatalogError && filteredVarCategories.length === 0 && (
-                                                <small className="saas-meta-template-help">Sin resultados para la busqueda.</small>
+                                                <small className="saas-meta-template-help">Sin resultados para la búsqueda.</small>
                                             )}
                                         </div>
 
@@ -2063,10 +2063,10 @@ function MetaTemplatesSection(props = {}) {
                             <SaasDetailPanelSection title="Metadata" defaultOpen>
                                 <div className="saas-admin-detail-grid">
                                     <div className="saas-admin-detail-field"><span>Estado</span><strong>{resolveStatusMeta(selectedTemplate?.status).label}</strong></div>
-                                    <div className="saas-admin-detail-field"><span>Modulo</span><strong>{toText(selectedTemplate?.moduleId) || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>MÓDULO</span><strong>{toText(selectedTemplate?.moduleId) || '-'}</strong></div>
                                     <div className="saas-admin-detail-field"><span>Uso</span><strong>{USE_CASE_OPTIONS.find((option) => option.value === normalizeTemplateUseCase(selectedTemplate?.useCase || 'both'))?.label || 'Campana e individual'}</strong></div>
                                     <div className="saas-admin-detail-field"><span>Idioma</span><strong>{toText(selectedTemplate?.templateLanguage).toUpperCase() || '-'}</strong></div>
-                                    <div className="saas-admin-detail-field"><span>Categoria</span><strong>{toText(selectedTemplate?.category) || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>CATEGORÍA</span><strong>{toText(selectedTemplate?.category) || '-'}</strong></div>
                                     <div className="saas-admin-detail-field"><span>Quality</span><strong>{(() => {
                                         const q = selectedTemplate?.qualityScore;
                                         if (!q) return 'N/A';

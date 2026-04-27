@@ -32,7 +32,7 @@ export default function ModulesConfigMasterPane({
     return (
         <aside className="saas-admin-master-pane">
             <div className="saas-admin-pane-header">
-                <h3>{isModulesSection ? 'Modulos' : 'Configuracion general'}</h3>
+                <h3>{isModulesSection ? 'MÓDULOS' : 'CONFIGURACIÓN GENERAL'}</h3>
                 <small>
                     {settingsTenantId
                         ? `Empresa: ${toTenantDisplayName(tenantOptions.find((tenant) => tenant.id === settingsTenantId) || {})}`
@@ -43,12 +43,12 @@ export default function ModulesConfigMasterPane({
             <div className="saas-admin-list-actions saas-admin-list-actions--row">
                 {isModulesSection && (
                     <button type="button" disabled={busy || !settingsTenantId || !canEditModules} onClick={openConfigModuleCreate}>
-                        Nuevo modulo
+                        Nuevo módulo
                     </button>
                 )}
                 {isGeneralConfigSection && (
                     <button type="button" disabled={busy || !settingsTenantId} onClick={openConfigSettingsView}>
-                        Abrir configuracion general
+                        Abrir configuración general
                     </button>
                 )}
                 <button type="button" disabled={busy} onClick={clearConfigSelection}>
@@ -60,7 +60,7 @@ export default function ModulesConfigMasterPane({
                 {!settingsTenantId && (
                     <div className="saas-admin-empty-state">
                         <h4>Sin empresa seleccionada</h4>
-                        <p>Elige una empresa para ver su configuracion.</p>
+                        <p>Elige una empresa para ver su configuración.</p>
                     </div>
                 )}
 
@@ -72,7 +72,7 @@ export default function ModulesConfigMasterPane({
                     >
                         <strong>Perfil de empresa</strong>
                         <small>Catalogo: {tenantSettings.catalogMode}</small>
-                        <small>Modulos habilitados: {MODULE_KEYS.filter((entry) => tenantSettings?.enabledModules?.[entry.key] !== false).length}/{MODULE_KEYS.length}</small>
+                        <small>Módulos habilitados: {MODULE_KEYS.filter((entry) => tenantSettings?.enabledModules?.[entry.key] !== false).length}/{MODULE_KEYS.length}</small>
                     </button>
                 )}
 
@@ -86,14 +86,14 @@ export default function ModulesConfigMasterPane({
                             <input
                                 value={search}
                                 onChange={(event) => setSearch(event.target.value)}
-                                placeholder="Buscar modulo por nombre, codigo o telefono"
+                                placeholder="Buscar módulo por nombre, código o teléfono..."
                             />
                             <button type="button">Columnas</button>
                         </div>
                         <div className="saas-admin-list-table-head saas-admin-list-table-head--modules">
-                            <span>Modulo</span>
-                            <span>Telefono</span>
-                            <span>Estado</span>
+                            <span>MÓDULO</span>
+                            <span>TELÉFONO</span>
+                            <span>ESTADO</span>
                         </div>
                         {filteredModules.length === 0 && (
                             <div className="saas-admin-empty-inline">No hay modulos para esta busqueda.</div>
@@ -105,7 +105,7 @@ export default function ModulesConfigMasterPane({
                                 className={`saas-admin-list-item saas-admin-list-item--button saas-admin-list-item--table saas-admin-list-item--modules ${selectedConfigKey === `wa_module:${moduleItem.moduleId}` ? 'active' : ''}`.trim()}
                                 onClick={() => openConfigModuleView(moduleItem.moduleId)}
                             >
-                                <strong>{moduleItem.name || 'Modulo sin nombre'}</strong>
+                                <strong>{moduleItem.name || 'Módulo sin nombre'}</strong>
                                 <span>{moduleItem.phoneNumber || '-'}</span>
                                 <small>{moduleItem.isActive ? 'Activo' : 'Inactivo'}</small>
                             </button>

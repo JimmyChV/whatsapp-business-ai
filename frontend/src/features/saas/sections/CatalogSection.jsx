@@ -67,11 +67,11 @@ function CatalogSection(props = {}) {
     })), [tenantCatalogItems]);
 
     const columns = React.useMemo(() => [
-        { key: 'name', label: 'Catalogo', width: '30%', sortable: true },
+        { key: 'name', label: 'CATÁLOGO', width: '30%', sortable: true },
         { key: 'sourceType', label: 'Origen', width: '20%', sortable: true },
         { key: 'defaultLabel', label: 'Principal', width: '16%', sortable: true },
         { key: 'status', label: 'Estado', width: '16%', sortable: true },
-        { key: 'id', label: 'Codigo', width: '18%', sortable: true }
+        { key: 'id', label: 'CÓDIGO', width: '18%', sortable: true }
     ], []);
 
     const filters = React.useMemo(() => [
@@ -160,11 +160,11 @@ function CatalogSection(props = {}) {
         <>
             <div className="saas-admin-form-row">
                 <div className="saas-admin-field">
-                    <label>ID catalogo</label>
+                    <label>ID catálogo</label>
                     <input
                         value={tenantCatalogForm.catalogId || ''}
                         onChange={(event) => setTenantCatalogForm?.((prev) => ({ ...prev, catalogId: text(event.target.value).toUpperCase() }))}
-                        placeholder="CAT-XXXXXX (auto si vacio)"
+                        placeholder="CAT-XXXXXX (auto si vacío)"
                         disabled={busy || catalogPanelMode === 'edit'}
                     />
                 </div>
@@ -173,7 +173,7 @@ function CatalogSection(props = {}) {
                     <input
                         value={tenantCatalogForm.name || ''}
                         onChange={(event) => setTenantCatalogForm?.((prev) => ({ ...prev, name: event.target.value }))}
-                        placeholder="Nombre del catalogo"
+                        placeholder="Nombre del catálogo"
                         disabled={busy}
                     />
                 </div>
@@ -192,11 +192,11 @@ function CatalogSection(props = {}) {
                     </select>
                 </div>
                 <div className="saas-admin-field">
-                    <label>Descripcion</label>
+                    <label>Descripción</label>
                     <input
                         value={tenantCatalogForm.description || ''}
                         onChange={(event) => setTenantCatalogForm?.((prev) => ({ ...prev, description: event.target.value }))}
-                        placeholder="Descripcion corta"
+                        placeholder="descripción corta"
                         disabled={busy}
                     />
                 </div>
@@ -209,7 +209,7 @@ function CatalogSection(props = {}) {
                         onChange={(event) => setTenantCatalogForm?.((prev) => ({ ...prev, isActive: event.target.checked }))}
                         disabled={busy}
                     />
-                    <span>Catalogo activo</span>
+                    <span>Catálogo activo</span>
                 </label>
                 <label className="saas-admin-module-toggle">
                     <input
@@ -218,7 +218,7 @@ function CatalogSection(props = {}) {
                         onChange={(event) => setTenantCatalogForm?.((prev) => ({ ...prev, isDefault: event.target.checked }))}
                         disabled={busy}
                     />
-                    <span>Catalogo principal</span>
+                    <span>Catálogo principal</span>
                 </label>
             </div>
             {tenantCatalogForm.sourceType === 'woocommerce' ? (
@@ -242,9 +242,9 @@ function CatalogSection(props = {}) {
             ) : null}
             <div className="saas-admin-form-row saas-admin-form-row--actions">
                 <button type="button" disabled={busy || !canEditCatalog || !text(tenantCatalogForm.name)} onClick={saveCatalog}>
-                    {catalogPanelMode === 'create' ? 'Guardar catalogo' : 'Actualizar catalogo'}
+                    {catalogPanelMode === 'create' ? 'Guardar catálogo' : 'Actualizar catálogo'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={close}>Cancelar</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={close}>CANCELAR</button>
             </div>
         </>
     ), [
@@ -268,7 +268,7 @@ function CatalogSection(props = {}) {
                 <input value={catalogProductForm.sku || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, sku: event.target.value }))} placeholder="SKU" disabled={busy || catalogProductImageUploading} />
                 <input value={catalogProductForm.imageUrl || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, imageUrl: event.target.value }))} placeholder="URL de imagen" disabled={busy || catalogProductImageUploading} />
             </div>
-            <textarea value={catalogProductForm.description || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, description: event.target.value }))} placeholder="Descripcion" disabled={busy || catalogProductImageUploading} />
+            <textarea value={catalogProductForm.description || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, description: event.target.value }))} placeholder="descripción" disabled={busy || catalogProductImageUploading} />
             <label className="saas-admin-module-toggle">
                 <input type="checkbox" checked={catalogProductForm.isActive !== false} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, isActive: event.target.checked }))} disabled={busy} />
                 <span>Producto activo</span>
@@ -289,7 +289,7 @@ function CatalogSection(props = {}) {
                 <button type="button" disabled={busy || !canEditCatalog || !text(catalogProductForm.title) || !text(catalogProductForm.price)} onClick={() => runAction?.(catalogProductPanelMode === 'create' ? 'Producto creado' : 'Producto actualizado', async () => saveCatalogProduct?.())}>
                     {catalogProductPanelMode === 'create' ? 'Guardar producto' : 'Actualizar producto'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelCatalogProductEdit}>Cancelar</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelCatalogProductEdit}>CANCELAR</button>
             </div>
         </div>
     ), [
@@ -310,8 +310,8 @@ function CatalogSection(props = {}) {
         if (!settingsTenantId) {
             return (
                 <div className="saas-admin-empty-state saas-admin-empty-state--detail">
-                    <h4>Catalogos por tenant</h4>
-                    <p>Selecciona una empresa para gestionar varios catalogos.</p>
+                    <h4>CATÁLOGOS POR EMPRESA</h4>
+                    <p>Selecciona una empresa para gestionar varios catálogos.</p>
                 </div>
             );
         }
@@ -319,31 +319,31 @@ function CatalogSection(props = {}) {
         if (!selectedTenantCatalog) {
             return (
                 <div className="saas-admin-empty-state saas-admin-empty-state--detail">
-                    <h4>Sin catalogo seleccionado</h4>
-                    <p>Selecciona un catalogo de la lista o crea uno nuevo.</p>
+                    <h4>Sin catálogo seleccionado</h4>
+                    <p>Selecciona un catálogo de la lista o crea uno nuevo.</p>
                 </div>
             );
         }
         return (
             <>
                 <div className="saas-admin-detail-grid">
-                    <div className="saas-admin-detail-field"><span>ID catalogo</span><strong>{selectedTenantCatalog.catalogId}</strong></div>
+                    <div className="saas-admin-detail-field"><span>ID CATÁLOGO</span><strong>{selectedTenantCatalog.catalogId}</strong></div>
                     <div className="saas-admin-detail-field"><span>Nombre</span><strong>{selectedTenantCatalog.name || '-'}</strong></div>
                     <div className="saas-admin-detail-field"><span>Origen</span><strong>{selectedTenantCatalog.sourceType}</strong></div>
-                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedTenantCatalog.isActive ? 'Activo' : 'Inactivo'}</strong></div>
-                    <div className="saas-admin-detail-field"><span>Principal</span><strong>{selectedTenantCatalog.isDefault ? 'Si' : 'No'}</strong></div>
-                    <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(selectedTenantCatalog.updatedAt)}</strong></div>
+                    <div className="saas-admin-detail-field"><span>ESTADO</span><strong>{selectedTenantCatalog.isActive ? 'Activo' : 'Inactivo'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>PRINCIPAL</span><strong>{selectedTenantCatalog.isDefault ? 'Sí' : 'No'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>ACTUALIZADO</span><strong>{formatDateTimeLabel(selectedTenantCatalog.updatedAt)}</strong></div>
                 </div>
                 <div className="saas-admin-related-block">
-                    <h4>Descripcion</h4>
-                    <div className="saas-admin-related-row" role="status"><span>{selectedTenantCatalog.description || 'Sin descripcion'}</span></div>
+                    <h4>Descripción</h4>
+                    <div className="saas-admin-related-row" role="status"><span>{selectedTenantCatalog.description || 'Sin descripción'}</span></div>
                 </div>
                 {selectedTenantCatalog.sourceType === 'local' ? (
                     <div className="saas-admin-related-block saas-admin-catalog-products-block">
                         <div className="saas-admin-pane-header">
                             <div>
                                 <h4>Productos locales</h4>
-                                <small>Gestiona productos con imagen, precio y detalle para este catalogo.</small>
+                                <small>Gestiona productos con imagen, precio y detalle para este catálogo.</small>
                             </div>
                             <div className="saas-admin-list-actions saas-admin-list-actions--row">
                                 <button type="button" disabled={busy || loadingCatalogProducts} onClick={() => loadTenantCatalogProducts?.(settingsTenantId, selectedTenantCatalog.catalogId)}>Recargar</button>
@@ -351,7 +351,7 @@ function CatalogSection(props = {}) {
                             </div>
                         </div>
                         {loadingCatalogProducts ? <div className="saas-admin-empty-inline">Cargando productos...</div> : null}
-                        {!loadingCatalogProducts && tenantCatalogProducts.length === 0 ? <div className="saas-admin-empty-inline">Sin productos en este catalogo.</div> : null}
+                        {!loadingCatalogProducts && tenantCatalogProducts.length === 0 ? <div className="saas-admin-empty-inline">Sin productos en este catálogo.</div> : null}
                         <div className="saas-admin-related-list">
                             {tenantCatalogProducts.map((product) => (
                                 <button
@@ -435,7 +435,7 @@ function CatalogSection(props = {}) {
         if (!selectedTenantCatalog || isCatalogEditing) return null;
         return (
             <>
-                <button type="button" disabled={busy || !canEditCatalog} onClick={openCatalogEdit}>Editar</button>
+                <button type="button" disabled={busy || !canEditCatalog} onClick={openCatalogEdit}>EDITAR</button>
                 <button type="button" disabled={busy || !canEditCatalog || selectedTenantCatalog.isDefault === true} onClick={() => runAction?.('Catalogo marcado como principal', async () => {
                     await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs/${encodeURIComponent(selectedTenantCatalog.catalogId)}`, {
                         method: 'PUT',
@@ -443,11 +443,11 @@ function CatalogSection(props = {}) {
                     });
                     await loadTenantCatalogs(settingsTenantId);
                 })}>Marcar principal</button>
-                <button type="button" disabled={busy || !canEditCatalog || selectedTenantCatalog.isActive === false} onClick={() => runAction?.('Catalogo desactivado', async () => {
+                <button type="button" disabled={busy || !canEditCatalog || selectedTenantCatalog.isActive === false} onClick={() => runAction?.('Catálogo desactivado', async () => {
                     await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs/${encodeURIComponent(selectedTenantCatalog.catalogId)}`, { method: 'DELETE' });
                     await loadTenantCatalogs(settingsTenantId);
                     close();
-                })}>Desactivar</button>
+                })}>DESACTIVAR</button>
             </>
         );
     }, [
@@ -469,7 +469,7 @@ function CatalogSection(props = {}) {
         <SaasEntityPage
             id="saas_catalogos"
             sectionKey="saas_catalogos"
-            title="Catalogos"
+            title="CATÁLOGOS"
             rows={rows}
             columns={columns}
             selectedId={selectedId}
@@ -481,15 +481,15 @@ function CatalogSection(props = {}) {
             dirty={isCatalogEditing || isProductEditing}
             requestJson={requestJson}
             loading={loadingTenantCatalogs}
-            emptyText={settingsTenantId ? 'Sin catalogos configurados.' : 'Selecciona una empresa para gestionar catalogos.'}
-            searchPlaceholder="Buscar catalogo por nombre, codigo, origen o estado"
+            emptyText={settingsTenantId ? 'Sin catálogos configurados.' : 'Selecciona una empresa para gestionar catálogos.'}
+            searchPlaceholder="Buscar catálogo por nombre, código, origen o estado..."
             filters={filters}
             actions={[
                 { label: 'Recargar', onClick: () => settingsTenantId && loadTenantCatalogs?.(settingsTenantId), disabled: busy || !settingsTenantId || loadingTenantCatalogs },
-                { label: 'Nuevo catalogo', onClick: openCatalogCreate, disabled: busy || !settingsTenantId || !canEditCatalog }
+                { label: 'Nuevo catálogo', onClick: openCatalogCreate, disabled: busy || !settingsTenantId || !canEditCatalog }
             ]}
-            detailTitle={catalogPanelMode === 'create' ? 'Nuevo catalogo' : (selectedTenantCatalog?.name || 'Detalle de catalogo')}
-            detailSubtitle={catalogPanelMode === 'create' ? 'Deja ID vacio para generarlo automaticamente.' : (selectedTenantCatalog?.catalogId || '')}
+            detailTitle={catalogPanelMode === 'create' ? 'Nuevo catálogo' : (selectedTenantCatalog?.name || 'Detalle de catálogo')}
+            detailSubtitle={catalogPanelMode === 'create' ? 'Deja el ID vacío para generarlo automáticamente.' : (selectedTenantCatalog?.catalogId || '')}
             detailActions={detailActions}
         />
     );

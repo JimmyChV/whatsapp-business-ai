@@ -113,7 +113,7 @@ function toIsoDateBoundary(value = '', boundary = 'start') {
 
 const COMMERCIAL_STATUS_OPTIONS = [
     { key: 'nuevo', label: 'Nuevo' },
-    { key: 'en_conversacion', label: 'En conversacion' },
+    { key: 'en_conversacion', label: 'En conversación' },
     { key: 'cotizado', label: 'Cotizado' },
     { key: 'vendido', label: 'Vendido' },
     { key: 'perdido', label: 'Perdido' }
@@ -129,20 +129,20 @@ const COMMERCIAL_STATUS_COLORS = {
 
 const CAMPAIGN_TABLE_COLUMNS = [
     { key: 'campaignName', label: 'Nombre', width: '240px', minWidth: '220px', maxWidth: '320px', type: 'text' },
-    { key: 'category', label: 'Categoria', width: '140px', minWidth: '124px', maxWidth: '180px', type: 'option' },
+    { key: 'category', label: 'CATEGORÍA', width: '140px', minWidth: '124px', maxWidth: '180px', type: 'option' },
     { key: 'language', label: 'Idioma', width: '120px', minWidth: '108px', maxWidth: '144px', type: 'option' },
     { key: 'status', label: 'Estado', width: '132px', minWidth: '120px', maxWidth: '168px', type: 'option' },
-    { key: 'moduleId', label: 'Modulo', width: '168px', minWidth: '144px', maxWidth: '220px', type: 'option' },
+    { key: 'moduleId', label: 'MÓDULO', width: '168px', minWidth: '144px', maxWidth: '220px', type: 'option' },
     { key: 'updatedAt', label: 'Actualizado', width: '168px', minWidth: '146px', maxWidth: '220px', type: 'date' }
 ];
 
 const CAMPAIGN_DEFAULT_COLUMN_KEYS = ['campaignName', 'category', 'language', 'status', 'moduleId', 'updatedAt'];
 const CAMPAIGN_WIZARD_STEPS = [
-    { key: 'campaign', label: 'Datos de campana', shortLabel: 'Datos' },
-    { key: 'inclusion', label: 'Inclusion', shortLabel: 'Inclusion' },
-    { key: 'exclusion', label: 'Exclusion', shortLabel: 'Exclusion' },
-    { key: 'review', label: 'Revision manual', shortLabel: 'Revision' },
-    { key: 'delivery', label: 'Envio', shortLabel: 'Envio' },
+    { key: 'campaign', label: 'Datos de campaña', shortLabel: 'Datos' },
+    { key: 'inclusion', label: 'Inclusión', shortLabel: 'Inclusión' },
+    { key: 'exclusion', label: 'Exclusión', shortLabel: 'Exclusión' },
+    { key: 'review', label: 'Revisión manual', shortLabel: 'Revisión' },
+    { key: 'delivery', label: 'Envío', shortLabel: 'Envío' },
     { key: 'summary', label: 'Resumen', shortLabel: 'Resumen' }
 ];
 
@@ -780,7 +780,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const campaignTableRows = useMemo(() => filteredCampaigns.map((campaign) => ({
         id: toText(campaign?.campaignId),
         campaignId: toText(campaign?.campaignId),
-        campaignName: toText(campaign?.campaignName) || 'Campana sin nombre',
+        campaignName: toText(campaign?.campaignName) || 'Campaña sin nombre',
         category: toText(campaign?.templateCategory || campaign?.category || '-'),
         language: toUpper(campaign?.templateLanguage || campaign?.language || '-'),
         status: toLower(campaign?.status || ''),
@@ -1144,7 +1144,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             {
                 key: 'module',
                 ok: moduleActive,
-                label: 'Modulo activo',
+                label: 'Módulo activo',
                 hint: moduleActive ? 'OK' : 'Selecciona un modulo activo.'
             },
             {
@@ -1174,8 +1174,8 @@ export default React.memo(function CampaignsSection(props = {}) {
     );
     const currentWizardStep = CAMPAIGN_WIZARD_STEPS[wizardStep - 1] || CAMPAIGN_WIZARD_STEPS[0];
     const wizardTitle = panelMode === 'edit'
-        ? (toText(form.campaignName) || 'Editar campana')
-        : (toText(form.campaignName) || 'Nueva campana');
+        ? (toText(form.campaignName) || 'Editar campaña')
+        : (toText(form.campaignName) || 'Nueva campaña');
     const wizardCanAdvance = useMemo(() => {
         if (wizardStep === 1) {
             return Boolean(toText(form.campaignName) && toText(form.moduleId) && toText(form.templateId || form.templateName));
@@ -1830,7 +1830,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     }, [currentFinalAudienceItems, panelMode, wizardStep]);
 
     const handleSendCampaignBlock = useCallback(async (blockIndex) => {
-        if (!selectedCampaignId) throw new Error('Selecciona una campana.');
+        if (!selectedCampaignId) throw new Error('Selecciona una campaña.');
         if (typeof sendCampaignBlockAction !== 'function') throw new Error('Cliente HTTP no disponible.');
         const response = await sendCampaignBlockAction(selectedCampaignId, blockIndex);
         const campaign = response?.campaign || null;
@@ -1905,7 +1905,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (isCampaignFormDirty) {
             const ok = await confirm({
                 title: 'Descartar cambios',
-                message: 'Hay cambios sin guardar en la campana. Si continuas, se perderan.',
+                message: 'Hay cambios sin guardar en la campaña. Si continúas, se perderán.',
                 confirmText: 'Descartar',
                 cancelText: 'Seguir editando',
                 tone: 'danger'
@@ -1946,7 +1946,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const validateWizardStep = useCallback((step = wizardStep) => {
         if (step === 1) {
             if (!toText(form.campaignName)) {
-                notify({ type: 'warn', message: 'Ingresa un nombre para la campana antes de continuar.' });
+                notify({ type: 'warn', message: 'Ingresa un nombre para la campaña antes de continuar.' });
                 return false;
             }
             if (!toText(form.moduleId)) {
@@ -1997,7 +1997,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         setExcludedCustomerIds([]);
         setReviewAudienceItems([]);
         clearSelectedCampaign();
-        notify({ type: 'info', message: campaign ? 'Campana guardada como borrador.' : 'Cambios guardados.' });
+        notify({ type: 'info', message: campaign ? 'Campaña guardada como borrador.' : 'Cambios guardados.' });
     }, [
         buildCampaignPayload,
         clearSelectedCampaign,
@@ -2029,7 +2029,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                 status: shouldStartNow ? 'running' : 'scheduled'
             });
         const campaign = response?.campaign || null;
-        if (!campaign) throw new Error('No se pudo guardar la campana.');
+        if (!campaign) throw new Error('No se pudo guardar la campaña.');
         if (shouldStartNow) {
             await startCampaign?.(campaign.campaignId);
         }
@@ -2044,10 +2044,10 @@ export default React.memo(function CampaignsSection(props = {}) {
         notify({
             type: 'info',
             message: form.blocksEnabled
-                ? 'Campana guardada. Podras ejecutar los bloques desde el detalle.'
+                    ? 'Campaña guardada. Podrás ejecutar los bloques desde el detalle.'
                 : hasSchedule
-                    ? 'Campana programada correctamente.'
-                    : 'Campana iniciada.'
+                    ? 'Campaña programada correctamente.'
+                    : 'Campaña iniciada.'
         });
     }, [
         buildCampaignPayload,
@@ -2092,7 +2092,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                 selectCampaign?.(campaignId, { loadDetail: true }),
                 loadTracking(campaignId)
             ]);
-        }, 'No se pudo abrir campana.');
+        }, 'No se pudo abrir campaña.');
     }, [loadTracking, runSafe, selectCampaign]);
 
     const renderAudienceFilterChips = (scope = 'inclusionFilters', title = 'Incluir') => {
@@ -2127,9 +2127,9 @@ export default React.memo(function CampaignsSection(props = {}) {
                 normalize: toText
             });
         }
-        if (filters.has_phone === true) chips.push({ keyName: 'has_phone', value: '', label: 'Tiene telefono valido', normalize: toText });
+        if (filters.has_phone === true) chips.push({ keyName: 'has_phone', value: '', label: 'Tiene teléfono válido', normalize: toText });
         if (filters.has_email === true) chips.push({ keyName: 'has_email', value: '', label: 'Tiene email', normalize: toText });
-        if (filters.has_address === true) chips.push({ keyName: 'has_address', value: '', label: 'Tiene direccion registrada', normalize: toText });
+        if (filters.has_address === true) chips.push({ keyName: 'has_address', value: '', label: 'Tiene dirección registrada', normalize: toText });
         if (chips.length === 0) return null;
         return (
             <div className="saas-campaigns-filter-chips">
@@ -2172,9 +2172,9 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (filters.created_after || filters.created_before) {
             chips.push({ keyName: 'created_range', value: '', label: `Registro: ${filters.created_after || '...'} a ${filters.created_before || '...'}` });
         }
-        if (filters.has_phone === true) chips.push({ keyName: 'has_phone', value: '', label: 'Tiene telefono valido' });
+        if (filters.has_phone === true) chips.push({ keyName: 'has_phone', value: '', label: 'Tiene teléfono válido' });
         if (filters.has_email === true) chips.push({ keyName: 'has_email', value: '', label: 'Tiene email' });
-        if (filters.has_address === true) chips.push({ keyName: 'has_address', value: '', label: 'Tiene direccion registrada' });
+        if (filters.has_address === true) chips.push({ keyName: 'has_address', value: '', label: 'Tiene dirección registrada' });
         return chips;
     }, [
         acquisitionSourceOptions,
@@ -2351,7 +2351,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                         <article key={item.customerId} className="saas-campaigns-audience-live-item">
                             <div className="saas-campaigns-audience-live-item__main">
                                 <strong>{item.contactName}</strong>
-                                <span>{item.phone || 'Sin telefono'}</span>
+                                <span>{item.phone || 'Sin teléfono'}</span>
                             </div>
                             <div className="saas-campaigns-audience-live-item__meta">
                                 {statusMetaItem ? (
@@ -2400,12 +2400,12 @@ export default React.memo(function CampaignsSection(props = {}) {
     const inclusionCriteriaGroups = useMemo(() => {
         const customerItems = [];
         if (inclusionCustomerTypeOptions.length > 0) customerItems.push({ key: 'customer_type_ids', label: 'Tipo de cliente' });
-        if (acquisitionSourceOptions.length > 0) customerItems.push({ key: 'acquisition_source_ids', label: 'Fuente de adquisicion' });
+        if (acquisitionSourceOptions.length > 0) customerItems.push({ key: 'acquisition_source_ids', label: 'Fuente de adquisición' });
         customerItems.push({ key: 'assigned_user_id', label: 'Asignado a' });
         customerItems.push({ key: 'created_range', label: 'Fecha de registro' });
         return [
             {
-                title: 'Geografia',
+                title: 'Geografía',
                 items: [
                     { key: 'departments', label: 'Departamento' },
                     { key: 'provinces', label: 'Provincia' },
@@ -2427,9 +2427,9 @@ export default React.memo(function CampaignsSection(props = {}) {
             {
                 title: 'Datos completos',
                 items: [
-                    { key: 'has_phone', label: 'Tiene telefono valido' },
+                    { key: 'has_phone', label: 'Tiene teléfono válido' },
                     { key: 'has_email', label: 'Tiene email' },
-                    { key: 'has_address', label: 'Tiene direccion registrada' }
+                    { key: 'has_address', label: 'Tiene dirección registrada' }
                 ]
             }
         ];
@@ -2439,7 +2439,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         const groups = [];
         if (exclusionDepartments.length > 0 || exclusionProvinces.length > 0 || exclusionDistricts.length > 0 || exclusionAudienceOptions.zoneLabels.length > 0) {
             groups.push({
-                title: 'Geografia',
+                title: 'Geografía',
                 items: [
                     ...(exclusionDepartments.length > 0 ? [{ key: 'departments', label: 'Departamento' }] : []),
                     ...(exclusionProvinces.length > 0 ? [{ key: 'provinces', label: 'Provincia' }] : []),
@@ -2454,16 +2454,16 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (stateItems.length > 0) groups.push({ title: 'Estado', items: stateItems });
         const customerItems = [];
         if (exclusionCustomerTypeOptions.length > 0) customerItems.push({ key: 'customer_type_ids', label: 'Tipo de cliente' });
-        if (exclusionAcquisitionSourceOptions.length > 0) customerItems.push({ key: 'acquisition_source_ids', label: 'Fuente de adquisicion' });
+        if (exclusionAcquisitionSourceOptions.length > 0) customerItems.push({ key: 'acquisition_source_ids', label: 'Fuente de adquisición' });
         if (exclusionAssignedUserOptions.length > 0) customerItems.push({ key: 'assigned_user_id', label: 'Asignado a' });
         customerItems.push({ key: 'created_range', label: 'Fecha de registro' });
         if (customerItems.length > 0) groups.push({ title: 'Perfil del cliente', items: customerItems });
         groups.push({
             title: 'Datos completos',
             items: [
-                { key: 'has_phone', label: 'Tiene telefono valido' },
+                { key: 'has_phone', label: 'Tiene teléfono válido' },
                 { key: 'has_email', label: 'Tiene email' },
-                { key: 'has_address', label: 'Tiene direccion registrada' },
+                { key: 'has_address', label: 'Tiene dirección registrada' },
                 { key: 'manual_customers', label: 'Clientes especificos' }
             ]
         });
@@ -2616,7 +2616,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                 {scope === 'exclusionFilters' && activeCriteria.includes('manual_customers') ? (
                     <div className="saas-admin-field saas-campaigns-audience-control-card">
                         <label>Clientes especificos</label>
-                        <input value={manualExclusionSearch} onChange={(event) => setManualExclusionSearch(event.target.value)} placeholder="Buscar por nombre o telefono" />
+                        <input value={manualExclusionSearch} onChange={(event) => setManualExclusionSearch(event.target.value)} placeholder="Buscar por nombre o teléfono..." />
                         <div className="saas-campaigns-manual-exclusion-results">
                             {manualExclusionCandidates.length === 0 ? <small className="saas-admin-empty-inline">{inclusionOnlyAudienceItems.length === 0 ? 'No hay audiencia incluida para excluir.' : 'No hay coincidencias disponibles.'}</small> : manualExclusionCandidates.map((item) => (
                                 <button key={`exclude_candidate_${item.customerId}`} type="button" className="saas-campaigns-manual-exclusion-item" onClick={() => toggleAudienceExclusion(item.customerId)}>
@@ -2691,7 +2691,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         switch (wizardStep) {
         case 1:
             return (
-                <SaasDetailPanelSection title="Paso 1 - Datos de campana">
+                <SaasDetailPanelSection title="PASO 1 - DATOS DE CAMPAÑA">
                     <div className="saas-campaigns-wizard-step saas-campaigns-wizard-step--campaign">
                         <div className="saas-campaigns-builder__form">
                             <div className="saas-admin-form-row">
@@ -2700,7 +2700,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                     <input value={form.campaignName} onChange={(e) => setForm((p) => ({ ...p, campaignName: e.target.value }))} />
                                 </div>
                                 <div className="saas-admin-field">
-                                    <label>Modulo</label>
+                                    <label>Módulo</label>
                                     <select value={form.moduleId} onChange={(e) => setForm((p) => ({ ...p, moduleId: e.target.value, templateId: '', templateName: '' }))}>
                                         <option value="">Selecciona modulo</option>
                                         {moduleOptions.map((m) => <option key={m.moduleId} value={m.moduleId}>{m.label}</option>)}
@@ -2723,7 +2723,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                     </select>
                                 </div>
                                 <div className="saas-admin-field">
-                                    <label>Programacion</label>
+                                    <label>Programación</label>
                                     <select
                                         value={form.scheduleMode}
                                         onChange={(e) => setForm((p) => ({
@@ -2769,7 +2769,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                             </div>
                             {renderTemplatePreviewBubble()}
                             <div className="saas-campaigns-wizard-preview__meta">
-                                <span><strong>Modulo:</strong> {selectedModule?.label || '-'}</span>
+                                <span><strong>Módulo:</strong> {selectedModule?.label || '-'}</span>
                                 <span><strong>Vigencia:</strong> {form.validFrom || form.validTo ? `${form.validFrom || '-'} a ${form.validTo || '-'}` : 'Sin vigencia definida'}</span>
                             </div>
                         </aside>
@@ -2778,7 +2778,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             );
         case 2:
             return (
-                <SaasDetailPanelSection title="Paso 2 - Inclusion">
+                <SaasDetailPanelSection title="PASO 2 - INCLUSIÓN">
                     {renderAudienceStepPanel({
                         scope: 'inclusionFilters',
                         baseCount: baseAudienceNumbers.eligible,
@@ -2799,7 +2799,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             );
         case 3:
             return (
-                <SaasDetailPanelSection title="Paso 3 - Exclusion">
+                <SaasDetailPanelSection title="PASO 3 - EXCLUSIÓN">
                     {renderAudienceStepPanel({
                         scope: 'exclusionFilters',
                         baseCount: inclusionAudienceNumbers.eligible || inclusionOnlyAudienceItems.length,
@@ -2821,11 +2821,11 @@ export default React.memo(function CampaignsSection(props = {}) {
             );
         case 4:
             return (
-                <SaasDetailPanelSection title="Paso 4 - Revision manual">
+                <SaasDetailPanelSection title="PASO 4 - REVISIÓN MANUAL">
                     <div className="saas-campaigns-review-step">
                         <div className="saas-campaigns-review-step__header">
                             <div>
-                                <strong>{`${reviewIncludedCount} clientes en esta campana`}</strong>
+                                <strong>{`${reviewIncludedCount} clientes en esta campaña`}</strong>
                                 <span>Marca clientes como excluidos sin quitarlos del listado. Puedes revertirlo antes de guardar.</span>
                             </div>
                             <div className="saas-admin-field saas-campaigns-review-step__search">
@@ -2833,14 +2833,14 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 <input
                                     value={reviewSearch}
                                     onChange={(event) => setReviewSearch(event.target.value)}
-                                    placeholder="Buscar por nombre o telefono"
+                                    placeholder="Buscar por nombre o teléfono..."
                                 />
                             </div>
                         </div>
                         <div className="saas-campaigns-review-step__list saas-campaigns-review-table">
                             <div className="saas-campaigns-review-table__head">
                                 <span>Cliente</span>
-                                <span>Telefono</span>
+                                <span>TELÉFONO</span>
                                 <span>Estado</span>
                                 <span>Zona</span>
                                 <span>Etiqueta</span>
@@ -2905,7 +2905,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             );
         case 5:
             return (
-                <SaasDetailPanelSection title="Paso 5 - Envio">
+                <SaasDetailPanelSection title="PASO 5 - ENVÍO">
                     <div className="saas-campaigns-delivery-step">
                         <div className="saas-campaigns-delivery-step__cards">
                             <button
@@ -2913,7 +2913,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 className={`saas-campaigns-delivery-card ${form.blocksEnabled ? '' : 'is-selected'}`.trim()}
                                 onClick={() => setForm((prev) => ({ ...prev, blocksEnabled: false }))}
                             >
-                                <strong>Envio unico</strong>
+                                <strong>Envío único</strong>
                                 <span>Un solo despacho con todos los clientes de la audiencia final.</span>
                             </button>
                             <button
@@ -2921,15 +2921,15 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 className={`saas-campaigns-delivery-card ${form.blocksEnabled ? 'is-selected' : ''}`.trim()}
                                 onClick={() => setForm((prev) => ({ ...prev, blocksEnabled: true, blockCount: Math.max(2, Math.min(10, Math.floor(toNumber(prev.blockCount, 2)))) }))}
                             >
-                                <strong>Envio por bloques</strong>
-                                <span>Divide la campana en grupos controlados para ejecutar por tandas.</span>
+                                <strong>Envío por bloques</strong>
+                                <span>Divide la campaña en grupos controlados para ejecutar por tandas.</span>
                             </button>
                         </div>
                         {form.blocksEnabled ? (
                             <div className="saas-campaigns-delivery-step__config">
                                 <div className="saas-campaigns-delivery-step__slider">
                                     <div className="saas-campaigns-delivery-step__slider-header">
-                                        <label>Numero de bloques</label>
+                                        <label>Número de bloques</label>
                                         <strong>{form.blockCount}</strong>
                                     </div>
                                     <input
@@ -2959,7 +2959,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                             </div>
                         ) : (
                             <div className="saas-campaigns-delivery-step__single-note">
-                                Todos los {finalAudienceCount} clientes se enviaran en una sola ejecucion.
+                                Todos los {finalAudienceCount} clientes se enviarán en una sola ejecución.
                             </div>
                         )}
                         <div className="saas-campaigns-delivery-step__summary">
@@ -2971,25 +2971,25 @@ export default React.memo(function CampaignsSection(props = {}) {
         case 6:
         default:
             return (
-                <SaasDetailPanelSection title="Paso 6 - Resumen final">
+                <SaasDetailPanelSection title="PASO 6 - RESUMEN FINAL">
                     <div className="saas-campaigns-summary-step">
                         <section className="saas-campaigns-summary-section">
                             <header>
-                                <h4>Campana</h4>
+                                <h4>Campaña</h4>
                                 <button type="button" onClick={() => setWizardStep(1)}>Volver al paso 1</button>
                             </header>
                             <div className="saas-campaigns-summary-grid">
                                 <div><span>Nombre</span><strong>{toText(form.campaignName) || '-'}</strong></div>
-                                <div><span>Modulo</span><strong>{selectedModule?.label || '-'}</strong></div>
+                                <div><span>Módulo</span><strong>{selectedModule?.label || '-'}</strong></div>
                                 <div><span>Template</span><strong>{selectedTemplate?.templateName || form.templateName || '-'}</strong></div>
-                                <div><span>Programacion</span><strong>{form.scheduleMode === 'scheduled' ? formatDateTime(form.scheduledAt) : 'Inmediata'}</strong></div>
+                                <div><span>Programación</span><strong>{form.scheduleMode === 'scheduled' ? formatDateTime(form.scheduledAt) : 'Inmediata'}</strong></div>
                                 <div><span>Vigencia desde</span><strong>{form.validFrom || '-'}</strong></div>
                                 <div><span>Vigencia hasta</span><strong>{form.validTo || '-'}</strong></div>
                             </div>
                         </section>
                         <section className="saas-campaigns-summary-section saas-campaigns-summary-preview">
                             <header>
-                                <h4>Preview template</h4>
+                                <h4>PREVIEW DEL TEMPLATE</h4>
                             </header>
                             {renderTemplatePreviewBubble()}
                         </section>
@@ -2999,8 +2999,8 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 <button type="button" onClick={() => setWizardStep(2)}>Volver al paso 2</button>
                             </header>
                             <div className="saas-campaigns-summary-audience">
-                                {renderReadonlyChipList('Inclusion', buildAudienceFilterChipData('inclusionFilters'))}
-                                {renderReadonlyChipList('Exclusion', buildAudienceFilterChipData('exclusionFilters'))}
+                                {renderReadonlyChipList('Inclusión', buildAudienceFilterChipData('inclusionFilters'))}
+                                {renderReadonlyChipList('Exclusión', buildAudienceFilterChipData('exclusionFilters'))}
                                 <div className="saas-campaigns-summary-metrics">
                                     <div className="saas-campaigns-summary-metric">
                                         <span>Excluidos manualmente</span>
@@ -3009,19 +3009,19 @@ export default React.memo(function CampaignsSection(props = {}) {
                                     <div className="saas-campaigns-summary-metric saas-campaigns-summary-metric--highlight">
                                         <span>Total final</span>
                                         <strong>{finalAudienceCount}</strong>
-                                        <small>clientes recibiran esta campana</small>
+                                        <small>clientes recibirán esta campaña</small>
                                     </div>
                                 </div>
                             </div>
                         </section>
                         <section className="saas-campaigns-summary-section">
                             <header>
-                                <h4>Envio</h4>
+                                <h4>Envío</h4>
                                 <button type="button" onClick={() => setWizardStep(5)}>Volver al paso 5</button>
                             </header>
                             <div className="saas-campaigns-summary-delivery">
                                 {!form.blocksEnabled ? (
-                                    <strong>Envio unico</strong>
+                                    <strong>Envío único</strong>
                                 ) : (
                                     <>
                                         <strong>{`${form.blockCount} bloques`}</strong>
@@ -3037,8 +3037,8 @@ export default React.memo(function CampaignsSection(props = {}) {
                             </div>
                         </section>
                         <div className="saas-campaigns-summary-footer">
-                            <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(saveCampaignDraftAction, 'No se pudo guardar campana.')}>Guardar borrador</button>
-                            <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(saveAndStartCampaignAction, 'No se pudo guardar e iniciar campana.')}>
+                            <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(saveCampaignDraftAction, 'No se pudo guardar campaña.')}>Guardar borrador</button>
+                            <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(saveAndStartCampaignAction, 'No se pudo guardar e iniciar campaña.')}>
                                 {form.blocksEnabled ? 'Guardar y preparar bloques' : 'Guardar e iniciar'}
                             </button>
                             <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
@@ -3053,14 +3053,14 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (wizardStep === 6) {
             return (
                 <>
-                    <button type="button" disabled={loading || wizardStep <= 1} onClick={goToPreviousWizardStep}>Atras</button>
+                    <button type="button" disabled={loading || wizardStep <= 1} onClick={goToPreviousWizardStep}>Atrás</button>
                     <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
                 </>
             );
         }
         return (
             <>
-                <button type="button" disabled={loading || wizardStep <= 1} onClick={goToPreviousWizardStep}>Atras</button>
+                <button type="button" disabled={loading || wizardStep <= 1} onClick={goToPreviousWizardStep}>Atrás</button>
                 <button type="button" disabled={loading || !wizardCanAdvance} onClick={goToNextWizardStep}>Siguiente</button>
                 <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
             </>
@@ -3069,11 +3069,11 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const headerElement = (
         <SaasViewHeader
-            title="Campanas"
+            title="CAMPAÑAS"
             count={filteredCampaigns.length}
             searchValue={search}
             onSearchChange={setSearch}
-            searchPlaceholder="Buscar campana por nombre, template o modulo"
+            searchPlaceholder="Buscar campaña por nombre, plantilla o módulo..."
             actions={[
                 {
                     key: 'reload',
@@ -3129,7 +3129,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             filters={{
                 columns: [
                     { key: 'status', label: 'Estado', type: 'option', options: Object.keys(STATUS_META).map((key) => ({ value: key, label: STATUS_META[key].label })) },
-                    { key: 'moduleId', label: 'Modulo', type: 'option', options: moduleOptions.map((item) => ({ value: item.moduleId, label: item.label })) }
+                    { key: 'moduleId', label: 'MÓDULO', type: 'option', options: moduleOptions.map((item) => ({ value: item.moduleId, label: item.label })) }
                 ],
                 value: {
                     columnKey: statusFilter ? 'status' : (moduleFilter ? 'moduleId' : ''),
@@ -3162,13 +3162,13 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const listPane = (
         <div className="saas-campaigns-pane">
-            {tenantScopeLocked ? <div className="saas-admin-empty-state"><p>Selecciona una empresa para gestionar campanas.</p></div> : (
+            {tenantScopeLocked ? <div className="saas-admin-empty-state"><p>Selecciona una empresa para gestionar campañas.</p></div> : (
                 <SaasDataTable
                     columns={campaignTableColumns}
                     rows={campaignTableRows}
                     selectedId={panelMode === 'create' ? '' : selectedCampaignId}
                     loading={loadingList}
-                    emptyText="No hay campanas para estos filtros."
+                    emptyText="No hay campañas para estos filtros."
                     onSelect={handleSelectCampaignRow}
                 />
             )}
@@ -3209,40 +3209,40 @@ export default React.memo(function CampaignsSection(props = {}) {
             )}
             {!tenantScopeLocked && panelMode === 'detail' && (
 
-                !selectedCampaignId ? <div className="saas-admin-empty-state saas-admin-empty-state--detail"><p>Selecciona una campana para ver tracking.</p></div> : (
+                !selectedCampaignId ? <div className="saas-admin-empty-state saas-admin-empty-state--detail"><p>Selecciona una campaña para ver el seguimiento.</p></div> : (
                     <SaasDetailPanel
-                        title={toText(selectedCampaign?.campaignName) || 'Campana'}
+                        title={toText(selectedCampaign?.campaignName) || 'Campaña'}
                         subtitle={toText(selectedCampaign?.templateName) || '-'}
                         className="saas-campaigns-detail-panel"
                         bodyClassName="saas-campaigns-detail-panel__body"
                         actions={(
                             <>
                                 {toLower(selectedCampaign?.status) === 'draft' && <button type="button" disabled={loading || !canWrite} onClick={() => { setForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions)); setPanelMode('edit'); setWizardStep(1); setLocalEstimate(null); setInclusionOnlyEstimate(null); }}>Editar</button>}
-                                {toLower(selectedCampaign?.status) === 'running' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => pauseCampaign?.(selectedCampaignId), 'No se pudo pausar campana.')}>Pausar</button>}
-                                {toLower(selectedCampaign?.status) === 'paused' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => resumeCampaign?.(selectedCampaignId), 'No se pudo reanudar campana.')}>Reanudar</button>}
-                                {['draft', 'scheduled'].includes(toLower(selectedCampaign?.status)) && !selectedBlocksConfig && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => startCampaign?.(selectedCampaignId), 'No se pudo iniciar campana.')}>Iniciar</button>}
-                                {!['cancelled', 'completed'].includes(toLower(selectedCampaign?.status)) && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => { const ok = await confirm({ title: 'Cancelar campana', message: 'Esta accion detendra el procesamiento pendiente.', confirmText: 'Cancelar campana', cancelText: 'Volver', tone: 'danger' }); if (!ok) return; await cancelCampaign?.(selectedCampaignId, 'cancelled_by_user'); }, 'No se pudo cancelar campana.')}>Cancelar</button>}
+                                {toLower(selectedCampaign?.status) === 'running' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => pauseCampaign?.(selectedCampaignId), 'No se pudo pausar campaña.')}>Pausar</button>}
+                                {toLower(selectedCampaign?.status) === 'paused' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => resumeCampaign?.(selectedCampaignId), 'No se pudo reanudar campaña.')}>Reanudar</button>}
+                                {['draft', 'scheduled'].includes(toLower(selectedCampaign?.status)) && !selectedBlocksConfig && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => startCampaign?.(selectedCampaignId), 'No se pudo iniciar campaña.')}>Iniciar</button>}
+                                {!['cancelled', 'completed'].includes(toLower(selectedCampaign?.status)) && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => { const ok = await confirm({ title: 'Cancelar campaña', message: 'Esta acción detendrá el procesamiento pendiente.', confirmText: 'Cancelar campaña', cancelText: 'Volver', tone: 'danger' }); if (!ok) return; await cancelCampaign?.(selectedCampaignId, 'cancelled_by_user'); }, 'No se pudo cancelar campaña.')}>Cancelar</button>}
                                 <button type="button" disabled={loading} onClick={() => runSafe(async () => { await loadCampaigns?.(); await loadTracking(selectedCampaignId); }, 'No se pudo recargar tracking.')}>Recargar</button>
                                 <button type="button" className="saas-btn-close" disabled={loading} onClick={() => { void handleRequestCloseCampaignPanel(); }}>Cerrar</button>
                             </>
                         )}
                     >
-                        <SaasDetailPanelSection title="Resumen operativo">
+                        <SaasDetailPanelSection title="RESUMEN OPERATIVO">
                             <div className="saas-admin-detail-grid">
                                 <div className="saas-admin-detail-field"><span>Estado</span><strong><span className={`saas-campaigns-status ${selectedMeta.className}`}>{selectedMeta.label}</span></strong></div>
-                                <div className="saas-admin-detail-field"><span>Modulo</span><strong>{toText(selectedCampaign?.moduleId) || '-'}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Template</span><strong>{toText(selectedCampaign?.templateName) || '-'}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Programada</span><strong>{formatDateTime(selectedCampaign?.scheduledAt)}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Creada</span><strong>{formatDateTime(selectedCampaign?.createdAt)}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Actualizada</span><strong>{formatDateTime(selectedCampaign?.updatedAt)}</strong></div>
+                                <div className="saas-admin-detail-field"><span>MÓDULO</span><strong>{toText(selectedCampaign?.moduleId) || '-'}</strong></div>
+                                <div className="saas-admin-detail-field"><span>TEMPLATE</span><strong>{toText(selectedCampaign?.templateName) || '-'}</strong></div>
+                                <div className="saas-admin-detail-field"><span>PROGRAMADA</span><strong>{formatDateTime(selectedCampaign?.scheduledAt)}</strong></div>
+                                <div className="saas-admin-detail-field"><span>CREADA</span><strong>{formatDateTime(selectedCampaign?.createdAt)}</strong></div>
+                                <div className="saas-admin-detail-field"><span>ACTUALIZADA</span><strong>{formatDateTime(selectedCampaign?.updatedAt)}</strong></div>
                             </div>
                         </SaasDetailPanelSection>
                         <SaasDetailPanelSection title="Metricas y progreso">
                             <div className="saas-admin-detail-grid">
-                                <div className="saas-admin-detail-field"><span>Total</span><strong>{toNumber(selectedCampaign?.totalRecipients)}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Enviados</span><strong>{toNumber(selectedCampaign?.sentRecipients)}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Fallidos</span><strong>{toNumber(selectedCampaign?.failedRecipients)}</strong></div>
-                                <div className="saas-admin-detail-field"><span>Omitidos</span><strong>{toNumber(selectedCampaign?.skippedRecipients)}</strong></div>
+                                <div className="saas-admin-detail-field"><span>TOTAL</span><strong>{toNumber(selectedCampaign?.totalRecipients)}</strong></div>
+                                <div className="saas-admin-detail-field"><span>ENVIADOS</span><strong>{toNumber(selectedCampaign?.sentRecipients)}</strong></div>
+                                <div className="saas-admin-detail-field"><span>FALLIDOS</span><strong>{toNumber(selectedCampaign?.failedRecipients)}</strong></div>
+                                <div className="saas-admin-detail-field"><span>OMITIDOS</span><strong>{toNumber(selectedCampaign?.skippedRecipients)}</strong></div>
                             </div>
                             <div className="saas-campaigns-progress saas-campaigns-progress--detail"><div className="saas-campaigns-progress__track"><div className="saas-campaigns-progress__fill" style={{ width: `${selectedProgress}%` }} /></div><span>{selectedProgress}%</span></div>
                         </SaasDetailPanelSection>
@@ -3260,7 +3260,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                     <div className="saas-campaigns-block-preview saas-campaigns-block-preview--detail">
                                         <table>
                                             <thead>
-                                                <tr><th>Bloque</th><th>Contactos</th><th>Estado</th><th>Completado</th><th>Accion</th></tr>
+                                                <tr><th>BLOQUE</th><th>CONTACTOS</th><th>ESTADO</th><th>COMPLETADO</th><th>ACCIÓN</th></tr>
                                             </thead>
                                             <tbody>
                                                 {selectedBlocks.map((block) => {
@@ -3309,7 +3309,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                                     <thead>
                                                         <tr>
                                                             <th>Nombre</th>
-                                                            <th>Telefono</th>
+                                                            <th>TELÉFONO</th>
                                                             <th>Estado comercial</th>
                                                             <th>Zona</th>
                                                             <th>Etiqueta</th>
@@ -3336,7 +3336,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                         </div>
                                     </>
                                 ) : (
-                                    <div className="saas-campaigns-table-wrap"><table className="saas-campaigns-table"><thead><tr><th>Telefono</th><th>Cliente</th><th>Estado</th><th>Intentos</th><th>Actualizado</th><th>Error</th></tr></thead><tbody>{recipients.length === 0 ? <tr><td colSpan={6}>Sin destinatarios.</td></tr> : recipients.map((r) => { const m = statusMeta(r?.status); return <tr key={`${toText(r?.recipientId)}_${toText(r?.phone)}`}><td>{toText(r?.phone) || '-'}</td><td>{toText(r?.customerId) || '-'}</td><td><span className={`saas-campaigns-status ${m.className}`}>{m.label}</span></td><td>{toNumber(r?.attemptCount)} / {toNumber(r?.maxAttempts)}</td><td>{formatDateTime(r?.updatedAt)}</td><td>{toText(r?.lastError || r?.skipReason) || '-'}</td></tr>; })}</tbody></table></div>
+                                    <div className="saas-campaigns-table-wrap"><table className="saas-campaigns-table"><thead><tr><th>TELÉFONO</th><th>CLIENTE</th><th>ESTADO</th><th>INTENTOS</th><th>ACTUALIZADO</th><th>ERROR</th></tr></thead><tbody>{recipients.length === 0 ? <tr><td colSpan={6}>Sin destinatarios.</td></tr> : recipients.map((r) => { const m = statusMeta(r?.status); return <tr key={`${toText(r?.recipientId)}_${toText(r?.phone)}`}><td>{toText(r?.phone) || '-'}</td><td>{toText(r?.customerId) || '-'}</td><td><span className={`saas-campaigns-status ${m.className}`}>{m.label}</span></td><td>{toNumber(r?.attemptCount)} / {toNumber(r?.maxAttempts)}</td><td>{formatDateTime(r?.updatedAt)}</td><td>{toText(r?.lastError || r?.skipReason) || '-'}</td></tr>; })}</tbody></table></div>
                                 )}
                             </section>
                         </SaasDetailPanelSection>

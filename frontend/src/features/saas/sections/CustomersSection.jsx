@@ -19,17 +19,17 @@ import { fetchTenantCustomerLabels, fetchTenantZoneRules } from '../services/lab
 import { listMetaTemplates } from '../services/metaTemplates.service';
 
 const CUSTOMER_TABLE_COLUMNS = [
-    { key: 'codigo', label: 'Codigo', width: '132px', minWidth: '120px', maxWidth: '152px', type: 'text' },
-    { key: 'nombreCompleto', label: 'Nombre completo', width: '208px', minWidth: '160px', maxWidth: '260px', type: 'text' },
+    { key: 'codigo', label: 'CÓDIGO', width: '132px', minWidth: '120px', maxWidth: '152px', type: 'text' },
+    { key: 'nombreCompleto', label: 'NOMBRE COMPLETO', width: '208px', minWidth: '160px', maxWidth: '260px', type: 'text' },
     { key: 'nombres', label: 'Nombres', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
-    { key: 'apellidoPaterno', label: 'Apellido paterno', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
-    { key: 'apellidoMaterno', label: 'Apellido materno', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
-    { key: 'telefono', label: 'Telefono', width: '156px', minWidth: '132px', maxWidth: '190px', type: 'text' },
-    { key: 'telefonoAlt', label: 'Telefono alterno', width: '168px', minWidth: '140px', maxWidth: '208px', type: 'text' },
-    { key: 'email', label: 'Correo', width: '220px', minWidth: '180px', maxWidth: '280px', type: 'text' },
+    { key: 'apellidoPaterno', label: 'APELLIDO PATERNO', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
+    { key: 'apellidoMaterno', label: 'APELLIDO MATERNO', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
+    { key: 'telefono', label: 'TELÉFONO', width: '156px', minWidth: '132px', maxWidth: '190px', type: 'text' },
+    { key: 'telefonoAlt', label: 'TELÉFONO ALTERNO', width: '168px', minWidth: '140px', maxWidth: '208px', type: 'text' },
+    { key: 'email', label: 'CORREO', width: '220px', minWidth: '180px', maxWidth: '280px', type: 'text' },
     { key: 'tipoCliente', label: 'Tipo de cliente', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
-    { key: 'tipoDocumento', label: 'Tipo documento', width: '162px', minWidth: '136px', maxWidth: '216px', type: 'option' },
-    { key: 'documento', label: 'Documento', width: '150px', minWidth: '130px', maxWidth: '190px', type: 'text' },
+    { key: 'tipoDocumento', label: 'TIPO DE DOCUMENTO', width: '162px', minWidth: '136px', maxWidth: '216px', type: 'option' },
+    { key: 'documento', label: 'DOCUMENTO', width: '150px', minWidth: '130px', maxWidth: '190px', type: 'text' },
     { key: 'idioma', label: 'Idioma', width: '118px', minWidth: '100px', maxWidth: '150px', type: 'option' },
     { key: 'fuenteAdquisicion', label: 'Fuente', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
     { key: 'tratamiento', label: 'Tratamiento', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
@@ -37,7 +37,7 @@ const CUSTOMER_TABLE_COLUMNS = [
     { key: 'etiquetas', label: 'Etiquetas', width: '220px', minWidth: '180px', maxWidth: '300px', type: 'text' },
     { key: 'ultimaInteraccion', label: 'Ultima interaccion', width: '166px', minWidth: '144px', maxWidth: '220px', type: 'date' },
     { key: 'actualizado', label: 'Actualizado', width: '166px', minWidth: '144px', maxWidth: '220px', type: 'date' },
-    { key: 'estado', label: 'Estado', width: '116px', minWidth: '96px', maxWidth: '146px', type: 'option' }
+    { key: 'estado', label: 'ESTADO', width: '116px', minWidth: '96px', maxWidth: '146px', type: 'option' }
 ];
 
 const CUSTOMER_DEFAULT_COLUMN_KEYS = [

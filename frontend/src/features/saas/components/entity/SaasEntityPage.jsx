@@ -133,10 +133,10 @@ function ColumnMenu({
                     ))}
                     <div className="saas-entity-columns__actions">
                         <button type="button" onClick={() => preferences?.setVisibleColumnKeys?.(menuColumns.map((column) => column.key))}>
-                            Todas
+                            TODAS
                         </button>
                         <button type="button" onClick={preferences?.resetColumns}>
-                            Restablecer
+                            RESTABLECER
                         </button>
                     </div>
                 </div>
@@ -158,7 +158,7 @@ export default function SaasEntityPage({
     renderForm = null,
     mode = 'detail',
     dirty = false,
-    confirmCloseMessage = 'Hay cambios sin guardar. ?Deseas cerrar de todos modos?',
+    confirmCloseMessage = 'Hay cambios sin guardar. ¿Deseas cerrar de todos modos?',
     requestJson = null,
     loading = false,
     emptyText = 'No hay datos para mostrar.',
@@ -279,7 +279,7 @@ export default function SaasEntityPage({
         <>
             {resolvedDetailActions}
             <button type="button" className="saas-btn-cancel" onClick={() => { void close(); }}>
-                Cerrar
+                CERRAR
             </button>
         </>
     );

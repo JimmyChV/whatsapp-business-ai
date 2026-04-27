@@ -76,7 +76,7 @@ function UsersSection(props = {}) {
 
     const columns = React.useMemo(() => [
         { key: 'name', label: 'Usuario', width: '24%', minWidth: '220px', sortable: true },
-        { key: 'email', label: 'Correo', width: '28%', minWidth: '260px', sortable: true },
+        { key: 'email', label: 'CORREO', width: '28%', minWidth: '260px', sortable: true },
         { key: 'role', label: 'Rol', width: '18%', minWidth: '150px', sortable: true },
         { key: 'status', label: 'Estado', width: '14%', minWidth: '120px', sortable: true },
         { key: 'memberships', label: 'Empresas', width: '12%', minWidth: '120px', sortable: true }
@@ -170,7 +170,7 @@ function UsersSection(props = {}) {
             return (
                 <div className="saas-admin-empty-state saas-admin-empty-state--detail">
                     <h4>Selecciona un usuario</h4>
-                    <p>El detalle se mostrara aqui. Editar se activa solo por boton.</p>
+                    <p>El detalle se mostrará aquí. Editar se activa solo por botón.</p>
                 </div>
             );
         }
@@ -195,10 +195,10 @@ function UsersSection(props = {}) {
                     </div>
                 </div>
                 <div className="saas-admin-detail-grid">
-                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedUser?.id || '-'}</strong></div>
-                    <div className="saas-admin-detail-field"><span>Correo</span><strong>{selectedUser.email || '-'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>CÓDIGO</span><strong>{selectedUser?.id || '-'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>CORREO</span><strong>{selectedUser.email || '-'}</strong></div>
                     <div className="saas-admin-detail-field"><span>Rol</span><strong>{selectedUser.roleLabel || selectedUser.role || '-'}</strong></div>
-                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedUser.active === false ? 'Inactivo' : 'Activo'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>ESTADO</span><strong>{selectedUser.active === false ? 'Inactivo' : 'Activo'}</strong></div>
                     <div className="saas-admin-detail-field"><span>Packs de acceso</span><strong>{Array.isArray(selectedUser.permissionPacks) ? selectedUser.permissionPacks.length : 0}</strong></div>
                     <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(selectedUser.updatedAt)}</strong></div>
                 </div>
@@ -265,7 +265,7 @@ function UsersSection(props = {}) {
         return (
             <>
                 <button type="button" disabled={busy || !canEditSelectedUser} onClick={openUserEdit}>
-                    Editar
+                    EDITAR
                 </button>
                 <button
                     type="button"
@@ -280,7 +280,7 @@ function UsersSection(props = {}) {
                         });
                     })}
                 >
-                    {selectedUser.active === false ? 'Activar' : 'Desactivar'}
+                    {selectedUser.active === false ? 'ACTIVAR' : 'DESACTIVAR'}
                 </button>
             </>
         );
@@ -321,7 +321,7 @@ function UsersSection(props = {}) {
                         type="password"
                         value={userForm.password || ''}
                         onChange={(event) => setUserForm?.((prev) => ({ ...prev, password: event.target.value }))}
-                        placeholder={userPanelMode === 'create' ? 'Password inicial' : 'Nuevo password opcional'}
+                        placeholder={userPanelMode === 'create' ? 'Contraseña inicial' : 'Nueva contraseña opcional'}
                         disabled={busy}
                     />
                     <label className="saas-admin-module-toggle">
@@ -340,7 +340,7 @@ function UsersSection(props = {}) {
                         onChange={(event) => setUserForm?.((prev) => ({ ...prev, tenantId: event.target.value }))}
                         disabled={busy || !canEditScopeInUserForm}
                     >
-                        <option value="">Tenant inicial</option>
+                        <option value="">Empresa inicial</option>
                         {tenantOptions.map((tenant) => (
                             <option key={tenant.id} value={tenant.id}>{toTenantDisplayName(tenant)}</option>
                         ))}
@@ -469,7 +469,7 @@ function UsersSection(props = {}) {
                     >
                         {userPanelMode === 'create' ? 'Guardar usuario' : 'Actualizar usuario'}
                     </button>
-                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelUserEdit}>Cancelar</button>
+                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelUserEdit}>CANCELAR</button>
                 </div>
             </>
         );
@@ -525,7 +525,7 @@ function UsersSection(props = {}) {
                 requestJson={requestJson}
                 loading={busy && rows.length === 0}
                 emptyText={tenantScopeLocked ? 'Selecciona una empresa para habilitar usuarios.' : 'No hay usuarios registrados.'}
-                searchPlaceholder="Buscar usuario por nombre, correo, rol o estado"
+                searchPlaceholder="Buscar usuario por nombre, correo, rol o estado..."
                 filters={filters}
                 actions={[
                     canManageUsers
@@ -539,7 +539,7 @@ function UsersSection(props = {}) {
                         : toUserDisplayName(selectedUser || {})}
                 detailSubtitle={userPanelMode === 'view'
                     ? 'Campos bloqueados. Usa Editar para modificar.'
-                    : 'ID y correo bloqueados durante edicion para mantener consistencia.'}
+                    : 'ID y correo bloqueados durante edición para mantener consistencia.'}
                 detailActions={detailActions}
             />
         </div>

@@ -31,22 +31,22 @@ export const EMPTY_ROLE_FORM = {
 };
 
 export const PLAN_LIMIT_KEYS = [
-    { key: 'maxUsers', label: 'Max usuarios', min: 1, max: 100000 },
-    { key: 'maxWaModules', label: 'Max modulos WA', min: 1, max: 100000 },
-    { key: 'maxCatalogs', label: 'Max catalogos', min: 1, max: 100000 },
-    { key: 'maxCatalogItems', label: 'Max productos catalogo', min: 1, max: 1000000 },
-    { key: 'maxMonthlyAiRequests', label: 'Max IA mensual', min: 1, max: 100000000 },
-    { key: 'maxActiveSessions', label: 'Max sesiones activas', min: 1, max: 100000 },
-    { key: 'quickReplyMaxUploadMb', label: 'Max MB por archivo rapido', min: 1, max: 1024 },
-    { key: 'quickReplyStorageQuotaMb', label: 'Cuota MB respuestas rapidas', min: 10, max: 200000 }
+    { key: 'maxUsers', label: 'MÁX. USUARIOS', min: 1, max: 100000 },
+    { key: 'maxWaModules', label: 'MÁX. MÓDULOS WA', min: 1, max: 100000 },
+    { key: 'maxCatalogs', label: 'MÁX. CATÁLOGOS', min: 1, max: 100000 },
+    { key: 'maxCatalogItems', label: 'MÁX. PRODUCTOS DE CATÁLOGO', min: 1, max: 1000000 },
+    { key: 'maxMonthlyAiRequests', label: 'MÁX. IA MENSUAL', min: 1, max: 100000000 },
+    { key: 'maxActiveSessions', label: 'MÁX. SESIONES ACTIVAS', min: 1, max: 100000 },
+    { key: 'quickReplyMaxUploadMb', label: 'MÁX. MB POR ARCHIVO RÁPIDO', min: 1, max: 1024 },
+    { key: 'quickReplyStorageQuotaMb', label: 'CUOTA MB RESPUESTAS RÁPIDAS', min: 10, max: 200000 }
 ];
 
 export const PLAN_FEATURE_KEYS = [
     { key: 'aiPro', label: 'IA Pro' },
-    { key: 'catalog', label: 'Catalogo' },
+    { key: 'catalog', label: 'Catálogo' },
     { key: 'cart', label: 'Carrito' },
-    { key: 'quickReplies', label: 'Respuestas rapidas' },
-    { key: 'audit', label: 'Auditoria' },
+    { key: 'quickReplies', label: 'Respuestas rápidas' },
+    { key: 'audit', label: 'Auditoría' },
     { key: 'opsPanel', label: 'Panel Ops' }
 ];
 
