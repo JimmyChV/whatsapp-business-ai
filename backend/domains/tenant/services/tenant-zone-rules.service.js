@@ -6,6 +6,7 @@ const {
     readTenantJsonFile,
     writeTenantJsonFile
 } = require('../../../config/persistence-runtime');
+const { normalizeAddressFields } = require('../../../utils/normalize-text');
 
 const ZONE_RULES_FILE = 'tenant_zone_rules.json';
 const CUSTOMER_LABELS_FILE = 'tenant_customer_labels.json';
@@ -480,6 +481,11 @@ async function recalculateZonesForTenant(tenantId = DEFAULT_TENANT_ID) {
             const nextDistrictName = toText(enriched?.districtName || enriched?.district_name) || null;
             const nextProvinceName = toText(enriched?.provinceName || enriched?.province_name) || null;
             const nextDepartmentName = toText(enriched?.departmentName || enriched?.department_name) || null;
+            const normalizedGeoFields = normalizeAddressFields({
+                district_name: nextDistrictName,
+                province_name: nextProvinceName,
+                department_name: nextDepartmentName
+            });
             const prevDistrictName = toText(address?.district_name) || null;
             const prevProvinceName = toText(address?.province_name) || null;
             const prevDepartmentName = toText(address?.department_name) || null;
@@ -497,7 +503,13 @@ async function recalculateZonesForTenant(tenantId = DEFAULT_TENANT_ID) {
                             updated_at = NOW()
                       WHERE tenant_id = $1
                         AND address_id = $2`,
-                    [cleanTenantId, addressId, nextDistrictName, nextProvinceName, nextDepartmentName]
+                    [
+                        cleanTenantId,
+                        addressId,
+                        normalizedGeoFields.district_name,
+                        normalizedGeoFields.province_name,
+                        normalizedGeoFields.department_name
+                    ]
                 );
             }
 

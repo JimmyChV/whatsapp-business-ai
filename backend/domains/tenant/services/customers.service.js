@@ -25,6 +25,7 @@ const {
     mapCsvRow,
     createChannelEventId
 } = require('../helpers/customers-normalizers.helpers');
+const { normalizeCustomerFields } = require('../../../utils/normalize-text');
 const CUSTOMERS_FILE = 'customers.json';
 const PAGE_LIMIT_DEFAULT = 50;
 const PAGE_LIMIT_MAX = 500;
@@ -382,6 +383,16 @@ async function upsertCustomerPostgres(tenantId = DEFAULT_TENANT_ID, payload = {}
     }
 
     const normalized = normalizeCustomer(payload, { fallbackId, previous: existing });
+    const normalizedDbFields = normalizeCustomerFields({
+        contact_name: normalized.contactName,
+        phone_e164: normalized.phoneE164,
+        phone_alt: normalized.phoneAlt,
+        first_name: normalized.firstName,
+        last_name_paternal: normalized.lastNamePaternal,
+        last_name_maternal: normalized.lastNameMaternal,
+        document_number: normalized.documentNumber,
+        notes: normalized.notes
+    });
 
     const result = await queryPostgres(
         `INSERT INTO tenant_customers (
@@ -421,19 +432,19 @@ async function upsertCustomerPostgres(tenantId = DEFAULT_TENANT_ID, payload = {}
             cleanTenantId,
             normalized.customerId,
             normalized.moduleId,
-            normalized.contactName,
-            normalized.phoneE164,
-            normalized.phoneAlt,
+            normalizedDbFields.contact_name,
+            normalizedDbFields.phone_e164,
+            normalizedDbFields.phone_alt,
             normalized.email,
             normalized.treatmentId,
-            normalized.firstName,
-            normalized.lastNamePaternal,
-            normalized.lastNameMaternal,
+            normalizedDbFields.first_name,
+            normalizedDbFields.last_name_paternal,
+            normalizedDbFields.last_name_maternal,
             normalized.documentTypeId,
-            normalized.documentNumber,
+            normalizedDbFields.document_number,
             normalized.customerTypeId,
             normalized.acquisitionSourceId,
-            normalized.notes,
+            normalizedDbFields.notes,
             JSON.stringify(normalized.tags || []),
             JSON.stringify(normalized.profile || {}),
             JSON.stringify(normalized.metadata || {}),
@@ -604,6 +615,16 @@ async function updateCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '', pat
         createdAt: toIsoText(existing?.createdAt || nowIso()) || nowIso(),
         updatedAt: nowIso()
     };
+    const normalizedDbFields = normalizeCustomerFields({
+        contact_name: updatedLegacy.contactName,
+        phone_e164: updatedLegacy.phoneE164,
+        phone_alt: updatedLegacy.phoneAlt,
+        first_name: updatedLegacy.firstName,
+        last_name_paternal: updatedLegacy.lastNamePaternal,
+        last_name_maternal: updatedLegacy.lastNameMaternal,
+        document_number: updatedLegacy.documentNumber,
+        notes: updatedLegacy.notes
+    });
 
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     if (getStorageDriver() === 'postgres') {
@@ -637,19 +658,19 @@ async function updateCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '', pat
                 cleanTenantId,
                 resolvedCustomerId,
                 updatedLegacy.moduleId,
-                updatedLegacy.contactName,
-                updatedLegacy.phoneE164,
-                updatedLegacy.phoneAlt,
+                normalizedDbFields.contact_name,
+                normalizedDbFields.phone_e164,
+                normalizedDbFields.phone_alt,
                 updatedLegacy.email,
                 updatedLegacy.treatmentId,
-                updatedLegacy.firstName,
-                updatedLegacy.lastNamePaternal,
-                updatedLegacy.lastNameMaternal,
+                normalizedDbFields.first_name,
+                normalizedDbFields.last_name_paternal,
+                normalizedDbFields.last_name_maternal,
                 updatedLegacy.documentTypeId,
-                updatedLegacy.documentNumber,
+                normalizedDbFields.document_number,
                 updatedLegacy.customerTypeId,
                 updatedLegacy.acquisitionSourceId,
-                updatedLegacy.notes,
+                normalizedDbFields.notes,
                 JSON.stringify(updatedLegacy.tags || []),
                 JSON.stringify(updatedLegacy.profile || {}),
                 JSON.stringify(updatedLegacy.metadata || {}),

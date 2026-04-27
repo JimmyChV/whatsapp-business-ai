@@ -5,6 +5,7 @@ const {
     queryPostgres
 } = require('../../../config/persistence-runtime');
 const { parseCsvRows } = require('../../tenant/helpers/customers-normalizers.helpers');
+const { normalizeAddressFields } = require('../../../utils/normalize-text');
 
 const ERP_DATA_DIR = path.join(__dirname, '../../../config/data/erp');
 const ERP_CATALOG_FILES = {
@@ -558,14 +559,21 @@ function registerOperationsHttpRoutes({
             ? Boolean(source.isPrimary)
             : (source.is_primary !== undefined ? Boolean(source.is_primary) : Boolean(base.isPrimary));
         const metadata = toSafeObject(source.metadata || base.metadata);
-        return {
-            addressType,
+        const normalizedDbFields = normalizeAddressFields({
             street,
             reference,
+            district_name: districtName,
+            province_name: provinceName,
+            department_name: departmentName
+        });
+        return {
+            addressType,
+            street: normalizedDbFields.street,
+            reference: normalizedDbFields.reference,
             mapsUrl,
-            districtName,
-            provinceName,
-            departmentName,
+            districtName: normalizedDbFields.district_name,
+            provinceName: normalizedDbFields.province_name,
+            departmentName: normalizedDbFields.department_name,
             latitude,
             longitude,
             isPrimary,

@@ -10,6 +10,7 @@ const {
     queryPostgres
 } = require('../../../config/persistence-runtime');
 const { parseCsvRows } = require('../helpers/customers-normalizers.helpers');
+const { normalizeAddressFields } = require('../../../utils/normalize-text');
 
 const STORE_FILE = 'customer_addresses.json';
 const ALLOWED_ADDRESS_TYPES = new Set(['fiscal', 'delivery', 'other']);
@@ -429,6 +430,15 @@ async function upsertAddress(tenantId = DEFAULT_TENANT_ID, payload = {}) {
                 addressId: addressId || previous?.addressId || randomAddressId(),
                 customerId: payload?.customerId || payload?.customer_id || previous?.customerId || ''
             }, previous);
+            const normalizedDbFields = normalizeAddressFields({
+                street: normalized.street,
+                reference: normalized.reference,
+                district_id: normalized.districtId,
+                district_name: normalized.districtName,
+                province_name: normalized.provinceName,
+                department_name: normalized.departmentName,
+                wkt: normalized.wkt
+            });
 
             if (!normalized.customerId) throw new Error('customerId requerido para direccion.');
 
@@ -476,17 +486,17 @@ async function upsertAddress(tenantId = DEFAULT_TENANT_ID, payload = {}) {
                     cleanTenantId,
                     normalized.customerId,
                     normalized.addressType,
-                    normalized.street,
-                    normalized.reference,
+                    normalizedDbFields.street,
+                    normalizedDbFields.reference,
                     normalized.mapsUrl,
-                    normalized.wkt,
+                    normalizedDbFields.wkt,
                     normalized.latitude,
                     normalized.longitude,
                     normalized.isPrimary,
-                    normalized.districtId,
-                    normalized.districtName,
-                    normalized.provinceName,
-                    normalized.departmentName,
+                    normalizedDbFields.district_id,
+                    normalizedDbFields.district_name,
+                    normalizedDbFields.province_name,
+                    normalizedDbFields.department_name,
                     JSON.stringify(normalized.metadata || {}),
                     normalized.createdAt,
                     normalized.updatedAt
