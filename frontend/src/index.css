@@ -57,8 +57,9 @@
 }
 
 :root[data-theme="light"] {
+  --incoming-msg-bg: var(--saas-bg-elevated);
   --outgoing-msg-bg: color-mix(in srgb, var(--saas-accent-primary) 14%, var(--saas-bg-surface));
-  --chat-window-background: color-mix(in srgb, var(--saas-bg-base) 96%, #d8d3cc);
+  --chat-window-background: var(--saas-bg-base);
   --chat-skeleton-surface: var(--saas-bg-surface);
   --chat-skeleton-elevated: var(--saas-bg-elevated);
   --chat-skeleton-text: var(--saas-bg-surface);
